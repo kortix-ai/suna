@@ -1907,6 +1907,7 @@
       "showOutOfContext": "显示上下文之外的消息",
       "fullTextPreview": "{count, plural, other {此处 # 段长文本只显示前 16 kB。}}",
       "fullTextShow": "显示全文（{size}）",
+      "fullTextDownload": "下载全文（{size}）",
       "fullTextError": "无法加载全文。",
       "fullTextRetry": "重试"
     }

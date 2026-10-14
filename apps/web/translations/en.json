@@ -1907,6 +1907,7 @@
       "showOutOfContext": "Show messages outside context",
       "fullTextPreview": "{count, plural, one {A long text here shows its first 16 kB.} other {# long texts here show their first 16 kB.}}",
       "fullTextShow": "Show full text ({size})",
+      "fullTextDownload": "Download full text ({size})",
       "fullTextError": "Could not load the full text.",
       "fullTextRetry": "Try again"
     }

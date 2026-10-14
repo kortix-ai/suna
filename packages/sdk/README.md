@@ -796,7 +796,10 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   maps each switch `harness.history` records to the turn it lands on.
 - Texts stored by reference: `sessionLogReferencedTexts(messages)` lists every
   text the API kept as a 16 kB preview (`{ ref, bytes }`); read one with
-  `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`.
+  `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`. `sessionLogFullTextAction(refs)` says
+  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`.
+- `useSessionLogRecord(session)` (`@kortix/sdk/react`) is the v2 session record without threads
+  (`restore_grade`, `grade_counts`, `harness`, `ext`); it keeps its identity through message puts.
 
 Both layers give one answer for a record converted from v1 (its `cost` too: a
 v1-derived reply is priced over its v1 parts): the SDK's test suite compares them

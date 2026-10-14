@@ -106,18 +106,18 @@ export interface SessionLogReferencedText {
 }
 
 type TextItem = { text: string; ref?: string; bytes?: number };
-/** The F3 texts of a block: the text block, or a tool result's text items (display and model). */
+/** The F3 texts a transcript renders: a text block, or a tool result's display text items (`content`; `model_content` is not drawn). */
 const textsOf = (b: SessionLogBlock): TextItem[] =>
   b.type === 'text'
     ? [b]
     : b.type === 'tool_call'
-      ? [...(b.result?.content ?? []), ...(b.result?.model_content ?? [])].filter((c): c is Extract<ToolResultContent, { type: 'text' }> => c.type === 'text')
+      ? (b.result?.content ?? []).filter((c): c is Extract<ToolResultContent, { type: 'text' }> => c.type === 'text')
       : [];
 
 /**
  * Every text in `messages` the API stored by reference (`ref` and `bytes`: the record holds a
- * 16 kB preview), once per `ref`, in record order. Read the whole text with
- * `fetchSessionAttachment(ref)`.
+ * 16 kB preview) that a transcript renders (text blocks, tool results' `content`), once per
+ * `ref`, in record order. Read the whole text with `fetchSessionAttachment(ref)`.
  */
 export function sessionLogReferencedTexts(messages: readonly SessionLogMessage[]): SessionLogReferencedText[] {
   const out = new Map<string, number>();
@@ -131,24 +131,33 @@ const swap = <T extends TextItem>(item: T, texts: ReadonlyMap<string, string>): 
   const { ref: _ref, bytes: _bytes, ...rest } = item;
   return { ...rest, text } as T;
 };
-const swapAll = (items: ToolResultContent[] | undefined, texts: ReadonlyMap<string, string>) =>
-  items?.map((c) => (c.type === 'text' ? swap(c, texts) : c));
+const swapAll = (items: ToolResultContent[], texts: ReadonlyMap<string, string>) =>
+  items.map((c) => (c.type === 'text' ? swap(c, texts) : c));
 
 const filled = new WeakMap<SessionLogMessage, { texts: ReadonlyMap<string, string>; out: SessionLogMessage }>();
 
+/** One message with its loaded texts; the answer is kept per message and `texts` map, unchanged messages included, so each message is read once per map. */
 function withTexts(m: SessionLogMessage, texts: ReadonlyMap<string, string>): SessionLogMessage {
-  if (!m.blocks.some((b) => textsOf(b).some((t) => t.ref !== undefined && texts.has(t.ref)))) return m;
   const cached = filled.get(m);
   if (cached?.texts === texts) return cached.out;
-  const blocks = m.blocks.map((b): SessionLogBlock => {
-    if (b.type === 'text') return swap(b, texts);
-    if (b.type !== 'tool_call' || !b.result) return b;
-    const { content, model_content } = b.result;
-    return { ...b, result: { ...b.result, content: swapAll(content, texts)!, ...(model_content && { model_content: swapAll(model_content, texts) }) } };
-  });
-  const out = { ...m, blocks };
+  const out = !m.blocks.some((b) => textsOf(b).some((t) => t.ref !== undefined && texts.has(t.ref)))
+    ? m
+    : {
+        ...m,
+        blocks: m.blocks.map((b): SessionLogBlock =>
+          b.type === 'text' ? swap(b, texts) : b.type === 'tool_call' && b.result ? { ...b, result: { ...b.result, content: swapAll(b.result.content, texts) } } : b,
+        ),
+      };
   filled.set(m, { texts, out });
   return out;
+}
+
+/** Above this many bytes in all, a host offers the texts as a download instead of rendering them inline (a multi-MB text in markdown stalls the page). */
+export const SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES = 1024 * 1024;
+
+/** How a host offers the whole of `refs`: `'inline'` up to {@link SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES} in all, else `'download'`. */
+export function sessionLogFullTextAction(refs: readonly SessionLogReferencedText[]): 'inline' | 'download' {
+  return refs.reduce((n, r) => n + r.bytes, 0) > SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES ? 'download' : 'inline';
 }
 
 /**

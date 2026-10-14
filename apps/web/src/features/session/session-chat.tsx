@@ -27,13 +27,14 @@ import {
   sessionLogRetrying,
   sessionLogTurns,
   fetchSessionAttachment,
+  sessionLogFullTextAction,
   sessionLogHarnessSwitches,
   sessionLogRestoreNotice,
   sessionLogWithFullTexts,
 } from '@kortix/sdk';
 import {
   useProjectSession,
-  useSessionLog,
+  useSessionLogRecord,
   useSessionLogThread,
   useSessionMessageAuthors,
   useSessionModelUsage,
@@ -265,6 +266,7 @@ import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
 import { useComputerAwakeLine } from './composer/computer-awake-bar';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
+import { downloadBlob } from '@/lib/utils/download';
 import { RestoreNotice, hasOutOfContext, harnessName, type FullTextState } from './session-history';
 
 import {
@@ -648,12 +650,11 @@ export function SessionChat({
     [sessionState, sessionId, hookMessages],
   );
   const thread: SessionLogThread | null = sessionState ? liveThread : detachedThread;
-  // P5.6. The session record (v2 only: no runtime session id, so no v1 rows are read): the
-  // restore notice and the harness history. The view settings are per session.
+  // P5.6. The session record of the v2 log (null on v1): the restore notice and the harness
+  // history. `useSessionLogRecord` keeps its identity through message puts, so a streamed
+  // delta does not re-render the chat through it. The view settings are per session.
   const historyKey = projectSessionId || sessionId;
-  const sessionRecord = useSessionLog(
-    sessionState ? { projectId: sessionState.projectId, sessionId: sessionState.sessionId, runtimeSessionId: null } : DETACHED_SESSION_MESSAGES,
-  );
+  const sessionRecord = useSessionLogRecord(sessionState ?? DETACHED_SESSION_MESSAGES);
   const restoreNotice = useMemo(() => sessionLogRestoreNotice(sessionRecord), [sessionRecord]);
   const restoreDismissed = useSessionHistoryViewStore(
     (s) => !!restoreNotice && s.dismissedRestore[historyKey] === restoreNotice.generation,
@@ -1854,6 +1855,16 @@ export function SessionChat({
           return { ...base, state: { ...base.state, [turnId]: state } };
         });
       mark('loading');
+      // Above 1 MB in all the texts download as files: a multi-MB text in markdown stalls the tab.
+      if (sessionLogFullTextAction(refs) === 'download') {
+        void Promise.all(refs.map(({ ref }) => fetchSessionAttachment(ref)))
+          .then((blobs) => {
+            blobs.forEach((blob, i) => downloadBlob(blob, blobs.length > 1 ? `full-text-${i + 1}.txt` : 'full-text.txt'));
+            mark('idle');
+          })
+          .catch(() => mark('error'));
+        return;
+      }
       void Promise.all(refs.map(async ({ ref }) => [ref, await (await fetchSessionAttachment(ref)).text()] as const))
         .then((pairs) =>
           setFullTexts((prev) => {

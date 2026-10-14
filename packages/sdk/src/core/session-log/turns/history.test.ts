@@ -7,7 +7,9 @@ import { describe, expect, test } from 'bun:test';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLog, type SessionLogBlock, type SessionLogMessage, type SessionLogThread } from '../types';
 import { sessionLogOfV1Rows } from '../v1-view';
 import {
+  SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES,
   isSessionLogRestoreNote,
+  sessionLogFullTextAction,
   sessionLogHarnessSwitches,
   sessionLogReferencedTexts,
   sessionLogRestoreNotice,
@@ -179,15 +181,31 @@ describe('texts stored by reference', () => {
     expect(sessionLogWithFullTexts(t, new Map())).toBe(t);
   });
 
-  test('a tool result text item is replaced in content and model_content', () => {
+  test('a tool result text item is replaced where the UI renders it (content); a ref only in model_content is not listed', () => {
     const out = sessionLogWithFullTexts(thread([tool('a')]), new Map([[`${REF}x`, 'all output']]));
     const block = out.messages[0]!.blocks[0]!;
     expect(block.type === 'tool_call' && block.result?.content).toEqual([{ type: 'text', text: 'all output' }]);
+    const modelOnly = msg('m', 'assistant', [{
+      type: 'tool_call', id: 'm-c', call_id: 'c', name: 'bash', kind: 'shell', input: {}, status: 'complete',
+      result: { content: [{ type: 'text', text: 'short' }], model_content: [{ type: 'text', text: 'head', ref: `${REF}m`, bytes: 500_000 }], is_error: false },
+    }], { reply_to: 'u' });
+    expect(sessionLogReferencedTexts([modelOnly])).toEqual([]);
   });
 
   test('the same message and the same map give the same object (a streamed frame does not rebuild it)', () => {
     const t = thread([big('u')]);
     const texts = new Map([[REF, 'whole']]);
     expect(sessionLogWithFullTexts(t, texts).messages[0]).toBe(sessionLogWithFullTexts({ ...t }, texts).messages[0]!);
+  });
+});
+
+describe('sessionLogFullTextAction', () => {
+  const ref = (bytes: number) => ({ ref: `r${bytes}`, bytes });
+  test('texts up to 1 MB in all are shown inline; above, they are downloaded', () => {
+    expect(SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES).toBe(1024 * 1024);
+    expect(sessionLogFullTextAction([ref(300_000)])).toBe('inline');
+    expect(sessionLogFullTextAction([ref(1024 * 1024)])).toBe('inline');
+    expect(sessionLogFullTextAction([ref(1024 * 1024 + 1)])).toBe('download');
+    expect(sessionLogFullTextAction([ref(600_000), ref(600_000)])).toBe('download');
   });
 });

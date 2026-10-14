@@ -1907,6 +1907,7 @@
       "showOutOfContext": "Прикажи поруке ван контекста",
       "fullTextPreview": "{count, plural, one {# дугачак текст овде приказује првих 16 kB.} few {# дугачка текста овде приказују првих 16 kB.} other {# дугачких текстова овде приказује првих 16 kB.}}",
       "fullTextShow": "Прикажи цео текст ({size})",
+      "fullTextDownload": "Преузми цео текст ({size})",
       "fullTextError": "Цео текст није могао да се учита.",
       "fullTextRetry": "Покушај поново"
     }

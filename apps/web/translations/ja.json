@@ -1907,6 +1907,7 @@
       "showOutOfContext": "コンテキスト外のメッセージを表示",
       "fullTextPreview": "{count, plural, other {ここには長いテキストの最初の 16 kB が表示されています（#件）。}}",
       "fullTextShow": "全文を表示（{size}）",
+      "fullTextDownload": "全文をダウンロード（{size}）",
       "fullTextError": "全文を読み込めませんでした。",
       "fullTextRetry": "再試行"
     }

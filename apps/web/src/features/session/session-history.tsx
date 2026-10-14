@@ -9,10 +9,12 @@
  * - `TranscriptMarker`: one line in the transcript, rule, pill, rule (the compaction marker's
  *   grammar), for the restore note and for a harness switch.
  * - `FullTextControl`: a turn that shows a 16 kB preview of a long text loads the whole text
- *   on request, never on its own.
+ *   on request, never on its own: inline up to 1 MB in all, as a downloaded file above
+ *   (`sessionLogFullTextAction`).
  */
 import { ArrowsLeftRightIcon, ClockCounterClockwiseIcon, XIcon } from '@phosphor-icons/react';
 import {
+  sessionLogFullTextAction,
   sessionLogReferencedTexts,
   type SessionLogMessage,
   type SessionLogReferencedText,
@@ -125,13 +127,14 @@ export function TurnFullText({
     <FullTextControl
       count={refs.length}
       bytes={refs.reduce((n, r) => n + r.bytes, 0)}
+      download={sessionLogFullTextAction(refs) === 'download'}
       state={state}
       onLoad={() => onLoad(turn.id, refs)}
     />
   );
 }
 
-function FullTextControl({ count, bytes, state, onLoad }: { count: number; bytes: number; state: FullTextState; onLoad: () => void }) {
+function FullTextControl({ count, bytes, download, state, onLoad }: { count: number; bytes: number; download: boolean; state: FullTextState; onLoad: () => void }) {
   const t = useTranslations('sessionUi.history');
   const locale = useLocale();
   const loading = state === 'loading';
@@ -139,7 +142,7 @@ function FullTextControl({ count, bytes, state, onLoad }: { count: number; bytes
     <div data-full-text-control={state} className="text-muted-foreground mt-2.5 flex flex-wrap items-center gap-2 text-xs">
       <span>{state === 'error' ? t('fullTextError') : t('fullTextPreview', { count })}</span>
       <Button type="button" variant="outline-ghost" size="sm" disabled={loading} aria-busy={loading || undefined} onClick={onLoad}>
-        {state === 'error' ? t('fullTextRetry') : t('fullTextShow', { size: formatTextSize(bytes, locale) })}
+        {state === 'error' ? t('fullTextRetry') : t(download ? 'fullTextDownload' : 'fullTextShow', { size: formatTextSize(bytes, locale) })}
       </Button>
     </div>
   );
