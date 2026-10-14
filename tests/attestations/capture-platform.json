@@ -1,5 +1,5 @@
 {
-  "source_hash": "caf659f3c554d24b28230b4ebf98beb446746247095cd711834e38032fb75792",
+  "source_hash": "d03b37e5448a3c0f86aadb763b6ffaf52795ed5bb36e9ff621763ab8035e2151",
   "diff_files": [
     ".agents/skills/worktree/SKILL.md",
     ".agents/skills/worktree/references/capture-local-store.md",
@@ -69,10 +69,6 @@
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
     "apps/web/src/components/iam/role-capability-matrix.test.ts",
     "apps/web/src/components/iam/role-capability-model.ts",
-    "apps/web/src/features/accounts/hub/account-hub-content.tsx",
-    "apps/web/src/features/accounts/hub/account-hub-section-gating.test.ts",
-    "apps/web/src/features/accounts/hub/sections.ts",
-    "apps/web/src/features/accounts/hub/use-account-hub-access.ts",
     "apps/web/src/features/capture/api/capture-api-modal.tsx",
     "apps/web/src/features/capture/area/capture-account-card.tsx",
     "apps/web/src/features/capture/area/capture-area-shell.tsx",
@@ -90,6 +86,7 @@
     "apps/web/src/features/capture/settings/exclusions-editor.tsx",
     "apps/web/src/features/capture/settings/exclusions-model.test.ts",
     "apps/web/src/features/capture/settings/exclusions-model.ts",
+    "apps/web/src/features/capture/settings/settings-page.tsx",
     "apps/web/src/features/capture/settings/settings-view.tsx",
     "apps/web/src/features/capture/timeline/display-model.test.ts",
     "apps/web/src/features/capture/timeline/display-model.ts",
@@ -105,7 +102,6 @@
     "apps/web/src/features/capture/timeline/use-scrubber.ts",
     "apps/web/src/features/marketing/download/releases.test.ts",
     "apps/web/src/features/marketing/download/releases.ts",
-    "apps/web/src/features/workspace/command-palette-search.test.ts",
     "apps/web/src/features/workspace/project-sidebar/workspace-menu-section.tsx",
     "apps/web/src/lib/desktop.ts",
     "apps/web/src/lib/menu-registry.ts",
@@ -220,13 +216,13 @@
     "tests/src/fixtures/capture.ts",
     "tests/src/flows/capture.flow.ts"
   ],
-  "diff_hash": "6c9d8cddd0416d7efd2ce33cd479f892845f788a4107bce4e3233b57a98405dd",
-  "head": "1e9bffed78ad24e3019da713b3993a81c8e8698e",
+  "diff_hash": "7ad24edbb89d4d0b1d546f233e5a36d9db1361170b9db63666d1f36f181b5f43",
+  "head": "a575270e1d749969c792e8157d12243eba2c859f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T01:10:04.143Z"
+  "at": "2026-10-14T02:56:19.279Z"
 }
