@@ -20744,5 +20744,21 @@
     "mapTwoFingers": "2本の指で地図を動かします",
     "pick": "おすすめ",
     "convertFailed": "トランスクリプトを準備できませんでした。もう一度お試しください。"
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix モバイル",
+    "badge": "新機能",
+    "title": "Kortix がスマートフォンでも",
+    "description": "プロジェクト、セッション、エージェントをどこにいても。デスクで始めた作業を、外出先からも進められます。",
+    "feature": {
+      "sessions": "続きからすぐ再開",
+      "sessionsDescription": "Web のすべてのセッションを、スマートフォンでそのまま。",
+      "notifications": "終わったらすぐにわかる",
+      "notificationsDescription": "セッションが完了したとき、または返答が必要なときにプッシュ通知。",
+      "dictation": "話して、送るだけ",
+      "dictationDescription": "プロンプトを入力せずに音声で伝えられます。"
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }
