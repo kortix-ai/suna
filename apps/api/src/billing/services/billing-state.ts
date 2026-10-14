@@ -26,9 +26,8 @@
  * - `no_account`      — no credit row at all (account setup incomplete).
  *
  * Rule of thumb this module exists to enforce (the lesson from PR #5141):
- * never infer "has a subscription" from `tier_key`. `tier_key` stays `free` for
- * plenty of paying accounts, and `per_seat` stays set long after a subscription
- * is cancelled.
+ * never infer "has a subscription" from `tier_key`. A stored paid tier can
+ * outlive its subscription, and a comped account pays nothing.
  */
 
 import { MINIMUM_CREDIT_FOR_RUN, isPaidTier } from './tier-facts';
