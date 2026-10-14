@@ -1245,6 +1245,7 @@ per-release changes.
 ### Agent repository access
 
 Agent configuration accepts `repository_access?: boolean` (default `true`).
+The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository`.
 Set `false` to run new sessions without the project repository or repository API access.
 Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
 `AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.
