@@ -28,11 +28,20 @@
  *   and relays no turn end for it (the active-turn renewal pass ends it once the
  *   box is idle), so a later id-less turn (a second `/summarize`, a delivery
  *   without a wire id) can be open beside it; each compaction takes the oldest
- *   one still waiting. A failed pi compaction stores nothing, and its turn ends
- *   before the next compaction completes, so it is never taken. An auto
- *   compaction inside a prompt turn (an id) marks nothing unless an id-less turn
- *   is still open beside it. A later acknowledgement (a restarted daemon
- *   re-sends everything) keeps the first time.
+ *   one still waiting. An auto compaction inside a prompt turn (an id) marks
+ *   nothing unless an id-less turn is still open beside it. A later
+ *   acknowledgement (a restarted daemon re-sends everything) keeps the first time.
+ *   Known wrong marks of the pi rule (it marks the wrong turn and leaves the right
+ *   one null):
+ *   - a `/summarize` pi refused (nothing stored) that the reaper has not ended yet
+ *     when the next compaction completes: that compaction marks it;
+ *   - a re-sent compaction (a daemon restart, or a retried post whose response was
+ *     lost) marks an id-less turn that started before it and is still open;
+ *   - on such a replay, a box clock ahead of the API by more than the reaper's
+ *     delay admits a turn that started after the compaction.
+ *   Follow-up (the durable fix): pi `compact()` relays `turn_begin`/`turn_end`
+ *   with the compaction marker id, so the id match works on both harnesses and
+ *   the id-less rule goes.
  *
  * Records keep the values the daemon sent, not the zod parse: the parse drops
  * fields this API does not know, and the record would lose them (the same rule
