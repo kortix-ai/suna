@@ -20776,14 +20776,6 @@
       "viewLabel": "Visualização",
       "viewAll": "Todos",
       "viewMine": "Meus dispositivos",
-      "filterLabel": "Filtrar por status",
-      "filter": {
-        "all": "Todos",
-        "recording": "Gravando",
-        "paused": "Pausado",
-        "permission": "Precisa de permissão",
-        "offline": "Offline"
-      },
       "loadFailed": "Não foi possível carregar os dispositivos.",
       "tryAgain": "Tentar de novo",
       "empty": {
@@ -20822,6 +20814,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Guia de instalação"
+      },
+      "summaryLabel": "Estado dos computadores",
+      "summary": {
+        "recording": "{count} gravando",
+        "idle": "{count} inativos",
+        "attention": "{count, plural, one {# precisa de atenção} other {# precisam de atenção}}",
+        "not_recording": "{count} sem gravar"
+      },
+      "health": {
+        "offline": "Sem relatório. Visto pela última vez {time}",
+        "stalled": "Gravador travado. Último quadro {time}",
+        "error": "Gravador parado. Último quadro {time}",
+        "never_reported": "Instalado, mas ainda não enviou relatório",
+        "unseen": "Não visto há mais de 7 dias",
+        "permission_missing": "Permita o app nas configurações do sistema",
+        "paused": "Uma pessoa pausou a gravação",
+        "sync_error": "Os envios estão falhando",
+        "backlog": "{count, plural, one {# item aguarda} other {# itens aguardam}} envio",
+        "behind_version": "Atualize de {current} para {version}",
+        "asleep": "Em repouso ou desligado. Visto pela última vez {time}"
       }
     },
     "settings": {

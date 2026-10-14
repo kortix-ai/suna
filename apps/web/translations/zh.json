@@ -20776,14 +20776,6 @@
       "viewLabel": "视图",
       "viewAll": "所有人",
       "viewMine": "我的设备",
-      "filterLabel": "按状态筛选",
-      "filter": {
-        "all": "全部",
-        "recording": "录制中",
-        "paused": "已暂停",
-        "permission": "需要权限",
-        "offline": "离线"
-      },
       "loadFailed": "无法加载设备。",
       "tryAgain": "重试",
       "empty": {
@@ -20822,6 +20814,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "安装指南"
+      },
+      "summaryLabel": "电脑状态",
+      "summary": {
+        "recording": "{count} 台录制中",
+        "idle": "{count} 台空闲",
+        "attention": "{count} 台需要关注",
+        "not_recording": "{count} 台未录制"
+      },
+      "health": {
+        "offline": "无报告。上次在线：{time}",
+        "stalled": "录制卡住。最后一帧：{time}",
+        "error": "录制已停止。最后一帧：{time}",
+        "never_reported": "已安装，但尚未上报",
+        "unseen": "超过 7 天未见",
+        "permission_missing": "请在系统设置中允许该应用",
+        "paused": "有人暂停了录制",
+        "sync_error": "上传失败",
+        "backlog": "{count} 项等待上传",
+        "behind_version": "请从 {current} 更新到 {version}",
+        "asleep": "已休眠或关机。上次在线：{time}"
       }
     },
     "settings": {

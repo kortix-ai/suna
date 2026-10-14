@@ -20776,14 +20776,6 @@
       "viewLabel": "Приказ",
       "viewAll": "Svi",
       "viewMine": "Моји уређаји",
-      "filterLabel": "Филтрирај по статусу",
-      "filter": {
-        "all": "Сви",
-        "recording": "Снима",
-        "paused": "Паузиран",
-        "permission": "Потребна дозвола",
-        "offline": "Ван мреже"
-      },
       "loadFailed": "Учитавање уређаја није успело.",
       "tryAgain": "Покушај поново",
       "empty": {
@@ -20822,6 +20814,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Водич за инсталацију"
+      },
+      "summaryLabel": "Стање рачунара",
+      "summary": {
+        "recording": "{count} снима",
+        "idle": "{count} мирује",
+        "attention": "{count, plural, one {# тражи пажњу} few {# траже пажњу} other {# траже пажњу}}",
+        "not_recording": "{count} не снима"
+      },
+      "health": {
+        "offline": "Нема извештаја. Последњи пут виђен {time}",
+        "stalled": "Снимач је заглављен. Последњи кадар {time}",
+        "error": "Снимач је заустављен. Последњи кадар {time}",
+        "never_reported": "Инсталиран, али се још није јавио",
+        "unseen": "Није виђен више од 7 дана",
+        "permission_missing": "Дозволите апликацију у системским подешавањима",
+        "paused": "Неко је паузирао снимање",
+        "sync_error": "Отпремање не успева",
+        "backlog": "{count, plural, one {# ставка чека} few {# ставке чекају} other {# ставки чека}} отпремање",
+        "behind_version": "Ажурирајте са {current} на {version}",
+        "asleep": "У стању мировања или искључен. Последњи пут виђен {time}"
       }
     },
     "settings": {

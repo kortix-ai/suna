@@ -20776,14 +20776,6 @@
       "viewLabel": "Vue",
       "viewAll": "Tout le monde",
       "viewMine": "Mes appareils",
-      "filterLabel": "Filtrer par statut",
-      "filter": {
-        "all": "Tous",
-        "recording": "En cours d’enregistrement",
-        "paused": "En pause",
-        "permission": "Autorisation requise",
-        "offline": "Hors ligne"
-      },
       "loadFailed": "Impossible de charger les appareils.",
       "tryAgain": "Réessayer",
       "empty": {
@@ -20822,6 +20814,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Guide d’installation"
+      },
+      "summaryLabel": "État des ordinateurs",
+      "summary": {
+        "recording": "{count} en enregistrement",
+        "idle": "{count} inactifs",
+        "attention": "{count, plural, one {# demande de l’attention} other {# demandent de l’attention}}",
+        "not_recording": "{count} n’enregistrent pas"
+      },
+      "health": {
+        "offline": "Aucun rapport. Vu pour la dernière fois {time}",
+        "stalled": "Enregistreur bloqué. Dernière image {time}",
+        "error": "Enregistreur arrêté. Dernière image {time}",
+        "never_reported": "Installé, mais n’a pas encore envoyé de rapport",
+        "unseen": "Pas vu depuis plus de 7 jours",
+        "permission_missing": "Autoriser l’app dans les réglages système",
+        "paused": "Une personne a mis l’enregistrement en pause",
+        "sync_error": "Les envois échouent",
+        "backlog": "{count, plural, one {# élément attend} other {# éléments attendent}} d’être envoyés",
+        "behind_version": "Mettre à jour de {current} vers {version}",
+        "asleep": "En veille ou éteint. Vu pour la dernière fois {time}"
       }
     },
     "settings": {

@@ -687,6 +687,8 @@ export async function ensureLocalStack(
           ...(S3_PROTOCOL_ACCESS_KEY_ID ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID } : {}),
           ...(S3_PROTOCOL_ACCESS_KEY_SECRET ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET } : {}),
           KORTIX_CAPTURE_INDEX_POLL_SECONDS: "2",
+          // No network in the deterministic profile: fleet health skips the newest-version check.
+          KORTIX_CAPTURE_UPDATE_MANIFEST_URL: "",
           SCHEDULER_ENABLED: "false",
           // OAU-7 replays a rotated refresh token after this window; keep it short.
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",

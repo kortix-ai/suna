@@ -181,6 +181,14 @@ export const DEFAULT_SESSIONS_TAB_COPY: SessionsTabCopy = {
       label: 'Recovery alert',
       description: 'A failing trigger or reminder works again.',
     },
+    capture_device_down: {
+      label: 'Capture computer stopped',
+      description: 'A Kortix Capture computer is not recording. Sent to people who manage Capture.',
+    },
+    capture_device_recovered: {
+      label: 'Capture computer recording again',
+      description: 'A Kortix Capture computer that stopped records again.',
+    },
   },
   push: 'Push',
   email: 'Email',

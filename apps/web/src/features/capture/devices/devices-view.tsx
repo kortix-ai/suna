@@ -1,6 +1,6 @@
 'use client';
 
-import type { CaptureDevice } from '@kortix/sdk';
+import { captureHealthBucket, type CaptureDevice, type CaptureHealthBucket, type CaptureHealthSummary } from '@kortix/sdk';
 import { useCaptureDevices } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
@@ -30,13 +30,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Tabs,
-  TabsList,
-  TabsListCompact,
-  TabsTrigger,
-  TabsTriggerCompact,
-} from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { StatusDot as DsStatusDot, type StatusTone } from '@/components/ui/status';
+import { cn } from '@/lib/utils';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -53,7 +49,7 @@ import {
   useCaptureDirectory,
 } from '../area/use-capture-area';
 import { deviceStatus, type DeviceStatusKey } from './device-status';
-import { DeviceActionsMenu, StatusLabel } from './device-status-ui';
+import { DeviceActionsMenu, HealthNote, StatusLabel } from './device-status-ui';
 import { RolloutModal, WaitingComputers } from './rollout';
 
 /** Kortix Capture's installers, one per OS (/download/capture/<os> → the newest vX.Y.Z Release). */
@@ -64,16 +60,14 @@ const CAPTURE_DOWNLOADS = [
 ] as const;
 
 type Scope = 'account' | 'mine';
-type Filter = 'all' | 'recording' | 'paused' | 'permission' | 'offline';
-const FILTERS: readonly Filter[] = ['all', 'recording', 'paused', 'permission', 'offline'];
 
-/** Which filter a status falls under; `notRecording` and `unknown` count as offline. */
-const filterOf = (key: DeviceStatusKey): Exclude<Filter, 'all'> =>
-  key === 'locked' || key === 'excluded'
-    ? 'paused'
-    : key === 'recording' || key === 'paused' || key === 'permission'
-      ? key
-      : 'offline';
+/** The summary line: one segment per health bucket, in the order a person reads it. */
+const BUCKETS: readonly { bucket: CaptureHealthBucket; tone: StatusTone }[] = [
+  { bucket: 'recording', tone: 'success' },
+  { bucket: 'idle', tone: 'neutral' },
+  { bucket: 'attention', tone: 'warning' },
+  { bucket: 'not_recording', tone: 'destructive' },
+];
 
 /**
  * Devices: every computer that records into the organization. With
@@ -86,29 +80,13 @@ export function DevicesView({ accountId }: { accountId: string }) {
   const area = useCaptureArea(accountId);
   const [scopePick, setScope] = useState<Scope>('account');
   const scope: Scope = area.readsEveryone ? scopePick : 'mine';
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<CaptureHealthBucket | null>(null);
   const query = useCaptureDevices(accountId, { scope });
   const devices = useMemo(
     () => (query.data?.devices ?? []).filter((device) => !device.revoked_at),
     [query.data],
   );
-  const counts = useMemo(() => {
-    const out: Record<Filter, number> = {
-      all: 0,
-      recording: 0,
-      paused: 0,
-      permission: 0,
-      offline: 0,
-    };
-    for (const device of devices) {
-      out.all += 1;
-      out[filterOf(deviceStatus(device).key)] += 1;
-    }
-    return out;
-  }, [devices]);
-  const rows = devices.filter(
-    (device) => filter === 'all' || filterOf(deviceStatus(device).key) === filter,
-  );
+  const rows = devices.filter((device) => filter === null || captureHealthBucket(device) === filter);
   const [apiOpen, setApiOpen] = useState(false);
   const [rolloutOpen, setRolloutOpen] = useState(false);
 
@@ -181,17 +159,8 @@ export function DevicesView({ accountId }: { accountId: string }) {
               </TabsList>
             </Tabs>
           ) : null}
-          {devices.length > 0 ? (
-            <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
-              <TabsListCompact aria-label={t('filterLabel')}>
-                {FILTERS.map((value) => (
-                  <TabsTriggerCompact key={value} value={value} className="gap-1.5">
-                    {t(`filter.${value}`)}
-                    <span className="text-muted-foreground tabular-nums">{counts[value]}</span>
-                  </TabsTriggerCompact>
-                ))}
-              </TabsListCompact>
-            </Tabs>
+          {devices.length > 0 && query.data ? (
+            <FleetHealth summary={query.data.health} active={filter} onPick={setFilter} />
           ) : null}
         </div>
       ) : null}
@@ -233,7 +202,7 @@ export function DevicesView({ accountId }: { accountId: string }) {
             accountId={accountId}
             rows={rows}
             byMember={scope === 'account'}
-            withIdleMembers={filter === 'all'}
+            withIdleMembers={filter === null}
             canManage={area.canManage}
           />
           {rows.length === 0 ? (
@@ -251,6 +220,44 @@ export function DevicesView({ accountId }: { accountId: string }) {
         <RolloutModal open={rolloutOpen} onOpenChange={setRolloutOpen} accountId={accountId} />
       ) : null}
     </CapturePage>
+  );
+}
+
+/**
+ * "41 recording · 3 idle · 2 need attention · 1 not recording". Each segment
+ * filters the list; picking the active one clears the filter. The dot carries
+ * the hue; the words stay ink.
+ */
+function FleetHealth({
+  summary,
+  active,
+  onPick,
+}: {
+  summary: CaptureHealthSummary;
+  active: CaptureHealthBucket | null;
+  onPick: (bucket: CaptureHealthBucket | null) => void;
+}) {
+  const t = useTranslations('capture.devices');
+  return (
+    <div role="group" aria-label={t('summaryLabel')} className="flex flex-wrap items-center gap-x-1 text-sm">
+      {BUCKETS.filter(({ bucket }) => summary[bucket] > 0 || bucket === 'recording').map(({ bucket, tone }, index) => (
+        <Fragment key={bucket}>
+          {index > 0 ? <span aria-hidden className="text-muted-foreground">·</span> : null}
+          <button
+            type="button"
+            aria-pressed={active === bucket}
+            onClick={() => onPick(active === bucket ? null : bucket)}
+            className={cn(
+              'hover:bg-muted flex items-center gap-1.5 rounded-md px-1.5 py-0.5 tabular-nums transition-colors',
+              active === bucket ? 'bg-muted text-foreground' : 'text-foreground',
+            )}
+          >
+            <DsStatusDot tone={tone} />
+            {t(`summary.${bucket}`, { count: summary[bucket] })}
+          </button>
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
@@ -329,7 +336,7 @@ function DeviceTable({
               ? t('unlinked')
               : (person.email ?? t('member'));
           const recording = devices.filter(
-            (device) => deviceStatus(device).key === 'recording',
+            (device) => captureHealthBucket(device) === 'recording',
           ).length;
           return (
             <Fragment key={userId ?? 'unlinked'}>
@@ -400,6 +407,7 @@ function DeviceRow({
       <TableCell className="text-muted-foreground">{deviceOs(device)}</TableCell>
       <TableCell className="max-w-64">
         <StatusLabel view={view} />
+        <HealthNote lines={view.health} className="mt-0.5 pl-3.5" />
       </TableCell>
       <TableCell className="text-muted-foreground text-xs tabular-nums">
         {view.lastFrameMs ? relativeTime(view.lastFrameMs, locale) : t('never')}

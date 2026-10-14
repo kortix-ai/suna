@@ -65,6 +65,7 @@ const R = {
   enrollApprove: `POST ${A}/enrollments/:enrollmentId/approve`,
   enrollDeny: `POST ${A}/enrollments/:enrollmentId/deny`,
   link: `PUT ${A}/devices/:deviceId/link`,
+  inbox: 'GET /v1/notifications',
 };
 const path = (route: string) => route.split(' ')[1]!;
 
@@ -854,5 +855,143 @@ flow(
       (await enroll(strictToken, pcD, member.email!)).status(403).body().has('$.code', 'capture_disabled');
       (await owner.get(path(R.enrollTokens), { params })).status(403).body().has('$.code', 'capture_disabled');
     });
+  },
+);
+
+/** A status.json of the engine (status.schema.json), restamped by `at`. */
+function statusDoc(at: number, over: Record<string, unknown> = {}) {
+  const doc = {
+    recording: 'recording',
+    reason: null,
+    missingPermissions: [],
+    pausedUntilMs: null,
+    audio: { enabled: false, state: null },
+    sync: { state: 'ok', pending: 0, lastUploadMs: at - 5_000 },
+    lastFrameMs: at - 2_000,
+    appVersion: '0.1.0',
+    actionsRecording: true,
+    capture: { intervalMs: 1000, maxHeight: 1080 },
+    host: { awakeSinceMs: at - 3_600_000 },
+    reportedAtMs: at,
+    ...over,
+  };
+  conforms('status', doc);
+  return doc;
+}
+
+flow(
+  'CAP-8',
+  {
+    domain: 'capture',
+    requires: ['database'],
+    timeoutMs: 300_000,
+    routes: [R.devices, R.sync, R.inbox, R.setEnabled],
+  },
+  async (ctx) => {
+    const { team, member } = await captureAccount(ctx);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { accountId: team.id };
+    await enableCapture(ctx, team.id);
+    const store = await localCaptureStore();
+    const MIN = 60_000;
+    // Fixed timestamps: the same document read again is the same not-recording spell.
+    const t0 = Date.now();
+    const stalledDoc = statusDoc(t0, { lastFrameMs: t0 - 20 * MIN });
+    const silentDoc = statusDoc(t0 - 45 * MIN);
+    const names = ['recording', 'locked', 'paused', 'stalled', 'silent'] as const;
+    const computers = new Map<(typeof names)[number], { device_id: string; prefix: string }>();
+    for (const name of names) computers.set(name, await signInDevice(ctx, ctx.P.OWNER, team.id, syntheticMachineKey(ctx.fixtures.name(`cap8-${name}`))));
+
+    /** Upload a status.json for one computer and read it now (what the index reader does every poll). */
+    const report = async (name: (typeof names)[number], doc: Record<string, unknown>) => {
+      const c = computers.get(name)!;
+      await uploadCaptureObjects(store, [{ key: `${c.prefix}/${c.device_id}/status.json`, body: new TextEncoder().encode(JSON.stringify(doc)), contentType: 'application/json' }]);
+      return (await owner.post(path(R.sync), {}, { params: { ...params, deviceId: c.device_id } })).status(200).json<{ alerts: { alerted: number; recovered: number } }>();
+    };
+    const fleet = async () => {
+      const r = (await owner.get(path(R.devices), { params, query: { scope: 'account' } })).status(200);
+      return r.json<{ devices: Array<{ device_id: string; health: { state: string; idle: boolean; reasons: string[]; since: string | null } }>; health: Record<string, unknown> }>();
+    };
+    const healthOf = (f: Awaited<ReturnType<typeof fleet>>, name: (typeof names)[number]) =>
+      f.devices.find((d) => d.device_id === computers.get(name)!.device_id)!.health;
+    const db = await openDb(ctx);
+    const stored = async (kind: string, userId: string) =>
+      Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.notifications WHERE account_id = $1 AND user_id = $2 AND kind = $3`, [team.id, userId, kind])).rows[0]!.n);
+
+    try {
+      await ctx.step('five computers report: recording, locked, paused by the person, recording with no frame for 20 awake minutes, and silent for 45 minutes → the summary counts 1 recording · 1 idle · 1 needs attention · 2 not recording, each with its reason', async () => {
+        const now = t0;
+        await report('recording', statusDoc(now));
+        await report('locked', statusDoc(now, { recording: 'paused', reason: 'locked', lastFrameMs: now - 40 * MIN }));
+        await report('paused', statusDoc(now, { recording: 'paused', reason: 'paused', pausedUntilMs: now + 30 * MIN }));
+        await report('stalled', stalledDoc);
+        await report('silent', silentDoc);
+        const f = await fleet();
+        if (JSON.stringify(f.health) !== JSON.stringify({ recording: 1, idle: 1, attention: 1, not_recording: 2, latest_version: null })) throw new Error(`summary ${JSON.stringify(f.health)}`);
+        const expected = {
+          recording: ['healthy', []],
+          locked: ['healthy', []],
+          paused: ['attention', ['paused']],
+          stalled: ['not_recording', ['stalled']],
+          silent: ['not_recording', ['offline']],
+        } as const;
+        for (const name of names) {
+          const h = healthOf(f, name);
+          if (h.state !== expected[name][0] || JSON.stringify(h.reasons) !== JSON.stringify(expected[name][1])) throw new Error(`${name}: ${JSON.stringify(h)}`);
+        }
+        if (!healthOf(f, 'locked').idle || healthOf(f, 'recording').idle) throw new Error('idle flag');
+        if (!healthOf(f, 'stalled').since || !healthOf(f, 'silent').since) throw new Error('not-recording spells have no start');
+      });
+
+      await ctx.step('a computer asleep after a lock stays healthy: silent for 3 days after a locked report → idle, no alert', async () => {
+        await report('locked', statusDoc(Date.now() - 3 * 86_400_000, { recording: 'paused', reason: 'locked' }));
+        const h = healthOf(await fleet(), 'locked');
+        if (h.state !== 'healthy' || !h.idle) throw new Error(`asleep ${JSON.stringify(h)}`);
+        await report('locked', statusDoc(Date.now(), { recording: 'paused', reason: 'locked' }));
+      });
+
+      await ctx.step('the owner (capture.manage) gets one capture_device_down per not-recording computer, the member (no capture.manage) none; reading the status again writes no second alert', async () => {
+        const ownerId = ctx.P.OWNER.userId!;
+        await report('stalled', stalledDoc);
+        await report('silent', silentDoc);
+        if ((await stored('capture_device_down', ownerId)) !== 2) throw new Error(`owner down rows ${await stored('capture_device_down', ownerId)}`);
+        if ((await stored('capture_device_down', member.userId)) !== 0) throw new Error('the member got an alert');
+        const rows = await db.query<{ dedupe_key: string; body: string; title: string }>(
+          `SELECT dedupe_key, body, title FROM kortix.notifications WHERE account_id = $1 AND user_id = $2 AND kind = 'capture_device_down' ORDER BY dedupe_key`,
+          [team.id, ownerId],
+        );
+        const keys = rows.rows.map((r) => r.dedupe_key.split(':')[1]).sort();
+        const want = [computers.get('stalled')!.device_id, computers.get('silent')!.device_id].sort();
+        if (JSON.stringify(keys) !== JSON.stringify(want) || !rows.rows.every((r) => /^capture-down:[0-9a-f-]{36}:\d+$/.test(r.dedupe_key))) throw new Error(`keys ${JSON.stringify(rows.rows)}`);
+        if (!rows.rows.some((r) => /^No report for \d+ min\.$/.test(r.body)) || !rows.rows.some((r) => /^No new frame for \d+ min while the computer was awake\.$/.test(r.body))) throw new Error(`bodies ${JSON.stringify(rows.rows)}`);
+        for (let again = 0; again < 2; again++) await report('silent', silentDoc);
+        if ((await stored('capture_device_down', ownerId)) !== 2) throw new Error('a repeat read wrote a second alert');
+      });
+
+      await ctx.step('the alert is in the owner’s inbox and opens the account’s Devices page', async () => {
+        const url = (await owner.get(path(R.inbox), { query: { limit: 50 } })).status(200).json<{ notifications: Array<{ kind: string; url: string; title: string }> }>();
+        const rows = url.notifications.filter((n) => n.kind === 'capture_device_down');
+        if (rows.length !== 2) throw new Error(`inbox ${JSON.stringify(url.notifications)}`);
+        if (!rows.every((n) => n.url.startsWith(`/capture/${team.id}/devices?notification=`))) throw new Error(`urls ${JSON.stringify(rows)}`);
+      });
+
+      await ctx.step('both computers record again → the owner gets one capture_device_recovered each, no new down; a repeat read writes no second recovery', async () => {
+        const ownerId = ctx.P.OWNER.userId!;
+        for (const name of ['stalled', 'silent'] as const) await report(name, statusDoc(Date.now()));
+        if ((await stored('capture_device_recovered', ownerId)) !== 2) throw new Error(`recovered ${await stored('capture_device_recovered', ownerId)}`);
+        for (const name of ['stalled', 'silent'] as const) await report(name, statusDoc(Date.now()));
+        if ((await stored('capture_device_recovered', ownerId)) !== 2 || (await stored('capture_device_down', ownerId)) !== 2) throw new Error('a repeat read wrote more rows');
+        const f = await fleet();
+        if (f.health.not_recording !== 0 || f.health.attention !== 1 || f.health.recording !== 3 || f.health.idle !== 1) throw new Error(`after ${JSON.stringify(f.health)}`);
+      });
+
+      await ctx.step('a new not-recording spell on the same computer alerts again (a new spell key)', async () => {
+        const ownerId = ctx.P.OWNER.userId!;
+        await report('stalled', statusDoc(Date.now(), { lastFrameMs: Date.now() - 25 * MIN, host: { awakeSinceMs: Date.now() - 3_600_000 } }));
+        if ((await stored('capture_device_down', ownerId)) !== 3) throw new Error(`second spell ${await stored('capture_device_down', ownerId)}`);
+      });
+    } finally {
+      await db.end();
+    }
   },
 );

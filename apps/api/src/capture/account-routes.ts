@@ -60,6 +60,7 @@ import {
   type SearchKind,
   type Who,
 } from './reads';
+import { runCaptureHealthTick } from './health-alerts';
 import { captureStoreConfigured } from './store';
 import { latestCaptureVersion } from './update-manifest';
 import { enqueueLink, pollDevice } from './workers';
@@ -458,7 +459,7 @@ accountsRouter.openapi(
     method: 'post',
     path: '/{accountId}/capture/devices/{deviceId}/sync',
     tags,
-    summary: 'Read a device’s status, description and index now, queue every new item for indexing, and retract every item the device deleted',
+    summary: 'Read a device’s status, description and index now, queue every new item for indexing, retract every item the device deleted, and raise or clear its not-recording alert',
     ...auth,
     request: { params: params.extend({ deviceId: z.string().uuid() }) },
     responses: { ...ok('The number of items queued and the number retracted'), ...errors(503) },
@@ -470,7 +471,9 @@ accountsRouter.openapi(
     const device = await loadDevice(access, c.req.valid('param').deviceId);
     if (!device || device.revokedAt) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     const { enqueued, forgotten } = await pollDevice(device);
-    return c.json({ device_id: device.deviceId, enqueued, forgotten }, 200);
+    // The status just read may open or close a not-recording alert: raise it now, as the leader's health tick would.
+    const alerts = await runCaptureHealthTick(Date.now(), device.accountId);
+    return c.json({ device_id: device.deviceId, enqueued, forgotten, alerts }, 200);
   },
 );
 

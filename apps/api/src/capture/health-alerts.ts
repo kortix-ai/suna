@@ -65,7 +65,7 @@ interface AlertDevice {
   health: DeviceHealth;
 }
 
-async function watchedDevices(now: number, latestVersion: string | null): Promise<AlertDevice[]> {
+async function watchedDevices(now: number, latestVersion: string | null, accountId?: string): Promise<AlertDevice[]> {
   const rows = await db
     .select({
       deviceId: captureDevices.deviceId,
@@ -77,7 +77,14 @@ async function watchedDevices(now: number, latestVersion: string | null): Promis
     })
     .from(captureDevices)
     .innerJoin(captureWorkspaces, eq(captureWorkspaces.accountId, captureDevices.accountId))
-    .where(and(isNull(captureDevices.revokedAt), eq(captureWorkspaces.enabled, true), isNotNull(captureDevices.status)));
+    .where(
+      and(
+        isNull(captureDevices.revokedAt),
+        eq(captureWorkspaces.enabled, true),
+        isNotNull(captureDevices.status),
+        ...(accountId ? [eq(captureDevices.accountId, accountId)] : []),
+      ),
+    );
   const notRecordingAfterMs = config.KORTIX_CAPTURE_ALERT_AFTER_MINUTES * 60_000;
   return rows.map((row) => ({
     deviceId: row.deviceId,
@@ -124,11 +131,14 @@ export interface HealthTickResult {
   recovered: number;
 }
 
-/** One pass over every watched computer. Idempotent across ticks and replicas. */
-export async function runCaptureHealthTick(now = Date.now()): Promise<HealthTickResult> {
+/**
+ * One pass over every watched computer, or over one account's (the device sync
+ * route, which reads a device's status now). Idempotent across ticks and replicas.
+ */
+export async function runCaptureHealthTick(now = Date.now(), accountId?: string): Promise<HealthTickResult> {
   const result: HealthTickResult = { alerted: 0, recovered: 0 };
   const alertAfterMs = config.KORTIX_CAPTURE_ALERT_AFTER_MINUTES * 60_000;
-  const devices = await watchedDevices(now, await latestCaptureVersion(now));
+  const devices = await watchedDevices(now, await latestCaptureVersion(now), accountId);
   const byId = new Map(devices.map((d) => [d.deviceId, d]));
   const managers = new Map<string, Promise<string[]>>();
   const managersOf = (accountId: string) => {

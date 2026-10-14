@@ -20776,14 +20776,6 @@
       "viewLabel": "View",
       "viewAll": "Everyone",
       "viewMine": "My devices",
-      "filterLabel": "Filter by status",
-      "filter": {
-        "all": "All",
-        "recording": "Recording",
-        "paused": "Paused",
-        "permission": "Needs permission",
-        "offline": "Offline"
-      },
       "loadFailed": "Could not load the devices.",
       "tryAgain": "Try again",
       "empty": {
@@ -20822,6 +20814,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Install guide"
+      },
+      "summaryLabel": "Fleet health",
+      "summary": {
+        "recording": "{count} recording",
+        "idle": "{count} idle",
+        "attention": "{count, plural, one {# needs attention} other {# need attention}}",
+        "not_recording": "{count} not recording"
+      },
+      "health": {
+        "offline": "No report. Last seen {time}",
+        "stalled": "Recorder stuck. Last frame {time}",
+        "error": "Recorder stopped. Last frame {time}",
+        "never_reported": "Installed, but has not reported yet",
+        "unseen": "Not seen for over 7 days",
+        "permission_missing": "Allow the app in system settings",
+        "paused": "A person paused recording",
+        "sync_error": "Uploads are failing",
+        "backlog": "{count, plural, one {# item} other {# items}} waiting to upload",
+        "behind_version": "Update from {current} to {version}",
+        "asleep": "Asleep or off. Last seen {time}"
       }
     },
     "settings": {

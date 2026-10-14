@@ -20776,14 +20776,6 @@
       "viewLabel": "Vista",
       "viewAll": "Tutti",
       "viewMine": "I miei dispositivi",
-      "filterLabel": "Filtra per stato",
-      "filter": {
-        "all": "Tutti",
-        "recording": "In registrazione",
-        "paused": "In pausa",
-        "permission": "Serve un permesso",
-        "offline": "Offline"
-      },
       "loadFailed": "Impossibile caricare i dispositivi.",
       "tryAgain": "Riprova",
       "empty": {
@@ -20822,6 +20814,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Guida all’installazione"
+      },
+      "summaryLabel": "Stato dei computer",
+      "summary": {
+        "recording": "{count} in registrazione",
+        "idle": "{count} inattivi",
+        "attention": "{count, plural, one {# richiede attenzione} other {# richiedono attenzione}}",
+        "not_recording": "{count} non registrano"
+      },
+      "health": {
+        "offline": "Nessun report. Visto l’ultima volta {time}",
+        "stalled": "Registratore bloccato. Ultimo fotogramma {time}",
+        "error": "Registratore fermo. Ultimo fotogramma {time}",
+        "never_reported": "Installato, ma non ha ancora inviato report",
+        "unseen": "Non visto da oltre 7 giorni",
+        "permission_missing": "Consenti l’app nelle impostazioni di sistema",
+        "paused": "Una persona ha messo in pausa la registrazione",
+        "sync_error": "I caricamenti falliscono",
+        "backlog": "{count, plural, one {# elemento attende} other {# elementi attendono}} il caricamento",
+        "behind_version": "Aggiorna da {current} a {version}",
+        "asleep": "In sospensione o spento. Visto l’ultima volta {time}"
       }
     },
     "settings": {
