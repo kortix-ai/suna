@@ -1,5 +1,5 @@
 {
-  "source_hash": "e895780ddeccdeeadbee1366abb7e6a9927c6b98e688cb0167f17bcf5535890a",
+  "source_hash": "474de6e9a1ff755c45f19463a0afda66a9c926bf790ea36598f09219286ec876",
   "diff_files": [
     "apps/web/src/app/(system)/api/auth/forgot-password/route.ts",
     "apps/web/src/app/[locale]/(auth)/auth/actions.ts",
@@ -8,12 +8,12 @@
     "apps/web/src/app/[locale]/(auth)/auth/forgot-password/page.tsx"
   ],
   "diff_hash": "caa75460c453d84c29487d1e6bbf4adae613815060c770402a43556619ea4add",
-  "head": "844355f2b69900f47378b32da155d94a2c308956",
+  "head": "d0210bac105c5482db9accea13d121c5b0eb1c94",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T17:21:56.632Z"
+  "at": "2026-10-14T17:37:07.051Z"
 }
