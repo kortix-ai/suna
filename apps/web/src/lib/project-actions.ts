@@ -1,12 +1,11 @@
 /**
- * Client-side mirror of the backend per-project leaf actions (apps/api/src/iam/
- * actions.ts `PROJECT_ACTIONS`) plus the customize-section → capability map that
- * drives UI gating.
+ * The customize-section → capability map that drives UI gating, over the
+ * project leaf catalog.
  *
- * Why a mirror and not a shared import: the API package isn't importable from
- * the web bundle. These strings MUST stay byte-identical to the backend catalog
- * — `VALID_ACTIONS` rejects anything else, so a typo here means the IAM probe
- * 400s. Keep this list in sync when actions.ts changes.
+ * `PROJECT_ACTIONS` lives in `@kortix/sdk` (KRTX-1720), so web and mobile spell
+ * every leaf the same way; the SDK test pins it to the API's own catalog
+ * (`apps/api/src/iam/actions.ts`). This file re-exports it for the existing
+ * `@/lib/project-actions` imports.
  *
  * Gating rule (IAM v1): a capability is DEACTIVATED for a group by giving
  * its custom role a permission set that OMITS the capability's leaf. The UI
@@ -17,6 +16,10 @@
  * (the sensitive file/secret reads moved off the floor `member` role), so that
  * section — like the standalone Files page — hides for plain members by design.
  */
+
+import { PROJECT_ACTIONS, type ProjectAction } from '@kortix/sdk';
+
+export { PROJECT_ACTIONS, type ProjectAction };
 
 /**
  * The internal gating-key vocabulary for `CUSTOMIZE_SECTION_ACCESS` below —
@@ -48,61 +51,6 @@ export type CustomizeSection =
   | 'settings'
   | 'feature-flags'
   | 'upgrade';
-
-export const PROJECT_ACTIONS = {
-  PROJECT_READ: 'project.read',
-  PROJECT_WRITE: 'project.write',
-  /** Destroying the project. Manager-only, and NOT implied by `project.write` —
-   *  a custom role can grant editing without granting deletion. */
-  PROJECT_DELETE: 'project.delete',
-
-  PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
-  PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
-  PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
-
-  /** Minting a project CLI token or a project-scoped PAT. Its own leaf because
-   *  a credential OUTLIVES the request that minted it. Manager-only. */
-  PROJECT_CREDENTIALS_ISSUE: 'project.credentials.issue',
-
-  PROJECT_MEMBERS_READ: 'project.members.read',
-  PROJECT_MEMBERS_MANAGE: 'project.members.manage',
-
-  PROJECT_AGENT_READ: 'project.agent.read',
-  PROJECT_AGENT_WRITE: 'project.agent.write',
-  PROJECT_SKILL_READ: 'project.skill.read',
-  PROJECT_SKILL_WRITE: 'project.skill.write',
-  PROJECT_COMMAND_READ: 'project.command.read',
-  PROJECT_COMMAND_WRITE: 'project.command.write',
-  PROJECT_TRIGGER_READ: 'project.trigger.read',
-  PROJECT_TRIGGER_CREATE: 'project.trigger.create',
-  PROJECT_FILE_READ: 'project.file.read',
-  PROJECT_FILE_WRITE: 'project.file.write',
-  PROJECT_SETTINGS_WRITE: 'project.settings.write',
-  PROJECT_SANDBOX_WRITE: 'project.sandbox.write',
-  PROJECT_MODEL_READ: 'project.model.read',
-  PROJECT_MODEL_WRITE: 'project.model.write',
-  PROJECT_GITOPS_READ: 'project.gitops.read',
-  PROJECT_GITOPS_PUSH: 'project.gitops.push',
-  PROJECT_GITOPS_MERGE: 'project.gitops.merge',
-  PROJECT_GITOPS_REF_ANY: 'project.gitops.ref.any',
-  PROJECT_GITOPS_REF_DELETE: 'project.gitops.ref.delete',
-  PROJECT_SECRET_READ: 'project.secret.read',
-  PROJECT_SECRET_WRITE: 'project.secret.write',
-  PROJECT_CONNECTOR_READ: 'project.connector.read',
-  PROJECT_CONNECTOR_WRITE: 'project.connector.write',
-  PROJECT_CONNECTOR_CONNECTIONS_MANAGE: 'project.connector.connections.manage',
-
-  PROJECT_APP_READ: 'project.app.read',
-  PROJECT_APP_WRITE: 'project.app.write',
-  PROJECT_APP_DEPLOY: 'project.app.deploy',
-  PROJECT_APP_ADMIN: 'project.app.admin',
-
-  PROJECT_REVIEW_READ: 'project.review.read',
-  PROJECT_REVIEW_SUBMIT: 'project.review.submit',
-  PROJECT_REVIEW_ACT: 'project.review.act',
-} as const;
-
-export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTIONS];
 
 /**
  * Per-section gating leaves.

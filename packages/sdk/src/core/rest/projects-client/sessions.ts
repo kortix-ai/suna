@@ -4,6 +4,8 @@ import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-clie
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { noteSessionStopped } from '../../http/session-stopped';
+import { isSessionLogPage } from '../../session-log/guard';
+import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
 
@@ -224,6 +226,12 @@ export interface CreateProjectSessionInput {
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
+  /**
+   * Harness context that rides beside `initial_prompt` and is delivered to the
+   * model as a synthetic (model-only) message part — the transcript keeps
+   * showing the caller's own words. At most 8192 characters.
+   */
+  initial_context?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
   /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
@@ -967,6 +975,30 @@ export async function getSessionTranscriptSync(
   );
 }
 
+/**
+ * One page of one thread of the session's stored log (`kortix.session/2`): the session record,
+ * every thread head, and the thread's newest `limit` messages (default 40, max 500) with
+ * `seq < before_seq`, ascending. `thread` defaults to the root thread. Read from Postgres, so it
+ * answers while the sandbox is stopped; the daemon journals each turn at its end.
+ * Null on a 404: the session has no stored log yet, or no such thread.
+ */
+export async function getSessionLogPage(
+  projectId: string,
+  sessionId: string,
+  query: SessionLogPageQuery = {},
+  options?: { signal?: AbortSignal },
+): Promise<SessionLogPage | null> {
+  let page: unknown;
+  try {
+    page = await loadSessionLogPage!(projectId, sessionId, query, options?.signal);
+  } catch (error) {
+    if ((error as { status?: unknown } | null)?.status === 404) return null;
+    throw error;
+  }
+  if (!isSessionLogPage(page)) throw new Error('The response is not a session log page');
+  return page;
+}
+
 /** 'delivering' — the control plane minted the turn but has not confirmed
  *  OpenCode received it. 'active' — the runtime accepted it and is working. */
 export type SessionTurnState = 'delivering' | 'active';
@@ -1593,13 +1625,40 @@ export async function updateProjectSession(
   );
 }
 
+/**
+ * Delete a session. It stays restorable until `restore_until` (30 days):
+ * `restoreProjectSession` brings it back. Its branch is kept for good; its
+ * messages and stored files are deleted after the window. `restore_until` is
+ * absent from an API that predates restore.
+ */
 export async function deleteProjectSession(projectId: string, sessionId: string) {
   const result = unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
+    await backendApi.delete<{ ok: boolean; restore_until?: string }>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+    ),
   );
   // The device's saved copy of a deleted session would only take space.
   void currentSavedCopyStore()?.remove(projectId, sessionId);
   return result;
+}
+
+/**
+ * Restore a deleted session before its `restore_until`. Its messages, stored
+ * files and branch come back; its next start boots a fresh sandbox from the
+ * branch. A refusal rejects with an `ApiError`: 409 `session_not_deleted`
+ * (nothing to restore), 409 `session_sandbox_removal_pending` (the old sandbox
+ * is still being removed: retry in a minute), 410 `session_purged` (past
+ * `restore_until`). Public links the delete revoked stay revoked.
+ */
+export async function restoreProjectSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean }>(
+      `/projects/${projectId}/sessions/${sessionId}/restore`,
+      {},
+      // The caller reports the outcome itself (an Undo toast, a CLI line).
+      { showErrors: false },
+    ),
+  );
 }
 
 /**

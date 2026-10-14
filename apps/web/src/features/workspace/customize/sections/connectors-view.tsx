@@ -107,7 +107,6 @@ import {
   type ConnectorDraftInput,
   type ConnectorRequestAuthType,
   createConnector,
-  deleteConnector,
   discoverConnectionOAuth2,
   discoverConnectionOAuth2Resource,
   discoverConnectorAuth,
@@ -147,7 +146,6 @@ import { credentialWriteTarget, oauth2DiscoveryConnectionKey } from './connector
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
-  createConnectorWithOptionalOAuth2,
   EMPTY_OAUTH2_APPLICATION_FORM,
   EMPTY_OAUTH2_CREDENTIAL_FORM,
   mergeOAuth2DiscoveryMetadata,
@@ -161,6 +159,7 @@ import { autoConnectPlan, mergeResourceDiscoveryIntoForm } from './connector-oau
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { startOAuth2SignIn } from './connector-oauth2-start';
 import { DiscoverCatalogue } from './discover-catalogue';
+import { useCreateCustomConnector } from './use-create-custom-connector';
 import { AudienceText } from './view/audience-badge';
 import {
   accountVisibility,
@@ -2581,7 +2580,7 @@ function AppCatalogue({
                         </div>
                       )}
                     </div>
-                    <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
+                    <Plus className="text-muted-foreground group-hover:text-primary size-4 shrink-0 transition-colors" />
                   </div>
                   <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
                     {app.description ?? ' '}
@@ -3115,7 +3114,7 @@ function ConnectorConfigFields({
                     <>
                       {' '}
                       {tI18nHardcoded.raw('i18nComplete.text4d327af41f96')}{' '}
-                      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
+                      <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">
                         {detectedAuth.parameterName}
                       </code>
                     </>
@@ -3230,7 +3229,8 @@ export function CustomConnectorForm({
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
-  onAdded: (slug?: string) => void;
+  /** The connector exists: open its page. `addAccount` opens "Add account" there. */
+  onAdded: (slug: string, options: { addAccount: boolean }) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [draft, setDraft] = useState<ConnectorDraftInput>({
@@ -3256,34 +3256,7 @@ export function CustomConnectorForm({
     }
   }, [draft.provider, oauth2Selected]);
 
-  const save = useMutation({
-    mutationFn: () =>
-      createConnectorWithOptionalOAuth2(projectId, draft, oauth2Selected ? oauth2 : null, {
-        createConnector,
-        deleteConnector,
-        setConnectorCredential,
-      }),
-    onSuccess: (result) => {
-      if (result.syncError) {
-        warningToast(
-          tI18nHardcoded('i18nComplete.textd6a135de3872', {
-            value0: draft.slug,
-            value1: result.syncError,
-          }),
-        );
-        onAdded();
-        return;
-      }
-      successToast(
-        result.credentialStored
-          ? tI18nHardcoded('i18nComplete.text5120ee26cbf5', { value0: draft.slug })
-          : tI18nHardcoded('i18nComplete.text29f396e2d238', { value0: draft.slug }),
-      );
-      onAdded(draft.slug);
-    },
-    onError: (err: Error) =>
-      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.textbdc7d54433e6')),
-  });
+  const save = useCreateCustomConnector(projectId, onAdded);
   const discovery = useQuery<ConnectorAuthDiscovery>({
     queryKey: ['connector-auth-discovery', projectId, discoveryDraft],
     queryFn: () => discoverConnectorAuth(projectId, discoveryDraft),
@@ -3303,7 +3276,7 @@ export function CustomConnectorForm({
         onSubmit={(e) => {
           e.preventDefault();
           if (oauth2Selected && !oauth2CredentialFormValid(oauth2)) return;
-          save.mutate();
+          save.mutate({ draft, oauth2: oauth2Selected ? oauth2 : null });
         }}
       >
         <div className="space-y-5">

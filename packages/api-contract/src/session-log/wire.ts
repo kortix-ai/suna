@@ -25,10 +25,26 @@
  * A tombstone of a message the API never stored is acknowledged and stores nothing.
  *
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
- * the caller's session read permission (the transcript route's), never the sandbox credential.
+ * the caller's session read permission, the transcript route's gate (a session-bound token included).
  * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
  * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
  * `thread` is not one of its threads.
+ *
+ * Restore (P6.1): `POST /v1/projects/:p/sessions/:s/log/restore`, sandbox token only, no body.
+ * The daemon of a fresh box calls it once, before its harness starts. It claims the session:
+ * under the session's advisory lock it raises `session_logs.generation` by 1 and answers
+ * `SessionLogRestore` at that generation, so a box still journaling at the old generation gets
+ * 409 and stops. Send `Accept-Encoding: gzip`: the answer is gzipped when it is over 1 kB.
+ * - 200 `SessionLogRestore`: `generation` (the box journals under it from now on), `log` (every
+ *   thread with its live messages in `seq` order, `in_context: false` ones included, tombstoned
+ *   ones left out), `revs` (the stored `rev` of every message, tombstoned ones included; any rev
+ *   at the claimed generation wins over them), `seq_max` (the highest seq of each thread,
+ *   tombstoned messages included: number new messages above it) and `blobs` (each text the
+ *   API stored by reference: the record holds its 16 kB preview; read the full text with `GET /v1/projects/:p/sessions/:s/attachments/<id>`,
+ *   the id being the last segment of `ref`, and check `sha256`).
+ * - 404 `SessionLogRestoreMissing`: the session has no stored log; nothing was claimed. Boot
+ *   without a restore. A 404 with another body is an API that predates the route.
+ * - 503: the operator switch `SESSION_LOG_RESTORE_ENABLED` is off; nothing was claimed.
  *
  * `rev` is monotonic per message across daemon boots, not a per-boot counter: the daemon
  * issues `max(Date.now() * 1000, last + 1)`, a safe integer that needs a `bigint` column. The
@@ -94,6 +110,25 @@ export const SessionLogPageSchema = z.object({
   has_more: z.boolean(),
 });
 
+/** A text the API stored by reference (F3): `ref` names its object in the session's own folder. */
+export const SessionLogRestoreBlobSchema = z.object({
+  message_id: messageId,
+  /** The text block, or the tool call whose result holds the text. */
+  block_id: z.string().min(1),
+  ref: z.string().min(1),
+  bytes: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+export const SessionLogRestoreSchema = z.object({
+  generation: z.number().int().positive(),
+  log: SessionLogSchema,
+  revs: z.record(rev),
+  /** The highest seq each thread holds, tombstoned messages included; the box numbers new messages above it. Absent from an API before P6.2. */
+  seq_max: z.record(z.number().int().nonnegative()).optional(),
+  blobs: z.array(SessionLogRestoreBlobSchema),
+});
+export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_session_log') });
+
 export type SessionLogPut = z.infer<typeof SessionLogPutSchema>;
 export type SessionLogTombstone = z.infer<typeof SessionLogTombstoneSchema>;
 export type SessionLogThreadUpsert = z.infer<typeof SessionLogThreadUpsertSchema>;
@@ -105,3 +140,5 @@ export type SessionLogJournalConflict = z.infer<typeof SessionLogJournalConflict
 export type SessionLogJournalSeqConflict = z.infer<typeof SessionLogJournalSeqConflictSchema>;
 export type SessionLogManifest = z.infer<typeof SessionLogManifestSchema>;
 export type SessionLogPage = z.infer<typeof SessionLogPageSchema>;
+export type SessionLogRestoreBlob = z.infer<typeof SessionLogRestoreBlobSchema>;
+export type SessionLogRestore = z.infer<typeof SessionLogRestoreSchema>;

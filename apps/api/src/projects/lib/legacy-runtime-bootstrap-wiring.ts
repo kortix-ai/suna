@@ -4,7 +4,7 @@
  * legacy-runtime-bootstrap.ts and is tested without any of this.
  */
 import { sessionSandboxes } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { readFileSync } from 'node:fs';
@@ -321,6 +321,23 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         .set({ metadata: mergeMetadata(patch) })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
     },
+    claimRun: async (patch, staleBeforeIso) => {
+      const record = sql`${sessionSandboxes.metadata}->'legacyRuntimeBootstrap'`;
+      const [won] = await db
+        .update(sessionSandboxes)
+        .set({ metadata: mergeMetadata(patch) })
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            sql`(
+              coalesce(${record}->>'state', '') <> 'running'
+              OR coalesce(${record}->>'lastAttemptAt', '') <= ${staleBeforeIso}
+            )`,
+          ),
+        )
+        .returning({ sandboxId: sessionSandboxes.sandboxId });
+      return Boolean(won);
+    },
     audit: async (event) => {
       await recordAuditEvent({
         accountId: row.accountId ?? null,
@@ -350,7 +367,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
 export async function runLegacyRuntimeBootstrap(
   row: LegacyBootstrapRow,
   reason: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; unpin?: boolean } = {},
 ): Promise<LegacyBootstrapResult> {
   return bootstrapLegacyRuntime(
     {
@@ -359,7 +376,8 @@ export async function runLegacyRuntimeBootstrap(
       provider: row.provider,
       metadata: row.metadata,
       reason,
-      force: opts.force,
+      force: opts.force || opts.unpin,
+      unpin: opts.unpin,
     },
     buildLegacyBootstrapDeps(row),
   );

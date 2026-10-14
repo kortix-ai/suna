@@ -113,13 +113,11 @@ export function ContextCard({
   // places. A tool row's detail shows what it actually did.
   for (const tool of tools) {
     const family: StepFamily =
-      (familyForTool(tool.parts?.[0]?.tool ?? '') as StepFamily) ?? 'other';
+      (familyForTool(tool.calls?.[0]?.name ?? '') as StepFamily) ?? 'other';
     // `deriveContext` skips *fully* errored calls, but this row aggregates ALL
     // calls to that tool — one failed call among several is exactly what a
     // status="done" glyph would hide (failed-call aggregation).
-    const failed = (tool.parts ?? []).some(
-      (p) => (p.state as { status?: string } | undefined)?.status === 'error',
-    );
+    const failed = (tool.calls ?? []).some((c) => c.status === 'error');
     // The row's detail opens straight onto raw tool views (W3) — a plain
     // sentence above them, in the same voice the Progress stepper narrates
     // with, is what tells a non-technical reader what they're looking at
@@ -129,14 +127,14 @@ export function ContextCard({
     // table (the rule `narration.ts:12-14` and `derive-panels.ts:1-14` both
     // enforce).
     const summary = failed
-      ? narrateFailedStep(family, tool.parts ?? [])
-      : narrateStep(family, tool.parts ?? []);
+      ? narrateFailedStep(family, tool.calls ?? [])
+      : narrateStep(family, tool.calls ?? []);
     groups.push({
       id: tool.callID,
       label: tool.label,
-      count: tool.parts?.length ?? 1,
+      count: tool.calls?.length ?? 1,
       icon: <StepIcon family={family} status={failed ? 'error' : 'done'} />,
-      body: <ToolParts parts={tool.parts ?? []} sessionId={sessionId} summary={summary} />,
+      body: <ToolParts calls={tool.calls ?? []} sessionId={sessionId} summary={summary} />,
     });
   }
 

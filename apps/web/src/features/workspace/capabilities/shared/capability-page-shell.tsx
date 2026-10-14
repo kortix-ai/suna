@@ -6,7 +6,10 @@ import { CapabilityScrollRootProvider, useCapabilityScrollRootRef } from './capa
 
 interface CapabilityPageShellProps {
   title: string;
+  /** One line. Longer explanations go in `titleAddon` (an info hover card). */
   description: string;
+  /** Rendered inline after the title, e.g. an info button. */
+  titleAddon?: ReactNode;
   /** Page-level action(s) — a single button, or a cluster of them. Rendered
    *  in the header's right-hand group, **after** `search`. Pass several by
    *  wrapping them in one element; the shell does not space them for you. */
@@ -38,6 +41,7 @@ interface CapabilityPageShellProps {
 export function CapabilityPageShell({
   title,
   description,
+  titleAddon,
   action,
   search,
   filters,
@@ -61,7 +65,10 @@ export function CapabilityPageShell({
               description re-wrapped and the header grew 20px under the
               reader (Agents 52 → 72px, Secrets 92 → 112px). */}
           <div className="space-y-1 sm:max-w-md">
-            <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
+              {titleAddon}
+            </div>
             <p className="text-muted-foreground text-sm text-balance">{description}</p>
           </div>
           {/* Search and action are ONE right-hand group, search first. As three

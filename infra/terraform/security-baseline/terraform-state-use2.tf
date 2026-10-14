@@ -1,7 +1,10 @@
-# Regional state backend for the us-east-2 Terraform roots.
+# Regional state backend for the us-east-2 Terraform roots: dev-us-east-2 and
+# dev-web-us-east-2. The eu-west-2 roots use terraform-state-euw2.tf.
 #
-# The other roots still use the shared us-west-2 backend. This bucket and lock
-# table keep us-east-2 state in the region of the infrastructure it describes.
+# The backends use S3 native locking (use_lockfile). The DynamoDB table below
+# served the deleted prod-us-east-2-shadow root and holds no lock; it goes in a
+# follow-up (deletion protection must be turned off in one apply, the table
+# removed in the next).
 # trivy:ignore:AVD-AWS-0089
 resource "aws_s3_bucket" "terraform_state_use2" {
   # checkov:skip=CKV_AWS_18:CloudTrail and S3 version history audit state access. A second access-log bucket adds another state-bearing bucket.

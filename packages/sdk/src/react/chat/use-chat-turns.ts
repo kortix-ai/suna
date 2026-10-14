@@ -33,7 +33,7 @@ export interface TurnView {
  * `groupMessagesIntoTurns` from `@kortix/sdk/turns` first if a host wants
  * grouped turns instead of a flat per-message list).
  */
-export function useChatTurns(messages: MessageWithParts[]): TurnView[] {
+export function useChatTurns(messages: readonly MessageWithParts[]): TurnView[] {
   return useMemo(
     () =>
       messages.map((message) => {

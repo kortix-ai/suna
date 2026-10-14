@@ -2154,7 +2154,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/routes/git-backend.ts": {
@@ -2534,7 +2534,7 @@
   },
   "src/projects/session-lifecycle/actions.ts": {
     "no-console": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/session-lifecycle/actor.ts": {
@@ -2841,7 +2841,7 @@
       "count": 9
     },
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/sandbox-proxy/forward/upstream.ts": {

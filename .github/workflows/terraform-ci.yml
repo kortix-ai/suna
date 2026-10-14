@@ -160,7 +160,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ vars.NACL_AUDIT_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
       - name: audit every region for public SSH/RDP
         run: python3 infra/terraform/scripts/audit-nacl-admin-ports.py
 
@@ -218,10 +218,16 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+      # Read-only plan: a stale regional state copy is a warning here, not a failure.
+      - name: Check the regional state copy
+        uses: ./.aws-env/.github/actions/state-copy-guard
+        with:
+          root: ${{ matrix.root }}
+          mode: warn
       - name: plan -detailed-exitcode
         run: |
           set -uo pipefail

@@ -576,6 +576,12 @@
     ]
   },
   {
+    "id": "aimlapi",
+    "env": [
+      "AIMLAPI_API_KEY"
+    ]
+  },
+  {
     "id": "upstage",
     "env": [
       "UPSTAGE_API_KEY"
@@ -1082,6 +1088,12 @@
     ]
   },
   {
+    "id": "sambanova",
+    "env": [
+      "SAMBANOVA_API_KEY"
+    ]
+  },
+  {
     "id": "tempr",
     "env": [
       "TEMPR_API_KEY"
@@ -1196,6 +1208,12 @@
     "id": "vivgrid",
     "env": [
       "VIVGRID_API_KEY"
+    ]
+  },
+  {
+    "id": "prime",
+    "env": [
+      "PRIME_API_KEY"
     ]
   },
   {

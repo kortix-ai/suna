@@ -389,6 +389,30 @@ export function resolvedPlan(state: AccountState | null | undefined): ResolvedPl
   };
 }
 
+/**
+ * Whether the caller may change billing for this account (`billing.write`,
+ * owners by default): buy credits, set auto top-up, subscribe.
+ *
+ * `false` while the state is unknown (still loading, or failed), so a purchase
+ * control never renders for a member in the window before the answer lands.
+ * A loaded state without the field reads as allowed: the field is additive and
+ * an older API must not lock an owner out. The billing API enforces the same
+ * gate either way; this decides what to show.
+ */
+export function canManageBilling(state: AccountState | null | undefined): boolean {
+  return !!state && state.can_manage_billing !== false;
+}
+
+/**
+ * Whether to offer buying credits or auto top-up: the plan may buy credits
+ * (`subscription.can_purchase_credits`, an entitlement) AND the caller may
+ * change billing (`canManageBilling`, a permission). `false` while the state
+ * is unknown.
+ */
+export function canOfferTopup(state: AccountState | null | undefined): boolean {
+  return state?.subscription?.can_purchase_credits === true && canManageBilling(state);
+}
+
 export interface GetAccountStateOptions {
   skipCache?: boolean;
   /** Scope the fetch to a specific account the user is a member of (e.g. on

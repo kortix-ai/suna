@@ -174,6 +174,15 @@ function seededRolePermissions(): Map<string, string[]> {
       const key = `${one[2]}:${one[3]}`;
       out.set(key, [...(out.get(key) ?? []), one[1]]);
     }
+    // The removal shape (20261013172952181: the member role loses
+    // `member.read` and `group.read`).
+    for (const gone of sql.matchAll(
+      /DELETE FROM kortix\.role_permissions rp[\s\S]*?r\.key = '([^']+)'[\s\S]*?r\.scope_type = '([^']+)'[\s\S]*?rp\.action IN \(([^)]*)\)/gi,
+    )) {
+      const key = `${gone[1]}:${gone[2]}`;
+      const removed = [...gone[3].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+      out.set(key, (out.get(key) ?? []).filter((action) => !removed.includes(action)));
+    }
   }
   return out;
 }
@@ -220,6 +229,14 @@ function sorted(set: Iterable<string>): string[] {
 }
 
 // ─── The mapping itself ─────────────────────────────────────────────────────
+
+describe('the built-in member role reads no directory', () => {
+  test('the fixture applies the removal migration', () => {
+    expect(roleActions('member', 'account')).not.toContain('member.read');
+    expect(roleActions('member', 'account')).not.toContain('group.read');
+    expect(roleActions('admin', 'account')).toContain('member.read');
+  });
+});
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {

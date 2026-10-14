@@ -101,4 +101,15 @@ describe('connectors page error path', () => {
     expect(source).toContain("setPanel('custom')");
     expect(source).toContain('<CustomConnectorForm');
   });
+
+  test('the custom form closes and opens the new connector, Add account when asked', () => {
+    // KRTX-2185: the modal used to stay open over a connector it had already
+    // created whenever the first sync failed, an MCP 401 included.
+    const form = source.slice(source.indexOf('<CustomConnectorForm'));
+    const onAdded = form.slice(0, form.indexOf('/>'));
+    expect(onAdded).toContain('onAdded={(slug, { addAccount }) => {');
+    expect(onAdded).toContain('setPanel(null);');
+    expect(onAdded).toContain('router.push(connectorHref(projectId, slug, { addAccount }));');
+    expect(onAdded).not.toContain('if (slug)');
+  });
 });

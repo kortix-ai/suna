@@ -1,0 +1,46 @@
+# prepare-migrate: everything a deploy job needs before it runs
+# `pnpm --filter @kortix/db migrate`. Shared by migrate-db in deploy-dev,
+# deploy-staging and deploy-prod. The caller checks out the repository first
+# (each env checks out its own ref), then sparse-checks `.github/actions` at
+# `github.workflow_sha` into `.aws-env` and calls this action from there. The
+# workflow file and its actions must come from the same commit: a
+# `workflow_run` workflow runs the default branch's YAML while the job
+# deploys another branch. The caller has `permissions: id-token: write` and
+# runs its own apply step: the guards on DATABASE_URL differ per env.
+name: prepare-migrate
+description: >-
+  Install node, bun and pnpm, install the @kortix/db workspace, and export
+  DATABASE_URL from a Secrets Manager blob through aws-env.
+
+inputs:
+  bun-version:
+    required: true
+    description: Bun version for setup-bun.
+  database-url:
+    required: true
+    description: aws-env key line, for example `DATABASE_URL=kortix-dev-env:DATABASE_URL`.
+  role-to-assume:
+    required: false
+    default: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+    description: Role assumed by aws-env. Same default as aws-env.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 22
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: ${{ inputs.bun-version }}
+    - run: corepack enable pnpm
+      shell: bash
+    - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+      shell: bash
+      env:
+        npm_config_engine_strict: "false"
+    - name: Read credentials from AWS Secrets Manager
+      uses: ./.aws-env/.github/actions/aws-env
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        keys: ${{ inputs.database-url }}

@@ -149,8 +149,8 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
       reloadConfig: () => loadConfig({ apiUrl: config.apiUrl }),
     },
   );
-  agent.connect();
-
+  // Before connect(): connect() writes state.json, and a SIGTERM that lands
+  // before a handler exists kills the process with the state left `connecting`.
   const shutdown = () => {
     if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
     agent?.disconnect();
@@ -158,6 +158,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+  agent.connect();
 }
 
 // ── pairing ──────────────────────────────────────────────────────────────────

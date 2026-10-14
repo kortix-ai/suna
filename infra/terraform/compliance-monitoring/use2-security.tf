@@ -428,6 +428,49 @@ resource "aws_wafv2_web_acl_logging_configuration" "use2" {
   log_destination_configs = [aws_cloudwatch_log_group.use2_waf.arn]
 }
 
+# DCF-406: every VPC carries a flow log. The dev VPC had none until 2026-10-12
+# (environments/dev-us-east-2 creates it; the delivery role lives in
+# security-baseline/main.tf and monitoring.tf reads it).
+data "aws_vpc" "use2_dev" {
+  provider = aws.use2
+  tags     = { Name = "kortix-dev-use2-vpc" }
+}
+
+resource "aws_cloudwatch_log_group" "use2_flow_logs" {
+  provider          = aws.use2
+  name              = "/vpc/flowlogs"
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.use2_logs.arn
+  tags              = local.tags
+}
+
+resource "aws_flow_log" "use2_dev" {
+  provider             = aws.use2
+  iam_role_arn         = data.aws_iam_role.flow_logs.arn
+  log_destination      = aws_cloudwatch_log_group.use2_flow_logs.arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = data.aws_vpc.use2_dev.id
+  tags                 = local.tags
+}
+
+# Drata test 233 (CIS 5.4): the default security group allows no traffic.
+# Nothing attaches it; every ECS service carries its own group.
+resource "aws_default_security_group" "use2_dev" {
+  provider = aws.use2
+  vpc_id   = data.aws_vpc.use2_dev.id
+
+  ingress = []
+  egress  = []
+
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-dev-use2-default"
+  }
+}
+
 resource "aws_cloudwatch_metric_alarm" "use2_target_response_time" {
   provider            = aws.use2
   for_each            = local.use2_albs

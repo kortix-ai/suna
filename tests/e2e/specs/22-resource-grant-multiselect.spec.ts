@@ -139,7 +139,9 @@ test.describe('22 — Resource-grant multi-select', () => {
         ),
       );
       await page.getByRole('button', { name: 'Grant access', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });
+      // Since #9750 the grant form opens in the account hub's split sheet: an
+      // <aside> named by its title (role complementary), not a modal dialog.
+      const dialog = page.getByRole('complementary', { name: 'Grant access', exact: true });
       await expect(dialog).toBeVisible();
 
       // Multi-select principals in the shared picker (each row is a toggle
@@ -247,7 +249,7 @@ test('grants an agent to everyone in the project from the same Grant access dial
     await dismissOnboarding(page);
 
     await page.getByRole('button', { name: 'Grant access', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });
+    const dialog = page.getByRole('complementary', { name: 'Grant access', exact: true });
     await expect(dialog).toBeVisible();
 
     // Everyone in the project is a principal that holds agents, never a role:
@@ -413,10 +415,31 @@ for (const selection of ['selected', 'all'] as const) {
       await expect(
         dialog.getByRole('button', { name: 'Attach', exact: true }),
       ).toBeDisabled();
-      rejectInventory = false;
-      await dialog
-        .getByRole('button', { name: 'Try again', exact: true })
-        .click();
+      // The app also retries the failed read on its own. Lifting the rejection
+      // here let an automatic retry succeed first and remove the button before
+      // the click ("element was detached from the DOM"). Lift it at the
+      // click's own pointerdown instead, so only the click's request succeeds.
+      await page.exposeFunction('liftInventoryRejection', () => {
+        rejectInventory = false;
+      });
+      // Listen on the dialog, which outlives the button the app re-renders.
+      await dialog.evaluate((element) => {
+        element.addEventListener(
+          'pointerdown',
+          (event) => {
+            const target = event.target as Element;
+            if (target.closest('button')?.textContent?.trim() === 'Try again') {
+              (window as any).liftInventoryRejection();
+            }
+          },
+          true,
+        );
+      });
+      const tryAgain = dialog.getByRole('button', {
+        name: 'Try again',
+        exact: true,
+      });
+      await tryAgain.click();
       await expect(
         dialog.getByRole('button', { name: 'Attach', exact: true }),
       ).toBeEnabled();

@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
+import { toolCallBlock } from '@kortix/sdk';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 
 /**
@@ -45,7 +46,7 @@ function renderPanel(part: ToolPart, opts: { defaultOpen?: boolean } = {}) {
   return renderToStaticMarkup(
     withProviders(
       <ToolSurfaceContext.Provider value="panel">
-        <ToolPartRenderer part={part} sessionId="s1" defaultOpen={opts.defaultOpen} />
+        <ToolPartRenderer call={toolCallBlock(part)} sessionId="s1" defaultOpen={opts.defaultOpen} />
       </ToolSurfaceContext.Provider>,
     ),
   );

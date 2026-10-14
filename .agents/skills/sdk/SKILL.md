@@ -669,7 +669,7 @@ burns budget while hiding a design problem.
 
 **Never report a subset as the whole.** `bun test src/foo.test.ts` passing tells
 you nothing about the suite. And the exit code is not a safety net — verified
-against `bun 1.3.14`:
+against `bun 1.4.3`:
 
 | Command | Exit | Trap? |
 |---|---|---|

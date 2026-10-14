@@ -23,11 +23,14 @@ import {
   useSidebarNavStore,
   type SidebarNavEntry,
 } from '@/stores/sidebar-nav-store';
-import { DotsThreeIcon } from '@phosphor-icons/react';
+import { DotsThreeOutlineIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from 'react';
 
 const subscribeNoop = () => () => {};
+
+/** Time to cross the gap between the More row and its menu before it closes. */
+const HOVER_CLOSE_DELAY_MS = 150;
 
 /**
  * The customizable nav rows under New session, in the order and with the
@@ -69,27 +72,59 @@ function MoreNavItem({
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hidden = items.filter((e) => e.visibility === 'never' && meta[e.id]);
 
   const closeSheet = () => {
     if (isMobile) setOpenMobile(false);
   };
 
+  // A mouse opens the menu on hover. Touch and keyboard keep the click and
+  // Enter/Space toggle from Radix.
+  const cancelClose = () => clearTimeout(closeTimer.current);
+  const hoverOpen = (e: PointerEvent) => {
+    if (e.pointerType !== 'mouse') return;
+    cancelClose();
+    setOpen(true);
+  };
+  const hoverClose = (e: PointerEvent) => {
+    if (e.pointerType !== 'mouse') return;
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_DELAY_MS);
+  };
+  useEffect(() => cancelClose, []);
+
   return (
     <SidebarMenuItem>
-      <DropdownMenu open={open} onOpenChange={setOpen}>
+      {/* Non-modal: a modal menu sets pointer-events: none on the body, which
+          fires pointerleave on the row and closes the menu it just opened. */}
+      <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
         <DropdownMenuTrigger asChild>
           <SidebarMenuButton
             tooltip={t('more')}
             className="group/menu-button text-sidebar-foreground relative"
+            onPointerEnter={hoverOpen}
+            onPointerLeave={hoverClose}
+            // Hover already opened it: stop the Radix pointerdown toggle from
+            // closing the menu when the mouse then clicks the row.
+            onPointerDown={(e) => {
+              if (e.pointerType === 'mouse' && open) e.preventDefault();
+            }}
           >
             <span className="shrink-0">
-              <DotsThreeIcon />
+              <DotsThreeOutlineIcon weight="fill" />
             </span>
             <span className="truncate">{t('more')}</span>
           </SidebarMenuButton>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="right" sideOffset={8} className="w-[15rem]">
+        <DropdownMenuContent
+          align="start"
+          side="right"
+          sideOffset={8}
+          className="w-[15rem]"
+          onPointerEnter={hoverOpen}
+          onPointerLeave={hoverClose}
+        >
           {hidden.map((entry) => {
             const row = meta[entry.id]!;
             return (

@@ -85,6 +85,9 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  */
 export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'initial_prompt',
+  // Same class as `initial_prompt`: a heavy write-only blob no client reads
+  // off the list (verified 2026-10-08 across apps/web, apps/mobile, packages/sdk).
+  'initial_context',
   'payload_summary',
   'session_start_timeline',
   'audit_v2',
@@ -189,8 +192,9 @@ export function serializeSession(
     // claim `running`: nothing has ever run in it, and every list painted those
     // shells as phantom green "Running" rows (KRTX-1466). Report the status it
     // held while its box booted; the first accepted turn drops the warm marker
-    // (session-activity.ts) and the row reads `running` again. The row itself
-    // still lists and still bills — see session-inventory.ts (KRTX-1068).
+    // (session-activity.ts) and the row reads `running` again. The row still
+    // bills; the manager `project` scope keeps listing it for lifecycle
+    // inspection — see session-inventory.ts (the `visible` scope hides it).
     status:
       row.status === 'running' && isWarmProjectSession(row.metadata)
         ? 'provisioning'
@@ -306,8 +310,8 @@ export function serializeProject(
     // on/off map; `experimental_features` is the self-describing catalog the UI
     // renders from. Both wire names are historical and STABLE; do not rename
     // them. SoT = ../../feature-flags/registry.
-    experimental: resolveFeatureFlags(row.metadata, row.accountId),
-    experimental_features: buildFeatureFlagCatalog(row.metadata, row.accountId),
+    experimental: resolveFeatureFlags(row.metadata),
+    experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
     // `available_sandbox_providers` is the enabled set the picker offers

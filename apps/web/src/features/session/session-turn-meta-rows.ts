@@ -6,14 +6,11 @@ import type { UiTranslator } from '@/i18n/translator';
  * the whole set from one clock read rather than each row racing its own.
  */
 
-import type { Turn, TurnCostInfo } from '@/ui';
+import type { TurnCostInfo } from '@/ui';
 import { formatCost, formatDuration, formatTokens } from '@/ui';
+import type { SessionLogMessage, SessionLogTurn } from '@kortix/sdk';
 import { formatDistanceStrict } from 'date-fns';
 
-// The narrow accessor for the `Message` union's `time` field lives in
-// `turn/message-time` — the same one the user bubble's timestamp reads through,
-// so there is exactly one place that knows how to get a stamp off a message.
-import { messageTime } from './turn/message-time';
 import type { TurnServedModel } from './turn/served-model';
 
 export interface SessionTurnSpan {
@@ -21,20 +18,25 @@ export interface SessionTurnSpan {
   endedAt: number | null;
 }
 
+/** A record time (`created_at` / `completed_at`, ISO) as epoch ms; null when absent. */
+const msOf = (iso: string | null | undefined): number | null => {
+  const ms = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(ms) ? ms : null;
+};
+
 /** A turn's wall-clock bounds: when the user's prompt landed, and when the
- *  agent last produced something for it. `endedAt` prefers the last assistant
- *  message's `completed` stamp — the point the response was actually done —
- *  and falls back to `created` for a message that never got one (e.g. it was
+ *  agent last produced something for it. `endedAt` prefers the last reply's
+ *  `completed_at` — the point the response was actually done — and falls back
+ *  to its `created_at` for a reply that never got one (e.g. it was
  *  interrupted before finishing). */
-export function sessionTurnSpan(turn: Turn): SessionTurnSpan {
-  const startedAt = messageTime(turn.userMessage).created ?? null;
-  const lastAssistant = turn.assistantMessages[turn.assistantMessages.length - 1];
-  const lastTime = messageTime(lastAssistant);
-  const endedAt = lastTime.completed ?? lastTime.created ?? null;
+export function sessionTurnSpan(turn: Pick<SessionLogTurn, 'user' | 'assistant'>): SessionTurnSpan {
+  const startedAt = msOf(turn.user.created_at);
+  const lastAssistant: SessionLogMessage | undefined = turn.assistant[turn.assistant.length - 1];
+  const endedAt = msOf(lastAssistant?.completed_at) ?? msOf(lastAssistant?.created_at);
   return { startedAt, endedAt };
 }
 
-export function sessionTurnEndedAt(turn: Turn): number | null {
+export function sessionTurnEndedAt(turn: Pick<SessionLogTurn, 'user' | 'assistant'>): number | null {
   return sessionTurnSpan(turn).endedAt;
 }
 
@@ -42,7 +44,7 @@ export function sessionTurnEndedAt(turn: Turn): number | null {
  *  `endedAt === startedAt`: one timestamp says WHEN a turn ended and says
  *  nothing about how long it took to get there, so a same-instant span is
  *  treated the same as no span at all rather than rendered as "0s". */
-export function sessionTurnDurationMs(turn: Turn): number | null {
+export function sessionTurnDurationMs(turn: Pick<SessionLogTurn, 'user' | 'assistant'>): number | null {
   const { startedAt, endedAt } = sessionTurnSpan(turn);
   if (startedAt == null || endedAt == null || endedAt <= startedAt) return null;
   return endedAt - startedAt;

@@ -21,8 +21,11 @@
  *   (KRTX-249): a "Customize in the web app" hand-off sheet, not a drawer row.
  * - Three sections of top-level sessions, by who started the run (KRTX-639):
  *   "Sessions" (yours, open), "Shared" (other members', collapsed, no header
- *   while empty) and "Automated" (triggers, channels, API keys; collapsed).
- *   No section renders while the viewer's own list still loads.
+ *   while empty with no next page) and "Automated" (triggers, channels, API
+ *   keys; collapsed). No section renders while the viewer's own list still
+ *   loads. A page can be empty and still carry a cursor (KRTX-1727): each
+ *   list reads past such pages on its own, and with no row yet and a next
+ *   page the drawer offers "Show more", never "No sessions yet".
  *   Each is its own paged query (`parent=root`), newest activity first
  *   (status mark · title; the session on screen is highlighted). A parent
  *   shows its child count and a caret, collapsed by default: a tap loads its
@@ -90,7 +93,8 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { DrawerSessionNode, NESTED_SESSION_INDENT, useSessionStarterOf } from './DrawerSessionRows';
 import { SubsessionTreeMemory } from '@/components/session/SessionSubsessionTree';
-import { CountPill, NavPill, SwitcherRow } from './DrawerNavRows';
+import { CountBadge } from '@/components/kortix/count-badge';
+import { NavPill, SwitcherRow } from './DrawerNavRows';
 import { SessionChildren, type SessionChildrenProps } from '@/components/session/SessionTreeParts';
 import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
@@ -295,7 +299,8 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   // closed, every poll result re-rendered it (~2 renders per 3 s), and the
   // open refetch below already shows a fresh list.
   const mine = useProjectSessionsPaged(projectId, { poll: isFocused && open, parent: 'root', startedBy: 'me' });
-  // Shared loads always (its header hides when it is empty); Automated only
+  // Shared loads always (its header hides when it is empty with no next
+  // page); Automated only
   // once opened: a project can hold hundreds of automated runs.
   const shared = useProjectSessionsPaged(projectId, {
     poll: false,
@@ -316,11 +321,14 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
+    isScanning: mineScanning,
   } = mine;
   // The side sections' "Show more" rows. `fetchNextPage` is stable; the query
   // objects are new on every render, so the list reads these fields, not them.
-  const sharedFetchingNext = shared.isFetchingNextPage;
-  const automatedFetchingNext = automated.isFetchingNextPage;
+  // A section reading past empty pages on its own (`isScanning`) reads as
+  // loading too, also in the render between two of its pages.
+  const sharedFetchingNext = shared.isFetchingNextPage || shared.isScanning;
+  const automatedFetchingNext = automated.isFetchingNextPage || automated.isScanning;
   const fetchNextShared = shared.fetchNextPage;
   const fetchNextAutomated = automated.fetchNextPage;
   const mineRoots = useMemo(() => rootRowsOnly(mine.sessions), [mine.sessions]);
@@ -392,7 +400,10 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
                 title: 'Shared',
                 rows: withoutNeedsYou(sharedRoots),
                 open: sharedOpen,
-                hidden: sharedRoots.length === 0,
+                // KRTX-1727: a page can be empty and still carry a cursor (the
+                // server drops rows the viewer may not see after a bounded
+                // scan). The section stays while it has a next page.
+                hidden: sharedRoots.length === 0 && !shared.hasNextPage,
                 hasMore: shared.hasNextPage,
               },
               {
@@ -409,15 +420,21 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionOpen reads `choices`
     [sessionsLoading, mineRoots, sharedRoots, automatedRoots, withoutNeedsYou, sharedOpen, automatedOpen, choices, projectId, hasNextPage, shared.hasNextPage, automated.hasNextPage, isExpanded]
   );
-  // loading / error / empty / rows — shared with the Sessions page
+  // loading / error / empty / more / rows — shared with the Sessions page
   // (lib/session/session-pages) so a failed fetch, or a first load paused
   // offline, never reads as "No sessions yet" (COR-146). Judged on the
-  // viewer's own list; Shared and Automated add rows, never a verdict.
+  // viewer's own list; Shared and Automated add rows, never a verdict: a
+  // Shared cursor must not hide the own list's error. A next page in Shared
+  // or Automated only hides the empty flower (KRTX-1727).
   const sessionsListState = sessionListState({
     isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasSessions: mineRoots.length > 0 || sharedRoots.length > 0 || automatedRoots.length > 0,
+    hasMore: hasNextPage,
   });
+  const sideHasMore = shared.hasNextPage || automated.hasNextPage;
+  // The viewer's own list is reading a next page: the footer loader shows.
+  const mineLoadingMore = isFetchingNextPage || mineScanning;
   // Only a pull shows the refresh spinner; a background poll does not.
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = useCallback(() => {
@@ -434,6 +451,10 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     haptics.tap();
     void refetchAll();
   }, [refetchAll]);
+  const handleShowMoreSessions = useCallback(() => {
+    haptics.tap();
+    void fetchNextPage();
+  }, [fetchNextPage]);
   const handleEndReached = useCallback(() => {
     if (!sectionOpen('sessions')) return;
     if (shouldLoadMoreSessions({ hasNextPage, isFetchingNextPage, isRefreshing: refreshing })) {
@@ -677,9 +698,18 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             </Button>
           </View>
         </View>
-      ) : sessionsListState === 'empty' ? (
+      ) : sessionsListState === 'empty' && !sideHasMore ? (
         <View className="items-center py-8" accessible accessibilityRole="image" accessibilityLabel="No sessions yet">
           <DrawerEmptyFlower color={mutedColor} />
+        </View>
+      ) : sessionsListState === 'more' && !mineLoadingMore ? (
+        // No row on the pages read so far, and the viewer's own list has a
+        // next page (KRTX-1727): offer it. While it loads, the footer loader
+        // shows. A Shared or Automated next page has its section's Show more.
+        <View className="items-start pl-4">
+          <Button variant="ghost" size="sm" onPress={handleShowMoreSessions}>
+            <Text>Show more</Text>
+          </Button>
         </View>
       ) : null}
     </View>
@@ -697,7 +727,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             label="Review"
             accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
             onPress={goToReview}
-            trailing={<CountPill count={reviewNeedsYouCount} />}
+            trailing={<CountBadge count={reviewNeedsYouCount} tone="waiting" />}
           />
           {notificationsEnabled ? (
             <NavPill
@@ -707,7 +737,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
                 notificationsUnreadCount > 0 ? `Notifications, ${notificationsUnreadCount} unread` : 'Notifications'
               }
               onPress={goToNotifications}
-              trailing={<CountPill count={notificationsUnreadCount} />}
+              trailing={<CountBadge count={notificationsUnreadCount} tone="waiting" />}
             />
           ) : null}
           <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
@@ -747,6 +777,9 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       needsYouSessions,
       needsYouBySession,
       sessionsListState,
+      sideHasMore,
+      mineLoadingMore,
+      handleShowMoreSessions,
       open,
       mutedColor,
       handleRetrySessions,
@@ -771,7 +804,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     [navigateOnce, onNavigateRoute]
   );
 
-  const showPageLoader = isFetchingNextPage && open;
+  const showPageLoader = mineLoadingMore && open;
   const listFooter = useMemo(
     () => (
       <View>
@@ -866,6 +899,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             <PlanRingAvatar
               imageUrl={profile.avatarUrl}
               fallbackText={profile.displayName}
+              email={profile.email}
               planName={planName}
               size={BAR_CONTROL_HEIGHT}
               gapColor={chrome}
