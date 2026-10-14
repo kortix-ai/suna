@@ -12,7 +12,10 @@ export type AuthorizeResult =
   | { ok: true; principal: AuthedPrincipal }
   | {
       ok: false;
-      status: 401 | 402;
+      // 401 unauthenticated, 402 billing/budget, 403 authenticated but not
+      // allowed (e.g. a project-less account PAT refused for inference,
+      // KRTX-2295).
+      status: 401 | 402 | 403;
       errorCode: string;
       message?: string;
       principal?: AuthedPrincipal;
