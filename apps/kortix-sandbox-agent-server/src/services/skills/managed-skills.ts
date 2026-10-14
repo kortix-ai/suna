@@ -134,23 +134,33 @@ function withheldManagedSkills(env: NodeJS.ProcessEnv | Record<string, string | 
 }
 
 /**
- * Remove the withheld managed skills from `skillsDir`, the directory OpenCode reads. A config
- * release is staged once and reused, so a copy an older daemon injected there survives restarts;
- * every OpenCode spawn calls this. `unseal` opens a sealed release dir for the removal and puts the
- * seal back. Never throws.
+ * Make `skillsDir`, the directory OpenCode reads, match the project's `genui` flag: remove a
+ * withheld managed skill, or copy kortix-genui back from the baked overlay when the flag is on.
+ * A config release is staged once and reused from disk without the overlay step, so a copy an
+ * earlier boot left (or a skill an earlier flag-off boot withheld) survives restarts and env
+ * changes; every OpenCode spawn calls this. `unseal` opens a sealed release dir for the write and
+ * puts the seal back. Never throws.
  */
-export async function removeWithheldManagedSkills(
+export async function syncFlaggedManagedSkills(
   skillsDir: string,
-  opts: { env?: NodeJS.ProcessEnv | Record<string, string | undefined>; unseal?: boolean } = {},
+  opts: { env?: NodeJS.ProcessEnv | Record<string, string | undefined>; unseal?: boolean; bakedDir?: string } = {},
 ): Promise<void> {
-  const names = withheldManagedSkills(opts.env ?? process.env)
-  if (names.length === 0 || !(await pathExists(skillsDir))) return
+  if (!(await pathExists(skillsDir))) return
+  const withheld = withheldManagedSkills(opts.env ?? process.env)
+  const baked = join(opts.bakedDir ?? managedSkillsDir(), GENUI_SKILL_NAME)
   const stale: string[] = []
-  for (const name of names) if (await pathExists(join(skillsDir, name))) stale.push(name)
-  if (stale.length === 0) return
+  for (const name of withheld) if (await pathExists(join(skillsDir, name))) stale.push(name)
+  const restore = withheld.length === 0 && !(await pathExists(join(skillsDir, GENUI_SKILL_NAME))) && (await pathExists(baked))
+  if (stale.length === 0 && !restore) return
   const unsealed = opts.unseal ? await execFileAsync('chmod', ['u+w', skillsDir]).then(() => true, () => false) : false
   try {
     for (const name of stale) await removeInjectedSkill(skillsDir, name, opts.unseal === true)
+    if (restore) {
+      await cp(baked, join(skillsDir, GENUI_SKILL_NAME), { recursive: true, force: true })
+      await excludeInjectedSkillsFromGit(skillsDir, [GENUI_SKILL_NAME])
+    }
+  } catch (err) {
+    logger.warn('[boot] flagged managed skill not synced', { skillsDir, err: String(err) })
   } finally {
     if (unsealed) await execFileAsync('chmod', ['u-w', skillsDir]).catch(() => undefined)
   }

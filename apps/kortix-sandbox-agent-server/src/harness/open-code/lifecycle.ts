@@ -121,16 +121,15 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
 import { configReleaseNoticePath } from '@/services/config-provider/notice'
 import { bootLinkPath, isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
-import { removeWithheldManagedSkills } from '@/services/skills/managed-skills'
+import { syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
-import { SKILLS_DIR } from './project-layout'
+import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -619,15 +618,15 @@ export async function buildOpencodeConfigContent(
   // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
   // OpenCode tool: the tools a capability covers get its rule (E9).
   // (7) OpenCode's built-in skills describe a standalone OpenCode install, not
-  // a Kortix project: every permission block denies them. The kortix-genui
-  // system skill is denied the same way while the project's `genui` flag is off.
-  const deniedSkills = genuiEnabled(env) ? DENIED_BUILTIN_SKILLS : [...DENIED_BUILTIN_SKILLS, GENUI_SKILL_NAME]
-  out.permission = denyBuiltinSkills(capabilityToolRules(out.permission), deniedSkills)
+  // a Kortix project: every permission block denies them. (The kortix-genui
+  // skill is not handled here: a project's `"*": "allow"` outranks a skill deny,
+  // so kortixd withholds its files instead, `syncFlaggedManagedSkills`.)
+  out.permission = denyBuiltinSkills(capabilityToolRules(out.permission))
   if (out.agent && typeof out.agent === 'object' && !Array.isArray(out.agent)) {
     for (const agent of Object.values(out.agent as Record<string, unknown>)) {
       if (agent && typeof agent === 'object' && 'permission' in agent) {
         const entry = agent as Record<string, unknown>
-        entry.permission = denyBuiltinSkills(capabilityToolRules(entry.permission), deniedSkills)
+        entry.permission = denyBuiltinSkills(capabilityToolRules(entry.permission))
       }
     }
   }
@@ -677,19 +676,19 @@ export function capabilityToolRules(permission: unknown): unknown {
 const DENIED_BUILTIN_SKILLS = ['customize-opencode']
 
 /**
- * Deny the built-in skills (or the `denied` names) in one permission block. OpenCode flattens the
+ * Deny the built-in skills in one permission block. OpenCode flattens the
  * global block and then the agent's into one rule list and the LAST match
  * wins, so an agent's own `permission: allow` outranks a global deny: every
  * block gets the rule, as its last `skill` entry. A bare action becomes its
  * `*` form, which OpenCode reads the same way. A block that already denies
  * every skill is left alone.
  */
-export function denyBuiltinSkills(permission: unknown, denied: readonly string[] = DENIED_BUILTIN_SKILLS): unknown {
+export function denyBuiltinSkills(permission: unknown): unknown {
   if (permission !== undefined && typeof permission !== 'string' && (!permission || typeof permission !== 'object' || Array.isArray(permission))) return permission
   const { skill, ...rest }: Record<string, unknown> = typeof permission === 'string' ? { '*': permission } : ((permission ?? {}) as Record<string, unknown>)
   if (skill === 'deny' || (skill === undefined && rest['*'] === 'deny')) return permission
   const rules: Record<string, unknown> = typeof skill === 'string' ? { '*': skill } : { ...(skill as Record<string, unknown> | undefined) }
-  for (const name of denied) {
+  for (const name of DENIED_BUILTIN_SKILLS) {
     delete rules[name]
     rules[name] = 'deny'
   }
@@ -2152,11 +2151,13 @@ export function createOpencodeLifecycle(
     const served = await readBootLinkTarget()
     const projectRoot = served ? (releaseRootOf(served) ?? currentCfg.projectTarget) : null
     const servesProject = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
-    // The `genui` flag is boot-only, but a config release is staged once and reused: a kortix-genui
-    // copy an older daemon injected there would survive. A skill deny cannot hide it (the project's
-    // `"*": "allow"` outranks it), so the copy goes before OpenCode reads the dir.
-    const servedSkills = await realpath(join(bootLinkPath(), 'skills')).catch(() => null)
-    if (servedSkills) await removeWithheldManagedSkills(servedSkills, { env: baseEnv, unseal: isInReleaseStore(servedSkills) })
+    // A config release is staged once and reused from disk without the overlay step, so the
+    // kortix-genui skill is made to match the `genui` flag here, where the overlay lands
+    // (`managedOverlayRoot`, as the assets service resolves it), before OpenCode reads it.
+    if (served && projectRoot) {
+      const skillsDir = join(managedOverlayRoot(served, projectRoot), 'skills')
+      await syncFlaggedManagedSkills(skillsDir, { env: baseEnv, unseal: isInReleaseStore(skillsDir) })
+    }
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),

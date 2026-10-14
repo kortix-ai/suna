@@ -11,7 +11,7 @@ import { existsSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ensureInjectedManagedSkills, removeWithheldManagedSkills } from '@/services/skills/managed-skills'
+import { ensureInjectedManagedSkills, syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
 
 const roots: string[] = []
 
@@ -66,14 +66,23 @@ describe('a reused config dir loses a kortix-genui copy while the flag is off', 
 
   test('flag off: removed, and the rest stays', async () => {
     const skillsDir = await skillsDirWithGenui()
-    await removeWithheldManagedSkills(skillsDir, { env: { KORTIX_GENUI: '0' } })
+    await syncFlaggedManagedSkills(skillsDir, { env: { KORTIX_GENUI: '0' } })
     expect(existsSync(join(skillsDir, 'kortix-genui'))).toBe(false)
     expect(existsSync(join(skillsDir, 'kortix-cli', 'SKILL.md'))).toBe(true)
   })
 
   test('flag on: kept', async () => {
     const skillsDir = await skillsDirWithGenui()
-    await removeWithheldManagedSkills(skillsDir, { env: { KORTIX_GENUI: '1' } })
+    await syncFlaggedManagedSkills(skillsDir, { env: { KORTIX_GENUI: '1' } })
+    expect(existsSync(join(skillsDir, 'kortix-genui', 'SKILL.md'))).toBe(true)
+  })
+
+  test('flag on: a reused dir that lacks the skill gets it back from the baked copy', async () => {
+    const { bakedDir, configDir } = await fixture()
+    await ensureInjectedManagedSkills(configDir, { bakedDir, env: { KORTIX_GENUI: '0' } })
+    const skillsDir = join(configDir, 'skills')
+    expect(existsSync(join(skillsDir, 'kortix-genui'))).toBe(false)
+    await syncFlaggedManagedSkills(skillsDir, { env: { KORTIX_GENUI: '1' }, bakedDir })
     expect(existsSync(join(skillsDir, 'kortix-genui', 'SKILL.md'))).toBe(true)
   })
 
@@ -81,7 +90,7 @@ describe('a reused config dir loses a kortix-genui copy while the flag is off', 
     const skillsDir = await skillsDirWithGenui()
     await chmod(skillsDir, 0o555)
     try {
-      await removeWithheldManagedSkills(skillsDir, { env: {}, unseal: true })
+      await syncFlaggedManagedSkills(skillsDir, { env: {}, unseal: true })
       expect(existsSync(join(skillsDir, 'kortix-genui'))).toBe(false)
       expect((await stat(skillsDir)).mode & 0o200).toBe(0)
     } finally {
