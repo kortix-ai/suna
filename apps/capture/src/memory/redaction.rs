@@ -469,12 +469,13 @@ mod tests {
         ] {
             assert_eq!(redact(benign).text, benign);
         }
+        // Split so no literal token shape sits in the source (secret scanners).
         for token in [
-            "sk_test_abcdefghijklmnopqrstuvwxyz",
-            concat!("xo", "xb-1234567890-abcdefghijklmnop"), // split: push protection matches a whole Slack token
-            "Bearer abcdefghijklmnopqrstuvwxyz",
+            format!("{}{}", "sk_te", "st_abcdefghijklmnopqrstuvwxyz"),
+            format!("{}{}", "xo", "xb-1234567890-abcdefghijklmnop"),
+            "Bearer abcdefghijklmnopqrstuvwxyz".to_string(),
         ] {
-            assert_eq!(redact(token).text, "[secret]");
+            assert_eq!(redact(&token).text, "[secret]");
         }
         assert_eq!(redact("o'connor@example.com").text, "[email]");
     }

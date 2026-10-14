@@ -19,6 +19,7 @@ if [ "$3" = "/" ] || [ -z "$3" ]; then
   /bin/launchctl bootstrap system /Library/LaunchDaemons/ai.kortix.capture.machine.plist >/dev/null 2>&1
   console_uid=$(/usr/bin/stat -f %u /dev/console 2>/dev/null)
   if [ -n "$console_uid" ] && [ "$console_uid" != "0" ]; then
+    # After an upgrade the old agent may still be unloading: retry until launchd takes it.
     n=0
     until /bin/launchctl bootstrap "gui/$console_uid" /Library/LaunchAgents/ai.kortix.capture.agent.plist >/dev/null 2>&1 || [ "$n" -ge 20 ]; do
       n=$((n + 1))
