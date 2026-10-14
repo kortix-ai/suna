@@ -162,7 +162,7 @@ A new instance starts with these defaults:
 
 | Setting | Default |
 |---|---|
-| Sign-in methods | Password only. Email sign-ups confirm without an email. |
+| Sign-in methods | Password only. Email sign-ups confirm without an email, so a sign-up's address is unproven. See [Unconfirmed email addresses](#unconfirmed-email-addresses). |
 | Social sign-in | None |
 | Billing | Off |
 | Marketing pages | Off. Every marketing route opens the web app. Turn on with `KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false`. |
@@ -184,7 +184,7 @@ A new instance starts with these defaults:
 | `open-sign-up` | A domain or tunnel instance has sign-up open and email confirmation off | Set `EMAIL_URL`, or set `DISABLE_SIGNUP=true` once your team is in. |
 
 <Callout type="warning">
-A new instance confirms every sign-up without an email. Until you fix `open-sign-up`, anyone who reaches the instance can create a confirmed account for any address, an admin address included. Sign up as the admin first, then set `EMAIL_URL` or `DISABLE_SIGNUP=true`.
+A new instance confirms every sign-up without an email. Until you fix `open-sign-up`, anyone who reaches the instance can create a confirmed account for any address, an admin address included. Sign up as the admin first, then set `EMAIL_URL` or `DISABLE_SIGNUP=true`. `kortix self-host init` prints the same warning on a domain or tunnel instance. `init --disable-signup` turns sign-up off from the first start, for an install that creates its accounts another way: while it is off, nobody can sign up, the admin included.
 </Callout>
 
 What the stack does by itself:
@@ -195,6 +195,18 @@ What the stack does by itself:
 - `kortix-updater` holds the Docker socket, so its image is pinned by digest.
 
 Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable.
+
+### Unconfirmed email addresses
+
+`ENABLE_EMAIL_AUTOCONFIRM=true` is the default until you set `EMAIL_URL`. Auth then confirms each sign-up without an email, and the API reads the same value from `.env`. While it is `true`, the API treats the email of a password, email-code or social login as unproven, because whoever signed up first holds the address:
+
+| Path | With `ENABLE_EMAIL_AUTOCONFIRM=true` |
+|---|---|
+| Sign-in with a pending invite | Sign-in does not accept the invite. The person accepts it from the project chooser or the **Switch Project** menu. |
+| SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. |
+| **Members** → **Invite** for that address | Creates a pending invite instead of adding the login. |
+
+A login that is already a member of the account, and a login through the account's own SAML provider, still match inside that account. `KORTIX_PLATFORM_ADMIN_EMAILS` never matches a SAML login. Setting `EMAIL_URL` turns `ENABLE_EMAIL_AUTOCONFIRM` off and restores the matching. A login created while it was on is not confirmed again: after you add email, its address matches invites and SCIM like a confirmed one. Set `EMAIL_URL` before you invite people. A cloud instance never sets the value.
 
 ## The platform admin console
 
@@ -403,5 +415,6 @@ Every subcommand takes `--instance <name>` (default `default`).
 | `--admin-email <email>` | `init`, `configure` | Sets `KORTIX_PLATFORM_ADMIN_EMAILS`. |
 | `--enterprise-license` | `init`, `configure`, `update` | Sets `ENTERPRISE_LICENSE_AVAILABLE=true`. |
 | `--restrict-account-creation`, `--no-restrict-account-creation` | `init`, `configure`, `update` | Account creation for admins only, or for everyone. |
+| `--disable-signup` | `init`, `configure`, `update` | Sets `DISABLE_SIGNUP=true`. Nobody can sign up, the admin included. `env set DISABLE_SIGNUP=false` opens it again. |
 | `--yes` | any | Accept defaults. Required for `uninstall` without a terminal. |
 | `--json` | `status`, `doctor`, `plan`, `env ls` | Machine-readable output. |

@@ -69,8 +69,16 @@ for real use) running Linux, and a domain you control.
    create an account for any address, the admin address included. Sign up
    first, then close it: `kortix self-host env set EMAIL_URL=smtp://…` makes
    new accounts confirm their email, and `kortix self-host env set
-   DISABLE_SIGNUP=true` turns self sign-up off. `kortix self-host doctor`
-   fails (`open-sign-up`) until one of them is set. Then:
+   DISABLE_SIGNUP=true` turns self sign-up off. `kortix self-host init`
+   prints this warning, and `kortix self-host doctor` fails (`open-sign-up`)
+   until one of them is set. `init --disable-signup` turns sign-up off from
+   the first start, for an install that creates its accounts another way.
+   While sign-ups confirm without email, Kortix treats a password login's
+   address as unproven: sign-in does not accept a pending invite (the person
+   accepts it in the app), and SCIM or **Members → Invite** for that address
+   creates an invite instead of adding the login. See
+   [Unconfirmed email addresses](https://kortix.com/docs/host#unconfirmed-email-addresses).
+   Then:
    - **Settings → Git** — connect a GitHub App (or PAT) so the platform can
      create project repos. This one dashboard flow replaces the old
      env-var-only managed-git setup.
