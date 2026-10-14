@@ -281,7 +281,7 @@ A session runs one agent. The request picks it, else the project's `default_agen
 | Key | Default | Effect |
 | --- | --- | --- |
 | `enabled` | `true` | `false`: no session can start the agent, and it cannot be `default_agent`. |
-| `repository_access` | `true` | `false`: new sessions of this agent start without a checkout of the project repository. Set it in **Workspace → Project repository access**. A running session keeps the setting it started with. |
+| `workspace.project_repository` | `true` | `false`: new sessions of this agent start without a checkout of the project repository. Set it in **Workspace → Project repository access**. A running session keeps the setting it started with. See [`workspace`](/docs/project/manifest#agent-workspace). |
 | `sandbox` | the project default | The sandbox template for this agent's sessions. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates). |
 | `harnesses` | none | Per-agent pi packages and OpenCode plugins. See [`kortix.yaml`](/docs/project/manifest#harnesses-opencode-and-pi). |
 
