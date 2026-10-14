@@ -1966,9 +1966,13 @@ fn device_status_and_policy_files() {
     let reported = rt.status_at;
     pass(&mut rt);
     assert_eq!(policy::read(&a.paths).unwrap().source, "kc/policy.json");
-    // TODO(kortix): the "reported ~15 s after a policy change" timing check needs a changed
-    // policy that the pass sees as new; re-putting the same account key did not move status_at
-    // here. The device-folder policy that used to drive it is ignored now (a4a2623).
+    // The change is reported with the next status (every 15 s: STATUS_EVERY_MS), never held back
+    // to a later minute. (The old 60 s status period made this "5 to 15 s"; the period is 15 s now.)
+    let due = rt.status_at + 15_000 - now();
+    assert!(
+        rt.status_at <= reported && (0..=15_000).contains(&due),
+        "status.json due in {due} ms after a policy change"
+    );
     // An unchanged policy does not move the status report.
     let reported = rt.status_at;
     rt.policy_at = 0;
