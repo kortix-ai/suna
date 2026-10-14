@@ -1,0 +1,18 @@
+{
+  "source_hash": "6bcf182e4098832f81683a8196644e991fa584a950faee94bcf4ce698d478fc5",
+  "diff_files": [
+    "apps/api/src/llm-gateway/hooks.test.ts",
+    "apps/api/src/llm-gateway/hooks.ts",
+    "apps/api/src/llm-gateway/wire.ts",
+    "packages/llm-gateway/src/domain/hooks.ts"
+  ],
+  "diff_hash": "2f231a71f4e411d3f60b30d7831481117b36ffa1035c3f3544d06b804e291ee3",
+  "head": "46d9c195a1d661a8e02c55c23651e8df000680eb",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-14T17:41:18.989Z"
+}
