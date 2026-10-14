@@ -85,7 +85,7 @@ describe('SubSessionSection totals', () => {
   });
 });
 
-describe('SubSessionSection loads a sub-agent thread when its row is shown', () => {
+describe('SubSessionSection loads a sub-agent thread once its row scrolls into view', () => {
   const ROOT = 'ses_lazy_root', CHILD = 'ses_lazy_child', GRAND = 'ses_lazy_grand', GREAT = 'ses_lazy_great';
   const sessions = [
     { id: ROOT, title: 'Root' },
@@ -94,7 +94,7 @@ describe('SubSessionSection loads a sub-agent thread when its row is shown', () 
     { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
   ] as unknown as Session[];
 
-  test('a shown row reads its saved window; a row behind a closed caret reads nothing until it opens', async () => {
+  test('a row reads its saved window only once it is in view, once; a row behind a closed caret reads nothing', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const { configureKortix } = await import('@kortix/sdk');
     configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
@@ -104,35 +104,72 @@ describe('SubSessionSection loads a sub-agent thread when its row is shown', () 
       requests.push(String(url));
       return Response.json({ available: false, reason: 'test', messages: [] });
     }) as unknown as typeof fetch;
-    const children = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`child=${id}`)));
+    // A fake IntersectionObserver: `show(title)` reports the row with that title in view.
+    type Row = { title: string };
+    const observers = new Set<{ cb: IntersectionObserverCallback; rows: Set<Row> }>();
+    const originalObserver = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = class {
+      private o: { cb: IntersectionObserverCallback; rows: Set<Row> };
+      constructor(cb: IntersectionObserverCallback) { observers.add((this.o = { cb, rows: new Set() })); }
+      observe(row: Row) { this.o.rows.add(row); }
+      disconnect() { observers.delete(this.o); }
+    } as unknown as typeof IntersectionObserver;
+    const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    const show = async (title: string) => {
+      await act(async () => {
+        for (const o of [...observers]) for (const row of o.rows) if (row.title === title) o.cb([{ isIntersecting: true, target: row } as never], o as never);
+      });
+      await settle();
+    };
+    const loaded = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`child=${id}`)));
+    // Each row's button gets a node naming its title (react-test-renderer has no DOM).
+    type El = { type: unknown; props: { children?: unknown } };
+    const createNodeMock = (el: El) => {
+      const spans = Array.isArray(el.props.children) ? (el.props.children as Array<El | null>) : [];
+      return { title: String(spans.find((c) => c?.type === 'span')?.props.children ?? '') };
+    };
+    const tree = (
+      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <SubSessionSection
+          source={{ projectId: 'p_lazy', sessionId: 's_lazy', runtimeSessionId: ROOT }}
+          session={sessions[0]}
+          allSessions={sessions}
+          pricingLookup={() => null}
+          fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+        />
+      </NextIntlClientProvider>
+    );
     let renderer: ReturnType<typeof create>;
     try {
-      await act(async () => {
-        renderer = create(
-          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-            <SubSessionSection
-              source={{ projectId: 'p_lazy', sessionId: 's_lazy', runtimeSessionId: ROOT }}
-              session={sessions[0]}
-              allSessions={sessions}
-              pricingLookup={() => null}
-              fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
-            />
-          </NextIntlClientProvider>,
-        );
-      });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      // The child row and the grandchild row are drawn; the great-grandchild is behind a closed caret.
-      expect(children()).toEqual([CHILD, GRAND]);
+      await act(async () => { renderer = create(tree, { createNodeMock: createNodeMock as never }); });
+      await settle();
+      // The child row and the grandchild row are drawn, not yet in view: nothing loads.
+      expect(loaded()).toEqual([]);
 
+      await show('Child agent');
+      expect(loaded()).toEqual([CHILD]);
+      await show('Grandchild agent');
+      expect(loaded()).toEqual([CHILD, GRAND]);
+
+      // A re-render of the open modal keeps both loaded and reads nothing again.
+      const before = requests.length;
+      await act(async () => { renderer!.update(tree); });
+      await settle();
+      expect(requests.length).toBe(before);
+
+      // Opening the grandchild's caret draws the great-grandchild row; it loads once in view.
       type Node = { children: Array<Node | string> };
       const textOf = (n: Node | string): string => (typeof n === 'string' ? n : n.children.map(textOf).join(''));
       const caret = renderer!.root.findAll((n) => n.type === 'button' && textOf(n as unknown as Node).includes('Grandchild agent'))[0]!;
       await act(async () => { caret.props.onClick(); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      expect(children()).toEqual([CHILD, GRAND, GREAT]);
+      await settle();
+      expect(loaded()).toEqual([CHILD, GRAND]);
+      await show('Great-grandchild agent');
+      expect(loaded()).toEqual([CHILD, GRAND, GREAT]);
     } finally {
       await act(async () => { renderer!.unmount(); });
       globalThis.fetch = originalFetch;
+      globalThis.IntersectionObserver = originalObserver;
     }
   });
 });

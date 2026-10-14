@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -94,9 +94,9 @@ function WithOneThread({
 }
 
 /**
- * Loads a sub-agent's thread into the store while its row is shown, as the sub-agent's own
- * view does (`useSessionSync` with `savedChild`): its saved window, then the runtime's. A row
- * behind a closed caret loads nothing until it opens.
+ * Loads a sub-agent's thread into the store, as the sub-agent's own view does (`useSessionSync`
+ * with `savedChild`): its saved window, then the runtime's. A row mounts it once the row has
+ * scrolled into view, so a row behind a closed caret or below the fold loads nothing.
  */
 function LoadSubAgentThread({ id, scope }: { id: string; scope: string | undefined }) {
   useSessionSync(id, { kortixSessionScope: scope, savedChild: true, subscribeMessages: false });
@@ -123,6 +123,18 @@ function SubSessionTreeNode({
   scope: string | undefined;
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
+  // About 2 requests per thread: load it only once its row has been in view, then keep it.
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const row = rowRef.current;
+    if (seen || !row) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setSeen(true);
+    });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [seen]);
   const own = metrics[id] ?? NO_METRICS;
   const title = allSessions.find((s) => s.id === id)?.title ?? id.slice(0, 12);
   const children = childMap.get(id) ?? [];
@@ -130,8 +142,9 @@ function SubSessionTreeNode({
 
   return (
     <div className={cn('flex flex-col', depth > 0 && 'border-border/30 ml-4 border-l pl-3')}>
-      <LoadSubAgentThread id={id} scope={scope} />
+      {seen && <LoadSubAgentThread id={id} scope={scope} />}
       <button
+        ref={rowRef}
         onClick={() => hasChildren && setExpanded(!expanded)}
         className={cn(
           'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
@@ -149,7 +162,7 @@ function SubSessionTreeNode({
           <div className="size-3 shrink-0" />
         )}
         <span className="text-foreground min-w-0 truncate font-medium">{title}</span>
-        <span className="text-muted-foreground/60 ml-auto shrink-0 text-xs tabular-nums">
+        <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
           {own.messages.all} {messagesSuffix}
         </span>
         <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(own.cost)}</span>
