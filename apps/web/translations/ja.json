@@ -7277,6 +7277,8 @@
       "tokensIn": "入力トークン",
       "tokensOut": "出力トークン",
       "treeMessages": "件のメッセージ",
+      "subAgentsLoaded": "{total} 件中 {loaded} 件のサブエージェントを読み込み済み",
+      "loadAll": "すべて読み込む",
       "detailInput": "入力トークン",
       "detailOutput": "出力トークン",
       "detailReasoning": "推論トークン",

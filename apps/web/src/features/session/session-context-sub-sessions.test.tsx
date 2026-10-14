@@ -221,3 +221,103 @@ describe('SubSessionSection with more sub-agents than the row memo holds', () =>
     await act(async () => { renderer!.unmount(); });
   });
 });
+
+describe('SubSessionSection totals while sub-agents load lazily', () => {
+  const ROOT = 'ses_all_root', CHILD = 'ses_all_child', GRAND = 'ses_all_grand', GREAT = 'ses_all_great';
+  const sessions = [
+    { id: ROOT, title: 'Root' },
+    { id: CHILD, parentID: ROOT, title: 'Child agent' },
+    { id: GRAND, parentID: CHILD, title: 'Grandchild agent' },
+    { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
+  ] as unknown as Session[];
+  const reply = (sessionID: string, id: string, input: number) => ({
+    info: {
+      id, sessionID, role: 'assistant' as const, time: { created: 1_700_000_000_000 }, parentID: 'u',
+      modelID: 'm', providerID: 'synthetic', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' },
+      cost: 0, tokens: { input, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+    parts: [],
+  });
+  const input: Record<string, number> = { [CHILD]: 13, [GRAND]: 100, [GREAT]: 1000 };
+
+  async function setup(observer: typeof IntersectionObserver | undefined) {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const { configureKortix } = await import('@kortix/sdk');
+    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+    useSessionStateStore.getState().hydrate(ROOT, [reply(ROOT, 'm_all_root', 2)] as never);
+    const loadedIds: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalObserver = globalThis.IntersectionObserver;
+    // A sub-agent's saved-window read lands its thread in the store.
+    globalThis.fetch = (async (url: unknown) => {
+      const child = /child=([^&]+)/.exec(String(url))?.[1];
+      if (child && input[child] !== undefined && !loadedIds.includes(child)) {
+        loadedIds.push(child);
+        useSessionStateStore.getState().hydrate(child, [reply(child, `m_${child}`, input[child]!)] as never);
+      }
+      return Response.json({ available: false, reason: 'test', messages: [] });
+    }) as unknown as typeof fetch;
+    (globalThis as { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver = observer;
+    let renderer: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <SubSessionSection
+            source={{ projectId: 'p_all', sessionId: 's_all', runtimeSessionId: ROOT }}
+            session={sessions[0]}
+            allSessions={sessions}
+            pricingLookup={() => null}
+            fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+          />
+        </NextIntlClientProvider>,
+        { createNodeMock: () => ({}) },
+      );
+    });
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    const text = () => JSON.stringify(renderer!.toJSON());
+    const cleanup = async () => {
+      await act(async () => { renderer!.unmount(); });
+      globalThis.fetch = originalFetch;
+      globalThis.IntersectionObserver = originalObserver;
+      for (const id of [ROOT, CHILD, GRAND, GREAT]) useSessionStateStore.getState().clearSession(id);
+    };
+    return { renderer: renderer!, text, loadedIds, cleanup };
+  }
+
+  test('before any row is in view the totals say they are partial; "Load all" loads every sub-agent and the totals become whole', async () => {
+    // An observer that never reports a row in view.
+    const quiet = class { observe() {} disconnect() {} } as unknown as typeof IntersectionObserver;
+    const { renderer, text, loadedIds, cleanup } = await setup(quiet);
+    try {
+      expect(text()).toContain('0 of 3 sub-agents loaded');
+      expect(loadedIds).toEqual([]);
+      // Combined: the root's 2 input tokens only, not the whole tree's 1115.
+      expect(text()).not.toContain('"1115"');
+
+      const button = renderer.root.findAll((n) => typeof n.props.onClick === 'function' && n.props.children === 'Load all')[0]!;
+      await act(async () => { button.props.onClick(); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+
+      // Every sub-agent loaded, the great-grandchild behind a closed caret too.
+      expect([...loadedIds].sort()).toEqual([CHILD, GRAND, GREAT].sort());
+      expect(text()).not.toContain('sub-agents loaded');
+      expect(text()).not.toContain('Load all');
+      // 4 messages; 2 + 13 + 100 + 1000 input tokens.
+      expect(text()).toContain('"4"');
+      expect(text()).toContain('"1115"');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('a host with no IntersectionObserver loads every drawn row at once', async () => {
+    const { text, loadedIds, cleanup } = await setup(undefined);
+    try {
+      // The child and grandchild rows are drawn; the great-grandchild is behind a closed caret.
+      expect([...loadedIds].sort()).toEqual([CHILD, GRAND].sort());
+      expect(text()).toContain('2 of 3 sub-agents loaded');
+    } finally {
+      await cleanup();
+    }
+  });
+});

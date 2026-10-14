@@ -7288,6 +7288,8 @@
       "tokensIn": "Tokens in",
       "tokensOut": "Tokens out",
       "treeMessages": "messages",
+      "subAgentsLoaded": "{loaded} of {total} sub-agents loaded",
+      "loadAll": "Load all",
       "detailInput": "Input tokens",
       "detailOutput": "Output tokens",
       "detailReasoning": "Reasoning tokens",
