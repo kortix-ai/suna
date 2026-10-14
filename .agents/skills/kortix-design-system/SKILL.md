@@ -301,6 +301,32 @@ Match the customize views — consistent sizes and variants:
 
 Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
 
+### Button groups — the default for buttons in a row
+
+**Two or more buttons side by side that serve one surface are a `ButtonGroup`** (`@/components/ui/button-group`). A toolbar cluster, a back/forward pair, a header's action set and a viewer's close cluster are all groups. Do not line buttons up with `flex gap-1` and hand-tuned `ml-*`: the group owns the spacing (`gap-px`) and joins the corners of neighbours, so a row of controls reads as one object instead of loose icons.
+
+| Rule | Why |
+| --- | --- |
+| One variant for every member: all `ghost`, all `secondary` or all `outline`. | Mixed weights break the group into a primary plus strays. A real primary action stands outside the group. |
+| The close `X` joins the group of the actions beside it. | It is part of the toolbar, not a separate control. |
+| Every member is a direct child: `Hint` (it renders `asChild`) wrapping a `Button` is fine, and so are `asChild` links. | The corner rounding targets direct children (`[&>*]`). A `<span>` or a `PopoverAnchor` wrapper between the group and the `Button` takes the rounding instead. |
+| No dividers, `gap-*`, `ml-*` or `mx-*` inside a group. | The group sets the rhythm; one override drifts every row. |
+| One group per job. Navigation (back/forward) and page actions (open, full screen, close) are two groups, with the address bar or title between them. | A group says "these act on the same thing". |
+| A hidden member (`{cond && …}`) is fine; a group of one is not: render the lone `Button` bare. | A group of one adds nothing. |
+
+**Not a group:** a modal or form footer (Cancel + Confirm stay a spaced pair, so the destructive or primary choice is not glued to Cancel), and a button beside a text input that is not part of it. Icon buttons inside an address or path pill are a group too: the pill holds the group at its trailing edge.
+
+Reference implementations:
+
+| File | Group |
+| --- | --- |
+| `app/[locale]/(public)/share/session/[token]/page.tsx` | Header actions, all `secondary`: open app, full screen, download or copy link, Open in Kortix |
+| `features/session/action-panel/shared/sandbox-browser-chrome.tsx` | Back / forward, `ghost`; Reload and the pill's trailing actions inside the address pill |
+| `features/session/action-panel/easy/viewer-actions.tsx` (`ViewerPathPill`) | Refresh, copy, copy link inside the path pill, `ghost` |
+| `features/session/action-panel/easy/app-preview.tsx` | Open in new tab, full screen, close, `ghost` |
+| `features/session/action-panel/easy/file-viewer.tsx`, `file-preview.tsx` | Save as PDF or Present, Download, full screen, close, `ghost` |
+| `features/changes/change-list.tsx` | Unified / split diff toggle, `outline` |
+
 ## Cursor affordance
 
 **Every clickable element shows `cursor: pointer`.** Disabled elements keep
@@ -593,6 +619,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Modals → `Modal` from `modal.tsx`. ❌ `Dialog`/`DialogContent` in features.
 - ✅ Destructive actions → `ConfirmDialog` (or the inline two-step Cancel/confirm swap, `channels-view.tsx`). ❌ firing a delete/revoke mutation directly from a `variant="destructive"` click.
 - ✅ Tooltips → `Hint`. ❌ `Tooltip` primitives in features.
+- ✅ Two or more buttons in a row on one surface → `ButtonGroup`, one variant, close `X` included. ❌ `flex gap-1` rows of loose buttons, ❌ `ml-*` / dividers between members, ❌ a group of one, ❌ grouping a modal's Cancel + Confirm.
 - ✅ Toasts → `@/components/ui/toast` helpers. ❌ `@/lib/toast` (deleted), raw sonner, `toast.success()`.
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.
 - ✅ Status → tinted icon tile + optional `Badge`. ❌ raw palette icon colors.
@@ -613,7 +640,7 @@ Standard content block (`agents-page.tsx` pattern):
 1. **Load [`kortix-brand`](../kortix-brand/SKILL.md)** — the value allowlists and the motion budget. Then this file, then [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md).
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
 3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
-4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
+4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. Buttons in a row → `ButtonGroup`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
 5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → overlays only; flat border for in-flow panels.
 6. **Motion last.** Count how often a user sees it. Constant → none. Otherwise ≤300ms, `ease-out`, named property, token duration, reduced-motion variant.
 7. New primitive? Tokens only, tiny API, add to `/design-system`.

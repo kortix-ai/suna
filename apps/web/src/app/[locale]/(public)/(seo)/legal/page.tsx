@@ -6,17 +6,18 @@ import Link from '@/components/site-link';
 import { Separator } from '@/components/ui/separator';
 import { DOC_BODY, DOC_GRID, DocRail, docRailItem } from '@/features/marketing/doc-rail';
 import { cn } from '@/lib/utils';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense, useState, type ReactNode } from 'react';
+import { Fragment, Suspense, useState, type ReactNode } from 'react';
+
+import { TERMS_LAST_UPDATED, TERMS_OF_SERVICE } from './terms-of-service';
 
 const LEGAL_LAST_UPDATED = 'September 29, 2026';
 
-type LegalTab = 'privacy' | 'imprint';
+type LegalTab = 'imprint' | 'terms' | 'privacy';
 
 function isLegalTab(value: string | null): value is LegalTab {
-  return value === 'privacy' || value === 'imprint';
+  return value === 'imprint' || value === 'terms' || value === 'privacy';
 }
 
 /**
@@ -379,13 +380,121 @@ function PrivacyPolicy() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Terms of Service — rendered from `terms-of-service.ts`
+// ---------------------------------------------------------------------------
+
+type TermsBlock = { kind: 'p'; text: string } | { kind: 'ul' | 'ol'; items: string[] };
+
+type TermsSection = { id: string; title: string; blocks: TermsBlock[] };
+
+/**
+ * The Markdown the Terms use, and nothing more: `##` sections, paragraphs,
+ * `-` bullets and `1.` lists. Items are separated by blank lines in the source,
+ * so consecutive items of one kind are merged into one list.
+ */
+function parseTerms(source: string): { intro: TermsBlock[]; sections: TermsSection[] } {
+  const intro: TermsBlock[] = [];
+  const sections: TermsSection[] = [];
+  for (const raw of source.split(/\n\s*\n/)) {
+    const chunk = raw.trim();
+    if (!chunk) continue;
+    if (chunk.startsWith('## ')) {
+      const title = chunk.slice(3).trim();
+      const slug = title
+        .replace(/^\d+\.\s*/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+      sections.push({ id: `terms-${slug}`, title, blocks: [] });
+      continue;
+    }
+    const blocks = sections.at(-1)?.blocks ?? intro;
+    const kind = /^-\s/.test(chunk) ? 'ul' : /^\d+\.\s/.test(chunk) ? 'ol' : 'p';
+    if (kind === 'p') {
+      blocks.push({ kind, text: chunk.replace(/\s*\n\s*/g, ' ') });
+      continue;
+    }
+    const item = chunk.replace(/^(-|\d+\.)\s+/, '').replace(/\s*\n\s*/g, ' ');
+    const last = blocks.at(-1);
+    if (last && last.kind === kind) last.items.push(item);
+    else blocks.push({ kind, items: [item] });
+  }
+  return { intro, sections };
+}
+
+const TERMS = parseTerms(TERMS_OF_SERVICE);
+
+/** `**Defined term**` reads in the foreground; an address is a mail link. */
+function TermsInline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*\*[^*]+\*\*|[a-z]+@kortix\.com)/g).map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return (
+            <strong key={index} className="text-foreground font-medium">
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+        if (/^[a-z]+@kortix\.com$/.test(part)) return <MailLink key={index} address={part} />;
+        return <Fragment key={index}>{part}</Fragment>;
+      })}
+    </>
+  );
+}
+
+function TermsBlocks({ blocks }: { blocks: TermsBlock[] }) {
+  return blocks.map((block, index) =>
+    block.kind === 'p' ? (
+      <P key={index}>
+        <TermsInline text={block.text} />
+      </P>
+    ) : block.kind === 'ul' ? (
+      <Bullets key={index}>
+        {block.items.map((item) => (
+          <li key={item}>
+            <TermsInline text={item} />
+          </li>
+        ))}
+      </Bullets>
+    ) : (
+      <ol
+        key={index}
+        className={cn(PROSE, 'marker:text-muted-foreground list-decimal space-y-2 pl-6')}
+      >
+        {block.items.map((item) => (
+          <li key={item}>
+            <TermsInline text={item} />
+          </li>
+        ))}
+      </ol>
+    ),
+  );
+}
+
+/** English only, like the privacy policy. The text lives in `terms-of-service.ts`. */
+function TermsOfService() {
+  return (
+    <div className="space-y-10">
+      <div className="space-y-4">
+        <TermsBlocks blocks={TERMS.intro} />
+      </div>
+      {TERMS.sections.map((section) => (
+        <Section key={section.id} id={section.id} title={section.title}>
+          <TermsBlocks blocks={section.blocks} />
+        </Section>
+      ))}
+    </div>
+  );
+}
+
 function LegalContent() {
   const t = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  // Terms moved to an external Drive folder (see lib/legal-terms-redirect.ts)
-  // and is a link out of this page rather than a tab.
+  // `/legal/terms` redirects here with `?tab=terms` (lib/legal-terms-redirect.ts).
   const urlTab: LegalTab = isLegalTab(searchParams.get('tab'))
     ? (searchParams.get('tab') as LegalTab)
     : 'imprint';
@@ -415,6 +524,7 @@ function LegalContent() {
 
   const tabs: { id: LegalTab; label: string }[] = [
     { id: 'imprint', label: t.raw('i18nComplete.textd198ed30d09b') },
+    { id: 'terms', label: t.raw('i18nComplete.text4afa55bf7aec') },
     { id: 'privacy', label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy') },
   ];
 
@@ -453,12 +563,6 @@ function LegalContent() {
                 {tab.label}
               </button>
             ))}
-
-            {/* /legal/terms 308s to the Drive-hosted PDF from middleware. */}
-            <Link href="/legal/terms" className={docRailItem()}>
-              {t.raw('i18nComplete.text4afa55bf7aec')}
-              <ArrowUpRightIcon className="size-3.5 shrink-0 opacity-60" />
-            </Link>
           </DocRail>
 
           {/* Keyed so switching documents replays the enter animation. */}
@@ -474,16 +578,25 @@ function LegalContent() {
               <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance">
                 {activeTab === 'imprint'
                   ? 'Imprint'
-                  : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
+                  : activeTab === 'terms'
+                    ? t.raw('i18nComplete.text4afa55bf7aec')
+                    : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
               </h2>
-              {activeTab === 'privacy' ? (
+              {activeTab === 'imprint' ? null : (
                 <p className="text-muted-foreground mt-2 text-sm tabular-nums">
-                  {t.raw('appLegalPage.line1534JsxTextLastUpdated')} {LEGAL_LAST_UPDATED}
+                  {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
+                  {activeTab === 'terms' ? TERMS_LAST_UPDATED : LEGAL_LAST_UPDATED}
                 </p>
-              ) : null}
+              )}
             </div>
 
-            {activeTab === 'imprint' ? <Imprint /> : <PrivacyPolicy />}
+            {activeTab === 'imprint' ? (
+              <Imprint />
+            ) : activeTab === 'terms' ? (
+              <TermsOfService />
+            ) : (
+              <PrivacyPolicy />
+            )}
           </m.article>
         </div>
       </div>
