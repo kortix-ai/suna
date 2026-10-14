@@ -4,7 +4,7 @@
 /**
  * Platinum's per-sandbox volume mount cap when its limits cannot be read. The
  * live value comes from Platinum (see volumes.ts `sandboxMountLimit`); every
- * volume counts against it, folders and the session's own state volume alike.
+ * volume counts against it.
  */
 export const DEFAULT_SANDBOX_MOUNT_LIMIT = 8;
 

@@ -1442,9 +1442,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // whole chat path (SSE, sync, send) rides this single global switch — there is no
   // separate per-session client to keep in sync.
   //
-  // Keyed on the box (`external_id`), not on `sandbox_id`: an ephemeral session
-  // keeps its `sandbox_id` (= the session id) across a stop that deletes its box
-  // and a wake that boots a new one. Keyed on `sandbox_id`, the switch never
+  // Keyed on the box (`external_id`), not on `sandbox_id`: a session keeps its
+  // `sandbox_id` (= the session id) when its box is replaced (a restore, a
+  // re-provision). Keyed on `sandbox_id`, the switch never
   // re-ran for the new box, and every read stayed on the deleted one until a
   // reload ("Lost contact with this session's computer").
   const [switchedBoxId, setSwitchedBoxId] = useState<string | null>(null);
@@ -1483,8 +1483,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [switched, switchedBoxId]);
 
-  // 3b. The proxy says the box behind our runtime URL is gone (deleted by an
-  // ephemeral stop; another tab or the send path may already have woken the
+  // 3b. The proxy says the box behind our runtime URL is gone (deleted or
+  // replaced; another tab or the send path may already have woken the
   // session on a new box). The URL can never answer again, so ask `/start`
   // now instead of waiting out its once-a-minute recheck.
   const refetchStart = start.refetch;

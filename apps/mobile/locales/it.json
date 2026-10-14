@@ -1162,6 +1162,7 @@
     "title": "Account",
     "preferences": "Preferenze",
     "sounds": "Suoni",
+    "richAnswers": "Risposte arricchite",
     "workspace": "Area di lavoro",
     "accounts": "Account",
     "help": "Aiuto",
@@ -1198,6 +1199,17 @@
     "showMoreSubsessions_other": "Mostra altre {{count}}",
     "showMoreSubsessionsLabel_one": "Mostra {{count}} altra sotto-sessione di {{title}}",
     "showMoreSubsessionsLabel_other": "Mostra altre {{count}} sotto-sessioni di {{title}}"
+  },
+  "genui": {
+    "chartTapHint": "Tocca per leggere un valore",
+    "map": "Mappa",
+    "mapUnavailable": "Mappa non disponibile",
+    "openImage": "Apri immagine",
+    "openMap": "Apri mappa",
+    "pick": "Consigliato",
+    "pieFocus": "{{label}} è il {{percent}}% del totale",
+    "pieOfTotal": "{{value}} su {{total}}",
+    "showData": "Mostra dati"
   },
   "updateRequired": {
     "title": "Aggiornamento necessario",

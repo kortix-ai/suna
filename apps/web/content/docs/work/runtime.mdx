@@ -93,7 +93,7 @@ Every person has a private folder, and any folder can be shared with people, gro
 - the folders the agent or the whole project has a grant on, at `/drives/<folder name>`;
 - in a private session that the person started, also that person's own folder at `/drives/me` and every folder shared with them or their groups.
 
-Shared folders need the Files feature. It needs Platinum, and it follows the account's **Volumes** switch, which a platform admin sets in the [admin console](/docs/host#the-platform-admin-console). It is not a project toggle. With Files on, a session on another provider does not start. A platform admin can turn on drive sync: the sandbox then copies each folder into the same `/drives` path and keeps it in sync through Kortix.
+Shared folders need the Files feature. It needs Platinum and the project's **Volumes** flag (**Customize** → **Settings** → **Feature flags**). With Files on, a session on another provider does not start. A platform admin can turn on drive sync: the sandbox then copies each folder into the same `/drives` path and keeps it in sync through Kortix.
 
 ## The image and templates
 
@@ -225,24 +225,6 @@ From a terminal, run `kortix sandboxes provider <name>`. `kortix sandboxes provi
 - A pin needs the `project.settings.write` permission. Only a person can set it. A session token gets `403` with code `agent_session_forbidden`. A session that needs another provider passes `provider` on create instead.
 - A switch to a different provider prepares the project's images on the target, verifies them, then activates the pin. New sessions use the old provider until the switch completes. The CLI follows the switch for up to 600 seconds (`--timeout <sec>`).
 - The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. The flag shows only when the operator configured a US region.
-
-## Persistent and ephemeral machines
-
-A session sandbox runs in one of three modes. Ephemeral sandboxes and persistent machines need Platinum and the account's **Volumes** switch, which a platform admin sets in the [admin console](/docs/host#the-platform-admin-console).
-
-| Mode | What survives a stop | What does not |
-| --- | --- | --- |
-| Normal | The sandbox stops in place with its disk. | Running processes. |
-| Ephemeral | Session files and the conversation, on a volume. A wake starts a new sandbox from the newest image. | Running processes and everything outside the saved state. |
-| Persistent machine | The whole root disk: installed packages, config and files. | Running processes. The machine stays on the image it was created from. |
-
-The operator's boot-mode policy decides which sessions are ephemeral. A persistent machine is a per-session choice:
-
-1. Create the session with `"persistent_machine": true` on `POST /v1/projects/{projectId}/sessions`. It runs on Platinum. A request or project pin for another provider returns `400` with code `PERSISTENT_MACHINE_UNSUPPORTED`. With **Volumes** off, Kortix ignores the field.
-2. To move it to the current image, send `{"reset_machine": true}` to `POST /v1/projects/{projectId}/sessions/{sessionId}/restart`. Kortix keeps the conversation and restores the session branch. Everything else on the old disk is gone. Shared folders are not touched.
-3. If Kortix cannot save the conversation first, the reset returns `409` with code `reset_state_not_preserved` and deletes nothing. Add `"discard_state": true` to reset and lose the conversation.
-
-A reset on a session that is not a persistent machine returns `400` with code `NOT_A_PERSISTENT_MACHINE`.
 
 ## Troubleshooting
 

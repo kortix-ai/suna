@@ -1290,6 +1290,147 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 // event (`core/stream/event-stream.ts`), which lists the wire events it
 // replaced in `coalesced`. The store applies the run in one update and keeps
 // the per-wire-event idempotency above.
+describe("useSyncStore — a delta that lands after its message completed", () => {
+	// The live run: the turn ends, the control plane's verdict triggers a tail
+	// read, and the hydrate writes the server's whole text while deltas the
+	// stream read earlier still wait in its queue. Appended, they put a piece of
+	// the reply (a generative UI block's source) after its last paragraph, and
+	// the longer local text then outlives every later read until a reload.
+	test("a hydrate of the completed message wins over deltas still in flight", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.upsertMessage("ses_1", assistantMessage("msg_a1"));
+		store.upsertPart("msg_a1", textPart("prt_1", "msg_a1", ""));
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "Hello ", "evt_1");
+
+		const completed = { ...assistantMessage("msg_a1"), time: { created: 1, completed: 2 } };
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: completed, parts: [textPart("prt_1", "msg_a1", "Hello world")] },
+		]);
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "world", "evt_2");
+
+		expect((useSyncStore.getState().parts.msg_a1[0] as TextPart).text).toBe("Hello world");
+	});
+
+	test("deltas of a message still open keep appending", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.upsertMessage("ses_1", assistantMessage("msg_a1"));
+		store.upsertPart("msg_a1", textPart("prt_1", "msg_a1", ""));
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "Hello ", "evt_1");
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "world", "evt_2");
+
+		expect((useSyncStore.getState().parts.msg_a1[0] as TextPart).text).toBe("Hello world");
+	});
+});
+
+describe("useSyncStore — a hydrate followed by a replay of the same stream", () => {
+	// The live report: a reply showed twice, the second copy glued to the last
+	// link. The stream dropped mid-turn, a tail read hydrated the whole text,
+	// and the reconnect replayed the turn: its first message.updated (not yet
+	// completed) and every delta the store never applied. Appended, the deltas
+	// wrote the reply a second time. A delta whose text the part already holds
+	// at its stream offset is the same text, not new text.
+	const reply = "For a 2-day stay, **pick The Connaught**.\n\n| Hotel | Price |\n|---|---|\n| A | 10k |";
+	const chunks = reply.match(/.{1,7}/gs)!;
+	const info = (completed?: number) => ({ ...assistantMessage("msg_a1"), time: completed ? { created: 1, completed } : { created: 1 } });
+	const event = (id: string, type: string, properties: Record<string, unknown>) =>
+		({ id, type, properties: { sessionID: "ses_1", ...properties } }) as never;
+	const delta = (i: number, epoch = "e1") =>
+		event(`${epoch}:${100 + i}`, "message.part.delta", { messageID: "msg_a1", partID: "prt_1", field: "text", delta: chunks[i] });
+	const text = () => (useSyncStore.getState().parts.msg_a1!.find((p) => p.id === "prt_1") as TextPart).text;
+
+	function liveStart(applied: number) {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.applyEvent(event("e1:98", "message.updated", { info: info() }));
+		store.applyEvent(event("e1:99", "message.part.updated", { part: textPart("prt_1", "msg_a1", ""), time: 1 }));
+		for (let i = 0; i < applied; i++) store.applyEvent(delta(i));
+	}
+	function replay(epoch = "e1") {
+		const store = useSyncStore.getState();
+		store.applyEvent(event(`${epoch}:98`, "message.updated", { info: info() }));
+		store.applyEvent(event(`${epoch}:99`, "message.part.updated", { part: textPart("prt_1", "msg_a1", ""), time: 1 }));
+		chunks.forEach((_, i) => store.applyEvent(delta(i, epoch)));
+		store.applyEvent(event(`${epoch}:200`, "message.updated", { info: info(2) }));
+	}
+
+	test("all deltas live, then the turn ends, then the whole turn is delivered again", () => {
+		liveStart(chunks.length);
+		const store = useSyncStore.getState();
+		store.applyEvent(event("e1:200", "message.updated", { info: info(2) }));
+		store.applyEvent(event("e1:201", "session.idle", {}));
+		expect(text()).toBe(reply);
+		replay("e2");
+		expect(text()).toBe(reply);
+	});
+
+	test("a replay that starts after the part's first frame, after the turn ended", () => {
+		liveStart(chunks.length);
+		const store = useSyncStore.getState();
+		store.applyEvent(event("e1:200", "message.updated", { info: info(2) }));
+		store.applyEvent(event("e2:98", "message.updated", { info: info() }));
+		chunks.forEach((_, i) => store.applyEvent(delta(i, "e2")));
+		expect(text()).toBe(reply);
+	});
+
+	test("the replayed deltas leave the hydrated reply as it is", () => {
+		liveStart(3);
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(2), parts: [textPart("prt_1", "msg_a1", reply)] },
+		]);
+		replay();
+		expect(text()).toBe(reply);
+	});
+
+	test("the same when the replay carries new event ids", () => {
+		liveStart(3);
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(2), parts: [textPart("prt_1", "msg_a1", reply)] },
+		]);
+		replay("e2");
+		expect(text()).toBe(reply);
+	});
+
+	test("a mid-turn hydrate: the held deltas are skipped, the new ones append", () => {
+		liveStart(2);
+		const half = chunks.slice(0, 6).join("");
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(), parts: [textPart("prt_1", "msg_a1", half)] },
+		]);
+		for (let i = 2; i < chunks.length; i++) useSyncStore.getState().applyEvent(delta(i));
+		expect(text()).toBe(reply);
+	});
+
+	test("a hydrate that ends inside a delta: only the part past the hydrated text appends", () => {
+		liveStart(0);
+		const store = useSyncStore.getState();
+		const wire = (id: string, piece: string) =>
+			event(id, "message.part.delta", { messageID: "msg_a1", partID: "prt_1", field: "text", delta: piece });
+		store.applyEvent(wire("e1:400", "Hello "));
+		// The tail read captured the server text partway through the next delta.
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(), parts: [textPart("prt_1", "msg_a1", "Hello wor")] },
+		]);
+		useSyncStore.getState().applyEvent(wire("e1:401", "world"));
+		useSyncStore.getState().applyEvent(wire("e1:402", "!"));
+		expect(text()).toBe("Hello world!");
+	});
+
+	test("live deltas that repeat the text before them still append", () => {
+		liveStart(0);
+		const store = useSyncStore.getState();
+		for (const [i, piece] of ["ab", "ab", "ab"].entries())
+			store.applyEvent(event(`e1:${300 + i}`, "message.part.delta", { messageID: "msg_a1", partID: "prt_1", field: "text", delta: piece }));
+		expect(text()).toBe("ababab");
+	});
+});
+
 describe("useSyncStore — coalesced message.part.delta", () => {
 	function wireDelta(id: string, delta: string) {
 		return {
