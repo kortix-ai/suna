@@ -225,7 +225,10 @@ export function sessionListViewerSql(viewer: SessionListViewer): SQL {
        and ((g.principal_type = 'member' and g.principal_id::text = ${viewer.viewerId})
          or (g.principal_type = 'group' and g.principal_id in (
                select gm.group_id from ${accountGroupMembers} as gm where gm.user_id = ${viewer.viewerId}))))`;
-  const byRules = sql`(${t.createdBy}::text = ${viewer.viewerId} or ${t.visibility} = 'project'
+  // `created_by` is compared as a uuid, never cast to text: the cast hides the
+  // column's statistics, the planner then expects a handful of matching rows,
+  // and it may read and sort every live row of the project for one page.
+  const byRules = sql`(${t.createdBy} = ${viewer.viewerId} or ${t.visibility} = 'project'
     or (${t.visibility} = 'restricted' and ${granted}))`;
   // Oversight and the trigger-run manager override are a human's powers only.
   const canAccess =

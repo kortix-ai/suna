@@ -301,7 +301,7 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
     expect(requests).toBe(8);
   });
 
-  test('the visible page reads idx_project_sessions_project_live, with and without a generic plan', async () => {
+  test('the visible page walks idx_project_sessions_project_live in list order, with no sort, with and without a generic plan', async () => {
     const query = db
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
@@ -330,11 +330,16 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
       await tx.execute(sql`set local plan_cache_mode = force_generic_plan`);
       return { custom, generic: await planText() };
     });
-    // Whether the planner then walks the index in order or sorts the few live
-    // rows depends on the row counts; the partial index serves both.
+    // The owner's 60 live sessions outnumber the page, so the plan walks the
+    // index head in list order and stops after 51 matching rows. A Sort node
+    // means it read every live row of the project first: an index whose column
+    // or NULLS order differs from the page ORDER BY, or a predicate that hides
+    // `created_by`'s statistics from the planner (with `created_by::text`,
+    // 10 of 20 runs sorted).
     for (const plan of [plans.custom, plans.generic]) {
       expect(plan).toContain('idx_project_sessions_project_live');
       expect(plan).not.toContain('idx_project_sessions_project_updated');
+      expect(plan).not.toMatch(/\bSort\b/);
     }
   });
 });
