@@ -44,13 +44,18 @@
  * session-open snapshot never answer. The copy the device kept painted first,
  * and the newer saved copy from the history read never replaced it, so the
  * reload showed an older last message until the computer woke. The newer turn
- * now shows at once.
+ * now shows at once, from one transcript read.
  *
  * The eighth arm opens the Sessions page as the project owner, then reloads it
  * with every session-list and permission read held. The page picks the
  * manager-only 'project' scope from a permission probe the device does not
  * keep, so it showed skeleton rows until the probe answered, over a list the
  * device already held. The kept rows now show at once.
+ *
+ * The ninth arm counts the reads (KRTX-189). An open downloaded the saved
+ * window twice: in the session-open snapshot, and again from
+ * `GET …/transcript`, because the history read raced the snapshot and the
+ * sync layer kept its own read. The snapshot now carries it alone.
  */
 import { type Page, expect, test } from '@playwright/test';
 import { loadEnv } from '../../src/core/env';
@@ -110,6 +115,22 @@ function readSavedCopy(page: Page, key: string): Promise<string | null> {
       }),
     key,
   );
+}
+
+/**
+ * Every read of the session's newest saved window from now on: `GET …/transcript?`
+ * for the conversation. An older page (`before=`) and a sub-agent's window
+ * (`child=`) are other reads.
+ */
+function countOpenTranscriptReads(page: Page, sessionId: string): { urls: string[] } {
+  const reads = { urls: [] as string[] };
+  page.on('request', (request) => {
+    const url = request.url();
+    if (url.includes(`/sessions/${sessionId}/transcript?`) && !url.includes('before=') && !url.includes('child=')) {
+      reads.urls.push(url);
+    }
+  });
+  return reads;
 }
 
 /** First moment each surface is PAINTED after the reload: hit-testable at its center. */
@@ -725,7 +746,8 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
       await route.continue().catch(() => {});
     });
     // After the first open, the session-open snapshot never answers either, so
-    // only the saved-history read can bring the newer copy.
+    // only the saved-history read can bring the newer copy. It waits for a
+    // snapshot in flight for 2 s at most (KRTX-189), then asks its route.
     await page.route(`**/sessions/${sessionId}/snapshot*`, async (route) => {
       if (holding) await held;
       await route.continue().catch(() => {});
@@ -773,6 +795,7 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     });
 
     holding = true;
+    const reads = countOpenTranscriptReads(page, sessionId);
     const history = page.waitForResponse(
       (r) => r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
     );
@@ -782,6 +805,8 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     await expect(page.getByText(newerReply, { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(newerPrompt, { exact: true })).toBeVisible();
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toHaveCount(1);
+    // One saved-history read, not that one plus a second read of the window.
+    expect(reads.urls).toHaveLength(1);
     await page.screenshot({ path: testInfo.outputPath('reload-newer-copy.png') });
     // And the device keeps the newer copy for the next open.
     await expect
@@ -890,6 +915,47 @@ test('34 — a Sessions page reload shows the kept rows while the manager probe 
     expect(marks.listSkeleton, 'no placeholder rows: the kept list paints at once').toBeUndefined();
     await expect(page.getByTestId('session-list-skeleton')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('sessions-page-reload-held.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+test('34 — an open reads the saved copy once: the session-open snapshot carries it, and no transcript read runs', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId } = await setup(page, 'one-read');
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    // The computer never comes up: the conversation can only come from a saved copy.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    const reads = countOpenTranscriptReads(page, sessionId);
+
+    // A first open and a reload. Each one's snapshot answers, and each one
+    // used to read the same window again from `GET …/transcript`.
+    for (const open of ['first open', 'reload'] as const) {
+      const snapshot = page.waitForResponse((r) => r.url().includes(`/sessions/${sessionId}/snapshot`));
+      if (open === 'first open') {
+        await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+      } else {
+        await page.reload({ waitUntil: 'commit' });
+      }
+      expect((await snapshot).status()).toBe(200);
+      await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+      // The racing read started in the mount's first effects, before the
+      // snapshot answered; two more seconds catch any late reader.
+      await page.waitForTimeout(2_000);
+      expect(reads.urls, `${open}: no transcript read beside the snapshot`).toEqual([]);
+    }
+    await page.screenshot({ path: testInfo.outputPath('one-saved-history-read.png') });
   } finally {
     release();
     await page.unrouteAll({ behavior: 'ignoreErrors' });

@@ -6,7 +6,7 @@ import type { KeyValueStorage } from '../core/cache/persisted-query-cache';
 import { configureKortix } from '../core/http/config';
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import { SAVED_COPY_REFRESH_DELAY_MS } from '../browser/session-sync/server-transcript-mirror';
-import { resetSessionOpenBundles } from '../core/session/open-bundle';
+import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import {
   type SavedCopyStore,
   createSavedCopyStore,
@@ -233,6 +233,69 @@ test("the host's saved copy reconciles into the local one when it arrives after 
   expect(hook.value().messages).toHaveLength(3);
   const kept = store.read(PROJECT, SESSION) as SessionTranscriptSyncEnvelope;
   expect(kept.messages).toHaveLength(3);
+});
+
+test('a host that hands in its saved copy, or null while that read runs, makes no transcript read here', async () => {
+  // `useSession` reads saved history once and passes the answer in. A second
+  // read beside it downloaded the same window again (KRTX-189).
+  const store = await seeded('ses_host_no_read', 2);
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return new Promise<Response>(() => {});
+  }) as unknown as typeof fetch;
+  const hook = await mountWithHostCopy('ses_host_no_read');
+  await settle();
+  expect(hook.value().messages).toHaveLength(2);
+
+  await hook.answer(envelope('ses_host_no_read', 3, '2026-09-26T00:00:00Z'));
+
+  expect(hook.value().messages).toHaveLength(3);
+  expect(requests).toEqual([]);
+  expect((store.read(PROJECT, SESSION) as SessionTranscriptSyncEnvelope).messages).toHaveLength(3);
+});
+
+test('a host that hands in no saved copy gets the one saved-history read', async () => {
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json(envelope('ses_no_host_copy', 2));
+  }) as unknown as typeof fetch;
+
+  const hook = await mount('ses_no_host_copy', offline);
+  await settle();
+
+  expect(hook.value().messages).toHaveLength(2);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain(`/sessions/${SESSION}/transcript?shape=sync`);
+  expect(requests[0]).toContain('history=true');
+});
+
+test('a host that hands in no saved copy rides the session-open snapshot in flight: no transcript request', async () => {
+  // apps/mobile's thread: `useSession` (chatEngine off) starts the snapshot
+  // in the commit the thread mounts in, and the thread's sync claims it.
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json({
+      observed_at: '2026-09-26T00:00:01Z',
+      session: { session_id: SESSION, runtime_session_id: 'ses_rides_snapshot' },
+      turn: { known: false, reason: 'test' },
+      queue: { known: false, reason: 'test' },
+      transcript: { known: true, requested: true, ...envelope('ses_rides_snapshot', 2) },
+      config: { known: true },
+      models: { known: false, reason: 'test' },
+    });
+  }) as unknown as typeof fetch;
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  openSessionBundle(PROJECT, SESSION);
+
+  const hook = await mount('ses_rides_snapshot', offline);
+  await settle();
+
+  expect(hook.value().messages).toHaveLength(2);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain(`/sessions/${SESSION}/snapshot`);
 });
 
 test("the host's saved copy never replaces a runtime read", async () => {

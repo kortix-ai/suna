@@ -424,7 +424,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   // The transcript, from the SDK: the saved copy first, one tail read once the
   // runtime is bound, then the live stream. The newest page only: `loadOlder`
-  // pulls the next older page (COR-144).
+  // pulls the next older page (COR-144). No `mirror`: the SDK reads the saved
+  // copy with the web's one saved-history read. After the connecting view
+  // (`readSavedSessionCopy`) it answers from the copy that view read, and the
+  // snapshot `useSession` starts asks for no window: one download per open.
+  // A sub-agent reads its own window.
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
   // The session stream (R5.3): while it is up, the SDK's tail and ask polls
   // stand down — the box's ring replays what a reconnect missed.
