@@ -13,6 +13,8 @@ import {
   sessionLogCallStatus,
   sessionLogOfV1Rows,
   sessionModelPin,
+  toolCallError,
+  toolCallRawOutput,
 } from '@kortix/sdk';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { formatRelative } from '@kortix/shared';
@@ -116,8 +118,10 @@ function blockToText(block: SessionLogBlock, streaming: boolean): string {
       return `${C.dim}[reasoning] ${block.text}${C.reset}`;
     case 'tool_call': {
       const status = sessionLogCallStatus(block, streaming);
-      const output = (block.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('\n');
-      return `${C.faded}[${block.name} · ${status}]${C.reset}${output ? `\n${C.dim}${output}${C.reset}` : ''}`;
+      // A failed call prints the SDK's error text (its `result.error`, else its result text), as the web does.
+      const error = toolCallError(block);
+      const output = error ?? toolCallRawOutput(block);
+      return `${C.faded}[${block.name} · ${status}]${C.reset}${output ? `\n${error ? C.red : C.dim}${output}${C.reset}` : ''}`;
     }
     case 'attachment':
       return fileText(block.name);

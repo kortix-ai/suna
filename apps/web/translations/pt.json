@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "Tema",
       "themeDescription": "Escolha a aparência do Kortix neste dispositivo.",
+      "moreThemes": "Mais temas…",
       "conversationDensity": "Densidade da conversa",
       "conversationDensityDescription": "Escolha quantos detalhes o agente mostra na conversa enquanto trabalha.",
       "richAnswers": "Respostas enriquecidas",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "Padrão",
       "themes": {
         "light": "Claro",
+        "pureLight": "Claro puro",
         "dark": "Escuro",
-        "system": "Sistema"
+        "pureDark": "Escuro puro",
+        "system": "Sistema",
+        "kortix": "Kortix",
+        "lightThemes": "Temas claros",
+        "darkThemes": "Temas escuros",
+        "search": "Pesquisar temas…",
+        "noResults": "Nenhum tema encontrado"
       },
       "densities": {
         "normal": {
@@ -7289,6 +7297,8 @@
       "tokensIn": "Tokens de entrada",
       "tokensOut": "Tokens de saída",
       "treeMessages": "mensagens",
+      "subAgentsLoaded": "{loaded} de {total} subagentes carregados",
+      "loadAll": "Carregar todos",
       "detailInput": "Tokens de entrada",
       "detailOutput": "Tokens de saída",
       "detailReasoning": "Tokens de raciocínio",
@@ -19200,6 +19210,10 @@
       "text8295f9d4861b": "Verificação do domínio SSO da conta definida",
       "text7beaff63a7d3": "Arquivo de configuração do projeto baixado",
       "text5176d59f25fd": "Versão de configuração da sessão resolvida",
+      "text64ad7399fb9e": "Tema claro puro",
+      "texte6ebf219f591": "tema modo claro puro branco",
+      "textc433363f9a4e": "Tema escuro puro",
+      "textbc9543239440": "tema modo escuro puro preto",
       "text273c48dbf3b9": "Dispositivo de notificações push registrado",
       "textbb666ddf7a57": "Dispositivo de notificações push removido",
       "text397ab5aecbbf": "Solicitação de permissão da sessão repassada",

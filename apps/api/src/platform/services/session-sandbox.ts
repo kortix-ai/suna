@@ -688,6 +688,9 @@ export async function provisionSessionSandbox(opts: {
     sandboxId: sandbox.sandboxId,
     serverType,
     location,
+    // A warm (speculative) box never leaves its project's region: the warm
+    // marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
+    locationRequired: sandbox.metadata?.warm === true,
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,

@@ -251,14 +251,26 @@ root. No turn runs at either point.
   The manifest is retried the same way, but no claim happens there: after its
   retries a box with a store (`held()` not null) boots on it at its persisted
   generation and logs one warning, and only a box with no store fails the
-  boot. A brand-new session (no store, the manifest lists no live message or
-  answers 404) boots empty, as before.
+  boot. One exception: before its first restore POST the box writes
+  `claiming: true` into `session-log-restore.json`. A restore clears it, and so
+  does a 404 or 503 to the first attempt (nothing was claimed), and a later boot
+  whose manifest shows no claim above this box. A 404 or 503 after a failed
+  attempt settles nothing: that attempt may have claimed, so the boot fails
+  with the mark kept. While the mark stands, a manifest that cannot be read
+  (5xx, network) fails the boot even with a store: a box that claimed and then
+  failed or died may hold a store below the claim. A manifest that answers
+  403, 404 or 503 (the ingest kill switch) boots the store and keeps the mark:
+  the journal route has the same gates, so nothing posts below a claim, and
+  the first boot that reads a manifest restores or clears the mark. A
+  manifest above this box's generation reads as behind even when every message
+  in it is tombstoned. A brand-new session (no store, the manifest lists no
+  live message or answers 404) boots empty, as before.
 - **D3, a partial restore** (the log's `restore_grade` is `partial`, the write
   dropped model-visible content, or a text kept its preview). The agent: a
   user message with one text block (`prt_kortix_restore_g<generation>`, naming
   what is missing) after every seq the API holds, under a wire id
-  (`mintWireMessageIdAbove`, backdated as a client prompt is) above every id of
-  the thread, so hosts that order placed messages by id show it after the
+  (`mintWireMessageId({ after })`, as a client prompt is minted) above every id
+  of the thread, so hosts that order placed messages by id show it after the
   restored history and before the next turn,
   written into the native store with the log (the adapter writes twice), so
   the next request carries it. Its cursor entry is dropped, so the journal
@@ -314,6 +326,10 @@ test, the request pi sends next equals `modelView(log)` plus the prompt, for the
 root and for each sub-agent resumed through `task` with its `task_id`. The
 recorded session round-trips: export → restore → export is equal except pi's
 system prompt messages (`kind: 'context'`), which pi rebuilds at the next prompt.
+The restore names each thread's last context record in the dump (`contextId`):
+the first system prompt pi rebuilds takes that id, so the record is replaced, not
+added. Three restores of one session keep one context record per thread (the
+same ids); before, each restore added one per thread pi prompted.
 
 Proved in `opencode-session-log-restore.test.ts` (the pinned OpenCode binary,
 `opencode serve` in an isolated home against a fake model, dummy key): the 7
@@ -328,10 +344,18 @@ restore → export is equal. A crash after the import (the pin write fails)
 leaves the seq and id map on disk: the next export carries the log's seqs and
 ids. Each `dropped` kind has a case: a call without a result
 (`tool_result`), a text still stored by reference (`text`), an attachment
-without bytes or with bytes that fail its `sha256` (`attachment`).
+without bytes or with bytes that fail its `sha256` (`attachment`). One
+`opencode import` writes every thread (a holding session, then one transaction
+moves each thread's rows to its own session): for the 7 fixtures and a 4-thread
+log, the session, message and part rows equal those of one import per thread
+except the write times (a message's `time_updated`, a part's times), every other
+table keyed by session holds the same row counts, and a message under another
+thread or a missing thread fails that comparison. A row left on the holding
+session fails the restore before the delete could cascade it away; the store then
+holds no root, so the next boot restores again.
 
 Known limits of the OpenCode restore:
-- `opencode import` runs once per thread (about 1 s each on a laptop): a session with many sub-agents restores in seconds, not milliseconds.
+- One `opencode import` process runs per restore, whatever the thread count; its start dominates the restore time (about 2 s on a 2-vCPU Platinum box). The version comes from the running OpenCode's `/global/health`; without an answer, `opencode --version` runs first (one more process start).
 - An attachment of an OpenCode session has its bytes only in the native store (`ref: blob:<sha256>`, nothing uploads them yet): a fresh box restores it only when `readAttachment` has the bytes. Without them it is left out and counts in `dropped.attachment` when the model would see it next.
 - A layout OpenCode cannot show in its order (an assistant message before the summary, a kept run that is not the contiguous run before the marker) counts in `dropped.layout`.
 - The id map (`ids` in `opencode-session-log.json`) is the only record of a re-keyed id. A lost map renames nothing back: a uuid thread id comes back as `ses_<sha>` (a second thread in the API), and a re-keyed pi part id as `prt_…` (a changed block id). Real Kortix roots (`ses_…`, `ses_pi…`) are never re-keyed; pi part ids are.
@@ -388,9 +412,10 @@ prove the oracle can fail: OpenCode's golden test checks a log with one changed
 answer against the request and expects a difference, and pi's partial-log test
 expects exactly the one difference the restore dropped. A broken mapping fails
 the suites: dropping pi's reasoning fails 1 of 22 pi restore tests, writing
-OpenCode reasoning as text fails 1 of 26 OpenCode restore tests. Not covered:
-no fixture holds an assistant text with `model_text` (no harness exports one),
-so OpenCode's restore passes when it drops that field.
+OpenCode reasoning as text fails 1 of 26 OpenCode restore tests, and writing an
+assistant `text` in place of its `model_text` fails 1 test in each suite. No
+harness exports an assistant `model_text`, so that test sets one on a golden
+reply.
 
 ### The v2 stream (P4.3)
 
@@ -446,7 +471,7 @@ put replace the whole record.
 The journal folds the v1 frames of each message it has not collected. It
 publishes a live put of a message on the v2 bus only, never into the dirty
 set: apps/api receives the turn end's record alone (its `log_durable_at`
-reacts to a non-streaming assistant message). A live put is published:
+reacts to a non-streaming assistant message or compaction). A live put is published:
 - on the first `message.updated` of a message: the prompt (complete) and each
   assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
 - on each `message.part.updated` of a part the message did not have: a new
@@ -853,7 +878,7 @@ runs (`../services/tools/`):
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
 | `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
-| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
 | `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 
 - **pi** loads them at `start()` and registers each as an `AgentTool`

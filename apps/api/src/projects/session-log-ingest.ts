@@ -16,8 +16,32 @@
  *   that collides rolls the whole batch back and answers 422 with its pair.
  * - Durable turns. The first acknowledged assistant message of a turn that is not
  *   streaming sets `session_turns.log_durable_at`: the turn whose `message_id` (the
- *   client-minted user message id) is the assistant message's `reply_to`. A later
+ *   client-minted user message id) is the assistant message's `reply_to`. No
+ *   assistant message answers a compaction: both harnesses fold the summary into
+ *   the compaction message. So a compaction that is not streaming marks its
+ *   `/summarize` turn itself, also when it failed or was aborted (`error` set),
+ *   like an errored assistant reply. On OpenCode that turn's `message_id` is the
+ *   compaction's id (the daemon's `turn_begin` names it). On pi the turn has no
+ *   message id: the compaction marks the earliest unmarked id-less turn of its
+ *   thread that started before the compaction completed and had not ended
+ *   before it. Earliest, not latest: pi runs a `/summarize` on its serial queue
+ *   and relays no turn end for it (the active-turn renewal pass ends it once the
+ *   box is idle), so a later id-less turn (a second `/summarize`, a delivery
+ *   without a wire id) can be open beside it; each compaction takes the oldest
+ *   one still waiting. An auto compaction inside a prompt turn (an id) marks
+ *   nothing unless an id-less turn is still open beside it. A later
  *   acknowledgement (a restarted daemon re-sends everything) keeps the first time.
+ *   Known wrong marks of the pi rule (it marks the wrong turn and leaves the right
+ *   one null):
+ *   - a `/summarize` pi refused (nothing stored) that the reaper has not ended yet
+ *     when the next compaction completes: that compaction marks it;
+ *   - a re-sent compaction (a daemon restart, or a retried post whose response was
+ *     lost) marks an id-less turn that started before it and is still open;
+ *   - on such a replay, a box clock ahead of the API by more than the reaper's
+ *     delay admits a turn that started after the compaction.
+ *   Follow-up (the durable fix): pi `compact()` relays `turn_begin`/`turn_end`
+ *   with the compaction marker id, so the id match works on both harnesses and
+ *   the id-less rule goes.
  *
  * Records keep the values the daemon sent, not the zod parse: the parse drops
  * fields this API does not know, and the record would lose them (the same rule
@@ -73,12 +97,13 @@ import {
   type SessionLogPut,
 } from '@kortix/api-contract/session-log';
 import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTurns } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
 import { jsonbSafeValue } from './lib/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
+import { toolInputOrderOf } from './session-log-input-order';
 
 export interface SessionLogScope {
   sessionId: string;
@@ -400,6 +425,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         contentHash: sessionLogContentHash(m),
         deletedAt: null,
         record: record as unknown as Record<string, unknown>,
+        toolInputOrder: toolInputOrderOf(record),
       })
       .onConflictDoUpdate({
         target: [sessionLogMessages.sessionId, sessionLogMessages.messageId],
@@ -417,6 +443,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
           contentHash: sql`excluded.content_hash`,
           deletedAt: null,
           record: sql`excluded.record`,
+          toolInputOrder: sql`excluded.tool_input_order`,
           updatedAt: sql`now()`,
         },
         // An unchanged re-put (a restarted daemon re-sends every message) leaves the row; it is still acknowledged.
@@ -432,19 +459,51 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
 }
 
 async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
-  const userMessageIds = [
-    ...new Set(
-      puts.flatMap(({ message: m }) =>
-        m.role === 'assistant' && m.status !== 'streaming' && m.reply_to ? [m.reply_to] : [],
-      ),
-    ),
-  ];
-  if (userMessageIds.length === 0) return;
-  await tx
-    .update(sessionTurns)
-    // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
-    .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
-    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, userMessageIds)));
+  const done = puts.map((p) => p.message).filter((m) => m.status !== 'streaming');
+  const compactions = done.filter((m) => m.kind === 'compaction');
+  const userMessageIds = [...new Set(done.flatMap((m) => (m.role === 'assistant' && m.reply_to ? [m.reply_to] : [])))];
+  // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
+  const durable = { logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` };
+  if (userMessageIds.length > 0) {
+    await tx
+      .update(sessionTurns)
+      .set(durable)
+      .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, userMessageIds)));
+  }
+  for (const m of compactions) {
+    // OpenCode: the `/summarize` turn's message id is the compaction's.
+    const byId = await tx
+      .update(sessionTurns)
+      .set(durable)
+      .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.messageId, m.message_id)))
+      .returning({ token: sessionTurns.turnToken });
+    if (byId.length > 0) continue;
+    // pi: the `/summarize` turn has no message id. Also OpenCode: an auto compaction inside a
+    // turn whose id bind failed (`bindRootScopedTurn` refuses two open id-less records).
+    const completedAt = Date.parse(m.completed_at ?? m.created_at);
+    if (Number.isNaN(completedAt)) continue;
+    const at = new Date(completedAt);
+    // ponytail: started_at/ended_at are the API clock, completed_at the box clock (pi stamps
+    // created_at at the end too, so no start time exists). A box behind the API by more than
+    // the summary's run time marks nothing. A box ahead can admit a turn that started after
+    // the compaction completed, but only when no earlier unmarked id-less turn was still open.
+    const earliest = tx
+      .select({ token: sessionTurns.turnToken })
+      .from(sessionTurns)
+      .where(
+        and(
+          eq(sessionTurns.sessionId, sessionId),
+          eq(sessionTurns.runtimeSessionId, m.thread_id),
+          isNull(sessionTurns.messageId),
+          isNull(sessionTurns.logDurableAt),
+          lte(sessionTurns.startedAt, at),
+          or(isNull(sessionTurns.endedAt), gte(sessionTurns.endedAt, at)),
+        ),
+      )
+      .orderBy(asc(sessionTurns.startedAt))
+      .limit(1);
+    await tx.update(sessionTurns).set(durable).where(inArray(sessionTurns.turnToken, earliest));
+  }
 }
 
 /** The boot-reconcile manifest, or null when the session is not this project's. */

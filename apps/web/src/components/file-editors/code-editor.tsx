@@ -716,7 +716,7 @@ export function CodeEditor({
       <div
         ref={editorContainerRef}
         className={cn(
-          'w-full max-w-full bg-white dark:bg-zinc-900',
+          'bg-background w-full max-w-full',
           editorClassName,
           readOnly
             ? 'min-h-full flex-1 overflow-visible' // Stretch to fill parent so short files still fill the viewport
