@@ -338,7 +338,7 @@ function transcripts(log: SessionLog): Map<string, KortixMessage[]> {
 
 /** The last context record the restore does not write: pi's rebuilt system prompt takes its id (`PiDump.contextId`). */
 function contextOf(thread: SessionLogThread): { contextId?: string } {
-  const last = thread.messages.filter((m) => m.kind === 'context' || m.role === 'system').sort((a, b) => a.seq - b.seq).at(-1)
+  const last = thread.messages.filter((m) => m.kind === 'context').sort((a, b) => a.seq - b.seq).at(-1)
   return last ? { contextId: last.message_id } : {}
 }
 

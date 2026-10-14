@@ -351,6 +351,31 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(state().claiming).toBeUndefined()
   })
 
+  test('a 503 after an attempt that may have claimed (502, then 503 from the edge) settles nothing: the mark stays and the boot fails', async () => {
+    const api = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 }), new Response('{}', { status: 503 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow(/restore failed/)
+    expect(api.count.claimed).toBe(1)
+    expect(state()).toEqual({ version: 1, generation: 0, unwritten: [], claiming: true })
+  })
+
+  test('while the mark stands, a manifest that answers 503 (no claim readable) fails the boot and keeps the mark', async () => {
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
+    const api = fakeApi({ manifest: [new Response('{}', { status: 503 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow(/claim/)
+    expect(api.count.restore).toBe(0)
+    expect(state().claiming).toBe(true)
+  })
+
+  test('a manifest above this box\'s generation whose messages are all tombstoned restores; it does not clear the mark as current', async () => {
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
+    const api = fakeApi({ manifest: [manifest(3, [['m1', true], ['m2', true]])], restore: [restoreAnswer(4, log([]))] })
+    expect((await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY))?.generation).toBe(4)
+    expect(api.count.restore).toBe(1)
+    expect(state().claiming).toBeUndefined()
+  })
+
   test('a claiming mark the manifest shows no claim for (the POST never reached the API) is cleared; a 404/503 restore answer clears it too', async () => {
     fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
     await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()

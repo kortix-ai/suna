@@ -24,9 +24,10 @@
  *   its id) never make the store behind. Content hashes are not compared: a store with unsent
  *   edits differs from the log by design, and the journal sends the difference.
  * - The restore. Before the first `POST …/log/restore`, `session-log-restore.json` gets a `claiming`
- *   mark; the answer that settles it (a restore, 404, 503) clears it, and so does a later boot whose
- *   manifest shows no claim above this box. While it stands, a manifest that cannot be read fails
- *   the boot even with a store. `POST …/log/restore` claims the next generation; the attachment bytes are
+ *   mark. A restore clears it; so does a 404 or 503 to the first attempt (nothing was claimed), and a
+ *   later boot whose manifest shows no claim above this box. A 404 or 503 after a failed attempt
+ *   settles nothing: that attempt may have claimed. While the mark stands, a manifest that cannot be
+ *   read or answers no claim (403, 404, 503) fails the boot even with a store. `POST …/log/restore` claims the next generation; the attachment bytes are
  *   read while the texts are; the adapter writes the log; this box's generation, the ids the
  *   write left out and the D3 notice persist in `session-log-restore.json` in the runtime state
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
@@ -132,7 +133,11 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
     logger.warn('[session-log] the manifest did not answer; the box keeps its native store', { err: String(err), generation: state.generation })
     return kept(state)
   }
-  if (!manifest) return settled(state)
+  if (!manifest) {
+    // A 403/404/503 manifest reads no claim, so it cannot settle one: with the mark, the store may be below it.
+    if (state.claiming) throw new Error('session-log manifest answered no claim while a restore claim may stand')
+    return kept(state)
+  }
   const why = behind(manifest, held, state)
   // A claim that committed raised the manifest generation above this box's, which reads as behind.
   if (!why) return settled(state)
@@ -142,7 +147,17 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   writeState({ ...state, claiming: true })
   // Each attempt claims a generation before it can fail: a box that kept its store after a failed
   // restore would post below the claim (409) and restore over that boot's turns at the next boot.
-  return attempts('restore', retryMs, async () => (await restore(ctx, port)) ?? settled({ ...state, claiming: true }))
+  // A 404/503 settles the claim only before any attempt failed: a failed attempt may have claimed.
+  let failed = false
+  return attempts('restore', retryMs, async () => {
+    const boot = await restore(ctx, port).catch((err) => {
+      failed = true
+      throw err
+    })
+    if (boot) return boot
+    if (failed) throw new Error('restore answered no claim after an attempt that may have claimed')
+    return settled({ ...state, claiming: true })
+  })
 }
 
 async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>): Promise<T> {
@@ -181,9 +196,10 @@ async function readManifest(ctx: SandboxRelayContext) {
 
 function behind(manifest: { generation: number; messages: Array<{ message_id: string; deleted: boolean }> }, held: ReadonlySet<string> | null, state: BootState): string | null {
   const live = manifest.messages.filter((m) => !m.deleted).map((m) => m.message_id)
-  if (live.length === 0) return null
+  const above = manifest.generation > state.generation ? `generation ${manifest.generation} is above this box's ${state.generation}` : null
+  if (live.length === 0) return above
   if (!held) return 'no native store'
-  if (manifest.generation > state.generation) return `generation ${manifest.generation} is above this box's ${state.generation}`
+  if (above) return above
   const unwritten = new Set(state.unwritten)
   const missing = live.filter((id) => !held.has(id) && !unwritten.has(id))
   return missing.length ? `${missing.length} of ${live.length} messages missing` : null

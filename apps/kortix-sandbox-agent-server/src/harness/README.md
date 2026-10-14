@@ -252,12 +252,16 @@ root. No turn runs at either point.
   retries a box with a store (`held()` not null) boots on it at its persisted
   generation and logs one warning, and only a box with no store fails the
   boot. One exception: before its first restore POST the box writes
-  `claiming: true` into `session-log-restore.json`. The answer that settles the
-  claim (a restore, a 404 or 503) clears it, and so does a later boot whose
-  manifest shows no claim above this box. While the mark stands, a manifest
-  that cannot be read fails the boot even with a store: a box that claimed and
-  then failed or died may hold a store below the claim. A brand-new session (no store, the manifest lists no live message or
-  answers 404) boots empty, as before.
+  `claiming: true` into `session-log-restore.json`. A restore clears it, and so
+  does a 404 or 503 to the first attempt (nothing was claimed), and a later boot
+  whose manifest shows no claim above this box. A 404 or 503 after a failed
+  attempt settles nothing: that attempt may have claimed, so the boot fails
+  with the mark kept. While the mark stands, a manifest that cannot be read or
+  answers no claim (403, 404, 503) fails the boot even with a store: a box
+  that claimed and then failed or died may hold a store below the claim. A
+  manifest above this box's generation reads as behind even when every message
+  in it is tombstoned. A brand-new session (no store, the manifest lists no
+  live message or answers 404) boots empty, as before.
 - **D3, a partial restore** (the log's `restore_grade` is `partial`, the write
   dropped model-visible content, or a text kept its preview). The agent: a
   user message with one text block (`prt_kortix_restore_g<generation>`, naming
