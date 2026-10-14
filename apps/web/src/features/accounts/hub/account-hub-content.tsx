@@ -374,8 +374,8 @@ export function AccountHubContent() {
                   returnUrl={typeof window !== 'undefined' ? window.location.href : '/projects'}
                   isActive
                 />
-                {/* The "Subscribe to Team plan" button opens the global
-                    upgrade-dialog store; mount its renderer here (the global
+                {/* The plan picker's subscribe button starts checkout, and the
+                    top-up view opens the global upgrade-dialog store; mount its renderer here (the global
                     one lives only on share pages) so the dialog actually
                     appears, scoped to THIS account via the provider above. */}
                 <GlobalUpgradeModal />

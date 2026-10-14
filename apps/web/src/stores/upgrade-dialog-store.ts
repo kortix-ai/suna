@@ -14,10 +14,8 @@ interface UpgradeDialogState {
    *  action to this, so a non-billing member sees the *team's* gated CTA, not
    *  their own personal account's. */
   accountId?: string;
-  /** From the 402 body — lets the modal show the top-up view (Team/paid wallet
-   *  drained) vs the Free-plan pitch (no plan) without guessing off tier_key,
-   *  which stays 'free' for per-seat accounts. */
-  billingModel?: string;
+  /** From the 402 body — lets the modal show the top-up view (paid wallet
+   *  drained) vs the plan picker (no plan) without guessing off tier_key. */
   hasSubscription?: boolean;
   /** The unambiguous state behind the block (lib/billing/billing-gate-state.ts).
    *  `reason` is the legacy 402 code and is lossy; this is what the modal picks
@@ -29,7 +27,6 @@ interface UpgradeDialogState {
     message?: string;
     balance?: number;
     accountId?: string;
-    billingModel?: string;
     hasSubscription?: boolean;
     billingState?: BillingState;
   }) => void;
@@ -42,7 +39,6 @@ export const useUpgradeDialogStore = create<UpgradeDialogState>((set) => ({
   message: '',
   balance: 0,
   accountId: undefined,
-  billingModel: undefined,
   hasSubscription: undefined,
   billingState: undefined,
   openUpgradeDialog: (opts) =>
@@ -52,7 +48,6 @@ export const useUpgradeDialogStore = create<UpgradeDialogState>((set) => ({
       message: opts.message ?? '',
       balance: opts.balance ?? 0,
       accountId: opts.accountId,
-      billingModel: opts.billingModel,
       hasSubscription: opts.hasSubscription,
       billingState: opts.billingState,
     }),

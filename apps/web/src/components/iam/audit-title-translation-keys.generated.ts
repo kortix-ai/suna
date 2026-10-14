@@ -60,6 +60,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Changed project member role': 'text2b99e2a42352',
   'Changed session model': 'text6a121becc711',
   'Changed session status': 'textd1cc9bf11cb2',
+  'Changed the credits plan': 'text44f9fff8bdae',
   'Changed the password': 'texte8818f8cbb40',
   'Checked API health': 'text565ed637aeae',
   'Checked API liveness': 'text457f4f767fe0',

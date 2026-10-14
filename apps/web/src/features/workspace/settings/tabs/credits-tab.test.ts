@@ -90,7 +90,7 @@ describe('planGrantMeter', () => {
     });
   });
 
-  test('is null when the plan grants nothing — Free and per-seat Team', () => {
+  test('is null when the plan grants nothing', () => {
     // A "0 of 0 used" bar is a bar that can never move.
     expect(planGrantMeter(stateWith({ tierMonthlyCredits: 0 }))).toBeNull();
   });

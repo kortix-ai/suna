@@ -7,7 +7,7 @@
  * **Why it exists** (Jay, 2026-09-03): "it's difficult to get to know how many
  * credits we still have pending". The balance was reachable only through
  * Account -> Plan, where it is the first card of a pane whose other four
- * blocks are all mutations — subscribe, claim seats, buy credits, open the
+ * blocks are all mutations — change plan, buy credits, open the
  * Stripe portal. Someone who wants a number had to open a checkout surface to
  * read it.
  *
@@ -46,7 +46,7 @@
  * `BillingAccountProvider`, which is what scopes their reads and mutations to
  * THIS account rather than the caller's primary one.
  *
- * Everything else on the pane stays read-only. The subscription, seats, and
+ * Everything else on the pane stays read-only. The subscription and
  * the Stripe portal are the Plan pane's subject and are not duplicated here.
  */
 
@@ -150,8 +150,8 @@ export interface GrantMeter {
  * and `credits.monthly` is what is left of it. Anything the account bought or
  * earned daily sits in a different bucket, so the subtraction stays honest.
  *
- * `null` when the plan grants nothing — Free and per-seat Team accounts, where
- * a "0 of 0 used" bar is a bar that can never move.
+ * `null` when the plan grants nothing, where a "0 of 0 used" bar is a bar that
+ * can never move.
  */
 export function planGrantMeter(state: AccountState): GrantMeter | null {
   const grantedCredits = dollarsToCredits(state.tier?.monthly_credits ?? 0);

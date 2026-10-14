@@ -377,7 +377,7 @@
         },
         "plan": {
           "label": "План",
-          "description": "Претплата, места у тиму и наплата за овај налог."
+          "description": "План, кредити и обрачун за овај налог."
         }
       }
     },
@@ -2032,16 +2032,12 @@
   },
   "billing": {
     "plan": {
-      "teamSeats": "{count, plural, one {Тим · # место} other {Тим · # места}}",
       "cancels": "Отказује се {date}",
       "cancelsAtPeriodEnd": "Отказује се на крају периода",
       "renews": "Обнавља се {date}",
       "active": "Активна",
       "noSubscription": "Нема претплате",
       "status": "{status}",
-      "seats": "Места",
-      "perSeat": "По месту",
-      "monthlyTotal": "Месечно укупно",
       "perMonth": "{amount}/мес",
       "currentPlan": "Тренутни план",
       "statuses": {
@@ -2055,9 +2051,6 @@
         "paused": "Паузирана"
       },
       "loadFailed": "Подаци о претплати нису могли да се учитају",
-      "teamTitle": "Kortix Team",
-      "teamDescription": "Ставите све чланове тима на један заједнички план.",
-      "subscribe": "Претплати се на Team",
       "manageBilling": "Управљај обрачуном",
       "outOfCredits": "Потрошили сте све кредите",
       "buyCreditsHint": "Купите кредите испод или укључите аутоматску допуну.",
@@ -2105,7 +2098,51 @@
     },
     "title": "Обрачун и претплата",
     "subscription": "Претплата",
-    "credits": "Кредити",
+    "credits": {
+      "picker": {
+        "presetGroup": "Месечни износ плана",
+        "presets": {
+          "starter": "Starter",
+          "pro": "Pro",
+          "scale": "Scale"
+        },
+        "amountLabel": "Месечни износ у доларима",
+        "sliderLabel": "Месечни износ",
+        "creditsPerMonth": "{credits} кредита / месец",
+        "range": "Изаберите цео износ у доларима од {min} до {max}."
+      },
+      "change": {
+        "updated": "План је ажуриран",
+        "updatedDescription": "{credits} кредита / месец.",
+        "unchanged": "То је већ ваш план.",
+        "paymentPending": "Плаћање захтева потврду",
+        "paymentPendingDescription": "Отвара се портал за обрачун ради потврде.",
+        "failed": "План није могао да се промени"
+      },
+      "planCard": {
+        "title": "Месечни кредити",
+        "description": "Сви чланови деле један фонд кредита. Неискоришћени кредити преносе се месец дана.",
+        "rate": "1 кредит = 0,01 $ рачунарске снаге sandbox-а и коришћења управљаних модела.",
+        "raiseHint": "Повећање се наплаћује одмах, пропорционално, и одмах додаје пропорционалне кредите.",
+        "cutHint": "Смањење почиње при следећој обнови.",
+        "subscribeAction": "Претплати се за {amount} / месец",
+        "updateAction": "Промени на {amount} / месец",
+        "chooseAction": "Ажурирај план",
+        "ownerOnly": "Само власници налога могу да промене план.",
+        "enterpriseNote": "Enterprise планови се воде са вашим тимом за налог."
+      },
+      "modal": {
+        "title": "Изаберите месечне кредите",
+        "description": "Један план, било које величине. Неограничен број чланова дели један фонд кредита, а неискоришћени кредити преносе се месец дана.",
+        "askOwnerHint": "Само власници налога могу да промене план.",
+        "askOwnerTitle": "Питајте власника налога",
+        "askOwnerBody": "Само власници налога могу да управљају обрачуном. Затражите од власника да изабере месечни износ за налог."
+      },
+      "admin": {
+        "plan": "План",
+        "monthlyAmount": "Месечни износ"
+      }
+    },
     "popular": "Популарно",
     "creditsExplained": "Објашњени кредити",
     "creditsExhausted": "+100 кредита у {time}. Надоградите да бисте сада користили.",
@@ -2265,6 +2302,79 @@
         "technicalIssues": "Имао сам техничке проблеме",
         "resultsNotGood": "Резултати нису испунили моја очекивања",
         "other": "Други разлог"
+      }
+    },
+    "pricing": {
+      "headline": "Једноставне цене у кредитима. Плаћате оно што ваши агенти користе.",
+      "plans": {
+        "free": {
+          "name": "Free",
+          "note": "Почните са стварним sandbox кредитима.",
+          "f1": "200 кредита / месец, без картице",
+          "f2": "1 пројекат",
+          "f3": "Користите сопствени API кључ за било који премијум модел",
+          "f4": "Повежите своју ChatGPT претплату"
+        },
+        "credits": {
+          "name": "Кредити",
+          "note": "Један план, било које величине. Изаберите кредите који су потребни вашем тиму.",
+          "unit": "/ месечно и више",
+          "f1": "Све из Free плана",
+          "f2": "Неограничен број чланова, један заједнички фонд кредита",
+          "f3": "Неискоришћени кредити преносе се месец дана",
+          "f4": "Допуњавајте кад год желите. Допуне никада не истичу",
+          "f5": "Управљани модели и све функције",
+          "f6": "Подршка путем е-поште"
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "note": "Обим, безбедност и ваше окружење.",
+          "price": "По договору",
+          "f1": "Све из плана Кредити",
+          "f2": "SAML SSO + SCIM синхронизација директоријума",
+          "f3": "Напредни RBAC + евиденције ревизије",
+          "f4": "Cloud, VPC или on-prem",
+          "f5": "BYOK, ChatGPT претплата и контроле управљаних модела",
+          "f6": "SLA, DPA и посвећена подршка"
+        }
+      },
+      "faq": {
+        "free": {
+          "question": "Шта укључује Free?",
+          "answer": "Free укључује 200 кредита месечно за рачунарску снагу sandbox-а и 1 пројекат. Користите сопствени API кључ или повежите ChatGPT претплату за премијум моделе. Управљани модели на Kortix кључевима захтевају плаћени план."
+        },
+        "credit": {
+          "question": "Шта може да се купи једним кредитом?",
+          "answer": "1 кредит вреди 0,01 $. Кредити плаћају рачунарску снагу sandbox-а и коришћење управљаних модела. Рачунарска снага се наплаћује по секунди и по ресурсу: 0,0000168 $/vCPU, 0,0000054 $/GiB RAM-а, 0,000000036 $/GiB складишта. То је око 0,20 $ на сат за подразумевану машину од 2 vCPU / 4 GiB / 20 GiB, а ништа док је заустављена. Управљани модели наплаћују улазне, излазне и кеширане токене по цени тог модела. Са сопственим кључем или ChatGPT-ом плаћате директно добављачу модела."
+        },
+        "amounts": {
+          "question": "Колико плаћам месечно?",
+          "answer": "Било који цео износ у доларима од 20 $ до 10.000 $. Starter је 20 $ за 2.000 кредита, Pro 100 $ за 10.000, Scale 500 $ за 50.000. Сваки износ има исту стопу: 100 кредита по долару, без количинских степеница. За више од 10.000 $ месечно обратите се продаји."
+        },
+        "members": {
+          "question": "Да ли плаћам чланове?",
+          "answer": "Не. Чланови су бесплатни и неограничени. Цео налог дели један фонд кредита, па додавање особе никада не мења ваш рачун."
+        },
+        "rollover": {
+          "question": "Шта се дешава са неискоришћеним кредитима?",
+          "answer": "Неискоришћени месечни кредити преносе се месец дана. Кредити од допуна никада не истичу."
+        },
+        "topup": {
+          "question": "Могу ли да додам кредите усред месеца?",
+          "answer": "Да. Допуните било који износ у било ком тренутку или укључите аутоматску допуну да се ваши агенти никада не заустављају."
+        },
+        "change": {
+          "question": "Могу ли да променим износ?",
+          "answer": "Кад год желите, у Подешавањима. Повећање се наплаћује одмах, пропорционално, и одмах додаје пропорционалне кредите. Смањење почиње при следећој обнови."
+        },
+        "existing": {
+          "question": "Шта се догодило са мојим постојећим планом?",
+          "answer": "Сваки постојећи план постао је план кредита по истој месечној цени. Планови по месту сада добијају цео износ рачуна као кредите у једном заједничком фонду, а места више не постоје."
+        },
+        "enterprise": {
+          "question": "Шта је са Enterprise-ом?",
+          "answer": "Све из плана Кредити плус SAML SSO, SCIM синхронизација директоријума (Okta, Microsoft Entra, JumpCloud), напредни RBAC, евиденције ревизије, SLA и DPA, и Cloud / VPC / on-prem окружење. Обратите нам се за цене по количини."
+        }
       }
     }
   },
@@ -3051,7 +3161,6 @@
     }
   },
   "hardcodedUi": {
-    "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Пређите са наплате по машини на нови план од 40 $ по месту. Отказујемо претплате за машине, неискоришћени износ примењујемо на прво место, а остатак враћамо као ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Токени при сваком захтеву наслеђују улогу налога и чланства у групама свог творца. Да бисте ограничили приступ токена, приликом креирања га ограничите на један пројекат.",
     "projectAccessBoundary": {
       "privateHeading": "Тражите приступ.",
@@ -8421,8 +8530,8 @@
     "autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad": "Идите на пројекте",
     "autoAppAppMarketplacePageJsxTextBrowseSkillsAcrossEvery14a9148d": "Прегледајте вештине у сваком извору — једним кликом их додајете у репо пројекта, уживо у следећој сесији.",
     "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrTitlebf9bba8c": "Претплатите се да бисте започели сесије",
-    "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779": "Ваш тим још нема план. Претплатите се на Kortix Тим за вођење сесија, са ЛЛМ рачунарством и АИ рачунарима за сваког саиграча.",
-    "autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1": "Претплатите се на Тимски план",
+    "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779": "Ваш налог још нема план. Изаберите месечни износ кредита да бисте покретали сесије. Сви чланови деле један фонд.",
+    "autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1": "Изабери план",
     "autoAppAppProjectsPageJsxTextAllAccounts7f58297f": "Сви рачуни",
     "autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3": "Још нема пројеката",
     "autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2": "Пројекат је наменски простор за једну компанију, производ или идеју.",
@@ -8549,14 +8658,9 @@
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": " и примените агента који већ користите.",
     "autoAppPublicMarketingDevelopersPageJsxTextStarOnGitHub32a38178": "Стар на GitHub",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "Поставите интерне агенте",
-    "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "Једноставне цене по седишту. Платите оно што користите.",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Свако седиште укључује пуну платформу и месечне кредите за време рада Агент Цомпутера. Понесите свој кључ API или повежите ChatGPT за приступ моделу. Управљани модели остају доступни и користе кредите на основу употребе токена.",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Плати за рачунар. Донесите свој модел.",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Kortix кредити су првенствено за време извршавања рачунара агента. Користите сопствени кључ API или претплату на ChatGPT да бисте задржали модел наплате код свог провајдера. Опциони управљани модели користе Тимске кредите на основу употребе токена.",
     "autoAppPublicMarketingPricingPageJsxTextPricingQuestionsa7129c6e": "Питања о ценама",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "Започните",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "Покрените свој тим",
-    "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "40$ по седишту, са по 25$ кредита за коришћење. Аутоматски пропорционално, откажите било када — или разговарајте са нама о Ентерприсе-у.",
     "autoAppPublicMarketingPricingPageJsxTextContactSales8f878231": "Затражите демо",
     "autoAppPublicMarketingPricingPageJsxTextGetStarted9675943d": "Започните",
     "autoAppPublicSeoBlogSlugPageJsxAttrSizesMaxbb7ac8fb": "(мак-видтх: 768пк) 100вв, 768пк",
@@ -8589,8 +8693,6 @@
     "autoAppSystemDebugSharingPageJsxTextSharingPickerVisualHarness45b06d33": "СхарингПицкер — визуелни упртач",
     "autoAppSystemDebugSharingPageJsxAttrTitleShareSessiona4e430a9": "Дели сесију",
     "autoAppSystemDebugToolsPageJsxTextSidePanelFileseba2e222": "Бочна табла · Датотеке (истраживач)",
-    "autoAppAdminAccountsPageJsxTextRevertToTeam5247682b": "Врати се у тим",
-    "autoAppAdminAccountsPageJsxTextEnterpriseUnlocksSAMLSSO7daa7fe0": "Ентерприсе откључава САМЛ SSO + SCIM синхронизацију директоријума за овај налог. Наплата седишта је непромењена.",
     "autoAppAdminOpsPageJsxTextShowingTheLatestecb396dc": "Приказује се најновије",
     "autoAppAdminProvidersPageJsxAttrTitleSandboxProviders3d848bdc": "Сандбок Провидерс",
     "autoAppAdminProvidersPageJsxAttrDescriptionBalanceNewSandboxes50122048": "Уравнотежите нове сандбокове међу провајдерима, прегледајте шта сваки ради, мигрирајте сесије између добављача и пратите како сваки провајдер ради",
@@ -8828,7 +8930,7 @@
     "autoAppPresentationSlidesPlatformJsxAttrLeadWeBuildOur3a652ae7": "Градимо сопствене компаније на Kortix и пуштамо људе да гледају: агенти који прегледају ПР, преглед по промени, Slack порука која се претвара у схиппе",
     "autoAppPresentationSlidesPlatformJsxAttrTitleOpenSourced5df9dc2": "Отворени извор",
     "autoAppPresentationSlidesPlatformJsxAttrBodySelfHostableUnderneathb975d6f7": "Само-хостује испод.",
-    "autoAppPresentationSlidesPlatformJsxAttrBodySeatsCompute61f703c9": "Седишта + рачунар.",
+    "autoAppPresentationSlidesPlatformJsxAttrBodySeatsCompute61f703c9": "Кредити за рачунарску снагу и моделе.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyRunItAnywhere9c8c4cd2": "Покрените га где год морају.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyAgentsSkillsWholedd8eefbc": "Агенти, вештине, цели пројекти.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyTheComputeFloora3af4e83": "Рачунарски спрат: ЦПУ и ГПУ мицроВМ.",
@@ -9318,9 +9420,7 @@
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelLightf3e8a707": "Светла тема",
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelDark294ccd51": "Тамна тема",
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelSystem89196afd": "Тема система",
-    "autoFeaturesAccountsSettingsBillingTabJsxTextKortixTeam698bb03b": "Kortix Тим",
     "autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571": "Претплатите се да ставите цео свој тим на Kortix — ЛЛМ рачунарство и АИ рачунари, један новчаник.",
-    "autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToTeam6a396f73": "Претплатите се на Тимски план",
     "autoFeaturesAccountsSettingsBillingTabJsxAttrTitleYouRanefc3b00e": "Понестало вам је кредита",
     "autoFeaturesAccountsSettingsBillingTabJsxTextAutoTopUp9c42761a": "Аутоматско допуњавање",
     "autoFeaturesAccountsSettingsBillingTabJsxTextNeverRunOut4fdb8c3d": "Никад више не понестане",
@@ -9333,27 +9433,15 @@
     "autoFeaturesBillingAccountOverviewJsxAttrLabelWalletBalancecdd0c37d": "Стање новчаника",
     "autoFeaturesBillingAccountOverviewJsxTextSpendThisPeriodc3ec187b": "Проведите овај период",
     "autoFeaturesBillingAccountOverviewJsxAttrSublabelSandboxRuntimef66ba97a": "Сандбок рунтиме",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextSwitchTo0413ce4a": "Пређите на цене засноване на седишту",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff5cec3ce2": "Пређите са наплате по машини на нови план од 40 УСД по седишту. Отказујемо ваше претплате на машине, стављамо ваш неискоришћени баланс на ваше прво седиште,",
     "autoFeaturesBillingClaimPerSeatCardJsxTextNonExpiringc3f29937": "кредит који не истиче",
     "autoFeaturesBillingClaimPerSeatCardJsxTextSwitchingf28a1421": "Пребацивање…",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextClaimSeat0d87cca9": "Захтевајте цене на основу седишта",
-    "autoFeaturesBillingSeatManagementCardJsxTextTeamSeatsac65209c": "Тимска места",
     "autoFeaturesBillingSeatManagementCardJsxTextTeammateIncludesCompute626f1aeb": "/саиграч · укључује рачунар + ЛЛМ коришћење",
     "autoFeaturesBillingSeatManagementCardJsxTextModba31324": "· /мес",
     "autoFeaturesBillingSeatManagementCardJsxTextThisPeriode510d764": "Овај период",
     "autoFeaturesBillingSeatManagementCardJsxTextTotalSpendThis908ba767": "Укупна потрошња овог периода",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d": "Претплатите се на Kortix Тим",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatPera29a6c6d": "по седишту месечно. ЛЛМ рачунарство и АИ рачунари за сваког саиграча.",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextKortixTeame5d39916": "Kortix Тим",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatc1480f59": "по седишту",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextBilledMonthlybdd7a0cd": "наплаћује се месечно",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextLLMComputeAndfea9deab": "ЛЛМ рачунари и АИ рачунари за сваког саиграча. Додајте места како ваш тим расте.",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f": "Почиње наплата…",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextAutoProratedCancelfa091962": "Аутоматски пропорционално · откажите било када · наплаћује се месечно",
-    "autoFeaturesBillingTeamPlanCheckoutJsxAttrLabelOnlyAccountbf72d3e0": "Само власници налога могу да се претплате. Ваше седиште се аутоматски активира када се активира.",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextAskAnAccount6f6b506d": "Затражите место од власника налога",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextOnlyAccountOwnerse7f0d952": "Само власници налога могу да управљају наплатом. Када се власник претплати на тим Kortix, ваше место се аутоматски активира.",
     "autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f": "Пребаци бочну траку",
     "autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904": "нешто стварно за рад.",
     "autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d": "Опишите задатак за почетак сесије…",
@@ -9913,7 +10001,6 @@
       "text0a08767ed1da": "Дозвољена, контролисана или блокирана",
       "text0a15fd3848fa": "Модел за вид",
       "text0a1d956ac650": "Прегледајте промене које ваши агенти предложе и прегледајте сваку верзију коју сачувају.",
-      "text0a2ea173ab93": "Кредити финансирају sandbox израчунавања — чак и BYOK пробни период захтева стање у новчанику за покретање сесија. Бесплатни почетни кредит износи $2; један месец по седишту износи $25.",
       "text0a30a815d67d": "Страница",
       "text0a45caff4417": "Покретање shell команди у терминалу",
       "text36569109d4e5": "Трошкови сесија и књига кредита за овај налог.",
@@ -10108,7 +10195,6 @@
       "text108d15248c17": "Само догађаји са радњом која почиње „{value0}“",
       "text108fd36702c5": "Окружење овог пројекта је спремно",
       "text109311589787": "Runtime",
-      "text109346f4fd22": "Ваш новчаник је празан, па сесије не могу да се покрену. Допуните стање да би ресурси и најновији AI модели наставили да раде — ваш план и места нису погођени.",
       "text1095ddb6dcd8": "Додајте application",
       "text109d57cb33d7": "Рангирање, оцењивање или одбијање кандидата",
       "text109ff88aec78": "Подразумевана веза је ажурирана",
@@ -10442,7 +10528,6 @@
       "text1a17a48d8496": "Књига кредита",
       "text1a1e4d549e85": "Када овај агент почне сам од себе.",
       "text1a2303ede074": "Повежи",
-      "text1a24578b099b": "чланови налога организација списак власници администратори места",
       "text1a3ba76c2b52": "И даље ћемо вас усмерити на следећи корак.",
       "text1a425eb8b2b6": "Конектор је додат у манифест, али синхронизација није успела: {value0}. Користите Sync да бисте покушали поново.",
       "text1a42d28bc87a": "Сандбокси агената, који раде код провајдера који конфигуришете",
@@ -10489,7 +10574,6 @@
       "text1b7b2078f271": "Одговор стиже у нит као једна порука која се попуњава, а не као зид ажурирања. Агент довршава ту поруку уместо да испод ње објави другу.",
       "text1b7bdab96532": "Који агент обрађује свако покретање.",
       "text1b84926d58a9": "За овај слајд нема сценарија.",
-      "text1b85843d53b1": "чланови члан радни простор приступ сарадници људи колеге списак ко може да види дозволе додели дели места",
       "text1b8f0674b970": "Sandbox садржи један Kortix токен ограничен на пројекат и нема кључеве трећих страна. Акредитив за систем кандидата дешифрује се на серверу, додаје одлазном захтеву, а затим се одбацује.",
       "text1ba70b3e6cfc": "Модел",
       "text1bb320d9db5d": "Користи прилагођени AgentMail кључ",
@@ -10816,7 +10900,6 @@
       "text24d906bf39fc": "Примењује се на кључеве које људи креирају овде. Кључеви које Kortix креира за покренуту сесију истичу са том сесијом.",
       "text24dab51514a1": "{value0} је додато у {value1}",
       "text24db9f4eb779": "Претплата је успешно синхронизована",
-      "text24e800f1cdb3": "Тим · 40$/место/мес",
       "text24f15c9196e8": "· група",
       "text24f32b0f8b75": "Одобрен пробни период налога",
       "text24f46f717cfa": "Ауторизација није потребна",
@@ -10935,7 +11018,6 @@
       "text28810171a932": "Повратне информације претворене у спецификације, са приложеним доказима",
       "text28904e587358": "Прави commit и отвара захтев за измену",
       "text2893925796c8": "Учитавање књиге стања…",
-      "text289aec13d5aa": "Претплатите се — ${value0}/сеат",
       "text289aff12b042": "Питање",
       "text289b30b31ca1": "cron израз са 6 поља — секунда, минут, сат, дан, месец, дан у недељи — у било којој IANA временској зони. Или једна run_at временска ознака за нешто што треба да се деси једном, па да остане тихо.",
       "text28a800e4720b": "select_account",
@@ -11839,7 +11921,6 @@
       "text42d0d7ff0656": "Петља агента",
       "text42d8a7ea9caf": "изузето",
       "text42e45c4f8d15": "Ажурирање webhook-а није успело",
-      "text42ef2c24bd7a": "Тимска места",
       "text42f3ceed281b": "OpenClaw и Hermes су бриљантни лични агенти отвореног кода — и искрено их препоручујемо појединцима. Али лични „Jarvis“ и уређена компанијска платформа су различите ствари. Ево тачно где је граница.",
       "text42fbdd7efa9b": "1px čvrsto rgba(255,80,80,0.4)",
       "text42fcd9dda5f6": "Уклањање тог упита није успело",
@@ -11934,7 +12015,6 @@
       "text457f4f767fe0": "Проверена доступност API-ја",
       "text45808d75bf89": "Webhooks",
       "text45823eaac0c8": "Колачић",
-      "text458cde86effb": "Задржава SSO, SCIM, RBAC и права ревизије за потписани Enterprise налог који се такође наплаћује по седишту, како Stripe усаглашавање не би могло да их уклони.",
       "text45989de49fb7": "Детаљи",
       "text459a23a5980f": "Удобно",
       "text459ff8f45278": "Аутоматски обезбеди групе",
@@ -11960,7 +12040,6 @@
       "text4616b90a6d94": "секунди све док",
       "text46342ec1eec9": "Фаза",
       "text4634beebd84d": "Агент добија токен. Кључ никада не добија.",
-      "text46470f35d5d8": "Ваша претплата, места у тиму и обрачун за овај налог.",
       "text464bfda48ca0": "TYPE II",
       "text464c4ffd019e": "Измени",
       "text464cf293fd24": "Нит {channel} повезана са једном сесијом, која се завршава захтевом за измену понуђеним на одобрење.",
@@ -12667,7 +12746,6 @@
       "text59f65a8a6575": "Отвори у Google Slides-у",
       "text59f765f38854": "Шта му је потребно",
       "text5a052671ec75": "Поље јединственог идентификатора за кориснике",
-      "text5a0b692095be": "Једноставна цена по кориснику. Бесплатни пакет укључује 200 кредита месечно за sandbox ресурсе; надоградите када пожелите најновије AI моделе и 2.500 заједничких кредита по кориснику.",
       "text5a0cac0326d5": "Преузми Kortix",
       "text5a219a418ec7": "Ова ставка није могла да се прочита из архиве.",
       "text5a23444828db": "Управљај",
@@ -12774,7 +12852,6 @@
       "text5d24939e8b83": "1 сесија  =  1 рачунар  =  1 грана",
       "text5d28a8e6bc88": "Подесио/ла сам callback URL, audience и NameID",
       "text5d28a90f4498": "није успело",
-      "text5d2c13d6f9fa": "седиште",
       "text5d401fa67ac9": "Удобно — до 3 по реду",
       "text5d405d8955db": "Покренут billing пакет тестова",
       "text5d42766c7eca": "Понуда",
@@ -14140,7 +14217,6 @@
       "text854a397472d0": "Слајд {value0} је успешно измењен",
       "text854e6dd9d777": "Тип се одређује при регистрацији. Региструјте нову апликацију да бисте га променили.",
       "text8552ade1b621": "Комора сесије: шта је {inside}, а шта је {outside}.",
-      "text8559d8fd97d1": "{count, plural, one {# активно седиште} other {# активних седишта}} · ${credit} кредита за коришћење је уплаћено.",
       "text8564edf2cd1f": "Акредитиви конектора, који се разрешавају на серверу",
       "text857be0b1fee8": "Постојећи рад",
       "text8585b95f4600": "Kortix на GitHub-у",
@@ -16197,7 +16273,6 @@
       "textbf405915a297": "Механичка миграција кроз двеста датотека",
       "textbf4d20c9ba67": "Потрошња рачунарских ресурса",
       "textbf56a193cb9f": "Следећи резултат",
-      "textbf5d8eb5292b": "Нема активне претплате за машину коју можете да пребаците на цене по седишту.",
       "textbf5f39ac2192": "    app: gmail",
       "textbf692d2cef5a": "Метаподаци федерације које сте раније преузели унапред су попуњени испод. Kortix региструје ваш IdP и усмерава пријаве за ваш email домен преко њега.",
       "textbf6c07f87075": "Повежи апликацију",
@@ -17190,11 +17265,9 @@
       "textdbba817f12f2": "7 послова је напредовало, 2 су застала.",
       "textdbbfc6cf8952": "Прегледач или изворна апликација. Без тајне — само PKCE.",
       "textdbc539f3b073": ". Немате дозволу да то промените — питајте менаџера пројекта.",
-      "textdbc55cb506f2": "Ваш тим још није на плану. Претплатите се на Kortix Team да бисте покретали сесије, уз LLM рачунарске ресурсе и AI Computers за сваког члана тима.",
       "textdbcd5e7bb7a0": "Светла",
       "textdbd9b1773511": "Вештине и меморија се увећавају при сваком покретању",
       "textdbe0414753c1": "Сачекајте тренутак пре поновног покушаја.",
-      "textdbe08e62ef56": "Ваш тим користи Kortix Team. Кредити за израчунавање и LLM су спремни.",
       "textdbe46defeac2": "само упозорава",
       "textdbef6cc84fef": "kortix pokreni self-host",
       "textdbf362d4f210": "Копирај линк",
@@ -17361,7 +17434,6 @@
       "texte0401ccff09d": "Slack и email се повезују на исти начин, па агент може да буде доступан и да одговара тамо где се посао већ одвија.",
       "texte0447514873e": "Учитавање чланова није успело",
       "texte0454e781e5f": "$ kortix cr",
-      "texte0478c3e271b": "Користите ценовник по кориснику",
       "texte04eb29020ea": "продаја",
       "texte0603c499aae": "http",
       "texte0661dab3f98": "Један ограничени токен и ништа више",
@@ -17588,7 +17660,6 @@
       "texte654b63c8098": "Креирај управљано Email пријемно сандуче",
       "texte65ac57c0c16": "Вештине, алати и смернице као код",
       "texte65afdeb4024": "Није могуће приступити серверу за преглед. Sandbox се можда још покреће.",
-      "texte65c84be34f9": "Enterprise овом налогу омогућава SAML SSO, SCIM синхронизацију директоријума, RBAC и приступ ревизији. Наплаћени план и наплата по седишту остају непромењени.",
       "texte65f8a02d565": "Учитавање измена није успело",
       "texte674447337e8": "Доступно",
       "texte67a6ef2363e": "Користи моју OAuth апликацију",
@@ -18042,7 +18113,6 @@
       "textf3a4ff3c0ae3": "Подесите апликацију за аутентификацију у оквиру Подешавања → Безбедност, а затим покушајте поново — овај налог блокира заштићене радње док сесија не буде потврђена MFA-ом.",
       "textf3ad568c3fa6": "Слика машине на којој се ова сесија покреће. Бира се при креирању сесије и касније се не може променити — покрените нову сесију да бисте користили другу.",
       "textf3b80d5fea1d": "Свака измена стиже на грану направљену за ту сесију. Ништа што агент уради није видљиво другој сесији нити main-у.",
-      "textf3b81325942e": "Седишта",
       "textf3d19541f3a5": "30 секунди",
       "textf3d331b82d30": "Синхронизација претплате није успела",
       "textf3d4c9b3357c": "Престаните да градите статички софтвер. Почните да градите повратне спреге.",
@@ -18463,7 +18533,6 @@
       "text87ee04b2e9ee": "Ниједно није заустављено",
       "text58dfb849aa70": "Заустављено: {value0}",
       "text42bd5f3bc3ca": "Приказује се на листи „{value0}“.",
-      "text415d8dfb1c5e": "Свако место додаје {value0} заједничких кредита месечно. Цео тим користи једно стање.",
       "textb9967f948f93": "Вредности окружења",
       "textaea537d63c8c": "Овлашћени налози",
       "text57c8f2cd3dd6": "Одређено при покретању сесије",
@@ -18506,7 +18575,6 @@
       "text151863950f0e": "Могу ли да користим моделе које већ плаћам?",
       "text055026a9c10e": "Да. Користите сопствени API кључ за било ког већег добављача, пријавите се ChatGPT претплатом коју већ плаћате или користите управљани мрежни пролаз без иједног кључа. Модел је један ред конфигурације у репозиторијуму, па је промена добављача diff, а не миграција.",
       "texte8dc9deba44c": "Колико кошта?",
-      "text8eb8b8551cec": "Free кошта $0 и обухвата један пројекат и 200 кредита месечно за sandbox рачунарске ресурсе, уз ваш кључ за сваки премијум модел. Team кошта $40 по месту месечно и обједињује 2.500 кредита по месту. Софтвер за самостално хостовање је бесплатан; сами плаћате модел и рачунарске ресурсе.",
       "text7ee5a6d5e8ad": "Зашто га градимо",
       "text625b22ba31d0": "Прочитајте изворни кôд",
       "textf16b8eb8dbdc": "ко обавља посао",
@@ -19597,7 +19665,18 @@
       "text91dc861375bc": "Политика издања за мобилне уређаје прегледана",
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
       "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
-      "text2313fe21ea84": "Измени {name}"
+      "text2313fe21ea84": "Измени {name}",
+      "text44f9fff8bdae": "Промењен је план кредита",
+      "text3fa17bba73e1": "Ваш налог још нема план. Изаберите месечни износ кредита да бисте покретали сесије. Сви чланови деле један фонд.",
+      "text6821e42be2c1": "Ваш новчаник је празан, па сесије не могу да раде. Допуните га да би рачунарска снага и најновији AI модели наставили да раде — ваш план није погођен.",
+      "text146aaf3c71fa": "Одржава SSO, SCIM, RBAC и ревизију омогућеним за потписани Enterprise налог који се такође наплаћује преко плаћеног плана, како их Stripe усклађивање не би уклонило.",
+      "text517105fd13ce": "Кредити финансирају рачунарску снагу sandbox-а — чак и BYOK пробни период захтева стање у новчанику за покретање сесија. Бесплатни уводни износ је 2 $.",
+      "text2f1d17f50af8": "Enterprise омогућава SAML SSO, SCIM синхронизацију директоријума, RBAC и приступ ревизији за овај налог. Наплаћени план се не мења.",
+      "text12836c0e435d": "Free је 0 $ — један пројекат и 200 кредита месечно за рачунарску снагу sandbox-а, са вашим кључем за било који премијум модел. Плаћени планови су у кредитима: изаберете месечни износ, чланови су бесплатни и неограничени, а један фонд покрива цео налог. Самостално хостовање софтвера не кошта ништа; уместо тога плаћате сопствени рачун за моделе и рачунарску снагу.",
+      "text5dffd4db88c5": "План, кредити и обрачун за овај налог.",
+      "text49fd64c206dd": "Ваш план је активан. Кредити су спремни.",
+      "textad828837ddd8": "чланови члан радни простор приступ сарадници људи колеге списак ко може да види дозволе додели дели",
+      "textf651529d7e60": "чланови налога организација списак власници администратори"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

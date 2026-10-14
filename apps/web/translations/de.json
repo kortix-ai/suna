@@ -524,7 +524,7 @@
         },
         "plan": {
           "label": "Tarif",
-          "description": "Ihr Abonnement, Teamplätze und die Abrechnung für dieses Konto."
+          "description": "Dein Plan, deine Credits und die Abrechnung für dieses Konto."
         }
       }
     },
@@ -2032,16 +2032,12 @@
   },
   "billing": {
     "plan": {
-      "teamSeats": "{count, plural, one {Team · # Platz} other {Team · # Plätze}}",
       "cancels": "Endet am {date}",
       "cancelsAtPeriodEnd": "Endet am Periodenende",
       "renews": "Verlängert sich am {date}",
       "active": "Aktiv",
       "noSubscription": "Kein Abonnement",
       "status": "{status}",
-      "seats": "Plätze",
-      "perSeat": "Pro Platz",
-      "monthlyTotal": "Monatlich gesamt",
       "perMonth": "{amount}/Monat",
       "currentPlan": "Aktueller Plan",
       "statuses": {
@@ -2055,9 +2051,6 @@
         "paused": "Pausiert"
       },
       "loadFailed": "Abonnementdaten konnten nicht geladen werden",
-      "teamTitle": "Kortix Team",
-      "teamDescription": "Nimm alle Teammitglieder in einen gemeinsamen Plan auf.",
-      "subscribe": "Team abonnieren",
       "manageBilling": "Abrechnung verwalten",
       "outOfCredits": "Keine Credits mehr",
       "buyCreditsHint": "Kaufe unten Credits oder aktiviere die automatische Aufladung.",
@@ -2105,7 +2098,51 @@
     },
     "title": "Abrechnung & Abonnement",
     "subscription": "Abonnement",
-    "credits": "Guthaben",
+    "credits": {
+      "picker": {
+        "presetGroup": "Monatlicher Planbetrag",
+        "presets": {
+          "starter": "Starter",
+          "pro": "Pro",
+          "scale": "Scale"
+        },
+        "amountLabel": "Monatlicher Betrag in Dollar",
+        "sliderLabel": "Monatlicher Betrag",
+        "creditsPerMonth": "{credits} Credits / Monat",
+        "range": "Wähle einen ganzen Dollarbetrag von {min} bis {max}."
+      },
+      "change": {
+        "updated": "Plan aktualisiert",
+        "updatedDescription": "{credits} Credits / Monat.",
+        "unchanged": "Das ist bereits dein Plan.",
+        "paymentPending": "Zahlung muss bestätigt werden",
+        "paymentPendingDescription": "Das Abrechnungsportal wird zur Bestätigung geöffnet.",
+        "failed": "Plan konnte nicht geändert werden"
+      },
+      "planCard": {
+        "title": "Monatliche Credits",
+        "description": "Alle Mitglieder teilen sich einen Credit-Pool. Ungenutzte Credits werden einen Monat übertragen.",
+        "rate": "1 Credit = 0,01 $ Sandbox-Rechenzeit und Nutzung verwalteter Modelle.",
+        "raiseHint": "Eine Erhöhung wird sofort anteilig berechnet und fügt die anteiligen Credits sofort hinzu.",
+        "cutHint": "Eine Senkung gilt ab der nächsten Verlängerung.",
+        "subscribeAction": "Für {amount} / Monat abonnieren",
+        "updateAction": "Auf {amount} / Monat ändern",
+        "chooseAction": "Plan aktualisieren",
+        "ownerOnly": "Nur Kontoinhaber können den Plan ändern.",
+        "enterpriseNote": "Enterprise-Pläne werden mit deinem Account-Team verwaltet."
+      },
+      "modal": {
+        "title": "Wähle deine monatlichen Credits",
+        "description": "Ein Plan in jeder Größe. Unbegrenzt viele Mitglieder teilen sich einen Credit-Pool, ungenutzte Credits werden einen Monat übertragen.",
+        "askOwnerHint": "Nur Kontoinhaber können den Plan ändern.",
+        "askOwnerTitle": "Frag einen Kontoinhaber",
+        "askOwnerBody": "Nur Kontoinhaber können die Abrechnung verwalten. Bitte einen Inhaber, einen Monatsbetrag für das Konto zu wählen."
+      },
+      "admin": {
+        "plan": "Plan",
+        "monthlyAmount": "Monatlicher Betrag"
+      }
+    },
     "popular": "Beliebt",
     "creditsExplained": "Credits erklärt",
     "creditsExhausted": "+100 Credits in {time}. Jetzt upgraden, um sofort zu nutzen.",
@@ -2265,6 +2302,79 @@
         "technicalIssues": "Ich hatte technische Probleme",
         "resultsNotGood": "Die Ergebnisse entsprachen nicht meinen Erwartungen",
         "other": "Anderer Grund"
+      }
+    },
+    "pricing": {
+      "headline": "Einfache Credit-Preise. Zahle für das, was deine Agenten nutzen.",
+      "plans": {
+        "free": {
+          "name": "Free",
+          "note": "Starte mit echten Sandbox-Credits.",
+          "f1": "200 Credits / Monat, keine Karte nötig",
+          "f2": "1 Projekt",
+          "f3": "Eigener API-Schlüssel für jedes Premium-Modell",
+          "f4": "Verbinde dein ChatGPT-Abo"
+        },
+        "credits": {
+          "name": "Credits",
+          "note": "Ein Plan in jeder Größe. Wähle die Credits, die dein Team braucht.",
+          "unit": "/ Monat und mehr",
+          "f1": "Alles aus Free",
+          "f2": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
+          "f3": "Ungenutzte Credits werden einen Monat übertragen",
+          "f4": "Jederzeit aufladen. Aufladungen verfallen nie",
+          "f5": "Verwaltete Modelle und alle Funktionen",
+          "f6": "Support per E-Mail"
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "note": "Skalierung, Sicherheit und dein Deployment.",
+          "price": "Individuell",
+          "f1": "Alles aus Credits",
+          "f2": "SAML-SSO + SCIM-Verzeichnissynchronisierung",
+          "f3": "Erweitertes RBAC + Audit-Logs",
+          "f4": "Cloud, VPC oder On-Prem",
+          "f5": "BYOK, ChatGPT-Abo und Steuerung verwalteter Modelle",
+          "f6": "SLA, DPA und dedizierter Support"
+        }
+      },
+      "faq": {
+        "free": {
+          "question": "Was enthält Free?",
+          "answer": "Free enthält jeden Monat 200 Credits für Sandbox-Rechenzeit und 1 Projekt. Nutze deinen eigenen API-Schlüssel oder verbinde dein ChatGPT-Abo für Premium-Modelle. Verwaltete Modelle mit Kortix-Schlüsseln erfordern einen kostenpflichtigen Plan."
+        },
+        "credit": {
+          "question": "Was bekomme ich für einen Credit?",
+          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen Sandbox-Rechenzeit und die Nutzung verwalteter Modelle. Rechenzeit wird pro Sekunde und Ressource abgerechnet: 0,0000168 $/vCPU, 0,0000054 $/GiB RAM, 0,000000036 $/GiB Speicher. Das sind etwa 0,20 $ pro Stunde für die Standardmaschine mit 2 vCPU / 4 GiB / 20 GiB, und nichts, solange sie gestoppt ist. Verwaltete Modelle berechnen Eingabe-, Ausgabe- und gecachte Tokens zum Tarif des jeweiligen Modells. Mit eigenem Schlüssel oder ChatGPT zahlst du deinen Modellanbieter direkt."
+        },
+        "amounts": {
+          "question": "Wie viel zahle ich pro Monat?",
+          "answer": "Einen beliebigen ganzen Dollarbetrag von 20 $ bis 10.000 $. Starter kostet 20 $ für 2.000 Credits, Pro 100 $ für 10.000, Scale 500 $ für 50.000. Jeder Betrag hat denselben Satz: 100 Credits pro Dollar, keine Mengenstaffeln. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
+        },
+        "members": {
+          "question": "Zahle ich für Mitglieder?",
+          "answer": "Nein. Mitglieder sind kostenlos und unbegrenzt. Das ganze Konto teilt sich einen Credit-Pool, deshalb ändert ein neues Mitglied nie deine Rechnung."
+        },
+        "rollover": {
+          "question": "Was passiert mit ungenutzten Credits?",
+          "answer": "Ungenutzte monatliche Credits werden um einen Monat übertragen. Credits aus Aufladungen verfallen nie."
+        },
+        "topup": {
+          "question": "Kann ich mitten im Monat Credits hinzufügen?",
+          "answer": "Ja. Lade jederzeit einen beliebigen Betrag auf oder aktiviere die automatische Aufladung, damit deine Agenten nie stoppen."
+        },
+        "change": {
+          "question": "Kann ich meinen Betrag ändern?",
+          "answer": "Jederzeit in den Einstellungen. Eine Erhöhung wird sofort anteilig berechnet und fügt die anteiligen Credits sofort hinzu. Eine Senkung gilt ab der nächsten Verlängerung."
+        },
+        "existing": {
+          "question": "Was ist mit meinem bestehenden Plan passiert?",
+          "answer": "Jeder bestehende Plan wurde zu einem Credits-Plan mit demselben Monatspreis. Pro-Platz-Pläne erhalten ihre gesamte Rechnung jetzt als Credits in einem gemeinsamen Pool, Plätze gibt es nicht mehr."
+        },
+        "enterprise": {
+          "question": "Was ist mit Enterprise?",
+          "answer": "Alles aus Credits plus SAML-SSO, SCIM-Verzeichnissynchronisierung (Okta, Microsoft Entra, JumpCloud), erweitertes RBAC, Audit-Logs, SLA und DPA sowie Cloud-/VPC-/On-Prem-Deployment. Sprich uns für Mengenpreise an."
+        }
       }
     }
   },
@@ -3051,7 +3161,6 @@
     }
   },
   "hardcodedUi": {
-    "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Wechsle von der Abrechnung pro Maschine zum neuen Tarif für 40 $ pro Sitzplatz. Wir kündigen deine Maschinenabonnements, verrechnen dein ungenutztes Guthaben mit dem ersten Sitzplatz und erstatten den Rest als ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Token übernehmen bei jeder Anfrage die Kontorolle und Gruppenmitgliedschaften ihres Erstellers. Begrenze den Zugriff eines Tokens auf ein einzelnes Projekt, wenn du es erstellst.",
     "projectAccessBoundary": {
       "privateHeading": "Bitten Sie um Zugriff.",
@@ -8562,8 +8671,8 @@
     "autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad": "Gehen Sie zu Projekten",
     "autoAppAppMarketplacePageJsxTextBrowseSkillsAcrossEvery14a9148d": "Durchsuchen Sie Fertigkeiten in allen Quellen – mit einem Klick werden sie zum Repo eines Projekts hinzugefügt, live in der nächsten Sitzung.",
     "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrTitlebf9bba8c": "Abonnieren Sie, um Sitzungen zu starten",
-    "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779": "Ihr Team hat noch keinen Plan. Abonnieren Sie Kortix Team, um Sitzungen mit LLM-Rechen- und KI-Computern für jeden Teamkollegen durchzuführen.",
-    "autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1": "Abonnieren Sie den Teamplan",
+    "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779": "Dein Konto hat noch keinen Plan. Wähle einen monatlichen Credit-Betrag, um Sitzungen auszuführen. Alle Mitglieder teilen sich einen Pool.",
+    "autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1": "Plan wählen",
     "autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3": "Noch keine Projekte",
     "autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2": "Ein Projekt ist ein spezieller Raum für ein Unternehmen, ein Produkt oder eine Idee.",
     "autoAppAuthAuthPageJsxAttrAriaLabelAuthenticationMode01efd9f8": "Authentifizierungsmodus",
@@ -8683,13 +8792,8 @@
     "autoAppPublicMarketingDevelopersPageJsxTextInstallTheCLIbd0e41b0": "Installieren Sie die CLI und führen Sie sie aus",
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": ", und stellen Sie den Agenten bereit, den Sie bereits verwenden.",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "Stellen Sie interne Agenten bereit",
-    "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "Einfache Preisgestaltung pro Sitzplatz. Bezahlen Sie für das, was Sie nutzen.",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Jeder Sitzplatz umfasst die vollständige Plattform und monatliche Credits für die Laufzeit von Agent Computers. Verwenden Sie einen eigenen API-Schlüssel oder verbinden Sie ChatGPT für den Modellzugriff. Verwaltete Modelle bleiben verfügbar und verbrauchen Credits auf Basis der Token-Nutzung.",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Bezahlen Sie für den Computer. Verwenden Sie Ihr eigenes Modell.",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Kortix-Credits sind primär für die Laufzeit von Agent Computers vorgesehen. Verwenden Sie einen eigenen API-Schlüssel oder ein ChatGPT-Abonnement, damit Ihr Modellanbieter die Modellnutzung abrechnet. Optionale verwaltete Modelle verbrauchen Team-Credits auf Basis der Token-Nutzung.",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "Beginnen Sie mit dem Bau",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "Bringen Sie Ihr Team in Schwung",
-    "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "40 $ pro Sitzplatz, mit jeweils 20 $ Nutzungsguthaben. Automatisch anteilig abgerechnet, jederzeit kündbar – oder sprechen Sie mit uns über Enterprise.",
     "autoAppPublicMarketingPricingPageJsxTextContactSales8f878231": "Kontaktieren Sie den Vertrieb",
     "autoAppPublicSeoBlogSlugPageJsxAttrSizesMaxbb7ac8fb": "(maximale Breite: 768 Pixel) 100vw, 768 Pixel",
     "autoAppPublicSeoBlogSlugPageJsxTextMoreFrom3f4590f3": "Mehr aus dem Blog",
@@ -8718,8 +8822,6 @@
     "autoAppSystemDebugSharingPageJsxTextSharingPickerVisualHarness45b06d33": "SharingPicker – visuelles Geschirr",
     "autoAppSystemDebugSharingPageJsxAttrTitleShareSessiona4e430a9": "Sitzung teilen",
     "autoAppSystemDebugToolsPageJsxTextSidePanelFileseba2e222": "Seitenbereich · Dateien (Explorer)",
-    "autoAppAdminAccountsPageJsxTextRevertToTeam5247682b": "Zurück zum Team",
-    "autoAppAdminAccountsPageJsxTextEnterpriseUnlocksSAMLSSO7daa7fe0": "Enterprise schaltet die SAML-SSO- und SCIM-Verzeichnissynchronisierung für dieses Konto frei. Die Sitzplatzabrechnung bleibt unverändert.",
     "autoAppAdminOpsPageJsxTextShowingTheLatestecb396dc": "Zeigt das Neueste",
     "autoAppAdminProvidersPageJsxAttrTitleSandboxProviders3d848bdc": "Sandbox-Anbieter",
     "autoAppAdminProvidersPageJsxAttrDescriptionBalanceNewSandboxes50122048": "Gleichen Sie neue Sandboxen über die Anbieter aus, überprüfen Sie, was die einzelnen Sandboxen ausführen, migrieren Sie Sitzungen zwischen den Anbietern und verfolgen Sie die Leistung der einzelnen Anbieter",
@@ -8929,7 +9031,7 @@
     "autoAppPresentationSlidesPlatformJsxAttrLeadWeBuildOur3a652ae7": "Wir bauen unsere eigenen Unternehmen auf Kortix auf und lassen die Leute zuschauen: Agenten, die PRs überprüfen, eine Vorschau pro Änderung, eine Slack-Nachricht, die sich in einen Versand verwandelt",
     "autoAppPresentationSlidesPlatformJsxAttrTitleOpenSourced5df9dc2": "Open Source",
     "autoAppPresentationSlidesPlatformJsxAttrBodySelfHostableUnderneathb975d6f7": "Darunter selbst bewirtbar.",
-    "autoAppPresentationSlidesPlatformJsxAttrBodySeatsCompute61f703c9": "Sitzplätze + Berechnung.",
+    "autoAppPresentationSlidesPlatformJsxAttrBodySeatsCompute61f703c9": "Credits für Rechenleistung und Modelle.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyRunItAnywhere9c8c4cd2": "Führen Sie es überall dort aus, wo sie es benötigen.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyAgentsSkillsWholedd8eefbc": "Agenten, Fähigkeiten, ganze Projekte.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyTheComputeFloora3af4e83": "Die Rechenebene: CPU- und GPU-MicroVMs.",
@@ -9349,9 +9451,7 @@
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelLightf3e8a707": "Lichtthema",
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelDark294ccd51": "Dunkles Thema",
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelSystem89196afd": "Systemthema",
-    "autoFeaturesAccountsSettingsBillingTabJsxTextKortixTeam698bb03b": "Kortix-Team",
     "autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571": "Abonnieren Sie, um Ihr gesamtes Team auf Kortix zu setzen – LLM Computing und AI Computers, eine Geldbörse.",
-    "autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToTeam6a396f73": "Abonnieren Sie den Teamplan",
     "autoFeaturesAccountsSettingsCliTokensTabJsxTextBullbb9413cf": "•",
     "autoFeaturesAccountsSettingsKeyboardShortcutsTabJsxAttrLabelCmd975d185c": "Befehl (⌘)",
     "autoFeaturesAccountsSettingsKeyboardShortcutsTabJsxAttrLabelCtrl620ee654": "Strg (⌃)",
@@ -9359,27 +9459,15 @@
     "autoFeaturesBillingAccountOverviewJsxAttrLabelWalletBalancecdd0c37d": "Wallet-Guthaben",
     "autoFeaturesBillingAccountOverviewJsxTextSpendThisPeriodc3ec187b": "Verbringen Sie diese Zeit",
     "autoFeaturesBillingAccountOverviewJsxAttrSublabelSandboxRuntimef66ba97a": "Sandbox-Laufzeit",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextSwitchTo0413ce4a": "Wechseln Sie zur sitzplatzbasierten Preisgestaltung",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff5cec3ce2": "Wechseln Sie von der Abrechnung pro Maschine zum neuen 40-Dollar-Tarif pro Sitzplatz. Wir kündigen Ihre Automatenabonnements, verrechnen Ihr ungenutztes Guthaben auf Ihren ersten Sitzplatz,",
     "autoFeaturesBillingClaimPerSeatCardJsxTextNonExpiringc3f29937": "unbegrenztes Guthaben",
     "autoFeaturesBillingClaimPerSeatCardJsxTextSwitchingf28a1421": "Wechseln…",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextClaimSeat0d87cca9": "Fordern Sie sitzplatzbasierte Preise an",
-    "autoFeaturesBillingSeatManagementCardJsxTextTeamSeatsac65209c": "Mannschaftssitze",
     "autoFeaturesBillingSeatManagementCardJsxTextTeammateIncludesCompute626f1aeb": "/teammate · umfasst Compute- und LLM-Nutzung",
     "autoFeaturesBillingSeatManagementCardJsxTextModba31324": "· /Mo",
     "autoFeaturesBillingSeatManagementCardJsxTextThisPeriode510d764": "Dieser Zeitraum",
     "autoFeaturesBillingSeatManagementCardJsxTextTotalSpendThis908ba767": "Gesamtausgaben in diesem Zeitraum",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d": "Abonnieren Sie das Kortix-Team",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatPera29a6c6d": "pro Sitzplatz und Monat. LLM-Rechen- und KI-Computer für jeden Teamkollegen.",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextKortixTeame5d39916": "Kortix-Team",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatc1480f59": "pro Sitzplatz",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextBilledMonthlybdd7a0cd": "monatlich abgerechnet",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextLLMComputeAndfea9deab": "LLM-Rechen- und KI-Computer für jeden Teamkollegen. Fügen Sie Sitzplätze hinzu, wenn Ihr Team wächst.",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f": "Checkout wird gestartet…",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextAutoProratedCancelfa091962": "Automatisch anteilig berechnet · Jederzeit kündbar · Monatliche Abrechnung",
-    "autoFeaturesBillingTeamPlanCheckoutJsxAttrLabelOnlyAccountbf72d3e0": "Nur Kontoinhaber können sich anmelden. Sobald dies der Fall ist, wird Ihr Sitz automatisch aktiviert.",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextAskAnAccount6f6b506d": "Bitten Sie einen Kontoinhaber um einen Sitzplatz",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextOnlyAccountOwnerse7f0d952": "Nur Kontoinhaber können die Abrechnung verwalten. Sobald sich ein Eigentümer bei Kortix Team anmeldet, wird Ihr Sitzplatz automatisch aktiviert.",
     "autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f": "Seitenleiste umschalten",
     "autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904": "etwas Reales, an dem man arbeiten kann.",
     "autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d": "Beschreiben Sie eine Aufgabe zum Starten einer Sitzung ...",
@@ -9913,7 +10001,6 @@
       "text0a08767ed1da": "Erlaubt, geschützt oder blockiert",
       "text0a15fd3848fa": "Vision-Modell",
       "text0a1d956ac650": "Prüfe die von deinen Agenten vorgeschlagenen Änderungen und sieh dir jede gespeicherte Version an.",
-      "text0a2ea173ab93": "Guthaben finanziert Sandbox-Compute – auch für einen BYOK-Testzeitraum ist ein Wallet-Guthaben erforderlich, um Sitzungen auszuführen. Das kostenlose Willkommensguthaben beträgt 2 $; ein Monat pro Sitz kostet 25 $.",
       "text0a30a815d67d": "Seite",
       "text0a45caff4417": "Shell-Befehle im Terminal ausführen",
       "text36569109d4e5": "Sitzungskosten und Guthabenbuchungen für dieses Konto.",
@@ -10108,7 +10195,6 @@
       "text108d15248c17": "Nur Ereignisse mit Aktion beginnend mit „{value0}“",
       "text108fd36702c5": "Die Umgebung dieses Projekts ist bereit",
       "text109311589787": "Laufzeit",
-      "text109346f4fd22": "Deine Wallet ist leer, daher können Sitzungen nicht ausgeführt werden. Lade Guthaben auf, damit Compute und die neuesten KI-Modelle weiterlaufen — dein Tarif und deine Plätze sind nicht betroffen.",
       "text1095ddb6dcd8": "Anwendung hinzufügen",
       "text109d57cb33d7": "Bewerber einordnen, bewerten oder ablehnen",
       "text109ff88aec78": "Standardverbindung aktualisiert",
@@ -10442,7 +10528,6 @@
       "text1a17a48d8496": "Guthabenübersicht",
       "text1a1e4d549e85": "Wenn dieser Agent von selbst startet.",
       "text1a2303ede074": "Verbinden",
-      "text1a24578b099b": "Kontomitglieder Organisation Verzeichnis Eigentümer Administratoren Plätze",
       "text1a3ba76c2b52": "Du wirst trotzdem zum nächsten Schritt weitergeleitet.",
       "text1a425eb8b2b6": "Connector zum Manifest hinzugefügt, aber die Synchronisierung ist fehlgeschlagen: {value0}. Verwende „Sync“, um es erneut zu versuchen.",
       "text1a42d28bc87a": "Agent-Sandboxes, die auf dem von Ihnen konfigurierten Provider laufen",
@@ -10489,7 +10574,6 @@
       "text1b7b2078f271": "Die Antwort erscheint als eine Nachricht im Thread, die nach und nach ausgefüllt wird, nicht als Wand aus Aktualisierungen. Der Agent finalisiert diese Nachricht, statt darunter eine zweite zu posten.",
       "text1b7bdab96532": "Welcher Agent die jeweilige Ausführung übernimmt.",
       "text1b84926d58a9": "Kein Skript für diese Folie.",
-      "text1b85843d53b1": "Mitglieder Mitglied Arbeitsbereichszugriff Mitarbeitende Personen Teammitglieder Verzeichnis wer kann sehen Berechtigungen gewähren teilen Plätze",
       "text1b8f0674b970": "Die Sandbox enthält ein auf das Projekt begrenztes Kortix-Token und keine Drittanbieter-Schlüssel. Deine Zugangsdaten zum Bewerbersystem werden serverseitig entschlüsselt, an die ausgehende Anfrage angehängt und anschließend verworfen.",
       "text1ba70b3e6cfc": "Das Modell",
       "text1bb320d9db5d": "Eigenen AgentMail-Schlüssel verwenden",
@@ -10816,7 +10900,6 @@
       "text24d906bf39fc": "Gilt für Schlüssel, die Personen hier erstellen. Schlüssel, die Kortix für eine laufende Sitzung erstellt, enden mit dieser Sitzung.",
       "text24dab51514a1": "{value0} zu {value1} hinzugefügt",
       "text24db9f4eb779": "Abo erfolgreich synchronisiert",
-      "text24e800f1cdb3": "Team · $40/Sitzplatz/Monat",
       "text24f15c9196e8": "· Gruppe",
       "text24f32b0f8b75": "Kontotestzugang gewährt",
       "text24f46f717cfa": "Keine Autorisierung erforderlich",
@@ -10935,7 +11018,6 @@
       "text28810171a932": "Feedback zu Spezifikationen verdichtet, mit beigefügten Belegen",
       "text28904e587358": "Er committet und öffnet einen Change Request",
       "text2893925796c8": "Ledger wird geladen…",
-      "text289aec13d5aa": "Abonnieren – ${value0}/Sitzplatz",
       "text289aff12b042": "Frage",
       "text289b30b31ca1": "Ein 6-Feld-Cron-Ausdruck — Sekunde, Minute, Stunde, Tag, Monat, Wochentag — in jeder IANA-Zeitzone. Oder ein einzelner run_at-Zeitstempel für etwas, das einmal geschehen und dann ruhig bleiben soll.",
       "text28a800e4720b": "select_account",
@@ -11839,7 +11921,6 @@
       "text42d0d7ff0656": "Agenten-Schleife",
       "text42d8a7ea9caf": "ausgenommen",
       "text42e45c4f8d15": "Webhook konnte nicht aktualisiert werden",
-      "text42ef2c24bd7a": "Teamplätze",
       "text42f3ceed281b": "OpenClaw und Hermes sind brillante Open-Source-Personal-Agenten — und wir empfehlen sie Einzelpersonen ausdrücklich. Aber ein persönlicher „Jarvis“ und eine gesteuerte Unternehmensplattform sind verschiedene Dinge. Hier verläuft die Grenze genau.",
       "text42fbdd7efa9b": "1px solid rgba(255,80,80,0.4)",
       "text42fcd9dda5f6": "Diese Eingabe konnte nicht entfernt werden",
@@ -11934,7 +12015,6 @@
       "text457f4f767fe0": "API-Erreichbarkeit geprüft",
       "text45808d75bf89": "Webhooks",
       "text45823eaac0c8": "Cookie",
-      "text458cde86effb": "Hält SSO, SCIM, RBAC und Audit für ein unterzeichnetes Enterprise-Konto mit Abrechnung pro Sitz aktiv, damit die Stripe-Abstimmung diese nicht entfernen kann.",
       "text45989de49fb7": "Details",
       "text459a23a5980f": "Komfortabel",
       "text459ff8f45278": "Gruppen automatisch bereitstellen",
@@ -11960,7 +12040,6 @@
       "text4616b90a6d94": "Sekunden, bis",
       "text46342ec1eec9": "Phase",
       "text4634beebd84d": "Der Agent erhält ein Token. Den Schlüssel bekommt er nie.",
-      "text46470f35d5d8": "Ihr Abonnement, Teamplätze und Abrechnung für dieses Konto.",
       "text464bfda48ca0": "TYPE II",
       "text464c4ffd019e": "Bearbeiten",
       "text464cf293fd24": "Ein {channel}-Thread, der an eine Session gebunden ist und mit einer zur Genehmigung angebotenen Änderungsanfrage endet.",
@@ -12667,7 +12746,6 @@
       "text59f65a8a6575": "In Google Slides öffnen",
       "text59f765f38854": "Was benötigt wird",
       "text5a052671ec75": "Feld für die eindeutige Benutzerkennung",
-      "text5a0b692095be": "Einfache Preise pro Sitzplatz. Der kostenlose Tarif umfasst monatlich 200 Guthaben für Sandbox-Rechenleistung; führe ein Upgrade durch, wenn du die neuesten KI-Modelle und 2.500 gemeinsame Guthaben pro Sitzplatz nutzen möchtest.",
       "text5a0cac0326d5": "Kortix herunterladen",
       "text5a219a418ec7": "Dieser Eintrag konnte nicht aus dem Archiv gelesen werden.",
       "text5a23444828db": "Verwalten",
@@ -12774,7 +12852,6 @@
       "text5d24939e8b83": "1 Sitzung  =  1 Computer  =  1 Branch",
       "text5d28a8e6bc88": "Ich habe Callback URL, Audience und NameID festgelegt",
       "text5d28a90f4498": "fehlgeschlagen",
-      "text5d2c13d6f9fa": "Sitz",
       "text5d401fa67ac9": "Bequem — bis zu 3 pro Zeile",
       "text5d405d8955db": "Abrechnungssuite ausgeführt",
       "text5d42766c7eca": "Angebot",
@@ -14140,7 +14217,6 @@
       "text854a397472d0": "Folie {value0} erfolgreich bearbeitet",
       "text854e6dd9d777": "Der Typ wird bei der Registrierung festgelegt. Registriere eine neue App, um ihn zu ändern.",
       "text8552ade1b621": "Die Kammer einer Sitzung: Was ist {inside} und was {outside}.",
-      "text8559d8fd97d1": "{count, plural, one {# aktiver Sitzplatz} other {# aktive Sitzplätze}} · ${credit} Nutzungsguthaben eingezahlt.",
       "text8564edf2cd1f": "Connector-Zugangsdaten, die serverseitig aufgelöst werden",
       "text857be0b1fee8": "Frühere Lösungen",
       "text8585b95f4600": "Kortix auf GitHub",
@@ -16197,7 +16273,6 @@
       "textbf405915a297": "Die mechanische Migration über zweihundert Dateien",
       "textbf4d20c9ba67": "Rechenverbrauch",
       "textbf56a193cb9f": "Nächstes Ergebnis",
-      "textbf5d8eb5292b": "Kein aktives Maschinenabonnement für den Wechsel zu sitzbasierten Preisen.",
       "textbf5f39ac2192": "    app: gmail",
       "textbf692d2cef5a": "Die zuvor erfassten Federation-Metadaten sind unten vorausgefüllt. Kortix registriert Ihren IdP und leitet Anmeldungen für Ihre E-Mail-Domain dorthin.",
       "textbf6c07f87075": "App verbinden",
@@ -17190,11 +17265,9 @@
       "textdbba817f12f2": "7 Deals weiterentwickelt, 2 zurückgefallen.",
       "textdbbfc6cf8952": "Browser- oder native App. Kein Secret – nur PKCE.",
       "textdbc539f3b073": ". Du hast keine Berechtigung, dies zu ändern – bitte einen Projektmanager darum.",
-      "textdbc55cb506f2": "Dein Team hat noch keinen Tarif. Abonniere Kortix Team, um Sitzungen mit LLM-Compute und AI Computers für jedes Teammitglied auszuführen.",
       "textdbcd5e7bb7a0": "Hell",
       "textdbd9b1773511": "Skills und Wissen wachsen mit jedem Lauf",
       "textdbe0414753c1": "Bitte warte einen Moment, bevor du es erneut versuchst.",
-      "textdbe08e62ef56": "Dein Team nutzt Kortix Team. Compute- und LLM-Credits sind bereit.",
       "textdbe46defeac2": "warnt nur",
       "textdbef6cc84fef": "kortix selbst-gehostet starten",
       "textdbf362d4f210": "Link kopieren",
@@ -17361,7 +17434,6 @@
       "texte0401ccff09d": "Slack und E-Mail werden auf dieselbe Weise verbunden, damit ein Agent dort erreicht werden und antworten kann, wo die Arbeit bereits stattfindet.",
       "texte0447514873e": "Mitglieder konnten nicht geladen werden",
       "texte0454e781e5f": "$ kortix cr",
-      "texte0478c3e271b": "Du nutzt die platzbasierte Preisgestaltung",
       "texte04eb29020ea": "Vertrieb",
       "texte0603c499aae": "http",
       "texte0661dab3f98": "Ein begrenztes Token und sonst nichts",
@@ -17588,7 +17660,6 @@
       "texte654b63c8098": "Verwalteten E-Mail-Posteingang erstellen",
       "texte65ac57c0c16": "Skills, Tools und Richtlinien als Code",
       "texte65afdeb4024": "Der Preview-Server konnte nicht erreicht werden. Die Sandbox wird möglicherweise noch gestartet.",
-      "texte65c84be34f9": "Enterprise bietet SAML SSO, SCIM-Verzeichnissynchronisierung, RBAC und Audit-Zugriff für dieses Konto. Der abgerechnete Tarif und die Abrechnung der Sitze bleiben unverändert.",
       "texte65f8a02d565": "Änderungen konnten nicht geladen werden",
       "texte674447337e8": "Verfügbar",
       "texte67a6ef2363e": "Eigene OAuth-App verwenden",
@@ -18042,7 +18113,6 @@
       "textf3a4ff3c0ae3": "Registriere unter Einstellungen → Sicherheit eine Authenticator-App und versuche es erneut — dieses Konto blockiert geschützte Aktionen, bis deine Sitzung per MFA verifiziert wurde.",
       "textf3ad568c3fa6": "Das Maschinen-Image, auf dem diese Sitzung ausgeführt wird. Es wird beim Erstellen der Sitzung ausgewählt und kann danach nicht geändert werden — starte eine neue Sitzung, um ein anderes Image zu verwenden.",
       "textf3b80d5fea1d": "Jede Bearbeitung landet auf dem für diese Sitzung erstellten Branch. Nichts, was der Agent tut, ist für eine andere Sitzung oder für main sichtbar.",
-      "textf3b81325942e": "Sitze",
       "textf3d19541f3a5": "30 Sekunden",
       "textf3d331b82d30": "Das Abonnement konnte nicht synchronisiert werden",
       "textf3d4c9b3357c": "Hör auf, statische Software zu bauen. Beginne, Feedbackschleifen zu bauen.",
@@ -18463,7 +18533,6 @@
       "text87ee04b2e9ee": "Keine gestoppt",
       "text58dfb849aa70": "{value0} gestoppt",
       "text42bd5f3bc3ca": "Wird in deiner Liste der {value0} angezeigt.",
-      "text415d8dfb1c5e": "Jeder Sitz fügt monatlich {value0} gemeinsame Credits hinzu. Das gesamte Team nutzt ein gemeinsames Guthaben.",
       "textb9967f948f93": "Umgebungswerte",
       "textaea537d63c8c": "Autorisierte Konten",
       "text57c8f2cd3dd6": "Beim Sitzungsstart festgelegt",
@@ -18506,7 +18575,6 @@
       "text151863950f0e": "Kann ich die Modelle verwenden, für die ich bereits bezahle?",
       "text055026a9c10e": "Ja. Verwenden Sie einen eigenen API-Schlüssel für jeden großen Anbieter, melden Sie sich mit Ihrem bestehenden ChatGPT-Abonnement an oder nutzen Sie das verwaltete Gateway ganz ohne Schlüssel. Das Modell ist eine Konfigurationszeile in Ihrem Repository. Ein Anbieterwechsel ist daher ein Diff und keine Migration.",
       "texte8dc9deba44c": "Was kostet es?",
-      "text8eb8b8551cec": "Free kostet $0 und umfasst ein Projekt sowie monatlich 200 Credits für Sandbox-Rechenleistung. Für Premium-Modelle verwenden Sie Ihren eigenen Schlüssel. Team kostet $40 pro Arbeitsplatz und Monat und bündelt 2.500 Credits pro Arbeitsplatz. Die Self-Hosting-Software ist kostenlos. Stattdessen bezahlen Sie Ihre Modell- und Rechenkosten selbst.",
       "text7ee5a6d5e8ad": "Warum wir es entwickeln",
       "text625b22ba31d0": "Quellcode ansehen",
       "textf16b8eb8dbdc": "wer die Arbeit erledigt",
@@ -19597,7 +19665,18 @@
       "text91dc861375bc": "Mobile Release-Richtlinie angezeigt",
       "texta37dd5ef6ef2": "Seitenleiste anpassen",
       "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar",
-      "text2313fe21ea84": "{name} bearbeiten"
+      "text2313fe21ea84": "{name} bearbeiten",
+      "text44f9fff8bdae": "Credits-Plan geändert",
+      "text3fa17bba73e1": "Dein Konto hat noch keinen Plan. Wähle einen monatlichen Credit-Betrag, um Sitzungen auszuführen. Alle Mitglieder teilen sich einen Pool.",
+      "text6821e42be2c1": "Dein Guthaben ist leer, daher können Sitzungen nicht laufen. Lade auf, damit Rechenleistung und die neuesten KI-Modelle weiterlaufen – dein Plan bleibt unberührt.",
+      "text146aaf3c71fa": "Hält SSO, SCIM, RBAC und Audit für ein unterzeichnetes Enterprise-Konto freigeschaltet, das zusätzlich über einen kostenpflichtigen Plan abgerechnet wird, damit der Stripe-Abgleich sie nicht entziehen kann.",
+      "text517105fd13ce": "Credits finanzieren Sandbox-Rechenzeit – auch eine BYOK-Testphase braucht Guthaben, um Sitzungen auszuführen. Das kostenlose Willkommensguthaben beträgt 2 $.",
+      "text2f1d17f50af8": "Enterprise schaltet SAML-SSO, SCIM-Verzeichnissynchronisierung, RBAC und Audit-Zugriff für dieses Konto frei. Der abgerechnete Plan bleibt unverändert.",
+      "text12836c0e435d": "Free kostet 0 $ – ein Projekt und 200 Credits pro Monat für Sandbox-Rechenzeit, mit deinem eigenen Schlüssel für jedes Premium-Modell. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt das ganze Konto. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
+      "text5dffd4db88c5": "Dein Plan, deine Credits und die Abrechnung für dieses Konto.",
+      "text49fd64c206dd": "Dein Plan ist aktiv. Die Credits sind bereit.",
+      "textad828837ddd8": "Mitglieder Mitglied Arbeitsbereichszugriff Mitarbeitende Personen Teammitglieder Verzeichnis wer kann sehen Berechtigungen gewähren teilen",
+      "textf651529d7e60": "Kontomitglieder Organisation Verzeichnis Eigentümer Administratoren"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
