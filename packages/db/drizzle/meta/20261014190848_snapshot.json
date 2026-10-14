@@ -1,5 +1,5 @@
 {
-  "id": "dba5ff7f-db1b-4239-bb00-3d352d6540e0",
+  "id": "f94d1b21-3da3-46cb-aaae-ed24c7b8e344",
   "prevId": "b6d49057-bc09-41af-be69-340c5e0e8cc8",
   "version": "7",
   "dialect": "postgresql",
@@ -9746,12 +9746,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "plan_monthly_usd": {
-          "name": "plan_monthly_usd",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "billing_model": {
           "name": "billing_model",
           "type": "text",
@@ -9821,12 +9815,6 @@
         "trial_seats": {
           "name": "trial_seats",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trial_monthly_usd": {
-          "name": "trial_monthly_usd",
-          "type": "numeric(12, 2)",
           "primaryKey": false,
           "notNull": false
         },
@@ -21243,6 +21231,12 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "tool_input_order": {
+          "name": "tool_input_order",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

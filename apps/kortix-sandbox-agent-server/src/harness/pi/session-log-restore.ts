@@ -22,7 +22,9 @@
  *
  * Mapping (the inverse of `session-log.ts`, plus what another harness wrote):
  * - A `context` message (a system prompt) is not written: pi builds its own
- *   from config and adds it at the next prompt. modelView omits it too.
+ *   from config and adds it at the next prompt. modelView omits it too. The
+ *   thread's last one names the id pi's rebuilt prompt takes (`contextId`), so
+ *   a restore replaces that record: N restores leave one per thread, not N.
  * - User text is the display `text`; a `model_text` that differs is a
  *   `context_edit` replacement, which is what pi sends. An `automation` user
  *   message is a `custom_message`. An image is pi image content with the bytes
@@ -334,6 +336,12 @@ function transcripts(log: SessionLog): Map<string, KortixMessage[]> {
   return out
 }
 
+/** The last context record the restore does not write: pi's rebuilt system prompt takes its id (`PiDump.contextId`). */
+function contextOf(thread: SessionLogThread): { contextId?: string } {
+  const last = thread.messages.filter((m) => m.kind === 'context').sort((a, b) => a.seq - b.seq).at(-1)
+  return last ? { contextId: last.message_id } : {}
+}
+
 /** `seqMax`: the highest seq the API holds per thread, tombstones included (P6.1 `seq_max`). */
 export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTarget, seqMax: Readonly<Record<string, number>> = {}): Promise<SessionLogRestoreResult> {
   const log = structuredClone(input)
@@ -373,13 +381,13 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
     const createdAt = ms(t.created_at)
     return {
       id: t.thread_id, title: t.title ?? '', agentName: t.agent ?? 'general', createdAt, updatedAt: Math.max(createdAt, ...t.messages.map((m) => ms(m.completed_at ?? m.created_at))),
-      agentMessages: agentMessages as never, messageIds, seqs, nextSeq: chain.floor + 1, transcript: v1.get(t.thread_id) ?? [],
+      agentMessages: agentMessages as never, messageIds, seqs, nextSeq: chain.floor + 1, transcript: v1.get(t.thread_id) ?? [], ...contextOf(t),
     }
   })
   const dump: PiDump = {
     version: 1, rootId, title: log.title ?? '', createdAt: ms(log.created_at), agentMessages: [],
     entries: main.entries as never, header: header as never, messageIds: main.ids, seqs: main.seqs,
-    transcript: v1.get(rootId) ?? [], turns: [], children,
+    transcript: v1.get(rootId) ?? [], turns: [], children, ...contextOf(root),
   }
   mkdirSync(target.stateDir, { recursive: true, mode: 0o700 })
   const path = piDumpPath(target.stateDir, target.sessionId)

@@ -224,7 +224,7 @@ From a terminal, run `kortix sandboxes provider <name>`. `kortix sandboxes provi
 
 - A pin needs the `project.settings.write` permission. Only a person can set it. A session token gets `403` with code `agent_session_forbidden`. A session that needs another provider passes `provider` on create instead.
 - A switch to a different provider prepares the project's images on the target, verifies them, then activates the pin. New sessions use the old provider until the switch completes. The CLI follows the switch for up to 600 seconds (`--timeout <sec>`).
-- The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. The flag shows only when the operator configured a US region.
+- The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. After a new sandbox image, the first session can wait while Platinum copies the image to the region. If the copy fails, the session starts in the home region instead. That sandbox keeps the home region on restart. A replacement sandbox asks for the US region again. The flag shows only when the operator configured a US region.
 
 ## Troubleshooting
 

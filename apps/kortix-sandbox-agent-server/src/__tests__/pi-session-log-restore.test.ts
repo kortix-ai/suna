@@ -191,6 +191,19 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     expect(oracle(changed, log.threads[0]!.thread_id, rt, 'Anything else?', body!).pass).toBe(false)
   }, 60_000)
 
+  test('an assistant text with model_text: the model gets model_text, never the display text (P6.5 review)', async () => {
+    const log = load('golden')
+    const block = log.threads[0]!.messages.find((m) => m.message_id === 'msg_g10')!.blocks[0] as { text: string; model_text?: string }
+    block.model_text = 'MODEL-TEXT-G10: exit status 1.'
+    const box = freshBox(log.session_id)
+    await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null })
+    const rt = await box.start()
+    const [body] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
+    expect(JSON.stringify(body)).toContain('MODEL-TEXT-G10: exit status 1.')
+    expect(JSON.stringify(body)).not.toContain(block.text)
+    expect(oracle(log, log.threads[0]!.thread_id, rt, 'Anything else?', body!).diffs).toEqual([])
+  }, 60_000)
+
   test('golden21: the interrupted call goes out with its closure result', async () => {
     const log = load('golden21')
     const { out, sent } = await restoreAndCheck(log, prompts('golden21'))
@@ -441,6 +454,42 @@ describe('a pi session recorded here, restored into a fresh box', () => {
   }, 60_000)
 })
 
+describe('tool-call input key order (P6 follow-up)', () => {
+  /** What a jsonb column does to an object: keys sorted by length, then bytes, at every depth. */
+  const jsonbSorted = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(jsonbSorted)
+    : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.length - b.length || (a < b ? -1 : 1)).map(([k, x]) => [k, jsonbSorted(x)]))
+    : v
+  const ARGS = { timeout: 5, command: 'printf ok', env: { ZED: '1', ALPHA: { yy: [{ b: 1, a: 2 }], b: true } } }
+  /** The `arguments` bytes of every tool call in a request pi sent. */
+  const callBytes = (body: { messages: unknown[] }) =>
+    (body.messages as Array<{ tool_calls?: Array<{ function: { arguments: string } }> }>).flatMap((m) => (m.tool_calls ?? []).map((c) => c.function.arguments))
+
+  test('the next request after a restore carries the call input bytes of the original request; a jsonb-sorted input does not', async () => {
+    const sessionId = 'sess-pi-restore-key-order'
+    const rt = await freshBox(sessionId).start()
+    await turn(rt, 'run it', [{ tool: 'bash', args: ARGS }, { text: 'ran' }])
+    const [originalBody] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
+    const original = callBytes(originalBody!)
+    expect(original).toEqual([JSON.stringify(ARGS)])
+
+    const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+    const nextRequest = async (restoredLog: SessionLog) => {
+      const box = freshBox(sessionId)
+      await restorePiSessionLog(restoredLog, { stateDir: box.stateDir, sessionId, cwd: box.workspace })
+      const [body] = await turn(await box.start(), 'Anything else?', [{ text: 'OK' }])
+      return callBytes(body!)
+    }
+    expect(await nextRequest(log)).toEqual(original)
+    // The control: the input as a jsonb column returns it changes the bytes (the prompt-cache miss P6.6 measured).
+    const sorted = structuredClone(log)
+    for (const t of sorted.threads) for (const m of t.messages) for (const b of m.blocks) if (b.type === 'tool_call') b.input = jsonbSorted(b.input)
+    const missed = await nextRequest(sorted)
+    expect(missed).toHaveLength(1)
+    expect(missed).not.toEqual(original)
+  }, 60_000)
+})
+
 describe('P2.10 and P2.12 on the real pi runtime', () => {
   afterEach(() => resetSessionLogJournalForTests())
 
@@ -682,6 +731,46 @@ describe('the boot reconcile on pi (P6.4)', () => {
       api.stop()
     }
   }, 60_000)
+
+  test('three restores of one session keep one context record per thread: pi rebuilds the restored system prompt under its id', async () => {
+    const sessionId = 'sess-pi-restore-repeat'
+    const recorded = freshBox(sessionId)
+    const rtA = await recorded.start()
+    await turn(rtA, 'first question', [{ text: 'first answer' }])
+    await turn(rtA, 'ask the helper', [{ tool: 'task', args: { description: 'help', prompt: 'child question', subagent_type: 'general' } }, { text: 'child answer' }, { text: 'parent answer' }])
+    const log = piSessionLog(rtA.sessionLogSnapshot()!).log
+    const context = (l: SessionLog) => l.threads.map((t) => t.messages.filter((m) => m.kind === 'context').map((m) => m.message_id))
+    const before = context(log)
+    expect(before.map((ids) => ids.length)).toEqual([1, 1])
+    for (const service of services.splice(0)) await service.lifecycle.stop()
+    const childId = log.threads.find((t) => t.parent_thread_id !== null)!.thread_id
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(tmpdir(), `pi-restore-repeat-${process.pid}`) })
+    try {
+      const counts: number[] = []
+      for (let n = 1; n <= 3; n++) {
+        // A fresh box each time: no native store, so every boot restores.
+        const box = freshBox(sessionId)
+        process.env.KORTIX_RUNTIME_STATE_DIR = join(box.workspace, '.runtime')
+        const service = box.service()
+        const boot = (await reconcileSessionLog(probe(box, sessionId), { retryMs: 1 }))!
+        expect(boot.generation).toBe(n)
+        await service.lifecycle.start()
+        const rt = service.runtime()!
+        startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
+        await turn(rt, `question ${n}`, [{ tool: 'task', args: { description: 'resume', prompt: `child ${n}`, subagent_type: 'general', task_id: childId } }, { text: `child ${n}` }, { text: `answer ${n}` }])
+        expect(await flushSessionLogJournal()).toBe(true)
+        await service.lifecycle.stop()
+        resetSessionLogJournalForTests()
+        // The rebuilt system prompt replaced the restored record: same id, one per thread.
+        expect(context(api.stored())).toEqual(before)
+        counts.push(api.stored().threads.reduce((sum, t) => sum + t.messages.length, 0))
+      }
+      // Each restore adds only its turn: the root's user + task call + reply, the child's prompt + reply.
+      expect(counts[2]! - counts[1]!).toBe(counts[1]! - counts[0]!)
+    } finally {
+      api.stop()
+    }
+  }, 90_000)
 
   test('a partial restore (D3): the agent gets a note in its next request and the log, the user a partial session patch', async () => {
     // golden as stored: its image is a `blob:` the box cannot read, so the restore drops it.

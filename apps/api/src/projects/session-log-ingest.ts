@@ -103,6 +103,7 @@ import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
 import { jsonbSafeValue } from './lib/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
+import { toolInputOrderOf } from './session-log-input-order';
 
 export interface SessionLogScope {
   sessionId: string;
@@ -424,6 +425,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         contentHash: sessionLogContentHash(m),
         deletedAt: null,
         record: record as unknown as Record<string, unknown>,
+        toolInputOrder: toolInputOrderOf(record),
       })
       .onConflictDoUpdate({
         target: [sessionLogMessages.sessionId, sessionLogMessages.messageId],
@@ -441,6 +443,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
           contentHash: sql`excluded.content_hash`,
           deletedAt: null,
           record: sql`excluded.record`,
+          toolInputOrder: sql`excluded.tool_input_order`,
           updatedAt: sql`now()`,
         },
         // An unchanged re-put (a restarted daemon re-sends every message) leaves the row; it is still acknowledged.
