@@ -431,8 +431,10 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // sub-session row, a task tool's View) — so resolve back to the Kortix id:
   // the first page's pin or `runtime_sessions` snapshot, else the thread this
   // screen opened, else the session whose sandbox is switched in (a thread
-  // only ever shows a runtime session of that sandbox). Every
-  // /projects/:id/sessions/:sid API call needs the Kortix UUID.
+  // only ever shows a runtime session of that sandbox). That last fallback
+  // names the row only: ProjectScreen reads any id other than the row's root
+  // pin as a sub-session. Every /projects/:id/sessions/:sid API call needs
+  // the Kortix UUID.
   const activeProjectSessionId = activeSessionId
     ? (projectSessionForRuntimeId(projectSessions, activeSessionId)?.session_id ??
       openedProjectSessionIdsRef.current[activeSessionId] ??
