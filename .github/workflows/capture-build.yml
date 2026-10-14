@@ -728,7 +728,7 @@ jobs:
           assert "installer exit: 0" in inst
           archs = text("archs.txt").split(); print("archs", archs)
           assert set(archs) == {"x86_64", "arm64"}, archs
-          assert "ai.kortix.capture" in text("info-plist.txt") and "LSUIElement" not in text("info-plist.txt"), "the app shows in the Dock while its window is open"
+          assert "ai.kortix.capture" in text("info-plist.txt") and "LSUIElement" in text("info-plist.txt"), "the app must be an accessory app: no Dock icon while it records in the background"
           assert "state = running" in text("daemon.txt"), text("daemon.txt")[:600]
           assert "ai.kortix.capture.agent" in text("agent.txt"), text("agent.txt")[:600]
           m = load("machine.json"); print("machine", m)
