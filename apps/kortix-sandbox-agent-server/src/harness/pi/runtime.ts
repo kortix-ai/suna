@@ -39,6 +39,7 @@ import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
+import { foreignReasoningExtension, withoutForeignReasoning } from './reasoning'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
@@ -505,7 +506,7 @@ export class PiRuntime {
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
         streamFn: withAgentSampling(
-          (model, context, options) => this.models!.models.streamSimple(model, context, options),
+          withoutForeignReasoning((model, context, options) => this.models!.models.streamSimple(model, context, options)),
           () => this.sampling(this.compiledAgent(), this.selected!),
         ),
         convertToLlm,
@@ -542,7 +543,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...project.extensions],
+        extensions: [this.turnExtension(), foreignReasoningExtension(), subagents(this.kortixHost()), ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -1264,7 +1265,7 @@ export class PiRuntime {
     })
     const agent = new core.Agent({
       streamFn: withAgentSampling(
-        (m, context, options) => this.models!.models.streamSimple(m, context, options),
+        withoutForeignReasoning((m, context, options) => this.models!.models.streamSimple(m, context, options)),
         () => this.sampling(this.compiled?.agent?.[input.agent], selected),
       ),
       toolExecution: 'sequential',
