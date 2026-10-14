@@ -1187,7 +1187,7 @@ jobs:
           osascript -l JavaScript > "$EV/frontmost.txt" 2>&1 <<'JXA' || true
           ObjC.import('CoreGraphics');
           var l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)));
-          var w = l.filter(function (x) { return x.kCGWindowLayer == 0 && x.kCGWindowOwnerName != 'Window Server'; });
+          var w = l.filter(function (x) { return x.kCGWindowLayer == 0 && ['Window Server', 'universalAccessAuthWarn', 'UserNotificationCenter', 'SecurityAgent', 'Dock'].indexOf(x.kCGWindowOwnerName) < 0; });
           w[0].kCGWindowOwnerName;
           JXA
           t0=$SECONDS; state=""
