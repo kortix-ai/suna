@@ -36,7 +36,7 @@ function router(handle: (call: Call) => unknown | Response): void {
     async fetch(req) {
       const call = { path: new URL(req.url).pathname, headers: Object.fromEntries(req.headers), body: await req.json() }
       calls.push(call)
-      const reply = handle(call)
+      const reply = await handle(call)
       return reply instanceof Response ? reply : Response.json(reply)
     },
   })
@@ -173,6 +173,28 @@ describe('scrape_webpage', () => {
   test('a call where every URL fails is an error', async () => {
     router(() => Response.json({ success: false, error: 'blocked' }, { status: 403 }))
     await expect(scrapeWebpage.execute({ urls: 'https://bad.test' }, ctx())).rejects.toThrow('Failed to scrape all 1 URLs. https://bad.test: blocked')
+  })
+
+  test('a scrape the provider answers late still reaches the tool: the cap covers the provider envelope', async () => {
+    // Firecrawl documents its own `timeout` up to 60000ms and answers past it
+    // when engines cascade. A tool cap below that envelope turns a
+    // slow-but-successful scrape into a tool timeout. Scale the tool's cap
+    // 100x down so this runs in ~1s: the router answers at 500ms, a 35s cap
+    // aborts at 350ms, the shipped cap waits and the call is made once.
+    const real = AbortSignal.timeout.bind(AbortSignal)
+    const sig = AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }
+    sig.timeout = (ms) => real(Math.round(ms / 100))
+    try {
+      router(async (call) => {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        return page(call.body.url)
+      })
+      const result = JSON.parse(out(await scrapeWebpage.execute({ urls: 'https://slow.example.test/page' }, ctx())))
+      expect(result).toMatchObject({ url: 'https://slow.example.test/page', success: true, title: 'T' })
+      expect(calls).toHaveLength(1)
+    } finally {
+      sig.timeout = real
+    }
   })
 })
 
