@@ -176,6 +176,27 @@ describe('mapApiReviewItem', () => {
     expect(call({ can_resolve: false, status: 'waiting' }).canResolve).toBe(false);
   });
 
+  test('resolvers reaches the call: who decides it, for a viewer who may not', () => {
+    const call = (fields: Partial<ApiReviewItem>) =>
+      approvalDetailOf(
+        mapApiReviewItem({
+          ...row,
+          kind: 'approval',
+          detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+          ...fields,
+        }),
+      ).actions[0];
+    expect(call({ can_resolve: false, status: 'waiting', resolvers: 'managers' }).resolvers).toBe(
+      'managers',
+    );
+    expect(
+      call({ can_resolve: false, status: 'waiting', resolvers: 'managers_and_launcher' }).resolvers,
+    ).toBe('managers_and_launcher');
+    // Unknown (a raced call, an older server): no field, the host keeps its plain wording.
+    expect('resolvers' in call({ resolvers: null })).toBe(false);
+    expect('resolvers' in call({})).toBe(false);
+  });
+
   test('a server older than can_resolve: canResolve follows the argument verdict', () => {
     // The same API rule decided `args_preview_authorized` before `can_resolve` existed.
     const call = (authorized?: boolean) =>

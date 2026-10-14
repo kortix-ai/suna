@@ -82,6 +82,9 @@ export interface ReviewApprovalAction {
    *  project manager or the session's launcher may (KRTX-1724). A host shows
    *  the decision only when this is not false. */
   canResolve?: boolean;
+  /** Who decides the call, for a viewer whose `canResolve` is false:
+   *  `managers` only, or `managers_and_launcher`. Absent when unknown. */
+  resolvers?: 'managers' | 'managers_and_launcher';
   /** The agent's own description of the call's effect. Unverified: the
    *  arguments remain the evidence. */
   approvalContext?: string;
@@ -351,6 +354,7 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
           typeof row.can_resolve === 'boolean'
             ? row.can_resolve
             : detail.args_preview_authorized !== false,
+        ...(row.resolvers ? { resolvers: row.resolvers } : {}),
         approvalContext: asString(detail.approval_context),
         connectorRisk: asString(detail.risk) ?? null,
         policySource: 'Requires approval',

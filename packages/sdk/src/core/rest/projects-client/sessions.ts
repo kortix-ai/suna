@@ -791,6 +791,13 @@ export interface SessionAuditAction {
    * when it is true; absent on a server older than KRTX-1724.
    */
   can_resolve?: boolean;
+  /**
+   * Who decides an unresolved row, for a viewer whose `can_resolve` is false:
+   * `managers` for a session started with an API token or a service account,
+   * else `managers_and_launcher`. Null on every settled row; absent on an
+   * older server.
+   */
+  resolvers?: 'managers' | 'managers_and_launcher' | null;
 }
 
 export interface SessionAudit {

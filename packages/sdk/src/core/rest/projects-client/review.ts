@@ -45,6 +45,13 @@ export interface ApiReviewItem {
    * native items, change requests, and servers older than KRTX-1724.
    */
   can_resolve?: boolean;
+  /**
+   * Connector-call items only: who decides the call, for a viewer who may not.
+   * `managers` for a session started with an API token or a service account,
+   * else `managers_and_launcher`. Null when the server does not know it;
+   * absent on servers older than this field.
+   */
+  resolvers?: 'managers' | 'managers_and_launcher' | null;
 }
 
 export async function listReviewItems(
