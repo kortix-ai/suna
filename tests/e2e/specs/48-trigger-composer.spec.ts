@@ -29,7 +29,8 @@ const INSTRUCTION = 'Post the standup digest to the team channel.';
 async function openComposer(page: Page, projectId: string) {
   await page.goto(`/projects/${projectId}/customize/triggers`, { waitUntil: 'domcontentloaded' });
   await dismissOnboarding(page);
-  await page.getByRole('button', { name: 'New trigger', exact: true }).click();
+  // The header's menu. Since #9801 the empty list has its own "New trigger" too.
+  await page.getByRole('button', { name: 'New trigger', exact: true }).and(page.locator('[aria-haspopup="menu"]')).click();
   await page.getByRole('menuitem', { name: 'Set up manually' }).click();
   const dialog = page.getByRole('dialog', { name: 'New trigger', exact: true });
   await expect(dialog).toBeVisible();
