@@ -30,8 +30,15 @@ export async function POST(req: NextRequest) {
     // into one Promise<A | B> so settleWithin's inference sees the whole union.
     const result = await settleWithin(Promise.resolve(sendEmailCode(null, formData)), AUTH_ROUTE_TIMEOUT_MS, () => ({
       message: AUTH_TIMEOUT_MESSAGE,
+      status: 503,
     }));
-    return NextResponse.json(result);
+    const status = 'success' in result && result.success ? 200 : 'status' in result ? result.status : 400;
+    return NextResponse.json(result, {
+      status,
+      // GoTrue does not expose its quota reset time through signInWithOtp.
+      // Use the same conservative hourly backoff as the existing email guidance.
+      headers: status === 429 ? { 'Retry-After': '3600' } : undefined,
+    });
   } catch (err) {
     console.error('[api/auth/send-code] POST error:', err);
     return NextResponse.json({ message: AUTH_UNEXPECTED_MESSAGE }, { status: 500 });
