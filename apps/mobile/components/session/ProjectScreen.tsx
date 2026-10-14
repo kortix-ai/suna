@@ -620,7 +620,7 @@ export function ProjectScreen() {
   const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
   const savedCopyRootId = savedCopyTarget?.rootId ?? null;
   const savedCopyChild = savedCopyTarget?.child ?? false;
-  // `empty`: the saved copy proved the root empty (`SavedCopyRead.empty`), so
+  // `empty`: the saved copy proved the root empty (`SavedSessionCopy.empty`), so
   // the view opens on its composer instead of a loader.
   const savedCopyHookTarget = useMemo(
     () =>
