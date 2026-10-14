@@ -22,7 +22,10 @@ test('the SDK root exports the kortix.session/2 constants', () => {
   expect(sdk.KNOWN_TOOL_KINDS).toContain('shell');
 });
 
-test('the SDK package does not depend on zod', () => {
+// zod is never required: the session-log types load without it. Only the `./genui` subpath uses it, as an
+// optional peer, so an install that never imports `@kortix/sdk/genui` needs no zod.
+test('the SDK package never requires zod', () => {
   const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../../../package.json'), 'utf8'));
-  expect({ ...pkg.dependencies, ...pkg.peerDependencies, ...pkg.optionalDependencies }).not.toHaveProperty('zod');
+  expect({ ...pkg.dependencies, ...pkg.optionalDependencies }).not.toHaveProperty('zod');
+  if (pkg.peerDependencies?.zod) expect(pkg.peerDependenciesMeta?.zod?.optional).toBe(true);
 });

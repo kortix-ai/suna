@@ -1162,6 +1162,7 @@
     "title": "Settings",
     "preferences": "Preferences",
     "sounds": "Sounds",
+    "richAnswers": "Rich answers",
     "workspace": "Workspace",
     "accounts": "Accounts",
     "help": "Help",
@@ -1200,6 +1201,17 @@
     "showMoreSubsessions_other": "Show {{count}} more",
     "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
     "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
+  },
+  "genui": {
+    "chartTapHint": "Tap to read a value",
+    "map": "Map",
+    "mapUnavailable": "Map unavailable",
+    "openImage": "Open image",
+    "openMap": "Open map",
+    "pick": "Pick",
+    "pieFocus": "{{label}} is {{percent}}% of the total",
+    "pieOfTotal": "{{value}} of {{total}}",
+    "showData": "Show data"
   },
   "updateRequired": {
     "title": "Update required",
