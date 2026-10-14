@@ -120,7 +120,7 @@ const CHAT_COMPLETIONS_RESPONSES = {
       },
     },
   },
-  ...errors(400, 401, 402, 413, 429, 502),
+  ...errors(400, 401, 402, 403, 413, 429, 502),
 };
 
 function chatCompletionsRoute(path: string) {
@@ -216,7 +216,7 @@ const MESSAGES_RESPONSES = {
       },
     },
   },
-  ...errors(400, 401, 402, 413, 429, 502),
+  ...errors(400, 401, 402, 403, 413, 429, 502),
 };
 
 function messagesRoute(path: string) {
