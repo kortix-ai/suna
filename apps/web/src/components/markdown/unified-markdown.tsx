@@ -7,7 +7,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
 import { closeOpenGenuiFence, openGenuiFence, separateGenuiClosers } from '@/components/markdown/code/genui-fence';
-import { parseFileLinkHref, remarkWorkspaceFileLinks } from '@/components/markdown/file-links';
+import { parseFileLinkHref, remarkWorkspaceFileLinks, workspaceFileLinkPath } from '@/components/markdown/file-links';
 import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
   isKatexClassName,
@@ -81,7 +81,7 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
 });
 
 export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
-  const { proxy, policy } = useContext(MarkdownRenderContext);
+  const { proxy, policy, variant } = useContext(MarkdownRenderContext);
   // Only agent content may turn a setup link into the in-app card. From any
   // other writer it stays a plain link to the same page.
   const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
@@ -106,7 +106,13 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
 
   // A file in the session's workspace opens the file preview, the same
   // as a path in prose (see `remarkWorkspaceFileLinks`).
-  const filePath = policy.fileLinks ? parseFileLinkHref(href) : null;
+  const decodedFilePath = policy.fileLinks ? parseFileLinkHref(href) : null;
+  const filePath = variant === 'document' && decodedFilePath
+    ? workspaceFileLinkPath(decodedFilePath, '/workspace')
+    : decodedFilePath;
+  if (decodedFilePath && !filePath) {
+    return <span className={LINK_CLASS}>{children}</span>;
+  }
   if (filePath) {
     return (
       <ClickablePath filePath={filePath} className={LINK_CLASS}>

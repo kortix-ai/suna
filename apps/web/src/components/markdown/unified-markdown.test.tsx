@@ -763,6 +763,16 @@ describe("UnifiedMarkdown — a markdown document's file links", () => {
     expect(html).not.toContain('<button');
   });
 
+  for (const href of ['../../etc/passwd', '/workspace/../../etc/passwd', 'sandbox:/etc/passwd', '%2fetc/passwd', '#kortix-file:%2Fworkspace%2F..%2F..%2Fetc%2Fpasswd']) {
+    test(`outside-root document target is not a preview control: ${href}`, () => {
+      const html = renderToStaticMarkup(withIntl(
+        <UnifiedMarkdown trust="agent" variant="document" documentPath="/workspace/memory/MEMORY.md" content={`[escape](${href})`} />,
+      ));
+      expect(html).not.toContain('<button');
+      expect(html).not.toContain('kortix-file');
+    });
+  }
+
   test('traversal outside the sandbox roots stays blocked', () => {
     const html = renderToStaticMarkup(
       withIntl(
