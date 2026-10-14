@@ -20228,7 +20228,8 @@
     "verified": "Verificato",
     "invalidCode": "Quel codice non ha funzionato. Controlla la tua app di autenticazione e riprova.",
     "noFactorTitle": "Configura l’autenticazione a due fattori",
-    "noFactorDescription": "Questa azione richiede l’autenticazione a due fattori. Aggiungi un’app di autenticazione in Impostazioni → Sicurezza, poi riprova."
+    "noFactorDescription": "Questa azione richiede l’autenticazione a due fattori. Aggiungi un’app di autenticazione in Impostazioni → Sicurezza, poi riprova.",
+    "setUp": "Configura autenticatore"
   },
   "connectorPages": {
     "install": "Installa",

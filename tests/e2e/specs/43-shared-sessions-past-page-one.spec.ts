@@ -9,11 +9,14 @@ import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } f
 import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 /**
- * KRTX-1727: the session list drops rows the viewer may not see after a
- * bounded scan, so a page can be empty and still carry a cursor. The sidebar
+ * KRTX-1727: the session list dropped rows the viewer may not see after a
+ * bounded scan, so a page could be empty and still carry a cursor. The sidebar
  * hid its Shared section on an empty first page. Here a teammate started 600
  * private sessions after sharing one with the project: the Shared section must
  * still list the shared one.
+ *
+ * KRTX-2316: the page query now filters those rows in SQL, so the first page
+ * holds the shared session and the sidebar reads no cursor page.
  *
  * Local only: the 600 sessions are written straight into the database.
  */
@@ -116,9 +119,9 @@ test('43 — the Shared section lists a session that sits past page one', { tag:
       await expect(page.getByText(SHARED_TITLE, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
     });
 
-    await test.step('the list read past the empty first page on its own', async () => {
+    await test.step('the first page holds the shared session: no cursor page is read', async () => {
       expect(sharedPages[0]).toBe('first');
-      expect(sharedPages.some((cursor) => cursor !== 'first')).toBe(true);
+      expect(sharedPages.every((cursor) => cursor === 'first')).toBe(true);
     });
   } finally {
     await project?.dispose().catch(() => undefined);
