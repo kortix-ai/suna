@@ -49,6 +49,9 @@ pub mod unix;
 
 pub mod notify;
 
+/// Self-update: the signed manifest, the installer, the health check and the rollback.
+pub mod update;
+
 /// The tray runs on Windows and macOS always, and on Linux with `memory-ui`
 /// (its gtk + appindicator system libraries).
 #[cfg(any(
@@ -421,6 +424,8 @@ pub fn machine_status() -> Value {
             "enrollment_token": cfg.is_some(),
         },
         "state": state,
+        "version": super::sync::app_version(),
+        "update": update::report(),
     })
 }
 

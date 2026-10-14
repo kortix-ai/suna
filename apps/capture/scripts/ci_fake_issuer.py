@@ -10,7 +10,7 @@ replaced by "<redacted>".
 Usage: python ci_fake_issuer.py --port 8787 --token <enrollment token> --log <file> [--approve-after <s>]
        --s3-endpoint http://127.0.0.1:9000 --bucket capture --access-key K --secret-key S
 It creates the bucket first. With `--list <prefix>` it prints the bucket's keys
-under the prefix (SigV4 ListObjectsV2) and exits instead of serving.
+under the prefix (SigV4 ListObjectsV2), with `--get <key>` an object's body, and exits instead of serving.
 """
 
 import argparse
@@ -33,7 +33,7 @@ DEVICE = str(uuid.UUID("0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"))
 p = argparse.ArgumentParser()
 for a in ("--s3-endpoint", "--bucket", "--access-key", "--secret-key"):
     p.add_argument(a, required=True)
-for a in ("--port", "--token", "--log", "--list", "--approve-after"):
+for a in ("--port", "--token", "--log", "--list", "--get", "--approve-after"):
     p.add_argument(a)
 args = p.parse_args()
 
@@ -79,6 +79,13 @@ if args.list is not None:
             break
         token = m.group(1)
     print("\n".join(keys))
+    raise SystemExit(0)
+
+if args.get is not None:
+    status, body = s3("GET", f"/{args.bucket}/{args.get}")
+    if status != 200:
+        raise SystemExit(f"get failed: {status} {body[:300]}")
+    print(body)
     raise SystemExit(0)
 
 try:

@@ -120,6 +120,24 @@ pub fn read_config() -> Option<ManagedConfig> {
         .or_else(|| parse_config_json(&read_trusted(&config_file(), true)?))
 }
 
+/// The sources of IT's update settings (`auto_update`, `update_channel`), strongest first:
+/// the MDM profile, then the root-owned config file. Neither needs the enrollment keys.
+pub fn policy_values() -> Vec<Value> {
+    let profile = cfg!(target_os = "macos")
+        .then(|| {
+            Command::new("/usr/bin/plutil")
+                .args(["-convert", "json", "-o", "-"])
+                .arg(profile_file())
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
+        })
+        .flatten();
+    let file = read_trusted(&config_file(), true).and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    profile.into_iter().chain(file).collect()
+}
+
 /// A configuration source exists on this computer (readable or not): the
 /// organization manages it.
 pub fn config_present() -> bool {
@@ -495,6 +513,7 @@ struct Machine {
     exe: PathBuf,
     sessions: BTreeMap<u32, Session>,
     log: Option<std::fs::File>,
+    updater: super::update::Updater,
 }
 
 impl Machine {
@@ -521,6 +540,22 @@ impl Machine {
             }
         }
         self.write_state(cfg.as_ref());
+        self.updater.tick();
+        if let Some(since) = self.updater.verifying_since() {
+            let ok = self.healthy_since(&live, since);
+            self.updater.note_probe(ok);
+        }
+    }
+
+    /// Every signed-in person's recorder runs and saves frames (see `update::person_ok`).
+    fn healthy_since(&mut self, live: &[Person], since_ms: i64) -> bool {
+        let exe = self.exe.clone();
+        live.iter().all(|p| {
+            run_as(p, &exe, &["--json", "status"], b"")
+                .ok()
+                .and_then(|(_, out)| serde_json::from_str::<Value>(&out).ok())
+                .is_some_and(|st| super::update::person_ok(&st, since_ms))
+        })
     }
 
     fn tick_person(&mut self, p: &Person, cfg: Option<&ManagedConfig>) -> Result<()> {
@@ -646,6 +681,7 @@ pub fn run() -> Result<()> {
             .append(true)
             .open(logs.join("machine.log"))
             .ok(),
+        updater: super::update::Updater::new(),
     };
     m.log(&format!(
         "machine service started ({} {})",

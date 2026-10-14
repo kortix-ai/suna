@@ -168,6 +168,8 @@ jobs:
           KORTIX_RELEASE_TAG: ${{ inputs.tag }}
           KORTIX_DEFAULT_ISSUER_URL: ${{ inputs.issuer_url }}
         run: |
+          # The update public key (apps/capture/update-public-key.txt, public) is compiled in; without it the app never updates.
+          if (Test-Path update-public-key.txt) { $env:KORTIX_CAPTURE_UPDATE_PUBLIC_KEY = (Get-Content update-public-key.txt -Raw).Trim() }
           cargo build --release --features native-recorders --bin kortix-capture --bin kortix-capture-engine --bin kortix-backend
           if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
           python scripts/install_privacy_runtime.py --platform windows-x86_64 --destination target/release
@@ -178,6 +180,11 @@ jobs:
           $next = "$($v[0]).$($v[1]).$([int]$v[2] + 1)"
           "NEXT_VERSION=$next" | Add-Content $env:GITHUB_ENV
           ./installer/windows/build-msi.ps1 -Stage target/release -Version "v$next" -Out "$env:RUNNER_TEMP\msi\KortixCapture-next.msi"
+      - name: The release binaries carry no update test hook
+        run: |
+          $hit = Select-String -Path target/release/kortix-capture.exe -Pattern "127.0.0.1:8899" -SimpleMatch -Quiet
+          "test manifest URL in the release binary: $([bool]$hit)" | Tee-Object "$env:EV\no_test_hook.txt"
+          if ($hit) { throw "the release binary contains the updater's test manifest URL" }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: capture-installer-windows
@@ -409,6 +416,36 @@ jobs:
           assert un["exit"] == 0 and un["service_gone"] and un["files_gone"] and un["policy_values_gone"], un
           assert un["machine_data_gone"] and un["user_library_kept"] and un["processes_left"] == 0, un
           print("ALL WINDOWS MSI ASSERTIONS PASSED")
+      - name: Updater - build the test versions N and N+1
+        run: |
+          # TEST builds, never released: the update public key is made here, the manifest is a local
+          # server, a check runs every 15 s. They differ only in the version (dev.7000001, dev.7000002).
+          $base = ($env:TAG -replace '^v', '' -replace '[-+].*$', '')
+          $u = "$env:RUNNER_TEMP\upd"
+          $env:KORTIX_CAPTURE_UPDATE_PUBLIC_KEY = (node scripts/ci_update_tool.mjs keygen $u).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "keygen failed" }
+          $env:KORTIX_CAPTURE_UPDATE_TEST_MANIFEST_URL = "http://127.0.0.1:8899/capture-update.json"
+          $env:KORTIX_CAPTURE_UPDATE_TEST_INTERVAL_SECS = "15"
+          $env:KORTIX_CAPTURE_UPDATE_TEST_HEALTH_SECS = "120"
+          foreach ($i in 1, 2) {
+            $tag = "v$base-dev.700000$i"
+            $env:KORTIX_RELEASE_TAG = $tag
+            cargo build --release --features native-recorders --bin kortix-capture --bin kortix-capture-engine --bin kortix-backend
+            if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+            $stage = "$u\stage$i"; New-Item -ItemType Directory -Force $stage | Out-Null
+            foreach ($f in 'kortix-capture.exe', 'kortix-capture-engine.exe', 'kortix-backend.exe', 'onnxruntime.dll', 'privacy-runtime-notices.txt') { Copy-Item "target\release\$f" $stage }
+            ./installer/windows/build-msi.ps1 -Stage $stage -Version $tag -Out "$u\KortixCapture-$tag-x64.msi"
+            if ($LASTEXITCODE -ne 0) { throw "build-msi failed" }
+          }
+          "UPD_BASE=$base" | Add-Content $env:GITHUB_ENV
+      - name: Updater - N updates to N+1 (signed manifest, rollback, refusals)
+        run: |
+          $u = "$env:RUNNER_TEMP\upd"; New-Item -ItemType Directory -Force "$u\work" | Out-Null
+          python scripts/ci_update_test.py --os windows --work "$u\work" --key "$u\update-key.pem" `
+            --n-installer "$u\KortixCapture-v$($env:UPD_BASE)-dev.7000001-x64.msi" --n1-installer "$u\KortixCapture-v$($env:UPD_BASE)-dev.7000002-x64.msi" `
+            --n-version "v$($env:UPD_BASE)-dev.7000001" --n1-version "v$($env:UPD_BASE)-dev.7000002" `
+            --token $env:TOKEN_FOR_MSI --issuer $env:KORTIX_URL_FOR_MSI --evidence "$env:EV\updater"
+          if ($LASTEXITCODE -ne 0) { throw "the updater test failed" }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -531,7 +568,13 @@ jobs:
           KORTIX_DEFAULT_ISSUER_URL: ${{ inputs.issuer_url }}
         run: |
           set -euo pipefail
+          # The update public key (apps/capture/update-public-key.txt, public) is compiled in; without it the app never updates.
+          if [ -s update-public-key.txt ]; then export KORTIX_CAPTURE_UPDATE_PUBLIC_KEY="$(tr -d '[:space:]' < update-public-key.txt)"; fi
           installer/macos/build-pkg.sh "$TAG" "$RUNNER_TEMP/pkg/KortixCapture-$TAG-universal.pkg" 2>&1 | tee "$EV/build.txt"
+          if grep -q "127.0.0.1:8899" target/aarch64-apple-darwin/release/kortix-capture target/x86_64-apple-darwin/release/kortix-capture; then
+            echo "::error::the release binary contains the updater's test manifest URL"; exit 1
+          fi
+          echo "test manifest URL in the release binaries: no" | tee "$EV/no_test_hook.txt"
           pkgutil --payload-files "$RUNNER_TEMP/pkg/KortixCapture-$TAG-universal.pkg" | grep -v "/skill/" | head -60 | tee "$EV/pkg-files.txt"
           pkgutil --check-signature "$RUNNER_TEMP/pkg/KortixCapture-$TAG-universal.pkg" 2>&1 | tee "$EV/pkg-signature.txt" || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -781,6 +824,33 @@ jobs:
           for line in ("daemon loaded: no", "agent loaded: no", "app: gone", "plists: 0", "symlink: gone", "support dir: gone", "receipt: 0", "processes: 0"):
               assert line in un, (line, un)
           print("ALL MACOS PKG ASSERTIONS PASSED")
+      - name: Updater - build the test versions N and N+1
+        working-directory: apps/capture
+        env:
+          # TEST builds, never released: ad hoc signed, unsigned pkg (the updater warns and goes on).
+          APPLE_CODESIGN_IDENTITY: "-"
+          APPLE_INSTALLER_IDENTITY: ""
+          MACOS_NOTARIZE: "0"
+          ARCHS: arm64
+        run: |
+          set -euo pipefail
+          base="$(printf '%s' "$TAG" | sed -E 's/^v//; s/[-+].*$//')"
+          u="$RUNNER_TEMP/upd"
+          export KORTIX_CAPTURE_UPDATE_PUBLIC_KEY="$(node scripts/ci_update_tool.mjs keygen "$u")"
+          export KORTIX_CAPTURE_UPDATE_TEST_MANIFEST_URL=http://127.0.0.1:8899/capture-update.json
+          export KORTIX_CAPTURE_UPDATE_TEST_INTERVAL_SECS=15 KORTIX_CAPTURE_UPDATE_TEST_HEALTH_SECS=120
+          for i in 1 2; do
+            tag="v$base-dev.700000$i"
+            KORTIX_RELEASE_TAG="$tag" installer/macos/build-pkg.sh "$tag" "$u/KortixCapture-$tag-universal.pkg" 2>&1 | tail -4
+          done
+          echo "UPD_BASE=$base" >> "$GITHUB_ENV"
+      - name: Updater - N updates to N+1 (signed manifest, rollback, refusals)
+        run: |
+          u="$RUNNER_TEMP/upd"; mkdir -p "$u/work"
+          python3 apps/capture/scripts/ci_update_test.py --os macos --work "$u/work" --key "$u/update-key.pem" \
+            --n-installer "$u/KortixCapture-v$UPD_BASE-dev.7000001-universal.pkg" --n1-installer "$u/KortixCapture-v$UPD_BASE-dev.7000002-universal.pkg" \
+            --n-version "v$UPD_BASE-dev.7000001" --n1-version "v$UPD_BASE-dev.7000002" \
+            --token "$TOKEN" --evidence "$EV/updater"
       - name: Gatekeeper accepts the installed app
         if: steps.sign.outputs.notarized == 'true'
         run: |
@@ -843,8 +913,12 @@ jobs:
           KORTIX_DEFAULT_ISSUER_URL: ${{ inputs.issuer_url }}
         run: |
           set -euo pipefail
+          # The update public key (apps/capture/update-public-key.txt, public) is compiled in; without it the app never updates.
+          if [ -s update-public-key.txt ]; then export KORTIX_CAPTURE_UPDATE_PUBLIC_KEY="$(tr -d '[:space:]' < update-public-key.txt)"; fi
           cargo build --release --features native-recorders,memory-ui,tray-linux --bin kortix-capture --bin kortix-capture-engine --bin kortix-backend
           python3 scripts/install_privacy_runtime.py --platform linux-x86_64 --destination target/release
+          if grep -q "127.0.0.1:8899" target/release/kortix-capture; then echo "::error::the release binary contains the updater's test manifest URL"; exit 1; fi
+          echo "test manifest URL in the release binary: no" | tee "$EV/no_test_hook.txt"
           installer/linux/build-deb.sh "$TAG" target/release "$RUNNER_TEMP/kortix-capture_${TAG}_amd64.deb" 2>&1 | tee "$EV/build.txt"
           dpkg-deb --contents "$RUNNER_TEMP/kortix-capture_${TAG}_amd64.deb" | grep -v "/skill" | tee "$EV/deb-files.txt"
           readelf -d target/release/kortix-capture | grep NEEDED | tee "$EV/needed.txt"
@@ -1063,6 +1137,30 @@ jobs:
           for line in ("binaries: 0", "units: 0", "config: gone", "machine data: gone", "autostart: gone", "processes: 0", "user library kept: yes"):
               assert line in un, (line, un)
           print("ALL LINUX DEB ASSERTIONS PASSED")
+      - name: Updater - build the test versions N and N+1
+        working-directory: apps/capture
+        run: |
+          set -euo pipefail
+          # TEST builds, never released: the update public key is made here, the manifest is a local
+          # server, a check runs every 15 s. They differ only in the version (dev.7000001, dev.7000002).
+          base="$(printf '%s' "$TAG" | sed -E 's/^v//; s/[-+].*$//')"
+          u="$RUNNER_TEMP/upd"
+          export KORTIX_CAPTURE_UPDATE_PUBLIC_KEY="$(node scripts/ci_update_tool.mjs keygen "$u")"
+          export KORTIX_CAPTURE_UPDATE_TEST_MANIFEST_URL=http://127.0.0.1:8899/capture-update.json
+          export KORTIX_CAPTURE_UPDATE_TEST_INTERVAL_SECS=15 KORTIX_CAPTURE_UPDATE_TEST_HEALTH_SECS=120
+          for i in 1 2; do
+            tag="v$base-dev.700000$i"
+            KORTIX_RELEASE_TAG="$tag" cargo build --release --features native-recorders,memory-ui,tray-linux --bin kortix-capture --bin kortix-capture-engine --bin kortix-backend
+            installer/linux/build-deb.sh "$tag" target/release "$u/kortix-capture_${tag}_amd64.deb" 2>&1 | tail -3
+          done
+          echo "UPD_BASE=$base" >> "$GITHUB_ENV"
+      - name: Updater - N updates to N+1 (signed manifest, rollback, refusals)
+        run: |
+          u="$RUNNER_TEMP/upd"; mkdir -p "$u/work"
+          python3 apps/capture/scripts/ci_update_test.py --os linux --work "$u/work" --key "$u/update-key.pem" \
+            --n-installer "$u/kortix-capture_v$UPD_BASE-dev.7000001_amd64.deb" --n1-installer "$u/kortix-capture_v$UPD_BASE-dev.7000002_amd64.deb" \
+            --n-version "v$UPD_BASE-dev.7000001" --n1-version "v$UPD_BASE-dev.7000002" \
+            --token "$TOKEN" --evidence "$EV/updater"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -1679,7 +1777,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: .github/actions
+          sparse-checkout: |
+            .github/actions
+            apps/capture/scripts
           persist-credentials: false
       # Optional: the Ed25519 private key (PEM) that signs capture-update.json.
       # Without it the manifest ships unsigned and the step says so.
@@ -1700,6 +1800,7 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
           CAPTURE_UPDATE_SIGNING_KEY: ${{ env.CAPTURE_UPDATE_SIGNING_KEY }}
         run: |
           set -euo pipefail
@@ -1710,34 +1811,22 @@ jobs:
           cp "$msi" KortixCapture-x64.msi
           cp "$pkg" KortixCapture-universal.pkg
           cp "$deb" kortix-capture_amd64.deb
-          node - "$TAG" "$CHANNEL" "$RELEASE_TAG" "$REPO" "$msi" "$pkg" "$deb" <<'JS'
-          const fs = require('node:fs'), crypto = require('node:crypto');
-          const [tag, channel, releaseTag, repo, msi, pkg, deb] = process.argv.slice(2);
-          const asset = (name) => {
-            const bytes = fs.readFileSync(name);
-            return {
-              name,
-              url: `https://github.com/${repo}/releases/download/${encodeURIComponent(releaseTag)}/${encodeURIComponent(name)}`,
-              sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
-              size: bytes.length,
-            };
-          };
-          const manifest = {
-            version: tag.replace(/^v/, ''),
-            channel,
-            released_at: new Date().toISOString(),
-            assets: { windows: asset(msi), macos: asset(pkg), linux: asset(deb) },
-          };
-          fs.writeFileSync('capture-update.json', JSON.stringify(manifest, null, 2) + '\n');
-          const key = process.env.CAPTURE_UPDATE_SIGNING_KEY;
-          if (key) {
-            const sig = crypto.sign(null, fs.readFileSync('capture-update.json'), crypto.createPrivateKey(key));
-            fs.writeFileSync('capture-update.json.sig', sig.toString('base64') + '\n');
-            console.log('capture-update.json signed (Ed25519).');
-          } else {
-            console.log('::warning::CAPTURE_UPDATE_SIGNING_KEY is not in kortix-ci-env: capture-update.json is UNSIGNED. Create the key (see the release runbook).');
-          }
-          JS
+          tool=../apps/capture/scripts/ci_update_tool.mjs
+          key=""
+          if [ -n "${CAPTURE_UPDATE_SIGNING_KEY:-}" ]; then
+            key="$RUNNER_TEMP/capture-update-key.pem"; printf '%s\n' "$CAPTURE_UPDATE_SIGNING_KEY" > "$key"; chmod 600 "$key"
+          fi
+          prev=()
+          if [ -n "$key" ] && [ "$CHANNEL" = stable ]; then prev=(--previous-from-releases "$REPO" --key "$key"); fi
+          node "$tool" manifest --out capture-update.json --version "$TAG" --channel "$CHANNEL" --repo "$REPO" --release-tag "$RELEASE_TAG" \
+            --asset "windows=$msi" --asset "macos=$pkg" --asset "linux=$deb" "${prev[@]}"
+          if [ -n "$key" ]; then
+            node "$tool" sign --key "$key" capture-update.json
+            rm -f "$key"
+            echo "capture-update.json signed (Ed25519)."
+          else
+            echo "::warning::CAPTURE_UPDATE_SIGNING_KEY is not in kortix-ci-env: capture-update.json is UNSIGNED and no installed app will update from it. Create the key (see the release runbook)."
+          fi
           sha256sum -- * | grep -v ' capture-update.json' > CAPTURE-SHA256SUMS
           ls -l; cat capture-update.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

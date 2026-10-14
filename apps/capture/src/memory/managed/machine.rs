@@ -114,6 +114,26 @@ pub fn read_config() -> Option<ManagedConfig> {
     )
 }
 
+/// IT's update settings from the policy key: `AutoUpdate` (`0`/`off` turns updates off)
+/// and `UpdateChannel` (`stable` or `dev`), both string values.
+pub(super) fn policy_value() -> Value {
+    json!({
+        "AutoUpdate": reg_string(POLICY_KEY, "AutoUpdate"),
+        "UpdateChannel": reg_string(POLICY_KEY, "UpdateChannel"),
+    })
+}
+
+/// Refuse a folder SYSTEM or Administrators do not own, or a link (the updater's folder).
+pub(super) fn require_trusted_owner(dir: &Path) -> Result<()> {
+    use std::os::windows::fs::MetadataExt;
+    let meta = std::fs::symlink_metadata(dir)?;
+    let owner = owner_sid(dir)?;
+    if !machine_dir_trusted(&owner, meta.file_attributes() & 0x400 != 0) {
+        bail!("{} is not used: it is a link or an account other than SYSTEM or Administrators owns it ({owner})", dir.display());
+    }
+    Ok(())
+}
+
 /// Write `EnrollmentToken` into the policy key the MSI created (with its
 /// SYSTEM + Administrators ACL). The MSI runs this as a deferred custom action
 /// that hides its command line: Windows Installer logs every Registry-table
@@ -487,6 +507,7 @@ struct Machine {
     exe: PathBuf,
     sessions: BTreeMap<u32, Session>,
     log: Option<std::fs::File>,
+    updater: super::update::Updater,
 }
 
 impl Machine {
@@ -526,6 +547,25 @@ impl Machine {
             }
         }
         self.write_state(cfg.as_ref());
+        self.updater.tick();
+        if let Some(since) = self.updater.verifying_since() {
+            let ok = self.healthy_since(since);
+            self.updater.note_probe(ok);
+        }
+    }
+
+    /// Every signed-in person's recorder runs and saves frames (see `update::person_ok`).
+    fn healthy_since(&mut self, since_ms: i64) -> bool {
+        let exe = self.exe.clone();
+        sessions().into_iter().all(|(id, _)| {
+            let Ok(token) = session_token(id) else {
+                return true;
+            };
+            run_as(&token, &exe, &["--json", "status"], b"")
+                .ok()
+                .and_then(|(_, out)| serde_json::from_str::<Value>(&out).ok())
+                .is_some_and(|st| super::update::person_ok(&st, since_ms))
+        })
     }
 
     fn tick_session(&mut self, id: u32, cfg: Option<&ManagedConfig>) -> Result<()> {
@@ -787,6 +827,7 @@ fn serve(wake: mpsc::Receiver<bool>) -> Result<()> {
         } else {
             None
         },
+        updater: super::update::Updater::new(),
     };
     m.log(&format!(
         "machine service started ({} {})",

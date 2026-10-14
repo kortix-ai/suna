@@ -157,11 +157,6 @@ fn default_config() -> Value {
         "actions": {
             "local_cap_gb": 2.0
         },
-        "updates": {
-            "manifest_url": null,
-            "public_key": null,
-            "interval_seconds": 3600
-        },
         "debug": {
             "enabled": false
         }
@@ -203,6 +198,5 @@ mod tests {
             300.0
         );
         assert_eq!(config.get_f64("actions.local_cap_gb", 0.0), 2.0);
-        assert_eq!(config.get_usize("updates.interval_seconds", 0), 3600);
     }
 }
