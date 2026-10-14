@@ -12,6 +12,7 @@ import { changeRequests, connectorCalls, projectSessions, reviewItems } from '@k
 import { type AnyColumn, type SQL, and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 import {
   CR_REVIEW_STATUS,
   adapterSourceForId,
@@ -134,7 +135,6 @@ export interface InboxCursor {
   id: string;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MICRO_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 
 export function encodeInboxCursor(cursor: InboxCursor): string {
@@ -151,7 +151,7 @@ export function decodeInboxCursor(raw: string): InboxCursor | null {
     const [rank, at, source, id] = value;
     if (![0, 1, 2].includes(rank) || ![0, 1, 2].includes(source)) return null;
     if (typeof at !== 'string' || !MICRO_ISO_RE.test(at)) return null;
-    if (typeof id !== 'string' || !UUID_RE.test(id)) return null;
+    if (!isUuid(id)) return null;
     return { rank, at, source, id };
   } catch {
     return null;
@@ -495,7 +495,7 @@ export async function getInboxItem(
 ): Promise<InboxItem | null> {
   const source = adapterSourceForId(id);
   const rawId = source ? id.slice(id.indexOf(':') + 1) : id;
-  if (!UUID_RE.test(rawId)) return null;
+  if (!isUuid(rawId)) return null;
   if (source === 'cr') {
     const [row] = await db
       .select()

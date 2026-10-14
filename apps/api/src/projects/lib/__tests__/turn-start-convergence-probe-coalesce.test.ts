@@ -19,7 +19,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let readCalls = 0;
 let readDelayMs = 20;
 
+const realSessionReload = await import('../session-reload');
 mock.module('../session-reload', () => ({
+  ...realSessionReload,
   readSandboxConfigState: async (_input: { sessionId: string }) => {
     readCalls += 1;
     await new Promise((resolve) => setTimeout(resolve, readDelayMs));

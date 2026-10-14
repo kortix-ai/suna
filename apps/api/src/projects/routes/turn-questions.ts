@@ -4,7 +4,8 @@ import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
-import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels/question-release';
+import { channelOfSessionMetadata, isUnattendedSessionMetadata, releaseChannelQuestion, unattendedQuestionSentinel } from '../../channels/question-release';
+import { releaseRuntimeQuestion } from '../session-lifecycle/release-runtime-question';
 import { PROJECT_ACTIONS } from '../../iam';
 import { logger } from '../../lib/logger';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
@@ -302,6 +303,23 @@ export function registerTurnQuestionsRoutes(): void {
         // The runtime no longer waits on it: the thread reply arrives as a new
         // turn. Unreachable keeps the row; the turn end closes it (KRTX-1739).
         if (released !== 'unreachable') {
+          await clearOpenQuestions(sessionId, { requestId: runtimeRequestId }).catch((err) =>
+            logger.warn('[turn-question] released question not closed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
+
+      // A trigger-started session has nobody to answer: release the call now so
+      // the turn finishes and the next fire is not queued behind it.
+      if (!channel && runtimeRequestId && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
+        const answers = Array.from({ length: Math.max(1, questions.length) }, () => [unattendedQuestionSentinel()]);
+        const released = await releaseRuntimeQuestion(sessionId, runtimeRequestId, answers);
+        if (released === 'unreachable') {
+          logger.warn('[turn-question] could not release an unattended session question', { sessionId, requestId: runtimeRequestId });
+        } else {
           await clearOpenQuestions(sessionId, { requestId: runtimeRequestId }).catch((err) =>
             logger.warn('[turn-question] released question not closed', {
               sessionId,

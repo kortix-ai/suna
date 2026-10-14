@@ -247,16 +247,12 @@ describe('resetClientState resets registered persisted stores IN MEMORY, not jus
     // key as device-scoped). If a future change folded it into the sweep by
     // mistake, this is the test that would catch a THEME reset on every
     // sign-out.
-    useUserPreferencesStore.getState().setThemeId('a-distinctive-non-default-theme');
-    expect(useUserPreferencesStore.getState().preferences.themeId).toBe(
-      'a-distinctive-non-default-theme',
-    );
+    useUserPreferencesStore.getState().setDarkTheme('pure-dark');
+    expect(useUserPreferencesStore.getState().preferences.darkTheme).toBe('pure-dark');
 
     await resetClientState({ idbTimeoutMs: 5 });
 
-    expect(useUserPreferencesStore.getState().preferences.themeId).toBe(
-      'a-distinctive-non-default-theme',
-    );
+    expect(useUserPreferencesStore.getState().preferences.darkTheme).toBe('pure-dark');
   });
 });
 
