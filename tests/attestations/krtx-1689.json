@@ -1,0 +1,18 @@
+{
+  "source_hash": "1b1033098dbb65456af128eed11005723c544be9120456add44f6e30021f739d",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(auth)/auth/email-link-step.test.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/email-link-step.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/entry-link-default.test.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/page.tsx"
+  ],
+  "diff_hash": "a712c1ebde44b5cf8610eb58f82d576bb78944d406141ebd3b6e03c21bcaa36e",
+  "head": "fbdca63a7441bba8f05d3f9f37ee1877d2ce6dd6",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-14T00:19:06.647Z"
+}
