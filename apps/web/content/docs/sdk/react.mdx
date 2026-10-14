@@ -389,6 +389,7 @@ export function adoptDeviceCaches(queryClient: QueryClient, userId: string) {
 - On React Native, pass AsyncStorage as `storage`. `restore` then returns a promise.
 - The saved-copy store keeps only copies the server sent at a turn end, never the live transcript. A stopped turn cannot come back as a running one.
 - A full, corrupt or missing store never throws. The app then opens from the server, as without the store.
+- `isPersistableQueryKey` never keeps a permission probe (`useCan`). When a probe's answer picks a query key, read the entry the restored cache holds until the probe answers. The web Sessions page does this for its manager-only `scope: 'project'` list.
 
 ## Sign-out and identity changes
 

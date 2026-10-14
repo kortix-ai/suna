@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 793,
+  "count": 795,
   "routes": [
     {
       "method": "GET",
@@ -2533,6 +2533,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/switch-preflight"
     },
     {
       "method": "GET",
