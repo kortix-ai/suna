@@ -27,7 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
+import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
 import { loadTools } from '@/services/tools/host'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
@@ -40,7 +40,7 @@ import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
-import { foreignReasoningExtension, withoutForeignReasoning } from './reasoning'
+import { withoutForeignReasoning } from './reasoning'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
@@ -544,7 +544,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), foreignReasoningExtension(), subagents(this.kortixHost()), ...project.extensions],
+        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
