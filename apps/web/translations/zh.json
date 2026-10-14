@@ -20744,5 +20744,21 @@
     "mapTwoFingers": "使用双指移动地图",
     "pick": "推荐",
     "convertFailed": "无法准备对话记录。请重试。"
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix 移动版",
+    "badge": "新",
+    "title": "Kortix，现已登陆手机",
+    "description": "你的项目、会话和智能体，随时随地都在。在办公桌前开始的工作，在哪儿都能继续推进。",
+    "feature": {
+      "sessions": "从上次停下的地方继续",
+      "sessionsDescription": "网页上的每个会话，都已在手机上就绪。",
+      "notifications": "一完成就知道",
+      "notificationsDescription": "会话完成或需要你回复时，推送通知你。",
+      "dictation": "说出来，直接发送",
+      "dictationDescription": "口述提示词，不用打字。"
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }

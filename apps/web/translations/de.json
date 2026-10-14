@@ -20744,5 +20744,21 @@
     "mapTwoFingers": "Verwende zwei Finger, um die Karte zu bewegen",
     "pick": "Empfehlung",
     "convertFailed": "Das Transkript konnte nicht vorbereitet werden. Versuche es erneut."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobil",
+    "badge": "Neu",
+    "title": "Kortix, jetzt auf deinem Smartphone",
+    "description": "Deine Projekte, Sessions und Agenten, wo immer du bist. Starte die Arbeit am Schreibtisch und bring sie von überall voran.",
+    "feature": {
+      "sessions": "Mach da weiter, wo du aufgehört hast",
+      "sessionsDescription": "Jede Session aus dem Web, bereit auf deinem Smartphone.",
+      "notifications": "Sofort wissen, wann es fertig ist",
+      "notificationsDescription": "Eine Push-Nachricht, wenn eine Session fertig ist oder deine Antwort braucht.",
+      "dictation": "Sag es, schick es ab",
+      "dictationDescription": "Diktiere einen Prompt, statt ihn zu tippen."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }
