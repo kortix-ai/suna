@@ -235,6 +235,42 @@ test("the host's saved copy reconciles into the local one when it arrives after 
   expect(kept.messages).toHaveLength(3);
 });
 
+test('a host that hands in its saved copy, or null while that read runs, makes no transcript read here', async () => {
+  // `useSession` reads saved history once and passes the answer in. A second
+  // read beside it downloaded the same window again (KRTX-189).
+  const store = await seeded('ses_host_no_read', 2);
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return new Promise<Response>(() => {});
+  }) as unknown as typeof fetch;
+  const hook = await mountWithHostCopy('ses_host_no_read');
+  await settle();
+  expect(hook.value().messages).toHaveLength(2);
+
+  await hook.answer(envelope('ses_host_no_read', 3, '2026-09-26T00:00:00Z'));
+
+  expect(hook.value().messages).toHaveLength(3);
+  expect(requests).toEqual([]);
+  expect((store.read(PROJECT, SESSION) as SessionTranscriptSyncEnvelope).messages).toHaveLength(3);
+});
+
+test('a host that hands in no saved copy gets the one saved-history read', async () => {
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json(envelope('ses_no_host_copy', 2));
+  }) as unknown as typeof fetch;
+
+  const hook = await mount('ses_no_host_copy', offline);
+  await settle();
+
+  expect(hook.value().messages).toHaveLength(2);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain(`/sessions/${SESSION}/transcript?shape=sync`);
+  expect(requests[0]).toContain('history=true');
+});
+
 test("the host's saved copy never replaces a runtime read", async () => {
   await seeded('ses_host_after_runtime', 2);
   heldFetch();

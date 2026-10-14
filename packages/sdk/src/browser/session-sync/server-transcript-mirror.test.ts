@@ -255,12 +255,16 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 		return urls;
 	}
 
+	// The snapshot's session row names the root its saved copy must belong to:
+	// the saved-history read serves the leg only for that root (KRTX-189).
+	const SESSION_ROW = { session_id: "S1", runtime_session_id: ROOT, opencode_session_id: ROOT };
+
 	test("paints the mirror the open bundle already fetched, with no second read", async () => {
 		resetSessionOpenBundles();
 		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
 		const urls = mockFetch({
 			observed_at: "2026-08-26T12:00:00.000Z",
-			session: { session_id: "S1" },
+			session: SESSION_ROW,
 			turn: { known: true, turns: [] },
 			queue: { known: true, prompts: [], held: false },
 			transcript: { known: true, requested: true, ...envelope() },
@@ -278,12 +282,15 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 		expect(painted?.messages).toHaveLength(2);
 	});
 
-	test("the stash is spent once — a later read goes to the server", async () => {
+	test("a second read inside the snapshot's share window rides the same snapshot", async () => {
+		// The one-shot stash is gone (KRTX-189). A second paint over a store the
+		// runtime already filled is still refused: `shouldHydrateFromMirror`
+		// rejects any snapshot over live messages, whichever read asks.
 		resetSessionOpenBundles();
 		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
 		const urls = mockFetch({
 			observed_at: "2026-08-26T12:00:00.000Z",
-			session: { session_id: "S1" },
+			session: SESSION_ROW,
 			turn: { known: true, turns: [] },
 			queue: { known: true, prompts: [], held: false },
 			transcript: { known: true, requested: true, ...envelope() },
@@ -291,11 +298,13 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 			models: { known: false, reason: "x" },
 		});
 		openSessionBundle("P1", "S1");
-		await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
-		await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
-		// A second paint over a store the runtime has already filled is how a
-		// transcript grows ghosts, so the stash must never answer twice.
-		expect(urls.some((u) => u.includes("/transcript"))).toBe(true);
+		const first = await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		const second = await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		expect(urls.filter((u) => u.includes("/transcript"))).toHaveLength(0);
+		expect(second?.messages).toHaveLength(first?.messages.length ?? -1);
+		expect(
+			shouldHydrateFromMirror({ envelope: second, runtimeSessionId: ROOT, hasMessages: true }),
+		).toBe(false);
 	});
 
 	test("a bundle that answered 'no saved copy' is final: no second read", async () => {
@@ -303,7 +312,7 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
 		const urls = mockFetch({
 			observed_at: "2026-09-25T12:00:00.000Z",
-			session: { session_id: "S1" },
+			session: SESSION_ROW,
 			turn: { known: true, turns: [] },
 			queue: { known: true, prompts: [], held: false },
 			transcript: {
@@ -323,16 +332,22 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 		});
 		openSessionBundle("P1", "S1");
 		const painted = await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
-		expect(painted).toBeNull();
+		// The server's answer, the same one the route gives: nothing paints, and
+		// `useSessionSync` drops the device's copy for the next open.
+		expect(painted?.available).toBe(false);
+		expect(shouldHydrateFromMirror({ envelope: painted, runtimeSessionId: ROOT, hasMessages: false })).toBe(false);
 		expect(urls.filter((u) => u.includes("/transcript"))).toHaveLength(0);
 	});
 
-	test("reads the transcript route when no bundle stashed one", async () => {
+	test("reads the saved-history route when no bundle carries the window", async () => {
 		resetSessionOpenBundles();
 		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
 		const urls = mockFetch(envelope());
 		const painted = await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		expect(urls).toHaveLength(1);
 		expect(urls[0]).toContain("/sessions/S1/transcript?shape=sync");
+		// The same read `useSession` makes: one saved-history read (KRTX-189).
+		expect(urls[0]).toContain("history=true");
 		expect(painted?.opencode_session_id).toBe(ROOT);
 	});
 });
