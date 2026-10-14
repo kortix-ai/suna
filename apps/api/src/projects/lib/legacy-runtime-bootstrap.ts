@@ -531,6 +531,7 @@ export type LegacyBootstrapOutcome =
   | 'not-legacy'
   | 'unreachable'
   | 'skipped-recent-check'
+  | 'skipped-self-updating'
   | 'skipped-cooldown'
   | 'skipped-exhausted'
   | 'skipped-in-progress'
@@ -691,6 +692,29 @@ function recentCurrentCheck(
   if (check.externalId !== externalId) return false;
   const atMs = Date.parse(check.at);
   return Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS;
+}
+
+const SELF_CONVERGING_REASONS: ReadonlySet<StaleReason> = new Set(['agent_swap_pending', 'running_assets_stale']);
+
+/**
+ * Is this box behind only on its OWN pending update, on a daemon that installs
+ * that update by itself? Then neither the open nor the reaper relaunches it:
+ * a legacy relaunch costs ~2 min of `starting` and races the daemon's swap.
+ *
+ * The marker is `runtime_truth` in the health body: daemons report it since
+ * the runtime-truth tick (#7792, 2026-09-27), which re-runs the asset pass and
+ * its swap request every 60 s. Every such daemon runs under the entrypoint
+ * supervisor loop that installs `agent.next` (since 2026-08-20). A daemon
+ * component the box itself calls `blocked`, any other stale reason, or a daemon
+ * without the tick still repairs.
+ */
+export function updatesItself(health: unknown, classification: RuntimeClassification): boolean {
+  if (classification.klass !== 'stale') return false;
+  if (!classification.staleReasons.every((reason) => SELF_CONVERGING_REASONS.has(reason))) return false;
+  const truth = isRecord(health) ? health.runtime_truth : null;
+  if (!isRecord(truth) || !isRecord(truth.components)) return false;
+  const daemon = truth.components.daemon;
+  return !isRecord(daemon) || daemon.state !== 'blocked';
 }
 
 /**
@@ -951,6 +975,12 @@ async function probeRuntimeForBootstrap(
       classification = second;
       if (classification.klass === 'not-ok') return { result: { outcome: 'unreachable', classification } };
     }
+  }
+  if (!input.force && updatesItself(health, classification)) {
+    // The daemon installs its own pending update (see `updatesItself`); a
+    // relaunch now would race that swap. Nothing is recorded, so the next
+    // pass probes again and repairs if the daemon stops converging.
+    return { result: { outcome: 'skipped-self-updating', classification } };
   }
   if (classification.klass === 'blocked' && !input.unpin) {
     // The daemon's own supervisor already tried, rolled back, and latched

@@ -486,6 +486,19 @@ describe('bootstrapLegacyRuntime', () => {
     expect(probed).toBe(true);
   });
 
+  test('the reaper never relaunches a box whose only staleness is its own pending update', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const selfUpdating = {
+      ...CURRENT_HEALTH,
+      runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true },
+      runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 1, cause: null } } },
+    };
+    const r = await bootstrapLegacyRuntime(input(), makeDeps({ health: [selfUpdating] }, calls));
+    expect(r.outcome).toBe('skipped-self-updating');
+    expect(calls.execs).toHaveLength(0);
+    expect(calls.audits).toHaveLength(0);
+  });
+
   test('busy OpenCode is never touched', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
     const r = await bootstrapLegacyRuntime(input(), makeDeps({ status: { ses_1: { type: 'busy' } } }, calls));

@@ -22,6 +22,7 @@ import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
   bootstrapLegacyRuntime,
   bootstrapWouldSkip,
+  updatesItself,
   classifyDaemonHealth,
   describeLegacyBootstrapRetry,
   opencodeIdle,
@@ -487,6 +488,12 @@ export async function guaranteeCurrentRuntimeOnOpen(
     // probe itself failed even though the caller already confirmed the
     // provider is running and OpenCode answered moments earlier — fail open
     // rather than block a session open on a second, redundant probe flaking.
+    return { action: 'proceed', classification };
+  }
+
+  if (updatesItself(health, classification)) {
+    // Behind only on its own pending update, on a daemon that installs it
+    // itself: serve the box. The same predicate keeps the reaper off it.
     return { action: 'proceed', classification };
   }
 

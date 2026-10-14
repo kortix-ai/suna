@@ -305,6 +305,49 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(scheduled).toBe(0);
   });
 
+  // A box whose only staleness is its own pending update, on a daemon with the
+  // runtime-truth tick (`runtime_truth`, since 2026-09-27; the supervisor loop
+  // shipped 2026-08-20), installs the update itself within minutes. A legacy
+  // relaunch there costs ~2 min of `starting` after every daemon deploy.
+  const SELF_UPDATING_HEALTH = {
+    ...CURRENT_HEALTH,
+    runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true },
+    runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 1, cause: null } } },
+  };
+  const openOn = async (sandboxId: string, health: unknown) => {
+    let scheduled = 0;
+    const outcome = await guaranteeCurrentRuntimeOnOpen(row(sandboxId), fakeDeps({ health, status: {} }), () => {
+      scheduled += 1;
+      return true;
+    });
+    return { outcome, scheduled };
+  };
+  test('a self-updating box whose only staleness is its pending swap: proceed, nothing scheduled', async () => {
+    const { outcome, scheduled } = await openOn('sb-self-updating', SELF_UPDATING_HEALTH);
+    expect(outcome.classification?.staleReasons).toEqual(['agent_swap_pending']);
+    expect(outcome.action).toBe('proceed');
+    expect(scheduled).toBe(0);
+  });
+  test('the same pending swap on a daemon without the runtime-truth tick: repair', async () => {
+    const { runtime_truth: _none, ...noTick } = SELF_UPDATING_HEALTH;
+    const { outcome, scheduled } = await openOn('sb-no-tick', noTick);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('a self-updating box whose own update is blocked: repair', async () => {
+    const blocked = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'blocked', attempted_at: null, attempts: 3, cause: 'x' } } } };
+    const { outcome, scheduled } = await openOn('sb-update-blocked', blocked);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('a self-updating box that also misses a required capability: repair', async () => {
+    const { capabilities: _gone, ...missing } = SELF_UPDATING_HEALTH;
+    const { outcome, scheduled } = await openOn('sb-self-updating-missing-cap', missing);
+    expect(outcome.classification?.staleReasons).toContain('missing_capability');
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+
   test('the guarantee kill switch fails open and never even reads the classification', async () => {
     process.env.LEGACY_RUNTIME_BOOTSTRAP = 'off';
     try {
