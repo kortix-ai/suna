@@ -153,9 +153,9 @@ test('provider and model access persists, keeps credentials, and updates control
     await expectProtectedProvider('OpenAI');
     await expect(page.getByRole('switch', { name: "GPT-5.5 is this project's default model and cannot be turned off", exact: true })).toBeDisabled();
     await page.screenshot({ path: testInfo.outputPath('model-access.png'), fullPage: true });
-    // No longer the default's provider: ChatGPT subscription switches from its Models group.
-    await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: false });
-    await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: true });
+    // ChatGPT subscription is not connected here: its group was listed only
+    // while it held the project default, and has no switch to offer now.
+    await expect(page.locator('[data-provider-group="codex"]')).toHaveCount(0);
     await providersTab.click();
     await openProvider('kortix');
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: true });
