@@ -590,8 +590,10 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(SUBAGENT_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
 
-    // A finished turn folds its work; the sub-agent row is part of it.
+    // A finished turn folds its work; the sub-agent row is part of it. Since
+    // #9774 each run of work under the fold has its own closed, named line.
     await openWork(page);
+    await page.getByRole('button', { name: 'Asked a helper agent', exact: true }).click();
     await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
     const view = page.getByRole('dialog');
     await expect(view).toBeVisible();

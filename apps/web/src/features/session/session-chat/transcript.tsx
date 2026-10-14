@@ -26,6 +26,8 @@ import {
   type SessionPromptViewer,
   type TextBlock,
   type ToolCallBlock,
+  isSessionLogRestoreNote,
+  type SessionLogReferencedText,
   sessionLogActivityText,
   sessionLogAnsweredQuestionCall,
   sessionLogBurstSteps,
@@ -107,6 +109,7 @@ import {
   type Command,
   type PermissionRequest,
   type QuestionRequest,
+  extractGatewayErrorDetails,
   formatDuration,
   getPermissionForTool,
   getRetryInfo,
@@ -123,6 +126,7 @@ import type { ProviderListResponse } from '@kortix/sdk/react';
 import { isOptimisticSessionPrompt, useSessionWorking } from '@kortix/sdk/react';
 import { CodeBlockEndpoints, SandboxUrlDetector } from '../sandbox-url-detector';
 import { resolveLastTurnWorking } from '../session-composer-readiness';
+import { HarnessSwitchMarker, RestoreNoteMarker, TurnFullText, type FullTextState } from '../session-history';
 
 // ============================================================================
 // Optimistic answers cache
@@ -330,8 +334,12 @@ export function deriveTurnErrorPresentation(input: {
           'then ask the agent to continue with a smaller workload.' +
           (notice.detail ? ` Details: ${notice.detail}.` : ''),
       };
-    case 'cause':
-      return { isAbort: false, text: notice.message, suggestion: undefined };
+    case 'cause': {
+      // The ledger keeps the provider body as recorded (`400: {"message": …}`): show the
+      // gateway's sentence and next step, as a transcript error does.
+      const gateway = extractGatewayErrorDetails(notice.message);
+      return { isAbort: false, text: gateway?.message || notice.message, suggestion: gateway?.message ? gateway.suggestion : undefined };
+    }
     case 'unexplained':
       return {
         isAbort: false,
@@ -1430,6 +1438,8 @@ function TurnUserBlock(
 ) {
   const { userContent } = props;
   const { sessionReport, systemMessages, hasVisibleUserContent } = userContent;
+  // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
+  if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
     <>
       {sessionReport && <TurnSessionReport report={sessionReport} />}
@@ -2179,6 +2189,11 @@ interface TranscriptTurnRowProps extends SessionTurnProps {
   suppressed: boolean;
   /** The fallback waiting row belongs under this turn. */
   showBusyRow: boolean;
+  /** P5.6: the harness the session continued with from this turn on (`harness.history`). */
+  continuedWith?: string;
+  /** P5.6: this turn's full-text load, for the texts it shows as a preview. */
+  fullTextState: FullTextState;
+  onLoadFullText: (turnId: string, refs: readonly SessionLogReferencedText[]) => void;
 }
 
 /**
@@ -2195,14 +2210,23 @@ export const TranscriptTurnRow = memo(function TranscriptTurnRow({
   viewportClassName,
   suppressed,
   showBusyRow,
+  continuedWith,
+  fullTextState,
+  onLoadFullText,
   ...turnProps
 }: TranscriptTurnRowProps) {
   return (
     <TurnViewport turnId={turnId} className={viewportClassName}>
+      {continuedWith && (
+        <div className="mb-6">
+          <HarnessSwitchMarker harness={continuedWith} />
+        </div>
+      )}
       {/* No separate divider for compaction turns — the
       CompactionMarker rendered by SessionTurn IS the
       divider (rule–pill–rule), through every phase. */}
       {suppressed ? null : <SessionTurn {...turnProps} />}
+      {!suppressed && <TurnFullText turn={turnProps.turn} state={fullTextState} onLoad={onLoadFullText} />}
       {/* Queued bubbles follow this turn. The waiting
           row stays above them, where the working turn
           draws its own, so it never jumps. */}

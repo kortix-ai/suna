@@ -337,6 +337,9 @@ A held call returns `202` with `status: "pending_approval"`, `approval_url`, `ap
 - An approval covers one exact request: the same connector, action, arguments and account. A changed argument needs a new approval.
 - After an approval, the identical call runs once when it repeats within 15 minutes.
 - There is no session-wide approval. An action that must run unattended needs an **Allow** rule.
+- A project manager or the person who started the session decides a held call. A session started with an API token (the CLI, a service account) is decided by project managers only.
+- Anyone else who can open the session sees the call and who decides it, with no **Approve** or **Deny**. They can copy `approval_url` and send it to that person: the approval page answers them with `403` too. In **Review**, the call is under **Waiting** for them, not **Needs you**.
+- `GET /v1/projects/<project_id>/sessions/<session_id>/audit` and `GET /v1/projects/<project_id>/review/items` return `can_resolve` and `resolvers` on each pending call. `can_resolve` is `true` only when the caller's `POST /v1/projects/<project_id>/approvals/<execution_id>` would succeed. Any other caller gets `403`. `resolvers` is `managers` or `managers_and_launcher`.
 - `--reason` (SDK: `approvalContext`) describes the effect when the arguments are only ids, for example who a draft goes to. The approver sees it marked as unverified. Kortix never sends it to the provider.
 
 ## Call a connector from a session
@@ -494,6 +497,7 @@ An `error` reason starts with the code in the table. Text after the first `:` is
 | `connector_not_connected` | 403 | No usable account, or `--account` named one that does not exist. | Open `connect_url`, or retry with a name from `available_accounts`. |
 | `account_required` | 403 | Several accounts are reachable, none is named, none is pinned. | Pass `--account`, or pin a default. |
 | `credential_not_shared` | 403 | The connector's project secret is not shared with the person this call acts for. | Ask the secret's owner to share it. |
+| `credential_undecryptable` | 403 | Kortix cannot decrypt the connector's stored credential, or the project secret it uses: the server's encryption key changed, or the stored value is damaged. `message` names the connector or the secret. | Reconnect the account, or enter the credential or the secret again. For an OAuth 2.0 account, save its OAuth application again first: the same key encrypts it, and until then its routes answer `409 SECRET_UNDECRYPTABLE`. |
 | `connector_disabled` | 403 | The connector is declared with `enabled: false`. | Enable it. |
 | `policy_block` | 403 | A **Block** rule matched. Final. | Do not retry. Change the policy. |
 | `connector_not_found` | 404 | No connector with this slug. | Run `kortix connectors ls`. |

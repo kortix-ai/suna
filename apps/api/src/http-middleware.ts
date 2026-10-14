@@ -17,13 +17,13 @@ import {
   requestClientLogFields,
   requestLogLevel,
   requestTimingLogField,
-  shouldSuppressRequestLog,
 } from './lib/request-log-level';
 import { installFetchTiming } from './lib/server-timing';
 import { addBreadcrumb } from './lib/sentry';
 import { compressResponse } from './middleware/compress';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
+import { shouldSuppressRequestLog } from './sandbox-proxy/request-log-suppression';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
 import { auditApiRequest } from './middleware/audit';

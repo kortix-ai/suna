@@ -1135,6 +1135,15 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_parent')
       .on(table.parentSessionId, table.updatedAt.desc(), table.sessionId.desc())
       .where(sql`${table.parentSessionId} is not null`),
+    // The `visible`-scope session list page: live rows only, in list order, so
+    // a project with thousands of soft-deleted sessions newer than its live
+    // ones still serves a page from the head of the index. The predicate is
+    // spelled exactly as `liveSessionSql` in
+    // apps/api/src/projects/lib/session-list.ts: the planner matches a partial
+    // index only on the same expression.
+    index('idx_project_sessions_project_live')
+      .on(table.projectId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`(${table.metadata} ? 'deletedAt') is not true`),
     // Served the retired per-END-USER Kortix-as-a-Backend session cap (COUNT
     // of one origin_ref's live sessions); no query reads it now. Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
     // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT

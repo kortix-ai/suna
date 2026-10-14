@@ -91,25 +91,25 @@ describe('buildInviteUser', () => {
  *
  * Removing the member row is not the whole offboarding: the departed member's
  * YOLO token (the credential their sessions spend under) must die with it, or
- * the removed person keeps a working credential. There are no seats to release;
- * members are unlimited and free. The UI removal path calls
- * `revokeYoloTokenForMember`; SCIM must too.
+ * the removed person keeps a working credential. There are no seats to release:
+ * members are unlimited and free.
  *
- * Asserted against the source: `deprovisionMember` is module-private, its
- * collaborators are DB deletes, and the property that matters is simply that
- * the call is on the path at all, after the member row is gone.
+ * Asserted against the source: SCIM deprovisions through `offboardMember`
+ * (accounts/core/offboard-member.ts, shared with removal and leave).
+ * `integration-offboard-member.test.ts` drives all three exits end to end.
  */
 import { readFileSync as readScimSource } from 'node:fs';
 import { join as joinScimPath } from 'node:path';
 
-const SCIM_USERS_SRC = readScimSource(
-  joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'),
+const SCIM_USERS_SRC = readScimSource(joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'), 'utf8');
+const OFFBOARD_SRC = readScimSource(
+  joinScimPath(import.meta.dir, '..', 'accounts', 'core', 'offboard-member.ts'),
   'utf8',
 );
 
 describe('SCIM deprovision revokes the member YOLO token', () => {
-  function deprovisionBody(): string {
-    const body = SCIM_USERS_SRC.split('async function deprovisionMember(')[1]?.split('\n}\n')[0];
+  function offboardBody(): string {
+    const body = OFFBOARD_SRC.split('export async function offboardMember(')[1]?.split('\n}\n')[0];
     expect(body).toBeTruthy();
     // Guard the extraction: if this stops covering the identity-row delete, every
     // assertion below passes vacuously.
@@ -117,23 +117,19 @@ describe('SCIM deprovision revokes the member YOLO token', () => {
     return body as string;
   }
 
-  test('revokeYoloTokenForMember is called on the deprovision path', () => {
-    expect(deprovisionBody()).toContain('revokeYoloTokenForMember(userId, accountId)');
+  test('SCIM deactivation runs the shared offboarding', () => {
+    expect(SCIM_USERS_SRC).toContain("offboardMember(SYSTEM_ACTOR, user.accountId, userId, 'deprovisioned')");
+    expect(SCIM_USERS_SRC).toContain("from '../accounts/core/offboard-member'");
   });
 
-  test('it is awaited, so the revoke cannot race the SCIM reply', () => {
-    expect(deprovisionBody()).toContain('await revokeYoloTokenForMember(');
+  test('the offboarding awaits revokeYoloTokenForMember after the member row is gone', () => {
+    const body = offboardBody();
+    expect(body).toContain('await revokeYoloTokenForMember(userId, accountId)');
+    expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(body.indexOf('revokeYoloTokenForMember('));
   });
 
-  test('the revoke happens after the member row is gone', () => {
-    const body = deprovisionBody();
-    expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(
-      body.indexOf('revokeYoloTokenForMember('),
-    );
-  });
-
-  test('the module imports it from billing/services/yolo-tokens, not seat management', () => {
-    expect(SCIM_USERS_SRC).toContain("from '../billing/services/yolo-tokens'");
+  test('nothing on the path still syncs seats', () => {
+    expect(OFFBOARD_SRC).not.toContain('seat-management');
     expect(SCIM_USERS_SRC).not.toContain('seat-management');
   });
 });

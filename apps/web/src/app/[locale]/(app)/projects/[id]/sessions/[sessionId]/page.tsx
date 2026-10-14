@@ -1031,11 +1031,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           />
         );
       } else {
-        notice = {
-          title: tSessionPage('stopped.title'),
-          message: restart.errorMessage ?? tSessionPage('stopped.message'),
-          action: <RestartSessionButton restart={restart} onRestart={handleRestart} />,
-        };
+        // A deliberate stop with a readable transcript is not a dead end. The
+        // conversation stays, the composer stays live (a sent message wakes the
+        // box and is delivered — `deliver` carries the wake intent), and the
+        // composer's own notice says the computer is asleep. A human who left
+        // and came back re-opens the box themselves (`useSession` releases the
+        // stop hold on the next presence return), so no explicit Restart
+        // button is needed here — a `notice` would only freeze the composer
+        // (`readOnly`) and replace it with a terminal card.
       }
     }
 
@@ -1226,16 +1229,23 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             during the wake is the composer's own notice; this says only which
             phase the boot is in. */}
         {notice && !canMountChat ? <SessionNoticeBanner {...notice} /> : null}
-        {!notice && bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
-          <SessionConnectingBanner
-            stage={authLoading || !user ? 'provisioning' : startStage}
-            projectId={projectId}
-            sessionId={sessionId}
-            note={wake.note}
-            reason={session.reason}
-            failure={session.failure}
-          />
-        )}
+        {/* Dormant with a transcript paints no boot strip: nothing is booting
+            until a message or a returning human wakes the box, and the
+            composer's asleep notice is the honest state. Once the wake is
+            claimed the sandbox row reappears and this banner mounts for real. */}
+        {!notice &&
+          !dormantWithoutRuntime &&
+          bootPresentation === 'banner' &&
+          (startStage !== 'ready' || !chatReady) && (
+            <SessionConnectingBanner
+              stage={authLoading || !user ? 'provisioning' : startStage}
+              projectId={projectId}
+              sessionId={sessionId}
+              note={wake.note}
+              reason={session.reason}
+              failure={session.failure}
+            />
+          )}
       </div>
     );
   })();

@@ -7,7 +7,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed (credits-only billing)
 Seat pricing is gone. Every legacy plan reads as `credits`: one paid plan, any
-whole monthly amount from $20 to $10,000, one shared credit wallet, unlimited
+whole monthly amount from $50 to $10,000, one shared credit wallet, unlimited
 members. 1 credit = $0.01.
 
 - Added: `setBillingPlan(params)` (`POST /v1/billing/plan`), `kortix.billing.setPlan`,
@@ -40,6 +40,48 @@ members. 1 credit = $0.01.
     `family` and `status` unions narrow as above.
 - The 402 body no longer carries `billing_model`. Branch on `billing_state`
   (`out_of_credits`, `no_subscription`, `payment_failed`).
+- Added: `ProjectLlmCatalogResponse.platformFeePercent`, Kortix's fee on managed
+  model usage in percent (5.5). `managedPricingRoutes` now carries base provider
+  prices, before the fee. Optional, absent on an older server. Additive.
+- Changed: `COST_MARKUP` is `1.055` (was `1.2`), so displayed session cost
+  matches what credits are charged.
+
+### Added (who may decide an approval)
+- `SessionAuditAction.can_resolve`: true only on an unresolved connector call
+  the viewer may approve or deny, the verdict `resolveApproval` would get
+  (today a project manager, or the session's launcher unless an API token or a
+  service account started the session). False on every other
+  row. Show Approve / Deny only when it is true. Also on the session snapshot's
+  `audit` leg. Optional, absent on an older server. Additive (KRTX-1724).
+- `ApiReviewItem.can_resolve` (connector-call items) and
+  `ReviewApprovalAction.canResolve`, set by `mapApiReviewItem`. A viewer who
+  may not decide the call gets it with status `waiting`, not `needs_you`. On an
+  older server `canResolve` follows `args_preview_authorized`, which the same
+  rule decided. Additive.
+- `reviewVerdictAllowed` refuses approve and reject on a connector call whose
+  `canResolve` is false.
+- `SessionAuditAction.resolvers`, `ApiReviewItem.resolvers` and
+  `ReviewApprovalAction.resolvers` (set by `mapApiReviewItem`): who decides a
+  pending call, for a viewer whose `can_resolve` is false. `managers` for a
+  session started with an API token or a service account (`origin: 'backend'`),
+  else `managers_and_launcher`. Null on a settled audit row; optional, absent
+  on an older server. Additive (KRTX-1724).
+
+### Added (undecryptable stored values)
+- `ProjectSecret.status` and `AccountSecretResource.status`: `'ok'`, or
+  `'undecryptable'` when the server can no longer decrypt the stored value
+  (its encryption key changed, or the row is damaged). The value is lost;
+  re-enter it with `upsertProjectSecret` or `rotateAccountSecretResource`.
+  `ProjectSecret.status` reports the shared value and is absent when none is
+  set. `ProjectSecret.mine.status` reports the caller's own override, which
+  the caller's sessions read while it is active: set it again with
+  `setPersonalProjectSecret`, or remove it with `deletePersonalProjectSecret`.
+  `SecretValueStatus` is the new public type. Optional: absent on older
+  servers. A connector call on such a credential fails with
+  `ConnectorCallError.code === 'credential_undecryptable'`. Any other request
+  that needs such a value answers `409` with
+  `ApiError.code === 'SECRET_UNDECRYPTABLE'` and a message that names it.
+  Additive (KRTX-1719).
 
 ### Added (session restore)
 - `restoreProjectSession(projectId, sessionId)` and `session.restore()`

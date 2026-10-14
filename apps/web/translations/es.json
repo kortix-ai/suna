@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Desconectar OpenCode Go",
     "opencodeGoFailed": "No se pudo conectar OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "No descifrable",
+      "hint": "Kortix no puede descifrar el valor guardado. La clave de cifrado cambió o el valor está dañado. Cualquier persona que administre este proyecto puede volver a introducirlo.",
+      "reenter": "Volver a introducir el valor",
+      "dialog": "Kortix no puede descifrar el valor guardado. Vuelve a introducirlo para guardar.",
+      "keyHint": "Kortix no puede descifrar esta clave de API. La clave de cifrado del servidor cambió o la clave guardada está dañada. Kortix no la usa hasta que su propietario o un administrador de la cuenta la vuelva a introducir.",
+      "loginHint": "Kortix no puede descifrar este inicio de sesión. La clave de cifrado del servidor cambió o el inicio de sesión guardado está dañado. Kortix no lo usa hasta que su propietario lo vuelva a conectar.",
+      "reenterKey": "Volver a introducir la clave",
+      "mineHint": "Kortix no puede descifrar tu propio valor de este secreto. Tus sesiones lo leen en lugar del valor compartido, así que fallan hasta que lo elimines.",
+      "deleteMine": "Eliminar mi valor",
+      "mineDeleted": "Valor eliminado",
+      "mineDeleteError": "No se pudo eliminar tu valor. Inténtalo de nuevo."
+    }
+  },
   "useCases": {
     "headline": "Los ciclos que hacen funcionar una empresa"
   },
@@ -1890,6 +1905,26 @@
       "commandsAndActions": "Comandos y acciones",
       "toUse": "para usar",
       "use": "Usar"
+    },
+    "history": {
+      "restoreTitle": "No se pudo restaurar parte del contenido anterior",
+      "restoreMissing": "Falta: {items}.",
+      "restoreAgent": "El agente sabe qué falta.",
+      "restoreDismiss": "Cerrar el aviso de restauración",
+      "missingAttachment": "{count, plural, one {# adjunto} other {# adjuntos}}",
+      "missingText": "{count, plural, one {# texto largo} other {# textos largos}}",
+      "missingToolInput": "{count, plural, one {# entrada de herramienta} other {# entradas de herramienta}}",
+      "missingToolResult": "{count, plural, one {# resultado de herramienta} other {# resultados de herramienta}}",
+      "missingCutPoint": "{count, plural, one {# punto de compactación} other {# puntos de compactación}}",
+      "missingOther": "{count, plural, one {# elemento más} other {# elementos más}}",
+      "restoreNote": "Sesión restaurada desde el historial guardado",
+      "harnessSwitch": "Continuó con {harness}",
+      "showOutOfContext": "Mostrar mensajes fuera del contexto",
+      "fullTextPreview": "{count, plural, one {Un texto largo muestra aquí sus primeros 16 kB.} other {# textos largos muestran aquí sus primeros 16 kB.}}",
+      "fullTextShow": "Mostrar el texto completo ({size})",
+      "fullTextDownload": "Descargar el texto completo ({size})",
+      "fullTextError": "No se pudo cargar el texto completo.",
+      "fullTextRetry": "Intentar de nuevo"
     }
   },
   "agents": {
@@ -11011,6 +11046,7 @@
       "text265e52a33b53": "Establece userName con el email que Kortix utiliza para relacionar cuentas: abre la sección \"Attribute Mapping\" (separada de la pantalla de autenticación), en la columna \"PingOne Directory\" despliega \"Username\" y selecciona \"Email Address\". Después, en las preferencias/acciones de la conexión, establece \"User Identifier\" = userName y \"User Filter Expression\" = `userName eq \"%s\"`. Equivocarse aquí es el fallo n.º 1 de PingOne: usa de forma predeterminada el nombre de usuario interno, no el email.",
       "text266240ec402c": "Modelo de facturación",
       "text2672651736ac": "- El trabajo llega a main solo mediante una solicitud de cambio",
+      "text2677201ed3eb": "Miembro desvinculado",
       "text267d2e1cb01e": "La pregunta más importante para cualquier empresa que adopta IA: ¿puedes cambiar el modelo sin perder la experiencia institucional que has construido? Una lista de soberanía para evaluar tu plataforma de IA.",
       "text268bc1833e83": "Gracias",
       "text268f14bbfe11": "Diagnóstico",
@@ -19797,6 +19833,12 @@
     "approvalPage": {
       "title": "Aprobar una acción de {connector}"
     },
+    "approvalWaiting": {
+      "byManager": "Esperando a que alguien que gestione este proyecto apruebe o rechace la llamada.",
+      "byName": "Esperando a que {name} o alguien que gestione este proyecto apruebe o rechace la llamada.",
+      "byOwner": "Esperando a que la persona que inició esta sesión o alguien que gestione este proyecto apruebe o rechace la llamada.",
+      "copyLink": "Copiar enlace de aprobación"
+    },
     "secretIntakeWithheld": {
       "title": "Guardado, pero {agent} aún no puede leerlo",
       "grant": "{names} no {count, plural, one {está} other {están}} entre los secretos del agente {agent}. Abre Personalizar → Agentes → {agent} → Secretos y {count, plural, one {actívalo} other {actívalos}}.",
@@ -20323,7 +20365,8 @@
     "verified": "Verificado",
     "invalidCode": "Ese código no funcionó. Revisa tu app de autenticación e inténtalo de nuevo.",
     "noFactorTitle": "Configura la autenticación de dos factores",
-    "noFactorDescription": "Esta acción requiere autenticación de dos factores. Añade una app de autenticación en Ajustes → Seguridad y vuelve a intentarlo."
+    "noFactorDescription": "Esta acción requiere autenticación de dos factores. Añade una app de autenticación en Ajustes → Seguridad y vuelve a intentarlo.",
+    "setUp": "Configurar autenticador"
   },
   "connectorPages": {
     "install": "Instalar",

@@ -754,7 +754,8 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   projection's turn), `held` (the prompts the inbox still holds, in queue
   order), `threads` (the session's threads, for `threads`), `pricing`. A turn
   keeps its identity while its messages and derived fields do. A message out
-  of context (a failed attempt) keeps its turn.
+  of context (a failed attempt) keeps its turn; `hideOutOfContext: true` leaves
+  out every message with `in_context: false` that is not streaming.
 - `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
   and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
   the settled-turn fold, and the rows of a burst.
@@ -787,6 +788,18 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   modal's overview and its sub-agent rows show.
 - A pending permission or question matches a call by `call.call_id`
   (`getPermissionForTool`, `getQuestionForTool`).
+- A session's history: `isSessionLogRestoreNote(message)` is the note a partial
+  restore leaves for the agent (render it as a notice, not a prompt);
+  `sessionLogRestoreNotice(session)` is what that restore could not bring back
+  (`{ generation, missing: [{ kind, count }] }`, null unless the grade is
+  `partial` and a restore wrote the record); `sessionLogHarnessSwitches(history, turns)`
+  maps each switch `harness.history` records to the turn it lands on.
+- Texts stored by reference: `sessionLogReferencedTexts(messages)` lists every
+  text the API kept as a 16 kB preview (`{ ref, bytes }`); read one with
+  `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`. `sessionLogFullTextAction(refs)` says
+  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`.
+- `useSessionLogRecord(session)` (`@kortix/sdk/react`) is the v2 session record without threads
+  (`restore_grade`, `grade_counts`, `harness`, `ext`); it keeps its identity through message puts.
 
 Both layers give one answer for a record converted from v1 (its `cost` too: a
 v1-derived reply is priced over its v1 parts): the SDK's test suite compares them
