@@ -15,6 +15,9 @@ same version. The server side (ingest, devices, policy, the web area) lives in
   secrets, human steps. Load it for any CI/CD or release question.
 - `references/app-behavior.md`: product behavior, enrollment, installers,
   sync, privacy. The feature map.
+- `references/self-host.md`: Capture sync on `kortix self-host` (the bundled
+  store, why it sits on the API origin, upgrade, proof). Load it for a 503
+  `capture_credentials_unavailable` on a self-hosted instance.
 - `references/capture-format.md`: the bucket format, the app's only contract
   with any cloud. JSON Schemas are in `apps/capture/schemas/`, the fixture
   bucket in `apps/capture/fixtures/capture-format-v2/`. The API tests, the

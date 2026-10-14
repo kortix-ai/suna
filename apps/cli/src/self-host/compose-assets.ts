@@ -483,6 +483,13 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // instance never even has the option of a port clash on 80/443.
   if (!options.domainConfigured) {
     delete services.caddy;
+  } else {
+    // Domain mode: Caddy serves the Capture store's path prefix itself (see
+    // assets/Caddyfile.txt), so uploads do not depend on the API. Every other
+    // mode has no Caddy and the API forwards the prefix.
+    const api = services['kortix-api'];
+    const apiEnv = asRecord(api?.environment);
+    delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
   }
 
   // The Cloudflare tunnel service is likewise opt-in: only present when
@@ -660,6 +667,7 @@ const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   // first thing the kernel OOM-killer should reach for.
   'supabase-analytics': { limit: '640m', reservation: '256m', oomScoreAdj: 500 },
   'supabase-vector': { limit: '192m', reservation: '64m', oomScoreAdj: 500 },
+  'capture-store': { limit: '${KORTIX_CAPTURE_STORE_MEMORY_LIMIT:-1024m}', reservation: '128m' },
   caddy: { limit: '256m', reservation: '64m' },
   cloudflared: { limit: '128m', reservation: '32m' },
 };
