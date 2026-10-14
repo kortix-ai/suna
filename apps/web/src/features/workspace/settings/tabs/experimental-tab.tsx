@@ -190,7 +190,6 @@ function ExperimentalFeatureRow({
   feature,
   pending,
   canManage,
-  blocked = false,
   onToggle,
   copy,
 }: {
@@ -198,9 +197,6 @@ function ExperimentalFeatureRow({
   pending: boolean;
   /** Already resolved for this row (an `operator_only` row needs a platform operator). */
   canManage: boolean;
-  /** The flag depends on one that is off (Stateless sessions needs Volumes):
-   *  the switch is dead, and the row's description says why. */
-  blocked?: boolean;
   onToggle: (key: string, next: boolean) => void;
   copy: ExperimentalCopy;
 }) {
@@ -231,8 +227,8 @@ function ExperimentalFeatureRow({
         {pending ? <Loading className="text-muted-foreground size-3.5" /> : null}
         <Switch
           aria-labelledby={nameId}
-          checked={blocked ? false : feature.enabled}
-          disabled={blocked || !canManage || pending}
+          checked={feature.enabled}
+          disabled={!canManage || pending}
           onCheckedChange={(v) => onToggle(feature.key, v)}
         />
       </div>
@@ -257,9 +253,6 @@ export interface ExperimentalTabViewProps {
    *  (the route's own rule, project-settings.ts patchFeatureFlagHandler). */
   canManageOperatorOnly?: boolean;
   onToggle?: (key: string, next: boolean) => void;
-  /** The `volumes` flag is on, read from the unfiltered list so a search that
-   *  hides the Volumes row cannot wake the Stateless sessions switch. */
-  volumesEnabled?: boolean;
   /**
    * Search text, CONTROLLED — the container owns it and hands down an already
    * filtered `features`.
@@ -298,7 +291,6 @@ export function ExperimentalTabView({
   canManage = true,
   canManageOperatorOnly = false,
   onToggle = () => {},
-  volumesEnabled = false,
   showPermissionNotice = false,
   query = '',
   onQueryChange = () => {},
@@ -309,8 +301,6 @@ export function ExperimentalTabView({
   // field does not vanish under the cursor the moment it matches nothing.
   const showSearch = features.length > 0 || searching;
   const pendingKeySet = new Set(pendingKeys);
-  // Stateless sessions run on Volumes; with Volumes off the switch is dead.
-  const volumesOff = !volumesEnabled;
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef, !isLoading && !isError && showSearch);
 
@@ -379,7 +369,6 @@ export function ExperimentalTabView({
                   feature={feature}
                   pending={pendingKeySet.has(feature.key)}
                   canManage={canManage && (feature.operator_only !== true || canManageOperatorOnly)}
-                  blocked={feature.key === 'stateless_sessions' && volumesOff}
                   onToggle={onToggle}
                   copy={copy}
                 />
@@ -504,7 +493,6 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       canManage={canEdit}
       canManageOperatorOnly={isOperator}
       onToggle={handleToggle}
-      volumesEnabled={withPending.some((f) => f.key === 'volumes' && f.enabled)}
       showPermissionNotice={!canEdit && !writeCap.isLoading}
       query={query}
       onQueryChange={setQuery}

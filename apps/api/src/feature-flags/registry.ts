@@ -69,8 +69,8 @@
  *
  * ## Derived flags (`derivedFrom: 'volumes'`)
  *
- * `drives` and `ephemeral_sandboxes` are not choices of their own: they follow
- * the project's `volumes` flag and are never offered as a toggle. Every flag is
+ * `drives` is not a choice of its own: it follows
+ * the project's `volumes` flag and is never offered as a toggle. Every flag is
  * per project; none is set for a whole organization (2026-10-13).
  *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
@@ -380,31 +380,15 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'volumes',
     name: 'Volumes',
     description:
-      'Shared Files and volume-backed sessions for this project.',
+      'Shared Files for this project.',
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
-      'BEHAVIORAL only, through the flags derived from it: drives (Files routes and ' +
-      'session drive mounts) and ephemeral_sandboxes (session volumes), and the session ' +
-      'boot mode (platform/services/boot-mode.ts resolveBootMode).',
-  },
-  {
-    key: 'stateless_sessions',
-    name: 'Stateless sessions',
-    description:
-      'Fresh computer on every wake; only files and chat are kept. Needs Volumes on.',
-    stability: 'experimental',
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    // Effective only with `volumes` on (resolveFeatureFlag).
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only: on, a new box of the project boots in `volume` mode ' +
-      '(platform/services/boot-mode.ts resolveBootMode). PATCH /features refuses to ' +
-      'turn it on while Volumes is off.',
+      'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
+      'session drive mounts).',
   },
   {
     key: 'drives',
@@ -426,28 +410,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
       'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
       'folder when off (drives/service.ts sessionVolumeMounts).',
-  },
-  {
-    key: 'ephemeral_sandboxes',
-    name: 'Ephemeral sandboxes',
-    description:
-      'A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop.',
-    stability: 'experimental',
-    // The session state lives on a Platinum volume. Follows the project's
-    // `volumes` flag (the boot mode decides which sessions are ephemeral).
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
-    derivedFrom: 'volumes',
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. Session provisioning mounts the session volume and sets ' +
-      'KORTIX_PERSIST_ROOT (platform/services/session-sandbox.ts); the idle reaper and ' +
-      'the Stop route commit the volume and delete the box instead of stopping it ' +
-      '(projects/reaping/stop-box.ts, projects/session-lifecycle/stop.ts); /start ' +
-      'provisions a fresh box for a retired row (projects/routes/shared.ts). A box ' +
-      'booted with the flag stays ephemeral if the flag is turned off, because its ' +
-      'state already lives on the volume.',
   },
   {
     key: 'session_log',
@@ -529,8 +491,6 @@ export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): bool
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
   if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom);
-  // Stateless sessions run on Volumes: without it the choice is kept but inert.
-  if (key === 'stateless_sessions' && !resolveFeatureFlag(metadata, 'volumes')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 
