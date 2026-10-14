@@ -144,7 +144,9 @@ export async function emailsByUserId(userIds: string[]): Promise<Map<string, str
 /**
  * The Auth user a directory email names. Only an identity whose email is
  * trusted (iam/email-trust.ts) qualifies: an SSO identity from another
- * account's IdP that did not verify the email's domain is never linked.
+ * account's IdP that did not verify the email's domain is never linked, and
+ * while Auth auto-confirms sign-ups a password identity is linked only when
+ * the account already holds it as a member.
  */
 export async function userIdByEmail(email: string, accountId?: string): Promise<string | null> {
   const normalized = email.trim().toLowerCase();

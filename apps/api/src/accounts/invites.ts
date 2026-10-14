@@ -64,10 +64,12 @@ function normalizeEmail(value: string | undefined | null): string {
 /**
  * The caller's email for invite matching: the Auth row's email, and only when
  * it proves ownership (see iam/email-trust.ts). An SSO identity whose IdP has
- * not verified the email's domain matches no invite.
+ * not verified the email's domain matches no invite. An auto-confirmed password
+ * email still matches here, where the invitee acts on one invite in person;
+ * sign-in no longer claims it silently (KRTX-1715).
  */
 async function callerInviteEmail(c: any): Promise<string> {
-  return trustedEmailForUser(c.get('userId') as string | undefined);
+  return trustedEmailForUser(c.get('userId') as string | undefined, { allowAutoconfirmed: true });
 }
 
 /** 403 for a caller whose token names the invite's email but cannot prove it. */
