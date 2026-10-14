@@ -1233,5 +1233,9 @@
     "wrongAccountBody": "Diese Einladung ist an ein anderes Konto gerichtet. Du bist als {{email}} angemeldet.",
     "signOutAndContinue": "Abmelden und fortfahren",
     "backToProjects": "Zurück zu den Projekten"
+  },
+  "approvals": {
+    "waitingTitle": "Wartet auf Genehmigung",
+    "waitingWho": "Die Person, die diese Sitzung gestartet hat, oder eine Person, die dieses Projekt verwaltet, kann den Aufruf genehmigen oder ablehnen."
   }
 }

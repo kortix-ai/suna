@@ -251,6 +251,30 @@ describe('connectorApprovalState', () => {
     expect(connectorApprovalState({ ...base, reviewFetchedAtMs: 500 })).toBe('pending');
   });
 
+  // KRTX-1724: the API lists the call as `waiting` for a viewer it would
+  // refuse (only a project manager or the session's launcher decides). That
+  // viewer reads the call and who decides, never Approve / Deny.
+  test('waiting when the call waits on someone else: no decision on this phone', () => {
+    expect(connectorApprovalState({ ...base, reviewItems: [{ id: 'call:exec_1', status: 'waiting' }] })).toBe(
+      'waiting',
+    );
+  });
+
+  test('a call the API marks canResolve false waits, whatever its status', () => {
+    expect(
+      connectorApprovalState({
+        ...base,
+        reviewItems: [{ id: 'call:exec_1', status: 'needs_you', canResolve: false }],
+      }),
+    ).toBe('waiting');
+    expect(
+      connectorApprovalState({
+        ...base,
+        reviewItems: [{ id: 'call:exec_1', status: 'needs_you', canResolve: true }],
+      }),
+    ).toBe('pending');
+  });
+
   test('a terminal status on the item names the outcome', () => {
     expect(connectorApprovalState({ ...base, reviewItems: [{ id: 'call:exec_1', status: 'approved' }] })).toBe(
       'approved',

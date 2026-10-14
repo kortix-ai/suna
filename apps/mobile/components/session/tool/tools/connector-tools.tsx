@@ -11,6 +11,7 @@
 
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { resolveApproval } from '@kortix/sdk';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useToast } from '@/components/kortix/toast-provider';
 import {
+  ClockIcon,
   CodeSimpleIcon,
   MagnifyingGlassIcon,
   PlugIcon,
@@ -293,6 +295,10 @@ ToolRegistry.register('kortix-connectors_describe', ConnectorDescribeTool);
  * The decision reuses `resolveApproval` — the same `@kortix/sdk` call
  * `ReviewPage`'s `useReviewVerdict` makes for its `resolve_approval` plan —
  * and refetches the same queries (`invalidateReviewItems`).
+ *
+ * Approve / Deny show only to a viewer the API lets decide the call (a project
+ * manager or the person who started the session; `canResolve`, KRTX-1724).
+ * Anyone else reads `waiting`: the call and who decides it, no decision.
  */
 function ConnectorApprovalPrompt({
   need,
@@ -303,6 +309,7 @@ function ConnectorApprovalPrompt({
 }) {
   const handoff = useContext(ConnectorHandoffContext);
   const projectId = handoff?.projectId ?? null;
+  const { t } = useTranslation();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
@@ -310,16 +317,27 @@ function ConnectorApprovalPrompt({
   // Poll the review list only while the answer can still change.
   const [polling, setPolling] = useState(true);
   const review = useReviewItems(projectId, { poll: polling });
+  // The call's own verdict rides on its single action (`canResolve`).
+  const reviewItems = useMemo(
+    () =>
+      review.data?.map((item) => ({
+        id: item.id,
+        status: item.status,
+        canResolve: item.kind === 'approval' ? item.detail.actions[0]?.canResolve : undefined,
+      })),
+    [review.data],
+  );
 
   const state = connectorApprovalState({
     executionId: need.executionId,
-    reviewItems: review.data,
+    reviewItems,
     reviewFetchedAtMs: review.dataUpdatedAt,
     reviewFailed: review.isError && !review.data,
     callSettledAtMs,
     localDecision,
   });
-  const live = state === 'pending' || state === 'unknown';
+  // A waiting call still resolves elsewhere: keep polling for the outcome.
+  const live = state === 'pending' || state === 'unknown' || state === 'waiting';
   useEffect(() => {
     setPolling(live);
   }, [live]);
@@ -364,6 +382,23 @@ function ConnectorApprovalPrompt({
       ))}
     </>
   );
+
+  if (state === 'waiting') {
+    return (
+      <View className="gap-2 rounded-xl border border-border bg-background p-3">
+        <View className="flex-row items-center gap-1.5">
+          <Icon as={ClockIcon} size={14} className="text-muted-foreground" />
+          <Text variant="small" className="leading-5 text-muted-foreground">
+            {t('approvals.waitingTitle')}
+          </Text>
+        </View>
+        {details}
+        <Text variant="muted" style={TURN_TYPE.xs}>
+          {t('approvals.waitingWho')}
+        </Text>
+      </View>
+    );
+  }
 
   if (state !== 'pending') {
     return (

@@ -171,18 +171,28 @@ export function connectorHandoffCallIds(parts: ReadonlyArray<{ part: Part }>): s
  * - `unknown`  — the review list has not loaded yet: render nothing, so a
  *   resolved call never flashes Approve / Deny;
  * - `pending`  — Approve / Deny;
+ * - `waiting`  — still pending, but this viewer may not decide it: only a
+ *   project manager or the person who started the session may (KRTX-1724).
+ *   No Approve / Deny, which the API would refuse with 403;
  * - `approved` / `denied` — the outcome is known;
  * - `resolved` — decided elsewhere (web, the Review page, before a remount),
  *   outcome not known.
  */
-export type ConnectorApprovalState = 'unknown' | 'pending' | 'approved' | 'denied' | 'resolved';
+export type ConnectorApprovalState =
+  | 'unknown'
+  | 'pending'
+  | 'waiting'
+  | 'approved'
+  | 'denied'
+  | 'resolved';
 
 export interface ConnectorApprovalStateInput {
   executionId: string;
   /** The project's review list (`reviewKeys.list`, the query `ReviewPage`
    *  reads). The API adapts only still-pending connector calls into it, as
-   *  `call:<execution_id>`. `undefined` until it loads. */
-  reviewItems: ReadonlyArray<{ id: string; status: string }> | undefined;
+   *  `call:<execution_id>`. `undefined` until it loads. `canResolve` is the
+   *  call's own verdict (`ReviewApprovalAction.canResolve`), when known. */
+  reviewItems: ReadonlyArray<{ id: string; status: string; canResolve?: boolean }> | undefined;
   /** When that list was fetched (react-query `dataUpdatedAt`), epoch ms. */
   reviewFetchedAtMs: number;
   /** The review list request failed and holds no data. */
@@ -195,13 +205,23 @@ export interface ConnectorApprovalStateInput {
   localDecision: 'approve' | 'deny' | null;
 }
 
+/**
+ * A pending connector call this viewer may not decide (KRTX-1724). The API
+ * lists it as `waiting` for such a viewer; an API older than that still says
+ * `needs_you`, but its `canResolve` (from `args_preview_authorized`) is false.
+ */
+export function approvalWaitsOnOthers(item: { status: string; canResolve?: boolean }): boolean {
+  return item.status === 'waiting' || (item.status === 'needs_you' && item.canResolve === false);
+}
+
 export function connectorApprovalState(input: ConnectorApprovalStateInput): ConnectorApprovalState {
   if (input.localDecision) return input.localDecision === 'approve' ? 'approved' : 'denied';
   if (!input.reviewItems) return input.reviewFailed ? 'pending' : 'unknown';
 
   const item = input.reviewItems.find((row) => row.id === `call:${input.executionId}`);
   if (item) {
-    if (item.status === 'needs_you' || item.status === 'waiting') return 'pending';
+    if (approvalWaitsOnOthers(item)) return 'waiting';
+    if (item.status === 'needs_you') return 'pending';
     if (item.status === 'approved') return 'approved';
     if (item.status === 'rejected') return 'denied';
     return 'resolved';
