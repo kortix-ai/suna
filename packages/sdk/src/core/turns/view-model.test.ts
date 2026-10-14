@@ -247,6 +247,29 @@ describe('toolViewModel — file read/write/edit', () => {
   });
 });
 
+describe('toolViewModel — Claude Code edits', () => {
+  test('MultiEdit: one diff per replaced block of edits[]', () => {
+    const tool = classifyToolPart('MultiEdit', {
+      status: 'completed',
+      input: { file_path: '/repo/a.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd' }] },
+      output: 'ok',
+      title: '',
+      metadata: {},
+      time: { start: 0, end: 1 },
+    });
+    expect(toolViewModel(tool)).toEqual({
+      kind: 'file-edit',
+      path: '/repo/a.ts',
+      diff: [
+        { type: 'removed', text: 'a' },
+        { type: 'added', text: 'b' },
+        { type: 'removed', text: 'c' },
+        { type: 'added', text: 'd' },
+      ],
+    });
+  });
+});
+
 describe('toolViewModel — search (grep/glob)', () => {
   test('grep output parses into path/line/content matches', () => {
     const tool = classifyToolPart('grep', {
