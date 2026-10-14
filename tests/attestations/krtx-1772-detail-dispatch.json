@@ -13,12 +13,12 @@
     "apps/web/src/features/session/action-panel/easy/tool-parts.tsx"
   ],
   "diff_hash": "a537f65cdc310a79fd99e3a95016e8ff2b250d0a676eaebc930d5819c345c5f5",
-  "head": "15357cd125c1440ff06489527edde61acb65536f",
+  "head": "ff8043c93ea86afe1078ddc1c4cbed6c6e72d80b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-13T23:58:35.258Z"
+  "at": "2026-10-14T02:25:45.850Z"
 }
