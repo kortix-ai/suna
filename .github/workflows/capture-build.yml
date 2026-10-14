@@ -1276,17 +1276,23 @@ jobs:
           rc=0; "$EXE" > "$EV/second.log" 2>&1 || rc=$?; echo "second launch exit: $rc" | tee "$EV/second.txt"
       - name: The menu-bar menu (best effort, needs GUI scripting)
         run: |
+          # The agent's process owns the status item; the window process has none.
           osascript > "$EV/tray-menu.txt" 2>&1 <<'APPLESCRIPT' || true
+          set ev to system attribute "EV"
           tell application "System Events"
-            tell process "Kortix Capture"
-              click menu bar item 1 of menu bar 2
-              delay 1
-              return name of every menu item of menu 1 of menu bar item 1 of menu bar 2
-            end tell
+            repeat with p in (every process whose name is "Kortix Capture")
+              try
+                click menu bar item 1 of menu bar 2 of p
+                delay 1
+                set names to name of every menu item of menu 1 of menu bar item 1 of menu bar 2 of p
+                do shell script "screencapture -x " & quoted form of (ev & "/tray-menu.png")
+                click menu bar item 1 of menu bar 2 of p
+                return names
+              end try
+            end repeat
           end tell
           APPLESCRIPT
           cat "$EV/tray-menu.txt"
-          killall UserNotificationCenter 2>/dev/null || true; screencapture -x "$EV/tray-menu.png" || true
       - name: Settings with Sync off, the S3 form, privacy controls hidden and on
         run: |
           shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
@@ -1347,6 +1353,8 @@ jobs:
           menu = text("tray-menu.txt"); print("tray menu:", menu.strip())
           if "Open Kortix Capture" in menu:
               assert "Settings" in menu and menu.index("Open Kortix Capture") < menu.index("Settings"), menu
+              assert "Quit" not in menu, "the tray has no Quit: " + menu
+              assert "Pause" in menu, menu
           legacy = text("legacy-after.txt"); print(legacy)
           assert "legacy plists left: 0" in legacy and "legacy processes left: 0" in legacy and "library kept: personal library file" in legacy, legacy
           silent = text("silent-install.txt"); print(silent)

@@ -162,6 +162,26 @@ fn menu(v: &View) -> (Menu, MenuItem, MenuItem) {
     (menu, status, sync)
 }
 
+/// Start the window. On macOS a window is started through LaunchServices (`open -n`): the
+/// click on the menu-bar icon then counts as the person's launch, and the new accessory window
+/// comes to the front. A plain child process would open behind the other apps.
+fn spawn_window(args: &[&str]) {
+    #[cfg(target_os = "macos")]
+    if let Ok(exe) = std::env::current_exe() {
+        // `<bundle>.app/Contents/MacOS/<exe>` -> `<bundle>.app`
+        if let Some(bundle) = exe.ancestors().nth(3).filter(|b| b.extension().is_some_and(|e| e == "app")) {
+            let _ = std::process::Command::new("/usr/bin/open")
+                .args(["-n", "-a"])
+                .arg(bundle)
+                .arg("--args")
+                .args(args)
+                .spawn();
+            return;
+        }
+    }
+    spawn_self(args);
+}
+
 fn spawn_self(args: &[&str]) {
     if let Ok(exe) = std::env::current_exe() {
         let _ = crate::os_proc::no_window(&mut std::process::Command::new(exe))
@@ -247,7 +267,7 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
                 }
             }
             // The app's Dock or Finder icon, clicked while it runs: show the window.
-            Event::Reopen { .. } => spawn_self(&["ui"]),
+            Event::Reopen { .. } => spawn_window(&["ui"]),
             Event::UserEvent(()) if Instant::now() >= next_refresh => {
                 next_refresh = Instant::now() + NOTICE_POLL;
                 let v = view(&paths);
@@ -281,8 +301,8 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
         // Menu clicks arrive on muda's channel, drained every wake-up.
         while let Ok(menu_event) = MenuEvent::receiver().try_recv() {
             match menu_event.id.as_ref() {
-                OPEN => spawn_self(&["ui"]),
-                SETTINGS => spawn_self(&["open", "kortix-capture://settings"]),
+                OPEN => spawn_window(&["ui"]),
+                SETTINGS => spawn_window(&["open", "kortix-capture://settings"]),
                 STATUS => spawn_self(&["permissions", "--request"]),
                 PAUSE | PAUSE_TOMORROW | PAUSE_FOREVER | RESUME => {
                     spawn_self(match menu_event.id.as_ref() {

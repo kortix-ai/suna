@@ -814,15 +814,14 @@ pub fn app(paths: &MemoryPaths) -> Result<()> {
     // Earlier installs left agents and processes that fight this one: remove them first.
     super::legacy::remove_legacy();
     super::legacy::migrate_legacy_settings(paths);
-    if super::managed::machine_service_installed() || super::managed::tray_running(paths) {
-        open_window()?;
-        return Ok(());
-    }
-    // The system agent (pkg, deb) records and hosts the tray: make sure it runs, open the
-    // window, and leave. This process never hosts the recording, so closing it changes nothing.
-    if super::legacy::system_agent_installed() && super::legacy::start_system_agent() {
-        open_window()?;
-        return Ok(());
+    // Something else already records (IT's agent, or a tray that runs): this process only shows
+    // the window. It shows it itself, not in a child: macOS lets the process the person
+    // launched take focus, and a child of it would open behind the other apps. It holds no
+    // recording state, so closing it changes nothing for the recorder.
+    let hosted = super::managed::machine_service_installed() || super::managed::tray_running(paths);
+    let agent = !hosted && super::legacy::system_agent_installed() && super::legacy::start_system_agent();
+    if hosted || agent {
+        return super::ui::run(paths, UiArgs { search: false, at: None });
     }
     // Opened by the person and not recording yet: start recording in the background at once.
     service_start(paths, &ServiceHostArgs::default())?;
