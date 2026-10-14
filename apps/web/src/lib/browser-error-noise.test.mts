@@ -12505,3 +12505,38 @@ test('keeps reporting the wallet wording from our bundles and other undefined-ob
     "undefined is not an object (evaluating 'window.kortix.session = undefined')", `${SPA_PROJECT}/sessions/ses_current`,
   )), false);
 });
+
+// Better Stack (Kortix Frontend prod), release dad30b6188, route `/`: an
+// injected wallet provider rejected a pending request with the EIP-1474
+// default `{ code: -32603, message: 'Internal JSON-RPC error.' }`. Sentry
+// reports the plain object as a frameless synthetic rejection. Kortix rejects
+// with Error instances only.
+function walletRpcRejection(serialized: unknown, frames?: Array<{ filename: string }>) {
+  return {
+    extra: { __serialized__: serialized },
+    exception: { values: [{
+      type: 'UnhandledRejection',
+      value: 'Object captured as promise rejection with keys: code, message',
+      mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+      ...(frames ? { stacktrace: { frames } } : {}),
+    }] },
+  };
+}
+
+test('suppresses the frameless wallet provider internal JSON-RPC rejection', () => {
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletRpcRejection({ code: -32603, message: 'Internal JSON-RPC error.' })), true);
+});
+
+test('keeps reporting other JSON-RPC objects and any rejection with our frames', () => {
+  for (const serialized of [
+    { code: -32603, message: 'Internal error' },
+    { code: -32000, message: 'Internal JSON-RPC error.' },
+    { code: -32603, message: 'Internal JSON-RPC error.', data: { connector: 'gmail' } },
+    'Internal JSON-RPC error.',
+  ]) {
+    assert.equal(shouldIgnoreSentryBrowserNoise(walletRpcRejection(serialized)), false, JSON.stringify(serialized));
+  }
+  for (const filename of ['app:///_next/static/immutable/chunks/0abc.js', 'apps/web/src/lib/x.ts']) {
+    assert.equal(shouldIgnoreSentryBrowserNoise(walletRpcRejection({ code: -32603, message: 'Internal JSON-RPC error.' }, [{ filename }])), false, filename);
+  }
+});
