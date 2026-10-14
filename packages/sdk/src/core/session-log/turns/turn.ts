@@ -9,8 +9,8 @@
  * - A reply joins the turn `reply_to` names, else the latest prompt before it. A reply before
  *   every loaded prompt opens a `partial` turn (a stand-in user message with no blocks) when
  *   it names a prompt, else joins the first turn. A reply shell with no block, no error and
- *   zero usage is not drawn. A message out of context stays: a failed attempt keeps its rows
- *   until P5.6 adds the toggle.
+ *   zero usage is not drawn. A message out of context stays (a failed attempt keeps its rows)
+ *   unless `hideOutOfContext` leaves it out.
  * - `held` prompts (the inbox still holds them) go after the thread, in the order given.
  * - A turn keeps its identity while its messages and derived fields do.
  */
@@ -109,6 +109,12 @@ export interface SessionLogTurnsOptions {
   threads?: ReadonlyArray<Pick<SessionLogThread, 'thread_id' | 'spawned_by'>>;
   /** Prices a reply whose usage reports no cost. */
   pricing?: ModelPricingLookup;
+  /**
+   * Leave out every message the model does not see (`in_context: false`: a failed attempt, an
+   * aborted empty reply, an old root's history), except one still streaming (a compaction
+   * marker until its summary lands). Default false: they keep their turns.
+   */
+  hideOutOfContext?: boolean;
 }
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
@@ -308,8 +314,21 @@ export function sessionLogRetrying(thread: Pick<SessionLogThread, 'messages'>): 
   return !!reply && hasRetryingAssistantTurn(v1RowsOf(reply));
 }
 
+const inContext = new WeakMap<SessionLogThread, SessionLogThread>();
+/** `thread` without the messages the model does not see, a streaming one kept; one object per thread. */
+function inContextOnly(thread: SessionLogThread): SessionLogThread {
+  let out = inContext.get(thread);
+  if (!out) {
+    const messages = thread.messages.filter((m) => m.in_context || m.status === 'streaming');
+    out = messages.length === thread.messages.length ? thread : { ...thread, messages };
+    inContext.set(thread, out);
+  }
+  return out;
+}
+
 /** The turns of `thread`, see the module header. */
-export function sessionLogTurns(thread: SessionLogThread, options: SessionLogTurnsOptions = {}): SessionLogTurn[] {
+export function sessionLogTurns(source: SessionLogThread, options: SessionLogTurnsOptions = {}): SessionLogTurn[] {
+  const thread = options.hideOutOfContext ? inContextOnly(source) : source;
   const held = new Set(options.held ?? NONE);
   const list = drafts(thread.messages, held);
   const lastReply = last(thread.messages, (m) => m.role === 'assistant');
