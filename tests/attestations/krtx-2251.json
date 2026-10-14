@@ -9,12 +9,12 @@
     "apps/web/src/lib/auth/submit-auth.test.ts"
   ],
   "diff_hash": "22be288e9589fae53eadf79c419828ed2eebb99829cdcd5a3bf715697b2fad35",
-  "head": "f736b7648acba5c640578bf0717e21cdbc55d324",
+  "head": "d642950acba3bf10c7d64d59c7cba1054a42b5b6",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-14T22:34:14.684Z"
+  "at": "2026-10-14T23:00:23.961Z"
 }
