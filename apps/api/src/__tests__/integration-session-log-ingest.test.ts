@@ -317,34 +317,61 @@ describe('journal', () => {
     expect(thread_row?.record).toEqual({ ...thread('bin2'), ext: { note: { version: '1', data: 't\uFFFD' } } });
   });
 
-  test('a compaction marks its /summarize turn durable: by message id (OpenCode), else the latest turn of its thread started before it completed, when that turn has no message id (pi)', async () => {
+  test('a compaction marks its /summarize turn durable: by message id (OpenCode), else the earliest unmarked id-less turn of its thread open when it completed (pi)', async () => {
     // No assistant message answers a compaction: both harnesses fold the summary into it.
     // OpenCode's daemon binds the compaction id to the turn (`turn_begin`); pi's turn keeps no
-    // message id. Runs in the OTHER session.
+    // message id. One thread per scenario, in the OTHER session.
     const at = (min: number) => new Date(Date.parse(T) + min * 60_000);
-    const turn = (token: string, startedAt: Date, messageId: string | null, runtimeSessionId = 'ses_pi') =>
-      ({ turnToken: `${token}-${OTHER}`, sessionId: OTHER, sandboxId: OTHER, projectId: PROJECT, accountId: ACCOUNT, runtimeSessionId, messageId, state: 'ended', startedAt });
-    await db.insert(sessionTurns).values([
-      turn('pi_prompt', at(-10), 'msg_c_u1'),
-      turn('pi_summarize', at(-5), null),
-      turn('pi_later', at(5), null),
-      turn('other_thread', at(-4), null, 'ses_other'),
-      turn('oc_summarize', at(-5), 'msg_c_oc', 'ses_oc'),
-    ]);
-    const compaction = (id: string, threadId: string) => message(id, 0, {
-      thread_id: threadId, kind: 'compaction', created_at: at(-5).toISOString(), completed_at: at(-4).toISOString(),
-      blocks: [{ type: 'compaction', id: `${id}-p0`, summary: 'the summary', first_kept_message_id: null, trigger: 'manual' }],
+    const turn = (name: string, thread: string, start: number, messageId: string | null, end: number | null = null, sessionId = OTHER) => ({
+      turnToken: `${name}-${sessionId}`, sessionId, sandboxId: sessionId, projectId: PROJECT, accountId: ACCOUNT, runtimeSessionId: thread, messageId,
+      state: end === null ? 'active' : 'ended', startedAt: at(start), endedAt: end === null ? null : at(end),
     });
+    await db.insert(sessionTurns).values([
+      // pi: a prompt, a /summarize whose compaction failed (nothing stored, ended), the /summarize, a later one.
+      turn('pi_prompt', 'ses_pi', -10, 'msg_c_u1', -9),
+      turn('pi_failed', 'ses_pi', -8, null, -7),
+      turn('pi_summarize', 'ses_pi', -5, null),
+      turn('pi_later', 'ses_pi', 5, null),
+      turn('other_thread', 'ses_other', -5, null),
+      // The same thread in another session.
+      turn('other_session', 'ses_pi', -6, null, null, SESSION),
+      // OpenCode: the turn carries the compaction id; an id-less turn open beside it stays unmarked.
+      turn('oc_summarize', 'ses_oc', -5, 'msg_c_oc', -4),
+      turn('oc_idless', 'ses_oc', -6, null),
+      // An auto compaction inside a prompt turn.
+      turn('auto_prompt', 'ses_auto', -5, 'msg_c_auto_u'),
+      // A: a delivery without a wire id starts while the /summarize runs.
+      turn('a_summarize', 'ses_a', -5, null),
+      turn('a_delivery', 'ses_a', -4.5, null),
+      // B: two /summarize calls back to back.
+      turn('b_first', 'ses_b', -5, null),
+      turn('b_second', 'ses_b', -4.5, null),
+    ]);
+    const compaction = (id: string, thread: string, completed: number) => ({
+      rev: REV + 81,
+      message: message(id, 0, {
+        thread_id: thread, kind: 'compaction', created_at: at(completed).toISOString(), completed_at: at(completed).toISOString(),
+        blocks: [{ type: 'compaction', id: `${id}-p0`, summary: 'the summary', first_kept_message_id: null, trigger: 'manual' }],
+      }),
+    });
+    const b2 = compaction('msg_c_b2', 'ses_b', -3);
     const res = await journal(batch({
-      puts: [{ rev: REV + 81, message: compaction('msg_c_pi', 'ses_pi') }, { rev: REV + 82, message: compaction('msg_c_oc', 'ses_oc') }],
-      threads: [thread('ses_pi'), thread('ses_oc')],
+      puts: [
+        compaction('msg_c_pi', 'ses_pi', -4), compaction('msg_c_oc', 'ses_oc', -4), compaction('msg_c_auto', 'ses_auto', -4),
+        compaction('msg_c_a', 'ses_a', -4), compaction('msg_c_b1', 'ses_b', -4), { ...b2, message: { ...b2.message, seq: 1 } },
+      ],
+      threads: ['ses_pi', 'ses_oc', 'ses_auto', 'ses_a', 'ses_b'].map(thread),
     }), tokens[OTHER]!, OTHER);
     expect(res.status).toBe(200);
     const durable = Object.fromEntries(
-      (await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.sessionId, OTHER)))
-        .map((r) => [r.token.replace(`-${OTHER}`, ''), r.at !== null]),
+      (await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.accountId, ACCOUNT)))
+        .filter((r) => r.token !== `turn-${SESSION}`)
+        .map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]),
     );
-    expect(durable).toEqual({ pi_prompt: false, pi_summarize: true, pi_later: false, other_thread: false, oc_summarize: true });
+    expect(durable).toEqual({
+      pi_prompt: false, pi_failed: false, pi_summarize: true, pi_later: false, other_thread: false, other_session: false,
+      oc_summarize: true, oc_idless: false, auto_prompt: false, a_summarize: true, a_delivery: false, b_first: true, b_second: true,
+    });
   });
 
   test('bodies: invalid JSON shape 400, over 2 MB gzipped 413, over 16 MB raw 413', async () => {
