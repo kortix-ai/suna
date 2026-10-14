@@ -343,6 +343,9 @@ export const PolicySchema = z.object({
     })
     .default({ paused: false, paused_until_ms: null }),
   notice: z.string().max(2000).default(''),
+  // Experimental surfaces. `privacy_controls` shows the exclusions and masking in Kortix and in
+  // the app; hiding them never changes what applies.
+  experimental: z.object({ privacy_controls: z.boolean().default(false) }).default({}),
 });
 export type CapturePolicy = z.infer<typeof PolicySchema>;
 

@@ -68,6 +68,11 @@ export interface CapturePolicy {
   };
   /** Text the device shows the person being recorded. */
   notice: string;
+  /**
+   * Experimental surfaces. `privacy_controls` shows the exclusions and masking in
+   * Kortix and in the app; hiding them never changes what applies. Absent: all off.
+   */
+  experimental?: { privacy_controls: boolean };
 }
 
 export interface CapturePolicyRecord {

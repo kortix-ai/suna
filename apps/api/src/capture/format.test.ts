@@ -165,6 +165,11 @@ describe('policy and status', () => {
     expect(PolicySchema.safeParse({ retention: { local_hours: 0, remote_days: -1 } }).success).toBe(false);
   });
 
+  test('the experimental privacy controls are off by default and kept when set', () => {
+    expect(DEFAULT_POLICY.experimental).toEqual({ privacy_controls: false });
+    expect(PolicySchema.parse({ experimental: { privacy_controls: true } }).experimental.privacy_controls).toBe(true);
+  });
+
   test('the policy sets the screen frame interval and resolution; null keeps the device default', () => {
     expect(DEFAULT_POLICY.recording).toEqual({ paused: false, paused_until_ms: null, interval_ms: null, max_height: null });
     // A policy stored before the fields existed reads back with the device defaults.

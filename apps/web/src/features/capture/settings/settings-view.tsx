@@ -1,12 +1,8 @@
 'use client';
 
 import {
-  CAPTURE_DEVICE_DEFAULTS,
-  CAPTURE_FRAME_INTERVALS_MS,
   CAPTURE_LAYERS,
-  CAPTURE_MAX_HEIGHTS,
   CAPTURE_RETENTION_LIMITS,
-  type CaptureMaxHeight,
   type CapturePolicy,
   type CapturePolicyRecord,
 } from '@kortix/sdk';
@@ -18,7 +14,6 @@ import { Field, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -125,45 +120,6 @@ function NumberRow({
   );
 }
 
-/** A choice from a short list, right-aligned like a switch. */
-function SelectRow<T extends number>({
-  title,
-  description,
-  value,
-  options,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  value: T;
-  options: readonly { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  const id = useId();
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div className="min-w-0">
-        <p id={id} className="text-foreground text-sm font-medium">
-          {title}
-        </p>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
-      </div>
-      <Select value={String(value)} onValueChange={(next) => onChange(Number(next) as T)}>
-        <SelectTrigger size="sm" aria-labelledby={id} className="w-32 shrink-0">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={String(option.value)}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
 /**
  * Kortix Capture's organization settings, the `capture` section of the
  * account settings (`?accountTab=capture`), `capture.manage` only: what every
@@ -219,13 +175,15 @@ function PolicyForm({
   const locale = useLocale();
   const save = useSetCapturePolicy(accountId);
   const [draft, setDraft] = useState<CapturePolicy>(record.policy);
+  const privacyControls = draft.experimental?.privacy_controls ?? false;
   const dirty = JSON.stringify(draft) !== JSON.stringify(record.policy);
   const patch = <K extends keyof CapturePolicy>(key: K, value: Partial<CapturePolicy[K]>) =>
     setDraft((current) => ({ ...current, [key]: { ...(current[key] as object), ...value } }));
   const whole = (value: string, max: number) =>
     Math.min(max, Math.max(0, Math.round(Number(value) || 0)));
+  // Frame rate and size are the computer's own choice: the policy never sets them.
   const submit = () =>
-    save.mutate(draft, {
+    save.mutate({ ...draft, recording: { ...draft.recording, interval_ms: null, max_height: null } }, {
       onSuccess: () => successToast(t('saved')),
       onError: (error) => errorToast(error instanceof Error ? error.message : t('saveFailed')),
     });
@@ -244,60 +202,7 @@ function PolicyForm({
         ))}
       </Group>
 
-      <Group title={t('framesTitle')} description={t('framesHint')}>
-        <SelectRow
-          title={t('interval')}
-          description={t('intervalHint')}
-          value={draft.recording.interval_ms ?? CAPTURE_DEVICE_DEFAULTS.intervalMs}
-          options={CAPTURE_FRAME_INTERVALS_MS.map((ms) => ({
-            value: ms,
-            label: t('intervalOption', { seconds: ms / 1000 }),
-          }))}
-          onChange={(interval_ms) => patch('recording', { interval_ms })}
-        />
-        <SelectRow<CaptureMaxHeight>
-          title={t('resolution')}
-          description={t('resolutionHint')}
-          value={draft.recording.max_height ?? CAPTURE_DEVICE_DEFAULTS.maxHeight}
-          options={CAPTURE_MAX_HEIGHTS.map((height) => ({
-            value: height,
-            label: height === 2160 ? '4K' : `${height}p`,
-          }))}
-          onChange={(max_height) => patch('recording', { max_height })}
-        />
-      </Group>
-
-      <section className="space-y-1">
-        <Label>{t('exclusionsTitle')}</Label>
-        <ExclusionsEditor
-          org={org}
-          view={fromPolicy(draft.privacy, (id) => ({
-            name: tGroup(id),
-            description: tGroup(`${id}Hint`),
-          }))}
-          onChange={(change) =>
-            setDraft((current) => ({
-              ...current,
-              privacy: applyToPrivacy(current.privacy, change),
-            }))
-          }
-        />
-      </section>
-
       <Group title={t('retentionTitle')}>
-        <NumberRow
-          id="capture-local-hours"
-          title={t('localHours')}
-          description={t('localHoursHint')}
-          unit={t('hours')}
-          value={draft.retention.local_hours}
-          max={CAPTURE_RETENTION_LIMITS.localHours}
-          onChange={(value) =>
-            patch('retention', {
-              local_hours: whole(value, CAPTURE_RETENTION_LIMITS.localHours),
-            })
-          }
-        />
         <NumberRow
           id="capture-remote-days"
           title={t('remoteDays')}
@@ -337,20 +242,44 @@ function PolicyForm({
         />
       </Group>
 
-      {/* Experimental: works, and costs each computer a ~1 GB model download first. */}
       <Group title={t('experimentalTitle')} description={t('experimentalHint')}>
         <SwitchRow
-          title={t('masking')}
-          description={t('maskingHint')}
-          checked={draft.privacy.redact_pii}
-          onChange={(redact_pii) => patch('privacy', { redact_pii })}
+          title={t('privacyControls')}
+          description={t('privacyControlsHint')}
+          checked={privacyControls}
+          onChange={(privacy_controls) => patch('experimental', { privacy_controls })}
         />
       </Group>
 
-      <section className="space-y-2">
-        <Label>{t('accessTitle')}</Label>
-        <p className="text-muted-foreground text-sm text-pretty">{t('accessBody')}</p>
-      </section>
+      {privacyControls ? (
+        <>
+          {/* Works, and costs each computer a ~1 GB model download first. */}
+          <Group title={t('maskingTitle')}>
+            <SwitchRow
+              title={t('masking')}
+              description={t('maskingHint')}
+              checked={draft.privacy.redact_pii}
+              onChange={(redact_pii) => patch('privacy', { redact_pii })}
+            />
+          </Group>
+          <section className="space-y-1">
+            <Label>{t('exclusionsTitle')}</Label>
+            <ExclusionsEditor
+              org={org}
+              view={fromPolicy(draft.privacy, (id) => ({
+                name: tGroup(id),
+                description: tGroup(`${id}Hint`),
+              }))}
+              onChange={(change) =>
+                setDraft((current) => ({
+                  ...current,
+                  privacy: applyToPrivacy(current.privacy, change),
+                }))
+              }
+            />
+          </section>
+        </>
+      ) : null}
 
       {dirty ? (
         <div className="bg-background sticky bottom-0 z-10 mt-8 flex flex-wrap items-center justify-between gap-3 border-t py-3">

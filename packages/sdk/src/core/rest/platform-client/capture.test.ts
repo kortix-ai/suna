@@ -95,6 +95,9 @@ test('policy: read and write the account policy', async () => {
   await setCapturePolicy('a1', POLICY);
   expect(last()).toMatchObject({ method: 'PUT', url: `${P}/policy`, body: { policy: POLICY } });
   expect((last().body as { policy: CapturePolicy }).policy.privacy.exclusion_groups).toEqual(['password_managers', 'banking']);
+  // The experimental switch that shows the privacy controls travels with the policy.
+  await setCapturePolicy('a1', { ...POLICY, experimental: { privacy_controls: true } });
+  expect((last().body as { policy: CapturePolicy }).policy.experimental).toEqual({ privacy_controls: true });
 });
 
 test('timeline: a day, a window, and its items; the query names the subject and device', async () => {
