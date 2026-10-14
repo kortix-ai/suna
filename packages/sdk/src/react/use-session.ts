@@ -1577,9 +1577,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
     streamConnected,
-    // Until the saved-history read answers with a copy, the session-open
-    // bundle's copy of the same mirror may paint (`undefined` = read it).
-    mirror: transcriptHistory.envelope ?? undefined,
+    // The saved-history read above is this open's ONE transcript read: its
+    // copy, or `null` while it runs and when it found none. Never `undefined`,
+    // which would make the sync layer read the same window again (KRTX-189).
+    mirror: transcriptHistory.envelope,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
