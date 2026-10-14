@@ -46,6 +46,7 @@ import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-i
 
 import { PI_HARNESS_VERSION } from './version'
 import type { PiSessionSnapshot } from './session-log'
+import { flushSessionLogJournal } from '../shared/session-log-journal'
 
 export type { CompiledAgent }
 
@@ -1085,6 +1086,9 @@ export class PiRuntime {
     this.publishSessionUpdated()
     this.publish({ type: 'session.compacted', properties: { sessionID } })
     this.persist()
+    // P2.12: a compaction between turns (`compact()`) has no turn end to flush the
+    // session log, so the stored summary goes now. One inside a turn waits for its end.
+    if (event.result && !this.active) void flushSessionLogJournal()
   }
 
   /** The session row changed (`time.compacting`). */

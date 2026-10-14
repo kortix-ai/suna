@@ -192,6 +192,9 @@ const SESSION_ROW_HEIGHT_CLASS = 'h-8';
  *  Automated sections. */
 const SIDEBAR_PAGE_SIZE = 20;
 
+/** The newest change requests the session briefs read: one server page. */
+const SIDEBAR_CHANGE_REQUEST_LIMIT = 50;
+
 // Staggered (unique) widths so the loading state reads as a list of rows, not a
 // block; the width doubles as a stable key.
 const SKELETON_ROW_WIDTHS = ['w-40', 'w-28', 'w-44', 'w-32', 'w-48', 'w-24', 'w-36', 'w-20'];
@@ -311,10 +314,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   }, [projectId, activeParentId, activeSection, setExpanded]);
 
   // The brief is a session record, not a Review Center inbox. It therefore
-  // loads every CR state, not only the ones awaiting review.
+  // loads every CR state, not only the ones awaiting review: the newest
+  // SIDEBAR_CHANGE_REQUEST_LIMIT of them, which belong to the recent sessions
+  // the sidebar lists. Never the whole history (565 KB measured on prod,
+  // polled every 60 s; KRTX-2316).
   const { data: changeRequestData } = useQuery({
-    queryKey: changeRequestKeys.list(projectId, 'all'),
-    queryFn: () => listChangeRequests(projectId, 'all'),
+    queryKey: [...changeRequestKeys.listScope(projectId), 'recent'],
+    queryFn: () => listChangeRequests(projectId, undefined, { limit: SIDEBAR_CHANGE_REQUEST_LIMIT }),
     staleTime: 5_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,

@@ -1911,6 +1911,26 @@
       "commandsAndActions": "コマンドとアクション",
       "toUse": "使用するには",
       "use": "使用"
+    },
+    "history": {
+      "restoreTitle": "以前の内容の一部を復元できませんでした",
+      "restoreMissing": "欠落: {items}。",
+      "restoreAgent": "エージェントには欠落している内容が伝えられています。",
+      "restoreDismiss": "復元の通知を閉じる",
+      "missingAttachment": "{count, plural, other {添付ファイル #件}}",
+      "missingText": "{count, plural, other {長いテキスト #件}}",
+      "missingToolInput": "{count, plural, other {ツール入力 #件}}",
+      "missingToolResult": "{count, plural, other {ツール結果 #件}}",
+      "missingCutPoint": "{count, plural, other {圧縮ポイント #件}}",
+      "missingOther": "{count, plural, other {その他 #件}}",
+      "restoreNote": "保存された履歴からセッションを復元しました",
+      "harnessSwitch": "{harness} で続行",
+      "showOutOfContext": "コンテキスト外のメッセージを表示",
+      "fullTextPreview": "{count, plural, other {ここには長いテキストの最初の 16 kB が表示されています（#件）。}}",
+      "fullTextShow": "全文を表示（{size}）",
+      "fullTextDownload": "全文をダウンロード（{size}）",
+      "fullTextError": "全文を読み込めませんでした。",
+      "fullTextRetry": "再試行"
     }
   },
   "agents": {
@@ -20214,7 +20234,8 @@
     "verified": "確認しました",
     "invalidCode": "このコードは使用できませんでした。認証アプリを確認して、もう一度お試しください。",
     "noFactorTitle": "二要素認証を設定",
-    "noFactorDescription": "この操作には二要素認証が必要です。設定 → セキュリティで認証アプリを追加してから、もう一度お試しください。"
+    "noFactorDescription": "この操作には二要素認証が必要です。設定 → セキュリティで認証アプリを追加してから、もう一度お試しください。",
+    "setUp": "認証アプリを設定"
   },
   "connectorPages": {
     "install": "インストール",

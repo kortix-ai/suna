@@ -1911,6 +1911,26 @@
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
       "use": "Use"
+    },
+    "history": {
+      "restoreTitle": "Some earlier content could not be restored",
+      "restoreMissing": "Missing: {items}.",
+      "restoreAgent": "The agent was told what is missing.",
+      "restoreDismiss": "Dismiss restore notice",
+      "missingAttachment": "{count, plural, one {# attachment} other {# attachments}}",
+      "missingText": "{count, plural, one {# long text} other {# long texts}}",
+      "missingToolInput": "{count, plural, one {# tool input} other {# tool inputs}}",
+      "missingToolResult": "{count, plural, one {# tool result} other {# tool results}}",
+      "missingCutPoint": "{count, plural, one {# compaction point} other {# compaction points}}",
+      "missingOther": "{count, plural, one {# other item} other {# other items}}",
+      "restoreNote": "Session restored from saved history",
+      "harnessSwitch": "Continued with {harness}",
+      "showOutOfContext": "Show messages outside context",
+      "fullTextPreview": "{count, plural, one {A long text here shows its first 16 kB.} other {# long texts here show their first 16 kB.}}",
+      "fullTextShow": "Show full text ({size})",
+      "fullTextDownload": "Download full text ({size})",
+      "fullTextError": "Could not load the full text.",
+      "fullTextRetry": "Try again"
     }
   },
   "agents": {
@@ -20214,7 +20234,8 @@
     "verified": "Verified",
     "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
     "noFactorTitle": "Set up two-factor authentication",
-    "noFactorDescription": "This action needs two-factor authentication. Add an authenticator app in Settings → Security, then try again."
+    "noFactorDescription": "This action needs two-factor authentication. Add an authenticator app in Settings → Security, then try again.",
+    "setUp": "Set up authenticator"
   },
   "connectorPages": {
     "install": "Install",

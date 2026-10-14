@@ -3,7 +3,8 @@
  * model provider, dummy key): it streams the next scripted step and records each
  * request body. pi and OpenCode both speak this dialect.
  */
-export type Step = { text: string } | { tool: string; args: Record<string, unknown> }
+/** `reasoning`: the reasoning tokens the step's usage reports (`completion_tokens_details.reasoning_tokens`). */
+export type Step = ({ text: string } | { tool: string; args: Record<string, unknown> }) & { reasoning?: number }
 export type ChatBody = { messages: unknown[]; tools?: unknown[] }
 
 export function startFakeModel(modelId = 'test-model') {
@@ -29,7 +30,7 @@ export function startFakeModel(modelId = 'test-model') {
         body += chunk({ content: step.text })
         body += chunk({}, 'stop')
       }
-      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: modelId, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`
+      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: modelId, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, ...(step.reasoning !== undefined ? { completion_tokens_details: { reasoning_tokens: step.reasoning } } : {}) } })}\n\n`
       body += 'data: [DONE]\n\n'
       return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
     },
