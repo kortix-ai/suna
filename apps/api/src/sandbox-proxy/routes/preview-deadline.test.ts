@@ -67,7 +67,9 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
+const realEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  ...realEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
@@ -79,7 +81,9 @@ mock.module('../../projects/lib/session-token-grant', () => ({
 mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
+const realSessionOpen = await import('../../projects/session-open');
 mock.module('../../projects/session-open', () => ({
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 // The deadline module is stubbed only where it TALKS TO THE DATABASE. The
@@ -119,7 +123,9 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   },
 }));
 
+const realBackend = await import('../backend');
 mock.module('../backend', () => ({
+  ...realBackend,
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: () => ({ effectivePort: upstreamPort }),
   resolveSandboxIngress: async () => ({

@@ -124,7 +124,7 @@ mock.module('../../../billing/services/compute-metering', () => ({
   endComputeSession: async () => {},
 }));
 
-mock.module('../../../sandbox-proxy', () => ({
+mock.module('../../../sandbox-proxy/provider', () => ({
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
