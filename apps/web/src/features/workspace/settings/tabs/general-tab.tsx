@@ -146,6 +146,7 @@ import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { TransferWorkspaceEntry } from './transfer-workspace-dialog';
 import {
   archiveProject,
   getProject,
@@ -242,6 +243,13 @@ export interface GeneralTabViewProps {
   onCloseArchiveDialog?: () => void;
   onConfirmArchive?: () => void;
   isArchivePending?: boolean;
+  /** `TransferWorkspaceEntry` — the second danger-zone row and its dialog.
+   *  A slot for the same reason the others are: the dialog owns its own
+   *  accounts query and mutation, so it cannot render under
+   *  `renderToStaticMarkup` with no providers. Shares the Delete section's
+   *  `canDelete` gate — the API's source gate for a transfer is the same
+   *  destructive tier that gates delete. */
+  transferSlot?: ReactNode;
 }
 
 export interface GeneralTabCopy {
@@ -295,6 +303,7 @@ export function GeneralTabView({
   onCloseArchiveDialog = () => {},
   onConfirmArchive = () => {},
   isArchivePending = false,
+  transferSlot,
 }: GeneralTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -336,6 +345,7 @@ export function GeneralTabView({
                     {copy.deleteWorkspace}
                   </Button>
                 </SettingsRow>
+                {transferSlot}
               </SettingsRowGroup>
             </section>
           ) : null}
@@ -648,6 +658,12 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       onCloseArchiveDialog={() => setArchiveOpen(false)}
       onConfirmArchive={() => archiveMutation.mutate()}
       isArchivePending={archiveMutation.isPending}
+      transferSlot={
+        <TransferWorkspaceEntry
+          projectId={projectId}
+          currentAccountId={project?.account_id}
+        />
+      }
     />
   );
 }

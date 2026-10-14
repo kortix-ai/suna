@@ -885,7 +885,19 @@
         "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
       "reassurance": "Selbst verbundene Git-Repositories werden nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
-      "keepWorkspace": "Projekt behalten"
+      "keepWorkspace": "Projekt behalten",
+      "transferWorkspace": "Projekt übertragen",
+      "transferDescription": "Dieses Projekt — Sitzungen, Dateien, Einstellungen und Mitgliederzugriff — in eine andere Organisation verschieben.",
+      "transferTitle": "Projekt übertragen",
+      "transferDialog": "Sitzungen, Dateien, Einstellungen und Mitgliederzugriff folgen dem Projekt. Bereits erfasste Nutzung bleibt auf der Rechnung dieser Organisation.",
+      "transferTargetLabel": "Zielorganisation",
+      "transferTargetPlaceholder": "Organisation auswählen",
+      "transferLoadingTargets": "Organisationen werden geladen…",
+      "transferNoTargets": "Sie sind kein Mitglied einer anderen Organisation.",
+      "transferMove": "Projekt verschieben",
+      "transferMoveTo": "Nach {name} verschieben",
+      "transferSuccess": "Projekt übertragen",
+      "transferFailed": "Übertragung fehlgeschlagen"
     },
     "sandbox": {
       "states": {
@@ -19637,7 +19649,8 @@
       "text91dc861375bc": "Mobile Release-Richtlinie angezeigt",
       "texta37dd5ef6ef2": "Seitenleiste anpassen",
       "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar",
-      "text2313fe21ea84": "{name} bearbeiten"
+      "text2313fe21ea84": "{name} bearbeiten",
+      "text2b2c3ec032a6": "Projekt in ein anderes Konto übertragen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

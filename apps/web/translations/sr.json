@@ -885,7 +885,19 @@
         "access": "Приступ за цео тим — нико више не може да приступи овом пројекту"
       },
       "reassurance": "Git складишта која сте сами повезали се не бришу. Сав већ послат код остаје на свом месту.",
-      "keepWorkspace": "Задржи пројекат"
+      "keepWorkspace": "Задржи пројекат",
+      "transferWorkspace": "Пренеси пројекат",
+      "transferDescription": "Премести овај пројекат — сесије, датотеке, подешавања и приступ чланова — у другу организацију.",
+      "transferTitle": "Пренеси пројекат",
+      "transferDialog": "Сесије, датотеке, подешавања и приступ чланова прате пројекат. Већ забележена потрошња остаје на рачуну ове организације.",
+      "transferTargetLabel": "Циљна организација",
+      "transferTargetPlaceholder": "Изабери организацију",
+      "transferLoadingTargets": "Учитавање организација…",
+      "transferNoTargets": "Нисте члан ниједне друге организације.",
+      "transferMove": "Премести пројекат",
+      "transferMoveTo": "Премести у {name}",
+      "transferSuccess": "Пројекат је пренесен",
+      "transferFailed": "Пренос није успео"
     },
     "sandbox": {
       "states": {
@@ -19637,7 +19649,8 @@
       "text91dc861375bc": "Политика издања за мобилне уређаје прегледана",
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
       "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
-      "text2313fe21ea84": "Измени {name}"
+      "text2313fe21ea84": "Измени {name}",
+      "text2b2c3ec032a6": "Пројекат је пренесен на други налог"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

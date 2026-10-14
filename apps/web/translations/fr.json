@@ -885,7 +885,19 @@
         "access": "L'accès de toute l'équipe — personne ne pourra plus accéder à cet projet"
       },
       "reassurance": "Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés. Le code déjà envoyé reste en place.",
-      "keepWorkspace": "Conserver le projet"
+      "keepWorkspace": "Conserver le projet",
+      "transferWorkspace": "Transférer le projet",
+      "transferDescription": "Déplacer ce projet — ses sessions, fichiers, réglages et accès membres — vers une autre organisation.",
+      "transferTitle": "Transférer le projet",
+      "transferDialog": "Les sessions, fichiers, réglages et accès membres suivent le projet. La consommation déjà enregistrée reste sur la facture de cette organisation.",
+      "transferTargetLabel": "Organisation cible",
+      "transferTargetPlaceholder": "Choisir une organisation",
+      "transferLoadingTargets": "Chargement des organisations…",
+      "transferNoTargets": "Vous n’êtes membre d’aucune autre organisation.",
+      "transferMove": "Déplacer le projet",
+      "transferMoveTo": "Déplacer vers {name}",
+      "transferSuccess": "Projet transféré",
+      "transferFailed": "Échec du transfert"
     },
     "sandbox": {
       "states": {
@@ -19637,7 +19649,8 @@
       "text91dc861375bc": "Politique de version mobile consultée",
       "texta37dd5ef6ef2": "Personnaliser la barre latérale",
       "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar",
-      "text2313fe21ea84": "Modifier {name}"
+      "text2313fe21ea84": "Modifier {name}",
+      "text2b2c3ec032a6": "Projet transféré vers un autre compte"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

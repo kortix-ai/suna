@@ -885,7 +885,19 @@
         "access": "チーム全員のアクセス権 — 誰もこのプロジェクトに再びアクセスできません"
       },
       "reassurance": "自分で接続した Git リポジトリは削除されません。すでにプッシュしたコードはそのまま残ります。",
-      "keepWorkspace": "プロジェクトを保持"
+      "keepWorkspace": "プロジェクトを保持",
+      "transferWorkspace": "プロジェクトを移管",
+      "transferDescription": "このプロジェクト（セッション・ファイル・設定・メンバーアクセス）を別の組織に移動します。",
+      "transferTitle": "プロジェクトを移管",
+      "transferDialog": "セッション・ファイル・設定・メンバーアクセスはプロジェクトと一緒に移動します。記録済みの使用量はこの組織の請求に残ります。",
+      "transferTargetLabel": "移動先の組織",
+      "transferTargetPlaceholder": "組織を選択",
+      "transferLoadingTargets": "組織を読み込み中…",
+      "transferNoTargets": "他の組織のメンバーではありません。",
+      "transferMove": "プロジェクトを移動",
+      "transferMoveTo": "{name} に移動",
+      "transferSuccess": "プロジェクトを移管しました",
+      "transferFailed": "移管に失敗しました"
     },
     "sandbox": {
       "states": {
@@ -19637,7 +19649,8 @@
       "text91dc861375bc": "モバイルのリリースポリシーを表示しました",
       "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
       "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar",
-      "text2313fe21ea84": "{name}を編集"
+      "text2313fe21ea84": "{name}を編集",
+      "text2b2c3ec032a6": "プロジェクトを別のアカウントに移管しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
