@@ -153,27 +153,28 @@ describe('buildPromptWithFiles', () => {
 });
 
 describe('buildSpawnPrompt', () => {
-  test('appends the session contract when spawning from inside a sandbox', () => {
-    const text = buildSpawnPrompt('Generate a demo PDF.', { fromSandbox: true });
-    expect(text).toContain('Generate a demo PDF.');
-    expect(text).toMatch(/do the task .*yourself/i);
-    expect(text).toMatch(/not spawn other sessions/i);
-    expect(text).toContain('/workspace/out/');
-    expect(text).toMatch(/uv run/);
+  test('splits the contract off the prompt so the prompt is stored verbatim', () => {
+    const spawn = buildSpawnPrompt('Generate a demo PDF.', { fromSandbox: true });
+    expect(spawn.prompt).toBe('Generate a demo PDF.');
+    expect(spawn.context).toMatch(/do the task .*yourself/i);
+    expect(spawn.context).toMatch(/not spawn other sessions/i);
+    expect(spawn.context).toContain('/workspace/out/');
+    expect(spawn.context).toMatch(/uv run/);
   });
 
   test('leaves prompts from a human host untouched', () => {
-    expect(buildSpawnPrompt('Generate a demo PDF.', { fromSandbox: false })).toBe(
-      'Generate a demo PDF.',
-    );
+    expect(buildSpawnPrompt('Generate a demo PDF.', { fromSandbox: false })).toEqual({
+      prompt: 'Generate a demo PDF.',
+      context: '',
+    });
   });
 
-  test('composes after the --with-file manifest', () => {
+  test('keeps the --with-file manifest in the prompt, not in the contract', () => {
     const withFiles = buildPromptWithFiles('Summarize.', ['/workspace/incoming/a.pdf']);
-    const text = buildSpawnPrompt(withFiles, { fromSandbox: true });
-    expect(text.indexOf('/workspace/incoming/a.pdf')).toBeLessThan(
-      text.indexOf('session contract'),
-    );
+    const spawn = buildSpawnPrompt(withFiles, { fromSandbox: true });
+    expect(spawn.prompt).toContain('/workspace/incoming/a.pdf');
+    expect(spawn.prompt).not.toContain('session contract');
+    expect(spawn.context).toContain('session contract');
   });
 });
 
