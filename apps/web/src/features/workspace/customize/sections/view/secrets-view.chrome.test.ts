@@ -65,33 +65,44 @@ describe('SecretsView page chrome', () => {
   });
 
   /**
-   * Docs first, Add last — the pairing `SettingsTabHeader` renders for every
-   * pane that declares a `docsHref`. Secrets has no registry entry to declare
-   * one from, so losing the button is a silent regression unless it is pinned.
+   * The Access legend and the docs link live in one info hover card after the
+   * title, so the header stays one line. It reads the shared presentation
+   * table: a legend restated in JSX drifts from the badge.
    */
-  test('Docs sits beside Add in the one header cluster, secondary first', () => {
-    const action = shellHeader.slice(shellHeader.indexOf('action={'));
-    expect(action.indexOf('/docs/project/secrets')).toBeGreaterThan(-1);
-    expect(action.indexOf('/docs/project/secrets')).toBeLessThan(
-      action.indexOf('onSelect: openCreate'),
-    );
+  test('the Access legend and docs link are the title info hover card', () => {
+    expect(shellHeader).toContain('titleAddon={<SecretsAccessInfo showEnforced={showEnforced} />}');
+    expect(shellHeader).not.toContain('filters=');
+    expect(shellHeader).not.toContain('/docs/project/secrets');
+    const info = code.slice(code.indexOf('function SecretsAccessInfo'));
+    expect(info).toContain('<HoverCardTrigger asChild>');
+    expect(info).toContain('secretDeliveryLegend(showEnforced, tI18nComplete)');
+    expect(info).toContain("raw('text0d8c9f89b826')");
+    expect(info).toContain('href="/docs/project/secrets"');
   });
 
   /**
-   * The Access legend is the shell's secondary row — where Skills and
-   * Connectors put their scope tabs — not a block in the content column above
-   * the table it explains. It must stay the collapsible built from the shared
-   * presentation table: a legend restated in JSX drifts from the badge.
+   * The editor opens in the page's SplitSheet column, beside the table, not in
+   * a dialog over it. Hosts without a sheet (the agent editor) keep the modal.
    */
-  test('the Access legend is the filters row, and reads the shared table', () => {
-    expect(shellHeader).toContain(
-      'filters={<SecretsAccessExplainer showEnforced={showEnforced} />}',
-    );
-    expect(shellChildren).not.toContain('<SecretsAccessExplainer');
-    expect(code).toContain('secretDeliveryLegend(showEnforced, tI18nComplete)');
-    expect(code).toContain("raw('text0d8c9f89b826')");
-    expect(code).toContain('<Collapsible open={open} onOpenChange={setOpen}');
-    expect(code).toContain('<CollapsibleTrigger');
-    expect(code).toContain('<CollapsibleContent>');
+  test('the secret editor renders in the SplitSheet column', () => {
+    expect(code).toContain('<SplitSheet');
+    expect(code).toContain('<SplitSheetMain>');
+    const content = code.slice(code.indexOf('<SplitSheetContent>'));
+    expect(content).toContain('presentation="sheet"');
+    expect(content.indexOf('<SecretDialog')).toBeGreaterThan(-1);
+    // Outside the shell: the editor is the sheet column, not page content.
+    expect(code.indexOf('<SecretDialog')).toBeGreaterThan(code.indexOf('</CapabilityPageShell>'));
+    expect(code).toContain("presentation === 'sheet'");
+    expect(code).toContain("presentation = 'modal'");
+    // Like the modal, the sheet refuses to close while a save is in flight.
+    expect(code).toContain('if (!next && editorSaving) return;');
+    expect(code).toContain('onSavingChange={setEditorSaving}');
+  });
+
+  test('editing shows the identifier once, as text, not as two disabled fields', () => {
+    const editStart = code.indexOf('{isEdit && row ? (');
+    const editBranch = code.slice(editStart, code.indexOf(') : (', editStart));
+    expect(editBranch).toContain('{row.identifier}');
+    expect(editBranch).not.toContain('<Input');
   });
 });

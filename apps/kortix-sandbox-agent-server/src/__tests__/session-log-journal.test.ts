@@ -151,8 +151,8 @@ function fakeAdapter() {
       }
       return { cursors, dropped: {} }
     },
-    async fingerprint() {
-      return sha(JSON.stringify([...native]))
+    async held() {
+      return new Set(native.keys())
     },
     live: (_thread: string, id: string) => (liveSeqs.has(id) ? { seq: liveSeqs.get(id)! } : null),
   }
