@@ -91,7 +91,7 @@ export function registerReviewItemsRoutes(): void {
       tags: ['review'],
       summary: 'List review items (approvals and change requests)',
       description:
-        'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. `limit` defaults to 50; above 200 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
+        'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. `limit` defaults to 50; above 200 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),

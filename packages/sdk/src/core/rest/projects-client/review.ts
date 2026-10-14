@@ -75,8 +75,11 @@ export interface ReviewItemsPage {
 /**
  * One page of the project's review inbox: Needs you, then Waiting, then Done,
  * newest first within each. The list is bounded (50 by default): pass
- * `segment` for one list, and walk the rest with `cursor`. For the needs-you
- * counts a badge shows, read `getReviewSummary` instead.
+ * `segment` for one list, and walk the rest with `cursor`. A walk is not a
+ * snapshot: an item whose status changes between two pages can come back on a
+ * later page (in its new segment) or be missed, so key a merged walk by
+ * `review_item_id`. For the needs-you counts a badge shows, read
+ * `getReviewSummary` instead.
  */
 export async function listReviewItems(
   projectId: string,

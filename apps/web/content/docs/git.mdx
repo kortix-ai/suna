@@ -401,7 +401,7 @@ The REST routes are under `/v1/projects/<project_id>/review`:
 
 | Route | Returns |
 | --- | --- |
-| `GET /review/items` | One page of items: **Needs you**, then **Waiting**, then **Done**, newest first within each. Filters: `segment`, `kind`, `session_id`. `limit` is 50 by default; above 200 it answers `400`. Pass `next_cursor` back as `cursor` for the next page; it is `null` on the last page. `kortix review ls` follows it. |
+| `GET /review/items` | One page of items: **Needs you**, then **Waiting**, then **Done**, newest first within each. Filters: `segment`, `kind`, `session_id`. `limit` is 50 by default; above 200 it answers `400`. Pass `next_cursor` back as `cursor` for the next page; it is `null` on the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed. `kortix review ls` follows the cursor and lists each item once, with its newest status. |
 | `GET /review/items/<item>` | One item by its id, including `cr:<id>` and a pending `call:<id>`. |
 | `GET /review/summary` | `{ needs_you_total, needs_you_by_session }`: the counts the sidebar shows. A connector call that you may not decide counts for the people who may. |
 
