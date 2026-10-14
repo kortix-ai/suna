@@ -497,6 +497,12 @@ esac
       expect(apiEnv.KORTIX_BILLING_INTERNAL_ENABLED).toBeUndefined();
       expect(apiEnv.ENTERPRISE_LICENSE_AVAILABLE).toBeUndefined();
       expect(apiEnv.KORTIX_RESTRICT_ACCOUNT_CREATION).toBeUndefined();
+      // The API reads the same ENABLE_EMAIL_AUTOCONFIRM GoTrue does: while it
+      // is on, a password email proves nothing (KRTX-1715). A pinned entry here
+      // would let the two disagree after `env set EMAIL_URL=…` flips it.
+      expect(apiEnv.ENABLE_EMAIL_AUTOCONFIRM).toBeUndefined();
+      expect((compose.services['supabase-auth'] as any).environment.GOTRUE_MAILER_AUTOCONFIRM)
+        .toBe('${ENABLE_EMAIL_AUTOCONFIRM}');
       expect((compose.services['kortix-api'] as any).env_file).toContain('.env');
     });
   });
@@ -708,6 +714,41 @@ esac
     const { check } = await signUpCheck();
     expect(check).toEqual({ name: 'open-sign-up', ok: true, detail: 'self sign-up is off (DISABLE_SIGNUP=true)' });
   }, 60_000);
+
+  // `init` says the same thing `doctor` fails on, at the moment the operator
+  // creates the instance, and `--disable-signup` closes it from the first boot.
+  const SIGN_UP_RISK = 'anyone who reaches this instance can create a confirmed account for any email address';
+
+  test('init on a domain instance prints the open sign-up risk and both ways to close it', async () => {
+    const { code, stdout } = await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    expect(code).toBe(0);
+    expect(stdout).toContain(SIGN_UP_RISK);
+    expect(stdout).toContain('kortix self-host env set DISABLE_SIGNUP=true');
+    expect(stdout).toContain('kortix self-host env set EMAIL_URL=');
+    expect(readEnv().DISABLE_SIGNUP).toBe('false');
+  }, 60_000);
+
+  test('init --disable-signup turns self sign-up off, prints no risk, and a later plain init keeps it off', async () => {
+    const first = await run(['init', '--yes', '--domain', 'kortix.example.com', '--disable-signup']);
+    expect(first.code).toBe(0);
+    expect(first.stdout).not.toContain(SIGN_UP_RISK);
+    expect(readEnv().DISABLE_SIGNUP).toBe('true');
+    expect((await signUpCheck()).check).toEqual({
+      name: 'open-sign-up',
+      ok: true,
+      detail: 'self sign-up is off (DISABLE_SIGNUP=true)',
+    });
+
+    // Not passing the flag never resets the operator's choice.
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    expect(readEnv().DISABLE_SIGNUP).toBe('true');
+  }, 60_000);
+
+  test('init on a laptop instance prints no sign-up risk', async () => {
+    const { code, stdout } = await run(['init', '--yes']);
+    expect(code).toBe(0);
+    expect(stdout).not.toContain(SIGN_UP_RISK);
+  });
 
   test('doctor checks open sign-up on a tunnel instance, and not on a laptop instance', async () => {
     await run(['init', '--yes']);
