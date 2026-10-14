@@ -1233,5 +1233,10 @@
     "wrongAccountBody": "Este convite é para outra conta. Você entrou como {{email}}.",
     "signOutAndContinue": "Sair e continuar",
     "backToProjects": "Voltar aos projetos"
+  },
+  "approvals": {
+    "waitingManagers": "Alguém que gerencia este projeto pode aprovar ou negar a chamada.",
+    "waitingTitle": "Aguardando aprovação",
+    "waitingWho": "A pessoa que iniciou esta sessão ou alguém que gerencia este projeto pode aprovar ou negar a chamada."
   }
 }

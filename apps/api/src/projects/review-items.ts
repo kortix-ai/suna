@@ -13,12 +13,19 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
 import { changeRequestToReviewItem, connectorCallToReviewItem } from './review-adapters';
+import type { ApprovalResolvers } from './lib/approval-authority';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 type ConnectorCallRow = typeof connectorCalls.$inferSelect;
 
 export type ReviewSegment = 'needs_you' | 'waiting' | 'done';
+
+/** What one caller may do with one pending connector call (KRTX-1724). */
+export interface ConnectorCallVerdict {
+  canResolve: boolean;
+  resolvers: ApprovalResolvers;
+}
 export type ReviewVerdict = 'approve' | 'reject' | 'changes' | 'answer' | 'dismiss';
 
 /** Kinds an agent may submit. `change`/`approval` come from adapters, not submit. */
@@ -146,7 +153,9 @@ export async function collectInboxItems(
   opts: {
     segment?: ReviewSegment;
     kind?: ReviewItemRow['kind'];
-    canExposeConnectorCallPreview?: (row: ConnectorCallRow) => boolean;
+    /** The caller's resolve verdict for one pending call (`mayResolveApproval`)
+     *  and who decides it. Undefined: no verdict, fail closed. */
+    connectorCallVerdict?: (row: ConnectorCallRow) => ConnectorCallVerdict | undefined;
   } = {},
 ) {
   const [nativeRows, crRows, execRows] = await Promise.all([
@@ -154,13 +163,17 @@ export async function collectInboxItems(
     safeSource('change_requests', sources.changeRequests),
     safeSource('connector_calls', sources.connectorApprovals),
   ]);
-  const items = [
+  // `can_resolve` + `resolvers` are set on connector calls only.
+  const items: Array<
+    ReturnType<typeof serializeReviewItem> & {
+      can_resolve?: boolean;
+      resolvers?: ApprovalResolvers | null;
+    }
+  > = [
     ...safeMap('native', nativeRows, serializeReviewItem),
     ...safeMap('change_requests', crRows, changeRequestToReviewItem),
     ...safeMap('connector_calls', execRows, (row) =>
-      connectorCallToReviewItem(row, {
-        includeArgsPreview: opts.canExposeConnectorCallPreview?.(row) === true,
-      }),
+      connectorCallToReviewItem(row, opts.connectorCallVerdict?.(row)),
     ),
   ];
   const segmentStatuses = opts.segment ? statusesForSegment(opts.segment) : null;
@@ -178,7 +191,7 @@ export async function listInboxItems(
   opts: {
     segment?: ReviewSegment;
     kind?: ReviewItemRow['kind'];
-    canExposeConnectorCallPreview?: (row: ConnectorCallRow) => boolean;
+    connectorCallVerdict?: (row: ConnectorCallRow) => ConnectorCallVerdict | undefined;
   } = {},
 ) {
   return collectInboxItems(

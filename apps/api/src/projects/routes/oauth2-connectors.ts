@@ -30,6 +30,7 @@ import {
   saveOAuth2Application,
 } from '../../connectors/oauth2-store';
 import { PROJECT_ACTIONS } from '../../iam';
+import { SecretUndecryptableError } from '../../secrets/undecryptable';
 import { db } from '../../shared/db';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -167,7 +168,8 @@ export function registerOauth2ConnectorsRoutes(): void {
       path: '/{projectId}/connections/{connectionId}/oauth2/application',
       summary: "Read a connection's OAuth2 application, secrets redacted",
       request: { params: ConnectionParams },
-      responses: { 200: json(ApplicationResponse, 'The application'), ...errors(403, 404) },
+      // 409 SECRET_UNDECRYPTABLE: this server cannot decrypt the stored application.
+      responses: { 200: json(ApplicationResponse, 'The application'), ...errors(403, 404, 409) },
     }),
     async (c) => {
     const projectId = c.req.param('projectId');
@@ -295,7 +297,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       request: { params: ConnectionParams, ...body(OAuth2AuthorizationStartInputSchema) },
       responses: {
         200: json(OAuth2AuthorizationStartResultSchema, 'The URL to send the user to'),
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 409),
       },
     }),
     async (c) => {
@@ -321,6 +323,8 @@ export function registerOauth2ConnectorsRoutes(): void {
         expires_at: new Date(started.expiresAt).toISOString(),
       });
     } catch (error) {
+      // The application config cannot be decrypted: 409, naming it (http-errors.ts).
+      if (error instanceof SecretUndecryptableError) throw error;
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -335,7 +339,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       request: { params: ConnectionParams, ...body(OAuth2DeviceAuthorizationStartInputSchema) },
       responses: {
         200: json(OAuth2DeviceAuthorizationStartResultSchema, 'The code to show the user'),
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 409),
       },
     }),
     async (c) => {
@@ -362,6 +366,8 @@ export function registerOauth2ConnectorsRoutes(): void {
         interval_seconds: started.intervalSeconds,
       });
     } catch (error) {
+      // The application config cannot be decrypted: 409, naming it (http-errors.ts).
+      if (error instanceof SecretUndecryptableError) throw error;
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -374,7 +380,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       path: '/{projectId}/connections/{connectionId}/oauth2/device/{sessionId}',
       summary: 'Poll an OAuth2 device authorization',
       request: { params: ConnectionParams.extend({ sessionId: z.string() }) },
-      responses: { 200: json(DevicePollSchema, 'The poll result'), ...errors(400, 403, 404) },
+      responses: { 200: json(DevicePollSchema, 'The poll result'), ...errors(400, 403, 404, 409) },
     }),
     async (c) => {
       const projectId = c.req.param('projectId');
@@ -390,6 +396,8 @@ export function registerOauth2ConnectorsRoutes(): void {
           }),
         );
       } catch (error) {
+        // The application config cannot be decrypted: 409, naming it (http-errors.ts).
+        if (error instanceof SecretUndecryptableError) throw error;
         return c.json({ error: (error as Error).message }, 400);
       }
     },

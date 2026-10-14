@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import type { SecretValueStatus } from '@kortix/api-contract';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { accountMemberJoin } from '../iam/membership-read';
@@ -27,6 +28,16 @@ export function decryptAccountSecret(accountId: string, envelope: string): strin
   const decipher = createDecipheriv('aes-256-gcm', key(accountId), iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(Buffer.from(encryptedText, 'base64url')), decipher.final()]).toString('utf8');
+}
+
+/** Can this server decrypt the envelope? The plaintext is discarded. */
+export function probeAccountSecret(accountId: string, envelope: string): SecretValueStatus {
+  try {
+    decryptAccountSecret(accountId, envelope);
+    return 'ok';
+  } catch {
+    return 'undecryptable';
+  }
 }
 
 /**

@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "OpenCode Go の接続を解除",
     "opencodeGoFailed": "OpenCode Go に接続できませんでした"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "復号できません",
+      "hint": "Kortix は保存された値を復号できません。暗号化キーが変更されたか、値が破損しています。このプロジェクトを管理しているユーザーなら誰でも再入力できます。",
+      "reenter": "値を再入力",
+      "dialog": "Kortix は保存された値を復号できません。保存するには値を再入力してください。",
+      "keyHint": "Kortix はこの API キーを復号できません。サーバーの暗号化キーが変更されたか、保存されたキーが破損しています。所有者またはアカウント管理者が再入力するまで、Kortix はこのキーを使用しません。",
+      "loginHint": "Kortix はこのログインを復号できません。サーバーの暗号化キーが変更されたか、保存されたログインが破損しています。所有者が再接続するまで、Kortix はこのログインを使用しません。",
+      "reenterKey": "キーを再入力",
+      "mineHint": "Kortix はこのシークレットのあなた自身の値を復号できません。あなたのセッションは共有値の代わりにこの値を読み込むため、削除するまで失敗します。",
+      "deleteMine": "自分の値を削除",
+      "mineDeleted": "値を削除しました",
+      "mineDeleteError": "値を削除できませんでした。もう一度お試しください。"
+    }
+  },
   "useCases": {
     "headline": "会社を動かすループ"
   },
@@ -10870,6 +10885,7 @@
       "text265e52a33b53": "Kortixが照合に使用するemailをuserNameに設定します。「Attribute Mapping」セクション（認証画面とは別）を開き、「PingOne Directory」列で「Username」を展開して「Email Address」を選択します。次に接続のpreferences/actionsで「User Identifier」= userName、「User Filter Expression」= `userName eq \"%s\"`に設定します。ここを誤るのがPingOneで最も多い失敗です。デフォルトではemailではなく内部ユーザー名になります。",
       "text266240ec402c": "請求モデル",
       "text2672651736ac": "- 変更リクエストを通じてのみmainに到達する",
+      "text2677201ed3eb": "メンバーをオフボーディングしました",
       "text267d2e1cb01e": "AIを導入するすべての企業にとって最重要の問い：構築した組織の専門知識を失わずにモデルを交換できますか？AIプラットフォームを評価するための主権性チェックリスト。",
       "text268bc1833e83": "ありがとうございます",
       "text268f14bbfe11": "診断",
@@ -19660,6 +19676,12 @@
     },
     "approvalPage": {
       "title": "{connector} のアクションを承認"
+    },
+    "approvalWaiting": {
+      "byManager": "このプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "byName": "{name} またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "byOwner": "このセッションを開始した人またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "copyLink": "承認リンクをコピー"
     },
     "secretIntakeWithheld": {
       "title": "保存しましたが、{agent} はまだ読み取れません",

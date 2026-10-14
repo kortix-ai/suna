@@ -169,8 +169,8 @@ export function changeRequestControlsFrom(
  *   (close) need project.write + project.review.act: close asserts write only,
  *   and it shows with review.act as the other verdicts do. No answer.
  * - Connector call: approve or reject only. The API lets a project manager or
- *   the person who launched the session decide, and sends that viewer the
- *   call's arguments: `previewAuthorized` is false for anyone it would refuse.
+ *   the person who launched the session decide, and says so per call:
+ *   `canResolve` (and `previewAuthorized`) is false for anyone it would refuse.
  * - Native item: project.write + project.review.act, for every verdict.
  */
 export function reviewVerdictAllowed(
@@ -181,7 +181,11 @@ export function reviewVerdictAllowed(
   const target = reviewItemTarget(item.id);
   if (target.type === 'connector_call') {
     const call = item.kind === 'approval' ? item.detail.actions?.[0] : undefined;
-    return (verdict === 'approve' || verdict === 'reject') && call?.previewAuthorized !== false;
+    return (
+      (verdict === 'approve' || verdict === 'reject') &&
+      call?.canResolve !== false &&
+      call?.previewAuthorized !== false
+    );
   }
   if (target.type === 'change_request') {
     if (verdict === 'answer') return false;

@@ -5,6 +5,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { createFirstInWindow } from '../../shared/audit-dedupe';
 import { db } from '../../shared/db';
 import { filterSecretRowsByAudience, secretAudienceSubject } from '../lib/secret-audience';
+import { SecretUndecryptableError } from '../../secrets/undecryptable';
 import { decryptProjectSecret } from './envelope';
 import { secretAudienceRank } from './grant-policy';
 
@@ -25,6 +26,13 @@ export interface ProjectSecretConsumerRead {
    * read is always audited. Leave unset for any read someone asked for.
    */
   probe?: boolean;
+  /**
+   * When no candidate resolves and one failed to decrypt, throw
+   * `SecretUndecryptableError` naming it instead of returning none. The
+   * connector gateway sets it, so a lost value is not reported as a value
+   * shared with someone else (KRTX-1719).
+   */
+  throwWhenUndecryptable?: boolean;
 }
 
 export interface ProjectSecretConsumerValue {
@@ -292,7 +300,8 @@ const firstProbeUseInWindow = createFirstInWindow();
 
 /**
  * Policy-check, decrypt and audit one candidate row. Returns the resolved
- * value, or null when the policy denies the consumer or the ciphertext fails.
+ * value, null when the policy denies the consumer, or 'undecryptable' when the
+ * ciphertext fails.
  */
 async function resolveOneConsumerSecretRow(
   input: ProjectSecretConsumerRead,
@@ -300,7 +309,7 @@ async function resolveOneConsumerSecretRow(
   normalizedName: string,
   row: ConsumerCandidateRow,
   policyRow: ConsumerCandidateRow,
-): Promise<ProjectSecretConsumerValue | null> {
+): Promise<ProjectSecretConsumerValue | null | 'undecryptable'> {
   const allowed = row.active && secretPolicyAllowsConsumer(policyRow, input.consumer);
   if (!allowed) {
     await recordSecretConsumerAudit(input, accountId, {
@@ -334,7 +343,7 @@ async function resolveOneConsumerSecretRow(
         value_source: row.ownerUserId ? 'personal' : 'shared',
       },
     });
-    return null;
+    return 'undecryptable';
   }
   if (!input.probe || firstProbeUseInWindow(`${input.consumer}|${row.secretId}`)) {
     await recordSecretConsumerAudit(input, accountId, {
@@ -380,6 +389,7 @@ async function resolveSelectedRows(
   }
 
   const resolved: ProjectSecretConsumerValue[] = [];
+  let undecryptable: string | null = null;
   for (const { row, policyRow } of selectedRows) {
     const value = await resolveOneConsumerSecretRow(
       input,
@@ -388,9 +398,13 @@ async function resolveSelectedRows(
       row,
       policyRow,
     );
-    if (!value) continue;
+    if (value === 'undecryptable') undecryptable ??= row.identifier;
+    if (!value || value === 'undecryptable') continue;
     resolved.push(value);
     if (resolved.length >= maxValues) break;
+  }
+  if (!resolved.length && undecryptable && input.throwWhenUndecryptable) {
+    throw new SecretUndecryptableError(`Project secret ${undecryptable}`);
   }
   return resolved;
 }

@@ -15,6 +15,7 @@ import {
   handleCall,
 } from '../connectors/gateway';
 import type { DefaultMode, Policy } from '../connectors/policy';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 import type { ChannelWriteMisfire } from '../connectors/channel-write-scope';
 
 const ALICE = 'user-alice';
@@ -219,6 +220,18 @@ describe('handleCall — upstream + errors', () => {
       reason: 'OAuth2 token request failed (503): temporarily_unavailable',
     });
     expect(records.at(-1)).toMatchObject({ status: 'error' });
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('a stored credential the server cannot decrypt is credential_undecryptable, not needs_auth, and never goes upstream', async () => {
+    const { deps, records, fetchCalls } = makeDeps();
+    deps.resolveCredential = async () => {
+      throw new SecretUndecryptableError('The credential of connector stripe');
+    };
+    const result = await handleCall(deps, baseInput);
+    expect(result).toMatchObject({ status: 'denied', reason: 'credential_undecryptable' });
+    expect((result as { message?: string }).message).toContain('connector stripe cannot be decrypted');
+    expect(records.at(-1)).toMatchObject({ status: 'denied' });
     expect(fetchCalls).toHaveLength(0);
   });
 

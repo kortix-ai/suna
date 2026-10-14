@@ -5,6 +5,7 @@ import { Client } from "pg";
 import {
   LOCAL_AUTH_EMAIL_HOOK_SECRET,
   LOCAL_GATEWAY_INTERNAL_TOKEN,
+  LOCAL_PLATFORM_ADMIN_EMAIL,
   LOCAL_STRIPE_WEBHOOK_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
   localWebUrl,
@@ -655,6 +656,9 @@ export async function ensureLocalStack(
           ...(ANON_KEY ? { SUPABASE_ANON_KEY: ANON_KEY } : {}),
           API_KEY_SECRET: "local-flow-runner-api-key-secret",
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
+          // ADM-25: the self-host operator allowlist, naming one synthetic
+          // address that no principal holds.
+          KORTIX_PLATFORM_ADMIN_EMAILS: LOCAL_PLATFORM_ADMIN_EMAIL,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
           // Every access token is confirmed live with GoTrue. TTL 0 sends one
           // GoTrue `/user` call per request; a full core run then exhausts

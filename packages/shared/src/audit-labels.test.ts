@@ -157,6 +157,13 @@ describe('action lookup', () => {
     expect(auditFamilyDetail('no.such.action')).toBeNull();
   });
 
+  test('member.offboarded is titled for every offboarding, also one that revoked nothing', () => {
+    // The API writes it on every removal, leave and SCIM deactivation, with
+    // `computers_revoked: 0` and `reminders_disabled: 0` for most members. A
+    // title that names a revocation states one that did not happen.
+    expect(auditLabelForAction('member.offboarded')?.title).toBe('Offboarded a member');
+  });
+
   test('a request no endpoint matched has its own label', () => {
     expect(UNMATCHED_ROUTE_LABEL.action).toMatch(ACTION_RE);
     expect(auditLabelForAction(UNMATCHED_ROUTE_LABEL.action)).toEqual(UNMATCHED_ROUTE_LABEL);

@@ -1,5 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
+import type { SecretValueStatus } from '@kortix/api-contract';
 import { config } from '../../config';
+import { SecretUndecryptableError } from '../../secrets/undecryptable';
 
 const ENVELOPE_VERSION = 'v1';
 const GCM_AUTH_TAG_LENGTH = 16;
@@ -57,4 +59,28 @@ export function decryptProjectSecret(projectId: string, valueEnc: string): strin
   return Buffer.concat([decipher.update(fromB64url(ciphertextB64)), decipher.final()]).toString(
     'utf8',
   );
+}
+
+/** Can this server decrypt the envelope? The plaintext is discarded. */
+export function probeProjectSecret(projectId: string, valueEnc: string): SecretValueStatus {
+  try {
+    decryptProjectSecret(projectId, valueEnc);
+    return 'ok';
+  } catch {
+    return 'undecryptable';
+  }
+}
+
+/** `decryptProjectSecret`, but a failure throws `SecretUndecryptableError` naming `label`. */
+export function decryptNamedProjectSecret(
+  projectId: string,
+  valueEnc: string,
+  label: string,
+  remedy?: string,
+): string {
+  try {
+    return decryptProjectSecret(projectId, valueEnc);
+  } catch {
+    throw new SecretUndecryptableError(label, remedy);
+  }
 }
