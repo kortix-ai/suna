@@ -20823,7 +20823,7 @@
       "summary": {
         "recording": "{count} 台录制中",
         "idle": "{count} 台空闲",
-        "attention": "{count} 台需要关注",
+        "attention": "{count, plural, other {# 台需要关注}}",
         "not_recording": "{count} 台未录制"
       },
       "health": {
@@ -20835,7 +20835,7 @@
         "permission_missing": "请在系统设置中允许该应用",
         "paused": "有人暂停了录制",
         "sync_error": "上传失败",
-        "backlog": "{count} 项等待上传",
+        "backlog": "{count, plural, other {# 项等待上传}}",
         "behind_version": "请从 {current} 更新到 {version}",
         "asleep": "已休眠或关机。上次在线：{time}"
       }

@@ -40,6 +40,8 @@ describe('KIND_LABEL', () => {
       shared: 'Shared with you',
       automation_failed: 'Failure alert',
       automation_recovered: 'Recovery alert',
+      capture_device_down: 'Capture computer stopped',
+      capture_device_recovered: 'Capture computer recording again',
     });
   });
 

@@ -991,7 +991,8 @@ flow(
 
       await ctx.step('the alert is in the owner’s inbox and opens the account’s Devices page', async () => {
         const url = (await owner.get(path(R.inbox), { query: { limit: 50 } })).status(200).json<{ notifications: Array<{ kind: string; url: string; title: string }> }>();
-        const rows = url.notifications.filter((n) => n.kind === 'capture_device_down');
+        // The owner persona is shared with the other flows, which leave alerts of their own: count this account's.
+        const rows = url.notifications.filter((n) => n.kind === 'capture_device_down' && n.url.startsWith(`/capture/${team.id}/`));
         if (rows.length !== 2) throw new Error(`inbox ${JSON.stringify(url.notifications)}`);
         if (!rows.every((n) => n.url.startsWith(`/capture/${team.id}/devices?notification=`))) throw new Error(`urls ${JSON.stringify(rows)}`);
       });

@@ -75,9 +75,11 @@ export function deliveryForKind(
   switch (kind) {
     case 'turn_done':
     case 'automation_recovered':
+    case 'capture_device_recovered':
       return { channelId: CHANNEL_COMPLETE, iosSound: 'kortix_complete.wav' };
     case 'turn_error':
     case 'automation_failed':
+    case 'capture_device_down':
       return { channelId: CHANNEL_ERROR, iosSound: 'kortix_error.wav' };
     case 'question':
     case 'permission':

@@ -20823,7 +20823,7 @@
       "summary": {
         "recording": "記録中 {count}",
         "idle": "待機中 {count}",
-        "attention": "要確認 {count}",
+        "attention": "{count, plural, other {要確認 #}}",
         "not_recording": "記録なし {count}"
       },
       "health": {
@@ -20835,7 +20835,7 @@
         "permission_missing": "システム設定でアプリを許可してください",
         "paused": "ユーザーが記録を一時停止しました",
         "sync_error": "アップロードに失敗しています",
-        "backlog": "アップロード待ち {count} 件",
+        "backlog": "{count, plural, other {アップロード待ち # 件}}",
         "behind_version": "{current} から {version} に更新してください",
         "asleep": "スリープ中または電源オフ。最後に確認: {time}"
       }

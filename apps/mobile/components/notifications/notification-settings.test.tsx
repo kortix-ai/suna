@@ -89,6 +89,8 @@ const KINDS = {
   shared: { push: true, email: true },
   automation_failed: { push: true, email: true },
   automation_recovered: { push: false, email: false },
+  capture_device_down: { push: true, email: true },
+  capture_device_recovered: { push: true, email: false },
 };
 function recordWith(extra: Record<string, unknown> = {}) {
   return {
@@ -191,6 +193,8 @@ describe('Settings → Notifications with a notification_center project', () => 
       'Shared with you',
       'Failure alert',
       'Recovery alert',
+      'Capture computer stopped',
+      'Capture computer recording again',
       'Device settings',
     ]);
     expect(row('Turn failed').right.props.checked).toBe(false);
