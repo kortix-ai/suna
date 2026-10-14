@@ -32,9 +32,13 @@
  *   date for a person (`MAX_OVERDUE` in `billing/repositories/account-deletion.ts`),
  *   a run that keeps failing falls into that backlog, and `ACCOUNT_DELETION_SWEEP_PAUSED`
  *   stops the worker. Such content goes here; the purge row's reason is
- *   `subscription_ended`. A cancelled request reopens the account: the purge then
- *   deletes that account's `subscription_ended` markers, so a session it reuses can be
- *   purged again and objects written after a marker are not left behind.
+ *   `subscription_ended`. A closing account that still acts as a live customer (a paid
+ *   tier whose payment is not cancelled, or any session created or turn started after
+ *   the close) is skipped whole and counted in the tick line (`liveClosed`): it is left
+ *   for a person. A cancelled request reopens the account: once a session's objects
+ *   are gone, the purge deletes its `subscription_ended` marker, so a session the
+ *   account reuses can be purged again. Not covered: a team account whose owner closed
+ *   their personal account (the deletion request names the personal account only).
  *
  * Known limits: an archived project stamps no session `deletedAt`; a rows purge that
  * runs late (worker off, backlog) moves its objects phase past day 90 by the same delay.
@@ -44,7 +48,8 @@
  *
  * A session is never touched while it is in use:
  * - a session that is not deleted, and whose account is not closed;
- * - a session of a closed account that was created, or ran a turn, after the close;
+ * - any session of a closed account that has a paid live plan, or that created a
+ *   session or ran a turn after the close;
  * - a session whose delete stamp is gone (restored) or unreadable.
  *
  * Each purged session keeps one `session_content_purges` row: the done marker
@@ -99,25 +104,57 @@ const instant = (at: Date) => sql`${at.toISOString()}::timestamptz`;
 
 type Store = Pick<ReturnType<typeof sessionAttachmentStore>, 'removeSession'>;
 type DueSession = { session_id: string; project_id: string; account_id: string; reason: string };
-export type PurgeResult = { sessions: number; objects: number; failed: number };
-
-/** Statuses of an account_deletion_requests row that close the account; `cancelled` reopens it. */
-const CLOSING = sql`('pending', 'processing')`;
+/** `liveClosed`: closing accounts past their window that still act live, left for a person. */
+export type PurgeResult = { sessions: number; objects: number; failed: number; liveClosed: number };
 
 /**
- * Forget the `subscription_ended` markers of an account that is open again (its
- * closure was cancelled). A session it reuses can then be purged again, and objects
- * written after a marker are not left behind forever. A completed closure has no
- * markers left: the account row cascades to them.
+ * The closing accounts and their close date: an open request (`pending` or `processing`;
+ * a legacy row with `is_cancelled` set is a cancel), the earliest `scheduled_for` wins.
+ * `completed` needs nothing: the account row is gone. `cancelled` reopens the account.
+ * A request row outlives its account (no foreign key): only accounts that exist count.
+ */
+const CLOSING = sql`
+  select r.account_id, min(r.scheduled_for) as closed_at
+  from kortix.account_deletion_requests r
+  join kortix.accounts a on a.account_id = r.account_id
+  where r.status in ('pending', 'processing') and not coalesce(r.is_cancelled, false)
+  group by r.account_id`;
+
+/**
+ * A closing account that still acts as a live customer: a paid tier whose payment is
+ * not cancelled, or any session created, or any turn started, after the close. The
+ * backstop leaves it for a person, like the account-deletion worker does.
+ */
+const LIVE = (k: string) => sql.raw(`(
+  exists (select 1 from kortix.credit_accounts c
+    where c.account_id = ${k}.account_id and coalesce(c.tier, 'free') <> 'free'
+      and coalesce(c.payment_status, '') not in ('canceled', 'cancelled', 'deleted'))
+  or exists (select 1 from kortix.project_sessions s2
+    where s2.account_id = ${k}.account_id and (s2.created_at > ${k}.closed_at
+      or exists (select 1 from kortix.session_turns t where t.session_id = s2.session_id and t.started_at > ${k}.closed_at))))`);
+
+/**
+ * Forget the `subscription_ended` markers of an account that is open again (its closure
+ * was cancelled), once that session's objects are gone too: a cancel between the two
+ * phases must not leave a half-erased session. A session the account reuses can then be
+ * purged again, and objects written after a marker are not left behind forever. A
+ * completed closure has no markers left: the account row cascades to them.
  */
 // ponytail: scans session_content_purges for the reason each tick (no index on reason).
 // The table holds one row per purged session; index (reason, account_id) when a tick measures slow.
 async function forgetReopenedAccounts(): Promise<void> {
   await db.execute(sql`
     delete from kortix.session_content_purges p
-    where p.reason = 'subscription_ended'
-      and not exists (select 1 from kortix.account_deletion_requests r
-        where r.account_id = p.account_id and r.status in ${CLOSING})`);
+    where p.reason = 'subscription_ended' and p.objects_purged_at is not null
+      and not exists (select 1 from (${CLOSING}) k where k.account_id = p.account_id)`);
+}
+
+/** Closing accounts whose window is due but that still act live: left for a person. */
+async function liveClosedAccounts(now: Date): Promise<number> {
+  const [row] = await db.execute(sql`
+    select count(*)::int as n from (${CLOSING}) k
+    where k.closed_at + make_interval(days => ${ACCOUNT_CLOSED_ROWS_DAYS}) <= ${instant(now)} and ${LIVE('k')}`);
+  return Number((row as { n: number }).n);
 }
 
 // ponytail: reads project_sessions whole each tick (no index on metadata.deletedAt). One
@@ -125,21 +162,14 @@ async function forgetReopenedAccounts(): Promise<void> {
 /** The sessions whose rows are due, oldest due first. */
 async function dueSessions(now: Date, limit: number): Promise<DueSession[]> {
   const rows = await db.execute(sql`
-    with closed as (
-      select r.account_id, min(r.scheduled_for) as closed_at
-      from kortix.account_deletion_requests r
-      where r.status in ${CLOSING}
-      group by r.account_id)
+    with closed as (select k.* from (${CLOSING}) k where not ${LIVE('k')})
     select s.session_id, s.project_id::text as project_id, s.account_id::text as account_id, x.reason
     from kortix.project_sessions s
     left join closed e on e.account_id = s.account_id
     cross join lateral (select
       case when jsonb_typeof(s.metadata -> 'deletedAt') = 'string' and s.metadata ->> 'deletedAt' ~ ${ISO_INSTANT}
         then (s.metadata ->> 'deletedAt')::timestamptz + make_interval(days => ${SESSION_DELETE_ROWS_DAYS}) end as deleted_due,
-      case when e.account_id is not null
-        and s.created_at <= e.closed_at
-        and not exists (select 1 from kortix.session_turns t where t.session_id = s.session_id and t.started_at > e.closed_at)
-        then e.closed_at + make_interval(days => ${ACCOUNT_CLOSED_ROWS_DAYS}) end as closed_due) w
+      e.closed_at + make_interval(days => ${ACCOUNT_CLOSED_ROWS_DAYS}) as closed_due) w
     cross join lateral (select
       least(w.deleted_due, w.closed_due) as due_at,
       case when w.deleted_due is not null and (w.closed_due is null or w.deleted_due <= w.closed_due)
@@ -173,9 +203,10 @@ export async function purgeSessionContent(
 ): Promise<PurgeResult> {
   const now = options.now ?? new Date();
   const batchSize = options.batchSize ?? PURGE_BATCH_SIZE;
-  const result: PurgeResult = { sessions: 0, objects: 0, failed: 0 };
+  const result: PurgeResult = { sessions: 0, objects: 0, failed: 0, liveClosed: 0 };
 
   await forgetReopenedAccounts();
+  result.liveClosed = await liveClosedAccounts(now);
   for (const row of await dueSessions(now, batchSize)) {
     try {
       await purgeRows(row, now);
@@ -213,6 +244,6 @@ export async function purgeSessionContent(
     }
   }
 
-  if (result.sessions + result.objects + result.failed > 0) logger.info('[session-purge] tick', result);
+  if (result.sessions + result.objects + result.failed + result.liveClosed > 0) logger.info('[session-purge] tick', result);
   return result;
 }

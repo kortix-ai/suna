@@ -134,7 +134,7 @@ describe('a deleted session', () => {
     expect(objectsOf(c)).toBe(0);
     expect((await bookkeeping(c.sessionId))!.objectsPurgedAt).toEqual(day(37));
     const before = [...bucket.objects.keys()].length;
-    expect(await tick(60)).toEqual({ sessions: 0, objects: 0, failed: 0 });
+    expect(await tick(60)).toEqual({ sessions: 0, objects: 0, failed: 0, liveClosed: 0 });
     expect([...bucket.objects.keys()].length).toBe(before);
     expect((await bookkeeping(c.sessionId))!.objectsPurgedAt).toEqual(day(37));
   });
@@ -199,8 +199,8 @@ describe('restoreSession and the purge', () => {
 });
 
 /** An account deletion request, as `request-deletion` writes it; the account is closed at `scheduledFor`. */
-const requestClosure = async (accountId: string, scheduledFor: Date, status = 'pending') =>
-  (await db.insert(accountDeletionRequests).values({ accountId, userId: USER, status, scheduledFor: scheduledFor.toISOString() }).returning())[0]!;
+const requestClosure = async (accountId: string, scheduledFor: Date, status = 'pending', isCancelled = false) =>
+  (await db.insert(accountDeletionRequests).values({ accountId, userId: USER, status, isCancelled, scheduledFor: scheduledFor.toISOString() }).returning())[0]!;
 const cancelClosure = (id: string) =>
   db.update(accountDeletionRequests).set({ status: 'cancelled', cancelledAt: new Date().toISOString() }).where(eq(accountDeletionRequests.id, id));
 
@@ -232,7 +232,7 @@ describe('a closed account (D6b)', () => {
     expect(objectsOf(c)).toBe(2);
     expect(await tick(87)).toMatchObject({ objects: 1 });
     expect(objectsOf(c)).toBe(0);
-    expect(await tick(91)).toEqual({ sessions: 0, objects: 0, failed: 0 });
+    expect(await tick(91)).toEqual({ sessions: 0, objects: 0, failed: 0, liveClosed: 0 });
     expect(await bookkeeping(c.sessionId)).toMatchObject({ objectsPurgedAt: day(87) });
   });
 
@@ -250,18 +250,51 @@ describe('a closed account (D6b)', () => {
     expect(await rowsOf(g.sessionId)).toEqual(NONE);
   });
 
-  test('a session used after the close is skipped: a turn that started after it, or a session created after it', async () => {
-    const p = await newProject('purge-closed-used');
+  test('an account with a session created after the close keeps ALL its sessions, and is counted as left for a person', async () => {
+    const p = await newProject('purge-closed-new-session');
+    await requestClosure(p.account_id, day(0));
+    const old = await seedContent(p);
+    const later = await seedContent(p);
+    await db.update(projectSessions).set({ createdAt: day(20) }).where(eq(projectSessions.sessionId, later.sessionId));
+    expect(await tick(90)).toMatchObject({ sessions: 0, liveClosed: 1 });
+    expect(await rowsOf(old.sessionId)).toEqual(ALL);
+    expect(objectsOf(old)).toBe(2);
+    expect(await rowsOf(later.sessionId)).toEqual(ALL);
+  });
+
+  test('an account with a turn after the close on one session keeps every session', async () => {
+    const p = await newProject('purge-closed-turn');
     await requestClosure(p.account_id, day(0));
     const withTurn = await seedContent(p);
-    const created = await seedContent(p);
     const idle = await seedContent(p);
     await db.insert(sessionTurns).values({ turnToken: crypto.randomUUID(), sessionId: withTurn.sessionId, sandboxId: crypto.randomUUID(), projectId: p.project_id, accountId: p.account_id, startedAt: day(10) });
-    await db.update(projectSessions).set({ createdAt: day(20) }).where(eq(projectSessions.sessionId, created.sessionId));
-    expect(await tick(90)).toMatchObject({ sessions: 1 });
+    expect(await tick(90)).toMatchObject({ sessions: 0, liveClosed: 2 });
     expect(await rowsOf(withTurn.sessionId)).toEqual(ALL);
-    expect(await rowsOf(created.sessionId)).toEqual(ALL);
-    expect(await rowsOf(idle.sessionId)).toEqual(NONE);
+    expect(await rowsOf(idle.sessionId)).toEqual(ALL);
+  });
+
+  test('a closed account on a paid tier whose payment is live is never purged; a cancelled payment does not save it', async () => {
+    const paid = await newProject('purge-closed-paid');
+    await db.insert(creditAccounts).values({ accountId: paid.account_id, tier: 'tier_25_200', paymentStatus: 'active', stripeSubscriptionStatus: 'active' });
+    await requestClosure(paid.account_id, day(0));
+    const kept = await seedContent(paid);
+    const lapsed = await newProject('purge-closed-paid-cancelled');
+    await db.insert(creditAccounts).values({ accountId: lapsed.account_id, tier: 'tier_25_200', paymentStatus: 'deleted', stripeSubscriptionStatus: 'canceled' });
+    await requestClosure(lapsed.account_id, day(0));
+    const gone = await seedContent(lapsed);
+    expect(await tick(300)).toMatchObject({ sessions: 1, liveClosed: 3 });
+    expect(await rowsOf(kept.sessionId)).toEqual(ALL);
+    expect(await rowsOf(gone.sessionId)).toEqual(NONE);
+  });
+
+  test('two open requests: the earliest scheduled_for is the close', async () => {
+    const p = await newProject('purge-closed-two');
+    const s = await seedContent(p);
+    await requestClosure(p.account_id, day(10), 'processing');
+    await requestClosure(p.account_id, day(0));
+    expect(await tick(79.9)).toMatchObject({ sessions: 0 });
+    expect(await tick(80)).toMatchObject({ sessions: 1 });
+    expect(await rowsOf(s.sessionId)).toEqual(NONE);
   });
 
   test('a deleted session of a closed account is purged by whichever window comes first', async () => {
@@ -296,12 +329,39 @@ describe('an account that is not closed', () => {
       sessions.push(await seedContent(p));
     }
     const none = await seedContent(await newProject('purge-open-no-billing'));
-    for (const n of [0, 80, 87, 400]) expect(await tick(n)).toEqual({ sessions: 0, objects: 0, failed: 0 });
+    for (const n of [0, 80, 87, 400]) expect(await tick(n)).toEqual({ sessions: 0, objects: 0, failed: 0, liveClosed: 0 });
     for (const s of [...sessions, none]) {
       expect(await rowsOf(s.sessionId)).toEqual(ALL);
       expect(objectsOf(s)).toBe(2);
       expect(await bookkeeping(s.sessionId)).toBeUndefined();
     }
+  });
+
+  test('a completed request, and a legacy pending row with is_cancelled set, never count as closing', async () => {
+    const done = await newProject('purge-completed');
+    const a = await seedContent(done);
+    await requestClosure(done.account_id, day(0), 'completed');
+    const legacy = await newProject('purge-legacy-cancelled');
+    const b = await seedContent(legacy);
+    await requestClosure(legacy.account_id, day(0), 'pending', true);
+    expect(await tick(300)).toMatchObject({ sessions: 0, objects: 0, liveClosed: 0 });
+    expect(await rowsOf(a.sessionId)).toEqual(ALL);
+    expect(await rowsOf(b.sessionId)).toEqual(ALL);
+  });
+
+  test('a closure cancelled between the rows phase and the objects phase still loses its objects, then its marker', async () => {
+    const p = await newProject('purge-cancel-between');
+    const s = await seedContent(p);
+    const req = await requestClosure(p.account_id, day(0));
+    expect(await tick(80)).toMatchObject({ sessions: 1 });
+    await cancelClosure(req.id);
+    expect(await tick(83)).toMatchObject({ sessions: 0, objects: 0 });
+    expect(await bookkeeping(s.sessionId)).toMatchObject({ reason: 'subscription_ended', objectsPurgedAt: null });
+    expect(await tick(87)).toMatchObject({ objects: 1 });
+    expect(objectsOf(s)).toBe(0);
+    await tick(88);
+    expect(await bookkeeping(s.sessionId)).toBeUndefined();
+    expect(await rowsOf(s.sessionId)).toEqual(NONE);
   });
 
   test('a cancelled closure keeps everything', async () => {
