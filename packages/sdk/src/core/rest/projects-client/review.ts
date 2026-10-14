@@ -38,6 +38,13 @@ export interface ApiReviewItem {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /**
+   * Connector-call items only (`call:<execution_id>`): true when this viewer
+   * may approve or deny the call — the verdict `resolveApproval` would get.
+   * A viewer who may not finds the call with status `waiting`. Absent on
+   * native items, change requests, and servers older than KRTX-1724.
+   */
+  can_resolve?: boolean;
 }
 
 export async function listReviewItems(

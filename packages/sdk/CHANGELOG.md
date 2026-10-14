@@ -5,6 +5,20 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (who may decide an approval)
+- `SessionAuditAction.can_resolve`: true only on an unresolved connector call
+  the viewer may approve or deny, the verdict `resolveApproval` would get
+  (today a project manager or the session's launcher). False on every other
+  row. Show Approve / Deny only when it is true. Also on the session snapshot's
+  `audit` leg. Optional, absent on an older server. Additive (KRTX-1724).
+- `ApiReviewItem.can_resolve` (connector-call items) and
+  `ReviewApprovalAction.canResolve`, set by `mapApiReviewItem`. A viewer who
+  may not decide the call gets it with status `waiting`, not `needs_you`. On an
+  older server `canResolve` follows `args_preview_authorized`, which the same
+  rule decided. Additive.
+- `reviewVerdictAllowed` refuses approve and reject on a connector call whose
+  `canResolve` is false.
+
 ### Added (session restore)
 - `restoreProjectSession(projectId, sessionId)` and `session.restore()`
   (`POST /v1/projects/:p/sessions/:s/restore`) take a deleted session out of
