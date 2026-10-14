@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { LegacyBootstrapDeps, LegacyBootstrapResult } from './legacy-runtime-bootstrap';
+import { classifyDaemonHealth } from './legacy-runtime-bootstrap';
 import {
   MAX_IN_FLIGHT,
+  expectedRunningAssetsFrom,
   __resetLegacyBootstrapInFlightForTests,
   guaranteeCurrentRuntimeOnOpen,
   scheduleLegacyRuntimeBootstrap,
@@ -346,6 +348,40 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(outcome.classification?.staleReasons).toContain('missing_capability');
     expect(outcome.action).toBe('repairing');
     expect(scheduled).toBe(1);
+  });
+
+  // The kill switch (`policy.agent_self_update: false`): the box never stages,
+  // its runtime_truth daemon reads `unknown`. It must read current (no agent
+  // compare, as `runningAssetsVerdict` does) or repair; never skip forever.
+  test('agent self-update off: the agent digest is not expected, so the box reads current', () => {
+    const manifest = {
+      cli_sha256: 'x',
+      managed_skills_hash: 'y',
+      components: { agent: { sha256: 'manifest-agent' } },
+      policy: { agent_self_update: false },
+    };
+    const expected = expectedRunningAssetsFrom(manifest as never);
+    expect(expected.agent_sha256).toBeNull();
+    expect(classifyDaemonHealth(CURRENT_HEALTH, expected).klass).toBe('current');
+    expect(expectedRunningAssetsFrom({ ...manifest, policy: { agent_self_update: true } } as never).agent_sha256).toBe('manifest-agent');
+  });
+  test('a daemon whose runtime_truth reads unknown is not trusted to update itself: repair', async () => {
+    const unknown = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } } };
+    const { outcome, scheduled } = await openOn('sb-truth-unknown', unknown);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('converging for 360 ticks (~6 h) is not self-update any more: repair', async () => {
+    const stuck = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 360, cause: null } } } };
+    const { outcome, scheduled } = await openOn('sb-converging-stuck', stuck);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('converging for 359 ticks with a pending swap: proceed', async () => {
+    const young = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 359, cause: null } } } };
+    const { outcome, scheduled } = await openOn('sb-converging-young', young);
+    expect(outcome.action).toBe('proceed');
+    expect(scheduled).toBe(0);
   });
 
   test('the guarantee kill switch fails open and never even reads the classification', async () => {

@@ -9,7 +9,7 @@ import { getProvider, type ProviderName } from '../../platform/providers';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { readFileSync } from 'node:fs';
 import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
-import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
+import { runtimeAssetsManifest, runtimeEntrypointPath, type RuntimeAssetsManifest } from '../../runtime-assets/manifest';
 import { projectSessions, projects } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { createAccountToken, revokeAccountToken } from '../../repositories/account-tokens';
@@ -26,6 +26,7 @@ import {
   classifyDaemonHealth,
   describeLegacyBootstrapRetry,
   opencodeIdle,
+  type ExpectedRunningAssets,
   type LegacyBootstrapDeps,
   type LegacyBootstrapResult,
   type LegacyBootstrapRetrySummary,
@@ -261,12 +262,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
     // this deploy's own manifest, never the box's opinion of itself.
     expectedRunningAssets: async () => {
       try {
-        const manifest = await runtimeAssetsManifest();
-        return {
-          cli_sha256: manifest.cli_sha256,
-          managed_skills_hash: manifest.managed_skills_hash,
-          agent_sha256: manifest.components.agent?.sha256 ?? null,
-        };
+        return expectedRunningAssetsFrom(await runtimeAssetsManifest());
       } catch {
         return null;
       }
@@ -391,6 +387,20 @@ export { MAX_IN_FLIGHT };
 /** Tests only: forget every in-flight sandbox between runs. Production never calls this. */
 export function __resetLegacyBootstrapInFlightForTests(): void {
   inFlight.clear();
+}
+
+/**
+ * The shas a box must run for this deploy. With `policy.agent_self_update`
+ * off no box stages the agent, so the agent is not compared (as
+ * `runningAssetsVerdict` does): a frozen fleet reads current, and the repair
+ * script never installs the agent past the kill switch.
+ */
+export function expectedRunningAssetsFrom(manifest: RuntimeAssetsManifest): ExpectedRunningAssets {
+  return {
+    cli_sha256: manifest.cli_sha256,
+    managed_skills_hash: manifest.managed_skills_hash,
+    agent_sha256: manifest.policy.agent_self_update === false ? null : manifest.components.agent?.sha256 ?? null,
+  };
 }
 
 /**

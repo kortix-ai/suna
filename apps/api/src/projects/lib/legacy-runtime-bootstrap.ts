@@ -694,6 +694,7 @@ function recentCurrentCheck(
   return Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS;
 }
 
+const SELF_UPDATE_MAX_TICKS = 360;
 const SELF_CONVERGING_REASONS: ReadonlySet<StaleReason> = new Set(['agent_swap_pending', 'running_assets_stale']);
 
 /**
@@ -704,17 +705,20 @@ const SELF_CONVERGING_REASONS: ReadonlySet<StaleReason> = new Set(['agent_swap_p
  * The marker is `runtime_truth` in the health body: daemons report it since
  * the runtime-truth tick (#7792, 2026-09-27), which re-runs the asset pass and
  * its swap request every 60 s. Every such daemon runs under the entrypoint
- * supervisor loop that installs `agent.next` (since 2026-08-20). A daemon
- * component the box itself calls `blocked`, any other stale reason, or a daemon
- * without the tick still repairs.
+ * supervisor loop that installs `agent.next` (since 2026-08-20). Any other
+ * stale reason, a daemon without the tick, or a daemon entry that is not
+ * `current` or young `converging` still repairs.
  */
 export function updatesItself(health: unknown, classification: RuntimeClassification): boolean {
   if (classification.klass !== 'stale') return false;
   if (!classification.staleReasons.every((reason) => SELF_CONVERGING_REASONS.has(reason))) return false;
   const truth = isRecord(health) ? health.runtime_truth : null;
   if (!isRecord(truth) || !isRecord(truth.components)) return false;
+  // Positive evidence only: the box's own daemon entry reads current, or has
+  // been converging for under ~6 h (`attempts` grows by 1 per 60 s tick).
+  // `unknown` (no pass yet, or self-update off) and `blocked` still repair.
   const daemon = truth.components.daemon;
-  return !isRecord(daemon) || daemon.state !== 'blocked';
+  return isRecord(daemon) && (daemon.state === 'current' || (daemon.state === 'converging' && Number(daemon.attempts) < SELF_UPDATE_MAX_TICKS));
 }
 
 /**
