@@ -50,9 +50,9 @@ import { connectorCallId, crChangeRequestId, itemDeepLink, planBulkAction } from
 import { ReviewCenter } from './review-center';
 
 /**
- * How many session deep links the inbox warms up front. The inbox is unbounded
- * — a busy project can hold dozens — and each prefetch is a real dynamic RSC
- * render. Eight covers the rows a user can see and click without scrolling.
+ * How many session deep links the inbox warms up front. A page holds up to 50
+ * items, and each prefetch is a real dynamic RSC render. Eight covers the rows
+ * a user can see and click without scrolling.
  */
 const PREFETCH_LIMIT = 8;
 
