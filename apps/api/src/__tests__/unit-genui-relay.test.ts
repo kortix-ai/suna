@@ -31,11 +31,16 @@ describe('relayTextRejection', () => {
     expect(relayTextRejection(undefined, '')).toEqual({ error: 'text is required' });
     expect(relayTextRejection('   ', '')).toEqual({ error: 'text is required' });
   });
-  test('a block-only answer that renders to nothing is rejected, never relayed raw', () => {
+  test('a block with nothing valid to render relays the SDK note, never the raw source', () => {
+    // The SDK contract (genui/markdown.ts): a settled block with no root yields a one-line note, never ''.
     const raw = '```openui\nroot = Stack([missing])\n```';
     const text = relayAnswerText(raw);
-    expect(text).toBe('');
-    expect(relayTextRejection(raw, text)).toEqual({
+    expect(text).toBe('*This content could not be displayed.*');
+    expect(text).not.toContain('Stack(');
+    expect(relayTextRejection(raw, text)).toBeNull();
+  });
+  test('an answer whose text renders to nothing is rejected, never relayed raw', () => {
+    expect(relayTextRejection('```openui\nroot = Stack([missing])\n```', '')).toEqual({
       error: 'text is required',
       reason: 'genui_block_unrenderable',
     });
