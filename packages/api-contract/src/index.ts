@@ -970,6 +970,9 @@ export const SessionMetadataInputSchema = JsonObjectSchema.refine(
   { message: `metadata must be at most ${SESSION_METADATA_MAX_CHARS} characters of JSON` },
 );
 
+/** The context the CLI's worker contract rides in, and its schema cap. */
+export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -977,6 +980,13 @@ export const SessionCreateInputSchema = z
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
+    /**
+     * Harness context that rides beside `initial_prompt` and is delivered to
+     * the model as a synthetic (model-only) message part — e.g. the CLI's
+     * worker contract. The transcript keeps showing the caller's own words:
+     * every renderer already hides synthetic text parts.
+     */
+    initial_context: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
     provider_secret_pools: z.record(
       z.string().min(1).max(100),
@@ -1035,6 +1045,7 @@ export const SessionCreateInputSchema = z
     agentName: z.string().min(1).optional(),
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
+    initialContext: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
     opencodeModel: z.string().min(1).optional(),
     sessionId: z
       .string()

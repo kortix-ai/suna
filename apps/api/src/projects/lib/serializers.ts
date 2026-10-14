@@ -85,6 +85,9 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  */
 export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'initial_prompt',
+  // Same class as `initial_prompt`: a heavy write-only blob no client reads
+  // off the list (verified 2026-10-08 across apps/web, apps/mobile, packages/sdk).
+  'initial_context',
   'payload_summary',
   'session_start_timeline',
   'audit_v2',
