@@ -28,6 +28,7 @@ export function GameOfLife() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    let disposed = false;
     const cellSize = 5;
     let cols = Math.floor(window.innerWidth / cellSize);
     let rows = Math.floor(window.innerHeight / cellSize);
@@ -69,7 +70,7 @@ export function GameOfLife() {
       img.src = logoPath;
 
       img.onload = () => {
-        if (!canvas || !ctx) return;
+        if (disposed) return;
 
         const aspectRatio = img.width / img.height;
 
@@ -203,6 +204,7 @@ export function GameOfLife() {
     };
 
     const handleResize = debounce(() => {
+      if (disposed) return;
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
@@ -219,6 +221,7 @@ export function GameOfLife() {
     window.addEventListener('resize', handleResize);
 
     return () => {
+      disposed = true;
       window.removeEventListener('resize', handleResize);
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
