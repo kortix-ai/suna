@@ -45,6 +45,12 @@
  * and the newer saved copy from the history read never replaced it, so the
  * reload showed an older last message until the computer woke. The newer turn
  * now shows at once.
+ *
+ * The eighth arm opens the Sessions page as the project owner, then reloads it
+ * with every session-list and permission read held. The page picks the
+ * manager-only 'project' scope from a permission probe the device does not
+ * keep, so it showed skeleton rows until the probe answered, over a list the
+ * device already held. The kept rows now show at once.
  */
 import { type Page, expect, test } from '@playwright/test';
 import { loadEnv } from '../../src/core/env';
@@ -145,6 +151,10 @@ async function installFirstShown(page: Page, sessionId: string) {
       const scan = () => {
         for (const el of Array.from(document.querySelectorAll('[data-testid="saved-session-skeleton"]'))) {
           if (painted(el)) mark('skeleton');
+        }
+        // The Sessions page's placeholder rows (`SessionListSkeleton`).
+        for (const el of Array.from(document.querySelectorAll('[data-testid="session-list-skeleton"]'))) {
+          if (painted(el)) mark('listSkeleton');
         }
         for (const h2 of Array.from(document.querySelectorAll('h2'))) {
           if (h2.textContent?.trim() === heading && painted(h2)) mark('bootScreen');
@@ -783,6 +793,103 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
         { timeout: 15_000, message: 'the device keeps the newer copy' },
       )
       .toBe(true);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+test('34 — a Sessions page reload shows the kept rows while the manager probe is held', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const env = loadEnv();
+  const { user, project, sessionId } = await setup(page, 'sessions-page');
+  const title = 'Quarterly report draft';
+  await runDatabaseSql(
+    "UPDATE kortix.project_sessions SET metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('custom_name', $2::text) WHERE session_id=$1",
+    [sessionId, title],
+    env.databaseUrl ?? undefined,
+  );
+  const row = () => page.getByLabel(`Show details for ${title}`, { exact: true });
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holding = false;
+  let heldManagerProbes = 0;
+  const hold = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    if (holding) await held;
+    await route.continue().catch(() => {});
+  };
+  try {
+    // The project row and every session list.
+    await page.route(
+      (url) =>
+        url.pathname === `${API_PATH}/projects/${project.id}` ||
+        url.pathname === `${API_PATH}/projects/${project.id}/sessions`,
+      hold,
+    );
+    // Every permission probe, single and batched. The page's scope comes from
+    // the single `project.members.manage` probe (`useProjectCan`).
+    await page.route(
+      (url) => /\/iam\/members\/[^/]+\/effective(:batch)?$/.test(url.pathname),
+      async (route) => {
+        if (holding && route.request().url().includes('action=project.members.manage')) {
+          heldManagerProbes += 1;
+        }
+        await hold(route);
+      },
+    );
+
+    // First visit, nothing held: the owner manages the project, so the page
+    // reads the 'project' scope, and the device keeps that list. GET only: on a
+    // split origin the CORS preflight matches the same URL first.
+    const inventory = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        new URL(response.url()).pathname === `${API_PATH}/projects/${project.id}/sessions` &&
+        new URL(response.url()).searchParams.get('scope') === 'project',
+      { timeout: 120_000 },
+    );
+    await page.goto(`/projects/${project.id}/sessions`, { waitUntil: 'commit' });
+    expect((await inventory).status()).toBe(200);
+    await expect(row()).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(
+        () =>
+          page.evaluate((userId) => {
+            const raw = localStorage.getItem(`kortix.query-cache:${userId}`);
+            const stored = raw ? (JSON.parse(raw) as { queries?: { k: unknown[] }[] }) : null;
+            return (stored?.queries ?? []).some((entry) => entry.k[4] === 'list-paged' && entry.k[5] === 'project');
+          }, user.id),
+        { timeout: 30_000, message: "the device keeps the 'project' scope list" },
+      )
+      .toBe(true);
+
+    // Reload with every session-list and permission read held.
+    holding = true;
+    await installFirstShown(page, sessionId);
+    await page.reload({ waitUntil: 'commit' });
+
+    // Fails on a page that waits for the probe before it picks a scope (the
+    // view before KRTX-261): while the probe is pending it reads the 'visible'
+    // key, which the device never stored for this owner, so it shows only
+    // skeleton rows, and the held probe never answers.
+    await expect(row()).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(() => heldManagerProbes, { message: 'the reload ran with the manager probe unanswered' })
+      .toBeGreaterThan(0);
+    await page.waitForTimeout(500); // more frames, for a placeholder that comes late
+    const marks = await firstShown(page);
+    await testInfo.attach('first shown after the Sessions page reload (every read held)', {
+      body: JSON.stringify(marks, null, 2),
+      contentType: 'application/json',
+    });
+    expect(marks.listSkeleton, 'no placeholder rows: the kept list paints at once').toBeUndefined();
+    await expect(page.getByTestId('session-list-skeleton')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('sessions-page-reload-held.png') });
   } finally {
     release();
     await page.unrouteAll({ behavior: 'ignoreErrors' });
