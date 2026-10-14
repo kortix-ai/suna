@@ -1338,7 +1338,9 @@ jobs:
           shot onboarding-permission
           # Allow Screen Recording (the runner image may refuse the TCC write: the shot above then stays the last step).
           for db in "/Library/Application Support/com.apple.TCC/TCC.db" "$HOME/Library/Application Support/com.apple.TCC/TCC.db"; do
-            sudo sqlite3 "$db" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, flags, last_modified) VALUES ('kTCCServiceScreenCapture','ai.kortix.capture',0,2,4,1,0,strftime('%s','now'));" >> "$EV/tcc.txt" 2>&1 && echo "tcc write ok: $db" >> "$EV/tcc.txt" || echo "tcc write refused: $db" >> "$EV/tcc.txt"
+            for svc in kTCCServiceScreenCapture kTCCServiceAccessibility kTCCServiceListenEvent; do
+              sudo sqlite3 "$db" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, flags, last_modified) VALUES ('$svc','ai.kortix.capture',0,2,4,1,0,strftime('%s','now'));" >> "$EV/tcc.txt" 2>&1 && echo "tcc write ok: $svc $db" >> "$EV/tcc.txt" || echo "tcc write refused: $svc $db" >> "$EV/tcc.txt"
+            done
           done
           cat "$EV/tcc.txt"
           t0=$SECONDS; state=""
@@ -1408,6 +1410,29 @@ jobs:
           state="$("$EXE" --json status 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
           f2="$(frames)"
           echo "after the kill: state $state frames $f2" | tee -a "$EV/guest.txt"
+      - name: Keyboard and mouse are recorded and uploaded
+        run: |
+          # The action recorder needs Accessibility and Input Monitoring (the personal install asks for them in the
+          # permission step). Type into the clock's Terminal for 70 s, then wait for the action segments to upload.
+          "$EXE" --json service status > "$EV/service-status.json" 2>&1 || true
+          python3 - "$EV/service-status.json" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          hb = d.get("heartbeat") or d
+          print("granted:", hb.get("granted"), "actions:", (hb.get("actions") or {}))
+          PY
+          for i in $(seq 1 35); do
+            osascript -e 'tell application "System Events" to keystroke "kortix capture input check "' >/dev/null 2>&1 || true
+            sleep 2
+          done
+          t0=$SECONDS; n=0
+          until [ "$n" -ge 1 ] || [ $((SECONDS - t0)) -ge 150 ]; do
+            sleep 5
+            n="$("$EXE" --json sync status 2>/dev/null | python3 -c 'import json,sys;s=(json.load(sys.stdin).get("state") or {});print(s.get("actions_uploaded",0)+s.get("actions_pending",0))' 2>/dev/null || echo 0)"
+          done
+          echo "action segments (uploaded or pending): $n (after $((SECONDS - t0)) s)" | tee "$EV/actions.txt"
+          "$EXE" --json sync status > "$EV/sync-actions.json" 2>&1 || true
+          "$EXE" --json service status > "$EV/service-status-after.json" 2>&1 || true
       - name: The status tells the truth while frames rise
         run: |
           # Sample the three readers of the one state (status --json = status.json's source, /api/app and the tray
@@ -1580,6 +1605,17 @@ jobs:
           assert "Kortix Capture" not in text("dock-persistent-apps.txt"), "the Dock must not keep a Kortix tile"
           front = text("frontmost.txt").strip(); print("frontmost after the install:", front)
           assert front == "Kortix Capture", "the onboarding window opened behind another app: " + front
+          # Keyboard and mouse: with Accessibility and Input Monitoring granted, the action recorder runs and
+          # its segments exist (uploaded or queued).
+          act = text("actions.txt"); print(act.strip())
+          sv = json.loads(text("service-status-after.json")); hb = sv.get("heartbeat") or sv
+          granted = hb.get("granted") or []
+          if "accessibility" in granted and "input_monitoring" in granted:
+              assert (hb.get("actions") or {}).get("running") is True, "the action recorder is not running: " + json.dumps(hb.get("actions"))
+              n = int(re.search(r"\(uploaded or pending\): (\d+)", act).group(1))
+              assert n >= 1, "no action segment was recorded while keys were typed: " + act
+          else:
+              print("warning: the runner did not grant Accessibility and Input Monitoring:", granted)
           # The status never lies: whenever frames rose between two samples, the state read recording
           # (status.json, /api/app and the tray read this one state), before and after a sign-out.
           for f in ("state-samples.txt", "state-samples-after-signout.txt"):

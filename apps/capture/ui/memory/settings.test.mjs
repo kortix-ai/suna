@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('/* ---- settings: pure ---- */'), src.indexOf('/* ---- end settings: pure ---- */'));
-const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,neverRows,privacyControls,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
+const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,inputsMissing,neverRows,privacyControls,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
 const f = new Function(block + `;return {${names}}`)();
-const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, neverRows, privacyControls, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
+const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, inputsMissing, neverRows, privacyControls, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
 
 // The copy names the machine by platform.
 assert.equal(deviceNoun('MacIntel'), 'Mac');
@@ -136,6 +136,17 @@ assert.equal(onboardingStep({ state: 'permission_missing' }, null, { destination
 assert.equal(onboardingStep({ state: 'permission_missing' }, { running: true, progress: { user_code: 'A' } }, { destination: 'off' }, { mac: true }), 'waiting');
 assert.equal(onboardingStep({ state: 'recording' }, { running: false, ok: true }, { destination: 'kortix' }, { signedIn: true }), 'done');
 assert.equal(onboardingStep({ state: 'recording' }, { running: false, ok: false, error: 'x' }, { destination: 'off' }, {}), 'connect');
+
+// macOS keyboard and mouse recording needs Accessibility and Input Monitoring.
+const hb = (granted, running = true) => ({ platform: 'macos', service: { heartbeat: { running, granted } } });
+assert.deepEqual(inputsMissing(hb(['screen'])), ['accessibility', 'input_monitoring']);
+assert.deepEqual(inputsMissing(hb(['screen', 'accessibility'])), ['input_monitoring']);
+assert.equal(inputsMissing(hb(['screen', 'accessibility', 'input_monitoring'])), null);
+assert.equal(inputsMissing(hb(null)), null, 'unknown is not missing');
+assert.equal(inputsMissing(hb(['screen'], false)), null, 'no service, no claim');
+assert.equal(inputsMissing({ platform: 'windows', service: { heartbeat: { running: true, granted: [] } } }), null);
+assert.equal(onboardingStep({ ...hb(['screen']), state: 'recording' }, null, { destination: 'off' }, { mac: true }), 'permission', 'inputs missing also asks');
+assert.equal(onboardingStep({ ...hb(['screen', 'accessibility', 'input_monitoring']), state: 'recording' }, null, { destination: 'off' }, { mac: true }), 'connect');
 
 // The window never tells a person to stop recording to change the destination.
 assert.ok(!/Stop recording before/i.test(src), 'switching accounts must not require stopping');

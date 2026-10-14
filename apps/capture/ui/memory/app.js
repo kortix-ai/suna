@@ -704,13 +704,22 @@ function lastHour(nowMs) {
   const f = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
   return { from: f(nowMs - 3600000), to: f(nowMs) };
 }
+/* macOS: keyboard and mouse recording needs Accessibility and Input Monitoring besides Screen Recording.
+   The service reports what macOS granted (heartbeat.granted); null when it does not know yet or off macOS. */
+function inputsMissing(app) {
+  const hb = app && app.service && app.service.heartbeat;
+  const g = hb && hb.running && Array.isArray(hb.granted) ? hb.granted : null;
+  if (!g || !app || !/mac/i.test(app.platform || '')) return null;
+  const missing = ['accessibility', 'input_monitoring'].filter((k) => !g.includes(k));
+  return missing.length ? missing : null;
+}
 /* Onboarding: which step shows. `app` is /api/app, `job` the sign-in job (/api/sync jobs.connect),
    `view` /api/sync view. permission (macOS, Screen Recording missing) -> connect -> waiting -> done. */
 function onboardingStep(app, job, view, o) {
   o = o || {};
   if (job && job.running) return 'waiting';
   if (o.signedIn && view && view.destination === 'kortix') return 'done';
-  if (o.mac && app && app.state === 'permission_missing' && !o.permissionSkipped) return 'permission';
+  if (o.mac && app && (app.state === 'permission_missing' || inputsMissing(app)) && !o.permissionSkipped) return 'permission';
   return 'connect';
 }
 /* ---- end sync: pure ---- */
@@ -1622,8 +1631,8 @@ function paintOnboarding(step, job, sync, app) {
   const err = OB.error ? `<p class="ob-err">${esc(OB.error)}</p>` : '';
   let body;
   if (step === 'permission') {
-    body = `<h1>Allow Screen Recording</h1>
-      <button class="btn primary" id="ob-grant"${OB.requested ? ' disabled' : ''}>${OB.requested ? 'Waiting for permission...' : 'Allow Screen Recording'}</button>
+    body = `<h1>Allow access</h1>
+      <button class="btn primary" id="ob-grant"${OB.requested ? ' disabled' : ''}>${OB.requested ? 'Waiting for permission...' : 'Allow access'}</button>
       <div class="ob-foot"><button class="link-btn" id="ob-perm-skip">Not now</button></div>`;
   } else if (step === 'waiting') {
     const p = job?.progress;
@@ -1673,12 +1682,14 @@ function paintChip() {
   chipEl.dataset.state = appData.state;
   const perm = $('#perm-line');
   if (perm) {
-    perm.hidden = appData.state !== 'permission_missing';
-    setHtml(perm, '<span>Screen Recording is off.</span><button class="btn" id="perm-grant">Grant</button>');
+    const screen = appData.state === 'permission_missing';
+    const inputs = !screen && inputsMissing(appData);
+    perm.hidden = !screen && !inputs;
+    setHtml(perm, `<span>${screen ? 'Screen Recording is off.' : 'Keyboard and mouse recording is off.'}</span><button class="btn" id="perm-grant">Grant</button>`);
   }
 }
 $('#perm-line').addEventListener('click', async (e) => {
-  if (e.target.closest('#perm-grant')) { await act('/api/app/permissions'); toast('Allow Screen Recording in the dialog'); }
+  if (e.target.closest('#perm-grant')) { await act('/api/app/permissions'); toast('Allow access in the dialog'); }
 });
 async function refreshApp() {
   try {
@@ -1891,7 +1902,7 @@ function paintRecording() {
     : `<span><select id="pause-for">${PAUSE_CHOICES.map(([k, n]) => `<option value="${k}"${k === '1h' ? ' selected' : ''}>${n}</option>`).join('')}</select> <button class="btn" id="pause-btn">Pause</button></span>`;
   const label = `<span class="status-dot${v.tone ? ' ' + v.tone : ''}"></span>${esc(off ? 'Recording is off' : v.text)}`;
   setHtml(box, row(label, appData.managed && notice ? esc(notice) : '', control)
-    + (appData.state === 'permission_missing' ? `<div class="note">Kortix Capture needs Screen Recording permission. <button class="btn" id="grant-btn">Grant Screen Recording</button></div>` : ''));
+    + (appData.state === 'permission_missing' ? `<div class="note">Screen Recording is off. <button class="btn" id="grant-btn">Grant</button></div>` : inputsMissing(appData) ? `<div class="note">Keyboard and mouse recording is off. <button class="btn" id="grant-btn">Grant</button></div>` : ''));
   const au = $('#audio-state');
   if (au) {
     const on = s.audio.enabled && st.audio && st.audio.state === 'recording';
