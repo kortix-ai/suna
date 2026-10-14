@@ -21,7 +21,96 @@
  * rendered as a negative.
  */
 
-import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
+import {
+  type SessionTranscriptSyncEnvelope,
+  getSessionTranscriptSync,
+  getSessionTurn,
+} from '../rest/projects-client/sessions';
+import { OPEN_BUNDLE_TRANSCRIPT_LIMIT, claimOpenBundle, openBundleHistory } from '../session/open-bundle';
+
+/**
+ * THE saved-history read: the newest window of the session's saved copy, for
+ * its current root. Every reader of a session's saved copy uses it: the web
+ * (`useSession`), mobile (`readSavedSessionCopy`) and `useSessionSync` for a
+ * host that passes no `mirror`.
+ *
+ * The session-open snapshot carries the same window, so a snapshot in flight
+ * or just answered serves it. The read WAITS for one in flight, as the row,
+ * `/turn` and `/prompts` reads do: racing it downloaded the window twice.
+ * Otherwise `GET …/transcript?shape=sync&history=true`. Throws when that
+ * route fails.
+ */
+export async function loadSavedTranscript(
+  projectId: string,
+  sessionId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<SessionTranscriptSyncEnvelope> {
+  const claimed = claimOpenBundle(projectId, sessionId);
+  const bundle = claimed ? await claimed : null;
+  return (
+    (bundle && openBundleHistory(bundle)) ??
+    getSessionTranscriptSync(projectId, sessionId, {
+      limit: OPEN_BUNDLE_TRANSCRIPT_LIMIT,
+      history: true,
+      signal: options.signal,
+    })
+  );
+}
+
+export interface SavedSessionCopy {
+  /** The server's saved copy, or null when the read failed. */
+  envelope: SessionTranscriptSyncEnvelope | null;
+  /**
+   * The conversation is proven empty, with nothing to wait for
+   * ({@link isEmptyConversation}): show the composer, not a boot screen.
+   */
+  empty: boolean;
+}
+
+/**
+ * The saved copy of a session, for a host that shows the session before
+ * `useSession` binds it (a connecting view while the computer wakes). Hand
+ * `envelope` to `useSessionSync` as `mirror` to paint it.
+ *
+ * Reads the copy once ({@link loadSavedTranscript}), and the turn record only
+ * when the copy proves `runtimeSessionId` empty. Never throws: a failed read
+ * answers `{ envelope: null, empty: false }`. A sub-agent's window is not read
+ * here: `useSessionSync` with `savedChild` reads it.
+ */
+export async function readSavedSessionCopy(input: {
+  projectId: string;
+  /** The Kortix session id. */
+  sessionId: string;
+  /** The runtime session the copy belongs to (the root). */
+  runtimeSessionId: string;
+}): Promise<SavedSessionCopy> {
+  const { projectId, sessionId, runtimeSessionId } = input;
+  if (!projectId || !sessionId || !runtimeSessionId) return { envelope: null, empty: false };
+  let envelope: SessionTranscriptSyncEnvelope;
+  try {
+    envelope = await loadSavedTranscript(projectId, sessionId);
+  } catch {
+    return { envelope: null, empty: false };
+  }
+  if (savedCopyEmptyRoot(envelope) !== runtimeSessionId) return { envelope, empty: false };
+  // A turn that ended after the capture, or one open now, says the copy is
+  // older than the conversation.
+  try {
+    const turn = await getSessionTurn(projectId, sessionId);
+    return {
+      envelope,
+      empty: isEmptyConversation({
+        savedEmptyRoot: runtimeSessionId,
+        rootSessionId: runtimeSessionId,
+        turnRead: true,
+        hasEndedTurn: turn.last_ended != null,
+        hasOpenOrQueuedTurn: turn.turns.length > 0,
+      }),
+    };
+  } catch {
+    return { envelope, empty: false };
+  }
+}
 
 export type SavedTranscript = 'loading' | 'shown' | 'none';
 

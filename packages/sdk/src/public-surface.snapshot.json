@@ -898,6 +898,7 @@
     "readFile",
     "readKortixMember",
     "readProjectFile",
+    "readSavedSessionCopy",
     "reasoningIsRunning",
     "rebuildProjectSnapshot",
     "reconcileConnection",
