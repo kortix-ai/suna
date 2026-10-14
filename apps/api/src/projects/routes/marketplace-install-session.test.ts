@@ -27,7 +27,9 @@ let createSessionCalls = 0;
 
 const app = new OpenAPIHono<AppEnv>();
 mock.module('../lib/app', () => ({ projectsApp: app }));
+const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     userId,
     row: {
@@ -58,7 +60,14 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => gatewayOn,
 }));
+// The stub spreads the real barrel (the same pattern as the git mock below):
+// the test file's own graph lazy-reads other exports of the mocked module
+// (trigger-fire binds drainSessionLifecycleQueue from it), and a partial mock
+// turns those live bindings into "Export named … not found" SyntaxErrors that
+// bun reports as unhandled errors between tests — killing the whole batch.
+const realSessionLifecycle = await import('../session-lifecycle');
 mock.module('../session-lifecycle', () => ({
+  ...realSessionLifecycle,
   createSession: async () => {
     createSessionCalls += 1;
     return {

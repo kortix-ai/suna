@@ -35,7 +35,6 @@
 
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
-import { invalidateProviderCache } from '../../sandbox-proxy';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';
@@ -1100,7 +1099,12 @@ async function reconcileNotRunningSandbox(
       // Preserve the established identity; never turn this signal into a
       // fresh, empty sandbox for the same session.
       await preserveEstablishedRuntime(row, 'provider_reported_removed', 'provider_removed', now);
-      invalidateProviderCache(row.externalId);
+      // Dynamic import, not a static one — see the note in session-lifecycle/actions.ts
+      // (module-init cycle guard).
+      {
+        const { invalidateProviderCache } = await import('../../sandbox-proxy');
+        invalidateProviderCache(row.externalId);
+      }
       result.reconciled += 1;
       result.billingClosed += 1;
       break;

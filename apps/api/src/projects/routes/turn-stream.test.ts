@@ -160,7 +160,15 @@ mock.module('../session-turn-ledger', () => ({
     result.outcome === 'no_active_turn',
 }));
 
+// The stubs spread the real modules: the test file's own graph lazy-reads
+// exports these stubs do not override (trigger-fire binds
+// drainSessionLifecycleQueue from the barrel; session-create binds
+// extractPromptInfo from session-title-generate), and a partial mock turns
+// those live bindings into "Export named … not found" SyntaxErrors that bun
+// reports as unhandled errors between tests — killing the whole batch.
+const realSessionLifecycle = await import('../session-lifecycle');
 mock.module('../session-lifecycle', () => ({
+  ...realSessionLifecycle,
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
   },
@@ -200,7 +208,9 @@ mock.module('../lib/session-runtime-projection-refresh', () => ({
   },
 }));
 
+const realSessionTitleGenerate = await import('../session-title-generate');
 mock.module('../session-title-generate', () => ({
+  ...realSessionTitleGenerate,
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
   },
