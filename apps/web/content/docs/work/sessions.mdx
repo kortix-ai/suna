@@ -234,13 +234,13 @@ The provider can stop a sandbox while a turn runs, and a runtime restart (for ex
 
 When it goes out:
 
-- **A session people use.** The message waits in the queue, held, so the stopped sandbox stays stopped. Select **Resume** above the composer (web) or **Send now** on the message (mobile), or send any message. From the CLI: `kortix sessions queue <session_id> release`. A session's first turn has no queued message, so Kortix puts a held continuation in the queue of the person who created the session.
-- **A `trigger`, `schedule` or `system` session, or a worker session another session started.** At once. Each sandbox recovers at most 2 times per rolling hour; after that the message waits, held.
+- **A session people use.** The message waits in the queue, held, so the stopped sandbox stays stopped. When the sandbox wakes, for example when someone opens the session, the message goes out. To send it before that, select **Resume** above the composer (web) or **Send now** on the message (mobile), or send any message. From the CLI: `kortix sessions queue <session_id> release`. A session's first turn has no queued message, so Kortix puts a held continuation in the queue of the person who created the session.
+- **A `trigger`, `schedule` or `system` session, or a worker session another session started.** At once. Each sandbox recovers at most 2 times per rolling hour. After that the message waits, held, until the sandbox wakes, and a session's first turn gets no continuation.
 - **A runtime restart on a sandbox that runs again.** At once.
 
-When the continuation reaches the sandbox, the turn's reason changes to "The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn."
+When the continuation reaches the sandbox, the turn's reason changes to "The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn." After a runtime restart it changes to "The runtime restarted during this turn. Kortix resumed it."
 
-Kortix never continues a turn that someone ended: the Stop button, `kortix sessions stop`, or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry.
+Kortix never continues a turn that someone ended: the Stop button (also when the sandbox stopped before the Stop reached it), `kortix sessions stop`, or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry. A continuation counts as a message: when the sandbox stops during the continuation, Kortix continues it again.
 
 Limits:
 
