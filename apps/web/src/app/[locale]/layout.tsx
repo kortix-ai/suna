@@ -1,5 +1,6 @@
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
+import { FileDropGuard } from '@/components/file-drop-guard';
 import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { ThemeProvider } from '@/components/home/theme-provider';
@@ -348,6 +349,9 @@ export default async function RootLayout({
                     reloading the document. */}
                     <RouterBridge />
                     <BrowserNoiseGuard />
+                    {/* A file dropped outside every drop zone would replace the
+                    page with the file and lose unsent attachments. */}
+                    <FileDropGuard />
                     <TurnAttentionBadge />
                     <DesktopChrome />
                     {/* The window's one Back: every screen gets an exit on the
