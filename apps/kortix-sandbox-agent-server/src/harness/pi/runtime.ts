@@ -531,6 +531,12 @@ export class PiRuntime {
       // none, and the workspace is never a config source while a release is in play.
       const packageRoot = this.projectRoot()
       if (packageRoot === null) project.entries = project.entries.filter((entry) => host.parseNpmSource(typeof entry === 'string' ? entry : entry.source))
+      let local: InlineExtension[] = []
+      if (packageRoot && this.releases?.projectRoot()) {
+        const loaded = await import('./extensions/prebuilt').then(({ loadLocalExtensions }) => loadLocalExtensions(packageRoot, project.entries))
+        project.entries = loaded.rest
+        local = loaded.extensions
+      }
       this.pi = await host.createPiSession({
         projectConfigDir: await this.projectConfigDir(),
         agent,
@@ -544,7 +550,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), foreignReasoningExtension(), subagents(this.kortixHost()), ...project.extensions],
+        extensions: [this.turnExtension(), foreignReasoningExtension(), subagents(this.kortixHost()), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
