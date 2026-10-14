@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -79,6 +80,12 @@ esac
 n=$(cat "$STUB_STATE/cloudflared-n" 2>/dev/null || echo 0)
 n=$((n+1)); echo "$n" > "$STUB_STATE/cloudflared-n"
 echo "[stub] tunnel up: https://stub-tunnel-\$n.trycloudflare.com"
+# Real cloudflared is a daemon: it prints the URL and keeps running (the
+# watchdog rotates it later). A one-shot stub that exits right after the echo
+# turns the script's early-exit check (kill -0) into a scheduling race under
+# load — the stub could die between the script's grep and its kill -0. Sleep
+# like the daemon would; the script's own kill/pkill cleans it up.
+exec /bin/sleep 120
 `);
 
   const pnpmLog = join(state, 'pnpm.log');
@@ -105,12 +112,14 @@ echo "[stub] tunnel up: https://stub-tunnel-\$n.trycloudflare.com"
     timeout: 60_000,
   });
   let pnpmCalls = [];
-  try {
-    pnpmCalls = readFileSync(pnpmLog, 'utf8').trim().split('\n');
-  } finally {
-    rmSync(scriptCopy, { force: true });
-    rmSync(bin, { recursive: true, force: true });
-  }
+  // The stub pnpm creates the log on its first call. A subject that exits
+  // before any pnpm call (a real regression in the script) must surface as an
+  // assertion failure with the script's real output, not as a harness ENOENT
+  // that hides the cause (2026-10-14: the lane's parallel wave starved the
+  // tunnel wait past its poll cap; the ENOENT then masked the actual branch).
+  if (existsSync(pnpmLog)) pnpmCalls = readFileSync(pnpmLog, 'utf8').trim().split('\n').filter(Boolean);
+  rmSync(scriptCopy, { force: true });
+  rmSync(bin, { recursive: true, force: true });
   return {
     status: r.status,
     stdout: r.stdout ?? '',
