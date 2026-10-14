@@ -53,7 +53,7 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     if (opts.host) {
       process.stderr.write(
         `${status.err(`Host "${opts.host}" is not logged in.`)} Run ` +
-          `${C.cyan}kortix hosts login ${opts.host}${C.reset}.\n`,
+          `${C.cyan}kortix hosts login ${opts.host}${auth ? ` --api '${auth.api_base.replaceAll("'", "'\\''")}'` : ''}${C.reset}.\n`,
       );
     } else {
       process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);

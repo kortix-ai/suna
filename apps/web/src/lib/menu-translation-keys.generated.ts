@@ -135,4 +135,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textaffaf0c2671a',
   'workspace access grants who can open repositories per workspace membership': 'text592dbd5acab8',
   'workspace agents skills commands tools build create': 'texta6dc82e13869',
+  'Pure Light Theme': 'text64ad7399fb9e',
+  'theme light mode pure white': 'texte6ebf219f591',
+  'Pure Dark Theme': 'textc433363f9a4e',
+  'theme dark mode pure black': 'textbc9543239440',
 };

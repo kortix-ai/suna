@@ -236,6 +236,8 @@ describe('a running box whose daemon is gone', () => {
       [LEGACY_CHECK_METADATA_KEY]: {
         at: new Date(1_000_000 - 60_000).toISOString(),
         klass: 'current',
+        manifestBuild: 1788044234,
+        externalId: 'sbx_1',
       },
     };
     const result = await bootstrapLegacyRuntime(input(metadata), deadDaemonDeps({}, calls));

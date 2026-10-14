@@ -71,7 +71,10 @@ export async function loadTools(
     if (typeof tool === 'string') failed.push({ name, error: tool })
     else tools.set(name, { ...tool, name, source: path })
   }
-  if (failed.length > 0) logger.warn('[tools] project tools that did not load', { failed })
+  // No tree is served yet (the boot placeholder) or at all (a governance-only
+  // release, whose agent may call none of these tools): not a load failure.
+  if (failed.length > 0 && !root) logger.info('[tools] no project tree is served; project tools are not loaded', { tools: failed.map(({ name }) => name) })
+  else if (failed.length > 0) logger.warn('[tools] project tools that did not load', { failed })
   loaded = tools
   return { tools: [...tools.values()], failed }
 }

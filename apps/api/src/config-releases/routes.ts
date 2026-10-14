@@ -36,7 +36,7 @@ import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-sessi
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
-import { CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
+import { buildConfigRelease, CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
 import { BaseRefUnresolvedError, resolveDesiredRelease } from './desired';
 import { notePublishedTip } from './publish';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
@@ -254,11 +254,12 @@ export function registerConfigReleaseRoutes(): void {
           ownerUserId: session.createdBy,
         };
         const isDaemon = isSessionSandboxCredential(c);
+        const repositoryAccess = repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles;
         const desired = await resolveDesiredRelease({
           project: gitProject(project),
           baseRef,
           sessionAgent: session.agentName,
-          repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
+          repositoryAccess,
           // Only the daemon's own request is an assignment. A human read is not.
           recordAssignment: isDaemon,
           bootTip: isDaemon ? bootTip : null,
@@ -272,7 +273,8 @@ export function registerConfigReleaseRoutes(): void {
         // A push made directly on the upstream reaches the API only through a read like this one.
         if (isDaemon) notePublishedTip(projectId, baseRef, desired.baseSha);
         if (format === CONFIG_RELEASE_FORMAT_V3) {
-          descriptor.snapshot = descriptor.files
+          // The snapshot is the whole commit: never for a tools-only release.
+          descriptor.snapshot = descriptor.files && repositoryAccess
             ? await configReleaseSnapshot(project, baseRef, descriptor.source_commit)
             : null;
         }
@@ -314,13 +316,21 @@ export function registerConfigReleaseRoutes(): void {
       if (isSessionSandboxCredential(c)) {
         const resolved = await sandboxSession(c, projectId, null);
         if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
-        // A session without repository access never receives a config archive.
-        // A previous-repository session DOES: the archive is the project's
-        // config dir, which is what every session of the project runs.
-        if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
-          return c.json({ error: 'repository access withheld' }, 403);
-        }
+        // A session without repository access receives only its agent's
+        // tools-only release (`toolsRelease`), and no other tree.
+        // A previous-repository session receives every archive: it is the
+        // project's config, which is what every session of the project runs.
         project = resolved.value.project;
+        if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
+          const agent = resolved.value.session.agentName;
+          const commit = c.req.query('commit') ?? '';
+          const release = agent && c.req.query('agent') === agent && HEX40.test(commit)
+            ? await buildConfigRelease(gitProject(project), commit, `agent:${agent}`).catch(() => null)
+            : null;
+          if (!release?.tools_only || release.config_tree_id !== configTreeId) {
+            return c.json({ error: 'repository access withheld' }, 403);
+          }
+        }
       } else {
         const loaded = await loadProjectForUser(c, projectId, 'read');
         if (!loaded) return c.json({ error: 'Not found' }, 404);
