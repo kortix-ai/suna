@@ -1269,6 +1269,30 @@ jobs:
           state="$("$EXE" --json status 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
           f2="$(frames)"
           echo "after the kill: state $state frames $f2" | tee -a "$EV/guest.txt"
+      - name: The status tells the truth while frames rise
+        run: |
+          # Sample the three readers of the one state (status --json = status.json's source, /api/app and the tray
+          # use the same function) against what the recorder really does: frames, and its own status file.
+          : > "$EV/state-samples.txt"
+          for i in $(seq 1 25); do
+            python3 - "$LIB" "$EXE" >> "$EV/state-samples.txt" <<'PY'
+          import json, subprocess, sys, time, os
+          lib, exe = sys.argv[1], sys.argv[2]
+          st = json.loads(subprocess.run([exe, "--json", "status"], capture_output=True, text=True).stdout or "{}")
+          try:
+              rec = json.load(open(os.path.join(lib, "recorder.json")))
+          except Exception:
+              rec = {}
+          age = int(time.time() * 1000) - rec.get("updated_at_ms", 0)
+          print(json.dumps({"t": int(time.time()), "frames": (st.get("counts") or {}).get("frames", 0), "state": st.get("state"),
+                            "rec_state": rec.get("state"), "rec_reason": rec.get("inactive_reason"), "rec_age_ms": age,
+                            "running": st.get("recorder_running"), "inactive_reason": st.get("inactive_reason"),
+                            "missing": st.get("missing_permissions")}))
+          PY
+            sleep 2
+          done
+          cp "$LIB/recorder.json" "$EV/recorder-final.json" 2>/dev/null || true
+          tail -3 "$EV/state-samples.txt"
       - name: Sign out, skip onboarding, open the app again
         run: |
           shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
@@ -1392,10 +1416,7 @@ jobs:
               assert "Kortix" not in fg, "a Kortix process is a foreground (Dock) app: " + fg
           assert "Kortix Capture" not in text("dock-persistent-apps.txt"), "the Dock must not keep a Kortix tile"
           front = text("frontmost.txt").strip(); print("frontmost after the install:", front)
-          # Evidence, not a gate: a CI runner has no real user session, so macOS may refuse to activate an
-          # accessory app launched by a script. The window opens (ui.lock) and is on screen in the shots.
-          if front != "Kortix Capture":
-              print("warning: the front window after the install belongs to", front)
+          assert front == "Kortix Capture", "the onboarding window opened behind another app: " + front
           # Closing the window changes nothing for the recorder; a killed agent comes back within 15 s and records.
           g = text("guest.txt"); print(g)
           m = re.search(r"before: recorder (\d*) agent (\d*) frames (\d+)", g)
