@@ -138,6 +138,9 @@ test('read-only query view refuses mutations without executing them', async () =
     await click(view, 'i18nComplete.text00d60e31a4e6');
     expect(view.root.findAllByType('div').some((node) => node.children.includes('Database is open read-only'))).toBe(true);
     expect(queries).not.toContain(sql);
+    // A refused mutation must not mark the database dirty: the unsaved-changes dot stays hidden.
+    expect(view.root.findAllByType('span').some((span) =>
+      span.props.title === 'componentsFileRenderersSqliteRenderer.line795JsxAttrTitleUnsavedChanges')).toBe(false);
     await click(view, 'Data');
     await act(() => sidebar(view)[1].props.onClick());
     await act(() => sidebar(view)[0].props.onClick());
@@ -158,6 +161,8 @@ test('read-only query view still runs SELECT', async () => {
   await click(view, 'i18nComplete.text00d60e31a4e6');
   expect(queries).toContain('SELECT id FROM "a""table" ORDER BY id');
   expect(view.root.findAllByType('div').some((node) => node.children.includes('Database is open read-only'))).toBe(false);
+  await act(async () => {}); // flush the lazy query-results grid
+  expect(view.root.findByType(Grid).props.rowData).toEqual([{ id: 1 }, { id: 2 }]);
 });
 
 test('mounted initialization surfaces master failure and handles empty master results', async () => {
