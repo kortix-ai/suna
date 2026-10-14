@@ -7,9 +7,13 @@ let dir: string;
 let api: ReturnType<typeof Bun.serve>;
 let requests: string[];
 
-async function cli(...args: string[]) {
+function cli(...args: string[]) {
+  return run([process.execPath, join(import.meta.dir, '../index.ts'), ...args]);
+}
+
+async function run(cmd: string[]) {
   const proc = Bun.spawn({
-    cmd: [process.execPath, join(import.meta.dir, '../index.ts'), ...args],
+    cmd,
     cwd: dir,
     env: {
       PATH: process.env.PATH ?? '', HOME: dir, NO_COLOR: '1',
@@ -41,6 +45,23 @@ beforeEach(() => {
 
 afterEach(() => { api.stop(true); rmSync(dir, { recursive: true, force: true }); });
 
+test('the recovery hint quotes shell metacharacters in the registered API URL', async () => {
+  const configPath = join(dir, 'config.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  const url = `${api.url.origin}/custom'path?x=1&y=$(touch injected)`;
+  config.hosts.custom.url = url;
+  config.hosts.custom.token = '';
+  writeFileSync(configPath, JSON.stringify(config));
+  const whoami = await cli('whoami', '--host', 'custom');
+  const hint = whoami.stderr.match(/Run (kortix hosts login .+)\.\n/);
+  expect(hint).not.toBeNull();
+  const parsed = await run(['bash', '-c',
+    `kortix() { printf '%s\\n' "$@"; }; ${hint?.[1]}`]);
+  expect(parsed.code).toBe(0);
+  expect(parsed.stdout.split('\n')).toEqual(['hosts', 'login', 'custom', '--api', url, '']);
+  expect(await Bun.file(join(dir, 'injected')).exists()).toBe(false);
+});
+
 for (const name of ['custom', 'default', 'selfhost']) {
   for (const args of [['logout', '--host', name], ['hosts', 'logout', name], ['logout']]) {
     test(`${name}: ${args.join(' ')} preserves registration and recovery login deployment`, async () => {
@@ -61,14 +82,21 @@ for (const name of ['custom', 'default', 'selfhost']) {
       }));
       const whoami = await cli('whoami', '--host', name);
       expect(whoami.code).toBe(1);
-      expect(whoami.stderr).toContain(`kortix hosts login ${name}`);
+      expect(whoami.stderr).toContain(`kortix hosts login ${name} --api '${api.url.origin}'`);
       expect(requests).toEqual([]);
       const again = await cli(...args);
       expect(again.code).toBe(0);
       expect(again.stdout).toContain('already logged out');
-      const login = await cli('hosts', 'login', name, '--token', 'kortix_pat_new', '--no-project');
+      const hint = whoami.stderr.match(/Run (kortix hosts login .+)\.\n/);
+      expect(hint).not.toBeNull();
+      const login = await run(['bash', '-c',
+        `CLI_BIN="$0"; CLI_ENTRY="$1"; kortix() { "$CLI_BIN" "$CLI_ENTRY" "$@"; }; ${hint?.[1]} --token kortix_pat_new --no-project`,
+        process.execPath, join(import.meta.dir, '../index.ts')]);
       expect(login.code).toBe(0);
       expect(requests).toEqual(['/v1/accounts/me']);
+      const recovered = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8'));
+      expect(recovered.hosts[name]).toMatchObject({ url: api.url.origin,
+        dashboard_url: 'http://localhost:3000', token: 'kortix_pat_new' });
       if (name !== 'selfhost') {
         expect((await cli('hosts', 'rm', name)).code).toBe(0);
         expect(JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')).hosts[name]).toBeUndefined();
