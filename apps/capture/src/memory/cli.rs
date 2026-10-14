@@ -1563,6 +1563,47 @@ fn status(paths: &MemoryPaths, json_out: bool) -> Result<()> {
     Ok(())
 }
 
+/// The System Settings pane (macOS) of the first permission still missing, from what macOS
+/// granted (`granted` is the service's list) and whether capture itself fails.
+pub fn missing_permission_pane(granted: &[String], screen_failing: bool) -> Option<&'static str> {
+    let has = |k: &str| granted.iter().any(|g| g == k);
+    if screen_failing || !has("screen") {
+        Some("Privacy_ScreenCapture")
+    } else if !has("accessibility") {
+        Some("Privacy_Accessibility")
+    } else if !has("input_monitoring") {
+        Some("Privacy_ListenEvent")
+    } else {
+        None
+    }
+}
+
+/// "Grant": ask macOS for the permissions (the system dialog shows once per permission, ever),
+/// and open the System Settings pane of the first one still missing, which is where a person
+/// turns it on after that first dialog. On the other systems there is nothing to grant.
+pub fn grant_permissions(paths: &MemoryPaths) {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = crate::os_proc::no_window(&mut std::process::Command::new(exe))
+            .args(["permissions", "--request"])
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let granted: Vec<String> = super::service::heartbeat(paths)["granted"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let failing = recording_state(paths) == "permission_missing";
+        if let Some(pane) = missing_permission_pane(&granted, failing) {
+            let _ = std::process::Command::new("/usr/bin/open")
+                .arg(format!("x-apple.systempreferences:com.apple.preference.security?{pane}"))
+                .spawn();
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = paths;
+}
+
 fn permissions(a: PermissionsArgs, json_out: bool) -> Result<()> {
     let mut engine = Engine::new()?;
     let cmd = if a.request {
@@ -2695,6 +2736,17 @@ run again with --yes to delete"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grant_opens_the_settings_pane_of_the_first_missing_permission() {
+        let g = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(missing_permission_pane(&g(&[]), false), Some("Privacy_ScreenCapture"));
+        assert_eq!(missing_permission_pane(&g(&["screen", "accessibility", "input_monitoring"]), true), Some("Privacy_ScreenCapture"), "capture fails although macOS lists it");
+        assert_eq!(missing_permission_pane(&g(&["screen"]), false), Some("Privacy_Accessibility"));
+        assert_eq!(missing_permission_pane(&g(&["screen", "accessibility"]), false), Some("Privacy_ListenEvent"));
+        assert_eq!(missing_permission_pane(&g(&["screen", "accessibility", "input_monitoring"]), false), None);
+    }
+
 
     #[test]
     fn pause_until_tomorrow_ends_at_six_local_the_next_day() {

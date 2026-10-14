@@ -1689,7 +1689,7 @@ function paintChip() {
   }
 }
 $('#perm-line').addEventListener('click', async (e) => {
-  if (e.target.closest('#perm-grant')) { await act('/api/app/permissions'); toast('Allow access in the dialog'); }
+  if (e.target.closest('#perm-grant')) { await act('/api/app/permissions'); toast('Turn on Kortix Capture in System Settings'); }
 });
 async function refreshApp() {
   try {
@@ -1699,7 +1699,7 @@ async function refreshApp() {
   } catch (e) { console.error(e); }
 }
 chipEl.onclick = async () => {
-  if (appData?.state === 'permission_missing') { await act('/api/app/permissions'); toast('Allow Screen Recording in the dialog'); return; }
+  if (appData?.state === 'permission_missing') { await act('/api/app/permissions'); toast('Turn on Kortix Capture in System Settings'); return; }
   openSettings();
 };
 
@@ -2091,7 +2091,7 @@ settingsEl.addEventListener('click', async (e) => {
       patch({ paused_until_ms: null, recording_enabled: true });
       setTimeout(loadSettings, 400);
       break;
-    case 'grant-btn': await act('/api/app/permissions'); toast('Allow Screen Recording in the dialog'); break;
+    case 'grant-btn': await act('/api/app/permissions'); toast('Turn on Kortix Capture in System Settings'); break;
     case 'open-logs': await act('/api/app/logs'); break;
     case 'audio-allow': {
       if (draft.audioDevices?.microphone === 'denied') { post({ cmd: 'open_url', url: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone' }); break; }

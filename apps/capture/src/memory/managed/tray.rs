@@ -328,7 +328,7 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
             match menu_event.id.as_ref() {
                 OPEN => spawn_window(&["ui"]),
                 SETTINGS => spawn_window(&["open", "kortix-capture://settings"]),
-                STATUS => spawn_self(&["permissions", "--request"]),
+                STATUS => crate::memory::cli::grant_permissions(&paths),
                 PAUSE | PAUSE_TOMORROW | PAUSE_FOREVER | RESUME => {
                     spawn_self(match menu_event.id.as_ref() {
                         PAUSE => &["pause", "--for", "1h"],

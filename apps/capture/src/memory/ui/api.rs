@@ -281,7 +281,7 @@ impl Ctx {
                 }
             }
             ("POST", "/api/app/permissions") => {
-                spawn_self(&["permissions", "--request"]);
+                cli::grant_permissions(&self.paths);
                 Response::json(json!({"ok": true}))
             }
             ("POST", "/api/app/logs") => {
