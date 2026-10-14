@@ -182,6 +182,19 @@
           }
         }
       }
+    },
+    "host": {
+      "type": "object",
+      "description": "The computer. awakeSinceMs: when it last woke from sleep, or when the app started (a gap over 120 s between sync ticks counts as a sleep). A reader counts \"not recording\" time from this moment, never across a sleep.",
+      "required": [
+        "awakeSinceMs"
+      ],
+      "properties": {
+        "awakeSinceMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     }
   }
 }

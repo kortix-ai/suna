@@ -687,6 +687,10 @@ const envSchema = z.object({
   KORTIX_CAPTURE_SQS_QUEUE_URL: optStr,
   /** How often the index reader polls each active device's `index/<day>.jsonl` and `status.json`. */
   KORTIX_CAPTURE_INDEX_POLL_SECONDS: optInt(60),
+  /** Minutes a device must be not recording (awake time) before the account's managers are told. */
+  KORTIX_CAPTURE_ALERT_AFTER_MINUTES: optInt(30),
+  /** The update manifest that names the newest published Capture version. Empty: no version check. */
+  KORTIX_CAPTURE_UPDATE_MANIFEST_URL: optUrl('https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json'),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -1420,6 +1424,8 @@ export const config = {
   KORTIX_CAPTURE_STS_ENDPOINT: env.KORTIX_CAPTURE_STS_ENDPOINT,
   KORTIX_CAPTURE_SQS_QUEUE_URL: env.KORTIX_CAPTURE_SQS_QUEUE_URL,
   KORTIX_CAPTURE_INDEX_POLL_SECONDS: env.KORTIX_CAPTURE_INDEX_POLL_SECONDS,
+  KORTIX_CAPTURE_ALERT_AFTER_MINUTES: env.KORTIX_CAPTURE_ALERT_AFTER_MINUTES,
+  KORTIX_CAPTURE_UPDATE_MANIFEST_URL: env.KORTIX_CAPTURE_UPDATE_MANIFEST_URL,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,
