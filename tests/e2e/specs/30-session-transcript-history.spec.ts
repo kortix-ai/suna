@@ -49,7 +49,8 @@ for (const store of STORES) {
   }, testInfo) => {
     test.setTimeout(240_000);
     const env = loadEnv();
-    const email = `transcript-history-${Date.now()}@example.test`;
+    // Both variants start at once on two workers: the store keeps their emails apart.
+    const email = `transcript-history-${store.log ? 'log' : 'mirror'}-${Date.now()}@example.test`;
     const user = await createAuthUser(email, authOptions);
     const auth = await signIn(email, authOptions);
     let projectId = '';
@@ -331,7 +332,7 @@ for (const store of STORES) {
     // private store — and the sandbox's `/file/raw` must never be asked.
     test.setTimeout(240_000);
     const env = loadEnv();
-    const email = `shown-file-${Date.now()}@example.test`;
+    const email = `shown-file-${store.log ? 'log' : 'mirror'}-${Date.now()}@example.test`;
     const user = await createAuthUser(email, authOptions);
     const auth = await signIn(email, authOptions);
     let disposeProject = async () => {};
