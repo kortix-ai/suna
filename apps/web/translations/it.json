@@ -2622,7 +2622,9 @@
       "permission": "Richiesta di autorizzazione",
       "shared": "Condivisa con te",
       "automation_failed": "Avviso di errore",
-      "automation_recovered": "Avviso di ripristino"
+      "automation_recovered": "Avviso di ripristino",
+      "capture_device_down": "Computer Capture fermo",
+      "capture_device_recovered": "Computer Capture di nuovo in registrazione"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -2631,7 +2633,9 @@
       "permission": "L'agente chiede l'autorizzazione per eseguire uno strumento.",
       "shared": "Qualcuno condivide una sessione con te.",
       "automation_failed": "Un trigger o un promemoria inizia a fallire.",
-      "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare."
+      "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare.",
+      "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
+      "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo."
     },
     "bell": {
       "label": "Notifiche",

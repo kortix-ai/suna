@@ -2622,7 +2622,9 @@
       "permission": "権限リクエスト",
       "shared": "あなたと共有",
       "automation_failed": "失敗アラート",
-      "automation_recovered": "復旧アラート"
+      "automation_recovered": "復旧アラート",
+      "capture_device_down": "Capture のコンピューターが停止",
+      "capture_device_recovered": "Capture のコンピューターが復旧"
     },
     "kindDescription": {
       "turn_done": "ターンが終了します。",
@@ -2631,7 +2633,9 @@
       "permission": "エージェントがツールを実行する権限を求めます。",
       "shared": "誰かがあなたとセッションを共有します。",
       "automation_failed": "トリガーまたはリマインダーが失敗し始めます。",
-      "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。"
+      "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。",
+      "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
+      "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。"
     },
     "bell": {
       "label": "通知",

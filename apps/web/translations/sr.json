@@ -2622,7 +2622,9 @@
       "permission": "Захтев за дозволу",
       "shared": "Подељено са вама",
       "automation_failed": "Упозорење о грешци",
-      "automation_recovered": "Обавештење о опоравку"
+      "automation_recovered": "Обавештење о опоравку",
+      "capture_device_down": "Capture рачунар је стао",
+      "capture_device_recovered": "Capture рачунар поново снима"
     },
     "kindDescription": {
       "turn_done": "Потез се завршава.",
@@ -2631,7 +2633,9 @@
       "permission": "Агент тражи дозволу да покрене алат.",
       "shared": "Неко дели сесију са вама.",
       "automation_failed": "Окидач или подсетник почиње да не успева.",
-      "automation_recovered": "Окидач или подсетник који није успевао поново ради."
+      "automation_recovered": "Окидач или подсетник који није успевао поново ради.",
+      "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
+      "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима."
     },
     "bell": {
       "label": "Обавештења",

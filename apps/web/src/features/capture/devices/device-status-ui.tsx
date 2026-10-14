@@ -44,7 +44,9 @@ export function StatusDot({
               : 'neutral'
       }
       className={cn(
-        view?.key === 'offline' && 'border-muted-foreground border bg-transparent',
+        view?.key === 'offline' &&
+          view.tone === 'none' &&
+          'border-muted-foreground border bg-transparent',
         className,
       )}
     />

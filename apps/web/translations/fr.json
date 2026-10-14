@@ -2622,7 +2622,9 @@
       "permission": "Demande d'autorisation",
       "shared": "Partagée avec vous",
       "automation_failed": "Alerte d'échec",
-      "automation_recovered": "Alerte de rétablissement"
+      "automation_recovered": "Alerte de rétablissement",
+      "capture_device_down": "Ordinateur Capture arrêté",
+      "capture_device_recovered": "Ordinateur Capture à nouveau en marche"
     },
     "kindDescription": {
       "turn_done": "Un tour se termine.",
@@ -2631,7 +2633,9 @@
       "permission": "L'agent demande l'autorisation d'exécuter un outil.",
       "shared": "Quelqu'un partage une session avec vous.",
       "automation_failed": "Un déclencheur ou un rappel commence à échouer.",
-      "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau."
+      "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau.",
+      "capture_device_down": "Un ordinateur Kortix Capture n’enregistre pas. Envoyé aux personnes qui gèrent Capture.",
+      "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau."
     },
     "bell": {
       "label": "Notifications",

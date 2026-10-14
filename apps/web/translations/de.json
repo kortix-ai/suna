@@ -2622,7 +2622,9 @@
       "permission": "Berechtigungsanfrage",
       "shared": "Mit dir geteilt",
       "automation_failed": "Fehleralarm",
-      "automation_recovered": "Entwarnung"
+      "automation_recovered": "Entwarnung",
+      "capture_device_down": "Capture-Computer gestoppt",
+      "capture_device_recovered": "Capture-Computer nimmt wieder auf"
     },
     "kindDescription": {
       "turn_done": "Ein Durchlauf endet.",
@@ -2631,7 +2633,9 @@
       "permission": "Der Agent bittet um die Erlaubnis, ein Tool auszuführen.",
       "shared": "Jemand teilt eine Sitzung mit dir.",
       "automation_failed": "Ein Trigger oder eine Erinnerung schlägt fehl.",
-      "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder."
+      "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder.",
+      "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
+      "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf."
     },
     "bell": {
       "label": "Benachrichtigungen",

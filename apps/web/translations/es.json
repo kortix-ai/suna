@@ -2622,7 +2622,9 @@
       "permission": "Solicitud de permiso",
       "shared": "Compartida contigo",
       "automation_failed": "Alerta de fallo",
-      "automation_recovered": "Alerta de recuperación"
+      "automation_recovered": "Alerta de recuperación",
+      "capture_device_down": "Ordenador de Capture detenido",
+      "capture_device_recovered": "Ordenador de Capture graba de nuevo"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -2631,7 +2633,9 @@
       "permission": "El agente pide permiso para ejecutar una herramienta.",
       "shared": "Alguien comparte una sesión contigo.",
       "automation_failed": "Un trigger o un recordatorio empieza a fallar.",
-      "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar."
+      "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar.",
+      "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
+      "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar."
     },
     "bell": {
       "label": "Notificaciones",
