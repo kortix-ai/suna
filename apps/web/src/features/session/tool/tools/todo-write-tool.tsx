@@ -24,12 +24,13 @@ export function TodoWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProp
   const metadata = partMetadata(call);
 
   const todos = useMemo(() => {
-    const fromInput = parseTodos(input.todos);
+    // Codex `update_plan` sends `plan: [{ step, status }]`.
+    const fromInput = parseTodos(input.todos ?? input.plan);
     if (fromInput.length) return fromInput;
     const fromMeta = parseTodos(metadata.todos);
     if (fromMeta.length) return fromMeta;
     return parseTodos(streamingInput.todos);
-  }, [input.todos, metadata.todos, streamingInput.todos]);
+  }, [input.todos, input.plan, metadata.todos, streamingInput.todos]);
 
   const total = todos.length;
   // Two more passes over the list per render — one of them allocating a throwaway

@@ -10,6 +10,10 @@
 // choice away ("Use a password instead" on the link step); whatever the
 // resolver says, the client hands off to the link action, which re-checks
 // closed signups and SSO server-side.
+//
+// Every step also renders its failure inline: a failed send keeps the
+// banner (role=alert) on screen after the toast expires, on the step that
+// produced it — password form included, since it re-offers the link.
 import { expect, mock, test } from 'bun:test';
 import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
@@ -36,6 +40,7 @@ mock.module('@/lib/supabase/client', () => ({
 }));
 let resolvedMode = 'unknown';
 let emailCodeSends = 0;
+let emailFailure: string | null = null;
 mock.module('./actions', () => ({
   resolveAuthMode: async () => ({ mode: resolvedMode }),
 }));
@@ -46,7 +51,9 @@ mock.module('@/lib/auth/submit-auth', () => ({
   AUTH_UNEXPECTED_MESSAGE: 'Something went wrong. Please try again.',
   submitAuthForm: async (_path: string, _body: FormData) => {
     emailCodeSends += 1;
-    return { ok: true, result: { success: true, email: 'synthetic@example.test' } };
+    return emailFailure
+      ? { ok: true, result: { message: emailFailure } }
+      : { ok: true, result: { success: true, email: 'synthetic@example.test' } };
   },
 }));
 mock.module('@/lib/env-config', () => ({
@@ -82,6 +89,27 @@ function expectNoPasswordInput(tree: NonNullable<ReturnType<typeof create>>) {
   expect(password).toBeNull();
 }
 
+function buttonByLabel(
+  tree: NonNullable<ReturnType<typeof create>>,
+  label: string,
+): { props: { onClick: () => void; disabled?: boolean } } | undefined {
+  return tree.root
+    .findAllByProps({ type: 'button' })
+    .find((button) => {
+      const children = button.props.children;
+      return Array.isArray(children)
+        ? children.some((child: unknown) => typeof child === 'string' && child.includes(label))
+        : typeof children === 'string' && children.includes(label);
+    });
+}
+
+// The password form is one explicit hop from the link step.
+async function goToPasswordForm(root: NonNullable<ReturnType<typeof create>>) {
+  const passwordButton = buttonByLabel(root, 'Use a password instead');
+  if (!passwordButton) throw new Error('Use-a-password button did not render');
+  await act(async () => passwordButton.props.onClick());
+}
+
 test('a returning account lands on the link step and sends no password prompt', async () => {
   resolvedMode = 'signin';
   emailCodeSends = 0;
@@ -100,17 +128,7 @@ test('the password form stays one explicit choice away from the link step', asyn
   emailCodeSends = 0;
   const root = await continueWithEmail('returning@example.test');
   try {
-    const passwordButton = root.root
-      .findAllByProps({ type: 'button' })
-      .find((button) => {
-        const children = button.props.children;
-        return Array.isArray(children)
-          ? children.some((child: unknown) => typeof child === 'string' && child.includes('Use a password instead'))
-          : typeof children === 'string' && children.includes('Use a password instead');
-      });
-    expect(passwordButton).toBeDefined();
-    if (!passwordButton) throw new Error('Use-a-password button did not render');
-    await act(async () => passwordButton.props.onClick());
+    await goToPasswordForm(root);
     const password = root.root.findByProps({ autoComplete: 'current-password', type: 'password' });
     expect(password.props.name).toBe('password');
     expect(JSON.stringify(root.toJSON())).toContain('Welcome back');
@@ -133,3 +151,47 @@ test('every resolution hands off to the link action — the server gates closed 
     }
   }
 });
+
+test('the password form still offers the email link as an explicit choice', async () => {
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  const root = await continueWithEmail('returning@example.test');
+  try {
+    await goToPasswordForm(root);
+    const linkButton = buttonByLabel(root, 'Email me a link instead');
+    expect(linkButton).toBeDefined();
+    if (!linkButton) throw new Error('Email-link button did not render');
+    await act(async () => linkButton.props.onClick());
+    expect(emailCodeSends).toBe(2);
+    expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+for (const failure of ['Email rate limit exceeded. Try again later.', 'Could not send the link']) {
+  test(`failed sign-in link stays visible on the password form: ${failure}`, async () => {
+    resolvedMode = 'signin';
+    emailCodeSends = 0;
+    const root = await continueWithEmail('returning@example.test');
+    try {
+      await goToPasswordForm(root);
+      emailFailure = failure;
+      const linkButton = buttonByLabel(root, 'Email me a link instead');
+      if (!linkButton) throw new Error('Email-link button did not render');
+      await act(async () => linkButton.props.onClick());
+      const alerts = root.root.findAllByProps({ role: 'alert' });
+      expect(alerts).toHaveLength(1);
+      expect(JSON.stringify(root.toJSON())).toContain(failure);
+      expect(JSON.stringify(root.toJSON())).toContain('Welcome back');
+      expect(linkButton.props.disabled).toBe(false);
+      emailFailure = null;
+      await act(async () => linkButton.props.onClick());
+      expect(root.root.findAllByProps({ role: 'alert' })).toHaveLength(0);
+      expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+    } finally {
+      emailFailure = null;
+      await act(async () => root.unmount());
+    }
+  });
+}
