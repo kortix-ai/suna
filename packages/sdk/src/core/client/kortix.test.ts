@@ -757,6 +757,14 @@ test('session(...).transcript hits the compact transcript endpoint with limit/ch
   expect(last().method).toBe('GET');
 });
 
+// KRTX-2316: the list is one page; the facade passes the status and the cursor.
+test('project(id).changeRequests.list pages with status, limit and cursor', async () => {
+  await kortix.project('PID123').changeRequests.list();
+  expect(last().url).toMatch(/\/projects\/PID123\/change-requests$/);
+  await kortix.project('PID123').changeRequests.list('all', { limit: 100, cursor: '51' });
+  expect(last().url).toContain('/projects/PID123/change-requests?status=all&limit=100&cursor=51');
+});
+
 test('project(id).changeRequests.requestChanges hits the request-changes endpoint', async () => {
   await kortix.project('PID123').changeRequests.requestChanges('CR1', 'please fix the tests');
   expect(last().url).toContain('/projects/PID123/change-requests/CR1/request-changes');

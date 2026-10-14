@@ -21,6 +21,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `listChangeRequests` takes `cursor` and its response adds `next_cursor`.
   The server now returns one page: 50 change requests by default, at most
   500 (a larger `limit` answers 400, it no longer clamps). Additive types.
+  `project(id).changeRequests.list(status?, options?)` passes both through,
+  so the facade can page as well. Additive (a widened parameter list).
 - React (`@kortix/sdk/react`): `useReviewSummary(projectId)` (polls every
   60 s), `useReviewItemPages(projectId, query)` (an infinite query; read the
   rows with `reviewItemsOf(query.data)`), `nextReviewItemsCursor`, and the
