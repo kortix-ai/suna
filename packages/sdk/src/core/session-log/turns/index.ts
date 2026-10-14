@@ -23,7 +23,7 @@
  * - `subAgentCalls`: `getChildSessionToolParts` (a sub-agent row's calls, from its thread).
  * - `sessionLogThreadMetrics`: a thread's cost, message counts and token totals (the context modal).
  * - `isSessionLogRestoreNote`, `sessionLogHarnessSwitches`, `sessionLogRestoreNotice`,
- *   `sessionLogReferencedTexts`, `sessionLogWithFullTexts`, `sessionLogFullTextAction` (P5.6, `./history.ts`): a session's
+ *   `sessionLogReferencedTexts`, `sessionLogWithFullTexts`, `sessionLogFullTextAction`, `sessionLogFullTextPlan` (P5.6, `./history.ts`): a session's
  *   history in a transcript, new (no v1 equivalent).
  * `getPermissionForTool(permissions, call.call_id)` and `getQuestionForTool` already take the
  * call id, so they serve a `ToolCallBlock` as they are.
@@ -62,6 +62,7 @@ export {
   SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES,
   isSessionLogRestoreNote,
   sessionLogFullTextAction,
+  sessionLogFullTextPlan,
   sessionLogHarnessSwitches,
   sessionLogReferencedTexts,
   sessionLogRestoreNotice,

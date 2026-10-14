@@ -582,7 +582,8 @@ noted on stderr when the session is not read live.
                     or "v1" for a session with no stored log, converted), and
                     "threads" (root and sub-agents), each with its newest
                     messages and "has_more". A running turn's messages
-                    the log does not hold yet carry "provisional": true
+                    the log does not hold yet carry
+                    "ext": {"kortix": {"data": {"provisional": true}}}
                     (their seq is not stored yet).
   --schema v1       Deprecated: emit the old JSON (role / text / parts per
                     root message) from the v1 transcript. Goes in the next
@@ -764,7 +765,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   const s = session;
   process.stdout.write(
     `\n${C.bold}${s.name ?? s.session_id.split('-')[0]}${C.reset} ` +
-      `${C.faded}(${s.agent_name} · ${s.status})${C.reset}\n`,
+      `${C.faded}(${s.agent_name} · ${logHeaderState(s.status, live?.messages ?? null)})${C.reset}\n`,
   );
   const root = output.threads.find((thread) => thread.parent_thread_id === null) ?? output.threads[0];
   const messages = root?.messages ?? [];
@@ -784,6 +785,16 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   }
   process.stdout.write('\n');
   return 0;
+}
+
+/**
+ * The `sessions log` header's state: the session status is the sandbox's (`running` while
+ * the box is up, whatever the agent does), so it is named as such. A live read adds what the
+ * agent does now (`deriveActivity`): `working` or `idle`.
+ */
+export function logHeaderState(status: ProjectSession['status'], live: MessageWithParts[] | null): string {
+  const sandbox = `sandbox ${status}`;
+  return live ? `${sandbox} · ${deriveActivity(live, status).working ? 'working' : 'idle'}` : sandbox;
 }
 
 type LogThread = SessionLogThread & { has_more: boolean };
@@ -847,7 +858,7 @@ export async function readStoredSessionLog(
 /**
  * A running session's threads with the turn it runs now. The stored log is
  * journaled at each turn end, so the root thread takes the live messages it
- * does not hold yet (newer than its last), marked `provisional: true`: their
+ * does not hold yet (newer than its last), marked `ext.kortix.data.provisional: true`: their
  * seq is not stored yet. A tail keeps the seqs `fromV1` gives the live read
  * when those agree with the stored ones, else it goes above the newest stored
  * seq. A deleted message's seq is not served, so a provisional seq can differ
@@ -856,7 +867,11 @@ export async function readStoredSessionLog(
  * its newest `limit` messages, and `has_more` says when older ones exist.
  */
 export function withLiveTurn(threads: LogThread[], live: SessionLogThread, limit: number): LogThread[] {
-  const provisional = (message: SessionLogMessage) => ({ ...message, thread_id: live.thread_id, provisional: true });
+  const provisional = (message: SessionLogMessage): SessionLogMessage => {
+    const kortix = message.ext?.kortix;
+    const data = { ...(kortix?.data as Record<string, unknown> | undefined), provisional: true };
+    return { ...message, thread_id: live.thread_id, ext: { ...message.ext, kortix: { ...kortix, version: kortix?.version ?? '1', data } } };
+  };
   const fit = (thread: SessionLogThread, messages: SessionLogMessage[], older: boolean): LogThread => ({
     ...thread,
     messages: messages.slice(-limit),

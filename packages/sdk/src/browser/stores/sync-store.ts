@@ -638,6 +638,17 @@ export function hasOnlyCacheSourcedMessages(sessionID: string): boolean {
 	return messages.every((message) => cached.has(message.id));
 }
 
+/**
+ * Does this session hold `messageID` from a runtime read or a live event, not only from a
+ * saved copy? A saved window's cursor names its oldest message: once the runtime holds that
+ * message and has no older page of its own, every older saved message is in the runtime too.
+ */
+export function hasRuntimeConfirmedMessage(sessionID: string, messageID: string): boolean {
+	const messages = useSyncStore.getState().messages[sessionID];
+	if (!messages?.some((message) => message.id === messageID)) return false;
+	return !cacheSourcedIds.get(sessionID)?.has(messageID);
+}
+
 function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
 	if (optimisticID === echoID) return;
 	// Chain through an earlier swap: a message that itself superseded an

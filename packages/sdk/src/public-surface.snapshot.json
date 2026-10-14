@@ -1020,6 +1020,7 @@
     "sessionLogBurstWorkLabel",
     "sessionLogCallStatus",
     "sessionLogFullTextAction",
+    "sessionLogFullTextPlan",
     "sessionLogHarnessSwitches",
     "sessionLogOfV1Rows",
     "sessionLogOpenCall",
@@ -1895,6 +1896,7 @@
     "Binary",
     "ascendingId",
     "hasOnlyCacheSourcedMessages",
+    "hasRuntimeConfirmedMessage",
     "sameSessionStatus",
     "useSyncStore"
   ],
@@ -3150,6 +3152,7 @@
     "Binary",
     "ascendingId",
     "hasOnlyCacheSourcedMessages",
+    "hasRuntimeConfirmedMessage",
     "sameSessionStatus",
     "useSyncStore"
   ],
