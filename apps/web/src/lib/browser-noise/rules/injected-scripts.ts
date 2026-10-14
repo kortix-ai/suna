@@ -1,5 +1,6 @@
 import type { NoiseRule } from '../evidence';
 import {
+  isBrowserBundleSource,
   isFirstPartyResolvedSource,
   normalizeString,
   sourcesOf,
@@ -226,6 +227,30 @@ export function isRedefineInjectedWalletNoise(input: {
   );
 }
 
+/**
+ * An injected wallet shim (Brave's wallet on iOS) assigns to a provider
+ * property before `window.ethereum` exists: `undefined is not an object
+ * (evaluating 'window.ethereum.selectedAddress = undefined')`. Better Stack,
+ * Kortix Frontend prod, 2026-10-14: one frame, `global code`, at the page
+ * document URL. Kortix code never touches `window.ethereum`. A frame in our
+ * bundles or resolved first-party source keeps reporting.
+ */
+const UNDEFINED_WALLET_PROVIDER_WRITE_MESSAGE =
+  /^undefined is not an object \(evaluating 'window\.(?:ethereum|solana|web3|tronWeb)\.[\w$.]+ = /;
+
+export function isInjectedWalletProviderWriteNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  const sources = sourcesOf(input);
+  return (
+    UNDEFINED_WALLET_PROVIDER_WRITE_MESSAGE.test(stripped) &&
+    !sources.some((source) => isBrowserBundleSource(source) || isFirstPartyResolvedSource(source))
+  );
+}
+
 /** Vercel toolbar frames have a reserved source path outside app bundles. */
 export function isVercelLiveFeedbackNoise(input: {
   filename?: unknown;
@@ -242,5 +267,6 @@ export const INJECTED_SCRIPT_RULES: readonly NoiseRule[] = [
   { id: 'onetrust-json-parse', appliesTo: 'both', match: isOneTrustJsonParseNoise },
   { id: 'redefine-webdriver', appliesTo: 'both', match: isRedefineWebdriverNoise },
   { id: 'redefine-wallet-provider', appliesTo: 'both', match: isRedefineInjectedWalletNoise },
+  { id: 'wallet-provider-write', appliesTo: 'both', match: isInjectedWalletProviderWriteNoise },
   { id: 'vercel-live-feedback', appliesTo: 'both', match: isVercelLiveFeedbackNoise },
 ];

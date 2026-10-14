@@ -23,7 +23,7 @@ mock.module('react-native', () => ({
 }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
-mock.module('@kortix/sdk', () => ({ groupMessagesIntoTurns: () => [] }));
+mock.module('@kortix/sdk', () => ({ sessionLogTurns: () => [] }));
 mock.module('@/lib/icons', () => ({ ArrowCounterClockwiseIcon: Empty }));
 mock.module('@/components/ui/text', () => ({ Text: passthrough('ui-text') }));
 mock.module('@/components/ui/button', () => ({ Button: passthrough('ui-button') }));

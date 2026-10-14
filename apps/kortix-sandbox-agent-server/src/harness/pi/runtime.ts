@@ -27,7 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
+import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
 import { loadTools } from '@/services/tools/host'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
@@ -40,7 +40,7 @@ import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
-import { foreignReasoningExtension, withoutForeignReasoning } from './reasoning'
+import { withoutForeignReasoning } from './reasoning'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
@@ -531,6 +531,12 @@ export class PiRuntime {
       // none, and the workspace is never a config source while a release is in play.
       const packageRoot = this.projectRoot()
       if (packageRoot === null) project.entries = project.entries.filter((entry) => host.parseNpmSource(typeof entry === 'string' ? entry : entry.source))
+      let local: InlineExtension[] = []
+      if (packageRoot && this.releases?.projectRoot()) {
+        const loaded = await import('./extensions/prebuilt').then(({ loadLocalExtensions }) => loadLocalExtensions(packageRoot, project.entries))
+        project.entries = loaded.rest
+        local = loaded.extensions
+      }
       this.pi = await host.createPiSession({
         projectConfigDir: await this.projectConfigDir(),
         agent,
@@ -544,7 +550,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), foreignReasoningExtension(), subagents(this.kortixHost()), ...project.extensions],
+        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -664,6 +670,7 @@ export class PiRuntime {
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
     if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
     this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
+    this.dismissOpenQuestions()
     if (input.noReply) {
       // OpenCode `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
@@ -728,7 +735,19 @@ export class PiRuntime {
     }
     this.steered.push({ messageId, input, message })
     this.agent.steer(message)
+    this.dismissOpenQuestions()
     return 'steered'
+  }
+
+  /**
+   * A new user message answers no open question, so it dismisses them: the
+   * question tool resolves as dismissed, the blocked turn ends, and the new
+   * message runs. Without this, a session nobody answers (a keyed cron, a
+   * Slack thread) queues every later message behind the question forever
+   * (prod 2026-10-09: 5 days of Slack-triage fires).
+   */
+  private dismissOpenQuestions(): void {
+    if (this.questions?.list().length) this.questions.rejectAll()
   }
 
   /**

@@ -356,7 +356,7 @@ Each adapter declares in its capabilities what its oracle suites passed against:
 `PI_CAPABILITIES` and `OPENCODE_CAPABILITIES` (`@kortix/api-contract/session-log`,
 `capabilities.ts`: apps/api reads the same manifests for the switch preflight,
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight`), field `harness_versions` (a semver range, today
-`1.0.3` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
+`1.0.3 || 1.2.0` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
 by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
 reads them and fails when a pin leaves them:
 
@@ -631,7 +631,7 @@ model call read it (its turn runs or ran), and it stays.
 > section. Until then OpenCode stays the default. When the move is complete,
 > `open-code/` and the `opencode` harness id are removed.
 
-pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.3) is bundled
+pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.2.0) is bundled
 into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
@@ -715,7 +715,10 @@ only those files is a working config on pi.
   restart.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `initial-turn-claimed`,
-`config-release-fetched`, `config-release-<disk|snapshot|archive>`,
+`config-release-published` (the release the API published and signed at
+session create, `KORTIX_CONFIG_RELEASE`: read from the store, no API call) or
+`config-release-fetched` (the descriptor route answered),
+`config-release-<disk|snapshot|archive|git>`,
 `config-release-proven`, `pi-ready`, `initial-prompt-delivered`,
 `initial-turn-accepted`, `runtime-ready`. No workspace step is a boot mark;
 `/kortix/health` reports the checkout as `workspace_provider`.
@@ -810,13 +813,13 @@ dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
 
 Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
-block that another model wrote as visible assistant text, and pi's summarizers
-(compaction, branch summary) flatten every thinking block into the prompt
-text. `pi/reasoning.ts` removes the thinking of another model on both paths,
-with pi-ai's own test (provider, api, model id): `withoutForeignReasoning`
-wraps the stream function of the root and every child agent, and the hidden
-`kortix-reasoning` extension filters the summarizer input in
-`session_before_compact` and `session_before_tree`. A model switch (a prompt's
+block that another model wrote as visible assistant text. `pi/reasoning.ts`
+removes the thinking of another model from each request, with pi-ai's own test
+(provider, api, model id): `withoutForeignReasoning` wraps the stream function
+of the root and every child agent. pi's summarizers (compaction, branch
+summary) send no thinking block of any model since pi 1.2.0
+(`serializeConversation`); `pi-session-log-restore.test.ts` fails if that
+changes. A model switch (a prompt's
 `model`, `POST /kortix/env`) and a restored log written by another model or
 harness both go through it. The same model's thinking goes back unchanged, and
 the store and the session log keep every block.
@@ -884,7 +887,8 @@ release a boot needs) stay outside `src/harness/`. Each depends only on
 `src/lib/` and knows nothing about any harness or about the other: both read
 the S3 project snapshot through `src/lib/project-snapshot/`, each into its
 own directory, in parallel. The config provider never reads `/workspace`
-(`obtainRelease`: disk, snapshot, archive). The harness composes them. Both
+(`obtainRelease`: disk, snapshot, archive, git; the archive first from the
+published release's signed store URL). The harness composes them. Both
 `open-code/boot.ts` and `pi/boot.ts` call `provideWorkspace(cfg, { onSummary })`
 at the point where the cold boot acquires the workspace. OpenCode still waits
 for the checkout before its proof, because an OpenCode Instance is built per

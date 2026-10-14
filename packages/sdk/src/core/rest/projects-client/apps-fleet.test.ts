@@ -81,6 +81,21 @@ test('scale and exec send the documented bodies', async () => {
   expect(last()).toMatchObject({ url: `${base}/exec`, method: 'POST', body: { command: ['ls', '-la'], timeout_s: 30 } });
 });
 
+test('scale with newVolumes accepts one new, empty volume per machine; without it the body is unchanged', async () => {
+  responses.push({ status: 202, body: { scale: { app: 2 }, machines: [] } }, { status: 202, body: { scale: { app: 1 }, machines: [] } });
+  await scaleApp('p1', 'a1', { app: 2 }, { newVolumes: true });
+  expect(last()).toMatchObject({ url: `${base}/scale`, method: 'PUT', body: { count: { app: 2 }, new_volumes: true } });
+  await scaleApp('p1', 'a1', { app: 1 });
+  expect(last().body).toEqual({ count: { app: 1 } });
+});
+
+test('a volume carries its live use and last commit (null when the provider did not answer)', () => {
+  const live: AppVolume = { ...volume, size_gb: 100, used_bytes: 1_048_576, last_commit_at: '2026-10-14T16:00:00.000Z' };
+  const usedIsNullable: Equal<AppVolume['used_bytes'], number | null | undefined> = true;
+  const commitIsNullable: Equal<AppVolume['last_commit_at'], string | null | undefined> = true;
+  expect([live.used_bytes, usedIsNullable, commitIsNullable]).toEqual([1_048_576, true, true]);
+});
+
 test('volumes: list, create, extend, destroy (with confirm), snapshots, restore and fork', async () => {
   const snapshot: AppVolumeSnapshot = { snapshot_id: 'daily-20261010', kind: 'daily', commit_id: 'c1', created_at: 't' };
   responses.push(

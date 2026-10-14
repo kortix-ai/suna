@@ -16,13 +16,13 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function PtyWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const { ptyInput, ptyId } = ptyWriteView(partInput(part));
+  const { ptyInput, ptyId } = ptyWriteView(partInput(call));
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TerminalWindowIcon}
       trigger={{ title: PTY_TEXT.terminalInput, subtitle: ptyId || undefined }}
       defaultOpen={defaultOpen}

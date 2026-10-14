@@ -1,5 +1,6 @@
 import type { NoiseRule } from '../evidence';
 import {
+  isBrowserBundleSource,
   isFirstPartyResolvedSource,
   normalizeString,
   sourcesOf,
@@ -622,6 +623,31 @@ export function isCaptchaInterceptorNoise(input: {
   return sources.some(isInjectedAppSource);
 }
 
+/**
+ * An injected wallet provider rejecting a pending request with the EIP-1474
+ * default internal error, `{ code: -32603, message: 'Internal JSON-RPC error.' }`
+ * (the wording of the wallet RPC error library). The rejected value is a plain
+ * object with no `stack`, so Sentry reports a frameless synthetic
+ * "Object captured as promise rejection with keys: code, message" and the
+ * extension-stack anchor above cannot see it. Better Stack, Kortix Frontend
+ * prod, release dad30b6188, route `/` (2 events). Kortix rejects with Error
+ * instances only. Anchored on the exact two-key object; a bundle or
+ * first-party frame keeps reporting.
+ */
+function isWalletInternalRpcRejectionNoise(input: {
+  message?: unknown;
+  extra?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (!SYNTHETIC_OBJECT_REJECTION_PATTERN.test(normalizeString(input.message))) return false;
+  const serialized = (input.extra as { __serialized__?: unknown } | undefined)?.__serialized__;
+  if (!serialized || typeof serialized !== 'object') return false;
+  const value = serialized as Record<string, unknown>;
+  if (Object.keys(value).sort().join(',') !== 'code,message') return false;
+  if (value.code !== -32603 || value.message !== 'Internal JSON-RPC error.') return false;
+  return !sourcesOf(input).some((source) => isBrowserBundleSource(source) || isFirstPartyResolvedSource(source));
+}
+
 export const EXTENSION_RULES: readonly NoiseRule[] = [
   {
     id: 'injected-app-source',
@@ -639,6 +665,7 @@ export const EXTENSION_RULES: readonly NoiseRule[] = [
   { id: 'inpage-wallet-stream', appliesTo: 'both', match: isInpageWalletStreamNoise },
   { id: 'inpage-wallet-no-message', appliesTo: 'sentry', match: isInpageJsNoErrorMessageNoise },
   { id: 'extension-rejected-object', appliesTo: 'sentry', match: isExtensionRejectedObjectNoise },
+  { id: 'wallet-internal-rpc-rejection', appliesTo: 'sentry', match: isWalletInternalRpcRejectionNoise },
   {
     // The runtime gate receives the raw rejected object as `reason`/`error`
     // (whose `message` is the provider's own, NOT Sentry's synthetic "Object
