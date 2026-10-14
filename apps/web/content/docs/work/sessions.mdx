@@ -240,7 +240,7 @@ When it goes out:
 
 When the continuation reaches the sandbox, the turn's reason changes to "The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn." After a runtime restart it changes to "The runtime restarted during this turn. Kortix resumed it."
 
-Kortix never continues a turn that someone ended: the Stop button (also when the sandbox stopped before the Stop reached it), `kortix sessions stop`, or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry. A continuation counts as a message: when the sandbox stops during the continuation, Kortix continues it again.
+Kortix never continues a turn that someone ended: the Stop button (also when the sandbox stopped before the Stop reached it), `kortix sessions stop`, a model change (`kortix sessions model` restarts the runtime and ends the turn in flight), or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry. A continuation counts as a message: when the sandbox stops during the continuation, Kortix continues it again.
 
 Limits:
 
