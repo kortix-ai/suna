@@ -1390,7 +1390,7 @@ flow(
 );
 
 /**
- * SESS-52 — one session by id, in any project (KRTX-2316). A client that holds
+ * SESS-53 — one session by id, in any project (KRTX-2316). A client that holds
  * only a session id (the SDK's `restartSandbox(id)`) reads it here instead of
  * walking every project's first sessions page. The answer is the project
  * route's own, except that a caller the project gate refuses gets the
@@ -1398,7 +1398,7 @@ flow(
  * profile: database sessions.
  */
 flow(
-  'SESS-52',
+  'SESS-53',
   {
     domain: 'sessions',
     requires: ['database'],
