@@ -670,6 +670,7 @@ export class PiRuntime {
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
     if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
     this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
+    this.dismissOpenQuestions()
     if (input.noReply) {
       // OpenCode `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
@@ -734,7 +735,19 @@ export class PiRuntime {
     }
     this.steered.push({ messageId, input, message })
     this.agent.steer(message)
+    this.dismissOpenQuestions()
     return 'steered'
+  }
+
+  /**
+   * A new user message answers no open question, so it dismisses them: the
+   * question tool resolves as dismissed, the blocked turn ends, and the new
+   * message runs. Without this, a session nobody answers (a keyed cron, a
+   * Slack thread) queues every later message behind the question forever
+   * (prod 2026-10-09: 5 days of Slack-triage fires).
+   */
+  private dismissOpenQuestions(): void {
+    if (this.questions?.list().length) this.questions.rejectAll()
   }
 
   /**
