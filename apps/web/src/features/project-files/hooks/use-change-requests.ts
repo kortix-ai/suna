@@ -2,7 +2,7 @@
 
 import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
 import { qk } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createChangeRequest,
   fetchChangeRequest,
@@ -148,15 +148,41 @@ export function usePrefetchChangeRequest() {
   };
 }
 
-export function useChangeRequests(
+/**
+ * How many open change requests the count badge and the command palette read
+ * (one shared entry). `CountBadge` shows 99+ above 99, so 100 rows keep the
+ * badge exact while the read stays bounded (KRTX-2316).
+ */
+export const OPEN_CHANGE_REQUESTS_LIMIT = 100;
+
+/** The open change requests the count badge reads (`OPEN_CHANGE_REQUESTS_LIMIT`). */
+export function useOpenChangeRequestList(options?: { refetchInterval?: number }) {
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  return useQuery<{ change_requests: ChangeRequest[] }>({
+    queryKey: changeRequestKeys.list(projectId, 'open'),
+    queryFn: () => fetchChangeRequests(projectId, 'open', { limit: OPEN_CHANGE_REQUESTS_LIMIT }),
+    enabled: Boolean(projectId),
+    staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+/**
+ * One status of the project's change requests, a page (50) at a time: the
+ * panel loads the next with `fetchNextPage` while `hasNextPage` is true.
+ */
+export function useChangeRequestPages(
   status: ChangeRequestStatus | 'all' = 'all',
   options?: { enabled?: boolean; refetchInterval?: number },
 ) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
-  return useQuery<{ change_requests: ChangeRequest[] }>({
-    queryKey: changeRequestKeys.list(projectId, status),
-    queryFn: () => fetchChangeRequests(projectId, status),
+  return useInfiniteQuery({
+    queryKey: [...changeRequestKeys.list(projectId, status), 'pages'],
+    queryFn: ({ pageParam }) => fetchChangeRequests(projectId, status, { cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: Boolean(projectId) && options?.enabled !== false,
     staleTime: 5_000,
     refetchInterval: options?.refetchInterval,

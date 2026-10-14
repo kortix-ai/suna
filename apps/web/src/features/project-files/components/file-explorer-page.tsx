@@ -25,7 +25,7 @@ import { downloadFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
 import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus } from '../hooks';
-import { useChangeRequests } from '../hooks/use-change-requests';
+import { useOpenChangeRequestList } from '../hooks/use-change-requests';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
 import {
   useFileCopy,
@@ -382,7 +382,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   const toggleRightPanel = (panel: FilesRightPanel) =>
     setRightPanel((current) => (current === panel ? null : panel));
 
-  const openCrCountQuery = useChangeRequests('open', { refetchInterval: 10_000 });
+  const openCrCountQuery = useOpenChangeRequestList({ refetchInterval: 10_000 });
   const openCrCount = openCrCountQuery.data?.change_requests.length ?? 0;
 
   const searchParams = useSearchParams();

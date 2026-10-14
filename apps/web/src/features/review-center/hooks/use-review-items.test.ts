@@ -8,7 +8,7 @@ const { invalidateReviewInbox } = await import('./use-review-items');
 // it lists a pending connector call. A verdict that refetched the inbox alone
 // left the session on Needs you until the needs-input poll (30 s).
 describe('invalidateReviewInbox', () => {
-  test('refetches the inbox and the project needs-input summary', async () => {
+  test('refetches every inbox page, the needs-you counts and the needs-input summary', async () => {
     const queryClient = new QueryClient();
     const invalidateSpy = mock(() => Promise.resolve());
     queryClient.invalidateQueries = invalidateSpy as typeof queryClient.invalidateQueries;
@@ -16,7 +16,8 @@ describe('invalidateReviewInbox', () => {
     await invalidateReviewInbox(queryClient, 'proj-1');
 
     expect(invalidateSpy.mock.calls).toEqual([
-      [{ queryKey: ['review-center', 'proj-1'] }],
+      [{ queryKey: qk.project.reviewItemsScope('proj-1') }],
+      [{ queryKey: qk.project.reviewSummary('proj-1') }],
       [{ queryKey: qk.project.needsInput('proj-1') }],
     ]);
   });

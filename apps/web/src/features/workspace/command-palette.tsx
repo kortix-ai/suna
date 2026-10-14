@@ -33,7 +33,10 @@ import { useWorkspaceSearch } from '@/features/files';
 import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
-import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import {
+  OPEN_CHANGE_REQUESTS_LIMIT,
+  changeRequestKeys,
+} from '@/features/project-files/hooks/use-change-requests';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
@@ -606,7 +609,7 @@ function ChangeRequestsPage({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading } = useQuery({
     queryKey: changeRequestKeys.list(projectId, 'open'),
-    queryFn: () => fetchChangeRequests(projectId, 'open'),
+    queryFn: () => fetchChangeRequests(projectId, 'open', { limit: OPEN_CHANGE_REQUESTS_LIMIT }),
     staleTime: 5_000,
   });
 
