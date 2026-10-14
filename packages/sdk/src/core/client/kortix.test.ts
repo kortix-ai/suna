@@ -362,6 +362,9 @@ test('project(id).review hits the review-items endpoints', async () => {
   await kortix.project('PID123').review.submit({ kind: 'output', title: 'Result' });
   expect(last().url).toContain('/projects/PID123/review/items');
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').review.summary();
+  expect(last().url).toContain('/projects/PID123/review/summary');
 });
 
 test('project(id).approvals hits the approvals inbox endpoints', async () => {
