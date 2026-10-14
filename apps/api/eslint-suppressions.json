@@ -1374,11 +1374,6 @@
       "count": 2
     }
   },
-  "src/middleware/compress.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/middleware/impersonation.ts": {
     "no-console": {
       "count": 2

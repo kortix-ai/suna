@@ -148,8 +148,8 @@ function copyOwnFiles(from: string, to: string): void {
 /**
  * One entry → one self-contained ESM file beside it (`<entry>.kortix.js`).
  * Returns every file the bundler loaded. Minified without renaming: an
- * extension may read a class or function name, and the API image's Bun 1.2.23
- * ignores `keepNames` (measured) and has no `metafile`.
+ * extension may read a class or function name, and Bun 1.2.23 (the API image
+ * until 2026-10-14) ignored `keepNames` (measured) and had no `metafile`.
  * Every loaded file must resolve (symlinks included) inside `installRoot`: a
  * `../`, absolute or symlinked import of an API-host file would ship its
  * contents in the bundle. Such a package fails here and takes the fallback.
