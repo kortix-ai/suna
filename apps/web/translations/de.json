@@ -20228,7 +20228,8 @@
     "verified": "Bestätigt",
     "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
     "noFactorTitle": "Zwei-Faktor-Authentifizierung einrichten",
-    "noFactorDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Füge unter Einstellungen → Sicherheit eine Authenticator-App hinzu und versuche es dann erneut."
+    "noFactorDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Füge unter Einstellungen → Sicherheit eine Authenticator-App hinzu und versuche es dann erneut.",
+    "setUp": "Authenticator einrichten"
   },
   "connectorPages": {
     "install": "Installieren",

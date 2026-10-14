@@ -20228,7 +20228,8 @@
     "verified": "Vérifié",
     "invalidCode": "Ce code n’a pas fonctionné. Vérifiez votre application d’authentification et réessayez.",
     "noFactorTitle": "Configurer l’authentification à deux facteurs",
-    "noFactorDescription": "Cette action nécessite l’authentification à deux facteurs. Ajoutez une application d’authentification dans Paramètres → Sécurité, puis réessayez."
+    "noFactorDescription": "Cette action nécessite l’authentification à deux facteurs. Ajoutez une application d’authentification dans Paramètres → Sécurité, puis réessayez.",
+    "setUp": "Configurer l’authentificateur"
   },
   "connectorPages": {
     "install": "Installer",
