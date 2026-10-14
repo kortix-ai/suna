@@ -7,7 +7,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
 import { closeOpenGenuiFence, openGenuiFence, separateGenuiClosers } from '@/components/markdown/code/genui-fence';
-import { parseFileLinkHref, remarkWorkspaceFileLinks, workspaceFileLinkPath } from '@/components/markdown/file-links';
+import { parseFileLinkHref, remarkWorkspaceFileLinks } from '@/components/markdown/file-links';
 import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
   isKatexClassName,
@@ -107,9 +107,7 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   // A file in the session's workspace opens the file preview, the same
   // as a path in prose (see `remarkWorkspaceFileLinks`).
   const decodedFilePath = policy.fileLinks ? parseFileLinkHref(href) : null;
-  const filePath = variant === 'document' && decodedFilePath
-    ? workspaceFileLinkPath(decodedFilePath, '/workspace')
-    : decodedFilePath;
+  const filePath = policy.fileLinks ? parseFileLinkHref(href, variant === 'document') : null;
   if (decodedFilePath && !filePath) {
     return <span className={LINK_CLASS}>{children}</span>;
   }

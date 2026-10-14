@@ -65,10 +65,13 @@ export function workspaceFileLinkPath(url: string | undefined, baseDir?: string)
   return path || null;
 }
 
-export function parseFileLinkHref(href: string | undefined): string | null {
+export function parseFileLinkHref(href: string | undefined, document = false): string | null {
   if (!href?.startsWith(FILE_LINK_HREF)) return null;
   try {
-    return decodeURIComponent(href.slice(FILE_LINK_HREF.length)) || null;
+    const path = decodeURIComponent(href.slice(FILE_LINK_HREF.length));
+    if (!document) return path || null;
+    const resolved = resolveDocumentRelative('', path);
+    return path.startsWith('/') && resolved && isUnderSandboxRoot(resolved) ? resolved : null;
   } catch {
     return null;
   }
