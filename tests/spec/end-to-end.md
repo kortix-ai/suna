@@ -530,7 +530,7 @@ A project's Files is one drive (kind `project`) backed by one storage volume. Fo
 
 DB `change_requests` (per-project `number`, `status open|merged|closed`).
 
-`CR-1` `GET /projects/:id/change-requests?status=open|merged|closed|all` → `read`.
+`CR-1` `GET /projects/:id/change-requests?status=open|merged|closed|all` → `read` → one page (see `CR-13`).
 `CR-2` `POST /projects/:id/change-requests {title,head_ref,base_ref?,description?,session_id?}` → `write` → 201, head/base SHAs anchored. Missing `title` → 400; missing `head_ref` → 400; `base_ref==head_ref` → 400; head with no commits ahead of base (equal tip, or merge-base == head behind an advanced base) → 422 `CR_HEAD_NOT_AHEAD` — an empty CR can never be created (the resolver force-refreshes the mirror before rejecting, so a just-pushed head never bounces).
 `CR-3` `GET …/:crId` → `read` (auto-refreshes branch tips).
 `CR-4` `PATCH …/:crId` → `write`, open only.
@@ -540,7 +540,8 @@ DB `change_requests` (per-project `number`, `status open|merged|closed`).
 `CR-8` `POST …/:crId/close` · `POST …/:crId/reopen` → `write`.
 `CR-8b` `POST …/:crId/request-changes {feedback}` → **`write` required** → 200 `{change_request, delivering}` — persists the note under CR metadata `requested_changes` + delivers it to the origin session's agent (Review Center "request changes"). Missing `feedback` → 400; not-open → 409.
 `CR-9` CLI mirror: `kortix cr ls|show|diff|open|merge|close|reopen` (reads `KORTIX_PROJECT_ID` inside sandbox).
-`CR-10` response envelopes (assert shape): list → `{change_requests:[…]}`, get → `{change_request:{…}}`, merge → `{change_request, merge}`. (Project DELETE returns `{ok:true}`, not an echoed status.)
+`CR-10` response envelopes (assert shape): list → `{change_requests:[…], next_cursor}`, get → `{change_request:{…}}`, merge → `{change_request, merge}`. (Project DELETE returns `{ok:true}`, not an echoed status.)
+`CR-13` the list is bounded (KRTX-2316): `GET /projects/:id/change-requests` returns one page, newest number first, 50 rows by default, and `next_cursor` (null on the last page); passing it back as `cursor` returns the rows numbered below it. `limit` 1–500; `limit=501` → 400 (no clamp); `limit=0` or a word → 400; a `cursor` that is not a CR number → 400. `kortix cr ls` and `kortix cr show <number>` follow the cursor, so they still reach every change request.
 
 ---
 
@@ -554,6 +555,8 @@ DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `s
 `RV-4` `POST …/review/items/:reviewItemId/act {verdict(approve|reject|changes|answer|dismiss),feedback?}` → `write` + `project.review.act` → 200 updated item; invalid `verdict` → 400; unknown id → 404; adapted (`cr:…`) id → 409 (act from the source view). The list read-model also folds in Change Requests as `kind:change` items (id `cr:<crId>`).
 `RV-5` `POST …/review/bulk {ids:[…],verdict}` → `write` + `project.review.act` → 200 `{updated,review_items}`; empty/missing `ids` → 400.
 `RV-6` access: NONMEMBER list → 403/404; ANON list → 401.
+`RV-7` needs-you counts (KRTX-2316): `GET …/review/summary` → `read` + `project.review.read` → `{needs_you_total, needs_you_by_session}`, counted on the server. An empty inbox → `{0, {}}`; 3 submitted items → 3, an item with no session in the total only; a verdict lowers the count; the total equals the `segment=needs_you` list. A pending connector call counts only for a caller who may resolve it (else it is Waiting). The response stays under 2 KB. NONMEMBER → 403/404; ANON → 401.
+`RV-8` the inbox is bounded (KRTX-2316): `GET …/review/items` returns one page, Needs you then Waiting then Done, newest first within each, and `next_cursor` (null on the last page). `limit` 1–200, default 50; `limit=201`, `limit=0`, a word, a forged `cursor` or a `session_id` that is not a uuid → 400. Following `next_cursor` returns every item once. `segment`, `kind` and `session_id` filter on the server. `GET …/review/items/:id` reads a native id, `cr:<cr_id>` and a pending `call:<execution_id>` with the list's shape and verdict, so a link to an item needs no page; an unknown id → 404.
 
 ---
 
