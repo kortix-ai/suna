@@ -64,7 +64,6 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import {
   fromV1,
-  SESSION_LOG_MINOR,
   type AdapterCapabilities,
   type CapabilityFeatures,
   type ExportCursor,
@@ -97,11 +96,15 @@ const native: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
   freeform_tool_input: false,
 }
-/** From the prototype adapter's tests (OpenCode 1.18.23); the restore (P6.3) is proved against them in `opencode-session-log-restore.test.ts`. */
+/**
+ * `harness_versions` and `schema_minors` name what the oracle suites (`opencode-session-log-restore.test.ts`,
+ * `opencode-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
+ * fails when the pin (runtime-versions.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
+ */
 export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
   harness: 'opencode',
-  harness_versions: '1.18',
-  schema_minors: [SESSION_LOG_MINOR],
+  harness_versions: '1.18.23',
+  schema_minors: [1],
   dialects: ['openai-chat'],
   native,
   // A tool-result attachment becomes a follow-up user turn; a layout is emulated.
