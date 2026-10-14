@@ -2,8 +2,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from '
 import React from 'react';
 // @ts-ignore -- this app has no @types/react-test-renderer
 import { act, create } from 'react-test-renderer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configureKortix } from '@kortix/sdk';
-import { resetIdentityState } from '@kortix/sdk/react';
+import { resetIdentityState, useSessionSync } from '@kortix/sdk/react';
+import { SessionRuntimeProvider, type BoundSession } from '@/components/session/SessionRuntime';
 import { useSavedCopy, type SavedCopyTarget } from './useSavedCopy';
 
 /**
@@ -128,4 +130,91 @@ describe('useSavedCopy', () => {
     expect(view).toEqual({ messages: undefined, empty: false });
     expect(urls).toHaveLength(0);
   });
+});
+
+describe('connect → thread: the window is downloaded once per open (KRTX-189)', () => {
+  // The connecting view reads the saved window while the computer wakes. At
+  // the bind, `SessionRuntimeProvider`'s `useSession` starts the session-open
+  // snapshot and `SessionPage` paints from the SDK's saved-history read (no
+  // `mirror`). Neither may download the window again. The thread can commit
+  // before the bind or with it (`lib/session/project-connect.ts`).
+  const OPEN_ROOT = 'ses_mobile_open_root';
+  let thread: ReturnType<typeof useSessionSync> | null = null;
+
+  function Thread(props: { sessionId: string }) {
+    thread = useSessionSync(OPEN_ROOT, {
+      kortixSessionScope: `p1/${props.sessionId}`,
+      networkEnabled: false,
+    });
+    return null;
+  }
+
+  function Opened(props: { client: QueryClient; session: BoundSession | null; sessionId: string }) {
+    return (
+      <QueryClientProvider client={props.client}>
+        <SessionRuntimeProvider session={props.session}>
+          <Thread sessionId={props.sessionId} />
+        </SessionRuntimeProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  /** The server: `/start` still waking, the snapshot honouring `?transcript=`. */
+  function serveOpen(sessionId: string) {
+    serve((url) => {
+      if (url.includes('/snapshot')) {
+        return {
+          observed_at: '2026-09-26T10:00:01Z',
+          session: { session_id: sessionId, runtime_session_id: OPEN_ROOT, opencode_session_id: OPEN_ROOT },
+          turn: { known: false, reason: 'test' },
+          queue: { known: false, reason: 'test' },
+          transcript: url.includes('transcript=0')
+            ? { known: true, requested: false }
+            : { known: true, requested: true, ...copy(OPEN_ROOT, 2) },
+          config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+          models: { known: false, reason: 'test' },
+        };
+      }
+      if (url.includes('/transcript?')) return copy(OPEN_ROOT, 2);
+      return { stage: 'starting', retriable: true, sandbox: null };
+    });
+  }
+
+  async function settle() {
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+  }
+
+  for (const order of ['bound with the thread', 'thread before the bind'] as const) {
+    test(`${order}: one window read, and the snapshot asks for the pointer only`, async () => {
+      const sessionId = order === 'bound with the thread' ? '11111111-1111-4111-8111-111111111189' : '22222222-2222-4222-8222-222222222189';
+      serveOpen(sessionId);
+      const connecting = await mount(target({ sessionId, rootId: OPEN_ROOT }));
+      expect(connecting.messages).toHaveLength(2);
+      await act(async () => tree.unmount());
+
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const bound = { projectId: 'p1', sessionId };
+      await act(async () => {
+        tree = create(React.createElement(Opened, { client, session: order === 'bound with the thread' ? bound : null, sessionId }));
+      });
+      await settle();
+      if (order === 'thread before the bind') {
+        await act(async () => tree.update(React.createElement(Opened, { client, session: bound, sessionId })));
+        await settle();
+      }
+
+      expect(thread?.messages.map((message) => message.info.id)).toEqual([`msg_${OPEN_ROOT}_1`, `msg_${OPEN_ROOT}_2`]);
+      // This session's reads only: a retry of an earlier test can land late.
+      const windows = urls.filter((url) => url.includes(`/sessions/${sessionId}/transcript?`));
+      const snapshots = urls.filter((url) => url.includes(`/sessions/${sessionId}/snapshot`));
+      expect(windows).toHaveLength(1);
+      expect(snapshots.length).toBeGreaterThan(0);
+      for (const url of snapshots) expect(url).toContain('transcript=0');
+      client.clear();
+    });
+  }
 });

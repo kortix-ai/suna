@@ -3,7 +3,8 @@
  * while the session's computer wakes, and whether the conversation is proven
  * empty. The SDK reads it (`readSavedSessionCopy`, the same saved-history read
  * the web makes) and paints it into its session store (`useSessionSync`), so
- * the thread that opens next starts from the same messages.
+ * the thread that opens next starts from the same messages. The SDK holds the
+ * copy for that open: the thread downloads the window no second time.
  */
 import { useEffect, useState } from 'react';
 import { readSavedSessionCopy, type SavedSessionCopy } from '@kortix/sdk';
