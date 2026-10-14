@@ -213,7 +213,9 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
     type: 'message', id, timestamp: m.created_at,
     message: {
       role: 'assistant', content,
-      ...(m.model?.api ? { api: API[m.model.api] ?? m.model.api } : {}),
+      // A log without `api` (v1, OpenCode-converted) names a gateway model by provider and model, as modelView
+      // compares them: give it the dialect every pi gateway model uses (model.ts), so pi-ai sees the same model.
+      ...(m.model?.api ? { api: API[m.model.api] ?? m.model.api } : m.model?.provider === 'kortix' ? { api: 'openai-completions' } : {}),
       provider: m.model?.provider ?? 'unknown', model: m.model?.model ?? 'unknown',
       usage: piUsage(m.usage), stopReason,
       ...(m.error ? { errorMessage: m.error.message } : {}),
