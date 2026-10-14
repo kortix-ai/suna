@@ -4,7 +4,7 @@
  * Until 2026-10-14 `apps/api/Dockerfile` pinned `BUN_VERSION=1.2` while laptops
  * and CI ran a newer Bun, so a Web/Node API the producer relied on could be
  * missing or broken only in the deployed image (the 2026-08-27 `CompressionStream`
- * learning). The image now runs the test Bun (tests/unit/api-image-bun.test.ts). This
+ * learning). The image now runs the test Bun (tests/unit/image-bun.test.ts). This
  * script exercises the exact AWS SDK call shapes `project-snapshot-store.ts`
  * uses — conditional PutObject (`IfNoneMatch: '*'`) with a Buffer body,
  * duplicate put → 412, HeadObject, GetObject `transformToString`, presigned GET

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { genuiEnabled } from '@/services/sandbox-env/genui'
+import { genuiEnabled } from '@/lib/config/genui'
 
 describe('genui flag', () => {
   test('only KORTIX_GENUI=1 enables it; missing means off', () => {
