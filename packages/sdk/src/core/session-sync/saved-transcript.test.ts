@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
+  SAVED_HISTORY_SNAPSHOT_WAIT_MS,
   type SavedTranscriptInput,
   isEmptyConversation,
+  loadSavedTranscript,
   readSavedSessionCopy,
   resolveSavedTranscript,
   savedCopyEmptyRoot,
@@ -310,5 +312,52 @@ describe('readSavedSessionCopy', () => {
   test('is public, so a host reads the saved copy the way useSession does', async () => {
     const sdk = await import('../../index');
     expect(sdk.readSavedSessionCopy).toBe(readSavedSessionCopy);
+  });
+});
+
+describe('loadSavedTranscript', () => {
+  // The read waits for a session-open snapshot in flight, because the snapshot
+  // carries the same window. It never waits on a hung one: past
+  // SAVED_HISTORY_SNAPSHOT_WAIT_MS the route answers.
+  const ROOT = 'ses_wait_root';
+  const originalFetch = globalThis.fetch;
+  const window = {
+    available: true,
+    reason: null,
+    source: 'mirror',
+    complete: true,
+    captured_at: '2026-09-26T10:00:00Z',
+    opencode_session_id: ROOT,
+    message_count: 1,
+    messages: [{ info: { id: 'msg_1', sessionID: ROOT, role: 'assistant', time: { created: 1 } }, parts: [] }],
+  };
+
+  beforeEach(() => {
+    resetSessionOpenBundles();
+    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    resetSessionOpenBundles();
+  });
+
+  test('the bound is a few seconds: long enough for a snapshot, short enough for a hung one', () => {
+    expect(SAVED_HISTORY_SNAPSHOT_WAIT_MS).toBeGreaterThanOrEqual(1_000);
+    expect(SAVED_HISTORY_SNAPSHOT_WAIT_MS).toBeLessThanOrEqual(3_000);
+  });
+
+  test('a snapshot slower than the wait loses to the saved-history route', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (input: unknown) => {
+      const url = String(input instanceof Request ? input.url : input);
+      urls.push(url);
+      if (url.includes('/snapshot')) return new Promise<Response>(() => {});
+      return Response.json(window);
+    }) as unknown as typeof fetch;
+    openSessionBundle('p1', 's1');
+    const answer = await loadSavedTranscript('p1', 's1', { snapshotWaitMs: 20 });
+    expect(answer.messages).toHaveLength(1);
+    expect(urls.filter((url) => url.includes('/transcript?') && url.includes('history=true'))).toHaveLength(1);
   });
 });
