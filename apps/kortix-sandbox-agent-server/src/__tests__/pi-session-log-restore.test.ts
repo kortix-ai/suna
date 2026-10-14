@@ -441,6 +441,42 @@ describe('a pi session recorded here, restored into a fresh box', () => {
   }, 60_000)
 })
 
+describe('tool-call input key order (P6 follow-up)', () => {
+  /** What a jsonb column does to an object: keys sorted by length, then bytes, at every depth. */
+  const jsonbSorted = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(jsonbSorted)
+    : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.length - b.length || (a < b ? -1 : 1)).map(([k, x]) => [k, jsonbSorted(x)]))
+    : v
+  const ARGS = { timeout: 5, command: 'printf ok', env: { ZED: '1', ALPHA: { yy: [{ b: 1, a: 2 }], b: true } } }
+  /** The `arguments` bytes of every tool call in a request pi sent. */
+  const callBytes = (body: { messages: unknown[] }) =>
+    (body.messages as Array<{ tool_calls?: Array<{ function: { arguments: string } }> }>).flatMap((m) => (m.tool_calls ?? []).map((c) => c.function.arguments))
+
+  test('the next request after a restore carries the call input bytes of the original request; a jsonb-sorted input does not', async () => {
+    const sessionId = 'sess-pi-restore-key-order'
+    const rt = await freshBox(sessionId).start()
+    await turn(rt, 'run it', [{ tool: 'bash', args: ARGS }, { text: 'ran' }])
+    const [originalBody] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
+    const original = callBytes(originalBody!)
+    expect(original).toEqual([JSON.stringify(ARGS)])
+
+    const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+    const nextRequest = async (restoredLog: SessionLog) => {
+      const box = freshBox(sessionId)
+      await restorePiSessionLog(restoredLog, { stateDir: box.stateDir, sessionId, cwd: box.workspace })
+      const [body] = await turn(await box.start(), 'Anything else?', [{ text: 'OK' }])
+      return callBytes(body!)
+    }
+    expect(await nextRequest(log)).toEqual(original)
+    // The control: the input as a jsonb column returns it changes the bytes (the prompt-cache miss P6.6 measured).
+    const sorted = structuredClone(log)
+    for (const t of sorted.threads) for (const m of t.messages) for (const b of m.blocks) if (b.type === 'tool_call') b.input = jsonbSorted(b.input)
+    const missed = await nextRequest(sorted)
+    expect(missed).toHaveLength(1)
+    expect(missed).not.toEqual(original)
+  }, 60_000)
+})
+
 describe('P2.10 and P2.12 on the real pi runtime', () => {
   afterEach(() => resetSessionLogJournalForTests())
 

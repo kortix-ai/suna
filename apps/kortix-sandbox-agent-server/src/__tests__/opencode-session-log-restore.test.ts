@@ -357,6 +357,43 @@ describe('an OpenCode session recorded here, restored into a fresh box', () => {
   }, 120_000)
 })
 
+describe('tool-call input key order (P6 follow-up)', () => {
+  /** What a jsonb column does to an object: keys sorted by length, then bytes. */
+  const jsonbSorted = (v: Record<string, unknown>) => Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.length - b.length || (a < b ? -1 : 1)))
+  const ARGS = { description: 'print ok', command: 'printf ok' }
+  const callBytes = (body: ChatBody) =>
+    (body.messages as Array<{ tool_calls?: Array<{ function: { arguments: string } }> }>).flatMap((m) => (m.tool_calls ?? []).map((c) => c.function.arguments))
+
+  test('the next request after a restore carries the call input bytes of the original request; a jsonb-sorted input does not', async () => {
+    const sessionId = 'sess-oc-restore-key-order'
+    const recorded = box(sessionId)
+    const live = await recorded.serve()
+    const { id: rootId } = (await post(live, '/session', {})) as { id: string }
+    // The first prompt also asks for a title (a request without tools); the call goes in the second.
+    await prompt(live, rootId, 'hello', [{ text: 'hi' }, { text: 'Title' }])
+    await prompt(live, rootId, 'run it', [{ tool: 'bash', args: ARGS }, { text: 'ran' }])
+    const [originalBody] = await prompt(live, rootId, 'Anything else?', [{ text: 'OK' }])
+    await live.stop()
+    const original = callBytes(originalBody!)
+    expect(original).toEqual([JSON.stringify(ARGS)])
+
+    const { log } = openCodeSessionLog({ sessionId, rootId, store: new OpencodeDb(recorded.dbPath).storeSnapshot()!, seqs: {} })
+    const nextRequest = async (restoredLog: SessionLog) => {
+      const b = box(sessionId)
+      await b.port.restore(restoredLog)
+      const [body] = await prompt(await b.serve(), b.native(rootId), 'Anything else?', [{ text: 'OK' }])
+      return callBytes(body!)
+    }
+    expect(await nextRequest(log)).toEqual(original)
+    // The control: the input as a jsonb column returns it changes the bytes (the prompt-cache miss P6.6 measured).
+    const sorted = structuredClone(log)
+    for (const t of sorted.threads) for (const m of t.messages) for (const b of m.blocks) if (b.type === 'tool_call') b.input = jsonbSorted(b.input as Record<string, unknown>)
+    const missed = await nextRequest(sorted)
+    expect(missed).toHaveLength(1)
+    expect(missed).not.toEqual(original)
+  }, 60_000)
+})
+
 describe('a second restore and the seq floor', () => {
   test('restore, a turn journaled under the restored root, restore again: one root, the oracle passes', async () => {
     const log = load('opencode')
