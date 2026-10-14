@@ -1,5 +1,5 @@
 {
-  "source_hash": "2a9043422426cd9d7deb79bc799fce2c55619ea92ec7ada8ce93e5be51ecf744",
+  "source_hash": "6c63612cb9323f60de39f94b0af8efdfea41eae5c3cbb6f7b8058839fa6b9188",
   "diff_files": [
     ".agents/skills/kortix-brand/references/verbal/claims.md",
     ".agents/skills/kortix-brand/references/verbal/positioning.md",
@@ -147,6 +147,7 @@
     "apps/web/content/docs/audit-actions.mdx",
     "apps/web/content/docs/credits.mdx",
     "apps/web/content/docs/sdk/reference.mdx",
+    "apps/web/scripts/audit-i18n.mjs",
     "apps/web/src/app/[locale]/(app)/projects/[id]/page.tsx",
     "apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx",
     "apps/web/src/app/[locale]/(public)/(marketing)/pricing/page.tsx",
@@ -154,6 +155,7 @@
     "apps/web/src/app/[locale]/admin/accounts/page.tsx",
     "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
+    "apps/web/src/components/projects/project-onboarding-wizard.tsx",
     "apps/web/src/features/accounts/hub/account-hub-content.tsx",
     "apps/web/src/features/accounts/settings/billing-tab.test.tsx",
     "apps/web/src/features/accounts/settings/billing-tab.tsx",
@@ -162,7 +164,7 @@
     "apps/web/src/features/billing/claim-per-seat-card.tsx",
     "apps/web/src/features/billing/compute-pricing.test.ts",
     "apps/web/src/features/billing/compute-pricing.ts",
-    "apps/web/src/features/billing/credit-plan-picker.tsx",
+    "apps/web/src/features/billing/credit-tier-select.tsx",
     "apps/web/src/features/billing/global-upgrade-modal.tsx",
     "apps/web/src/features/billing/plan-card.test.ts",
     "apps/web/src/features/billing/plan-card.tsx",
@@ -234,13 +236,13 @@
     "tests/src/flows/billing.flow.ts",
     "tests/src/flows/retired.flow.ts"
   ],
-  "diff_hash": "410803a315589c80696b7b64fc92349a92f11c20fd5057c357cdce1dff851b59",
-  "head": "b08ea4a4b5f3f9f3f1308527ba844d1284b91a3f",
+  "diff_hash": "b5dcbfa4500415424dac20138ade9e9448ead7240f071d6b14f52938cfa34ac0",
+  "head": "577c7c6aac03a913034dbdfd58e4a6b3478ea6c4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T00:44:07.172Z"
+  "at": "2026-10-14T02:43:05.935Z"
 }
