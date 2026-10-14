@@ -53,8 +53,6 @@
  */
 
 import type { Context, Next } from 'hono';
-import { Readable } from 'node:stream';
-import { createDeflate, createGzip } from 'node:zlib';
 
 /**
  * The smallest body worth compressing, and the exact number of bytes this
@@ -65,22 +63,6 @@ import { createDeflate, createGzip } from 'node:zlib';
  * most API responses (`{"ok":true}`, a status poll, a 402) are far below it.
  */
 export const COMPRESSION_MIN_BYTES = 1024;
-
-/**
- * Whether THIS runtime can compress at all. `CompressionStream` is a Web API
- * that Bun 1.2 (the API image's pinned major, `apps/api/Dockerfile`
- * `BUN_VERSION`) does not implement, while Bun 1.3 — every laptop and CI lane
- * — does. Checked per call, not once at import, so a test can remove the
- * global and prove the fail-open path; the cost is one property read.
- *
- * Fail OPEN: without the API the middleware must not touch the body. The
- * first deploy of this file threw `ReferenceError: CompressionStream is not
- * defined` AFTER peeking the body, so on dev every response of 1 KiB or more
- * answered 500 while `/health` stayed green (2026-08-26 22:41 → 2026-08-27).
- */
-export function compressionAvailable(): boolean {
-  return typeof (globalThis as { CompressionStream?: unknown }).CompressionStream === 'function';
-}
 
 /**
  * Content types worth compressing.
@@ -240,44 +222,6 @@ function restream(
   });
 }
 
-
-/**
- * Bun < 1.3 — the `oven/bun:1.2-slim` runtime image — does not define
- * `CompressionStream`. Calling it there turned every compressible response into
- * a 500 (`ReferenceError: CompressionStream is not defined`; SampleCo,
- * 2026-08-26), while local Bun 1.3.14 has it, so every local test passed.
- * Feature-detect once and fall back to `node:zlib`, which streams on every Bun
- * this repo runs.
- */
-/** `body` piped through the requested encoding, on native or zlib plumbing. */
-export function compressedStream(
-  encoding: 'gzip' | 'deflate',
-  body: ReadableStream<Uint8Array>,
-  useNative: boolean = compressionAvailable(),
-): ReadableStream<Uint8Array> {
-  if (useNative) {
-    try {
-      return body.pipeThrough(
-        new CompressionStream(encoding) as unknown as ReadableWritablePair<
-          Uint8Array,
-          Uint8Array
-        >,
-      );
-    } catch (err) {
-      // Present but broken (or an encoding it does not implement): fall through
-      // to zlib rather than 500 a response that was perfectly fine.
-      console.warn('[compress] CompressionStream failed — using node:zlib', {
-        encoding,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-  const zlib = encoding === 'gzip' ? createGzip() : createDeflate();
-  return Readable.toWeb(
-    Readable.fromWeb(body as unknown as Parameters<typeof Readable.fromWeb>[0]).pipe(zlib),
-  ) as unknown as ReadableStream<Uint8Array>;
-}
-
 /**
  * Compress eligible responses. Mount once, globally, at the OUTSIDE of the
  * middleware chain so it sees the final response of every route.
@@ -335,16 +279,17 @@ export async function compressResponse(c: Context, next: Next): Promise<void> {
   }
 
   // The body has been partially consumed by the peek, so from here on the
-  // ONLY correct outcome is "compressed": `compressedStream` uses the native
-  // CompressionStream when the runtime has one and node:zlib when it does not
-  // (the Bun 1.2 runtime image), and never throws for a healthy response.
+  // ONLY correct outcome is "compressed".
   headers.set('content-encoding', encoding);
   // The compressed length is unknown until the stream ends, so any declared
   // length must go: keeping it would describe the wrong number of bytes and the
   // client would truncate or hang. Bun frames the response as chunked instead.
   headers.delete('content-length');
 
-  c.res = new Response(compressedStream(encoding, restream(peek.chunks, reader)), {
+  const compressed = restream(peek.chunks, reader).pipeThrough(
+    new CompressionStream(encoding) as unknown as ReadableWritablePair<Uint8Array, Uint8Array>,
+  );
+  c.res = new Response(compressed, {
     status: res.status,
     statusText: res.statusText,
     headers,
