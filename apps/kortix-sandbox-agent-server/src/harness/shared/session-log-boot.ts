@@ -23,7 +23,10 @@
  *   message the store deleted after holding it (a revert not yet tombstoned: `held()` keeps
  *   its id) never make the store behind. Content hashes are not compared: a store with unsent
  *   edits differs from the log by design, and the journal sends the difference.
- * - The restore. `POST …/log/restore` claims the next generation; the attachment bytes are
+ * - The restore. Before the first `POST …/log/restore`, `session-log-restore.json` gets a `claiming`
+ *   mark; the answer that settles it (a restore, 404, 503) clears it, and so does a later boot whose
+ *   manifest shows no claim above this box. While it stands, a manifest that cannot be read fails
+ *   the boot even with a store. `POST …/log/restore` claims the next generation; the attachment bytes are
  *   read while the texts are; the adapter writes the log; this box's generation, the ids the
  *   write left out and the D3 notice persist in `session-log-restore.json` in the runtime state
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
@@ -57,7 +60,7 @@ import {
   type SessionLogSessionPatch,
   type SessionLogThread,
 } from '@kortix/api-contract/session-log'
-import { mintWireMessageIdAbove, wireIdClock, wireIdClockDelta } from '@kortix/sdk/wire-message-id'
+import { mintWireMessageId } from '@kortix/sdk/wire-message-id'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { sandboxRelayContext, type SandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { logger } from '@/lib/log/logger'
@@ -80,7 +83,8 @@ export type SessionLogBoot = {
 /** The log's harness history at the restore, and the root seq and time from which this box's harness serves the session. */
 export type HarnessCarry = { history: SessionLog['harness']['history']; from_seq: number; at: string }
 
-type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry }
+/** `claiming`: a restore POST went out and no answer settled it; the API may hold a claim above `generation`. */
+type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry; claiming?: true }
 
 export const sessionLogBootStatePath = () => join(resolveKortixRuntimeStateDirectory(), 'session-log-restore.json')
 
@@ -103,6 +107,15 @@ function writeState(s: BootState): void {
 
 const kept = (s: BootState): SessionLogBoot => ({ generation: s.generation, cursors: [], ...(s.session && { session: s.session }), ...(s.harness && { harness: s.harness }) })
 
+/** No claim above `generation` stands: clear the mark a restore POST left. */
+function settled(s: BootState): SessionLogBoot {
+  if (s.claiming) {
+    const { claiming: _, ...rest } = s
+    writeState(rest)
+  }
+  return kept(s)
+}
+
 export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_000 } = {}): Promise<SessionLogBoot | null> {
   const ctx = sandboxRelayContext()
   if (!ctx) return null
@@ -113,18 +126,23 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   try {
     manifest = await attempts('manifest', retryMs, () => readManifest(ctx))
   } catch (err) {
-    // No claim happens before the manifest: a box with a store boots on it; only a box with no store fails.
-    if (!held) throw err
+    // No claim happens before the manifest: a box with a store boots on it. A box with no store fails, and so
+    // does one whose earlier restore POST may have claimed (`claiming`): its store may be below that claim.
+    if (!held || state.claiming) throw err
     logger.warn('[session-log] the manifest did not answer; the box keeps its native store', { err: String(err), generation: state.generation })
     return kept(state)
   }
-  if (!manifest) return kept(state)
+  if (!manifest) return settled(state)
   const why = behind(manifest, held, state)
-  if (!why) return kept(state)
+  // A claim that committed raised the manifest generation above this box's, which reads as behind.
+  if (!why) return settled(state)
   logger.info('[session-log] the native store is behind the log; restoring', { why, generation: manifest.generation, persisted: state.generation })
+  // The mark goes to disk before the first POST: the API commits a claim before it answers, so a box
+  // that dies or fails after it must not keep its store at a later boot that cannot read the manifest.
+  writeState({ ...state, claiming: true })
   // Each attempt claims a generation before it can fail: a box that kept its store after a failed
   // restore would post below the claim (409) and restore over that boot's turns at the next boot.
-  return attempts('restore', retryMs, async () => (await restore(ctx, port)) ?? kept(state))
+  return attempts('restore', retryMs, async () => (await restore(ctx, port)) ?? settled({ ...state, claiming: true }))
 }
 
 async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>): Promise<T> {
@@ -238,20 +256,14 @@ export const RESTORE_NOTE_BLOCK_PREFIX = 'prt_kortix_restore_g'
 export const isRestoreNote = (m: { blocks: ReadonlyArray<{ id: string }> }) => m.blocks.some((b) => b.id.startsWith(RESTORE_NOTE_BLOCK_PREFIX))
 
 /**
- * The note's id is a wire id (`mintWireMessageIdAbove`, backdated as a client prompt is) above every
- * id of the thread, so hosts that order placed messages by id show it after the restored history
- * and before the next turn.
+ * The note's id is a wire id minted as a client prompt's is (`mintWireMessageId`, above every id of the
+ * thread), so hosts that order placed messages by id show it after the restored history and before
+ * the next turn.
  */
 function noteMessage(thread: SessionLogThread, seq: number, generation: number, text: string): SessionLogMessage {
   const at = new Date().toISOString()
-  let floor: bigint | null = null
-  for (const m of thread.messages) {
-    const clock = wireIdClock(m.message_id)
-    if (clock !== null && (floor === null || wireIdClockDelta(clock, floor) > BigInt(0))) floor = clock
-  }
-  const { id } = mintWireMessageIdAbove({ nowMs: Date.now(), newestKnownTime: floor })
   return {
-    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: id, thread_id: thread.thread_id, seq,
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: mintWireMessageId({ after: thread.messages.map((m) => m.message_id) }), thread_id: thread.thread_id, seq,
     role: 'user', kind: 'turn', status: 'complete', in_context: true, origin: 'notification',
     model: null, usage: null, finish: null, error: null, created_at: at, completed_at: at,
     producer: { harness: 'kortix', harness_version: 'restore', adapter_version: '1' },
