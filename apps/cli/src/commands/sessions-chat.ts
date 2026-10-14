@@ -14,6 +14,7 @@ import {
   sessionLogOfV1Rows,
   sessionModelPin,
 } from '@kortix/sdk';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
@@ -110,7 +111,7 @@ const fileText = (name: string | undefined) => `${C.faded}[file${name ? ` · ${n
 function blockToText(block: SessionLogBlock, streaming: boolean): string {
   switch (block.type) {
     case 'text':
-      return block.synthetic ? '' : block.text;
+      return block.synthetic ? '' : genuiToMarkdown(block.text, { streaming });
     case 'reasoning':
       return `${C.dim}[reasoning] ${block.text}${C.reset}`;
     case 'tool_call': {
@@ -133,17 +134,28 @@ function blockToText(block: SessionLogBlock, streaming: boolean): string {
   }
 }
 
+/** A session-log message's blocks as text; a still-streaming genui block never prints the cut-off note. */
+function logMessageText(message: SessionLogMessage): string {
+  const streaming = message.status === 'streaming';
+  return message.blocks
+    .map((block) => blockToText(block, streaming))
+    .filter((text) => text.length > 0)
+    .join('\n');
+}
+
+/** A v1 message's text, as `sessions chat` prints it. */
+export function extractMessageText(msg: MessageWithParts): string {
+  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
+  return message ? logMessageText(message) : '';
+}
+
 /** Print one session-log message: a role header, its blocks as text, and its error. */
 export function printLogMessage(message: SessionLogMessage): void {
   const role = message.kind === 'compaction' ? 'compaction' : message.role;
   const color = role === 'user' || role === 'system' ? C.green : C.cyan;
   const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
   process.stdout.write(`\n${color}${C.bold}${role}${C.reset} ${C.faded}${ts}${C.reset}\n`);
-  const streaming = message.status === 'streaming';
-  const body = message.blocks
-    .map((block) => blockToText(block, streaming))
-    .filter((text) => text.length > 0)
-    .join('\n');
+  const body = logMessageText(message);
   if (body) {
     for (const line of body.split('\n')) process.stdout.write(`  ${line}\n`);
   }
@@ -1276,7 +1288,8 @@ export function deriveActivity(
     return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
   }
 
-  // Otherwise the last assistant turn is done — summarize its reply.
+  // Otherwise the last assistant turn is done (or failed) — summarize its reply. A turn still
+  // streaming returned "working…" above, so a cut-off note here is real.
   const completed = lastInfo.time?.completed;
   const text = last.parts
     .filter(
@@ -1285,7 +1298,7 @@ export function deriveActivity(
         !(p as { synthetic?: boolean }).synthetic &&
         typeof (p as { text?: string }).text === 'string',
     )
-    .map((p) => (p as { text: string }).text)
+    .map((p) => genuiToMarkdown((p as { text: string }).text))
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();

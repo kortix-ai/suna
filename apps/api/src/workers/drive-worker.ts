@@ -2,7 +2,7 @@
 //
 // - the conflict scanner (see drives/conflicts.ts);
 // - the volume deletion queue: `kortix.platinum_volume_deletions` holds every
-//   volume whose owner row is gone (a drive, a session's state volume). A
+//   volume whose owner row is gone (a drive). A
 //   trigger fills it on every delete path, cascades included; this drains it.
 //   A volume still held by a sandbox answers 409 and is retried with backoff.
 // - the revocation retry: a session sandbox whose folder access narrowed but
@@ -29,14 +29,6 @@ let retryingRevocations = false;
 
 /** How often a revocation whose detach did not land is tried again (each row backs off on its own). */
 const REVOCATION_TICK_MS = 15_000;
-
-/** Queue a volume for deletion (idempotent). `delayMs` lets a box that still holds it go first. */
-export async function queueVolumeDeletion(volumeName: string, reason: string, delayMs = 0): Promise<void> {
-  await db
-    .insert(platinumVolumeDeletions)
-    .values({ volumeName, reason, notBefore: new Date(Date.now() + delayMs) })
-    .onConflictDoNothing();
-}
 
 export async function drainVolumeDeletions(limit = 20): Promise<{ deleted: number; deferred: number }> {
   if (draining || !driveStorageAvailable()) return { deleted: 0, deferred: 0 };

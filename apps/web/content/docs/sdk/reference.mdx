@@ -248,7 +248,7 @@ These methods read the project repository. To read and write files in a running 
 | `git.branches()` · `git.versionDiff(…)` | Branches · the diff between two refs. |
 | `git.inviteCollaborator(…)` | Invite a GitHub user to a Kortix-managed repository. |
 | `gitToken()` | A fresh scoped push token for a Kortix-managed repository. A bring-your-own repository returns `409`. |
-| `changeRequests.list()` · `.get(crId)` · `.diff(crId)` · `.mergePreview(crId)` | Read change requests. |
+| `changeRequests.list(status?, { limit?, cursor? })` · `.get(crId)` · `.diff(crId)` · `.mergePreview(crId)` | Read change requests. `list` returns one page, newest number first: 50 by default, at most 500. Pass `next_cursor` back as `cursor`; it is `null` on the last page. |
 | `changeRequests.open(input)` · `.update(crId, input)` · `.merge(crId, input?)` · `.close(crId, input?)` · `.reopen(crId, input?)` | Change request lifecycle. |
 | `changeRequests.requestChanges(crId, input)` | Record feedback and, optionally, send it to the session that made the change. |
 
@@ -269,7 +269,8 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 
 | Method | What it does |
 | --- | --- |
-| `review.list(params?)` · `.get(id)` · `.submit(input)` · `.act(id, …)` · `.bulkAct(input)` | The Review page inbox: change requests, approvals and agent outputs. |
+| `review.list(params?)` · `.get(id)` · `.submit(input)` · `.act(id, …)` · `.bulkAct(input)` | The Review page inbox: change requests, approvals and agent outputs. `list` returns one page (`{ review_items, next_cursor }`, 50 items by default, at most 200): Needs you, then Waiting, then Done. Filter with `segment`, `kind` and `sessionId`; pass `next_cursor` back as `cursor`. A walk is not a snapshot: an item decided between two pages can come back on a later page, so key the rows by `review_item_id`. `get` reads any item by id, including `cr:<id>` and a pending `call:<id>`. `useReviewItemPages(projectId, query)` (`@kortix/sdk/react`) is the same list as an infinite query; read its rows with `reviewItemsOf(query.data)`. |
+| `review.summary()` | `{ needs_you_total, needs_you_by_session }`: what waits on the caller, counted on the server. Read it for a badge or a per-session dot, never the list. `useReviewSummary(projectId)` polls it every 60 seconds. |
 | `approvals.list(options?)` · `approvals.sessionsNeedingInput(options?)` | Connector calls that wait for a decision · sessions blocked on one or on an open agent question, with a count per session. `useSessionsNeedingInput(projectId)` (`@kortix/sdk/react`) reads the same list every 30 seconds, and again on each question event of an open session. |
 | `approvals.resolve(executionId, 'approve' \| 'deny', { note? })` | Decide one call. `note` goes to the agent as an instruction. A decision covers that call only. |
 

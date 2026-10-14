@@ -839,6 +839,12 @@ test('restartProjectSession POSTs to /restart', async () => {
   expect(result.status).toBe('provisioning');
 });
 
+test('restartProjectSession sends no reset: persistent machines are gone, reset_machine is ignored', async () => {
+  nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'provisioning' } };
+  await restartProjectSession('P1', 'S1', { reset_machine: true, discard_state: true });
+  expect(last().body).toEqual({});
+});
+
 test('getProjectSessionConfigState GETs /config', async () => {
   nextResponse = {
     status: 200,

@@ -69,7 +69,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/session/session-list': { sessionDisplayTitle: (row: any) => row?.name ?? null, resolveSessionTitle: (row: any) => row?.name ?? null, subsessionTitle: (child: any) => child.title },
   '@/lib/session/sub-agents': { subAgentRelation: (_row: any, parent: any) => (parent ? { type: 'child', parent } : null), subAgentsOf: () => [] },
   '@tanstack/react-query': { useQueryClient: () => queryClient },
-  '@/lib/review/use-review': { useReviewItems: () => ({ data: reviewData }) },
+  '@/lib/review/use-review': { useReviewNeedsYou: () => ({ total: reviewData.length, items: reviewData }) },
   '@/lib/session/needs-you': { needsYouBySession: (items: any[], summary?: any) => new Map([...items.map((item): [string, any] => [item.session_id, item]), ...Object.entries(summary?.sessions ?? {})]) },
   '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, sessionParentId: (row: any) => row?.parent_session_id ?? null, runtimeSessionsOf: (row: any) => row.runtime_sessions ?? [], SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
     sessionStartKey: (projectId: string, sessionId: string) => ['start', projectId, sessionId],
