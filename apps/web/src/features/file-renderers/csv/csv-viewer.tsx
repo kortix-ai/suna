@@ -586,7 +586,7 @@ export function CsvViewer({
       data: parsed.rows,
     });
 
-    downloadTextFile(text, ensureCsvExtension('data.csv'), 'text/csv;charset=utf-8');
+    downloadTextFile(text, ensureCsvExtension(fileName || 'data.csv'), 'text/csv;charset=utf-8');
   }
 
   return (
