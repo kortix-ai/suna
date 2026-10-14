@@ -1,5 +1,5 @@
 {
-  "source_hash": "4624d604def0978fcd02cdfec069a949991df74712ddbf0ca07fe80f18c68b31",
+  "source_hash": "3b69fc7bd9299aa288da005208e1650d38ceb766171d0d9bb48c925a9b33df03",
   "diff_files": [
     "apps/web/src/components/markdown/file-links.test.ts",
     "apps/web/src/components/markdown/file-links.ts",
@@ -7,16 +7,19 @@
     "apps/web/src/components/markdown/unified-markdown.test.tsx",
     "apps/web/src/components/markdown/unified-markdown.tsx",
     "apps/web/src/features/file-viewer/file-content-renderer.tsx",
+    "apps/web/src/features/session/action-panel/easy/file-viewer.test.tsx",
+    "apps/web/src/features/session/action-panel/easy/file-viewer.tsx",
     "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
-    "apps/web/src/features/workspace/capabilities/shared/entity/entity-modal.tsx"
+    "apps/web/src/features/workspace/capabilities/shared/entity/entity-modal.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "c67bf69a7b8b96cf274e4ed37b80c7c7463bd386dd6e87b343092859131723c1",
-  "head": "cd3b1ee41ff89ef519c8666b0d67d8ac703d0b27",
+  "diff_hash": "336142a4e94ab08914ea4a5bbe78d49564f8bcf954b7e8d5b0ec6d94e0a3b1b2",
+  "head": "08c67a89e6fa3c876dfab7dac0cd5e2af8530584",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T05:01:53.135Z"
+  "at": "2026-10-14T15:16:56.664Z"
 }
