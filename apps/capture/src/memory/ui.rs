@@ -200,7 +200,7 @@ mod window {
     use super::*;
     use std::sync::Arc;
     use tao::dpi::LogicalSize;
-    use tao::event::{Event, WindowEvent};
+    use tao::event::{Event, StartCause, WindowEvent};
     use tao::event_loop::{ControlFlow, EventLoopBuilder};
     use tao::window::WindowBuilder;
     use wry::http::{header, Response};
@@ -211,6 +211,8 @@ mod window {
         Close,
         /// Clipboard text for the field in focus (the window has no Edit menu).
         Paste(String),
+        /// The window stops floating once it is in front.
+        Unfloat,
     }
 
     /// `kmem://localhost/` on macOS and Linux, `http://kmem.localhost/` on Windows.
@@ -274,6 +276,7 @@ mod window {
         let handler_ctx = ctx.clone();
         let ipc_ctx = ctx.clone();
         let close_proxy = proxy.clone();
+        let unfloat_proxy = proxy.clone();
         let hash = format!("#{}", urlencoding::encode(&target.to_json().to_string()));
         let builder = WebViewBuilder::new()
             .with_asynchronous_custom_protocol("kmem".into(), move |_id, request, responder| {
@@ -348,6 +351,22 @@ mod window {
                     *control_flow = ControlFlow::Exit;
                 }
                 // Opening the app while this window is its registered instance.
+                // An accessory app launched by another process starts behind the others, and a
+                // focus request before the loop runs is ignored: ask again once it runs.
+                Event::NewEvents(StartCause::Init) => {
+                    // Float above the other apps' windows for a moment (an accessory app is not
+                    // activated by a launch from a script), then behave as a normal window.
+                    window.set_always_on_top(true);
+                    window.set_focus();
+                    let p = unfloat_proxy.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(700));
+                        let _ = p.send_event(UiEvent::Unfloat);
+                    });
+                }
+                Event::UserEvent(UiEvent::Unfloat) => {
+                    window.set_always_on_top(false);
+                }
                 Event::Reopen { .. } => {
                     window.set_minimized(false);
                     window.set_focus();
@@ -377,6 +396,12 @@ mod window {
                     ));
                     window.set_minimized(false);
                     window.set_focus();
+                    window.set_always_on_top(true);
+                    let p = unfloat_proxy.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(700));
+                        let _ = p.send_event(UiEvent::Unfloat);
+                    });
                 }
                 _ => {}
             }

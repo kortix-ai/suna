@@ -1071,9 +1071,535 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  macos-personal:
+    name: macOS pkg, personal install (onboarding, background-always, no Dock)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      EV: ${{ github.workspace }}/evidence
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust (stable)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --no-self-update
+          rustup default stable
+          rustup target add aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/capture
+          key: capture-pkg-personal
+      - name: Window script tests
+        working-directory: apps/capture
+        run: |
+          mkdir -p "$EV"
+          node ui/memory/settings.test.mjs
+          node ui/memory/timeline.test.mjs
+      - name: Build the arm64 pkg and expand it
+        working-directory: apps/capture
+        env:
+          ARCHS: arm64
+          APPLE_CODESIGN_IDENTITY: "-"
+        run: |
+          installer/macos/build-pkg.sh "$TAG" "$RUNNER_TEMP/pkg/KortixCapture-$TAG-arm64.pkg" 2>&1 | tee "$EV/build.txt"
+          pkgutil --expand-full "$RUNNER_TEMP/pkg/KortixCapture-$TAG-arm64.pkg" "$RUNNER_TEMP/expanded"
+          app="$(find "$RUNNER_TEMP/expanded" -name 'Kortix Capture.app' -maxdepth 4 | head -1)"
+          echo "APP=$app" >> "$GITHUB_ENV"
+          plutil -p "$app/Contents/Info.plist" > "$EV/info-plist.txt"
+          # The icon: an .icns with every size, and the largest is the 1024 master.
+          iconutil -c iconset "$app/Contents/Resources/kortix-capture.icns" -o "$RUNNER_TEMP/icon.iconset"
+          ls "$RUNNER_TEMP/icon.iconset" | tee "$EV/iconset.txt"
+          sips -g pixelWidth "$RUNNER_TEMP/icon.iconset/icon_512x512@2x.png" | tee -a "$EV/iconset.txt"
+      - name: S3 (versitygw) and the CI stand-in for Kortix
+        run: |
+          d="$RUNNER_TEMP/s3"; mkdir -p "$d/data" "$d/bin"
+          gh release download v1.8.0 --repo versity/versitygw -p "versitygw_v1.8.0_Darwin_arm64.tar.gz" -D "$d"
+          tar -xzf "$d/versitygw_v1.8.0_Darwin_arm64.tar.gz" -C "$d/bin"
+          gw="$(find "$d/bin" -name versitygw -type f | head -1)"
+          nohup "$gw" --port 127.0.0.1:9000 --access cikortix --secret cikortix-secret-123 posix "$d/data" > "$EV/versitygw.out.log" 2> "$EV/versitygw.err.log" &
+          sleep 4
+          token="kortix_enr_ci$(uuidgen | tr -d - | tr A-Z a-z)"
+          echo "::add-mask::$token"
+          echo "TOKEN=$token" >> "$GITHUB_ENV"
+          echo "S3DATA=$d/data" >> "$GITHUB_ENV"
+          nohup python3 apps/capture/scripts/ci_fake_issuer.py --port 8787 --token "$token" --log "$EV/issuer.jsonl" --approve-after 10 \
+            --s3-endpoint http://127.0.0.1:9000 --bucket capture --access-key cikortix --secret-key cikortix-secret-123 \
+            > "$EV/issuer.out.log" 2> "$EV/issuer.err.log" &
+          for i in $(seq 1 15); do curl -s -o /dev/null -X POST http://127.0.0.1:8787/v1/nothing && break; sleep 2; done
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: A screen that changes every second
+        run: |
+          # The recorder saves a frame only when the screen changed. Terminal runs the clock.
+          printf '#!/bin/bash\nwhile true; do clear; echo KORTIX CAPTURE APP VERIFY; date +%%T; sleep 1; done\n' > "$RUNNER_TEMP/clock.command"
+          chmod +x "$RUNNER_TEMP/clock.command"
+          open "$RUNNER_TEMP/clock.command" || true
+          # The clock sits in the bottom-right corner: it must not cover the app's window in the screenshots.
+          sleep 4
+          osascript >/dev/null 2>&1 <<'APPLESCRIPT' || true
+          tell application "System Events"
+            tell process "Terminal"
+              set position of window 1 to {640, 600}
+              set size of window 1 to {360, 110}
+            end tell
+          end tell
+          APPLESCRIPT
+      - name: Plant a legacy install (old tray and service agents, a copy in ~/Applications)
+        run: |
+          uid="$(id -u)"
+          old="$HOME/Applications/Kortix Capture.app/Contents/MacOS"
+          mkdir -p "$old" "$HOME/Library/LaunchAgents" "$HOME/Library/Application Support/ai.kortix.capture"
+          printf '#!/bin/sh\nexec sleep 3000\n' > "$old/kortix-tray"; chmod +x "$old/kortix-tray"
+          printf '#!/bin/sh\nexec sleep 3001\n' > "$old/Kortix Capture"; chmod +x "$old/Kortix Capture"
+          echo "personal library file" > "$HOME/Library/Application Support/ai.kortix.capture/keep.txt"
+          for spec in "ai.kortix.capture.tray|$old/kortix-tray" "ai.kortix.capture.service.deadbeef|$old/Kortix Capture"; do
+            label="${spec%%|*}"; prog="${spec#*|}"
+            cat > "$HOME/Library/LaunchAgents/$label.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict><key>Label</key><string>$label</string>
+          <key>ProgramArguments</key><array><string>$prog</string></array>
+          <key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>
+          PLIST
+            launchctl bootstrap "gui/$uid" "$HOME/Library/LaunchAgents/$label.plist" || true
+          done
+          sleep 3
+          { ls "$HOME/Library/LaunchAgents"; pgrep -fl "$HOME/Applications/Kortix Capture.app" || true; } | tee "$EV/legacy-planted.txt"
+          grep -q kortix-tray "$EV/legacy-planted.txt" || echo "warning: the planted tray is not running"
+      - name: Install the pkg on a personal computer (no configuration); onboarding opens
+        run: |
+          shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
+          sudo installer -pkg "$RUNNER_TEMP/pkg/KortixCapture-$TAG-arm64.pkg" -target / 2>&1 | tee "$EV/installer.txt"
+          exe="/Applications/Kortix Capture.app/Contents/MacOS/Kortix Capture"
+          echo "EXE=$exe" >> "$GITHUB_ENV"
+          lib="$HOME/Library/Application Support/ai.kortix.capture"
+          echo "LIB=$lib" >> "$GITHUB_ENV"
+          # The installer opens the window once, on onboarding. The recorder already runs in the background.
+          t0=$SECONDS
+          until [ -f "$lib/ui.lock" ] || [ $((SECONDS - t0)) -ge 90 ]; do sleep 1; done
+          echo "ui.lock after $((SECONDS - t0)) s: $([ -f "$lib/ui.lock" ] && echo yes || echo no)" | tee "$EV/window.txt"
+          t0=$SECONDS; state=""
+          until [ -n "$state" ] && [ "$state" != "not_recording" ] || [ $((SECONDS - t0)) -ge 90 ]; do
+            sleep 3; state="$("$exe" --json status 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
+          done
+          echo "state before the permission: $state" | tee "$EV/state-before-permission.txt"
+          "$exe" --json onboard --status > "$EV/onboarding-status-install.json" 2>&1 || true
+          sleep 6
+          shot onboarding-permission
+          # Allow Screen Recording (the runner image may refuse the TCC write: the shot above then stays the last step).
+          for db in "/Library/Application Support/com.apple.TCC/TCC.db" "$HOME/Library/Application Support/com.apple.TCC/TCC.db"; do
+            sudo sqlite3 "$db" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, flags, last_modified) VALUES ('kTCCServiceScreenCapture','ai.kortix.capture',0,2,4,1,0,strftime('%s','now'));" >> "$EV/tcc.txt" 2>&1 && echo "tcc write ok: $db" >> "$EV/tcc.txt" || echo "tcc write refused: $db" >> "$EV/tcc.txt"
+          done
+          cat "$EV/tcc.txt"
+          t0=$SECONDS; state=""
+          until [ "$state" = "recording" ] || [ $((SECONDS - t0)) -ge 150 ]; do
+            sleep 3; state="$("$exe" --json status 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
+          done
+          echo "state after install: $state (after $((SECONDS - t0)) s)" | tee "$EV/state-after-install.txt"
+          sleep 8
+          # The window the installer opened is the one in front (an accessory app still takes focus).
+          killall UserNotificationCenter 2>/dev/null || true; sleep 2
+          # The front-most normal window (CGWindowList is ordered front to back) belongs to Kortix Capture.
+          osascript -l JavaScript > "$EV/frontmost.txt" 2>&1 <<'JXA' || true
+          ObjC.import('CoreGraphics');
+          var l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)));
+          var w = l.filter(function (x) { return x.kCGWindowLayer == 0 && x.kCGWindowOwnerName != 'Window Server'; });
+          w[0].kCGWindowOwnerName;
+          JXA
+          shot onboarding-connect
+          { echo "tray lock: $([ -f "$lib/tray.lock" ] && echo yes || echo no)"; echo "notify lines:"; grep -rh "\[notify\]" "$lib/logs" 2>/dev/null | head -5 || true; echo "recorder: $(pgrep -f 'kortix-capture record|Kortix Capture record' | wc -l | tr -d ' ')"; } 2>&1 | tee "$EV/silent-install.txt"
+          { echo "legacy plists left: $(ls "$HOME/Library/LaunchAgents" | grep -Ec 'ai\.kortix\.capture\.(tray|service)' || true)"; echo "legacy processes left: $(pgrep -f "$HOME/Applications/Kortix Capture.app" | wc -l | tr -d ' ')"; echo "library kept: $(cat "$HOME/Library/Application Support/ai.kortix.capture/keep.txt" 2>/dev/null || echo MISSING)"; } | tee "$EV/legacy-after.txt"
+          lsappinfo list > "$EV/lsappinfo-installed.txt" 2>&1 || true
+          "$exe" --json sync status > "$EV/sync-off.json" 2>&1 || true
+          "$exe" --json status > "$EV/status-installed.json" 2>&1 || true
+      - name: Sign in from onboarding (the sign-in is approved after 10 s), sync turns on by itself
+        run: |
+          shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
+          "$EXE" login --no-browser --issuer http://127.0.0.1:8787 > "$EV/onboarding-signin.txt" 2>&1 &
+          pid=$!
+          t0=$SECONDS
+          until grep -q user_code "$LIB/connect.json" 2>/dev/null || [ $((SECONDS - t0)) -ge 40 ]; do sleep 1; done
+          sleep 3
+          cp "$LIB/connect.json" "$EV/connect-waiting.json" 2>/dev/null || true
+          shot onboarding-waiting
+          wait $pid || true
+          sleep 6
+          shot onboarding-done
+          "$EXE" --json sync status > "$EV/sync-after.json" 2>&1 || true
+          "$EXE" --json onboard --status > "$EV/onboarding-status-signedin.json" 2>&1 || true
+          # No click after the sign-in: recordings upload.
+          t0=$SECONDS; up=0
+          until [ "$up" -ge 1 ] || [ $((SECONDS - t0)) -ge 180 ]; do
+            sleep 5; up="$("$EXE" --json sync status 2>/dev/null | python3 -c 'import json,sys;print((json.load(sys.stdin).get("state") or {}).get("uploaded",0))' 2>/dev/null || echo 0)"
+          done
+          echo "uploaded chunks after the sign-in: $up (after $((SECONDS - t0)) s)" | tee "$EV/uploads.txt"
+          "$EXE" --json sync status > "$EV/sync-uploaded.json" 2>&1 || true
+      - name: The window is a guest, the agent always comes back
+        run: |
+          shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
+          frames() { "$EXE" --json status 2>/dev/null | python3 -c 'import json,sys;print((json.load(sys.stdin).get("counts") or {}).get("frames",0))' 2>/dev/null || echo 0; }
+          recpid() { pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture record' | head -1; }
+          agentpid() { pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' | head -1; }
+          # The window is open (onboarding). No Kortix process is a Dock app.
+          lsappinfo list > "$EV/lsappinfo-window-open.txt" 2>&1 || true
+          # No Dock app while the window is open: System Events lists the foreground (Dock) apps.
+          osascript -e 'tell application "System Events" to get name of every application process whose background only is false' > "$EV/foreground-apps.txt" 2>&1 || true
+          # The Dock keeps a "recent applications" tile for an app that ran once: evidence, not a running app.
+          defaults read com.apple.dock recent-apps > "$EV/dock-recent-apps.txt" 2>&1 || true
+          defaults read com.apple.dock persistent-apps > "$EV/dock-persistent-apps.txt" 2>&1 || true
+          shot dock-window-open
+          pid0="$(recpid)"; agent0="$(agentpid)"; f0="$(frames)"
+          echo "before: recorder $pid0 agent $agent0 frames $f0" | tee "$EV/guest.txt"
+          # Closing the window (the window process ends) changes nothing for the recorder.
+          pkill -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture ui' || true
+          sleep 30
+          pid1="$(recpid)"; f1="$(frames)"
+          echo "after closing the window: recorder $pid1 frames $f1" | tee -a "$EV/guest.txt"
+          # A Quit sent to the app (osascript) and a kill -9 of the agent: it is back within 15 s and records.
+          osascript -e 'quit app "Kortix Capture"' >/dev/null 2>&1 || true
+          sleep 3
+          kill -9 "$(agentpid)" 2>/dev/null || true
+          t0=$SECONDS; back=""
+          until [ -n "$back" ] || [ $((SECONDS - t0)) -ge 30 ]; do sleep 1; back="$(agentpid)"; done
+          echo "agent back after $((SECONDS - t0)) s: ${back:-none}" | tee -a "$EV/guest.txt"
+          sleep 25
+          state="$("$EXE" --json status 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
+          f2="$(frames)"
+          echo "after the kill: state $state frames $f2" | tee -a "$EV/guest.txt"
+      - name: Sign out, skip onboarding, open the app again
+        run: |
+          shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
+          "$EXE" --json status > "$EV/status-before-signout1.json" 2>&1 || true
+          "$EXE" --json sync sign-out > "$EV/signout.json" 2>&1 || true
+          "$EXE" --json status > "$EV/status-after-signout.json" 2>&1 || true
+          "$EXE" --json onboard --status > "$EV/onboarding-status-signedout.json" 2>&1 || true
+          "$EXE" --json onboard --skip > "$EV/onboarding-status-skipped.json" 2>&1 || true
+          pkill -f "Kortix Capture.app/Contents/MacOS/Kortix Capture ui" || true
+          sleep 3
+          open -a "Kortix Capture"
+          t0=$SECONDS
+          until [ -f "$LIB/ui.lock" ] || [ $((SECONDS - t0)) -ge 90 ]; do sleep 1; done
+          sleep 8
+          lsappinfo list > "$EV/lsappinfo-open.txt" 2>&1 || true
+          shot launch-timeline
+          # A second launch hands over to the running window and exits.
+          rc=0; "$EXE" > "$EV/second.log" 2>&1 || rc=$?; echo "second launch exit: $rc" | tee "$EV/second.txt"
+      - name: The menu-bar menu (best effort, needs GUI scripting)
+        run: |
+          # The agent's process owns the status item; the window process has none.
+          osascript > "$EV/tray-menu.txt" 2>&1 <<'APPLESCRIPT' || true
+          set ev to system attribute "EV"
+          tell application "System Events"
+            repeat with p in (every process whose name is "Kortix Capture")
+              repeat with idx in {2, 1}
+                try
+                  click menu bar item 1 of menu bar idx of p
+                  delay 1
+                  set names to name of every menu item of menu 1 of menu bar item 1 of menu bar idx of p
+                  do shell script "screencapture -x " & quoted form of (ev & "/tray-menu.png")
+                  click menu bar item 1 of menu bar idx of p
+                  return names
+                end try
+              end repeat
+            end repeat
+            return "no status item found"
+          end tell
+          APPLESCRIPT
+          cat "$EV/tray-menu.txt"
+      - name: Settings with Sync off, the S3 form, privacy controls hidden and on
+        run: |
+          shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
+          "$EXE" open kortix-capture://settings >/dev/null 2>&1 & sleep 6; shot settings-sync-off
+          "$EXE" open "kortix-capture://settings?sync=s3" >/dev/null 2>&1 & sleep 6; shot settings-sync-s3
+          # Privacy controls are off by default: the page goes from Sync to Storage.
+          "$EXE" open "kortix-capture://settings?section=storage" >/dev/null 2>&1 & sleep 6; shot settings-privacy-off
+          "$EXE" --json settings experimental.privacy_controls true > "$EV/flag-on.json" 2>&1 || true
+          "$EXE" --json settings excluded_domains '["mine.example"]' > "$EV/own-entry.json" 2>&1 || true
+          "$EXE" open "kortix-capture://settings?section=never" >/dev/null 2>&1 & sleep 6; shot settings-privacy-on
+          "$EXE" --json settings experimental.privacy_controls false > /dev/null 2>&1 || true
+      - name: Sign in to Kortix while recording; the organization's policy decides the privacy controls
+        run: |
+          shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
+          acct="00000000-0000-4000-8000-00000000c1c1"
+          mkdir -p "$S3DATA/capture/orgs/$acct"
+          policy() { printf '{"schema":2,"privacy":{"excluded_bundle_ids":["com.example.Required"],"exclusion_groups":["banking"],"exclude_private_browsing":true},"experimental":{"privacy_controls":%s}}' "$1" > "$S3DATA/capture/orgs/$acct/policy.json"; }
+          policy true
+          "$EXE" login --no-browser --issuer http://127.0.0.1:8787 > "$EV/signin.txt" 2>&1 || true
+          "$EXE" --json sync status > "$EV/sync-after2.json" 2>&1 || true
+          # The policy arrives within a minute.
+          t0=$SECONDS
+          until "$EXE" --json sync status 2>/dev/null | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin).get("policy") else 1)'; do [ $((SECONDS - t0)) -ge 150 ] && break; sleep 5; done
+          echo "policy after $((SECONDS - t0)) s" | tee "$EV/policy-wait.txt"
+          "$EXE" open "kortix-capture://settings?sync=kortix" >/dev/null 2>&1 & sleep 6; shot settings-sync-kortix
+          "$EXE" open "kortix-capture://settings?section=never" >/dev/null 2>&1 & sleep 6; shot settings-privacy-org
+          "$EXE" --json sync status > "$EV/sync-synced.json" 2>&1 || true
+          # The organization turns the controls off: they hide, and what it required keeps applying.
+          policy false
+          t0=$SECONDS
+          until "$EXE" --json sync status 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);sys.exit(0 if d.get("policy",{}).get("policy",{}).get("experimental",{}).get("privacy_controls") is False else 1)'; do [ $((SECONDS - t0)) -ge 150 ] && break; sleep 5; done
+          echo "policy flag off after $((SECONDS - t0)) s" | tee -a "$EV/policy-wait.txt"
+          "$EXE" open "kortix-capture://settings?section=storage" >/dev/null 2>&1 & sleep 6; shot settings-privacy-org-off
+          "$EXE" --json exclusions > "$EV/exclusions-org-off.json" 2>&1 || true
+      - name: A managed computer (enrolled by the organization)
+        run: |
+          m="$RUNNER_TEMP/managed-library"; mkdir -p "$m"
+          export KORTIX_CAPTURE_DIR="$m"
+          # The stand-in answers the first enrollment "pending" and the next one "enrolled".
+          for i in 1 2; do printf '%s' "$TOKEN" | "$EXE" --json sync enroll --issuer http://127.0.0.1:8787 --account-name ci-person >> "$EV/enroll.txt" 2>&1 || true; echo >> "$EV/enroll.txt"; done
+          "$EXE" --json sync status > "$EV/sync-managed.json" 2>&1 || true
+          "$EXE" --json onboard --status > "$EV/onboarding-status-managed.json" 2>&1 || true
+          "$EXE" open kortix-capture://settings > /dev/null 2>&1 &
+          sleep 14
+          killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/settings-managed.png"
+      - name: Assert
+        shell: python3 {0}
+        run: |
+          import json, os, pathlib
+          ev = pathlib.Path(os.environ["EV"])
+          text = lambda n: (ev / n).read_text(errors="replace")
+          import re
+          # The recorder ran from the install: recording, or waiting for the macOS permission.
+          st = json.loads(text("status-installed.json"))
+          assert st["state"] in ("recording", "permission_missing", "paused"), "the status line must not stick: " + st["state"]
+          print(text("state-before-permission.txt").strip(), "|", text("state-after-install.txt").strip())
+          # No Dock icon while it records in the background: no Kortix process is a foreground app.
+          menu = text("tray-menu.txt"); print("tray menu:", menu.strip())
+          if "Open Kortix Capture" in menu:
+              assert "Settings" in menu and menu.index("Open Kortix Capture") < menu.index("Settings"), menu
+              assert "Quit" not in menu, "the tray has no Quit: " + menu
+              assert "Pause" in menu, menu
+          legacy = text("legacy-after.txt"); print(legacy)
+          assert "legacy plists left: 0" in legacy and "legacy processes left: 0" in legacy and "library kept: personal library file" in legacy, legacy
+          silent = text("silent-install.txt"); print(silent)
+          assert "[notify]" not in silent, silent
+          # Personal install: the installer opened the window, and onboarding is needed.
+          assert "ui.lock after" in text("window.txt") and text("window.txt").strip().endswith("yes"), text("window.txt")
+          assert json.loads(text("onboarding-status-install.json"))["needed"] is True, text("onboarding-status-install.json")
+          assert "icon_512x512@2x.png" in text("iconset.txt") and "pixelWidth: 1024" in text("iconset.txt"), text("iconset.txt")
+          assert "LSUIElement" in text("info-plist.txt"), "no Dock icon, ever"
+          assert "second launch exit: 0" in text("second.txt")
+          # No Kortix process is a foreground (Dock) app, window open or not.
+          for f in ("lsappinfo-installed.txt", "lsappinfo-window-open.txt", "lsappinfo-open.txt"):
+              for entry in re.split(r"\n(?=\d+\) )", text(f)):
+                  if 'bundleID="ai.kortix.capture"' in entry:
+                      assert 'type="Foreground"' not in entry, (f, entry)
+          fg = text("foreground-apps.txt")
+          print("foreground apps:", fg.strip()[:300])
+          if "Finder" in fg:
+              assert "Kortix" not in fg, "a Kortix process is a foreground (Dock) app: " + fg
+          assert "Kortix Capture" not in text("dock-persistent-apps.txt"), "the Dock must not keep a Kortix tile"
+          front = text("frontmost.txt").strip(); print("frontmost after the install:", front)
+          # Evidence, not a gate: a CI runner has no real user session, so macOS may refuse to activate an
+          # accessory app launched by a script. The window opens (ui.lock) and is on screen in the shots.
+          if front != "Kortix Capture":
+              print("warning: the front window after the install belongs to", front)
+          # Closing the window changes nothing for the recorder; a killed agent comes back within 15 s and records.
+          g = text("guest.txt"); print(g)
+          m = re.search(r"before: recorder (\d*) agent (\d*) frames (\d+)", g)
+          m2 = re.search(r"after closing the window: recorder (\d*) frames (\d+)", g)
+          assert m and m2 and m.group(1) and m.group(1) == m2.group(1), "the recorder pid changed when the window closed: " + g
+          assert int(m2.group(2)) > int(m.group(3)), "frames stopped rising while the window was closed: " + g
+          back = re.search(r"agent back after (\d+) s: (\d+)", g)
+          assert back and int(back.group(1)) <= 15, "the agent did not come back within 15 s: " + g
+          after = re.search(r"after the kill: state (\w*) frames (\d+)", g)
+          assert after and after.group(1) in ("recording", "permission_missing") and int(after.group(2)) >= int(m2.group(2)), g
+          off = json.loads(text("sync-off.json"))
+          assert off["enabled"] is False and off["kortix"]["signed_in"] is False, off["kortix"]
+          # Sign-in from onboarding: sync is on with no other click, and recordings upload.
+          after = json.loads(text("sync-after.json"))
+          assert after["enabled"] is True and after["provider"] == "kortix", after
+          assert after["kortix"]["signed_in"] is True and after["kortix"]["member_email"] == "person@example.com", after["kortix"]
+          assert after["kortix"]["account_name"] == "Example Org", after["kortix"]
+          assert json.loads(text("connect-waiting.json"))["progress"]["user_code"] == "CI12-3456", text("connect-waiting.json")
+          assert json.loads(text("onboarding-status-signedin.json"))["needed"] is False
+          up = int(re.search(r"uploaded chunks after the sign-in: (\d+)", text("uploads.txt")).group(1))
+          assert up >= 1, text("uploads.txt")
+          # Sign out keeps the recording; onboarding comes back on the next open; skip is remembered.
+          out = json.loads(text("signout.json"))
+          assert out["signed_out"] is True and out["enabled"] is False, out
+          st_before = json.loads(text("status-before-signout1.json")); st_out = json.loads(text("status-after-signout.json"))
+          assert st_out["state"] == st_before["state"], (st_before["state"], st_out["state"])
+          assert json.loads(text("onboarding-status-signedout.json"))["needed"] is True
+          assert json.loads(text("onboarding-status-skipped.json"))["needed"] is False
+          ex = text("exclusions-org-off.json"); print(ex[:600])
+          assert "com.example.Required" in ex or "banking" in ex, "the organization's exclusions keep applying with the controls hidden"
+          managed = json.loads(text("sync-managed.json"))
+          assert managed["managed"] is True, managed
+          assert json.loads(text("onboarding-status-managed.json"))["needed"] is False, "a managed computer has no onboarding"
+          for png in ("dock-window-open.png", "onboarding-permission.png", "onboarding-connect.png", "onboarding-waiting.png", "onboarding-done.png", "launch-timeline.png", "settings-sync-off.png", "settings-sync-s3.png", "settings-privacy-off.png", "settings-privacy-on.png", "settings-sync-kortix.png", "settings-privacy-org.png", "settings-privacy-org-off.png", "settings-managed.png"):
+              assert (ev / png).stat().st_size > 10_000, png
+          print("ALL MACOS APP ASSERTIONS PASSED")
+      - name: Stop the app
+        if: always()
+        run: |
+          pkill -f 'Kortix Capture.app' || true
+          sudo launchctl bootout system /Library/LaunchDaemons/ai.kortix.capture.machine.plist 2>/dev/null || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: capture-macos-personal
+          path: evidence
+          if-no-files-found: ignore
+
+  windows-personal:
+    name: Windows, personal install (onboarding, background-always, no taskbar button)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: apps/capture
+    env:
+      EV: ${{ github.workspace }}\evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust (stable)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --no-self-update
+          rustup default stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/capture
+          key: capture-windows-personal
+      - name: Window script tests
+        run: |
+          New-Item -ItemType Directory -Force $env:EV | Out-Null
+          node ui/memory/settings.test.mjs
+          if ($LASTEXITCODE) { exit 1 }
+          node ui/memory/timeline.test.mjs
+          if ($LASTEXITCODE) { exit 1 }
+      - name: Build
+        run: cargo build --release --features native-recorders --bin kortix-capture --bin kortix-capture-engine --bin kortix-backend
+      - name: S3 (versitygw) and the CI stand-in for Kortix
+        run: |
+          $d = "$env:RUNNER_TEMP\s3"; New-Item -ItemType Directory -Force "$d\data", "$d\meta" | Out-Null
+          gh release download v1.8.0 --repo versity/versitygw -p "versitygw_v1.8.0_Windows_x86_64.zip" -D $d
+          Expand-Archive "$d\versitygw_v1.8.0_Windows_x86_64.zip" -DestinationPath "$d\bin"
+          $gw = (Get-ChildItem "$d\bin" -Recurse -Filter versitygw.exe | Select-Object -First 1).FullName
+          function Start-Detached($name, $cmdline) {
+            $cmd = "$env:RUNNER_TEMP\$name.cmd"
+            "@echo off`r`n$cmdline" | Set-Content $cmd -Encoding ascii
+            schtasks /Create /TN $name /TR "`"$cmd`"" /SC ONCE /ST 23:59 /RU SYSTEM /RL HIGHEST /F | Out-Null
+            schtasks /Run /TN $name | Out-Null
+          }
+          Start-Detached "kcap-s3" "`"$gw`" --port 127.0.0.1:9000 --access cikortix --secret cikortix-secret-123 posix --sidecar `"$d\meta`" `"$d\data`" > `"$env:EV\versitygw.out.log`" 2> `"$env:EV\versitygw.err.log`""
+          Start-Sleep 3
+          $token = "kortix_enr_ci" + [guid]::NewGuid().ToString("N")
+          "::add-mask::$token"
+          $py = (Get-Command python).Source
+          $script = (Resolve-Path scripts/ci_fake_issuer.py).Path
+          Start-Detached "kcap-issuer" "`"$py`" `"$script`" --port 8787 --token $token --approve-after 10 --log `"$env:EV\issuer.jsonl`" --s3-endpoint http://127.0.0.1:9000 --bucket capture --access-key cikortix --secret-key cikortix-secret-123 2> `"$env:EV\issuer.err.log`""
+          $t0 = Get-Date; $up = $false
+          while (-not $up -and ((Get-Date) - $t0).TotalSeconds -lt 30) {
+            Start-Sleep 2
+            try { Invoke-WebRequest -Method Post http://127.0.0.1:8787/v1/nothing -SkipHttpErrorCheck | Out-Null; $up = $true } catch {}
+          }
+          if (-not $up) { throw "the CI issuer did not start" }
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Open the app on a personal computer (onboarding, tray, background recorder)
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("$env:EV\$name.png")
+          }
+          $lib = Join-Path $env:RUNNER_TEMP "library"; New-Item -ItemType Directory -Force $lib | Out-Null
+          $env:KORTIX_CAPTURE_DIR = $lib
+          $exe = (Resolve-Path "target\release\kortix-capture.exe").Path
+          # Plant a legacy install (an old Run key and an old scheduled task): the app removes them.
+          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "Kortix Capture tray" /d "C:\Old\Kortix\kortix-tray.exe" /f | Out-Null
+          schtasks /Create /TN "Kortix Capture tray" /TR "C:\Old\Kortix\kortix-tray.exe" /SC ONLOGON /F | Out-Null
+          Start-Process $exe -ArgumentList "app" -RedirectStandardError "$env:EV\app.log" -WindowStyle Hidden
+          $t0 = Get-Date
+          while (-not (Test-Path "$lib\ui.lock") -and ((Get-Date) - $t0).TotalSeconds -lt 90) { Start-Sleep 1 }
+          "ui.lock: $(Test-Path "$lib\ui.lock")" | Tee-Object "$env:EV\window.txt"
+          $t0 = Get-Date
+          while (-not (Test-Path "$lib\tray.lock") -and ((Get-Date) - $t0).TotalSeconds -lt 90) { Start-Sleep 1 }
+          "tray.lock: $(Test-Path "$lib\tray.lock")" | Tee-Object "$env:EV\tray-log.txt"
+          "run key left: $(reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' | Select-String -SimpleMatch 'Kortix Capture tray' -Quiet)" | Tee-Object "$env:EV\legacy-after.txt"
+          schtasks /Query /TN "Kortix Capture tray" 2>$null | Out-Null
+          "task left: $($LASTEXITCODE -eq 0)" | Tee-Object -Append "$env:EV\legacy-after.txt"
+          & $exe --json onboard --status | Set-Content "$env:EV\onboarding-status-install.json"
+          Start-Sleep 8
+          Shot "onboarding-connect"
+          # Sign in from onboarding: approved 10 s after the code appears. Sync turns on by itself.
+          $login = Start-Process $exe -ArgumentList "login --no-browser --issuer http://127.0.0.1:8787" -PassThru -WindowStyle Hidden -RedirectStandardOutput "$env:EV\signin.txt" -RedirectStandardError "$env:EV\signin.err.txt"
+          $t0 = Get-Date
+          while (-not ((Test-Path "$lib\connect.json") -and (Select-String -Path "$lib\connect.json" -Pattern "user_code" -Quiet)) -and ((Get-Date) - $t0).TotalSeconds -lt 40) { Start-Sleep 1 }
+          Start-Sleep 3
+          Copy-Item "$lib\connect.json" "$env:EV\connect-waiting.json" -ErrorAction SilentlyContinue
+          Shot "onboarding-waiting"
+          $null = $login.WaitForExit(90000)
+          Start-Sleep 6
+          Shot "onboarding-done"
+          & $exe --json sync status | Set-Content "$env:EV\sync-after.json"
+          & $exe --json onboard --status | Set-Content "$env:EV\onboarding-status-signedin.json"
+          # The window is a guest: closing it leaves the recorder and the service alone.
+          function Procs($pattern) { Get-CimInstance Win32_Process -Filter "Name='kortix-capture.exe'" | Where-Object { $_.CommandLine -match $pattern } }
+          $rec0 = @(Procs "record").ProcessId
+          "recorder before: $($rec0 -join ',')" | Tee-Object "$env:EV\guest.txt"
+          Procs " ui(\s|$)" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          Start-Sleep 20
+          $rec1 = @(Procs "record").ProcessId
+          "recorder after closing the window: $($rec1 -join ',')" | Tee-Object -Append "$env:EV\guest.txt"
+          "window processes left: $(@(Procs ' ui(\s|$)').Count)" | Tee-Object -Append "$env:EV\guest.txt"
+          # The taskbar shows no Kortix button while no window is open.
+          "windows with a title: $(@(Get-Process kortix-capture -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle }).Count)" | Tee-Object -Append "$env:EV\guest.txt"
+          # Sign out, skip onboarding, open the app again: the timeline, no onboarding.
+          & $exe --json sync sign-out | Set-Content "$env:EV\signout.json"
+          & $exe --json onboard --status | Set-Content "$env:EV\onboarding-status-signedout.json"
+          & $exe --json onboard --skip | Set-Content "$env:EV\onboarding-status-skipped.json"
+          Start-Process $exe -ArgumentList "open","kortix-capture://timeline" -WindowStyle Hidden; Start-Sleep 10
+          Shot "launch-timeline"
+          Start-Process $exe -ArgumentList "open","kortix-capture://settings" -WindowStyle Hidden; Start-Sleep 5
+          Shot "settings"
+          Start-Process $exe -ArgumentList "open","kortix-capture://settings?sync=s3" -WindowStyle Hidden; Start-Sleep 5
+          Shot "settings-sync-s3"
+          Get-Process kortix-capture -ErrorAction SilentlyContinue | Select-Object Id, MainWindowTitle | Format-Table | Out-String | Tee-Object "$env:EV\processes.txt"
+      - name: Assert
+        run: |
+          $w = Get-Content "$env:EV\window.txt"; if ($w -notmatch "True") { throw "no window: $w" }
+          $t = Get-Content "$env:EV\tray-log.txt" -Raw; if ($t -notmatch "True") { throw "no tray: $t" }
+          $j = { param($n) Get-Content "$env:EV\$n" -Raw | ConvertFrom-Json }
+          $l = Get-Content "$env:EV\legacy-after.txt" -Raw; if ($l -match "True") { throw "a legacy agent is still there: $l" }
+          if (-not (& $j "onboarding-status-install.json").needed) { throw "onboarding not needed on a fresh personal install" }
+          $a = & $j "sync-after.json"
+          if (-not $a.enabled -or $a.provider -ne "kortix") { throw "sync is not on after the sign-in: $($a | ConvertTo-Json -Depth 3)" }
+          if ($a.kortix.account_name -ne "Example Org") { throw "no account name" }
+          if ((& $j "connect-waiting.json").progress.user_code -ne "CI12-3456") { throw "no code in the waiting step" }
+          if ((& $j "onboarding-status-signedin.json").needed) { throw "onboarding still needed after the sign-in" }
+          $g = Get-Content "$env:EV\guest.txt" -Raw; Write-Output $g
+          $before = [regex]::Match($g, "recorder before: ([\d,]*)").Groups[1].Value
+          $after = [regex]::Match($g, "after closing the window: ([\d,]*)").Groups[1].Value
+          if (-not $before -or $before -ne $after) { throw "the recorder changed when the window closed: $g" }
+          if ($g -notmatch "window processes left: 0") { throw "the window process is still running: $g" }
+          if ($g -notmatch "windows with a title: 0") { throw "a window is still open: $g" }
+          if (-not (& $j "onboarding-status-signedout.json").needed) { throw "onboarding must return after a sign-out" }
+          if ((& $j "onboarding-status-skipped.json").needed) { throw "skip must be remembered" }
+          foreach ($f in "onboarding-connect.png", "onboarding-waiting.png", "onboarding-done.png", "launch-timeline.png", "settings.png", "settings-sync-s3.png") { if ((Get-Item "$env:EV\$f").Length -lt 10000) { throw "$f is empty" } }
+          "ALL WINDOWS APP ASSERTIONS PASSED"
+      - name: Stop the app
+        if: always()
+        run: Get-Process kortix-capture -ErrorAction SilentlyContinue | Stop-Process -Force
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: capture-windows-personal
+          path: evidence
+          if-no-files-found: ignore
+
   collect:
     name: Collect the installers
-    needs: [test, windows-msi, macos-pkg, linux-deb]
+    needs: [test, windows-msi, macos-pkg, linux-deb, macos-personal, windows-personal]
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
     timeout-minutes: 15
     permissions:

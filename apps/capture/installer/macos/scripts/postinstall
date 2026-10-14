@@ -28,7 +28,7 @@ if [ "$3" = "/" ] || [ -z "$3" ]; then
     # A personal install (no configuration from IT): open the window once, on onboarding.
     # A computer IT configured is preconfigured and silent: no window.
     if [ ! -f "$SUPPORT/config.json" ] && [ ! -f "/Library/Managed Preferences/ai.kortix.capture.plist" ] && [ ! -f "/Library/Managed Preferences/$(/usr/bin/id -un "$console_uid" 2>/dev/null)/ai.kortix.capture.plist" ]; then
-      /bin/launchctl asuser "$console_uid" /usr/bin/open -a "$APP" >/dev/null 2>&1 &
+      /bin/launchctl asuser "$console_uid" /usr/bin/open -n -a "$APP" --args ui >/dev/null 2>&1 &
     fi
   fi
 fi

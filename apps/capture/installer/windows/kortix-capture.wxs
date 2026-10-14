@@ -106,6 +106,8 @@
                         Account="LocalSystem"
                         Arguments="machine run"
                         Vital="yes">
+          <!-- Start a minute after boot (delayed automatic start); every failure restarts it. -->
+          <ServiceConfig DelayedAutoStart="yes" OnInstall="yes" OnReinstall="yes" />
           <util:ServiceConfig FirstFailureActionType="restart"
                               SecondFailureActionType="restart"
                               ThirdFailureActionType="restart"

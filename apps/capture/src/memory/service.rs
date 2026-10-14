@@ -819,6 +819,10 @@ pub fn run_with(
 ) -> Result<bool> {
     // A library from the control-plane era becomes Sync Off before anything syncs.
     super::legacy::migrate_legacy_settings(paths);
+    // The previous service was killed: its recorder is an orphan that drains and holds the
+    // library. End it now so this service's recorder starts at once.
+    #[cfg(unix)]
+    reap_orphan_recorder(paths);
     // The recorders it starts inherit the class: the person's apps win the CPU.
     crate::os_proc::below_normal_priority();
     fs::create_dir_all(&paths.root)?;
@@ -983,9 +987,14 @@ pub fn run_with(
                 "last_probe": last_probe.as_ref().map(|(_, v)| v.clone()),
             });
             let _ = write_private(&paths.root.join(HEARTBEAT_FILE), &beat.to_string());
+            // A recorder that should run and does not (the agent just restarted while the old
+            // recorder drained, or a crash backoff): look again in 3 s, not after the 30 s tick.
+            let hurry = (w.recorder && recorder.child.is_none() && !recorder.quit)
+                || (w.actions && actions.child.is_none() && !actions.quit);
+            let wait = if hurry { Duration::from_secs(3) } else { tick };
             tokio::select! {
                 _ = &mut shutdown => break,
-                _ = tokio::time::sleep(tick) => {}
+                _ = tokio::time::sleep(wait) => {}
             }
         }
         recorder.stop().await;
@@ -995,6 +1004,34 @@ pub fn run_with(
         let _ = fs::remove_file(super::actions::heartbeat_path(paths));
     });
     Ok(config_changed)
+}
+
+/// An earlier service died (kill -9, a crash): its recorder, reparented to init, is still finishing
+/// its last chunk. Ask it to stop and wait a few seconds, so the restarted service records again
+/// within seconds, not after the orphan's drain.
+#[cfg(unix)]
+fn reap_orphan_recorder(paths: &MemoryPaths) {
+    let Some(st) = super::recorder::RecorderStatus::read(paths) else { return };
+    let pid = st.pid as i32;
+    if pid <= 1 || unsafe { libc::kill(pid, 0) } != 0 {
+        return;
+    }
+    let ppid = std::process::Command::new("/bin/ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<i32>().ok());
+    if ppid != Some(1) {
+        return; // it belongs to a live service
+    }
+    tracing::warn!("[service] ending the orphan recorder {pid} of a killed service");
+    unsafe { libc::kill(pid, libc::SIGTERM) };
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 async fn shutdown_signal() {
