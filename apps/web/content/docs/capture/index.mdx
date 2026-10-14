@@ -29,9 +29,8 @@ it is off:
 
 In Kortix: open the account's settings, then **Settings**, and turn on
 **Kortix Capture**. The account settings then list a **Kortix Capture**
-section with the organization's rules: what every device records, the screen
-frame interval and resolution, the mandatory exclusions, retention, the notice
-devices show, and an account-wide pause. In Kortix Capture, the gear and your
+section with the organization's rules: what every device records, how long
+Kortix keeps it, an account-wide pause and an optional notice. In Kortix Capture, the gear and your
 profile menu open it.
 
 From the API: `PATCH /v1/accounts/<account_id>/capture` with `{"enabled": true}`.
@@ -117,22 +116,18 @@ Capture on or off writes `capture.enable` or `capture.disable`.
 One policy applies to every device of the account:
 
 - layers: screen, actions, audio (audio is off until someone turns it on);
-- the screen frame interval (`recording.interval_ms`, 0.5 to 10 seconds) and
-  resolution (`recording.max_height`: 720p, 1080p, 1440p or 4K). Every device
-  uses them instead of its own settings. Without them a device records one
-  frame every 2 seconds at 1440p. A device saves a frame only when the screen
-  changed, and an unchanged screen every 30 seconds. The devices list shows
-  the values each device uses;
-- mandatory exclusions: apps, websites, the categories password managers,
-  messaging and banking, and private browsing. Password managers and private
-  browsing are excluded by default. A device adds them to the member's own
-  exclusions, which stay on that computer; the member cannot remove the
-  account's;
 - an account-wide pause;
-- retention on the device and in Kortix (`remote_days`);
+- how long Kortix keeps recordings (`remote_days`);
 - an optional notice: each person sees it once, and again when its text changes;
-- personal-data masking on the device (**Experimental**, off by default). The
-  first time it is on, each computer downloads a ~1 GB model.
+- **Experimental → Privacy controls** (off by default) shows two more:
+  personal-data masking on the computer (each computer first downloads a ~1 GB
+  model), and the apps and websites no computer records. Each computer skips
+  those before it records, so they are never saved or uploaded; a person can
+  add their own in Kortix Capture but cannot remove these. Turning the switch
+  off hides the controls; what is set keeps applying.
+
+Each computer chooses its own frame rate, resolution and how long it keeps
+recordings after uploading them.
 
 Kortix publishes the policy to `orgs/<account_id>/policy.json` in the capture
 store, where every device reads it within a minute. A device cannot write a
