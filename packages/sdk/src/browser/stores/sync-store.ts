@@ -645,9 +645,14 @@ export function hasOnlyCacheSourcedMessages(sessionID: string): boolean {
  */
 export function hasRuntimeConfirmedMessage(sessionID: string, messageID: string): boolean {
 	const messages = useSyncStore.getState().messages[sessionID];
-	if (!messages?.some((message) => message.id === messageID)) return false;
-	return !cacheSourcedIds.get(sessionID)?.has(messageID);
+	if (!messages) return false;
+	// One id set per message array: every hook that asks between two writes of the session's
+	// list reads the same set (a streamed part delta does not replace the list).
+	let ids = messageIdSets.get(messages);
+	if (!ids) messageIdSets.set(messages, (ids = new Set(messages.map((message) => message.id))));
+	return ids.has(messageID) && !cacheSourcedIds.get(sessionID)?.has(messageID);
 }
+const messageIdSets = new WeakMap<readonly Message[], Set<string>>();
 
 function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
 	if (optimisticID === echoID) return;

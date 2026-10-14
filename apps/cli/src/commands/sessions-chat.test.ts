@@ -201,13 +201,26 @@ describe('withLiveTurn — a running session shows the turn the log does not hol
   const shape = (threads: Array<{ thread_id: string; messages: SessionLogMessage[]; has_more: boolean }>) =>
     threads.map((t) => [t.thread_id, t.messages.map((m) => [m.message_id, m.seq, (m.ext?.kortix?.data as { provisional?: boolean } | undefined)?.provisional ?? false]), t.has_more]);
 
-  test('the mark is `ext.kortix.data.provisional`, beside the ext the message has, never a top-level key', () => {
+  test('a live message carries both marks (top-level `provisional`, deprecated, and `ext.kortix.data.provisional`); a stored one neither', () => {
     const own = { pi: { version: '1', data: { cwd: '/w' } }, kortix: { version: '1', data: { origin: 'x' } } };
     const window = { ...head('ses_root', null), messages: [record('m1', 1), { ...record('m2', 2, { role: 'assistant' }), ext: own }] };
     const [thread] = withLiveTurn([root([record('m1', 1)])], window, 10);
-    const tail = thread!.messages[1]!;
-    expect('provisional' in tail).toBe(false);
-    expect(tail.ext).toEqual({ pi: own.pi, kortix: { version: '1', data: { origin: 'x', provisional: true } } });
+    const [stored, tail] = thread!.messages as Array<SessionLogMessage & { provisional?: boolean }>;
+    expect(tail!.provisional).toBe(true);
+    expect(tail!.ext).toEqual({ pi: own.pi, kortix: { version: '1', data: { origin: 'x', provisional: true } } });
+    expect('provisional' in stored!).toBe(false);
+    expect(stored!.ext?.kortix).toBeUndefined();
+  });
+
+  test('an `ext.kortix.data` that is not a plain object is left as it is; the top-level mark still says provisional', () => {
+    for (const data of ['text', [1, 2], null]) {
+      const ext = { kortix: { version: '1', data } };
+      const window = { ...head('ses_root', null), messages: [record('m1', 1), { ...record('m2', 2, { role: 'assistant' }), ext }] };
+      const [thread] = withLiveTurn([root([record('m1', 1)])], window, 10);
+      const tail = thread!.messages[1] as SessionLogMessage & { provisional?: boolean };
+      expect(tail.provisional).toBe(true);
+      expect(tail.ext).toEqual(ext);
+    }
   });
 
   test("the live seqs agree with the stored ones: the tail keeps fromV1's seqs, marked provisional", () => {
