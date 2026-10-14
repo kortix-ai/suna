@@ -46,6 +46,7 @@ export {
   configReleases,
   configReleaseFailures,
   configReleaseHeads,
+  baseTipChecks,
   projectMembers,
   projectAccessRequests,
   projectSecrets,

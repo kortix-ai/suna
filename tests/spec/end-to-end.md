@@ -1668,9 +1668,15 @@ lists. `PUT …/scale` and `POST …/exec` → **409** `app_no_machines`;
 `volume_not_found`. A volume row seeded in PostgreSQL (the local profile has
 no Platinum) lists with `size_gb: 10`, `attached: false`, `process_group: app`
 and `snapshot_retention_days: 5`, adds `volumes` and `snapshots` to the App's
-`capabilities`, and `kortix apps volumes <app>` prints it. `PATCH` refuses a
-shrink (**400** `volume_shrink_refused`), 101 GB and a retention of 61 days,
-and accepts 20 GB with 7 days (read back). `DELETE` without the matching
+`capabilities`, and `kortix apps volumes <app>` prints it (`used_bytes` and
+`last_commit_at` are null: the provider is not there to read). A volume has the
+fixed size its provider allots: `PATCH` refuses 101 GB (**400**
+`volume_size_invalid`) and a retention of 61 days, answers any other size
+without a provider with **503** `volume_size_unknown`, and accepts a retention
+of 7 days (read back); `kortix apps volumes set <app> data --retention 30`
+sets 30. A group that mounts a volume runs one machine:
+`machines.integration.test.ts` proves `PUT …/scale` to 2 → **409**
+`volume_single_machine`, and 2 with `new_volumes: true` → accepted. `DELETE` without the matching
 `?confirm=<name>` → **400** `confirmation_required`; `restore` and `fork` with
 an unknown snapshot → **400** `snapshot_invalid`. A project member without
 deploy or admin gets **403** on every write; a `NONMEMBER` gets 403/404 and

@@ -252,28 +252,8 @@ locals {
   })
 }
 
-# AWS Backup still protects the us-west-2 Terraform lock table
-# (security-baseline/main.tf) until the state moves. Its failures go to the
-# eu-west-2 bus, where euw2_backup_failures delivers them. The forwarder role
-# belongs to security-baseline/guardduty-alerting.tf.
-data "aws_iam_role" "event_forwarder" {
-  name = "kortix-guardduty-event-forwarder"
-}
-
-resource "aws_cloudwatch_event_rule" "usw2_backup_failures" {
-  name          = "kortix-backup-job-failures"
-  description   = "Forward failed, aborted, or expired AWS Backup jobs to the eu-west-2 alert bus"
-  event_pattern = local.backup_failure_pattern
-  tags          = merge(local.tags, { Control = "DCF-99" })
-}
-
-resource "aws_cloudwatch_event_target" "usw2_backup_failures" {
-  rule      = aws_cloudwatch_event_rule.usw2_backup_failures.name
-  target_id = "central-alert-bus"
-  arn       = "arn:aws:events:eu-west-2:${local.account_id}:event-bus/default"
-  role_arn  = data.aws_iam_role.event_forwarder.arn
-}
-
+# AWS Backup runs in eu-west-2 only (security-baseline/main.tf), so its
+# failures need no cross-region forwarder.
 resource "aws_cloudwatch_event_rule" "euw2_backup_failures" {
   provider      = aws.euw2
   name          = "kortix-backup-job-failures"

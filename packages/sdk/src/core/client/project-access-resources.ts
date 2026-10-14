@@ -54,8 +54,8 @@ export function bindProjectAccessResources(projectId: string) {
         restart: (appId: string, machineId: string) => P.restartAppMachine(projectId, appId, machineId),
         destroy: (appId: string, machineId: string) => P.destroyAppMachine(projectId, appId, machineId),
       },
-      /** Machines per process group (0-20). */
-      scale: (appId: string, count: Record<string, number>) => P.scaleApp(projectId, appId, count),
+      /** Machines per process group (0-20). A group with a volume runs one unless `newVolumes`. */
+      scale: (...a: DropFirst<Parameters<typeof P.scaleApp>>) => P.scaleApp(projectId, ...a),
       /** Run one command in a machine. Project admins only. */
       exec: (...a: DropFirst<Parameters<typeof P.execInApp>>) => P.execInApp(projectId, ...a),
       /** Volumes: persistent disks that outlive every release; daily snapshots. */
