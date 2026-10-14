@@ -43,10 +43,10 @@ function EntryStatus({ status }: { status: string }) {
   return <WarningCircleIcon size={ENTRY_ICON} color={palette.destructive} />;
 }
 
-export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const sessionId = (input.session_id as string) || '';
   const mode = (input.mode as string) || 'summary';
   const pattern = (input.pattern as string) || '';
@@ -58,7 +58,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={EyeglassesIcon}
       trigger={{
         title: `Session · ${sessionReadModeLabel(mode)}`,

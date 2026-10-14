@@ -61,7 +61,7 @@ export function statusElapsedFrame(
 export type StatusThrottleDecision = { type: 'keep' } | { type: 'apply' } | { type: 'defer'; delayMs: number };
 
 /**
- * What to do with a fresh `getTurnStatus` value. An empty or unchanged status
+ * What to do with a fresh activity line (`busyStatusText`). An empty or unchanged status
  * keeps the label; a change inside the window waits for the rest of it.
  * `lastChangeAtMs` starts at mount, exactly as web's `lastStatusChangeRef`.
  */

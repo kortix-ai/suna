@@ -142,7 +142,7 @@ The three reply actions remove the item only after the server accepts the reply.
 | --- | --- | --- |
 | `enabled` | `true` | `false` holds the whole hook: no `/start`, no stream. Use it until a precondition passes. |
 | `waitMs` | `15000` | The long-poll budget sent to `/start`. The server clamps it. |
-| `chatEngine` | `true` | `false` when your app mounts its own chat surface for this session. Then `messages`, `diffs` and `todos` are empty, and questions and permissions stay live. |
+| `chatEngine` | `true` | `false` when your app mounts its own chat surface for this session. Then `messages`, `diffs` and `todos` are empty, questions and permissions stay live, and the session log is still negotiated (`useSessionLogThread` reads it). |
 | `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. |
 | `replayStartStash` | `true` | Sends a first prompt that a "new session" screen saved, once the session is ready and empty. |
 | `initialRuntimeSessionId` | `null` | A runtime session id your server already holds. The transcript renders from it while `/start` runs. The `/start` answer wins. |

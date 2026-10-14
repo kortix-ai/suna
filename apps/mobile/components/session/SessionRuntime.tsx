@@ -13,8 +13,9 @@
  * `chatEngine: false`: the thread reads its own transcript (`useSessionSync`),
  * for the root and for a sub-agent alike, so this hook does not also read it.
  */
-import React, { createContext, useContext } from 'react';
-import { useSession, type UseSessionResult } from '@kortix/sdk/react';
+import React, { createContext, useContext, useMemo } from 'react';
+import type { SessionLogThread } from '@kortix/sdk';
+import { useSession, useSessionLogThread, type UseSessionResult } from '@kortix/sdk/react';
 
 export interface BoundSession {
   projectId: string;
@@ -43,4 +44,21 @@ export function SessionRuntimeProvider({
 /** The bound session's runtime, or `null` when none is bound. */
 export function useSessionRuntime(): UseSessionResult | null {
   return useContext(SessionRuntimeContext);
+}
+
+/**
+ * One runtime session's thread of the bound session, from the session log
+ * (`useSessionLogThread`): the root thread for the root runtime id, a
+ * sub-agent's thread by its runtime id. On v2 the API's log holds it; on v1 it
+ * is the `fromV1` view of that runtime session's rows. `null` without an id or
+ * a bound session, and while nothing is loaded.
+ */
+export function useRuntimeThread(runtimeSessionId: string | null | undefined): SessionLogThread | null {
+  const runtime = useSessionRuntime();
+  const projectId = runtime?.projectId ?? '';
+  const sessionId = runtime?.sessionId ?? '';
+  const root = runtime?.runtimeSessionId ?? null;
+  const source = useMemo(() => ({ projectId, sessionId, runtimeSessionId: root }), [projectId, sessionId, root]);
+  const thread = useSessionLogThread(source, runtimeSessionId === root ? undefined : (runtimeSessionId ?? null));
+  return runtimeSessionId && thread && thread.messages.length > 0 ? thread : null;
 }
