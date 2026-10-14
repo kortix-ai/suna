@@ -165,7 +165,9 @@ export function schedulePublish(projectId: string, ref: string, commit: string |
         const project = await loadPublishProject(projectId);
         if (project) await publishConfigRelease(project, ref, next);
       } catch (error) {
-        logger.warn('[config-releases] publish failed', { projectId, ref, error: (error as Error).message });
+        // Drizzle wraps the driver error: its `cause` holds what Postgres said.
+        const cause = (error as { cause?: Error }).cause?.message;
+        logger.warn('[config-releases] publish failed', { projectId, ref, error: (error as Error).message.split('\n')[0], cause });
       }
       next = state.again;
     }
