@@ -20623,10 +20623,10 @@
   "capture": {
     "authorize": {
       "title": "Odobri prijavu za Kortix Capture",
-      "description": "Провери да ли се овај код поклапа са кодом у апликацији, па изабери налог у који снима.",
+      "description": "Proveri da kod odgovara aplikaciji, pa izaberi nalog.",
       "approvingAs": "Пријава као {email}",
-      "notice": "Aplikacija snima tvoj ekran i tvoje radnje, i zvuk kada nalog to dozvoljava. Ti možeš da ga vidiš. Takođe vlasnici i administratori naloga, i svako kome prilagođena uloga to dozvoljava. Svaki pregled od strane drugih se beleži.",
-      "ownCodeOnly": "Odobri samo kod koji vidiš u Kortix Capture na svom računaru. Nikad ne odobravaj kod koji ti je neko poslao: ta osoba bi snimala kao ti.",
+      "notice": "Vlasnici i administratori vide šta snima. Svaki pregled se beleži.",
+      "ownCodeOnly": "Odobri samo kod prikazan na tvom računaru.",
       "approve": "Odobri prijavu",
       "deny": "Odbij",
       "approvedTitle": "Kortix Capture је пријављен",
@@ -20957,7 +20957,7 @@
     },
     "rollout": {
       "title": "Инсталирај на рачунаре фирме",
-      "description": "Napravi token za upis, a IT pomoću njega instalira Kortix Capture: jedna komanda, ili Intune i drugo upravljanje uređajima. Svaki računar sam počinje snimanje i niko se ne prijavljuje. Firmeni token upisuje računare bez povezivanja; poveži ih sa osobama u Uređajima, ili uključi Odobri svaki računar da potvrdiš predloženu osobu. Lični token povezuje svaki računar sa jednom osobom.",
+      "description": "IT instalira Kortix Capture pomoću tokena za upis. Svaki računar sam snima; niko se ne prijavljuje.",
       "tokensTitle": "Твоји токени за регистрацију",
       "tokensEmpty": "Још нема токена за регистрацију.",
       "guide": "Водич за подешавање за ИТ",
@@ -20966,7 +20966,7 @@
       "name": "Назив",
       "namePlaceholder": "Лаптопови инжењеринга",
       "for": "Za",
-      "forHint": "Bilo ko: računari se upisuju bez povezivanja, a ti ih povezuješ. Osoba: svaki računar se povezuje sa njom.",
+      "forHint": "Bilo ko: računare povezuješ kasnije. Osoba: svaki računar se povezuje sa njom.",
       "forAnyone": "Bilo ko u firmi",
       "forPerson": "Za {person}",
       "domains": "Домени е-поште",
@@ -20984,9 +20984,9 @@
       "createdBody": "Kortix приказује овај токен само једном. Свако ко га има може да региструје рачунаре у ову организацију док га не опозовеш.",
       "installTitle": "Инсталирај на сваком рачунару",
       "installBody": {
-        "windows": "Покрени као администратор или распореди преко Intune-а или групне смернице. При следећој пријави у Windows рачунар се региструје, почиње снимање и особа види обавештење.",
-        "macos": "Покрени у Терминалу или распореди пакет преко MDM-а са токеном у конфигурационом профилу (домен ai.kortix.capture). Особа једном одобрава снимање екрана; PPPC профил може да одобри остало.",
-        "linux": "Покрени на радној површини са X11. При следећој пријави рачунар се региструје и почиње снимање. Wayland сесије се још не снимају."
+        "windows": "Pokreni kao administrator ili rasporedi preko Intune ili grupnih smernica. Računar počinje snimanje pri sledećoj prijavi.",
+        "macos": "Pokreni u Terminalu ili rasporedi paket preko MDM-a. Osoba jednom dozvoljava snimanje ekrana, osim ako ga PPPC profil ne dodeli.",
+        "linux": "Pokreni na desktopu sa X11. Računar počinje snimanje pri sledećoj prijavi. Wayland još nije podržan."
       },
       "usage": "{count, plural, one {# рачунар} few {# рачунара} other {# рачунара}}",
       "usageOf": "{count} од {max} рачунара",

@@ -20623,10 +20623,10 @@
   "capture": {
     "authorize": {
       "title": "Aprovar o login do Kortix Capture",
-      "description": "Confirme que este código corresponde ao do app e escolha a conta em que ele grava.",
+      "description": "Confira se o código corresponde ao app e escolha uma conta.",
       "approvingAs": "Entrando como {email}",
-      "notice": "O app grava sua tela e suas ações, e o áudio quando a conta permite. Você pode ver. Os proprietários e admins da conta também, e qualquer pessoa que uma função personalizada permita. Cada acesso de outra pessoa é registrado.",
-      "ownCodeOnly": "Aprove só um código que você vê no Kortix Capture no seu próprio computador. Nunca aprove um código que alguém enviou: essa pessoa gravaria como você.",
+      "notice": "Proprietários e admins veem o que ele grava. Cada acesso é registrado.",
+      "ownCodeOnly": "Aprove só um código exibido no seu próprio computador.",
       "approve": "Aprovar login",
       "deny": "Negar",
       "approvedTitle": "O Kortix Capture está conectado",
@@ -20957,7 +20957,7 @@
     },
     "rollout": {
       "title": "Instalar nos computadores da empresa",
-      "description": "Crie um token de inscrição e a TI instala o Kortix Capture com ele: um comando, ou Intune e outra gestão de dispositivos. Cada computador começa a gravar sozinho e ninguém inicia sessão. Um token da empresa inscreve computadores sem vínculo; vincule-os a pessoas em Dispositivos, ou ative Aprovar cada computador para confirmar a pessoa sugerida. Um token pessoal vincula todos os computadores a uma pessoa.",
+      "description": "A TI instala o Kortix Capture com um token de inscrição. Cada computador grava sozinho; ninguém inicia sessão.",
       "tokensTitle": "Seus tokens de registro",
       "tokensEmpty": "Ainda não há token de registro.",
       "guide": "Guia de configuração para TI",
@@ -20966,7 +20966,7 @@
       "name": "Nome",
       "namePlaceholder": "Notebooks de engenharia",
       "for": "Para",
-      "forHint": "Qualquer pessoa: os computadores são inscritos sem vínculo e você os vincula. Uma pessoa: todos os computadores são vinculados a ela.",
+      "forHint": "Qualquer pessoa: você vincula os computadores depois. Uma pessoa: todos os computadores são vinculados a ela.",
       "forAnyone": "Qualquer pessoa da empresa",
       "forPerson": "Para {person}",
       "domains": "Domínios de e-mail",
@@ -20984,9 +20984,9 @@
       "createdBody": "O Kortix mostra este token uma única vez. Quem o tiver pode registrar computadores nesta organização até você revogá-lo.",
       "installTitle": "Instalar em cada computador",
       "installBody": {
-        "windows": "Execute como administrador ou distribua com o Intune ou uma política de grupo. No próximo login no Windows o computador se registra, começa a gravar e a pessoa vê um aviso.",
-        "macos": "Execute no Terminal ou distribua o pacote com seu MDM e o token em um perfil de configuração (domínio ai.kortix.capture). A pessoa aprova a gravação de tela uma vez; um perfil PPPC pode conceder o resto.",
-        "linux": "Execute em um desktop com X11. No próximo login o computador se registra e começa a gravar. Sessões Wayland ainda não são gravadas."
+        "windows": "Execute como administrador ou distribua com Intune ou Política de Grupo. O computador começa a gravar no próximo login.",
+        "macos": "Execute no Terminal ou distribua o pacote com seu MDM. A pessoa permite a gravação de tela uma vez, a menos que um perfil PPPC a conceda.",
+        "linux": "Execute em um desktop com X11. O computador começa a gravar no próximo login. O Wayland ainda não é compatível."
       },
       "usage": "{count, plural, one {# computador} other {# computadores}}",
       "usageOf": "{count} de {max} computadores",

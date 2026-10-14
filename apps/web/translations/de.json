@@ -20623,10 +20623,10 @@
   "capture": {
     "authorize": {
       "title": "Kortix-Capture-Anmeldung bestätigen",
-      "description": "Prüfe, dass dieser Code dem in der App entspricht, und wähle dann das Konto, in das sie aufzeichnet.",
+      "description": "Prüfe, ob der Code mit der App übereinstimmt, und wähle ein Konto.",
       "approvingAs": "Anmeldung als {email}",
-      "notice": "Die App zeichnet deinen Bildschirm und deine Aktionen auf, und Audio, wenn das Konto es erlaubt. Du kannst es sehen. Ebenso die Owner und Admins des Kontos und alle, denen eine benutzerdefinierte Rolle es erlaubt. Jeder Zugriff durch andere wird protokolliert.",
-      "ownCodeOnly": "Bestätige nur einen Code, den du in Kortix Capture auf deinem eigenen Computer siehst. Bestätige nie einen Code, den dir jemand geschickt hat: Diese Person würde als du aufnehmen.",
+      "notice": "Eigentümer und Admins sehen, was aufgenommen wird. Jeder Zugriff wird protokolliert.",
+      "ownCodeOnly": "Bestätige nur einen Code, der auf deinem eigenen Computer angezeigt wird.",
       "approve": "Anmeldung bestätigen",
       "deny": "Ablehnen",
       "approvedTitle": "Kortix Capture ist angemeldet",
@@ -20957,7 +20957,7 @@
     },
     "rollout": {
       "title": "Auf Firmencomputern installieren",
-      "description": "Erstelle ein Registrierungstoken; die IT installiert Kortix Capture damit: ein Befehl, oder Intune und andere Geräteverwaltung. Jeder Computer startet die Aufnahme selbst, niemand meldet sich an. Ein Firmentoken registriert Computer ohne Zuordnung; ordne sie unter Geräte Personen zu, oder schalte „Jeden Computer bestätigen“ ein, um die vorgeschlagene Person zu bestätigen. Ein persönliches Token ordnet jeden Computer einer Person zu.",
+      "description": "Die IT installiert Kortix Capture mit einem Registrierungstoken. Jeder Computer nimmt selbst auf; niemand meldet sich an.",
       "tokensTitle": "Deine Registrierungstokens",
       "tokensEmpty": "Noch kein Registrierungstoken.",
       "guide": "Einrichtungsanleitung für die IT",
@@ -20966,7 +20966,7 @@
       "name": "Name",
       "namePlaceholder": "Engineering-Laptops",
       "for": "Für",
-      "forHint": "Alle: Computer werden ohne Zuordnung registriert, und du ordnest sie zu. Eine Person: jeder Computer wird ihr zugeordnet.",
+      "forHint": "Alle: du ordnest Computer später zu. Eine Person: jeder Computer wird ihr zugeordnet.",
       "forAnyone": "Alle in der Firma",
       "forPerson": "Für {person}",
       "domains": "E-Mail-Domains",
@@ -20984,9 +20984,9 @@
       "createdBody": "Kortix zeigt dieses Token nur einmal. Wer es hat, kann Computer in diese Organisation registrieren, bis du es widerrufst.",
       "installTitle": "Auf jedem Computer installieren",
       "installBody": {
-        "windows": "Führe es als Administrator aus oder verteile es mit Intune oder einer Gruppenrichtlinie. Bei der nächsten Windows-Anmeldung registriert sich der Computer, beginnt mit der Aufnahme, und die Person sieht einen Hinweis.",
-        "macos": "Führe es im Terminal aus oder verteile das Paket mit deinem MDM und dem Token in einem Konfigurationsprofil (Domain ai.kortix.capture). Die Person erlaubt die Bildschirmaufnahme einmal; ein PPPC-Profil kann den Rest freigeben.",
-        "linux": "Führe es auf einem Desktop mit X11 aus. Bei der nächsten Anmeldung registriert sich der Computer und beginnt mit der Aufnahme. Wayland-Sitzungen werden noch nicht aufgenommen."
+        "windows": "Als Administrator ausführen oder mit Intune oder Gruppenrichtlinien verteilen. Der Computer startet die Aufnahme bei der nächsten Anmeldung.",
+        "macos": "Im Terminal ausführen oder das Paket per MDM verteilen. Die Person erlaubt die Bildschirmaufnahme einmal, außer ein PPPC-Profil erteilt sie.",
+        "linux": "Auf einem Desktop mit X11 ausführen. Der Computer startet die Aufnahme bei der nächsten Anmeldung. Wayland wird noch nicht unterstützt."
       },
       "usage": "{count, plural, one {# Computer} other {# Computer}}",
       "usageOf": "{count} von {max} Computern",

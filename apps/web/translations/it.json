@@ -20623,10 +20623,10 @@
   "capture": {
     "authorize": {
       "title": "Approva l’accesso di Kortix Capture",
-      "description": "Controlla che questo codice corrisponda a quello dell’app, poi scegli l’account in cui registra.",
+      "description": "Controlla che il codice corrisponda all’app, poi scegli un account.",
       "approvingAs": "Accesso come {email}",
-      "notice": "L’app registra il tuo schermo e le tue azioni, e l’audio quando l’account lo consente. Tu puoi vederlo. Anche i proprietari e gli admin dell’account, e chiunque un ruolo personalizzato autorizzi. Ogni accesso da parte di altri viene registrato.",
-      "ownCodeOnly": "Approva solo un codice che vedi in Kortix Capture sul tuo computer. Non approvare mai un codice che qualcuno ti ha inviato: registrerebbe a tuo nome.",
+      "notice": "Proprietari e amministratori vedono ciò che registra. Ogni accesso è registrato.",
+      "ownCodeOnly": "Approva solo un codice mostrato sul tuo computer.",
       "approve": "Approva accesso",
       "deny": "Rifiuta",
       "approvedTitle": "Kortix Capture ha effettuato l'accesso",
@@ -20957,7 +20957,7 @@
     },
     "rollout": {
       "title": "Installa sui computer aziendali",
-      "description": "Crea un token di registrazione, poi l’IT installa Kortix Capture con esso: un comando, oppure Intune e altri strumenti di gestione dei dispositivi. Ogni computer inizia a registrare da solo e nessuno accede. Un token aziendale registra i computer senza collegarli; collegali alle persone in Dispositivi, oppure attiva Approva ogni computer per confermare la persona suggerita. Un token personale collega ogni computer a una persona.",
+      "description": "L’IT installa Kortix Capture con un token di registrazione. Ogni computer registra da solo; nessuno accede.",
       "tokensTitle": "I tuoi token di registrazione",
       "tokensEmpty": "Ancora nessun token di registrazione.",
       "guide": "Guida di configurazione per l’IT",
@@ -20966,7 +20966,7 @@
       "name": "Nome",
       "namePlaceholder": "Portatili ingegneria",
       "for": "Per",
-      "forHint": "Chiunque: i computer si registrano senza collegamento e li colleghi tu. Una persona: ogni computer è collegato a lei.",
+      "forHint": "Chiunque: colleghi i computer in seguito. Una persona: ogni computer è collegato a lei.",
       "forAnyone": "Chiunque in azienda",
       "forPerson": "Per {person}",
       "domains": "Domini email",
@@ -20984,9 +20984,9 @@
       "createdBody": "Kortix mostra questo token una sola volta. Chi lo possiede può registrare computer in questa organizzazione finché non lo revochi.",
       "installTitle": "Installa su ogni computer",
       "installBody": {
-        "windows": "Eseguilo come amministratore o distribuiscilo con Intune o un criterio di gruppo. Al prossimo accesso a Windows il computer si registra, inizia a registrare e la persona vede un avviso.",
-        "macos": "Eseguilo nel Terminale o distribuisci il pacchetto con il tuo MDM e il token in un profilo di configurazione (dominio ai.kortix.capture). La persona approva una volta la registrazione dello schermo; un profilo PPPC può concedere il resto.",
-        "linux": "Eseguilo su un desktop X11. Al prossimo accesso il computer si registra e inizia a registrare. Le sessioni Wayland non vengono ancora registrate."
+        "windows": "Eseguilo come amministratore o distribuiscilo con Intune o Criteri di gruppo. Il computer inizia a registrare al prossimo accesso.",
+        "macos": "Eseguilo nel Terminale o distribuisci il pacchetto con il tuo MDM. La persona consente la registrazione dello schermo una volta, salvo che un profilo PPPC la conceda.",
+        "linux": "Eseguilo su un desktop X11. Il computer inizia a registrare al prossimo accesso. Wayland non è ancora supportato."
       },
       "usage": "{count, plural, one {# computer} other {# computer}}",
       "usageOf": "{count} di {max} computer",

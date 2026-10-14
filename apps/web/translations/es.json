@@ -20623,10 +20623,10 @@
   "capture": {
     "authorize": {
       "title": "Aprobar el inicio de sesión de Kortix Capture",
-      "description": "Comprueba que este código coincide con el de la app y elige la cuenta en la que graba.",
+      "description": "Comprueba que el código coincide con la app y elige una cuenta.",
       "approvingAs": "Iniciando sesión como {email}",
-      "notice": "La app graba tu pantalla y tus acciones, y el audio cuando la cuenta lo permite. Tú puedes verlo. También los propietarios y administradores de la cuenta, y cualquiera a quien un rol personalizado lo permita. Cada acceso de otra persona queda registrado.",
-      "ownCodeOnly": "Aprueba solo un código que veas en Kortix Capture en tu propio equipo. Nunca apruebes un código que alguien te haya enviado: grabaría como tú.",
+      "notice": "Los propietarios y administradores ven lo que graba. Cada acceso queda registrado.",
+      "ownCodeOnly": "Aprueba solo un código que aparezca en tu propio equipo.",
       "approve": "Aprobar inicio de sesión",
       "deny": "Denegar",
       "approvedTitle": "Kortix Capture ha iniciado sesión",
@@ -20957,7 +20957,7 @@
     },
     "rollout": {
       "title": "Instalar en los equipos de la empresa",
-      "description": "Crea un token de inscripción y TI instala Kortix Capture con él: un comando, o Intune y otra gestión de dispositivos. Cada equipo empieza a grabar solo y nadie inicia sesión. Un token de empresa inscribe equipos sin vincular; vincúlalos a personas en Dispositivos, o activa Aprobar cada equipo para confirmar la persona sugerida. Un token personal vincula todos los equipos a una persona.",
+      "description": "TI instala Kortix Capture con un token de inscripción. Cada equipo graba solo; nadie inicia sesión.",
       "tokensTitle": "Tus tokens de inscripción",
       "tokensEmpty": "Aún no hay ningún token de inscripción.",
       "guide": "Guía de configuración para TI",
@@ -20966,7 +20966,7 @@
       "name": "Nombre",
       "namePlaceholder": "Portátiles de ingeniería",
       "for": "Para",
-      "forHint": "Cualquiera: los equipos se inscriben sin vincular y tú los vinculas. Una persona: todos los equipos se vinculan a ella.",
+      "forHint": "Cualquiera: vinculas los equipos después. Una persona: todos los equipos se vinculan a ella.",
       "forAnyone": "Cualquiera de la empresa",
       "forPerson": "Para {person}",
       "domains": "Dominios de correo",
@@ -20984,9 +20984,9 @@
       "createdBody": "Kortix muestra este token una sola vez. Quien lo tenga puede inscribir equipos en esta organización hasta que lo revoques.",
       "installTitle": "Instalar en cada equipo",
       "installBody": {
-        "windows": "Ejecútalo como administrador o distribúyelo con Intune o una directiva de grupo. En el siguiente inicio de sesión de Windows el equipo se inscribe, empieza a grabar y la persona ve un aviso.",
-        "macos": "Ejecútalo en Terminal o distribuye el paquete con tu MDM y el token en un perfil de configuración (dominio ai.kortix.capture). La persona aprueba la grabación de pantalla una vez; un perfil PPPC puede conceder el resto.",
-        "linux": "Ejecútalo en un escritorio con X11. En el siguiente inicio de sesión el equipo se inscribe y empieza a grabar. Las sesiones Wayland aún no se graban."
+        "windows": "Ejecútalo como administrador o distribúyelo con Intune o directiva de grupo. El equipo empieza a grabar en el próximo inicio de sesión.",
+        "macos": "Ejecútalo en Terminal o distribuye el paquete con tu MDM. La persona permite la grabación de pantalla una vez, salvo que un perfil PPPC la conceda.",
+        "linux": "Ejecútalo en un escritorio con X11. El equipo empieza a grabar en el próximo inicio de sesión. Wayland aún no es compatible."
       },
       "usage": "{count, plural, one {# equipo} other {# equipos}}",
       "usageOf": "{count} de {max} equipos",

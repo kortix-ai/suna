@@ -20623,10 +20623,10 @@
   "capture": {
     "authorize": {
       "title": "批准 Kortix Capture 登录",
-      "description": "确认此代码与应用中的代码一致，然后选择它记录到的账户。",
+      "description": "确认代码与应用中一致，然后选择一个账户。",
       "approvingAs": "以 {email} 登录",
-      "notice": "该应用会录制你的屏幕和操作，在账户允许时也会录制音频。你可以查看。账户的所有者和管理员，以及自定义角色允许的任何人也可以查看。他人的每次查看都会被记录。",
-      "ownCodeOnly": "只批准你在自己电脑的 Kortix Capture 中看到的代码。绝不要批准别人发给你的代码：对方会以你的身份录制。",
+      "notice": "所有者和管理员可以查看录制内容。每次查看都会被记录。",
+      "ownCodeOnly": "只批准在你自己电脑上显示的代码。",
       "approve": "批准登录",
       "deny": "拒绝",
       "approvedTitle": "Kortix Capture 已登录",
@@ -20957,7 +20957,7 @@
     },
     "rollout": {
       "title": "安装到公司电脑",
-      "description": "创建一个注册令牌，IT 用它安装 Kortix Capture：一条命令，或通过 Intune 等设备管理工具。每台电脑自动开始录制，无需任何人登录。公司令牌注册的电脑不关联任何人；在“设备”中把它们关联到人，或开启“逐台批准”以确认建议的人。个人令牌将所有电脑关联到同一个人。",
+      "description": "IT 使用注册令牌安装 Kortix Capture。每台电脑自动录制，无需任何人登录。",
       "tokensTitle": "你的注册令牌",
       "tokensEmpty": "还没有注册令牌。",
       "guide": "IT 设置指南",
@@ -20966,7 +20966,7 @@
       "name": "名称",
       "namePlaceholder": "工程部笔记本",
       "for": "适用于",
-      "forHint": "所有人：电脑注册后不关联任何人，由你来关联。指定某人：所有电脑都关联到此人。",
+      "forHint": "所有人：稍后由你关联电脑。指定某人：所有电脑都关联到此人。",
       "forAnyone": "公司所有人",
       "forPerson": "{person} 专用",
       "domains": "邮箱域名",
@@ -20984,9 +20984,9 @@
       "createdBody": "Kortix 只显示此令牌一次。在你撤销之前，持有它的任何人都可以将电脑注册到此组织。",
       "installTitle": "在每台电脑上安装",
       "installBody": {
-        "windows": "以管理员身份运行，或通过 Intune 或组策略分发。下次登录 Windows 时，电脑会注册并开始录制，用户会看到提示。",
-        "macos": "在终端中运行，或通过 MDM 分发安装包，并在配置描述文件（域 ai.kortix.capture）中提供令牌。用户只需批准一次屏幕录制；其余权限可由 PPPC 描述文件授予。",
-        "linux": "在 X11 桌面上运行。下次登录时，电脑会注册并开始录制。尚不支持录制 Wayland 会话。"
+        "windows": "以管理员身份运行，或通过 Intune 或组策略部署。电脑在下次登录时开始录制。",
+        "macos": "在终端中运行，或通过 MDM 部署安装包。除非 PPPC 配置文件已授权，用户需允许一次屏幕录制。",
+        "linux": "在 X11 桌面上运行。电脑在下次登录时开始录制。暂不支持 Wayland。"
       },
       "usage": "{count, plural, other {# 台电脑}}",
       "usageOf": "{count} / {max} 台电脑",

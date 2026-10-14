@@ -20623,10 +20623,10 @@
   "capture": {
     "authorize": {
       "title": "Approve the Kortix Capture sign-in",
-      "description": "Check that this code matches the one in the app, then pick the account it records into.",
+      "description": "Check that the code matches the app, then pick an account.",
       "approvingAs": "Signing in as {email}",
-      "notice": "The app records your screen and your actions, and audio when the account allows it. You can see it. So can the account’s owners and admins, and anyone a custom role allows. Every view by someone else is logged.",
-      "ownCodeOnly": "Approve only a code you see in Kortix Capture on your own computer. Never approve a code someone sent you: they would record as you.",
+      "notice": "Owners and admins can see what it records. Every view is logged.",
+      "ownCodeOnly": "Only approve a code shown on your own computer.",
       "approve": "Approve sign-in",
       "deny": "Deny",
       "approvedTitle": "Kortix Capture is signed in",
@@ -20957,7 +20957,7 @@
     },
     "rollout": {
       "title": "Install on company computers",
-      "description": "Create an enrollment token, then IT installs Kortix Capture with it: one command, or Intune and other device management. Each computer starts recording on its own and nobody signs in. A company token enrolls computers linked to no one; link them to people in Devices, or turn on Approve each computer to confirm the suggested person. A personal token links every computer to one person.",
+      "description": "IT installs Kortix Capture with an enrollment token. Each computer records on its own; nobody signs in.",
       "tokensTitle": "Your enrollment tokens",
       "tokensEmpty": "No enrollment token yet.",
       "guide": "IT setup guide",
@@ -20966,7 +20966,7 @@
       "name": "Name",
       "namePlaceholder": "Engineering laptops",
       "for": "For",
-      "forHint": "Anyone: computers enroll linked to no one, and you link them. A person: every computer links to them.",
+      "forHint": "Anyone: you link computers later. A person: every computer links to them.",
       "forAnyone": "Anyone at the company",
       "forPerson": "For {person}",
       "domains": "Email domains",
@@ -20984,9 +20984,9 @@
       "createdBody": "Kortix shows this token once. Anyone who has it can enroll computers into this organization until you revoke it.",
       "installTitle": "Install on each computer",
       "installBody": {
-        "windows": "Run it as an administrator, or deploy it with Intune or Group Policy. At the next Windows sign-in the computer enrolls and starts recording, and the person sees a notice.",
-        "macos": "Run it in Terminal, or deploy the package with your MDM and the token in a configuration profile (domain ai.kortix.capture). The person approves Screen Recording once; a PPPC profile can grant the rest.",
-        "linux": "Run it on a desktop with X11. At the next sign-in the computer enrolls and starts recording. Wayland sessions are not recorded yet."
+        "windows": "Run as administrator, or deploy with Intune or Group Policy. The computer starts recording at the next sign-in.",
+        "macos": "Run in Terminal, or deploy the package with your MDM. The person allows Screen Recording once, unless a PPPC profile grants it.",
+        "linux": "Run on a desktop with X11. The computer starts recording at the next sign-in. Wayland is not supported yet."
       },
       "usage": "{count, plural, one {# computer} other {# computers}}",
       "usageOf": "{count} of {max} computers",
