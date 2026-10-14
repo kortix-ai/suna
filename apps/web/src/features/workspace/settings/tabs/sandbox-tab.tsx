@@ -1082,15 +1082,12 @@ export function SandboxTab({ projectId }: { projectId: string }) {
     setFormOpen(true);
   };
 
-  // Same quirk as `sandbox-view.tsx`: this button does NOT reset
-  // `editingTemplate` (only `openNewForm`, used by the header action, does)
-  // — preserved as-is, not in scope to fix.
   const newTemplateAction = canManage ? (
     <Button
       size="sm"
       variant="outline"
       className="gap-1.5 transition-transform active:scale-[0.96]"
-      onClick={() => setFormOpen(true)}
+      onClick={openNewForm}
     >
       <PlusIcon className="size-3.5 shrink-0" />
       {t('actions.new')}
