@@ -1,5 +1,5 @@
 {
-  "source_hash": "437fb17d786b0a1c72ce750ba11920479f28299bd1ebb652d3b5d91d3c4bf6a5",
+  "source_hash": "2aad8c062a2b538e447cbbd9bb2bb1de40aa77e26ccf9a4fafc46868b307036f",
   "diff_files": [
     "apps/web/src/components/markdown/code/code-block.test.tsx",
     "apps/web/src/components/markdown/code/code-block.tsx",
@@ -7,12 +7,12 @@
     "apps/web/src/components/markdown/code/shiki-highlighter.ts"
   ],
   "diff_hash": "70bffc91b38b9c2ab247a253b701db2d30e34ba12ad840613083e4f6afa5b224",
-  "head": "01c019b0deb82e29bf6516c20e9c2a264dbed672",
+  "head": "4445802040982611cd6bcb222f922f0424b28ec7",
   "passed": false,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T19:42:23.468Z"
+  "at": "2026-10-14T19:54:54.402Z"
 }
