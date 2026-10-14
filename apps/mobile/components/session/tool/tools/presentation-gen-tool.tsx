@@ -61,11 +61,11 @@ function SuccessLine({ children, trailing }: { children: string; trailing?: stri
   );
 }
 
-export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function PresentationGenTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { chain } = useToolRowVariant();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const running = useContext(ToolRunningContext);
   const action = typeof input.action === 'string' ? input.action : undefined;
   const presentationName = typeof input.presentation_name === 'string' ? input.presentation_name : undefined;
@@ -86,7 +86,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PresentationIcon}
       trigger={
         <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5 }}>

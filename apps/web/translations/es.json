@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "Tema",
       "themeDescription": "Elija la apariencia de Kortix en este dispositivo.",
+      "moreThemes": "Más temas…",
       "conversationDensity": "Densidad de la conversación",
       "conversationDensityDescription": "Elija cuántos detalles muestra el agente en la conversación mientras trabaja.",
       "richAnswers": "Respuestas enriquecidas",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "Predeterminado",
       "themes": {
         "light": "Claro",
+        "pureLight": "Claro puro",
         "dark": "Oscuro",
-        "system": "Sistema"
+        "pureDark": "Oscuro puro",
+        "system": "Sistema",
+        "kortix": "Kortix",
+        "lightThemes": "Temas claros",
+        "darkThemes": "Temas oscuros",
+        "search": "Buscar temas…",
+        "noResults": "No se encontraron temas"
       },
       "densities": {
         "normal": {
@@ -5773,7 +5781,6 @@
       "line175JsxTextOpenInTabInstead": "Abrir en una pestaña en su lugar"
     },
     "componentsDashboardConnectingScreen": {
-      "line156JsxAttrTitleRuntimeDegraded": "Entorno de ejecución degradado",
       "line422JsxTextCouldnAposTStart": "No se pudo iniciar",
       "line469JsxTextIsStopped": "está detenido",
       "line472JsxTextOpenANewSessionOrReturnToProjects": "Abre una nueva sesión o vuelve a proyectos para continuar.",
@@ -10920,7 +10927,6 @@
       "text26eb1bc45b53": "Denegación predeterminada",
       "text26ecc76c0ce9": "¿Eliminar este token?",
       "text26ee1166df63": "Los cambios se aplican al siguiente prompt.",
-      "text26f0dd993530": "Reintentando automáticamente",
       "text27042f4e6eca": "derecha",
       "text270ba743dc3c": "Los cron schedules y webhooks firmados inician sesiones de Kortix sin nadie presente. Cada trigger indica el agente que ejecuta, incluye una plantilla de prompt y entrega el trabajo mediante una solicitud de cambio que aprueba una persona.",
       "text271189ae389a": "Hora de inicio",
@@ -11447,7 +11453,13 @@
       "text370145ffb7ba": "Email omitido: copia el enlace de invitación para compartirlo manualmente",
       "text37023affd996": "hay más elementos no mostrados",
       "text37056f2381e2": "prop o sube un archivo.",
-      "text37074af6784c": "{value0} miembro{value1} pierde acceso a {value2}.",
+      "text586a24125900": "{count, plural, one {# miembro pierde} other {# miembros pierden}} el acceso a {account}.",
+      "text4e9efdcbbcbe": " (+{count} más; consulta la consola)",
+      "text65ef045d1ffa": "Contenido {value0}",
+      "text3028bf7d2dec": "Eliminar {value0}",
+      "textd0166fa53db8": "Subir {value0}",
+      "text3cc3767e7032": "Subido",
+      "text95e154398a4b": "Reemplazar",
       "text373570b711c7": "Los filtros, los límites de fechas, las filas que descartó y el motivo. Un análisis cuyas exclusiones no están documentadas no es un análisis, y un comentario en la consulta es el lugar más sencillo para conservarlas.",
       "text3738dea54aaa": "No se pudo actualizar el alcance",
       "text373a23b43a0b": "traducirX(calc((var(--tile) + var(--gap)) / 2))",
@@ -11870,7 +11882,6 @@
       "text429bbfa117e2": "App móvil",
       "text429be41120e9": "Ejecuta el proyecto sin salir de la conversación.",
       "text429ffbbaa586": "Conexión fácil",
-      "text42b3d52014ba": "Espacio de trabajo sin conexión",
       "text42b8d7c5357a": "El sandbox no confirmó la recarga",
       "text42bcffb92597": "Ver como este miembro",
       "text42bd94c06205": "Estado (punto, insignia, diff)",
@@ -15271,7 +15282,6 @@
       "texta4a83d949891": "No se pudo compactar la sesión",
       "texta4b4b51ec474": "translate(-50%, -100%)",
       "texta4b6a3d9d629": "kortix init convierte cualquier directorio en una instancia de Kortix. kortix ship la pone en producción. Desde entonces es un repo que te pertenece: versionado, comparable mediante diffs y mejorado por sí mismo, un cambio revisado a la vez.",
-      "texta4c128e48978": "El host es accesible, pero el entorno de ejecución principal del espacio de trabajo está fallando al procesar solicitudes. Reinicia el entorno de ejecución o la carga de trabajo para recuperar los servicios.",
       "texta4c297b580ad": "- Reclama los pagos vencidos y escala después de 30 días",
       "texta4c7fa51a957": "No se encontraron ramas",
       "texta4c9215859a8": "Miembro del proyecto eliminado",
@@ -17161,7 +17171,6 @@
       "textd938438f232e": "Autenticación del webhook",
       "textd942e3dc737b": "docs.kortix.com",
       "textd948c285986a": "Slack desconectado",
-      "textd94a83e48b64": "No se puede acceder a este espacio de trabajo. Vuelve a los proyectos y abre o crea otra sesión.",
       "textd952c0d7b0b0": "Se inyectan al llamar",
       "textd95934d15292": "Buscar entre más de 5000 API, servidores MCP y aplicaciones OAuth",
       "textd96a37fc02f0": "Reemplazar contraseña",
@@ -17553,7 +17562,6 @@
       "texte478b984a2d9": "Lee el tracker tal como es: problemas, estados, enlaces y comentarios; y escribe el resultado organizado donde se lo permitas. El tracker sigue siendo el sistema de registro; el agente no crea otro.",
       "texte47b85588c7c": "Cualquier IdP que utilice \"{value0}\" perderá el acceso inmediatamente. Esto no se puede deshacer: necesitarás acuñar un nuevo token para volver a conectarte.",
       "texte47c8bae740d": "Copiar clave",
-      "texte48034ba91dd": "Servicios del espacio de trabajo no disponibles",
       "texte4855e715f70": "    sandbox: python",
       "texte493d2f8af71": "Opciones avanzadas → Personalizar el nombre del atributo de grupo",
       "texte4a075134e2b": "No requiere nada especial: este elemento funciona directamente.",
@@ -19188,6 +19196,10 @@
       "text8295f9d4861b": "Verificación del dominio SSO de la cuenta establecida",
       "text7beaff63a7d3": "Archivo de configuración del proyecto descargado",
       "text5176d59f25fd": "Versión de configuración de la sesión resuelta",
+      "text64ad7399fb9e": "Tema claro puro",
+      "texte6ebf219f591": "tema modo claro puro blanco",
+      "textc433363f9a4e": "Tema oscuro puro",
+      "textbc9543239440": "tema modo oscuro puro negro",
       "text273c48dbf3b9": "Dispositivo de notificaciones push registrado",
       "textbb666ddf7a57": "Dispositivo de notificaciones push eliminado",
       "text397ab5aecbbf": "Solicitud de permiso de sesión retransmitida",
@@ -20744,5 +20756,21 @@
     "mapTwoFingers": "Usa dos dedos para mover el mapa",
     "pick": "Elección",
     "convertFailed": "No se pudo preparar la transcripción. Inténtalo de nuevo."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix móvil",
+    "badge": "Nuevo",
+    "title": "Kortix, ahora en tu teléfono",
+    "description": "Tus proyectos, sesiones y agentes, estés donde estés. Empieza el trabajo en tu escritorio y hazlo avanzar desde cualquier lugar.",
+    "feature": {
+      "sessions": "Sigue donde lo dejaste",
+      "sessionsDescription": "Cada sesión de la web, lista en tu teléfono.",
+      "notifications": "Entérate en cuanto termina",
+      "notificationsDescription": "Un aviso push cuando una sesión termina o necesita tu respuesta.",
+      "dictation": "Dilo y envíalo",
+      "dictationDescription": "Dicta un prompt en lugar de escribirlo."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }

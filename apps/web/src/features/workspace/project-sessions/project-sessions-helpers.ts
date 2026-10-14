@@ -1,5 +1,7 @@
 import type { UiTranslator } from '@/i18n/translator';
 import { runtimeSessionsOf, type ProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
+import type { QueryClient } from '@tanstack/react-query';
 
 import {
   matchesSourceFilters,
@@ -238,6 +240,29 @@ export function summarizeBulkDelete(
       value2: failed.length,
     }),
   };
+}
+
+/**
+ * The scope whose list this device already holds for these filters, the newer
+ * of the two, or null. The page reads the manager-only 'project' scope or the
+ * default 'visible' one, and the permission probe that decides is not kept
+ * across a reload: until it answered, a manager saw skeleton rows over a list
+ * the restored cache held. Both entries came from this user's own earlier
+ * reads (the persisted cache is per user), and the probe's answer replaces
+ * the choice.
+ */
+export function cachedSessionsScope(
+  queryClient: Pick<QueryClient, 'getQueryState'>,
+  projectId: string,
+  filters: Parameters<typeof qk.project.sessionsPaged>[2],
+): 'project' | 'visible' | null {
+  let newest: { scope: 'project' | 'visible'; at: number } | null = null;
+  for (const scope of ['project', 'visible'] as const) {
+    const state = queryClient.getQueryState(qk.project.sessionsPaged(projectId, scope, filters));
+    if (state?.data === undefined) continue;
+    if (!newest || state.dataUpdatedAt > newest.at) newest = { scope, at: state.dataUpdatedAt };
+  }
+  return newest?.scope ?? null;
 }
 
 /** Run `task` over `items` with at most `limit` in flight, preserving order. */

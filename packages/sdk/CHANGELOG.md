@@ -5,6 +5,80 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session-log follow-ups)
+- `sessionLogFullTextPlan(refs)`: which texts stored by reference a host shows
+  inline and which it downloads. The smallest fill the 1 MiB inline budget;
+  only the rest download. Before, a host could only download every text of a
+  turn over 1 MiB in all.
+- `hasRuntimeConfirmedMessage(sessionID, messageID)`
+  (`@kortix/sdk/internal/sync-store`): the store holds the message from a
+  runtime read or a live event, not only from a saved copy.
+
+### Fixed (session-log follow-ups)
+- `useSessionSync` stops offering the saved copy's older pages once the
+  runtime holds the saved window's oldest message and has no older page of
+  its own: `hasOlder` is `false` when the whole history is loaded. Before,
+  the "earlier messages" control stayed after the runtime had answered
+  everything (web and mobile). A box that lost its state still pages its
+  saved history.
+- `toToolView` reads Claude Code edits: `old_string` / `new_string`, the
+  `edits[]` of a `MultiEdit` (blocks joined in order), and a `NotebookEdit`'s
+  `notebook_path` and `new_source`. `toolKind` maps `MultiEdit` and
+  `NotebookEdit` to `edit`; `inputPath` reads `notebook_path`. The
+  `file-edit` view model reads the same blocks.
+
+### Added (block readers a host draws a tool call with)
+- `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),
+  `toolCallRawOutput(call)` (a completed call's text, one string per call
+  object) and `toolCallError(call)` (a failed call's error: the semantic
+  error, else the result text, as `toV1` gives `state.error`, so a native
+  failed call never shows an empty error body).
+- `subAgentCalls(thread)`: the shown tool calls of a sub-agent thread's
+  replies, in order, one array per thread object.
+
+### Changed (session log)
+- `useSession({ chatEngine: false })` negotiates the session log (v2) as
+  `useSession` with its chat engine does: with the runtime's
+  `session.log.v2` and the project flag `session_log`, it reads the first
+  log page and switches the session stream to `schema=v2`, so
+  `useSessionLogThread` serves v2 records to a host that reads its own
+  transcript (apps/mobile).
+- `useSessionLogThread` on v2 places the v1 store rows the log lacks by time,
+  as `useSessionMessages` does: an older page (`loadOlder`) goes before the
+  log's messages, an optimistic send after them. Before, every such row was
+  appended, so older turns rendered after the newest one.
+
+### Changed (one saved-history read per session open)
+- `useSession` reads a session's saved copy once per open. The session-open
+  snapshot carries the first window; the read waits up to 2 s for a snapshot
+  in flight, then asks `GET …/transcript?shape=sync&history=true`. Before,
+  every open with a snapshot in flight downloaded the window twice, and the
+  sync layer could read it a third time (KRTX-189).
+- `useSessionSync` with no `mirror` runs the same read. `useSession` passes
+  its answer as `mirror`: the copy, or `null` while the read runs and when
+  the server holds none. A host that mounts a second `useSessionSync` for the
+  root conversation beside `useSession` passes `mirror: null`. Beside
+  `useSession({ chatEngine: false })`, which makes no saved-history read, and
+  on a `savedChild` hook, the host omits `mirror`: that hook makes the read.
+- A host that passes no `mirror` now gets the server's "no saved copy" answer
+  from the snapshot too, so the device copy is dropped for the next open, as
+  the route answer already did.
+
+### Added (saved copy before `useSession` binds)
+- `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` and
+  `SavedSessionCopy` (`{ envelope, empty }`): the same saved-history read,
+  plus the empty-conversation proof (`isEmptyConversation` over the turn
+  record, read only when the copy proves the root empty). Never throws. For a
+  connecting screen that shows the conversation while the computer wakes;
+  apps/mobile uses it. Additive (KRTX-189).
+- The open that follows `readSavedSessionCopy` downloads the window no second
+  time. The SDK holds the copy for up to 5 min (one wake). The session-open
+  snapshot then asks for the pointer only (`?transcript=0`), and the
+  saved-history read answers from the held copy. Before, the connecting view
+  and the thread after it each downloaded the window.
+  `resetIdentityState` forgets the held copy and the session-open snapshots
+  (KRTX-189).
+
 ### Added (bounded review reads)
 - `getReviewSummary(projectId)` and `project(id).review.summary()`
   (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you

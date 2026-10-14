@@ -34,18 +34,18 @@ import { SubAgentActivity, SubAgentStatusBanner, useChildSession } from './sub-a
 
 const HIT_SLOP = { top: webSpace(2), bottom: webSpace(2) };
 
-export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
+export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const status = partStatus(part);
-  const childSessionId = useMemo(() => getChildSessionId(part), [part]);
-  const { childMessages, childToolParts } = useChildSession(childSessionId);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const childSessionId = useMemo(() => getChildSessionId(call), [call]);
+  const { childThread, childCalls } = useChildSession(childSessionId);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
   const detail = useContext(ToolDetailContext);
 
   const model = useMemo(
-    () => sessionSpawnModel({ status, input, childToolParts }),
-    [status, input, childToolParts],
+    () => sessionSpawnModel({ status, input, childCalls }),
+    [status, input, childCalls],
   );
 
   const canOpen = Boolean(childSessionId) && navigationEnabled;
@@ -57,8 +57,8 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   if (detail === 'body') {
     return (
       <ToolDetailContext.Provider value="nested">
-        <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
-        <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+        <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
+        <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       </ToolDetailContext.Provider>
     );
   }
@@ -133,10 +133,10 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           </Pressable>
         ) : null}
       </View>
-      {forceOpen && childToolParts.length > 0 ? (
-        <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+      {forceOpen && childCalls.length > 0 ? (
+        <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
       ) : null}
-      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+      <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
     </>
   );
 }

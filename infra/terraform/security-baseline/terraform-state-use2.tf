@@ -1,10 +1,9 @@
 # Regional state backend for the us-east-2 Terraform roots: dev-us-east-2 and
 # dev-web-us-east-2. The eu-west-2 roots use terraform-state-euw2.tf.
 #
-# The backends use S3 native locking (use_lockfile). The DynamoDB table below
-# served the deleted prod-us-east-2-shadow root and holds no lock; it goes in a
-# follow-up (deletion protection must be turned off in one apply, the table
-# removed in the next).
+# The backends use S3 native locking (use_lockfile). The DynamoDB table
+# `kortix-terraform-locks-us-east-2` served the deleted prod-us-east-2-shadow
+# root and was removed on 2026-10-14.
 # trivy:ignore:AVD-AWS-0089
 resource "aws_s3_bucket" "terraform_state_use2" {
   # checkov:skip=CKV_AWS_18:CloudTrail and S3 version history audit state access. A second access-log bucket adds another state-bearing bucket.
@@ -180,39 +179,4 @@ resource "aws_s3_bucket_policy" "terraform_state_use2" {
 
   bucket = aws_s3_bucket.terraform_state_use2.id
   policy = data.aws_iam_policy_document.terraform_state_use2.json
-}
-
-resource "aws_dynamodb_table" "terraform_locks_use2" {
-  provider = aws.use2
-
-  name                        = "kortix-terraform-locks-us-east-2"
-  billing_mode                = "PAY_PER_REQUEST"
-  hash_key                    = "LockID"
-  deletion_protection_enabled = true
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  point_in_time_recovery {
-    enabled = true
-  }
-
-  server_side_encryption {
-    enabled     = true
-    kms_key_arn = aws_kms_key.terraform_state_use2.arn
-  }
-
-  tags = {
-    ManagedBy  = "terraform"
-    Stack      = "security-baseline"
-    Compliance = "soc2"
-    Name       = "kortix-terraform-locks-us-east-2"
-    Region     = "us-east-2"
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }

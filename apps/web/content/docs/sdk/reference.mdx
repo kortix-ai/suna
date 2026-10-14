@@ -576,6 +576,17 @@ const child = getChildSessionId(call); // a running task's child session
 const command = toolCallMetadata(call).command; // bash
 ```
 
+### Reading a tool call
+
+What a host draws a `ToolCallBlock` with. Block-native: they stay.
+
+| Name | What it does |
+| --- | --- |
+| `toolCallStatus(call)` | The status in the words a renderer compares: `pending`, `running`, `completed` or `error`. |
+| `toolCallRawOutput(call)` | A completed call's output text as the tool returned it (its result's text items, joined); `''` for any other call. One string per call object. |
+| `toolCallError(call)` | A failed call's error text: its semantic error (`result.error.message`), else its result text, as `toV1` gives a v1 part's `state.error`. A harness that closes a failed call with `is_error` and the tool's text only still shows that text. `undefined` for a call that did not fail. |
+| `subAgentCalls(thread)` | The tool calls a sub-agent row lists: every shown call (`shouldShowToolPart`) of the thread's replies, in order. One array per thread object; the same empty array for `null`. |
+
 ### Block turns
 
 The turn model over session-log blocks: what a transcript renders a thread from. Each name replaces a v1 helper over `MessageWithParts` (see [Turns, status and helpers](#turns-status-and-helpers)); the v1 helpers stay until the next major.
@@ -603,6 +614,7 @@ The turn model over session-log blocks: what a transcript renders a thread from.
 | `sessionLogReferencedTexts(messages)` | The texts the API stored by reference (a text over 256 kB keeps a 16 kB preview, plus `ref` and `bytes`) that a transcript renders, text blocks and tool results' `content` items (not `model_content`), once per `ref`: `{ ref, bytes }`. Read one with `fetchSessionAttachment(ref)`. | new |
 | `sessionLogWithFullTexts(thread, texts)` | `thread` with each text whose `ref` is a key of `texts` replaced by the whole text, without `ref` and `bytes`. Untouched messages, and the thread when nothing changes, keep their identity. | new |
 | `sessionLogFullTextAction(refs)` | How a host offers the whole of `refs`: `'inline'` up to `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'download'` (a multi-MB text rendered as markdown stalls the page). | new |
+| `sessionLogFullTextPlan(refs)` | Which of `refs` show inline and which download: the smallest texts fill the 1 MiB inline budget first, only the rest download (`{ inline, download }`, both in record order). Nothing downloads exactly when `sessionLogFullTextAction` says `'inline'`. | new |
 
 A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`, `getQuestionForTool(questions, call.call_id)`. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept a `SessionLogTurn[]` as well as v1 turns, and `stepLabel` any session-log block (a non-call block reads by its `type`).
 
