@@ -1,0 +1,17 @@
+{
+  "source_hash": "067e5341bc680d6a35b752a881d8d492a7556505ce1eee4b3855281188cefe06",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(public)/(marketing)/design-system/page-usage-dont-heading.test.tsx",
+    "apps/web/src/app/[locale]/(public)/(marketing)/design-system/page.tsx",
+    "apps/web/translations/en.json"
+  ],
+  "diff_hash": "82a1a2ce91fb1fba200dab4e88249de751e516e4cea68a925a72d791bb2284b5",
+  "head": "4623a695443421938d567cca080ae70e41eea1ba",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-14T12:59:32.203Z"
+}
