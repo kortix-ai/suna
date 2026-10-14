@@ -1,5 +1,5 @@
 {
-  "source_hash": "7960663c34c149d8d0a57faae9a2e1266a2e3aebe656799a8f8005de5ba1f06b",
+  "source_hash": "b984a3cbea80250a33b7973342e0eeec7deea6fdaddde39dd1592e52ec770fa7",
   "diff_files": [
     ".agents/skills/genui/SKILL.md",
     ".agents/skills/kortix-capture/SKILL.md",
@@ -444,13 +444,13 @@
     "tests/src/flows/notifications.flow.ts",
     "tests/unit/release-record-workflow.test.ts"
   ],
-  "diff_hash": "607f016630e0383869bf4d234154d06654f79baffa18affa79741d1dac664c83",
-  "head": "da12b7050313c39f6132f2c61b1dc73b97eecf60",
+  "diff_hash": "26d5a43df98953406ff5840d1e2a7c87ca3f1edf248aaf80a39694dc5ee52098",
+  "head": "d775a981476e4f73545dda97a755a94b1eaf6e5b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T18:40:14.285Z"
+  "at": "2026-10-14T19:35:44.648Z"
 }
