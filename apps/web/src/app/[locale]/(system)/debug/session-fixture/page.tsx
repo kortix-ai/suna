@@ -6,7 +6,8 @@
  * Renders `@kortix/shared/session-fixture` through the web transcript's own
  * turn (`TurnViewport` + `SessionTurn`, over the session-log turns of the
  * fixture's rows) in a 390px column, for side-by-side comparison with the
- * mobile route `kortix://session-fixture`.
+ * mobile route `kortix://session-fixture`. Below it, Codex and Claude Code tool calls
+ * (`FOREIGN_TOOL_CALLS`) render through their block kind's renderer (P5.3).
  *
  * No network: the fixture is seeded into the SDK session store under fixture
  * ids, queries are disabled by default, and no runtime is connected. Tool rows
@@ -25,6 +26,8 @@ import '@/features/session/tool/tools/register';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
 import { SessionTurn } from '@/features/session/session-chat/transcript';
+import { FOREIGN_TOOL_CALLS } from '@/features/session/tool/foreign-tool-calls';
+import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import { TurnViewport } from '@/features/session/turn/turn-viewport';
 import { SESSION_FIXTURE } from '@kortix/shared/session-fixture';
 
@@ -140,6 +143,12 @@ export default function SessionFixturePage() {
                 })}
               </div>
             </div>
+            <section className="border-border mt-12 flex flex-col gap-2 border-t px-4 pt-3" data-testid="foreign-tools">
+              <p className="text-sm font-medium">Foreign harness tools</p>
+              {FOREIGN_TOOL_CALLS.map((call) => (
+                <ToolPartRenderer key={call.id} call={call} defaultOpen />
+              ))}
+            </section>
           </div>
 
           {showQuestion && question ? (

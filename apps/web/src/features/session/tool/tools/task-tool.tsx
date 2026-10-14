@@ -113,6 +113,8 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
     () =>
       (input.description as string) ||
       firstMeaningfulLine(input.prompt) ||
+      // Codex `spawn_agent`.
+      firstMeaningfulLine(input.message) ||
       firstMeaningfulLine(input.title, 80),
     [input],
   );
