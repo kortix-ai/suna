@@ -674,6 +674,14 @@ const envSchema = z.object({
   /** Endpoint a DEVICE reaches (credentials response, signed URLs). Empty = the endpoint above / AWS. */
   KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: optUrl(''),
   KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: optBoolFalse,
+  /**
+   * Self-host without a domain (loopback, Cloudflare tunnel): the in-network S3
+   * endpoint this API forwards `/<bucket>/*` to, so a device reaches the store
+   * over the API's own origin. Unset in domain mode, where Caddy does it.
+   */
+  KORTIX_CAPTURE_S3_PROXY_TARGET: optUrl(''),
+  /** Create the bucket if it is missing (self-host's bundled store). AWS: Terraform owns it. */
+  KORTIX_CAPTURE_S3_CREATE_BUCKET: optBoolFalse,
   KORTIX_CAPTURE_S3_ACCESS_KEY_ID: optStr,
   KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: optStr,
   // Credential issuer: STS AssumeRole with an inline session policy that
@@ -1414,6 +1422,8 @@ export const config = {
   KORTIX_CAPTURE_S3_ENDPOINT: env.KORTIX_CAPTURE_S3_ENDPOINT,
   KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: env.KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT,
   KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: env.KORTIX_CAPTURE_S3_FORCE_PATH_STYLE,
+  KORTIX_CAPTURE_S3_PROXY_TARGET: env.KORTIX_CAPTURE_S3_PROXY_TARGET,
+  KORTIX_CAPTURE_S3_CREATE_BUCKET: env.KORTIX_CAPTURE_S3_CREATE_BUCKET,
   KORTIX_CAPTURE_S3_ACCESS_KEY_ID: env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID,
   KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: env.KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY,
   KORTIX_CAPTURE_STS_ROLE_ARN: env.KORTIX_CAPTURE_STS_ROLE_ARN,

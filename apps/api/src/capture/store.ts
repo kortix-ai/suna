@@ -3,7 +3,7 @@
  * Devices write; the API reads (ingestion), writes `policy.json`, and signs
  * short-lived media URLs. Unset bucket ⇒ `captureStoreConfigured()` is false.
  */
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { config } from '../config';
 import { ObjectStore } from '../object-store/s3';
 
@@ -37,4 +37,25 @@ export async function putCaptureObject(key: string, body: string | Uint8Array, c
   await captureStore
     .client()
     .send(new PutObjectCommand({ Bucket: captureStore.bucket, Key: key, Body: body, ContentType: contentType }));
+}
+
+/**
+ * Creates the bucket when `KORTIX_CAPTURE_S3_CREATE_BUCKET` is on (self-host's
+ * bundled store, which starts empty). Idempotent: a bucket that exists, or that
+ * a second replica created first, is left alone. AWS: Terraform owns the bucket.
+ */
+export async function ensureCaptureBucket(): Promise<void> {
+  if (!config.KORTIX_CAPTURE_S3_CREATE_BUCKET || !captureStore.configured) return;
+  const client = captureStore.client();
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: captureStore.bucket }));
+    return;
+  } catch (error) {
+    if ((error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode !== 404) throw error;
+  }
+  try {
+    await client.send(new CreateBucketCommand({ Bucket: captureStore.bucket }));
+  } catch (error) {
+    if (!['BucketAlreadyOwnedByYou', 'BucketAlreadyExists'].includes((error as { name?: string })?.name ?? '')) throw error;
+  }
 }
