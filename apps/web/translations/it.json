@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "Tema",
       "themeDescription": "Scegli l'aspetto di Kortix su questo dispositivo.",
+      "moreThemes": "Altri temi…",
       "conversationDensity": "Densità della conversazione",
       "conversationDensityDescription": "Scegli quanti dettagli mostra l'agente nella conversazione mentre lavora.",
       "richAnswers": "Risposte arricchite",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "Predefinito",
       "themes": {
         "light": "Chiaro",
+        "pureLight": "Chiaro puro",
         "dark": "Scuro",
-        "system": "Sistema"
+        "pureDark": "Scuro puro",
+        "system": "Sistema",
+        "kortix": "Kortix",
+        "lightThemes": "Temi chiari",
+        "darkThemes": "Temi scuri",
+        "search": "Cerca temi…",
+        "noResults": "Nessun tema trovato"
       },
       "densities": {
         "normal": {
@@ -7281,6 +7289,8 @@
       "tokensIn": "Token in entrata",
       "tokensOut": "Token in uscita",
       "treeMessages": "messaggi",
+      "subAgentsLoaded": "{loaded} di {total} sub-agenti caricati",
+      "loadAll": "Carica tutti",
       "detailInput": "Token di input",
       "detailOutput": "Token di output",
       "detailReasoning": "Token di ragionamento",
@@ -11449,7 +11459,13 @@
       "text370145ffb7ba": "Email saltata: copia il link di invito per condividerlo manualmente",
       "text37023affd996": "altri non mostrati",
       "text37056f2381e2": "prop o carica un file.",
-      "text37074af6784c": "{value0} membro{value1} perde l'accesso a {value2}.",
+      "text586a24125900": "{count, plural, one {# membro perde} other {# membri perdono}} l'accesso a {account}.",
+      "text4e9efdcbbcbe": " (+{count} altri — vedi la console)",
+      "text65ef045d1ffa": "Contenuti {value0}",
+      "text3028bf7d2dec": "Rimuovi {value0}",
+      "textd0166fa53db8": "Carica {value0}",
+      "text3cc3767e7032": "Caricato",
+      "text95e154398a4b": "Sostituisci",
       "text373570b711c7": "Filtri, limiti temporali, righe eliminate e motivi. Un'analisi con esclusioni non documentate non è un'analisi; un commento nella query è il modo più semplice per conservarle.",
       "text3738dea54aaa": "Impossibile aggiornare l'ambito",
       "text373a23b43a0b": "translateX(calc((var(--tile) + var(--gap)) / 2))",
@@ -19186,6 +19202,10 @@
       "text8295f9d4861b": "Verifica del dominio SSO dell’account impostata",
       "text7beaff63a7d3": "Archivio di configurazione del progetto scaricato",
       "text5176d59f25fd": "Release di configurazione della sessione risolta",
+      "text64ad7399fb9e": "Tema chiaro puro",
+      "texte6ebf219f591": "tema modalità chiara puro bianco",
+      "textc433363f9a4e": "Tema scuro puro",
+      "textbc9543239440": "tema modalità scura puro nero",
       "text273c48dbf3b9": "Dispositivo per notifiche push registrato",
       "textbb666ddf7a57": "Dispositivo per notifiche push rimosso",
       "text397ab5aecbbf": "Richiesta di autorizzazione della sessione inoltrata",
@@ -20781,6 +20801,22 @@
     "mapTwoFingers": "Usa due dita per spostare la mappa",
     "pick": "Scelta",
     "convertFailed": "Impossibile preparare la trascrizione. Riprova."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobile",
+    "badge": "Novità",
+    "title": "Kortix, ora sul tuo telefono",
+    "description": "I tuoi progetti, sessioni e agenti, ovunque tu sia. Avvia il lavoro alla scrivania e fallo avanzare da qualsiasi posto.",
+    "feature": {
+      "sessions": "Riprendi da dove avevi lasciato",
+      "sessionsDescription": "Ogni sessione dal web, pronta sul tuo telefono.",
+      "notifications": "Sai subito quando è finito",
+      "notificationsDescription": "Una notifica push quando una sessione termina o aspetta la tua risposta.",
+      "dictation": "Dillo e invialo",
+      "dictationDescription": "Detta un prompt invece di scriverlo."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   },
   "capture": {
     "authorize": {

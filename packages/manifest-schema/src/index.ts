@@ -221,6 +221,9 @@ export {
 export {
   type AgentModeV2,
   type WorkspaceModeV2,
+  type AgentWorkspaceV2,
+  type ProjectRepositoryResult,
+  resolveProjectRepository,
   type RuntimeV2,
   type PermissionActionV2,
   type PermissionRuleV2,

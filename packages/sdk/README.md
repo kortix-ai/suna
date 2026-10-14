@@ -731,6 +731,10 @@ still v1:
   for rows a host reads without a `useSession` (a sub-agent's chat). One message
   per row object, kept while the row is unchanged. It goes away with the v1 rows.
 
+A host draws a `ToolCallBlock` with `toolCallStatus(call)` (`completed`, not
+`complete`), `toolCallRawOutput(call)`, `toolCallError(call)` (the semantic error,
+else the result text) and, for a sub-agent row, `subAgentCalls(thread)`.
+
 `getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,
 reads one page of the stored session log (`SessionLogPage`: the session record,
 every thread head, a thread's newest messages by `seq`, `has_more`). `query` is
@@ -802,7 +806,9 @@ transcript renders a thread from. It replaces the v1 turn helpers over
 - Texts stored by reference: `sessionLogReferencedTexts(messages)` lists every
   text the API kept as a 16 kB preview (`{ ref, bytes }`); read one with
   `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`. `sessionLogFullTextAction(refs)` says
-  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`.
+  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`;
+  `sessionLogFullTextPlan(refs)` says which texts: the smallest fill the 1 MiB inline budget,
+  only the rest download.
 - `useSessionLogRecord(session)` (`@kortix/sdk/react`) is the v2 session record without threads
   (`restore_grade`, `grade_counts`, `harness`, `ext`); it keeps its identity through message puts.
 
@@ -1245,6 +1251,7 @@ per-release changes.
 ### Agent repository access
 
 Agent configuration accepts `repository_access?: boolean` (default `true`).
+The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository`.
 Set `false` to run new sessions without the project repository or repository API access.
 Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
 `AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.

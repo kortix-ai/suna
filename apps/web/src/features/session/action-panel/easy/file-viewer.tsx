@@ -24,6 +24,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
@@ -54,7 +55,13 @@ function extensionOf(fileName: string): string {
 
 export function languageFor(fileName: string): string {
   const language = getLanguageFromExt(fileName);
-  return extensionOf(fileName) === 'svg' ? 'xml' : extensionOf(fileName) === 'htm' ? 'html' : language === 'plaintext' ? 'text' : language;
+  return extensionOf(fileName) === 'svg'
+    ? 'xml'
+    : extensionOf(fileName) === 'htm'
+      ? 'html'
+      : language === 'plaintext'
+        ? 'text'
+        : language;
 }
 
 export function isMarkdown(fileName: string): boolean {
@@ -173,10 +180,11 @@ export function FileViewer({
           />
         </ViewerPathPill>
 
-        <span className="flex shrink-0 items-center gap-1">
+        <ButtonGroup className="shrink-0">
           {/* Download stays the raw `.md`; Save as PDF is the rendered page. */}
           {markdown && (
             <SaveAsPdfButton
+              variant="secondary"
               fileName={fileName}
               content={content}
               className="size-7"
@@ -186,7 +194,7 @@ export function FileViewer({
           <ViewerDownloadAction download={path ? { path, fileName } : undefined} />
           <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
-        </span>
+        </ButtonGroup>
       </div>
 
       {/* Only scrolling and sizing live here. Padding belongs to each view (see

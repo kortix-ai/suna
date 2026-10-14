@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "テーマ",
       "themeDescription": "このデバイスでの Kortix の外観を選択します。",
+      "moreThemes": "その他のテーマ…",
       "conversationDensity": "会話の表示密度",
       "conversationDensityDescription": "エージェントの作業中に会話へ表示する詳細の量を選択します。",
       "richAnswers": "リッチな回答",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "デフォルト",
       "themes": {
         "light": "ライト",
+        "pureLight": "ピュアライト",
         "dark": "ダーク",
-        "system": "システム"
+        "pureDark": "ピュアダーク",
+        "system": "システム",
+        "kortix": "Kortix",
+        "lightThemes": "ライトテーマ",
+        "darkThemes": "ダークテーマ",
+        "search": "テーマを検索…",
+        "noResults": "テーマが見つかりません"
       },
       "densities": {
         "normal": {
@@ -7281,6 +7289,8 @@
       "tokensIn": "入力トークン",
       "tokensOut": "出力トークン",
       "treeMessages": "件のメッセージ",
+      "subAgentsLoaded": "{total} 件中 {loaded} 件のサブエージェントを読み込み済み",
+      "loadAll": "すべて読み込む",
       "detailInput": "入力トークン",
       "detailOutput": "出力トークン",
       "detailReasoning": "推論トークン",
@@ -11449,7 +11459,13 @@
       "text370145ffb7ba": "メールをスキップしました — 招待リンクをコピーして手動で共有してください",
       "text37023affd996": "その他は表示されません",
       "text37056f2381e2": "か、ファイルをアップロードしてください。",
-      "text37074af6784c": "{value0} メンバー{value1} は {value2} にアクセスできなくなります。",
+      "text586a24125900": "{count, plural, other {#人のメンバー}}が{account}にアクセスできなくなります。",
+      "text4e9efdcbbcbe": "（ほか {count} 件 — コンソールを参照）",
+      "text65ef045d1ffa": "コンテンツ {value0}",
+      "text3028bf7d2dec": "{value0}を削除",
+      "textd0166fa53db8": "{value0}をアップロード",
+      "text3cc3767e7032": "アップロード済み",
+      "text95e154398a4b": "置き換え",
       "text373570b711c7": "フィルター、日付の境界、除外した行とその理由。除外が記録されていない分析は分析とは言えません。クエリ内のコメントは、それを残す最も簡単な場所です。",
       "text3738dea54aaa": "スコープの更新に失敗しました",
       "text373a23b43a0b": "translateX(calc((var(--tile) + var(--gap)) / 2))",
@@ -19186,6 +19202,10 @@
       "text8295f9d4861b": "アカウントの SSO ドメイン検証を設定しました",
       "text7beaff63a7d3": "プロジェクトの設定アーカイブをダウンロードしました",
       "text5176d59f25fd": "セッションの設定リリースを解決しました",
+      "text64ad7399fb9e": "ピュアライトテーマ",
+      "texte6ebf219f591": "テーマ ライトモード ピュア 白",
+      "textc433363f9a4e": "ピュアダークテーマ",
+      "textbc9543239440": "テーマ ダークモード ピュア 黒",
       "text273c48dbf3b9": "プッシュ通知デバイスを登録しました",
       "textbb666ddf7a57": "プッシュ通知デバイスを削除しました",
       "text397ab5aecbbf": "セッションの権限リクエストを中継しました",
@@ -20781,6 +20801,22 @@
     "mapTwoFingers": "2本の指で地図を動かします",
     "pick": "おすすめ",
     "convertFailed": "トランスクリプトを準備できませんでした。もう一度お試しください。"
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix モバイル",
+    "badge": "新機能",
+    "title": "Kortix がスマートフォンでも",
+    "description": "プロジェクト、セッション、エージェントをどこにいても。デスクで始めた作業を、外出先からも進められます。",
+    "feature": {
+      "sessions": "続きからすぐ再開",
+      "sessionsDescription": "Web のすべてのセッションを、スマートフォンでそのまま。",
+      "notifications": "終わったらすぐにわかる",
+      "notificationsDescription": "セッションが完了したとき、または返答が必要なときにプッシュ通知。",
+      "dictation": "話して、送るだけ",
+      "dictationDescription": "プロンプトを入力せずに音声で伝えられます。"
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   },
   "capture": {
     "authorize": {

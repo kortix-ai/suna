@@ -356,7 +356,7 @@ Each adapter declares in its capabilities what its oracle suites passed against:
 `PI_CAPABILITIES` and `OPENCODE_CAPABILITIES` (`@kortix/api-contract/session-log`,
 `capabilities.ts`: apps/api reads the same manifests for the switch preflight,
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight`), field `harness_versions` (a semver range, today
-`1.0.3` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
+`1.0.3 || 1.2.0` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
 by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
 reads them and fails when a pin leaves them:
 
@@ -446,7 +446,7 @@ put replace the whole record.
 The journal folds the v1 frames of each message it has not collected. It
 publishes a live put of a message on the v2 bus only, never into the dirty
 set: apps/api receives the turn end's record alone (its `log_durable_at`
-reacts to a non-streaming assistant message). A live put is published:
+reacts to a non-streaming assistant message or compaction). A live put is published:
 - on the first `message.updated` of a message: the prompt (complete) and each
   assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
 - on each `message.part.updated` of a part the message did not have: a new
@@ -631,7 +631,7 @@ model call read it (its turn runs or ran), and it stays.
 > section. Until then OpenCode stays the default. When the move is complete,
 > `open-code/` and the `opencode` harness id are removed.
 
-pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.3) is bundled
+pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.2.0) is bundled
 into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
@@ -715,7 +715,10 @@ only those files is a working config on pi.
   restart.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `initial-turn-claimed`,
-`config-release-fetched`, `config-release-<disk|snapshot|archive>`,
+`config-release-published` (the release the API published and signed at
+session create, `KORTIX_CONFIG_RELEASE`: read from the store, no API call) or
+`config-release-fetched` (the descriptor route answered),
+`config-release-<disk|snapshot|archive|git>`,
 `config-release-proven`, `pi-ready`, `initial-prompt-delivered`,
 `initial-turn-accepted`, `runtime-ready`. No workspace step is a boot mark;
 `/kortix/health` reports the checkout as `workspace_provider`.
@@ -810,13 +813,13 @@ dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
 
 Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
-block that another model wrote as visible assistant text, and pi's summarizers
-(compaction, branch summary) flatten every thinking block into the prompt
-text. `pi/reasoning.ts` removes the thinking of another model on both paths,
-with pi-ai's own test (provider, api, model id): `withoutForeignReasoning`
-wraps the stream function of the root and every child agent, and the hidden
-`kortix-reasoning` extension filters the summarizer input in
-`session_before_compact` and `session_before_tree`. A model switch (a prompt's
+block that another model wrote as visible assistant text. `pi/reasoning.ts`
+removes the thinking of another model from each request, with pi-ai's own test
+(provider, api, model id): `withoutForeignReasoning` wraps the stream function
+of the root and every child agent. pi's summarizers (compaction, branch
+summary) send no thinking block of any model since pi 1.2.0
+(`serializeConversation`); `pi-session-log-restore.test.ts` fails if that
+changes. A model switch (a prompt's
 `model`, `POST /kortix/env`) and a restored log written by another model or
 harness both go through it. The same model's thinking goes back unchanged, and
 the store and the session log keep every block.
@@ -850,7 +853,7 @@ runs (`../services/tools/`):
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
 | `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
-| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
 | `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 
 - **pi** loads them at `start()` and registers each as an `AgentTool`
@@ -884,7 +887,8 @@ release a boot needs) stay outside `src/harness/`. Each depends only on
 `src/lib/` and knows nothing about any harness or about the other: both read
 the S3 project snapshot through `src/lib/project-snapshot/`, each into its
 own directory, in parallel. The config provider never reads `/workspace`
-(`obtainRelease`: disk, snapshot, archive). The harness composes them. Both
+(`obtainRelease`: disk, snapshot, archive, git; the archive first from the
+published release's signed store URL). The harness composes them. Both
 `open-code/boot.ts` and `pi/boot.ts` call `provideWorkspace(cfg, { onSummary })`
 at the point where the cold boot acquires the workspace. OpenCode still waits
 for the checkout before its proof, because an OpenCode Instance is built per

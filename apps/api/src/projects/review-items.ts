@@ -151,7 +151,7 @@ export function decodeInboxCursor(raw: string): InboxCursor | null {
     const [rank, at, source, id] = value;
     if (![0, 1, 2].includes(rank) || ![0, 1, 2].includes(source)) return null;
     if (typeof at !== 'string' || !MICRO_ISO_RE.test(at)) return null;
-    if (typeof id !== 'string' || !isUuid(id)) return null;
+    if (!isUuid(id)) return null;
     return { rank, at, source, id };
   } catch {
     return null;

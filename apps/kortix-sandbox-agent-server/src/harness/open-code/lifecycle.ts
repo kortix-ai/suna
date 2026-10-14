@@ -122,7 +122,7 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { configReleaseNoticePath } from '@/services/config-provider/notice'
-import { bootLinkPath, isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
+import { bootLinkPath, isInReleaseStore, readBootLinkTarget, readBootReleaseRoot, releaseRootOf } from '@/services/config-provider/boot-config'
 import { syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
@@ -2165,7 +2165,8 @@ export function createOpencodeLifecycle(
       servesRelease: !!served && releaseRootOf(served) !== null,
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
-      toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: servesProject ? projectRoot : null, configDir: served },
+      // Project tools load from the served release (or checkout), config dir or not.
+      toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: await readBootReleaseRoot(), configDir: served },
     })
   }
 

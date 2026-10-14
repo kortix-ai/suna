@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "Thème",
       "themeDescription": "Choisissez l'apparence de Kortix sur cet appareil.",
+      "moreThemes": "Plus de thèmes…",
       "conversationDensity": "Densité de la conversation",
       "conversationDensityDescription": "Choisissez le niveau de détail affiché par l'agent dans la conversation pendant son travail.",
       "richAnswers": "Réponses enrichies",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "Par défaut",
       "themes": {
         "light": "Clair",
+        "pureLight": "Clair pur",
         "dark": "Sombre",
-        "system": "Système"
+        "pureDark": "Sombre pur",
+        "system": "Système",
+        "kortix": "Kortix",
+        "lightThemes": "Thèmes clairs",
+        "darkThemes": "Thèmes sombres",
+        "search": "Rechercher des thèmes…",
+        "noResults": "Aucun thème trouvé"
       },
       "densities": {
         "normal": {
@@ -7281,6 +7289,8 @@
       "tokensIn": "Tokens entrants",
       "tokensOut": "Tokens sortants",
       "treeMessages": "messages",
+      "subAgentsLoaded": "{loaded} sur {total} sous-agents chargés",
+      "loadAll": "Tout charger",
       "detailInput": "Tokens d'entrée",
       "detailOutput": "Tokens de sortie",
       "detailReasoning": "Tokens de raisonnement",
@@ -11449,7 +11459,13 @@
       "text370145ffb7ba": "E-mail ignoré — copiez le lien d’invitation pour le partager manuellement",
       "text37023affd996": "d’autres éléments non affichés",
       "text37056f2381e2": "prop ou importez un fichier.",
-      "text37074af6784c": "{value0} membre{value1} perd l'accès à {value2}.",
+      "text586a24125900": "{count, plural, one {# membre perd} other {# membres perdent}} l'accès à {account}.",
+      "text4e9efdcbbcbe": " (+{count} autres — voir la console)",
+      "text65ef045d1ffa": "Contenu {value0}",
+      "text3028bf7d2dec": "Supprimer {value0}",
+      "textd0166fa53db8": "Importer {value0}",
+      "text3cc3767e7032": "Importé",
+      "text95e154398a4b": "Remplacer",
       "text373570b711c7": "Les filtres, les limites de dates, les lignes supprimées et leurs raisons. Une analyse dont les exclusions ne sont pas documentées n’en est pas une, et un commentaire dans la requête est le moyen le moins coûteux de les conserver.",
       "text3738dea54aaa": "Échec de la mise à jour de la portée",
       "text373a23b43a0b": "translaterX(calcul((var(--tuile) + var(--écart)) / 2))",
@@ -19186,6 +19202,10 @@
       "text8295f9d4861b": "Vérification du domaine SSO du compte définie",
       "text7beaff63a7d3": "Archive de configuration du projet téléchargée",
       "text5176d59f25fd": "Version de configuration de la session résolue",
+      "text64ad7399fb9e": "Thème clair pur",
+      "texte6ebf219f591": "thème mode clair pur blanc",
+      "textc433363f9a4e": "Thème sombre pur",
+      "textbc9543239440": "thème mode sombre pur noir",
       "text273c48dbf3b9": "Appareil de notifications push enregistré",
       "textbb666ddf7a57": "Appareil de notifications push supprimé",
       "text397ab5aecbbf": "Demande d’autorisation de session relayée",
@@ -20781,6 +20801,22 @@
     "mapTwoFingers": "Utilisez deux doigts pour déplacer la carte",
     "pick": "Choix",
     "convertFailed": "Impossible de préparer la transcription. Réessayez."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobile",
+    "badge": "Nouveau",
+    "title": "Kortix, désormais sur votre téléphone",
+    "description": "Vos projets, sessions et agents, où que vous soyez. Lancez le travail depuis votre bureau et faites-le avancer de partout.",
+    "feature": {
+      "sessions": "Reprenez là où vous en étiez",
+      "sessionsDescription": "Chaque session du web, prête sur votre téléphone.",
+      "notifications": "Sachez dès que c'est terminé",
+      "notificationsDescription": "Une notification push quand une session se termine ou attend votre réponse.",
+      "dictation": "Dites-le, envoyez-le",
+      "dictationDescription": "Dictez un prompt au lieu de le taper."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   },
   "capture": {
     "authorize": {

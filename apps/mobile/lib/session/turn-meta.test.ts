@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts, Turn } from '@/lib/session/types';
+import type { SessionLogMessage } from '@kortix/sdk';
+import { threadOf } from '@/lib/testing/session-log';
 import {
   TURN_META_LABELS,
   formatDistanceStrictAgo,
@@ -9,19 +10,17 @@ import {
   turnMetaRows,
 } from './turn-meta';
 
+/** A v1 row's times as the session-log message the turn reads (`created_at`, `completed_at`). */
 function message(
   id: string,
   role: 'user' | 'assistant',
   time: { created?: number; completed?: number } | undefined,
-): MessageWithParts {
-  return {
-    info: { id, role, sessionID: 's1', time } as unknown as MessageWithParts['info'],
-    parts: [],
-  };
+): SessionLogMessage {
+  return threadOf([{ info: { id, role, sessionID: 's1', time }, parts: [{ type: 'text', id: `${id}-p`, text: 'x' }] }]).messages[0]!;
 }
 
-function turn(user: MessageWithParts, ...assistants: MessageWithParts[]): Turn {
-  return { userMessage: user, assistantMessages: assistants };
+function turn(user: SessionLogMessage, ...assistant: SessionLogMessage[]) {
+  return { user, assistant };
 }
 
 const cost = (value: number, input: number, output: number) => ({

@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "Tema",
       "themeDescription": "Escolha a aparência do Kortix neste dispositivo.",
+      "moreThemes": "Mais temas…",
       "conversationDensity": "Densidade da conversa",
       "conversationDensityDescription": "Escolha quantos detalhes o agente mostra na conversa enquanto trabalha.",
       "richAnswers": "Respostas enriquecidas",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "Padrão",
       "themes": {
         "light": "Claro",
+        "pureLight": "Claro puro",
         "dark": "Escuro",
-        "system": "Sistema"
+        "pureDark": "Escuro puro",
+        "system": "Sistema",
+        "kortix": "Kortix",
+        "lightThemes": "Temas claros",
+        "darkThemes": "Temas escuros",
+        "search": "Pesquisar temas…",
+        "noResults": "Nenhum tema encontrado"
       },
       "densities": {
         "normal": {
@@ -7281,6 +7289,8 @@
       "tokensIn": "Tokens de entrada",
       "tokensOut": "Tokens de saída",
       "treeMessages": "mensagens",
+      "subAgentsLoaded": "{loaded} de {total} subagentes carregados",
+      "loadAll": "Carregar todos",
       "detailInput": "Tokens de entrada",
       "detailOutput": "Tokens de saída",
       "detailReasoning": "Tokens de raciocínio",
@@ -11449,7 +11459,13 @@
       "text370145ffb7ba": "E-mail ignorado — copie o link de convite para compartilhar manualmente",
       "text37023affd996": "mais itens não exibidos",
       "text37056f2381e2": "prop ou envie um arquivo.",
-      "text37074af6784c": "{value0} membro{value1} perde acesso a {value2}.",
+      "text586a24125900": "{count, plural, one {# membro perde} other {# membros perdem}} o acesso a {account}.",
+      "text4e9efdcbbcbe": " (+{count} mais — veja o console)",
+      "text65ef045d1ffa": "Conteúdo {value0}",
+      "text3028bf7d2dec": "Remover {value0}",
+      "textd0166fa53db8": "Enviar {value0}",
+      "text3cc3767e7032": "Enviado",
+      "text95e154398a4b": "Substituir",
       "text373570b711c7": "Filtros, limites de data, linhas removidas e motivos. Uma análise cujas exclusões não estão documentadas não é uma análise, e um comentário na consulta é o lugar mais simples para registrá-las.",
       "text3738dea54aaa": "Falha ao atualizar o escopo",
       "text373a23b43a0b": "translateX(calc((var(--tile) + var(--gap)) / 2))",
@@ -19186,6 +19202,10 @@
       "text8295f9d4861b": "Verificação do domínio SSO da conta definida",
       "text7beaff63a7d3": "Arquivo de configuração do projeto baixado",
       "text5176d59f25fd": "Versão de configuração da sessão resolvida",
+      "text64ad7399fb9e": "Tema claro puro",
+      "texte6ebf219f591": "tema modo claro puro branco",
+      "textc433363f9a4e": "Tema escuro puro",
+      "textbc9543239440": "tema modo escuro puro preto",
       "text273c48dbf3b9": "Dispositivo de notificações push registrado",
       "textbb666ddf7a57": "Dispositivo de notificações push removido",
       "text397ab5aecbbf": "Solicitação de permissão da sessão repassada",
@@ -20781,6 +20801,22 @@
     "mapTwoFingers": "Use dois dedos para mover o mapa",
     "pick": "Escolha",
     "convertFailed": "Não foi possível preparar a transcrição. Tente novamente."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobile",
+    "badge": "Novo",
+    "title": "Kortix, agora no seu celular",
+    "description": "Seus projetos, sessões e agentes, onde você estiver. Comece o trabalho na sua mesa e faça ele avançar de qualquer lugar.",
+    "feature": {
+      "sessions": "Continue de onde parou",
+      "sessionsDescription": "Todas as sessões da web, prontas no seu celular.",
+      "notifications": "Saiba na hora em que terminar",
+      "notificationsDescription": "Um aviso push quando uma sessão termina ou precisa da sua resposta.",
+      "dictation": "Fale e envie",
+      "dictationDescription": "Dite um prompt em vez de digitar."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   },
   "capture": {
     "authorize": {

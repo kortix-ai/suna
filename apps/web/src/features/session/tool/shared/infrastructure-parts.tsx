@@ -2,7 +2,11 @@
 
 import { stripBashMetadata } from '@kortix/shared/tool-output';
 import { type TriggerTitle } from '@/ui';
-import { toolCallMetadata, type ToolCallBlock } from '@kortix/sdk';
+import { toolCallMetadata, toolCallRawOutput, type ToolCallBlock } from '@kortix/sdk';
+
+// The SDK's block readers, under the names the renderers use: the status in their words
+// (`completed`, not `complete`), the raw output of a completed call, a failed call's error text.
+export { toolCallError as partError, toolCallRawOutput as partRawOutput, toolCallStatus as partStatus } from '@kortix/sdk';
 import { CheckIcon as Check, WarningCircleIcon as CircleAlert, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import Loading from '@/components/ui/loading';
 import { STATUS_TEXT } from '@/components/ui/status';
@@ -118,19 +122,6 @@ export function partMetadata(call: ToolCallBlock): Record<string, unknown> {
   return call.status === 'pending' ? EMPTY_RECORD : toolCallMetadata(call);
 }
 
-const RAW_OUTPUT_CACHE = new WeakMap<ToolCallBlock, string>();
-
-/** A completed call's output text as the tool returned it; `''` for any other call. */
-export function partRawOutput(call: ToolCallBlock): string {
-  if (call.status !== 'complete') return '';
-  const cached = RAW_OUTPUT_CACHE.get(call);
-  if (cached !== undefined) return cached;
-  let text = '';
-  for (const item of call.result?.content ?? []) if (item.type === 'text') text += item.text;
-  RAW_OUTPUT_CACHE.set(call, text);
-  return text;
-}
-
 /**
  * A completed tool's output, stripped of transport noise — memoised per call.
  *
@@ -152,22 +143,12 @@ export function partOutput(call: ToolCallBlock): string {
   const cached = OUTPUT_CACHE.get(call);
   if (cached !== undefined) return cached;
 
-  const output = stripBashMetadata(partRawOutput(call))
+  const output = stripBashMetadata(toolCallRawOutput(call))
     .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
     .trim();
 
   OUTPUT_CACHE.set(call, output);
   return output;
-}
-
-/** The error text of a failed call; `undefined` when it carries none. */
-export function partError(call: ToolCallBlock): string | undefined {
-  return call.status === 'error' ? call.result?.error?.message : undefined;
-}
-
-/** The status in the words the renderers compare: `pending`, `running`, `completed` or `error`. */
-export function partStatus(call: ToolCallBlock): string {
-  return call.status === 'complete' ? 'completed' : call.status;
 }
 
 export function firstMeaningfulLine(value: unknown, maxLength = 120): string {

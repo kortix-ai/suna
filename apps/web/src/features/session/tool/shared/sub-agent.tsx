@@ -4,7 +4,7 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { ToolSurfaceContext, useToolIndent } from '@/features/session/tool/shared/surface';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import { cn } from '@/lib/utils';
-import { getRetryInfo, getRetryMessage, shouldShowToolPart } from '@/ui';
+import { getRetryInfo, getRetryMessage } from '@/ui';
 import { classifySessionLogMessage, type SessionLogThread, type ToolCallBlock } from '@kortix/sdk';
 import { canQueryRuntimeSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
 import { useParams } from 'next/navigation';
@@ -30,14 +30,6 @@ export function useSubAgentThread(childSessionId: string | undefined): SessionLo
     [childSessionId, params?.id, params?.sessionId],
   );
   return useSessionLogThread(source, childSessionId ?? null);
-}
-
-/** The sub-agent's tool calls a row lists: every shown call of its replies, in order. */
-export function subAgentCalls(thread: SessionLogThread | null): ToolCallBlock[] {
-  if (!thread) return [];
-  return thread.messages.flatMap((m) =>
-    m.role === 'assistant' ? m.blocks.filter((b): b is ToolCallBlock => b.type === 'tool_call' && shouldShowToolPart(b)) : [],
-  );
 }
 
 /**
@@ -85,7 +77,7 @@ export function SubAgentActivity({
   calls,
 }: {
   childSessionId?: string;
-  calls: ToolCallBlock[];
+  calls: readonly ToolCallBlock[];
 }) {
   const indent = useToolIndent();
 

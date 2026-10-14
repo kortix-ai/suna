@@ -22,7 +22,7 @@ import {
 type Stores = Map<string, Map<string, unknown>>;
 
 /** The slice of IndexedDB the module uses, in memory. Every callback fires on a later task, as in a browser. */
-function fakeIndexedDB(options: { blocked?: boolean; version?: number; stores?: string[] } = {}) {
+function fakeIndexedDB(options: { blocked?: boolean; version?: number; stores?: string[]; upgradeThrows?: boolean } = {}) {
   const databases = new Map<string, { version: number; stores: Stores }>();
   if (options.version) {
     databases.set('kortix-session-cache', {
@@ -48,7 +48,18 @@ function fakeIndexedDB(options: { blocked?: boolean; version?: number; stores?: 
         const stores = db.stores;
         request.result = {
           objectStoreNames: { contains: (store: string) => stores.has(store) },
-          createObjectStore: (store: string) => void stores.set(store, new Map()),
+          createObjectStore: (store: string) => {
+            // Chrome 115 in the field: the upgrade transaction is gone by the
+            // time the handler runs.
+            if (options.upgradeThrows) {
+              // An aborted upgrade leaves the previous version, as in a browser.
+              db!.version = previous;
+              throw new Error(
+                "InvalidStateError: Failed to execute 'createObjectStore' on 'IDBDatabase': The database is not running a version change transaction.",
+              );
+            }
+            stores.set(store, new Map());
+          },
           deleteObjectStore: (store: string) => void stores.delete(store),
           close() {},
           transaction(store: string) {
@@ -149,6 +160,16 @@ describe('indexedDBKeyValueStorage', () => {
     const storage = indexedDBKeyValueStorage()!;
     expect(await storage.getItem('k')).toBeNull();
     await expect(Promise.resolve(storage.setItem('k', 'v'))).rejects.toThrow();
+  });
+
+  test('an upgrade that throws fails the open instead of escaping to window.onerror', async () => {
+    // Better Stack (Kortix Frontend prod): `InvalidStateError: Failed to execute
+    // 'createObjectStore' on 'IDBDatabase'` thrown inside `onupgradeneeded`,
+    // uncaught, reported through the global error handler.
+    install(fakeIndexedDB({ upgradeThrows: true }).factory);
+    const storage = indexedDBKeyValueStorage()!;
+    expect(await storage.getItem('k')).toBeNull();
+    await expect(Promise.resolve(storage.setItem('k', 'v'))).rejects.toThrow('createObjectStore');
   });
 
   test('backs a saved-copy store end to end', async () => {

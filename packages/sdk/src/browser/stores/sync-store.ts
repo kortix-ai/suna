@@ -638,6 +638,22 @@ export function hasOnlyCacheSourcedMessages(sessionID: string): boolean {
 	return messages.every((message) => cached.has(message.id));
 }
 
+/**
+ * Does this session hold `messageID` from a runtime read or a live event, not only from a
+ * saved copy? A saved window's cursor names its oldest message: once the runtime holds that
+ * message and has no older page of its own, every older saved message is in the runtime too.
+ */
+export function hasRuntimeConfirmedMessage(sessionID: string, messageID: string): boolean {
+	const messages = useSyncStore.getState().messages[sessionID];
+	if (!messages) return false;
+	// One id set per message array: every hook that asks between two writes of the session's
+	// list reads the same set (a streamed part delta does not replace the list).
+	let ids = messageIdSets.get(messages);
+	if (!ids) messageIdSets.set(messages, (ids = new Set(messages.map((message) => message.id))));
+	return ids.has(messageID) && !cacheSourcedIds.get(sessionID)?.has(messageID);
+}
+const messageIdSets = new WeakMap<readonly Message[], Set<string>>();
+
 function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
 	if (optimisticID === echoID) return;
 	// Chain through an earlier swap: a message that itself superseded an
@@ -1037,6 +1053,18 @@ const sessionMessageRows = new Map<
 	}
 >();
 const EMPTY_MESSAGE_ROWS: MessageWithParts[] = [];
+/**
+ * The same rows, by the store's message array. The bounded map above is for row reuse
+ * across a changed array; this one keeps a result's identity while its arrays are
+ * unchanged, however many sessions are read in between. A subscribed selector re-reads
+ * on every store change, and a rebuilt array reads as a change: past 20 sessions read
+ * per render (a context modal with 20+ sub-agent rows), the LRU alone re-rendered until
+ * React threw. Weak, so an entry goes with the array the store drops.
+ */
+const rowsByMessages = new WeakMap<
+	Message[],
+	{ msgs: Message[]; partRefs: (Part[] | undefined)[]; result: MessageWithParts[] }
+>();
 
 /** Insert-or-refresh `sessionID` as the most recently used entry, dropping the
  *  least recently used one once the map is over {@link MESSAGE_ROWS_LIMIT}.
@@ -1933,7 +1961,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	buildSessionMessages: (sessionID, msgs, parts) => {
 		if (!msgs || msgs.length === 0) return EMPTY_MESSAGE_ROWS;
 
-		const cached = sessionMessageRows.get(sessionID);
+		const cached = rowsByMessages.get(msgs) ?? sessionMessageRows.get(sessionID);
 		if (cached && cached.msgs === msgs) {
 			let same = cached.partRefs.length === msgs.length;
 			if (same) {
@@ -1989,7 +2017,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			}
 			result.push(reuse ?? { info, parts: messageParts ?? [] });
 		}
-		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
+		const entry = { msgs, partRefs, result };
+		touchSessionMessageRows(sessionID, entry);
+		rowsByMessages.set(msgs, entry);
 		return result;
 	},
 
