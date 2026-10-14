@@ -7285,6 +7285,8 @@
       "tokensIn": "Токени у",
       "tokensOut": "Токени ван",
       "treeMessages": "поруке",
+      "subAgentsLoaded": "Учитано {loaded} од {total} подагената",
+      "loadAll": "Учитај све",
       "detailInput": "Уносни токени",
       "detailOutput": "Излазни токени",
       "detailReasoning": "Жетони за расуђивање",
