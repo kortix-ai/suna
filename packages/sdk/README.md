@@ -754,7 +754,8 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   projection's turn), `held` (the prompts the inbox still holds, in queue
   order), `threads` (the session's threads, for `threads`), `pricing`. A turn
   keeps its identity while its messages and derived fields do. A message out
-  of context (a failed attempt) keeps its turn.
+  of context (a failed attempt) keeps its turn; `hideOutOfContext: true` leaves
+  out every message with `in_context: false` that is not streaming.
 - `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
   and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
   the settled-turn fold, and the rows of a burst.
@@ -787,6 +788,18 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   modal's overview and its sub-agent rows show.
 - A pending permission or question matches a call by `call.call_id`
   (`getPermissionForTool`, `getQuestionForTool`).
+- A session's history: `isSessionLogRestoreNote(message)` is the note a partial
+  restore leaves for the agent (render it as a notice, not a prompt);
+  `sessionLogRestoreNotice(session)` is what that restore could not bring back
+  (`{ generation, missing: [{ kind, count }] }`, null unless the grade is
+  `partial` and a restore wrote the record); `sessionLogHarnessSwitches(history, turns)`
+  maps each switch `harness.history` records to the turn it lands on.
+- Texts stored by reference: `sessionLogReferencedTexts(messages)` lists every
+  text the API kept as a 16 kB preview (`{ ref, bytes }`); read one with
+  `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`. `sessionLogFullTextAction(refs)` says
+  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`.
+- `useSessionLogRecord(session)` (`@kortix/sdk/react`) is the v2 session record without threads
+  (`restore_grade`, `grade_counts`, `harness`, `ext`); it keeps its identity through message puts.
 
 Both layers give one answer for a record converted from v1 (its `cost` too: a
 v1-derived reply is priced over its v1 parts): the SDK's test suite compares them
@@ -1377,3 +1390,41 @@ member queries every 10 seconds while the tab is visible. It also refreshes on
 focus and reconnect, including data still inside the stale-time window. It does
 not poll background tabs or change the identity provider's provisioning schedule.
 Other freshness tiers keep their existing behavior.
+
+## Generative UI (`@kortix/sdk/genui`)
+
+When a project turns on the `genui` flag, the agent may answer with ` ```openui ` blocks:
+cards, comparisons, charts, maps, tabs. Render them with the headless renderer and your own
+components, or with the bundled defaults:
+
+```tsx
+import { genuiVersionFromClassName } from '@kortix/sdk/genui';
+import { GenuiBlock, defaultGenuiComponents } from '@kortix/sdk/genui/react';
+
+// A module constant: the same function on every render.
+const renderMarkdown = (md: string) => <Markdown>{md}</Markdown>;
+
+// Inside your markdown renderer's `code` override:
+const version = genuiVersionFromClassName(className);
+if (version !== null) {
+  return (
+    <GenuiBlock
+      code={code}
+      version={version}
+      streaming={isStreaming}
+      components={defaultGenuiComponents}
+      renderMarkdown={renderMarkdown}
+    />
+  );
+}
+```
+
+Pass a stable `renderMarkdown` (module constant or `useCallback`): a new function re-renders the block's markdown parts and node views.
+
+A host that renders no UI (email, a chat bot, a CLI) converts a reply with `genuiToMarkdown(text)`.
+It converts blocks inside blockquotes and list items too. For a reply that is still streaming, pass
+`genuiToMarkdown(text, { streaming: true })`: the unfinished last block shows no "cut off" note.
+
+Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
+sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
+`DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless you opt in.

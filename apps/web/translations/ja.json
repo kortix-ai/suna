@@ -688,6 +688,8 @@
       "themeDescription": "このデバイスでの Kortix の外観を選択します。",
       "conversationDensity": "会話の表示密度",
       "conversationDensityDescription": "エージェントの作業中に会話へ表示する詳細の量を選択します。",
+      "richAnswers": "リッチな回答",
+      "richAnswersDescription": "回答内の比較、表、グラフ、地図をビジュアルで表示します。オフにすると、同じ内容をテキストで表示します。",
       "wallpaper": "壁紙",
       "wallpaperDescription": "プロジェクトの背景です。",
       "defaultWallpaper": "デフォルト",
@@ -1208,6 +1210,10 @@
           "name": "Pi ハーネス（サンドボックス内）",
           "description": "セッションを OpenCode の代わりにセッションのサンドボックス内の Pi ハーネスで実行します。オフでも、マニフェストの `runtime: pi` は引き続き Pi を選択します。"
         },
+        "genui": {
+          "name": "生成UI",
+          "description": "エージェントは、長い文章の代わりにカード、比較表、グラフ、地図、タブで回答できます。"
+        },
         "reminders": {
           "name": "リマインダー",
           "description": "エージェントやユーザーがセッションのチェックインを1回または繰り返しで予定できます。実行のたびにそのセッションに再度呼びかけます。リマインダーページ、セッションのリマインダー表示、`kortix remind` が追加されます。"
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "ボリューム",
-          "description": "このプロジェクトで共有ファイルとボリューム上のセッションを使えます。"
-        },
-        "stateless_sessions": {
-          "name": "ステートレスセッション",
-          "description": "起動のたびに新しいコンピューター。ファイルとチャットだけが残ります。ボリュームの有効化が必要です。"
+          "description": "このプロジェクトで共有ファイルを使えます。"
         },
         "drives": {
           "name": "ドライブ",
           "description": "セッションと同期し続ける共有フォルダー：自分のドライブ、エージェントごとのドライブ、管理者がプロジェクトに割り当てた会社のドライブ。新しいセッションでは /drives に表示されます。"
-        },
-        "ephemeral_sandboxes": {
-          "name": "使い捨てサンドボックス",
-          "description": "停止したセッションはファイルと会話をボリュームに保持し、コンピューターを解放します。再開すると最新のイメージから新しいコンピューターが起動します。実行中のプロセスは停止後に残りません。"
         },
         "session_log": {
           "name": "セッションログ v2",
@@ -1905,6 +1903,26 @@
       "commandsAndActions": "コマンドとアクション",
       "toUse": "使用するには",
       "use": "使用"
+    },
+    "history": {
+      "restoreTitle": "以前の内容の一部を復元できませんでした",
+      "restoreMissing": "欠落: {items}。",
+      "restoreAgent": "エージェントには欠落している内容が伝えられています。",
+      "restoreDismiss": "復元の通知を閉じる",
+      "missingAttachment": "{count, plural, other {添付ファイル #件}}",
+      "missingText": "{count, plural, other {長いテキスト #件}}",
+      "missingToolInput": "{count, plural, other {ツール入力 #件}}",
+      "missingToolResult": "{count, plural, other {ツール結果 #件}}",
+      "missingCutPoint": "{count, plural, other {圧縮ポイント #件}}",
+      "missingOther": "{count, plural, other {その他 #件}}",
+      "restoreNote": "保存された履歴からセッションを復元しました",
+      "harnessSwitch": "{harness} で続行",
+      "showOutOfContext": "コンテキスト外のメッセージを表示",
+      "fullTextPreview": "{count, plural, other {ここには長いテキストの最初の 16 kB が表示されています（#件）。}}",
+      "fullTextShow": "全文を表示（{size}）",
+      "fullTextDownload": "全文をダウンロード（{size}）",
+      "fullTextError": "全文を読み込めませんでした。",
+      "fullTextRetry": "再試行"
     }
   },
   "agents": {
@@ -19677,75 +19695,16 @@
     "approvalPage": {
       "title": "{connector} のアクションを承認"
     },
+    "approvalWaiting": {
+      "byManager": "このプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "byName": "{name} またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "byOwner": "このセッションを開始した人またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
+      "copyLink": "承認リンクをコピー"
+    },
     "secretIntakeWithheld": {
       "title": "保存しましたが、{agent} はまだ読み取れません",
       "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
       "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "イメージ",
-      "modeImageDetail": "セッションイメージのみ。",
-      "modeImageRequested": "イメージを要求: {count}",
-      "modeArtifacts": "イメージ + アーティファクト",
-      "modeArtifactsDetail": "最新ランタイム用の起動アーティファクトボリュームを追加します。",
-      "modeArtifactsRequested": "イメージ + アーティファクトを要求: {count}",
-      "modeVolume": "ボリューム",
-      "modeVolumeDetail": "一時的なコンピューター、セッション状態はボリューム上、さらにアーティファクト。",
-      "modeVolumeRequested": "ボリュームを要求: {count}",
-      "reasonSessionVolume": "セッションボリューム",
-      "reasonArtifactsVolume": "アーティファクトボリューム",
-      "reasonVolumeMount": "ボリュームのマウント",
-      "reasonTimeout": "タイムアウト",
-      "reasonBootHealth": "コンピューターが準備完了になりませんでした",
-      "reasonOther": "その他",
-      "fallBackToTheImage": "イメージにフォールバック",
-      "fallBackToImage": "イメージへのフォールバック",
-      "saved": "起動モードを保存しました",
-      "saveFailed": "起動モードを保存できませんでした",
-      "title": "起動モード",
-      "description": "ボリュームがオンのプロジェクトで新しいセッションがどう起動し、どのフォールバックを取るか。ボリュームとステートレスセッションはプロジェクトの機能フラグで、ここでは設定しません。変更は30秒以内にすべてのAPIプロセスに反映されます。",
-      "discard": "破棄",
-      "save": "保存",
-      "off": "オフ",
-      "bootModeTitle": "起動モード",
-      "bootModeDescription": "ボリュームがオンのプロジェクトで新しいセッションがどう起動するか。ステートレスセッションがオンのプロジェクトはボリューム上で起動します。",
-      "defaultModeTitle": "デフォルトモード",
-      "killSwitchTitle": "キルスイッチ: すべての新しいセッションをイメージから起動",
-      "killSwitchDetail": "すべてのモードを一度に上書きします。ファイルとドライブはそのままです。ファイルがすでにボリューム上にあるセッションは、そのボリュームを保持します。",
-      "killSwitchLabel": "キルスイッチ",
-      "last24HoursTitle": "過去24時間",
-      "last24HoursDescription": "各モードで起動したセッションと、行われたフォールバック。ボリュームプロバイダー上で集計されます。",
-      "columnFallback": "フォールバック",
-      "columnReason": "理由",
-      "columnCount": "件数",
-      "columnLatestError": "最新のエラー",
-      "noFallbacks": "過去24時間にフォールバックはありません。",
-      "countsUnavailable": "件数を取得できません: {error}",
-      "unknownError": "不明なエラー",
-      "fallbackTitle": "フォールバック",
-      "fallbackDescription": "起動の失敗が続くセッションは、セッションごとに一度だけ一段階下がり、到達したモードに留まります。ファイルがすでにボリューム上にあるセッションは、そのボリュームを離れません。",
-      "after": "起動失敗が",
-      "failedBoots": "回続いたら",
-      "volumeAttemptsLabel": "ボリュームの試行回数",
-      "artifactsAttemptsLabel": "アーティファクトの試行回数",
-      "lastStepNote": "(デフォルトモードで最後の段階をオフにしない限りオン)",
-      "whereModesApplyTitle": "モードが適用される場所",
-      "whereModesApplyDescription": "プロバイダーとデプロイのスイッチはサーバーの環境から取得されます。アーティファクトボリュームはここで設定でき、空の場合は環境の値を使います。",
-      "volumeProviderTitle": "ボリュームプロバイダー: {provider}",
-      "volumeProviderConfigured": "設定済み。このプロバイダー上のセッションは、ルールが選んだモードで起動します。",
-      "volumeProviderNotConfigured": "未設定: すべてのセッションがイメージから起動します。",
-      "ready": "準備完了",
-      "otherProvidersTitle": "その他のプロバイダー: {providers}",
-      "otherProvidersDriveSync": "常にイメージから起動します。ドライブはドライブ同期で届きます。",
-      "otherProvidersNoDriveSync": "常にイメージから起動します。ドライブ同期がオフのため、ドライブを使うプロジェクトはボリュームプロバイダーに留まります。",
-      "imageOnly": "イメージのみ",
-      "artifactsVolumeTitle": "アーティファクトボリューム",
-      "artifactsVolumeSet": "イメージ + アーティファクトまたはボリュームのセッションは {source} をマウントします。",
-      "artifactsVolumeFromEnvironment": "イメージ + アーティファクトまたはボリュームのセッションは {source} をマウントします (環境から)。",
-      "artifactsVolumeNone": "未設定: アーティファクトのモードはイメージのみの場合と同じように起動します。",
-      "artifactsVolumeLabel": "アーティファクトボリュームとタグ",
-      "ephemeralSandboxesOff": "このデプロイでは {variable} がオフです: ステートレスセッションはイメージ + アーティファクトで起動します。",
-      "nothingSaved": "まだ何も保存されていません: ボリュームがオンのプロジェクトはイメージから起動します。"
     }
   },
   "projectOnboarding": {
@@ -20202,7 +20161,8 @@
     "verified": "確認しました",
     "invalidCode": "このコードは使用できませんでした。認証アプリを確認して、もう一度お試しください。",
     "noFactorTitle": "二要素認証を設定",
-    "noFactorDescription": "この操作には二要素認証が必要です。設定 → セキュリティで認証アプリを追加してから、もう一度お試しください。"
+    "noFactorDescription": "この操作には二要素認証が必要です。設定 → セキュリティで認証アプリを追加してから、もう一度お試しください。",
+    "setUp": "認証アプリを設定"
   },
   "connectorPages": {
     "install": "インストール",
@@ -20766,5 +20726,23 @@
     "you": "あなた",
     "manageFolderAccess": "アクセスを管理",
     "viewFolderAccess": "アクセスを表示"
+  },
+  "genui": {
+    "showData": "データを表示",
+    "openImage": "画像を開く",
+    "viewAllImages": "{count}件をすべて表示",
+    "pieFocus": "{label}は合計の{percent}%",
+    "pieOfTotal": "{total}のうち{value}",
+    "directions": "経路",
+    "call": "電話",
+    "website": "ウェブサイト",
+    "label": "ラベル",
+    "value": "値",
+    "map": "地図",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小",
+    "mapTwoFingers": "2本の指で地図を動かします",
+    "pick": "おすすめ",
+    "convertFailed": "トランスクリプトを準備できませんでした。もう一度お試しください。"
   }
 }

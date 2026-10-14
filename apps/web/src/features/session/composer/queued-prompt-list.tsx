@@ -207,28 +207,34 @@ export function QueuedPromptList({
                           <PencilSimpleIcon className="size-3.5" />
                         </Button>
                       )}
-                      {/* Send now: hurry one queued row. The same primitive as
-                          Retry below, and the gentler twin of "Stop and send":
-                          the live turn keeps running, and this row is answered
-                          first at the next drain. Another member's row runs as
-                          them, so only they may hurry it. A row already handed
-                          to the running turn (`steer` with no fallback) has
-                          nothing to hurry — the turn reads it at its next
-                          step — so it keeps only its Remove. */}
-                      {row.state === 'queued' &&
-                        !(row.steer && !row.steerFallback) &&
+                      {/* Send now / Retry: one primitive, two labels. The
+                          inbox's one retry primitive answers a failed row's
+                          "Retry" and a queued row's "Send now" — and the
+                          queued call doubles as the gentler twin of "Stop and
+                          send": the live turn keeps running, and this row is
+                          answered first at the next drain. Another member's
+                          row runs as them, so only they may hurry it (the
+                          projection already scopes `retryable` to the viewer's
+                          own row). A row already handed to the running turn
+                          (`steer` with no fallback) has nothing to hurry — the
+                          turn reads it at its next step — so it keeps only its
+                          Remove. */}
+                      {onRetry &&
                         !row.fromAnotherMember &&
-                        onRetry && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          aria-label={copy.raw('text588032878324')}
-                          onClick={() => onRetry(row.id)}
-                        >
-                          {copy.raw('text588032878324')}
-                        </Button>
-                      )}
+                        (row.retryable ||
+                          (row.state === 'queued' && !(row.steer && !row.steerFallback))) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            aria-label={
+                              failed ? copy.raw('text942087cc2d41') : copy.raw('text588032878324')
+                            }
+                            onClick={() => onRetry(row.id)}
+                          >
+                            {failed ? copy.raw('text942087cc2d41') : copy.raw('text588032878324')}
+                          </Button>
+                        )}
                       {row.interruptible && onStopAndSend && (
                         <Button
                           type="button"
@@ -237,17 +243,6 @@ export function QueuedPromptList({
                           onClick={() => onStopAndSend(row.id)}
                         >
                           {t('stopAndSend')}
-                        </Button>
-                      )}
-                      {row.retryable && onRetry && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          aria-label={copy.raw('text942087cc2d41')}
-                          onClick={() => onRetry(row.id)}
-                        >
-                          {copy.raw('text942087cc2d41')}
                         </Button>
                       )}
                       {row.removable && onRemove && (

@@ -1,12 +1,12 @@
 /**
  * Integration test (real app + real PostgreSQL): a keep-alive poll never
- * undoes a deliberate stop of an ephemeral session.
+ * wakes a stopped session whose row is retired.
  *
- * A stop of an ephemeral box deletes it and leaves the row stopped with no
- * external id, marked retired. The open tab keeps polling
+ * A retired row (a restored session) is stopped with no external id and
+ * names the box it gave up. The open tab keeps polling
  * `/start?keep_stopped=1`. That poll used to claim the retired row and
  * allocate a fresh box before it ever looked at `keep_stopped`, so a tab left
- * open brought back every session the user had just stopped. The poll must
+ * open booted a box for every retired session it showed. The poll must
  * answer `stopped` and leave the row alone; an explicit `/start` still wakes.
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
@@ -15,7 +15,7 @@ import { accountMembers, projectMembers, projectSessions, sessionSandboxes } fro
 import { app } from '../index';
 import { db } from '../shared/db';
 import { config } from '../config';
-import { EPHEMERAL_RETIRED_KEY } from '../platform/services/ephemeral-sandbox';
+import { RETIRED_EXTERNAL_ID_KEY } from '../platform/services/retired-sandbox-row';
 import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from './helpers/compat-views';
 import {
@@ -67,7 +67,7 @@ beforeAll(async () => {
     .set({ agentName: 'main', sandboxProvider: 'platinum' })
     .where(eq(projectSessions.sessionId, sessionId));
   const sandboxId = crypto.randomUUID();
-  // The row a manual stop of an ephemeral box leaves behind.
+  // A retired row: stopped, no box, the old box named.
   await db.insert(sessionSandboxes).values({
     sandboxId,
     sessionId,
@@ -78,7 +78,7 @@ beforeAll(async () => {
     externalId: null,
     metadata: {
       stopReason: 'manual',
-      [EPHEMERAL_RETIRED_KEY]: 'keep-stopped-old-box',
+      [RETIRED_EXTERNAL_ID_KEY]: 'keep-stopped-old-box',
       platinumCreateAttempt: 1,
     },
   });
@@ -116,7 +116,7 @@ async function sandboxRows() {
   return db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, fixture!.sessionId));
 }
 
-test('a keep-alive poll leaves a stopped ephemeral session stopped, and allocates nothing', async () => {
+test('a keep-alive poll leaves a retired session stopped, and allocates nothing', async () => {
   expect(fixture).not.toBeNull();
   for (let i = 0; i < 3; i++) {
     const answer = await start('?keep_stopped=1');
@@ -124,13 +124,13 @@ test('a keep-alive poll leaves a stopped ephemeral session stopped, and allocate
   }
   const rows = await sandboxRows();
   expect(rows.map((r) => [r.sandboxId, r.status, r.externalId])).toEqual([[fixture!.sandboxId, 'stopped', null]]);
-  expect((rows[0]!.metadata as Record<string, unknown>)[EPHEMERAL_RETIRED_KEY]).toBe('keep-stopped-old-box');
+  expect((rows[0]!.metadata as Record<string, unknown>)[RETIRED_EXTERNAL_ID_KEY]).toBe('keep-stopped-old-box');
 }, 30_000);
 
 test('an explicit start still wakes it', async () => {
   const answer = await start();
   expect(answer.stage).toBe('provisioning');
-  expect(answer.reason).toBe('ephemeral_wake');
+  expect(answer.reason).toBe('retired_row_wake');
   // The retired row was claimed: the old stopped row no longer exists.
   const rows = await sandboxRows();
   expect(rows.some((r) => r.sandboxId === fixture!.sandboxId && r.status === 'stopped')).toBe(false);

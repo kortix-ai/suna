@@ -379,6 +379,24 @@ describe('THEME.accent carries the 6 brand accents, theme-invariant', () => {
   }
 });
 
+/**
+ * `--chart-1..5`, the one data-viz ramp, is declared byte-identical in both
+ * scopes, so THEME.chart is theme-invariant like THEME.accent. Index 0 is
+ * `--chart-1`.
+ */
+describe('THEME.chart carries the 5 chart tokens, theme-invariant', () => {
+  for (const step of [1, 2, 3, 4, 5]) {
+    it(`chart[${step - 1}] matches --chart-${step} in both :root and .dark:root`, () => {
+      const light = token(':root', `chart-${step}`);
+      expect(token('.dark:root', `chart-${step}`)).toBe(light);
+      expect(THEME.chart[step - 1] as string).toBe(light);
+    });
+  }
+  it('has exactly 5 steps', () => {
+    expect(THEME.chart).toHaveLength(5);
+  });
+});
+
 describe('NAV_THEME carries no untokened color', () => {
   it('contains no #rrggbb hex literals', () => {
     const all = JSON.stringify(NAV_THEME);

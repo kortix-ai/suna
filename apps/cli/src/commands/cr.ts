@@ -22,6 +22,7 @@ import {
   crDiff,
   crVersionDiff,
   displayBranch,
+  listAllChangeRequests,
   printMergeVerdict,
   resolveCr,
 } from './cr-diff.ts';
@@ -160,21 +161,18 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  let resp: ChangeRequestsListResponse;
+  let crs: ChangeRequestsListResponse['change_requests'];
   try {
-    resp = await ctx.client.get<ChangeRequestsListResponse>(
-      `/projects/${ctx.projectId}/change-requests?status=${filter}`,
-    );
+    crs = await listAllChangeRequests(ctx, filter);
   } catch (err) {
     return surfaceApiError(err);
   }
 
   if (json) {
-    emitJson(resp);
+    emitJson({ change_requests: crs });
     return 0;
   }
 
-  const crs = resp.change_requests;
   if (crs.length === 0) {
     process.stdout.write(
       `  ${C.dim}No ${filter === 'all' ? '' : filter + ' '}change requests${C.reset}\n`,

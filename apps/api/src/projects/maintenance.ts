@@ -147,14 +147,15 @@ async function auditBranchDeleted(row: {
   }
 }
 
-export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
-  candidates: number;
-  deleted: number;
-  skipped: number;
-  errors: number;
-}> {
+/**
+ * The session branches the GC may delete at `now`: a terminal session idle for
+ * the retention period. A deleted session keeps `updated_at` (the delete does
+ * not move it in the list), so its branch is also kept for the retention
+ * period after the delete: a restore inside the window gets the branch back.
+ */
+export async function selectExpiredSessionBranches(now: Date) {
   const cutoff = new Date(now.getTime() - branchRetentionDays() * 24 * 60 * 60 * 1000);
-  const rows = await db
+  return db
     .select({
       sessionId: projectSessions.sessionId,
       branchName: projectSessions.branchName,
@@ -172,6 +173,8 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
       and(
         inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
         lt(projectSessions.updatedAt, cutoff),
+        sql`(coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''
+          OR (${projectSessions.metadata}->>'deletedAt')::timestamptz < ${cutoff.toISOString()}::timestamptz)`,
         ne(projectSessions.branchName, projects.defaultBranch),
         // Exclude the two NEVER-deletable classes at the query so they can't
         // occupy batch slots forever and starve deletable rows: a skipped row
@@ -193,6 +196,15 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
     // order can't crowd them out of the batch.
     .orderBy(asc(projectSessions.updatedAt))
     .limit(GC_BATCH_SIZE);
+}
+
+export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
+  candidates: number;
+  deleted: number;
+  skipped: number;
+  errors: number;
+}> {
+  const rows = await selectExpiredSessionBranches(now);
 
   let deleted = 0;
   let skipped = 0;
