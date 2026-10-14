@@ -134,10 +134,10 @@ function TodoBox({ status }: { status: string }) {
   );
 }
 
-export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionGetTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const sid = (input.session_id as string) || '';
 
   const parsed = useMemo(() => parseSessionGetOutput(output, sid), [output, sid]);
@@ -151,7 +151,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={BookOpenIcon}
       trigger={{ title: parsed?.title ?? 'Session Get', subtitle: parsed?.id || sid, args: headerArgs }}
       defaultOpen={defaultOpen}

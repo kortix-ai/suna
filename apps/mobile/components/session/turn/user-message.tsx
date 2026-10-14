@@ -36,9 +36,9 @@ import {
   DownloadSimpleIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import type { Turn } from '@/lib/session/types';
 import type { Command } from '@/lib/session/runtime-data';
-import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
+import type { SessionLogTurn } from '@kortix/sdk';
+import { recordTimeMs } from '@/lib/session/turn-meta';
 import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
 import { parseReminderPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
@@ -57,8 +57,7 @@ import {
 } from '@/lib/session/attachment-tile';
 import {
   commandMessageText,
-  isUserMessageEdited,
-  parseUserMessageParts,
+  parseUserMessageBlocks,
   type MessageAttachment,
   queuedPromptStatusLabel,
   quoteMarginBottom,
@@ -291,7 +290,7 @@ export function UserMessage({
   sender,
   sessionAuthor,
 }: {
-  turn: Turn;
+  turn: SessionLogTurn;
   isDark: boolean;
   agentNames?: string[];
   /** Opens a workspace path (file mention, attachment tile). */
@@ -322,10 +321,10 @@ export function UserMessage({
    */
   sessionAuthor?: SessionSourceAuthor | null;
 }) {
-  const message = turn.userMessage;
-  const messageId = message.info.id;
+  const message = turn.user;
+  const messageId = message.message_id;
 
-  const parsed = useMemo(() => parseUserMessageParts(message.parts), [message.parts]);
+  const parsed = useMemo(() => parseUserMessageBlocks(message.blocks), [message.blocks]);
 
   const { rawText, content, attachments } = parsed;
 
@@ -338,8 +337,9 @@ export function UserMessage({
   /** The text the editor starts from and Copy writes. */
   const promptText = commandText ? commandText.prompt : content.text;
 
-  const edited = useMemo(() => isUserMessageEdited(message.parts as never), [message.parts]);
-  const timestamp = messageCreatedAt(message as unknown as MessageWithParts);
+  // When it was sent; a missing or zero stamp is no time.
+  const sentAt = recordTimeMs(message.created_at);
+  const timestamp = sentAt && sentAt > 0 ? sentAt : null;
 
   // Both parsers are linear in the prompt: a channel or a webhook chooses this
   // text, and a regex version of each froze the JS thread on a crafted prompt.
@@ -383,7 +383,6 @@ export function UserMessage({
     menuRef,
     text: copyText,
     timestamp,
-    edited,
     onEdit: canEdit ? () => onEditStart?.(messageId, promptText) : undefined,
   };
 
@@ -555,7 +554,6 @@ function MessageMenu({
   menuRef,
   text,
   timestamp,
-  edited,
   onEdit,
   onSelectText,
   children,
@@ -563,14 +561,13 @@ function MessageMenu({
   menuRef: React.RefObject<TriggerRef | null>;
   text: string;
   timestamp: number | null;
-  edited: boolean;
   onEdit?: () => void;
   onSelectText?: () => void;
   children: React.ReactNode;
 }) {
   const toast = useToast();
   // Read when the menu renders its content (on open), so "Today" is current.
-  const sentLabel = userMessageSentLabel({ timestamp, edited, now: Date.now() });
+  const sentLabel = userMessageSentLabel({ timestamp, now: Date.now() });
   const copy = useCallback(async () => {
     await Clipboard.setStringAsync(text);
     haptics.success();

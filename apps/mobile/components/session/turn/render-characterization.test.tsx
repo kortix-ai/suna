@@ -15,6 +15,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import type { SessionLogTurn } from '@kortix/sdk';
+import { turnsOf } from '@/lib/testing/session-log';
+
+/** The one turn `rows` hold (v1 rows → the SDK's block turn); `live` makes it the working turn. */
+const turnOf = (rows: unknown[], live = false): SessionLogTurn => turnsOf(rows, { busy: live })[0]!;
 
 const icons = new Set<string>();
 const IconGlyph = ({ name }: { name: string }) => {
@@ -167,9 +172,11 @@ afterEach(async () => {
 
 let tree: ReactTestRenderer | undefined;
 
-/** A `MessageWithParts` stub: `turn-meta` reads only `info.time.created/completed`. */
-const message = (id: string, time: { created?: number; completed?: number }) =>
-  ({ id, info: { time } }) as unknown as import('@/lib/session/types').MessageWithParts;
+/** A v1 row stub: `turn-meta` reads only the message times. */
+const message = (id: string, role: 'user' | 'assistant', time: { created?: number; completed?: number }) => ({
+  info: { id, role, sessionID: 's-1', time, ...(role === 'assistant' ? { parentID: 'user-1' } : {}) },
+  parts: [],
+});
 
 describe('CompactionMarker (characterization: inline summary is the only path)', () => {
   test('a landed summary pill toggles the inline summary, no opens-elsewhere branch', async () => {
@@ -218,10 +225,10 @@ describe('CompactionMarker (characterization: inline summary is the only path)',
 });
 
 describe('TurnActions (characterization: only the turn/response/costInfo mode)', () => {
-  const turn = {
-    userMessage: message('user-1', { created: 1_000 }),
-    assistantMessages: [message('a-1', { created: 2_000, completed: 3_500 })],
-  } as import('@/lib/session/types').Turn;
+  const turn = turnOf([
+    message('user-1', 'user', { created: 1_000 }),
+    message('a-1', 'assistant', { created: 2_000, completed: 3_500 }),
+  ]);
   const costInfo = { cost: 0.5, tokens: { input: 10, output: 5 } };
 
   test('derives Finished/Duration from the turn and renders the action bar', async () => {
@@ -259,21 +266,20 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
     parts: [{ id: 'user-part-1', type: 'text', text: prompt, sessionID: 's-1', messageID: 'user-1' }],
   });
   const turnWith = (text: string, completed?: number, prompt = 'Explain this') =>
-    ({
-      userMessage: userMessageWith(prompt),
-      assistantMessages: [
-        { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000, completed } }, parts: [textPart(text)] },
+    turnOf(
+      [
+        userMessageWith(prompt),
+        { info: { id: 'a-1', role: 'assistant', parentID: 'user-1', sessionID: 's-1', time: { created: 2_000, completed } }, parts: [textPart(text)] },
       ],
-    }) as unknown as import('@/lib/session/types').Turn;
+      completed === undefined,
+    );
 
   test('the streaming reply keeps its instance when the turn finishes', async () => {
     await act(async () => {
       tree = create(
         <SessionTurn
           turn={turnWith('Hello, this is the start')}
-          isWorkingTurn
           sessionStatus={{ type: 'busy' } as never}
-          isBusy
         />,
       );
     });
@@ -283,9 +289,7 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
       tree?.update(
         <SessionTurn
           turn={turnWith('Hello, this is the start of a longer reply.')}
-          isWorkingTurn
           sessionStatus={{ type: 'busy' } as never}
-          isBusy
         />,
       );
     });
@@ -293,8 +297,6 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
       tree?.update(
         <SessionTurn
           turn={turnWith('Hello, this is the start of a longer reply.', 3_000)}
-          isWorkingTurn={false}
-          isBusy={false}
         />,
       );
     });
@@ -315,9 +317,7 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
     const streaming = (text: string) => (
       <SessionTurn
         turn={turnWith(text, undefined, prompt)}
-        isWorkingTurn
         sessionStatus={{ type: 'busy' } as never}
-        isBusy
         commands={commands}
       />
     );
@@ -338,8 +338,6 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
       tree?.update(
         <SessionTurn
           turn={turnWith('Looks good so far. One nit.', 3_000, prompt)}
-          isWorkingTurn={false}
-          isBusy={false}
           commands={commands}
         />,
       );
@@ -366,17 +364,18 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
       sessionID: 's-1',
       messageID: 'a-1',
     };
-    const withTool = {
-      ...turnWith('Let me check the files.'),
-      assistantMessages: [
+    const withTool = turnOf(
+      [
+        userMessageWith('Explain this'),
         {
-          info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000 } },
+          info: { id: 'a-1', role: 'assistant', parentID: 'user-1', sessionID: 's-1', time: { created: 2_000 } },
           parts: [textPart('Let me check the files.'), toolPart],
         },
       ],
-    } as unknown as import('@/lib/session/types').Turn;
-    const working = (turn: import('@/lib/session/types').Turn) => (
-      <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />
+      true,
+    );
+    const working = (turn: SessionLogTurn) => (
+      <SessionTurn turn={turn} sessionStatus={{ type: 'busy' } as never} />
     );
 
     await act(async () => {
@@ -398,9 +397,7 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
       tree = create(
         <SessionTurn
           turn={turnWith('Opened a change request.')}
-          isWorkingTurn
           sessionStatus={{ type: 'busy' } as never}
-          isBusy
           changeRequests={changeRequests}
           onOpenChangeRequest={onOpen}
         />,
@@ -413,8 +410,6 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
       tree?.update(
         <SessionTurn
           turn={turnWith('Opened a change request.', 3_000)}
-          isWorkingTurn={false}
-          isBusy={false}
           changeRequests={changeRequests}
           onOpenChangeRequest={onOpen}
         />,
@@ -433,22 +428,23 @@ describe('SessionTurn segments: every burst loops while on screen, trailing is s
     state: { status: 'running', input: { command: 'ls' }, time: { start: 2_000 } },
   });
   const text = (id: string) => ({ id, type: 'text', text: `between ${id}`, sessionID: 's-1', messageID: 'a-1' });
-  const turn = {
-    userMessage: {
-      info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
-      parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
-    },
-    assistantMessages: [
-      { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000 } }, parts: [tool('t-1'), text('x-1'), tool('t-2')] },
+  const turn = turnOf(
+    [
+      {
+        info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+        parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
+      },
+      { info: { id: 'a-1', role: 'assistant', parentID: 'user-1', sessionID: 's-1', time: { created: 2_000 } }, parts: [tool('t-1'), text('x-1'), tool('t-2')] },
     ],
-  } as unknown as import('@/lib/session/types').Turn;
+    true,
+  );
   const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never)).map((node) => node.props);
 
   for (const onScreen of [true, false]) {
     test(`onScreen=${onScreen}: only the last burst is trailing; every burst loops only on screen`, async () => {
       await act(async () => {
         tree = create(
-          <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy onScreen={onScreen} />,
+          <SessionTurn turn={turn} sessionStatus={{ type: 'busy' } as never} onScreen={onScreen} />,
         );
       });
       expect(bursts()).toEqual([
@@ -466,22 +462,24 @@ describe('SessionTurn work fold: live stream as today, settled work behind one r
     state: { status: 'completed', input: { command: 'ls' }, output: '', time: { start: 2_000, end: 2_500 } },
   };
   const reply = (text: string) => ({ id: 'x-final', type: 'text', text, sessionID: 's-1', messageID: 'a-1' });
+  const user = {
+    info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+    parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
+  };
   const turnWith = (text: string, completed?: number) =>
-    ({
-      userMessage: {
-        info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
-        parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
-      },
-      assistantMessages: [
-        { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000, completed } }, parts: [bash, reply(text)] },
+    turnOf(
+      [
+        user,
+        { info: { id: 'a-1', role: 'assistant', parentID: 'user-1', sessionID: 's-1', time: { created: 2_000, completed } }, parts: [bash, reply(text)] },
       ],
-    }) as unknown as import('@/lib/session/types').Turn;
+      completed === undefined,
+    );
   const row = () => tree!.root.findAll((node) => node.type === ('rn-pressable' as never));
   const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never));
 
   test('working: no row, the burst and the reply stream as today', async () => {
     await act(async () => {
-      tree = create(<SessionTurn turn={turnWith('Found it')} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />);
+      tree = create(<SessionTurn turn={turnWith('Found it')} sessionStatus={{ type: 'busy' } as never} />);
     });
     expect(row()).toHaveLength(0);
     expect(bursts()).toHaveLength(1);
@@ -490,10 +488,10 @@ describe('SessionTurn work fold: live stream as today, settled work behind one r
 
   test('settle: the work collapses behind "Worked for 2s", the reply keeps its instance', async () => {
     await act(async () => {
-      tree = create(<SessionTurn turn={turnWith('Found it')} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />);
+      tree = create(<SessionTurn turn={turnWith('Found it')} sessionStatus={{ type: 'busy' } as never} />);
     });
     await act(async () => {
-      tree?.update(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} />);
+      tree?.update(<SessionTurn turn={turnWith('Found it.', 3_000)} />);
     });
     expect(row()).toHaveLength(1);
     expect(row()[0].props.accessibilityState).toEqual({ expanded: false });
@@ -505,22 +503,20 @@ describe('SessionTurn work fold: live stream as today, settled work behind one r
 
   test('a tap opens the work inline like Codex: narration, one named line of work, narration; a second tap closes it', async () => {
     const interim = { id: 'x-interim', type: 'text', text: 'Checking the folder.', sessionID: 's-1', messageID: 'a-1' };
-    const turn = {
-      ...turnWith('Found it.', 3_000),
-      assistantMessages: [
-        {
-          info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000, completed: 3_000 } },
-          parts: [interim, bash, reply('Found it.')],
-        },
-      ],
-    } as unknown as import('@/lib/session/types').Turn;
+    const turn = turnOf([
+      user,
+      {
+        info: { id: 'a-1', role: 'assistant', parentID: 'user-1', sessionID: 's-1', time: { created: 2_000, completed: 3_000 } },
+        parts: [interim, bash, reply('Found it.')],
+      },
+    ]);
     // The visible column, in order: the row, then each segment it renders.
     const column = () =>
       tree!.root
         .findAll((node) => ['rn-pressable', 'rn-burst', 'rn-text-part'].includes(node.type as unknown as string))
         .map((node) => ((node.type as unknown as string) === 'rn-text-part' ? node.props.text : node.type));
     await act(async () => {
-      tree = create(<SessionTurn turn={turn} isWorkingTurn={false} isBusy={false} sessionId="s-1" />);
+      tree = create(<SessionTurn turn={turn} sessionId="s-1" />);
     });
     expect(column()).toEqual(['rn-pressable', 'Found it.']);
 

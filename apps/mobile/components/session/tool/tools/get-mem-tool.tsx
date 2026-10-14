@@ -47,11 +47,11 @@ function WrapRow({ children }: { children: ReactNode }) {
   );
 }
 
-export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function GetMemTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const source = (input.source as string) || '';
   const memoryId = input.id != null ? String(input.id) : '';
@@ -64,7 +64,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={BrainIcon}
       trigger={{ title: trigger.title, subtitle: trigger.subtitle }}
       badge={trigger.badge}

@@ -5,6 +5,27 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (block readers a host draws a tool call with)
+- `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),
+  `toolCallRawOutput(call)` (a completed call's text, one string per call
+  object) and `toolCallError(call)` (a failed call's error: the semantic
+  error, else the result text, as `toV1` gives `state.error`, so a native
+  failed call never shows an empty error body).
+- `subAgentCalls(thread)`: the shown tool calls of a sub-agent thread's
+  replies, in order, one array per thread object.
+
+### Changed (session log)
+- `useSession({ chatEngine: false })` negotiates the session log (v2) as
+  `useSession` with its chat engine does: with the runtime's
+  `session.log.v2` and the project flag `session_log`, it reads the first
+  log page and switches the session stream to `schema=v2`, so
+  `useSessionLogThread` serves v2 records to a host that reads its own
+  transcript (apps/mobile).
+- `useSessionLogThread` on v2 places the v1 store rows the log lacks by time,
+  as `useSessionMessages` does: an older page (`loadOlder`) goes before the
+  log's messages, an optimistic send after them. Before, every such row was
+  appended, so older turns rendered after the newest one.
+
 ### Changed (one saved-history read per session open)
 - `useSession` reads a session's saved copy once per open. The session-open
   snapshot carries the first window; the read waits up to 2 s for a snapshot

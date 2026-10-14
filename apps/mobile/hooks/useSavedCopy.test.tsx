@@ -93,7 +93,7 @@ describe('useSavedCopy', () => {
   test('the root paints the server copy from one saved-history read', async () => {
     serve(() => copy(ROOT, 2));
     const view = await mount(target());
-    expect(view.messages?.map((message) => message.info.id)).toEqual([`msg_${ROOT}_1`, `msg_${ROOT}_2`]);
+    expect(view.thread?.messages.map((message) => message.message_id)).toEqual([`msg_${ROOT}_1`, `msg_${ROOT}_2`]);
     expect(view.empty).toBe(false);
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain('/projects/p1/sessions/s1/transcript?shape=sync');
@@ -103,7 +103,7 @@ describe('useSavedCopy', () => {
   test('a sub-agent paints its own window, read by `child`, and never claims emptiness', async () => {
     serve(() => copy(CHILD, 1));
     const view = await mount(target({ rootId: CHILD, child: true }));
-    expect(view.messages?.map((message) => message.info.sessionID)).toEqual([CHILD]);
+    expect(view.thread?.messages.map((message) => message.thread_id)).toEqual([CHILD]);
     expect(view.empty).toBe(false);
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain(`child=${CHILD}`);
@@ -113,7 +113,7 @@ describe('useSavedCopy', () => {
     serve((url) => (url.includes('/turn') ? { turns: [] } : copy(ROOT, 0, { total: 0 })));
     const view = await mount(target());
     expect(view.empty).toBe(true);
-    expect(view.messages).toBeUndefined();
+    expect(view.thread).toBeUndefined();
   });
 
   test('a failed read paints nothing and claims nothing', async () => {
@@ -121,13 +121,13 @@ describe('useSavedCopy', () => {
       throw new TypeError('Network request failed');
     }) as unknown as typeof fetch;
     const view = await mount(target());
-    expect(view).toEqual({ messages: undefined, empty: false });
+    expect(view).toEqual({ thread: undefined, empty: false });
   });
 
   test('no target reads nothing', async () => {
     serve(() => copy(ROOT, 2));
     const view = await mount(null);
-    expect(view).toEqual({ messages: undefined, empty: false });
+    expect(view).toEqual({ thread: undefined, empty: false });
     expect(urls).toHaveLength(0);
   });
 });
@@ -193,7 +193,7 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
       const sessionId = order === 'bound with the thread' ? '11111111-1111-4111-8111-111111111189' : '22222222-2222-4222-8222-222222222189';
       serveOpen(sessionId);
       const connecting = await mount(target({ sessionId, rootId: OPEN_ROOT }));
-      expect(connecting.messages).toHaveLength(2);
+      expect(connecting.thread?.messages).toHaveLength(2);
       await act(async () => tree.unmount());
 
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
