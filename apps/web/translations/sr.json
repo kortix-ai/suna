@@ -1890,6 +1890,25 @@
       "commandsAndActions": "Команде и радње",
       "toUse": "за коришћење",
       "use": "Користи"
+    },
+    "history": {
+      "restoreTitle": "Део ранијег садржаја није могао да се врати",
+      "restoreMissing": "Недостаје: {items}.",
+      "restoreAgent": "Агент зна шта недостаје.",
+      "restoreDismiss": "Затвори обавештење о враћању",
+      "missingAttachment": "{count, plural, one {# прилог} few {# прилога} other {# прилога}}",
+      "missingText": "{count, plural, one {# дугачак текст} few {# дугачка текста} other {# дугачких текстова}}",
+      "missingToolInput": "{count, plural, one {# улаз алата} few {# улаза алата} other {# улаза алата}}",
+      "missingToolResult": "{count, plural, one {# резултат алата} few {# резултата алата} other {# резултата алата}}",
+      "missingCutPoint": "{count, plural, one {# тачка сажимања} few {# тачке сажимања} other {# тачака сажимања}}",
+      "missingOther": "{count, plural, one {# друга ставка} few {# друге ставке} other {# других ставки}}",
+      "restoreNote": "Сесија је враћена из сачуване историје",
+      "harnessSwitch": "Настављено са {harness}",
+      "showOutOfContext": "Прикажи поруке ван контекста",
+      "fullTextPreview": "{count, plural, one {# дугачак текст овде приказује првих 16 kB.} few {# дугачка текста овде приказују првих 16 kB.} other {# дугачких текстова овде приказује првих 16 kB.}}",
+      "fullTextShow": "Прикажи цео текст ({size})",
+      "fullTextError": "Цео текст није могао да се учита.",
+      "fullTextRetry": "Покушај поново"
     }
   },
   "agents": {
