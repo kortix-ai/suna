@@ -725,10 +725,11 @@ jobs:
           until grep -q "\[notify\] notice" "$HOME/Library/Application Support/ai.kortix.capture/logs/tray.log" 2>/dev/null || [ $((SECONDS - t0)) -ge 150 ]; do sleep 5; done
           grep -h "notify\|tray" "$HOME/Library/Application Support/ai.kortix.capture/logs/tray.log" 2>/dev/null | tail -5 | tee "$EV/notice.txt"
           ps -axo pid,command | grep -E "Kortix Capture tray" | grep -v grep | tee "$EV/tray.txt" || true
-          # macOS quits the tray (a clean exit 0) when a person changes a privacy permission
-          # in System Settings. The service starts it again: there is no Quit.
+          # The tray ends (macOS quits it, exit 0, when a person changes a privacy permission in
+          # System Settings; or it is killed). The service starts it again after every exit:
+          # there is no Quit. An Apple Event cannot reach the accessory tray on a runner, so stop it.
           tq_old="$(pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture tray' | head -1)"
-          osascript -e 'tell application id "ai.kortix.capture" to quit' 2>&1 | tee "$EV/tray-quit.txt" || true
+          kill -TERM "$tq_old" 2>&1 | tee "$EV/tray-quit.txt" || true
           t0=$SECONDS; tq_new=""
           until [ -n "$tq_new" ] && [ "$tq_new" != "$tq_old" ] || [ $((SECONDS - t0)) -ge 60 ]; do sleep 2; tq_new="$(pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture tray' | head -1)"; done
           printf '{"old": "%s", "new": "%s", "back_after_s": %d}\n' "$tq_old" "$tq_new" $((SECONDS - t0)) | tee "$EV/tray-quit.json"
