@@ -1890,6 +1890,26 @@
       "commandsAndActions": "Comandos e ações",
       "toUse": "para usar",
       "use": "Usar"
+    },
+    "history": {
+      "restoreTitle": "Parte do conteúdo anterior não pôde ser restaurada",
+      "restoreMissing": "Faltando: {items}.",
+      "restoreAgent": "O agente sabe o que está faltando.",
+      "restoreDismiss": "Fechar o aviso de restauração",
+      "missingAttachment": "{count, plural, one {# anexo} other {# anexos}}",
+      "missingText": "{count, plural, one {# texto longo} other {# textos longos}}",
+      "missingToolInput": "{count, plural, one {# entrada de ferramenta} other {# entradas de ferramenta}}",
+      "missingToolResult": "{count, plural, one {# resultado de ferramenta} other {# resultados de ferramenta}}",
+      "missingCutPoint": "{count, plural, one {# ponto de compactação} other {# pontos de compactação}}",
+      "missingOther": "{count, plural, one {# outro item} other {# outros itens}}",
+      "restoreNote": "Sessão restaurada a partir do histórico salvo",
+      "harnessSwitch": "Continuou com {harness}",
+      "showOutOfContext": "Mostrar mensagens fora do contexto",
+      "fullTextPreview": "{count, plural, one {Um texto longo mostra aqui seus primeiros 16 kB.} other {# textos longos mostram aqui seus primeiros 16 kB.}}",
+      "fullTextShow": "Mostrar o texto completo ({size})",
+      "fullTextDownload": "Baixar o texto completo ({size})",
+      "fullTextError": "Não foi possível carregar o texto completo.",
+      "fullTextRetry": "Tentar novamente"
     }
   },
   "agents": {

@@ -1890,6 +1890,26 @@
       "commandsAndActions": "命令和操作",
       "toUse": "以使用",
       "use": "使用"
+    },
+    "history": {
+      "restoreTitle": "部分较早的内容无法恢复",
+      "restoreMissing": "缺少：{items}。",
+      "restoreAgent": "智能体已获知缺少的内容。",
+      "restoreDismiss": "关闭恢复通知",
+      "missingAttachment": "{count, plural, other {# 个附件}}",
+      "missingText": "{count, plural, other {# 段长文本}}",
+      "missingToolInput": "{count, plural, other {# 个工具输入}}",
+      "missingToolResult": "{count, plural, other {# 个工具结果}}",
+      "missingCutPoint": "{count, plural, other {# 个压缩点}}",
+      "missingOther": "{count, plural, other {# 个其他项目}}",
+      "restoreNote": "会话已从保存的历史中恢复",
+      "harnessSwitch": "改用 {harness} 继续",
+      "showOutOfContext": "显示上下文之外的消息",
+      "fullTextPreview": "{count, plural, other {此处 # 段长文本只显示前 16 kB。}}",
+      "fullTextShow": "显示全文（{size}）",
+      "fullTextDownload": "下载全文（{size}）",
+      "fullTextError": "无法加载全文。",
+      "fullTextRetry": "重试"
     }
   },
   "agents": {
