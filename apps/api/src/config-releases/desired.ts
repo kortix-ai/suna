@@ -26,7 +26,6 @@ import {
 import { loadAgentRosterAtCommit } from './agent-roster';
 import { releaseVariantFor, resolveSessionReleaseAgent, type DeclaredAgentRoster } from './session-agent';
 import { dbConfigReleaseLedger, PROJECT_QUARANTINE_SESSIONS, type ConfigReleaseLedger } from './quarantine';
-import { sharedBaseTip } from './base-tip';
 
 
 export class BaseRefUnresolvedError extends Error {
@@ -116,7 +115,9 @@ const defaultDeps: DesiredReleaseDeps = {
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
   readBase: readMirrorCommitSha,
-  checkBase: (project, ref) => sharedBaseTip(project, ref),
+  // Loaded on first use: base-tip reaches projects/surface, whose session code imports the
+  // sandbox proxy root, which reaches back here through turn-start (an import cycle).
+  checkBase: async (project, ref) => (await import('./base-tip')).sharedBaseTip(project, ref),
   loadRoster: loadAgentRosterAtCommit,
 };
 
