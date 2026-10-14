@@ -16,8 +16,15 @@
  *   that collides rolls the whole batch back and answers 422 with its pair.
  * - Durable turns. The first acknowledged assistant message of a turn that is not
  *   streaming sets `session_turns.log_durable_at`: the turn whose `message_id` (the
- *   client-minted user message id) is the assistant message's `reply_to`. A later
- *   acknowledgement (a restarted daemon re-sends everything) keeps the first time.
+ *   client-minted user message id) is the assistant message's `reply_to`. No
+ *   assistant message answers a compaction: both harnesses fold the summary into
+ *   the compaction message. So a compaction that is not streaming marks the
+ *   `/summarize` turn itself. On OpenCode that turn's `message_id` is the
+ *   compaction's id (the daemon's `turn_begin` names it). On pi the turn has no
+ *   message id: the compaction marks the latest turn of its thread that started
+ *   before the compaction completed, when that turn has no message id (an auto
+ *   compaction inside a prompt turn marks nothing). A later acknowledgement (a
+ *   restarted daemon re-sends everything) keeps the first time.
  *
  * Records keep the values the daemon sent, not the zod parse: the parse drops
  * fields this API does not know, and the record would lose them (the same rule
@@ -73,7 +80,7 @@ import {
   type SessionLogPut,
 } from '@kortix/api-contract/session-log';
 import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTurns } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
@@ -421,19 +428,36 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
 }
 
 async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
-  const userMessageIds = [
-    ...new Set(
-      puts.flatMap(({ message: m }) =>
-        m.role === 'assistant' && m.status !== 'streaming' && m.reply_to ? [m.reply_to] : [],
-      ),
-    ),
+  const done = puts.map((p) => p.message).filter((m) => m.status !== 'streaming');
+  const compactions = done.filter((m) => m.kind === 'compaction');
+  // A turn's message: the one an assistant message answers, or the compaction itself (OpenCode).
+  const turnMessageIds = [
+    ...new Set([
+      ...done.flatMap((m) => (m.role === 'assistant' && m.reply_to ? [m.reply_to] : [])),
+      ...compactions.map((m) => m.message_id),
+    ]),
   ];
-  if (userMessageIds.length === 0) return;
-  await tx
-    .update(sessionTurns)
-    // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
-    .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
-    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, userMessageIds)));
+  // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
+  const durable = { logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` };
+  if (turnMessageIds.length > 0) {
+    await tx
+      .update(sessionTurns)
+      .set(durable)
+      .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds)));
+  }
+  // pi: the `/summarize` turn has no message id.
+  for (const m of compactions) {
+    const completedAt = Date.parse(m.completed_at ?? m.created_at);
+    if (Number.isNaN(completedAt)) continue;
+    // ponytail: started_at is the API clock and completed_at the box clock; a box behind by more than the summary's run time marks nothing.
+    const latest = tx
+      .select({ token: sessionTurns.turnToken })
+      .from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.runtimeSessionId, m.thread_id), lte(sessionTurns.startedAt, new Date(completedAt))))
+      .orderBy(desc(sessionTurns.startedAt))
+      .limit(1);
+    await tx.update(sessionTurns).set(durable).where(and(inArray(sessionTurns.turnToken, latest), isNull(sessionTurns.messageId)));
+  }
 }
 
 /** The boot-reconcile manifest, or null when the session is not this project's. */

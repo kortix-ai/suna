@@ -85,7 +85,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   config.SESSION_LOG_INGEST_ENABLED = true;
-  await db.delete(sessionTurns).where(eq(sessionTurns.sessionId, SESSION));
+  await db.delete(sessionTurns).where(eq(sessionTurns.accountId, ACCOUNT));
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, ACCOUNT));
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${ACCOUNT}`);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
@@ -315,6 +315,36 @@ describe('journal', () => {
       .from(sessionLogThreads)
       .where(and(eq(sessionLogThreads.sessionId, SESSION), eq(sessionLogThreads.threadId, 'bin2')));
     expect(thread_row?.record).toEqual({ ...thread('bin2'), ext: { note: { version: '1', data: 't\uFFFD' } } });
+  });
+
+  test('a compaction marks its /summarize turn durable: by message id (OpenCode), else the latest turn of its thread started before it completed, when that turn has no message id (pi)', async () => {
+    // No assistant message answers a compaction: both harnesses fold the summary into it.
+    // OpenCode's daemon binds the compaction id to the turn (`turn_begin`); pi's turn keeps no
+    // message id. Runs in the OTHER session.
+    const at = (min: number) => new Date(Date.parse(T) + min * 60_000);
+    const turn = (token: string, startedAt: Date, messageId: string | null, runtimeSessionId = 'ses_pi') =>
+      ({ turnToken: `${token}-${OTHER}`, sessionId: OTHER, sandboxId: OTHER, projectId: PROJECT, accountId: ACCOUNT, runtimeSessionId, messageId, state: 'ended', startedAt });
+    await db.insert(sessionTurns).values([
+      turn('pi_prompt', at(-10), 'msg_c_u1'),
+      turn('pi_summarize', at(-5), null),
+      turn('pi_later', at(5), null),
+      turn('other_thread', at(-4), null, 'ses_other'),
+      turn('oc_summarize', at(-5), 'msg_c_oc', 'ses_oc'),
+    ]);
+    const compaction = (id: string, threadId: string) => message(id, 0, {
+      thread_id: threadId, kind: 'compaction', created_at: at(-5).toISOString(), completed_at: at(-4).toISOString(),
+      blocks: [{ type: 'compaction', id: `${id}-p0`, summary: 'the summary', first_kept_message_id: null, trigger: 'manual' }],
+    });
+    const res = await journal(batch({
+      puts: [{ rev: REV + 81, message: compaction('msg_c_pi', 'ses_pi') }, { rev: REV + 82, message: compaction('msg_c_oc', 'ses_oc') }],
+      threads: [thread('ses_pi'), thread('ses_oc')],
+    }), tokens[OTHER]!, OTHER);
+    expect(res.status).toBe(200);
+    const durable = Object.fromEntries(
+      (await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.sessionId, OTHER)))
+        .map((r) => [r.token.replace(`-${OTHER}`, ''), r.at !== null]),
+    );
+    expect(durable).toEqual({ pi_prompt: false, pi_summarize: true, pi_later: false, other_thread: false, oc_summarize: true });
   });
 
   test('bodies: invalid JSON shape 400, over 2 MB gzipped 413, over 16 MB raw 413', async () => {
