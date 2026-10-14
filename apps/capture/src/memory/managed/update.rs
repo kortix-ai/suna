@@ -893,7 +893,9 @@ fn download(c: &reqwest::blocking::Client, asset: &Asset, dest: &Path) -> Result
     }
 }
 
+/// Signed and Bad are only produced where the OS can check (macOS, Windows).
 #[derive(Debug, PartialEq)]
+#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
 enum PlatformSig {
     Signed,
     Unsigned,
@@ -1009,7 +1011,8 @@ fn run_check(
     }
     if let Ok(rd) = std::fs::read_dir(updates_dir()) {
         for e in rd.flatten() {
-            if e.file_name().to_string_lossy().starts_with("supervisor-") {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with("supervisor-") || name == "kcap-updater" {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -1112,11 +1115,18 @@ fn spawn_supervisor() -> Result<()> {
     let id = format!("{}", now_ms());
     #[cfg(target_os = "linux")]
     {
-        // A transient unit: the installer restarts this service and systemd kills its control group.
+        use std::os::unix::fs::PermissionsExt;
+        // A copy under another name: the package's prerm runs `pkill -x kortix-capture`, which would
+        // end the supervisor. And a transient unit: the installer restarts this service, and
+        // systemd kills the control group of the service.
+        let copy = updates_dir().join("kcap-updater");
+        let _ = std::fs::remove_file(&copy);
+        std::fs::copy(&exe, &copy).context("copy the supervisor")?;
+        std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o700))?;
         let unit = format!("kortix-capture-update-{id}");
         let ok = std::process::Command::new("systemd-run")
             .args(["--unit", &unit, "--collect", "--quiet"])
-            .arg(&exe)
+            .arg(&copy)
             .args(["machine", "update-apply", "--job"])
             .arg(&job)
             .status()

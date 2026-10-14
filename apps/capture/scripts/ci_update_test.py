@@ -175,12 +175,12 @@ def install(path):
     elif OS == "macos":
         cfg = "/Library/Application Support/Kortix/Capture/config.json"
         run(["install", "-d", "-m", "755", "-o", "root", "-g", "wheel", "/Library/Application Support/Kortix", str(MACH)], root=True)
-        run(["tee", cfg], root=True, input=json.dumps({"url": args.issuer, "enrollment_token": args.token}), stdout=subprocess.DEVNULL)
+        run(["tee", cfg], root=True, input=json.dumps({"url": args.issuer, "enrollment_token": args.token}))
         run(["chmod", "600", cfg], root=True)
         run(["installer", "-pkg", path, "-target", "/"], root=True)
     else:
         run(["install", "-d", "-m", "755", "/etc/kortix"], root=True)
-        run(["tee", "/etc/kortix/capture.json"], root=True, input=json.dumps({"url": args.issuer, "enrollment_token": args.token}), stdout=subprocess.DEVNULL)
+        run(["tee", "/etc/kortix/capture.json"], root=True, input=json.dumps({"url": args.issuer, "enrollment_token": args.token}))
         run(["chmod", "600", "/etc/kortix/capture.json"], root=True)
         run(["apt-get", "install", "-y", "-q", path], root=True, env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"})
 
