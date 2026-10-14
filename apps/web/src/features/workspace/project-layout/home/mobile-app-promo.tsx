@@ -73,8 +73,8 @@ export function MobileAppPromo() {
           loads, so it appears at once. Closing still fades (Radix exit). */}
       <ModalContent
         animation="none"
-        overlayClassName="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 duration-200"
-        className="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 space-y-0 duration-200 lg:max-w-3xl"
+        overlayClassName="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 duration-(--duration-moderate)"
+        className="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 space-y-0 duration-(--duration-moderate) lg:max-w-3xl"
       >
         {/* 55 / 45: copy first, the art on the trailing side. From `sm` up
             only: on a phone the copy and the store buttons stand alone. The
