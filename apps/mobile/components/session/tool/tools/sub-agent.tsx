@@ -6,7 +6,7 @@
  *
  * ── Where the child session's data comes from ───────────────────────────────
  * The child's thread is `useSessionLogThread` of the bound session (web
- * P5.7 `useSubAgentThread`), by the child's runtime session id. On v2 the
+ * P5.7 `useSubAgentThread`; here `useRuntimeThread`), by the child's runtime session id. On v2 the
  * API's session log holds it; on v1 it is the `fromV1` view of the child's
  * rows, which the SDK's reducer files under the child's `sessionID` from the
  * parent's stream. It never fetches. A child transcript is resident while the
@@ -23,6 +23,7 @@ import { useContext, useMemo } from 'react';
 import { View } from 'react-native';
 import {
   classifySessionLogMessage,
+  subAgentCalls,
   getRetryInfo,
   getRetryMessage,
   type SessionLogThread,
@@ -32,26 +33,20 @@ import { SessionRetryDisplay, useRetrySecondsLeft } from '@/components/session/s
 import { TurnErrorDisplay } from '@/components/session/SessionErrorBanner';
 import { useRuntimeThread } from '@/components/session/SessionRuntime';
 import { useSessionStatus } from '@/lib/session/session-store';
-import { subAgentCalls } from '@/lib/session/tools/agents-task';
 import { webSpace } from '@/lib/session/user-message';
 import { TurnLiveContext } from '../shared/infrastructure';
 import { ToolNavigationContext } from '../shared/navigation';
 import { ToolSurfaceContext, useToolIndent } from '../shared/surface';
 import { ToolPartRenderer } from '../tool-part-renderer';
 
-/** The child's thread (`useRuntimeThread` by the child's runtime session id); `null` while nothing is loaded. */
-export function useSubAgentThread(childSessionId: string | undefined): SessionLogThread | null {
-  return useRuntimeThread(childSessionId);
-}
-
 /** The child's thread plus its shown tool calls, memoised on the thread. */
 export function useChildSession(childSessionId: string | undefined) {
-  const childThread = useSubAgentThread(childSessionId);
+  const childThread = useRuntimeThread(childSessionId);
   const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
   return { childThread, childCalls };
 }
 
-export function SubAgentActivity({ childSessionId, calls }: { childSessionId?: string; calls: ToolCallBlock[] }) {
+export function SubAgentActivity({ childSessionId, calls }: { childSessionId?: string; calls: readonly ToolCallBlock[] }) {
   // Read BEFORE the provider flips the surface: the offset belongs to the row
   // this list hangs under.
   const indent = useToolIndent();

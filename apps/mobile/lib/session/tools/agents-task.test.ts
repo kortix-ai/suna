@@ -1,9 +1,9 @@
+import { subAgentCalls } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { sessionLogOfV1Rows, type ToolPart } from '@kortix/sdk';
 
 import {
   childLastActivity,
-  subAgentCalls,
   describeChildStep,
   taskRowModel,
 } from './agents-task';

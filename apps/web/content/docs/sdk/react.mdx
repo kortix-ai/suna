@@ -279,7 +279,7 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
 }
 ```
 
-On v2, `useSessionLogThread` appends the v1 rows the log does not hold yet (an optimistic send) after the thread's messages, converted with `fromV1`, until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
+On v2, `useSessionLogThread` adds the v1 rows the log does not hold yet, converted with `fromV1` and placed by time as `useSessionMessages` places them (an older page `loadOlder` read goes before the thread's messages, an optimistic send after them), until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
 
 A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 

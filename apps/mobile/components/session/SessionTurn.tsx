@@ -184,7 +184,6 @@ function SessionTurnImpl({
 
   // Web: `working = isWorkingTurn && sessionWorking`: the SDK's `live`. Any other turn is never working.
   const working = turn.live;
-  const isWorkingTurn = turn.live;
 
   const hasSteps = useMemo(() => turnHasSteps(blocks), [blocks]);
   const hasAssistantContent = turn.assistant.length > 0;
@@ -236,12 +235,12 @@ function SessionTurnImpl({
   const errorDetails = turn.error?.details;
   // The retry frame belongs to the WORKING turn (web session-chat.tsx).
   const retryInfo = useMemo(
-    () => (isWorkingTurn ? getRetryInfo(sessionStatus) : undefined),
-    [sessionStatus, isWorkingTurn],
+    () => (working ? getRetryInfo(sessionStatus) : undefined),
+    [sessionStatus, working],
   );
   const retryMessage = useMemo(
-    () => (isWorkingTurn ? getRetryMessage(sessionStatus) : undefined),
-    [sessionStatus, isWorkingTurn],
+    () => (working ? getRetryMessage(sessionStatus) : undefined),
+    [sessionStatus, working],
   );
   const retrySecondsLeft = useRetrySecondsLeft(retryInfo);
   // Throttled status + stall clock; "Thinking" until the turn has an assistant message.

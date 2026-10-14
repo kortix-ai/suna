@@ -45,6 +45,8 @@ export type { SessionLogPage, SessionLogPageQuery } from './source';
 
 // Transitional bridge for hosts that render blocks while their rows are v1 (`./tool-call.ts`).
 export { toolCallBlock, toolCallMetadata } from './tool-call';
+// What a host draws a call with: its status, raw output and error text (block-native, not transitional).
+export { toolCallError, toolCallRawOutput, toolCallStatus } from './tool-call';
 // The same bridge for rows a host reads without a `useSession` (a sub-agent's chat): the
 // `fromV1` live view `useSessionLogThread` serves on v1 (`./v1-view.ts`).
 export { sessionLogOfV1Rows } from './v1-view';

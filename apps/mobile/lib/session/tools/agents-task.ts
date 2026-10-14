@@ -7,22 +7,9 @@
  * "Agent · {value0}{value1}", `textb581fd88ea24` ": {value0}".
  */
 
-import { getToolInfo, shouldShowToolPart, type SessionLogThread, type ToolCallBlock } from '@kortix/sdk';
+import { getToolInfo, type ToolCallBlock } from '@kortix/sdk';
 import { firstMeaningfulLine, partInput } from '@/lib/session/tool-part-accessors';
 
-const NO_CALLS: ToolCallBlock[] = [];
-
-/**
- * A sub-agent thread's shown tool calls, in order: every visible call of its
- * replies (web `subAgentCalls`, the block form of `getChildSessionToolParts`).
- */
-export function subAgentCalls(thread: SessionLogThread | null | undefined): ToolCallBlock[] {
-  if (!thread) return NO_CALLS;
-  const calls = thread.messages.flatMap((m) =>
-    m.role === 'assistant' ? m.blocks.filter((b): b is ToolCallBlock => b.type === 'tool_call' && shouldShowToolPart(b)) : [],
-  );
-  return calls.length > 0 ? calls : NO_CALLS;
-}
 
 /** "Title · subtitle" for one child step (web `info.title + (info.subtitle ? ' · ' + … : '')`). */
 export function describeChildStep(call: ToolCallBlock): string {
