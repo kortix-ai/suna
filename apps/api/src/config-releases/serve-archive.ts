@@ -27,6 +27,7 @@ import { rewriteStorageOrigin } from '../shared/storage-url';
 import { classifyIpHost, sanitizeUrlForLog } from '../snapshots/providers/upload-url-guard';
 import {
   buildConfigArchive,
+  buildConfigRelease,
   ConfigArchiveTooLargeError,
   isTreeObject,
   MAX_CONFIG_ARCHIVE_BYTES,
@@ -35,6 +36,7 @@ import {
   resolveReleaseTreeSource,
   storeConfigArchive,
 } from './builder';
+import { readFileTree } from './release-tree';
 import {
   CONFIG_ARCHIVE_URL_TTL_SECONDS,
   configArchiveKey,
@@ -241,6 +243,12 @@ async function composedArchiveBuilder(
   const known = await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], repo);
   if (known.exitCode !== 0) return null;
   if (agent && !/^[a-zA-Z0-9_-]+$/.test(agent)) return null;
+  if (agent) {
+    // The agent variant's release holds only its project tool modules (`toolsRelease`).
+    const release = await buildConfigRelease(project, commit, `agent:${agent}`).catch(() => null);
+    const files = release?.tools_only && release.config_tree_id === treeId ? release.files : null;
+    if (files) return async () => (await readFileTree(repo, files, { archive: true })).archive!;
+  }
   const resolved = await resolveReleaseTreeSource(repo, project, commit, agent ? `agent:${agent}` : 'project').catch(() => null);
   if (!resolved) return null;
   if (!('source' in resolved) || !isComposedSource(resolved.source)) return null;
