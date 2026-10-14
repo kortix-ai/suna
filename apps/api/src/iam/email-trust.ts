@@ -30,8 +30,8 @@ import { isUuid } from '../shared/validate';
 export interface EmailTrustOptions {
   /**
    * Keep a non-SSO email trusted while Auth auto-confirms sign-ups. Only the
-   * explicit invite list/accept/decline routes pass it: whether they close
-   * under autoconfirm is an open product decision (KRTX-1715).
+   * invitee routes (accounts/invites.ts) pass it, and only for an invite a
+   * person sent: the invitee accepts that one in person (KRTX-1715).
    */
   allowAutoconfirmed?: boolean;
 }

@@ -4,18 +4,21 @@
  * password identity's email proves nothing. Anyone who reaches the instance can
  * sign up as a colleague's address first (KRTX-1715 path C). So that email
  * does not claim a pending invite at sign-in, does not bind a SCIM user, and
- * does not resolve an add-by-email. An identity the account already holds as a
- * member, and an identity from the account's own IdP, still resolve inside that
- * account. With the fact unset (cloud), nothing changes.
+ * does not resolve an add-by-email. The SCIM invite created instead is not
+ * listed to, accepted or declined by that email either. An identity the
+ * account already holds as a member, and an identity from the account's own
+ * IdP, still resolve inside that account. With the fact unset (cloud), nothing
+ * changes.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { accountInvitations, accountMemberships, accountSsoProviders, accounts, creditAccounts } from '@kortix/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { autoClaimPendingInvites } from '../accounts/core/app';
 import { resolveAccountIdentityByEmail } from '../iam/account-identity';
 import { trustedEmailForUser } from '../iam/email-trust';
+import { createAccountToken } from '../repositories/account-tokens';
 import { createScimToken } from '../repositories/scim';
 import { userIdByEmail } from '../scim/app';
 
@@ -43,11 +46,35 @@ async function authUser(address: string, idp?: string): Promise<string> {
   return id;
 }
 
+/** An invite a person sent (Members → Invite), as accounts/core/invites.ts writes it. */
 async function invite(address: string): Promise<string> {
   const [row] = await db
     .insert(accountInvitations)
-    .values({ accountId: ACCOUNT, email: address, expiresAt: new Date(Date.now() + 86_400_000) })
+    .values({ accountId: ACCOUNT, email: address, invitedBy: ANCHOR_OWNER, expiresAt: new Date(Date.now() + 86_400_000) })
     .returning({ inviteId: accountInvitations.inviteId });
+  return row!.inviteId;
+}
+
+// Personal accounts of the callers below, deleted with their tokens in afterAll.
+const callerAccounts: string[] = [];
+
+/** `user`'s own API client: a PAT on a personal account of theirs, never on ACCOUNT. */
+async function caller(user: string) {
+  await db.insert(accounts).values({ accountId: user, name: 'autoconfirm-invitee-personal' });
+  await db.insert(accountMemberships).values({ accountId: user, userId: user });
+  callerAccounts.push(user);
+  const { secretKey } = await createAccountToken({ accountId: user, userId: user, name: 'autoconfirm-invitee' });
+  return async (method: 'GET' | 'POST', path: string) => {
+    const res = await app.request(path, { method, headers: { Authorization: `Bearer ${secretKey}` } });
+    return { status: res.status, body: (await res.json()) as Record<string, any> };
+  };
+}
+
+async function inviteIdFor(address: string): Promise<string> {
+  const [row] = await db
+    .select({ inviteId: accountInvitations.inviteId })
+    .from(accountInvitations)
+    .where(and(eq(accountInvitations.accountId, ACCOUNT), eq(accountInvitations.email, address)));
   return row!.inviteId;
 }
 
@@ -102,6 +129,10 @@ afterEach(() => autoconfirm(ORIGINAL));
 
 afterAll(async () => {
   autoconfirm(ORIGINAL);
+  if (callerAccounts.length > 0) {
+    await db.execute(sql`DELETE FROM kortix.account_tokens WHERE account_id IN (${sql.join(callerAccounts.map((id) => sql`${id}::uuid`), sql`, `)})`);
+    await db.delete(accounts).where(inArray(accounts.accountId, callerAccounts));
+  }
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
   await db.execute(sql`DELETE FROM auth.users WHERE id=${ANCHOR_OWNER}::uuid`);
 });
@@ -164,13 +195,60 @@ describe('email autoconfirm on (a self-host with no email provider)', () => {
     expect(await resolveAccountIdentityByEmail(ACCOUNT, address)).toEqual({ userId: viaOwnIdp, ambiguous: false });
     expect(await userIdByEmail(address, ACCOUNT)).toBe(viaOwnIdp);
   });
+});
 
-  test('the explicit invite routes still read the email (an open decision, KRTX-1715)', async () => {
+describe('the invitee routes (/v1/account-invites) over HTTP', () => {
+  test('autoconfirm on: the invite SCIM created for an address is not listed, described, accepted or declined by the password identity that holds it', async () => {
     autoconfirm(true);
-    const address = email('explicit');
-    const user = await authUser(address);
+    const address = email('scim-invite-stranger');
+    const stranger = await authUser(address);
+    expect((await scimCreateUser(address)).status).toBe(201);
+    const inviteId = await inviteIdFor(address);
+    const as = await caller(stranger);
 
-    expect(await trustedEmailForUser(user, { allowAutoconfirmed: true })).toBe(address);
+    const list = await as('GET', '/v1/account-invites');
+    expect(list.status).toBe(200);
+    expect(list.body.invites.map((i: { invite_id: string }) => i.invite_id)).not.toContain(inviteId);
+    const described = await as('GET', `/v1/account-invites/${inviteId}`);
+    expect(described.status).toBe(200);
+    expect(described.body).toMatchObject({ email_matches_caller: false, account_id: null, email: null });
+
+    const accept = await as('POST', `/v1/account-invites/${inviteId}/accept`);
+    expect(accept.status).toBe(403);
+    expect(accept.body.code).toBe('email_unconfirmed');
+    expect(await isMember(stranger)).toBe(false);
+    const decline = await as('POST', `/v1/account-invites/${inviteId}/decline`);
+    expect(decline.status).toBe(403);
+    expect(decline.body.code).toBe('email_unconfirmed');
+    expect(await pendingInvites(address)).toBe(1);
+  });
+
+  test('autoconfirm on: an invite a person sent is still listed and accepted by the password identity that holds the address', async () => {
+    // The residual KRTX-1715 keeps: whoever signed up first as the address
+    // accepts it. The /docs/host#unconfirmed-email-addresses page says so.
+    autoconfirm(true);
+    const address = email('person-invite');
+    const holder = await authUser(address);
+    const inviteId = await invite(address);
+    const as = await caller(holder);
+
+    expect((await as('GET', '/v1/account-invites')).body.invites.map((i: { invite_id: string }) => i.invite_id)).toContain(inviteId);
+    expect((await as('GET', `/v1/account-invites/${inviteId}`)).body.email_matches_caller).toBe(true);
+    expect((await as('POST', `/v1/account-invites/${inviteId}/accept`)).status).toBe(200);
+    expect(await isMember(holder)).toBe(true);
+  });
+
+  test('autoconfirm off: the invite SCIM created before the person signed up is listed and accepted', async () => {
+    autoconfirm(false);
+    const address = email('scim-invite-off');
+    expect((await scimCreateUser(address)).status).toBe(201);
+    const inviteId = await inviteIdFor(address);
+    const user = await authUser(address);
+    const as = await caller(user);
+
+    expect((await as('GET', '/v1/account-invites')).body.invites.map((i: { invite_id: string }) => i.invite_id)).toContain(inviteId);
+    expect((await as('POST', `/v1/account-invites/${inviteId}/accept`)).status).toBe(200);
+    expect(await isMember(user)).toBe(true);
   });
 });
 
