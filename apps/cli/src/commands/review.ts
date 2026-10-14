@@ -176,8 +176,10 @@ async function reviewLs(f: Record<string, string | undefined>, json: boolean): P
 
   // The inbox is paged (KRTX-2316): follow `next_cursor`, 200 a page after the
   // first. The first request sends no `limit`, so an older API, which returned
-  // the whole inbox, still answers in full.
-  const items: ReviewItem[] = [];
+  // the whole inbox, still answers in full. The walk is not a snapshot: an item
+  // decided between two pages moves to a later segment and comes back, so the
+  // later copy (the newer status) replaces the earlier one.
+  const byId = new Map<string, ReviewItem>();
   try {
     let cursor: string | null | undefined;
     do {
@@ -192,12 +194,16 @@ async function reviewLs(f: Record<string, string | undefined>, json: boolean): P
       const page = await ctx.client.get<{ review_items: ReviewItem[]; next_cursor?: string | null }>(
         `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
       );
-      items.push(...page.review_items);
+      for (const item of page.review_items) {
+        byId.delete(item.review_item_id);
+        byId.set(item.review_item_id, item);
+      }
       cursor = page.next_cursor;
     } while (cursor);
   } catch (err) {
     return surfaceApiError(err);
   }
+  const items = [...byId.values()];
 
   if (json) {
     emitJson({ review_items: items });
