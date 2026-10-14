@@ -69,8 +69,18 @@ for real use) running Linux, and a domain you control.
    create an account for any address, the admin address included. Sign up
    first, then close it: `kortix self-host env set EMAIL_URL=smtp://…` makes
    new accounts confirm their email, and `kortix self-host env set
-   DISABLE_SIGNUP=true` turns self sign-up off. `kortix self-host doctor`
-   fails (`open-sign-up`) until one of them is set. Then:
+   DISABLE_SIGNUP=true` turns self sign-up off. `kortix self-host init`
+   prints this warning, and `kortix self-host doctor` fails (`open-sign-up`)
+   until one of them is set. `init --disable-signup` turns sign-up off from
+   the first start, for an install that creates its accounts another way.
+   While sign-ups confirm without email, Kortix treats a password login's
+   address as unproven: sign-in does not accept a pending invite, SCIM or
+   **Members → Invite** for that address creates an invite instead of adding
+   the login, and a SCIM invite needs single sign-on. An invite a person sent
+   is still accepted by whoever signed up first with the address, and the
+   same holds for the admin email. See
+   [Unconfirmed email addresses](https://kortix.com/docs/host#unconfirmed-email-addresses).
+   Then:
    - **Settings → Git** — connect a GitHub App (or PAT) so the platform can
      create project repos. This one dashboard flow replaces the old
      env-var-only managed-git setup.
@@ -180,7 +190,7 @@ exact command, no SSH key or open port required):
 ```sh
 kortix self-host update            # pull the newest image on your channel now, migrate, roll forward
 kortix self-host env ls            # list every value, grouped by service (secrets masked)
-kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, EMAIL_URL, ...); restarts affected services only
+kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, EMAIL_URL, ...); restarts affected services only; a new API_KEY_SECRET needs a confirmation or --yes
 kortix self-host env rotate KEY    # regenerate a rotatable generated secret (or --all-generated); API_KEY_SECRET and POSTGRES_PASSWORD are refused: a new value breaks stored data
 kortix self-host logs [service]    # tail Compose logs
 kortix self-host status            # container status

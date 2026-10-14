@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Disconnetti OpenCode Go",
     "opencodeGoFailed": "Impossibile connettere OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Non decifrabile",
+      "hint": "Kortix non riesce a decifrare il valore salvato. La chiave di cifratura è cambiata o il valore è danneggiato. Chiunque gestisca questo progetto può reinserirlo.",
+      "reenter": "Reinserisci il valore",
+      "dialog": "Kortix non riesce a decifrare il valore salvato. Reinseriscilo per salvare.",
+      "keyHint": "Kortix non riesce a decifrare questa chiave API. La chiave di cifratura del server è cambiata o la chiave salvata è danneggiata. Kortix non la usa finché il suo proprietario o un amministratore dell'account non la reinserisce.",
+      "loginHint": "Kortix non riesce a decifrare questo accesso. La chiave di cifratura del server è cambiata o l'accesso salvato è danneggiato. Kortix non lo usa finché il suo proprietario non lo riconnette.",
+      "reenterKey": "Reinserisci la chiave",
+      "mineHint": "Kortix non riesce a decifrare il tuo valore di questo segreto. Le tue sessioni lo leggono al posto del valore condiviso, quindi non funzionano finché non lo elimini.",
+      "deleteMine": "Elimina il mio valore",
+      "mineDeleted": "Valore eliminato",
+      "mineDeleteError": "Impossibile eliminare il tuo valore. Riprova."
+    }
+  },
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"
   },
@@ -10890,6 +10905,7 @@
       "text265e52a33b53": "Imposta userName sull'email usata da Kortix per l'associazione: apri la sezione \"Attribute Mapping\" (separata dalla schermata di autenticazione), nella colonna \"PingOne Directory\" espandi \"Username\" e seleziona \"Email Address\". Poi, nelle preferenze/azioni della connessione, imposta \"User Identifier\" = userName e \"User Filter Expression\" = `userName eq \"%s\"`. Un'impostazione errata è la causa principale dei problemi con PingOne: per impostazione predefinita usa il nome utente interno, non l'email.",
       "text266240ec402c": "Modello di fatturazione",
       "text2672651736ac": "- Il lavoro arriva in main solo tramite una change request",
+      "text2677201ed3eb": "Offboarding di un membro completato",
       "text267d2e1cb01e": "La domanda più importante per ogni azienda che adotta l’AI: puoi cambiare modello senza perdere l’esperienza istituzionale costruita? Una checklist di sovranità per valutare la tua piattaforma AI.",
       "text268bc1833e83": "Grazie",
       "text268f14bbfe11": "Diagnostica",
@@ -19680,6 +19696,12 @@
     },
     "approvalPage": {
       "title": "Approva un’azione di {connector}"
+    },
+    "approvalWaiting": {
+      "byManager": "In attesa che chi gestisce questo progetto approvi o rifiuti la chiamata.",
+      "byName": "In attesa che {name} o chi gestisce questo progetto approvi o rifiuti la chiamata.",
+      "byOwner": "In attesa che la persona che ha avviato questa sessione o chi gestisce questo progetto approvi o rifiuti la chiamata.",
+      "copyLink": "Copia il link di approvazione"
     },
     "secretIntakeWithheld": {
       "title": "Salvato, ma {agent} non può ancora leggerlo",

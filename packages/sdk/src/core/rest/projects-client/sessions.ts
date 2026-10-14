@@ -226,6 +226,12 @@ export interface CreateProjectSessionInput {
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
+  /**
+   * Harness context that rides beside `initial_prompt` and is delivered to the
+   * model as a synthetic (model-only) message part — the transcript keeps
+   * showing the caller's own words. At most 8192 characters.
+   */
+  initial_context?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
   /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
@@ -778,6 +784,20 @@ export interface SessionAuditAction {
    * the row is unresolved; a settled decision carries no live link.
    */
   approval_url?: string | null;
+  /**
+   * True only on an unresolved row this viewer may approve or deny — the
+   * verdict `resolveApproval` would get (today: a project manager or the
+   * session's launcher). False on every other row. Show Approve / Deny only
+   * when it is true; absent on a server older than KRTX-1724.
+   */
+  can_resolve?: boolean;
+  /**
+   * Who decides an unresolved row, for a viewer whose `can_resolve` is false:
+   * `managers` for a session started with an API token or a service account,
+   * else `managers_and_launcher`. Null on every settled row; absent on an
+   * older server.
+   */
+  resolvers?: 'managers' | 'managers_and_launcher' | null;
 }
 
 export interface SessionAudit {

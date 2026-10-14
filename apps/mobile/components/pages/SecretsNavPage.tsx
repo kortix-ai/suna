@@ -55,6 +55,7 @@ import {
   useProjectAccess,
 } from '@/lib/projects/hooks';
 import type { ProjectSecret, ConnectorSharing } from '@/lib/projects/projects-client';
+import { secretStatusText, secretUndecryptable } from '@/lib/projects/secret-status';
 import { haptics } from '@/lib/haptics';
 import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
@@ -121,14 +122,6 @@ function buildRows(
     rows.push({ name: s.name, secret: s, required: false, optional: false });
   }
   return rows;
-}
-
-function statusText(s: SecretWithLegacySharing | null): string {
-  if (!s) return 'Not set';
-  if (s.effective_source === 'mine') return 'Using your own value';
-  if (s.effective_source === 'shared') return 'Using the shared value';
-  if (s.configured && !s.usable_by_me) return "Shared exists, not shared with you";
-  return 'Not set';
 }
 
 function sharingScopeLabel(sharing: ConnectorSharing | null | undefined): string | null {
@@ -749,13 +742,16 @@ export function SecretsNavPage({
                 <SettingsGroupItem index={index} count={filtered.length}>
                   <SettingsRow
                     label={row.name}
-                    description={[need, statusText(s), scope].filter(Boolean).join(' · ')}
+                    description={[need, secretStatusText(s), scope].filter(Boolean).join(' · ')}
                     onPress={() => openRow(row.name)}
                     right={
                       <View className="flex-row items-center gap-3">
                         {/* A required secret with no value: the one state that blocks a run. */}
                         {row.required && (s?.effective_source ?? 'none') === 'none' ? (
                           <View accessibilityLabel="Not set" className="size-1.5 rounded-full bg-kortix-orange" />
+                        ) : secretUndecryptable(s) ? (
+                          // A value the server cannot decrypt blocks a run the same way (KRTX-1719).
+                          <View accessibilityLabel="Cannot be decrypted" className="size-1.5 rounded-full bg-kortix-orange" />
                         ) : null}
                         <Icon as={ChevronRight} size={16} className="text-muted-foreground/70" />
                       </View>

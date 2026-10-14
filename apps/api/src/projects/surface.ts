@@ -47,6 +47,12 @@ export {
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
+
+// Who may decide a gated connector call (consumed by ../setup-links/approval-app,
+// so the approval page refuses exactly whom the resolve route refuses).
+export { mayResolveApproval } from './lib/approval-authority';
+export { approvalCallerOf } from './lib/http-approval-caller';
+export { approvalTargetSession } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';
@@ -58,6 +64,10 @@ export { currentInstanceId } from './instance-scope';
 export { sessionAttachmentStore } from './lib/session-attachments';
 export { deleteManagedProjectRepo } from './lib/project-deletion';
 export { isAlreadyNotRunning } from './reaping/policy';
+
+// Offboarding pauses the reminders a departed member set (consumed by
+// ../accounts/core/offboard-member).
+export { disableRemindersAuthoredBy } from './lib/session-reminders';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';

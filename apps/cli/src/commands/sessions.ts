@@ -622,7 +622,11 @@ async function sessionsNew(
 
   const body: Record<string, unknown> = {};
   if (prompt && uploads.length === 0) {
-    body.initial_prompt = buildSpawnPrompt(prompt, { fromSandbox });
+    // The prompt is stored verbatim; the contract rides in `initial_context`
+    // and reaches the model as a synthetic (model-only) part.
+    const spawn = buildSpawnPrompt(prompt, { fromSandbox });
+    body.initial_prompt = spawn.prompt;
+    if (spawn.context) body.initial_context = spawn.context;
   }
   // Titles derive from the user's words, not from the session-contract or the
   // --with-file manifest the CLI appends around them.
@@ -728,16 +732,20 @@ async function sessionsNew(
         if (!json) process.stdout.write(`  ${C.dim}uploaded ${u.target}${C.reset}\n`);
       }
       if (prompt) {
+        // A deferred prompt goes to a RUNNING session through the prompt
+        // inbox, which has no synthetic-part carrier yet: the contract still
+        // rides inside the text there (the caller's words stay at the top).
+        const spawn = buildSpawnPrompt(
+          buildPromptWithFiles(
+            prompt,
+            uploads.map((u) => u.target),
+          ),
+          { fromSandbox },
+        );
         await sendPromptToSession(
           ctx,
           created,
-          buildSpawnPrompt(
-            buildPromptWithFiles(
-              prompt,
-              uploads.map((u) => u.target),
-            ),
-            { fromSandbox },
-          ),
+          spawn.context ? `${spawn.prompt}\n\n${spawn.context}` : spawn.prompt,
         );
       }
     } catch (err) {

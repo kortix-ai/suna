@@ -11,6 +11,7 @@
 
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { resolveApproval } from '@kortix/sdk';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useToast } from '@/components/kortix/toast-provider';
 import {
+  ClockIcon,
   CodeSimpleIcon,
   MagnifyingGlassIcon,
   PlugIcon,
@@ -27,9 +29,11 @@ import {
 import { invalidateReviewItems, useReviewItems } from '@/lib/review/use-review';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
+  approvalWaitingWhoKey,
   connectorApprovalNeed,
   connectorApprovalState,
   connectorConnectNeed,
+  listPredatesCall,
   type ConnectorApprovalNeed,
 } from '@/lib/session/connector-handoff';
 import {
@@ -293,6 +297,10 @@ ToolRegistry.register('kortix-connectors_describe', ConnectorDescribeTool);
  * The decision reuses `resolveApproval` — the same `@kortix/sdk` call
  * `ReviewPage`'s `useReviewVerdict` makes for its `resolve_approval` plan —
  * and refetches the same queries (`invalidateReviewItems`).
+ *
+ * Approve / Deny show only to a viewer the API lets decide the call (a project
+ * manager or the person who started the session; `canResolve`, KRTX-1724).
+ * Anyone else reads `waiting`: the call and who decides it, no decision.
  */
 function ConnectorApprovalPrompt({
   need,
@@ -303,6 +311,7 @@ function ConnectorApprovalPrompt({
 }) {
   const handoff = useContext(ConnectorHandoffContext);
   const projectId = handoff?.projectId ?? null;
+  const { t } = useTranslation();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
@@ -310,19 +319,42 @@ function ConnectorApprovalPrompt({
   // Poll the review list only while the answer can still change.
   const [polling, setPolling] = useState(true);
   const review = useReviewItems(projectId, { poll: polling });
+  // The call's own verdict rides on its single action (`canResolve`), and so
+  // does who decides it (`resolvers`).
+  const reviewItems = useMemo(
+    () =>
+      review.data?.map((item) => {
+        const call = item.kind === 'approval' ? item.detail.actions[0] : undefined;
+        return {
+          id: item.id,
+          status: item.status,
+          canResolve: call?.canResolve,
+          resolvers: call?.resolvers,
+        };
+      }),
+    [review.data],
+  );
+  const resolvers = reviewItems?.find((item) => item.id === `call:${need.executionId}`)?.resolvers;
 
   const state = connectorApprovalState({
     executionId: need.executionId,
-    reviewItems: review.data,
+    reviewItems,
     reviewFetchedAtMs: review.dataUpdatedAt,
-    reviewFailed: review.isError && !review.data,
     callSettledAtMs,
     localDecision,
   });
-  const live = state === 'pending' || state === 'unknown';
+  // A waiting call still resolves elsewhere: keep polling for the outcome.
+  const live = state === 'pending' || state === 'unknown' || state === 'waiting';
   useEffect(() => {
     setPolling(live);
   }, [live]);
+  // A list fetched before this call settled cannot carry its verdict: ask now
+  // instead of waiting out the 8 s poll (the card shows nothing meanwhile).
+  const stale = review.dataUpdatedAt > 0 && listPredatesCall(review.dataUpdatedAt, callSettledAtMs);
+  const { refetch } = review;
+  useEffect(() => {
+    if (stale) void refetch();
+  }, [stale, refetch]);
 
   const decide = async (decision: 'approve' | 'deny') => {
     if (!projectId || busy) return;
@@ -364,6 +396,23 @@ function ConnectorApprovalPrompt({
       ))}
     </>
   );
+
+  if (state === 'waiting') {
+    return (
+      <View className="gap-2 rounded-xl border border-border bg-background p-3">
+        <View className="flex-row items-center gap-1.5">
+          <Icon as={ClockIcon} size={14} className="text-muted-foreground" />
+          <Text variant="small" className="leading-5 text-muted-foreground">
+            {t('approvals.waitingTitle')}
+          </Text>
+        </View>
+        {details}
+        <Text variant="muted" style={TURN_TYPE.xs}>
+          {t(approvalWaitingWhoKey(resolvers))}
+        </Text>
+      </View>
+    );
+  }
 
   if (state !== 'pending') {
     return (
