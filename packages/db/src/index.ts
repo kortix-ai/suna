@@ -45,6 +45,7 @@ export {
   projectSnapshotArchives,
   configReleases,
   configReleaseFailures,
+  configReleaseHeads,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
