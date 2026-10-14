@@ -1,17 +1,17 @@
 {
-  "source_hash": "dd6955ccc741d194637588896382758bf5ccde2e35d1ca3946d6f33959c328f6",
+  "source_hash": "8a4175474b1c0705aa3c7927c58cd96b684673d28472876f257129b7a1689de5",
   "diff_files": [
     "apps/web/src/app/[locale]/game-of-life/game-of-life.test.tsx",
     "apps/web/src/app/[locale]/game-of-life/game-of-life.tsx",
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "83618b05562a0f3439a9b8d7c4825b074f0c3470768773670aff10fb3b11f0e9",
-  "head": "2c1da3a884f4ac58e5f52a099ba82397ea58daee",
+  "diff_hash": "71dfdea5f71982291e95dee4f9a3baa73e20a905cc6b92862d22b9b563681acb",
+  "head": "5ec1157b8d6ca9dd4fd5944762a8c6e49f08aa65",
   "passed": false,
   "lanes": {
-    "core": "pass",
+    "core": "fail",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T17:17:15.340Z"
+  "at": "2026-10-14T19:19:49.262Z"
 }
