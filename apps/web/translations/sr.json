@@ -20750,5 +20750,17 @@
     "you": "Ти",
     "manageFolderAccess": "Управљај приступом",
     "viewFolderAccess": "Прикажи приступ"
+  },
+  "agentManualCreate": {
+    "title": "Kreiraj agenta",
+    "description": "Sačuvaj uputstva sada. Podesi model i alate na stranici agenta.",
+    "created": "Agent je kreiran",
+    "failed": "Kreiranje agenta nije uspelo",
+    "name": "Ime",
+    "duplicate": "Agent sa ovim imenom već postoji.",
+    "nameHelp": "Koristi mala slova, cifre, crtice ili donje crte.",
+    "instructions": "Uputstva",
+    "cancel": "Otkaži",
+    "create": "Kreiraj"
   }
 }

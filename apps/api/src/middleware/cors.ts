@@ -42,6 +42,7 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: [
       'Content-Type',
+      'If-None-Match',
       'Authorization',
       'X-Kortix-Token',
       'Mcp-Protocol-Version',

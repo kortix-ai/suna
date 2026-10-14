@@ -20750,5 +20750,17 @@
     "you": "Du",
     "manageFolderAccess": "Zugriff verwalten",
     "viewFolderAccess": "Zugriff ansehen"
+  },
+  "agentManualCreate": {
+    "title": "Agent erstellen",
+    "description": "Speichere jetzt die Anweisungen. Modell und Werkzeuge kannst du auf der Agentenseite konfigurieren.",
+    "created": "Agent erstellt",
+    "failed": "Agent konnte nicht erstellt werden",
+    "name": "Name",
+    "duplicate": "Ein Agent mit diesem Namen existiert bereits.",
+    "nameHelp": "Verwende Kleinbuchstaben, Ziffern, Bindestriche oder Unterstriche.",
+    "instructions": "Anweisungen",
+    "cancel": "Abbrechen",
+    "create": "Erstellen"
   }
 }
