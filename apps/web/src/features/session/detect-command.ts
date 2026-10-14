@@ -1,5 +1,8 @@
 import type { Command } from '@kortix/sdk/react';
 
+/** Folds every run of blank lines to one. */
+const foldBlankLines = (text: string) => text.replace(/\n{3,}/g, '\n\n');
+
 /**
  * Detect if user message text matches a known command template.
  * Returns the command name + extracted args, or undefined if no match.
@@ -39,20 +42,21 @@ export function detectCommandFromText(
     // if rawText matches the body. This handles commands whose template is the
     // full file content (which opencode sends verbatim as the user message).
     if (tpl.length > 2000) {
-      // Strip trailing $ARGUMENTS (with optional surrounding whitespace/newlines)
-      const tplBody = tpl.replace(/\s*\$ARGUMENTS\s*$/, '').trimEnd();
+      // Strip trailing $ARGUMENTS (with optional surrounding whitespace/newlines).
+      // Blank-line runs fold to one on both sides: the bubble's text went through
+      // `stripSystemPtyText`, which folds them, and a SKILL.md body has them.
+      const tplBody = foldBlankLines(tpl.replace(/\s*\$ARGUMENTS\s*$/, '').trimEnd());
+      const text = foldBlankLines(trimmedRawText);
       // Fast check: does rawText equal the template body exactly?
-      if (tplBody.length > 0 && trimmedRawText === tplBody) {
+      if (tplBody.length > 0 && text === tplBody) {
         return { name: cmd.name, args: undefined };
       }
       // Also handle the case where $ARGUMENTS is at the end and the user
-      // provided some text after the template body.
-      if (tplBody.length > 0 && trimmedRawText.startsWith(tplBody)) {
-        const after = trimmedRawText.slice(tplBody.length).trim();
-        return {
-          name: cmd.name,
-          args: after.length > 0 && after.length < 200 ? after : undefined,
-        };
+      // provided some text after the template body. The prefix match is exact,
+      // so the rest is the user's whole prompt, however long.
+      if (tplBody.length > 0 && text.startsWith(tplBody)) {
+        const after = text.slice(tplBody.length).trim();
+        return { name: cmd.name, args: after.length > 0 ? after : undefined };
       }
       continue;
     }

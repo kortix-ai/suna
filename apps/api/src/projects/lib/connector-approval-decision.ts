@@ -11,6 +11,7 @@ import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
+import { type ApprovalTarget, approvalTargetOf } from './approval-authority';
 
 export type ApprovalDecision = 'approve' | 'deny';
 
@@ -50,22 +51,6 @@ export async function loadApprovalRow(
 
 export function isPendingApproval(row: PendingApprovalRow): boolean {
   return row.status === 'pending_approval' && !row.approvedBy && !row.resolvedAt;
-}
-
-export interface ApprovalTarget {
-  createdBy: string | null;
-  origin: string | null;
-}
-
-/** `created_by` + origin of the session a gated call belongs to — the inputs
- *  of the launcher half of the authority rule. A call with no session belongs
- *  to the user it ran as. `session` is the call's session row, if it exists. */
-export function approvalTargetOf(
-  row: Pick<PendingApprovalRow, 'sessionId' | 'actingUserId'>,
-  session: { createdBy: string | null; origin: string | null } | undefined,
-): ApprovalTarget {
-  if (!row.sessionId) return { createdBy: row.actingUserId, origin: 'user' };
-  return { createdBy: session?.createdBy ?? null, origin: session?.origin ?? null };
 }
 
 export async function approvalTargetSession(

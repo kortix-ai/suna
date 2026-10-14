@@ -313,12 +313,16 @@ ensure_agent_binary() {
 
   if [[ -f "$bin" ]]; then
     local newer
-    newer="$(find "$dir/src" "$dir/scripts" "$dir/package.json" -type f -newer "$bin" -print -quit 2>/dev/null || true)"
+    # The binary bundles the workspace packages it imports: a change to the generative UI prompt
+    # (packages/sdk/src/genui) or to the runtime contract must rebuild it too.
+    newer="$(find "$dir/src" "$dir/scripts" "$dir/package.json" \
+      "$ROOT_DIR/packages/sdk/src" "$ROOT_DIR/packages/api-contract/src" \
+      -type f -newer "$bin" -print -quit 2>/dev/null || true)"
     if [[ -z "$newer" ]]; then
       echo "[dev] kortix-agent up to date — skipping daemon build"
       return 0
     fi
-    echo "[dev] kortix-agent stale (changed: ${newer#"$dir"/}) — rebuilding…"
+    echo "[dev] kortix-agent stale (changed: ${newer#"$ROOT_DIR"/}) — rebuilding…"
   else
     echo "[dev] kortix-agent missing — building…"
   fi

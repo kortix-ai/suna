@@ -688,6 +688,8 @@
       "themeDescription": "Choisissez l'apparence de Kortix sur cet appareil.",
       "conversationDensity": "Densité de la conversation",
       "conversationDensityDescription": "Choisissez le niveau de détail affiché par l'agent dans la conversation pendant son travail.",
+      "richAnswers": "Réponses enrichies",
+      "richAnswersDescription": "Affiche les comparaisons, tableaux, graphiques et cartes sous forme visuelle dans les réponses. Si l'option est désactivée, le même contenu apparaît en texte.",
       "wallpaper": "Fond d'écran",
       "wallpaperDescription": "L'arrière-plan de votre projet.",
       "defaultWallpaper": "Par défaut",
@@ -1208,6 +1210,10 @@
           "name": "Harness Pi (dans le bac à sable)",
           "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
         },
+        "genui": {
+          "name": "UI générative",
+          "description": "L'agent peut répondre avec des cartes, des comparatifs, des graphiques, des cartes géographiques et des onglets plutôt qu'avec de longs textes."
+        },
         "reminders": {
           "name": "Rappels",
           "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Rappels, l’indicateur de rappels de la session et `kortix remind`."
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Fichiers partagés et sessions sur volumes pour ce projet."
-        },
-        "stateless_sessions": {
-          "name": "Sessions sans état",
-          "description": "Un ordinateur neuf à chaque réveil ; seuls les fichiers et le chat sont conservés. Nécessite les volumes activés."
+          "description": "Fichiers partagés pour ce projet."
         },
         "drives": {
           "name": "Drive",
           "description": "Des dossiers partagés synchronisés avec les sessions : votre propre drive, un par agent, et les drives d’entreprise qu’un administrateur associe au projet. Les nouvelles sessions les voient sous /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Sandboxes éphémères",
-          "description": "Une session arrêtée garde ses fichiers et sa conversation sur un volume et libère sa machine. La réveiller démarre une nouvelle machine avec l’image la plus récente. Les processus en cours ne survivent pas à un arrêt."
         },
         "session_log": {
           "name": "Journal de session v2",
@@ -5775,7 +5773,6 @@
       "line175JsxTextOpenInTabInstead": "Ouvrir plutôt dans un onglet"
     },
     "componentsDashboardConnectingScreen": {
-      "line156JsxAttrTitleRuntimeDegraded": "Runtime dégradé",
       "line422JsxTextCouldnAposTStart": "Impossible de démarrer",
       "line469JsxTextIsStopped": "est arrêté",
       "line472JsxTextOpenANewSessionOrReturnToProjects": "Ouvrez une nouvelle session ou revenez aux projets pour continuer.",
@@ -10922,7 +10919,6 @@
       "text26eb1bc45b53": "Refus par défaut",
       "text26ecc76c0ce9": "Supprimer ce jeton ?",
       "text26ee1166df63": "Les modifications s’appliquent au prochain prompt.",
-      "text26f0dd993530": "Nouvelle tentative automatique",
       "text27042f4e6eca": "droite",
       "text270ba743dc3c": "Les planifications Cron et les webhooks signés démarrent des sessions Kortix sans personne présente. Chaque déclencheur indique l’agent exécuté, contient un modèle de prompt et livre le travail via une demande de changement approuvée par une personne.",
       "text271189ae389a": "Heure de début",
@@ -11872,7 +11868,6 @@
       "text429bbfa117e2": "Application mobile",
       "text429be41120e9": "Exécutez le projet sans quitter la conversation.",
       "text429ffbbaa586": "Connexion facile",
-      "text42b3d52014ba": "Espace de travail hors ligne",
       "text42b8d7c5357a": "Le sandbox n’a pas confirmé le rechargement",
       "text42bcffb92597": "Afficher en tant que ce membre",
       "text42bd94c06205": "Statut (point, badge, diff)",
@@ -15273,7 +15268,6 @@
       "texta4a83d949891": "Échec de la réduction de la session",
       "texta4b4b51ec474": "translate(-50%, -100%)",
       "texta4b6a3d9d629": "kortix init transforme n’importe quel répertoire en Kortix. kortix ship le met en ligne. Ensuite, vous disposez d’un seul dépôt — que vous possédez, versionnez et comparez, et qui s’améliore lui-même au fil de modifications revues.",
-      "texta4c128e48978": "L’hôte est accessible, mais le runtime principal de l’espace de travail ne répond pas aux requêtes. Redémarrez le runtime ou la charge de travail pour rétablir les services.",
       "texta4c297b580ad": "- Relancer les impayés, escalader au-delà de 30 jours",
       "texta4c7fa51a957": "Aucune branche trouvée",
       "texta4c9215859a8": "Membre du projet supprimé",
@@ -17163,7 +17157,6 @@
       "textd938438f232e": "Authentification du webhook",
       "textd942e3dc737b": "docs.kortix.com",
       "textd948c285986a": "Slack déconnecté",
-      "textd94a83e48b64": "Cet espace de travail est inaccessible. Retournez aux projets et ouvrez une autre session ou créez-en une nouvelle.",
       "textd952c0d7b0b0": "Injecté au moment de l’appel",
       "textd95934d15292": "Rechercher parmi plus de 5 000 API, serveurs MCP et applications OAuth",
       "textd96a37fc02f0": "Remplacer le mot de passe",
@@ -17555,7 +17548,6 @@
       "texte478b984a2d9": "Lisez le tracker tel qu’il est réellement — tickets, états, liens, commentaires — et réécrivez le résultat nettoyé là où vous l’autorisez. Le tracker reste la source de référence ; l’agent n’en crée pas une seconde.",
       "texte47b85588c7c": "Tout fournisseur d'identité utilisant \"{value0}\" perdra immédiatement l'accès. Cela ne peut pas être annulé : vous devrez créer un nouveau jeton pour vous reconnecter.",
       "texte47c8bae740d": "Copier la clé",
-      "texte48034ba91dd": "Services de l’espace de travail indisponibles",
       "texte4855e715f70": "    sandbox: python",
       "texte493d2f8af71": "Options avancées → Personnaliser le nom de l'attribut de groupe",
       "texte4a075134e2b": "Aucune exigence particulière — cet élément fonctionne immédiatement.",
@@ -19707,71 +19699,6 @@
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",
       "grant": "{names} {count, plural, one {ne fait pas} other {ne font pas}} partie des secrets de l'agent {agent}. Ouvrez Personnaliser → Agents → {agent} → Secrets et {count, plural, one {activez-le} other {activez-les}}.",
       "allowlist": "{names} {count, plural, one {est} other {sont}} hors des secrets de cette session. Démarrez une nouvelle session pour {count, plural, one {l'utiliser} other {les utiliser}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Image",
-      "modeImageDetail": "L’image de session seule.",
-      "modeImageRequested": "Image demandée : {count}",
-      "modeArtifacts": "Image + artefacts",
-      "modeArtifactsDetail": "Plus le volume d’artefacts de démarrage pour le runtime le plus récent.",
-      "modeArtifactsRequested": "Image + artefacts demandés : {count}",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Machine éphémère, état de session sur un volume, plus les artefacts.",
-      "modeVolumeRequested": "Volume demandé : {count}",
-      "reasonSessionVolume": "Volume de session",
-      "reasonArtifactsVolume": "Volume d’artefacts",
-      "reasonVolumeMount": "Montage de volume",
-      "reasonTimeout": "Délai dépassé",
-      "reasonBootHealth": "La machine n’a jamais été prête",
-      "reasonOther": "Autre",
-      "fallBackToTheImage": "Se replier sur l’image",
-      "fallBackToImage": "Repli sur l’image",
-      "saved": "Modes de démarrage enregistrés",
-      "saveFailed": "Impossible d’enregistrer les modes de démarrage",
-      "title": "Modes de démarrage",
-      "description": "Comment démarrent les nouvelles sessions d’un projet dont les volumes sont activés, et les replis qu’elles prennent. Les volumes et les sessions sans état sont des feature flags du projet, pas des réglages d’ici. Les modifications atteignent chaque processus API en moins de 30 secondes.",
-      "discard": "Annuler les modifications",
-      "save": "Enregistrer",
-      "off": "Désactivé",
-      "bootModeTitle": "Mode de démarrage",
-      "bootModeDescription": "Comment démarrent les nouvelles sessions d’un projet dont les volumes sont activés. Un projet dont les sessions sans état sont activées démarre sur un volume.",
-      "defaultModeTitle": "Mode par défaut",
-      "killSwitchTitle": "Coupe-circuit : démarrer chaque nouvelle session depuis l’image",
-      "killSwitchDetail": "Remplace tous les modes d’un coup ; Fichiers et les drives restent tels quels. Une session dont les fichiers sont déjà sur un volume garde son volume.",
-      "killSwitchLabel": "Coupe-circuit",
-      "last24HoursTitle": "Dernières 24 heures",
-      "last24HoursDescription": "Sessions démarrées dans chaque mode, et les replis qu’elles ont pris. Comptées sur le fournisseur de volumes.",
-      "columnFallback": "Repli",
-      "columnReason": "Raison",
-      "columnCount": "Nombre",
-      "columnLatestError": "Dernière erreur",
-      "noFallbacks": "Aucun repli au cours des dernières 24 heures.",
-      "countsUnavailable": "Comptages indisponibles : {error}",
-      "unknownError": "erreur inconnue",
-      "fallbackTitle": "Repli",
-      "fallbackDescription": "Une session dont les démarrages échouent à répétition descend d’un cran, une fois par session ; elle reste sur le mode atteint. Une session dont les fichiers sont déjà sur un volume ne le quitte jamais.",
-      "after": "après",
-      "failedBoots": "démarrages échoués",
-      "volumeAttemptsLabel": "Tentatives sur volume",
-      "artifactsAttemptsLabel": "Tentatives avec artefacts",
-      "lastStepNote": "(activé sauf si le mode par défaut désactive la dernière étape)",
-      "whereModesApplyTitle": "Où les modes s’appliquent",
-      "whereModesApplyDescription": "Les fournisseurs et les interrupteurs de déploiement proviennent de l’environnement du serveur. Le volume d’artefacts peut être défini ici ; vide, celui de l’environnement est utilisé.",
-      "volumeProviderTitle": "Fournisseur de volumes : {provider}",
-      "volumeProviderConfigured": "Configuré. Les sessions qui l’utilisent démarrent dans le mode choisi par leur règle.",
-      "volumeProviderNotConfigured": "Non configuré : chaque session démarre depuis l’image.",
-      "ready": "Prêt",
-      "otherProvidersTitle": "Autres fournisseurs : {providers}",
-      "otherProvidersDriveSync": "Démarrent toujours depuis l’image. Les drives les atteignent via la synchronisation des drives.",
-      "otherProvidersNoDriveSync": "Démarrent toujours depuis l’image. La synchronisation des drives est désactivée, donc les projets avec drive restent sur le fournisseur de volumes.",
-      "imageOnly": "Image uniquement",
-      "artifactsVolumeTitle": "Volume d’artefacts",
-      "artifactsVolumeSet": "Les sessions en Image + artefacts ou Volume montent {source}.",
-      "artifactsVolumeFromEnvironment": "Les sessions en Image + artefacts ou Volume montent {source} (depuis l’environnement).",
-      "artifactsVolumeNone": "Aucun défini : les modes avec artefacts démarrent comme si l’image était seule.",
-      "artifactsVolumeLabel": "Volume d’artefacts et tag",
-      "ephemeralSandboxesOff": "{variable} est désactivé dans ce déploiement : les sessions sans état démarrent en Image + artefacts.",
-      "nothingSaved": "Rien d’enregistré pour l’instant : les projets dont les volumes sont activés démarrent depuis l’image."
     }
   },
   "projectOnboarding": {
@@ -20228,7 +20155,8 @@
     "verified": "Vérifié",
     "invalidCode": "Ce code n’a pas fonctionné. Vérifiez votre application d’authentification et réessayez.",
     "noFactorTitle": "Configurer l’authentification à deux facteurs",
-    "noFactorDescription": "Cette action nécessite l’authentification à deux facteurs. Ajoutez une application d’authentification dans Paramètres → Sécurité, puis réessayez."
+    "noFactorDescription": "Cette action nécessite l’authentification à deux facteurs. Ajoutez une application d’authentification dans Paramètres → Sécurité, puis réessayez.",
+    "setUp": "Configurer l’authentificateur"
   },
   "connectorPages": {
     "install": "Installer",
@@ -20792,5 +20720,23 @@
     "you": "Vous",
     "manageFolderAccess": "Gérer l’accès",
     "viewFolderAccess": "Voir l’accès"
+  },
+  "genui": {
+    "showData": "Afficher les données",
+    "openImage": "Ouvrir l'image",
+    "viewAllImages": "Tout voir ({count})",
+    "pieFocus": "{label} représente {percent} % du total",
+    "pieOfTotal": "{value} sur {total}",
+    "directions": "Itinéraire",
+    "call": "Appeler",
+    "website": "Site web",
+    "label": "Libellé",
+    "value": "Valeur",
+    "map": "Carte",
+    "zoomIn": "Augmenter le zoom",
+    "zoomOut": "Réduire le zoom",
+    "mapTwoFingers": "Utilisez deux doigts pour déplacer la carte",
+    "pick": "Choix",
+    "convertFailed": "Impossible de préparer la transcription. Réessayez."
   }
 }

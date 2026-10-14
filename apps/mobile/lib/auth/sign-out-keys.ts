@@ -7,6 +7,7 @@ const PRESERVED_KEYS: ReadonlySet<string> = new Set([
   '@theme_preference', // stores/theme-store.ts
   '@kortix_language', // lib/utils/i18n.ts
   '@push_registration', // stores/push-store.ts: device push token, prompt shown
+  'kortix-genui', // stores/genui-store.ts: Rich answers on/off
 ]);
 
 /** Onboarding completion flags are per-device caches of profile state. */

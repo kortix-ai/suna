@@ -79,16 +79,11 @@ export interface CreateSandboxOpts {
    */
   volumes?: Record<string, { volume: string; read_only?: boolean; subdir?: string; ref?: string }>;
   /**
-   * An ephemeral session box: its state lives on a session volume and a stop
-   * deletes the box. (A create refused over any `volumes` always fails: a
-   * session never boots without its drives or its state.)
+   * The box keeps its state on its `volumes` (an App machine), so Platinum's
+   * periodic whole-box backup is off. (A create refused over any `volumes`
+   * always fails: a box never boots without them.)
    */
   volumesRequired?: boolean;
-  /**
-   * A persistent machine: the box boots from a new Platinum root volume made
-   * from the template, owned by the box (deleted with it). Platinum only.
-   */
-  rootVolume?: boolean;
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {

@@ -688,6 +688,8 @@
       "themeDescription": "Wählen Sie das Erscheinungsbild von Kortix auf diesem Gerät.",
       "conversationDensity": "Gesprächsdichte",
       "conversationDensityDescription": "Legt fest, wie viele Details der Agent während seiner Arbeit im Gespräch zeigt.",
+      "richAnswers": "Erweiterte Antworten",
+      "richAnswersDescription": "Zeigt Vergleiche, Tabellen, Diagramme und Karten in Antworten als Grafiken. Wenn deaktiviert, zeigen Antworten denselben Inhalt als Text.",
       "wallpaper": "Hintergrund",
       "wallpaperDescription": "Der Hintergrund Ihres Projekts.",
       "defaultWallpaper": "Standard",
@@ -1208,6 +1210,10 @@
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
         },
+        "genui": {
+          "name": "Generative UI",
+          "description": "Der Agent kann statt langer Texte mit Karten, Vergleichen, Diagrammen, Landkarten und Tabs antworten."
+        },
         "reminders": {
           "name": "Erinnerungen",
           "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Geteilte Dateien und Sitzungen auf Volumes für dieses Projekt."
-        },
-        "stateless_sessions": {
-          "name": "Zustandslose Sitzungen",
-          "description": "Bei jedem Aufwecken ein frischer Computer; nur Dateien und Chat bleiben. Erfordert aktivierte Volumes."
+          "description": "Geteilte Dateien für dieses Projekt."
         },
         "drives": {
           "name": "Drive",
           "description": "Geteilte Ordner, die mit Sitzungen synchron bleiben: dein eigenes Drive, eines pro Agent und Firmen-Drives, die ein Admin dem Projekt zuweist. Neue Sitzungen sehen sie unter /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Kurzlebige Sandboxes",
-          "description": "Eine gestoppte Session behält ihre Dateien und ihr Gespräch auf einem Volume und gibt ihren Rechner ab. Beim Aufwecken startet ein neuer Rechner mit dem neuesten Image. Laufende Prozesse überstehen einen Stopp nicht."
         },
         "session_log": {
           "name": "Session-Log v2",
@@ -5775,7 +5773,6 @@
       "line175JsxTextOpenInTabInstead": "Stattdessen in Tab öffnen"
     },
     "componentsDashboardConnectingScreen": {
-      "line156JsxAttrTitleRuntimeDegraded": "Laufzeit beeinträchtigt",
       "line422JsxTextCouldnAposTStart": "Konnte nicht starten",
       "line469JsxTextIsStopped": "ist gestoppt",
       "line472JsxTextOpenANewSessionOrReturnToProjects": "Öffne eine neue Sitzung oder kehre zu den Projekten zurück, um fortzufahren.",
@@ -10922,7 +10919,6 @@
       "text26eb1bc45b53": "Standardmäßig verweigern",
       "text26ecc76c0ce9": "Diesen Token löschen?",
       "text26ee1166df63": "Änderungen gelten für den nächsten Prompt.",
-      "text26f0dd993530": "Wird automatisch erneut versucht",
       "text27042f4e6eca": "rechts",
       "text270ba743dc3c": "Cron-Zeitpläne und signierte Webhooks starten Kortix-Sitzungen, ohne dass jemand anwesend ist. Jeder Trigger benennt den Agenten, als der er ausgeführt wird, enthält eine Prompt-Vorlage und bringt seine Arbeit über einen Change Request ein, den eine Person genehmigt.",
       "text271189ae389a": "Startzeit",
@@ -11872,7 +11868,6 @@
       "text429bbfa117e2": "Mobile App",
       "text429be41120e9": "Führe das Projekt aus, ohne das Gespräch zu verlassen.",
       "text429ffbbaa586": "Einfach verbinden",
-      "text42b3d52014ba": "Workspace offline",
       "text42b8d7c5357a": "Die Sandbox hat das Neuladen nicht bestätigt",
       "text42bcffb92597": "Als dieses Mitglied anzeigen",
       "text42bd94c06205": "Status (Punkt, Badge, Diff)",
@@ -15273,7 +15268,6 @@
       "texta4a83d949891": "Sitzung konnte nicht komprimiert werden",
       "texta4b4b51ec474": "translate(-50%, -100%)",
       "texta4b6a3d9d629": "kortix init macht jedes Verzeichnis zu einem Kortix. kortix ship schaltet es live. Von da an ist es ein Repo in deinem Besitz – versioniert, als Diff vergleichbar und verbessert sich selbst, eine geprüfte Änderung nach der anderen.",
-      "texta4c128e48978": "Der Host ist erreichbar, aber die zentrale Workspace-Laufzeit verarbeitet Anfragen nicht. Starte die Laufzeit oder den Workload neu, um die Dienste wiederherzustellen.",
       "texta4c297b580ad": "- Überfällige Zahlungen nachverfolgen, ab 30 Tagen eskalieren",
       "texta4c7fa51a957": "Keine Branches gefunden",
       "texta4c9215859a8": "Projektmitglied entfernt",
@@ -17163,7 +17157,6 @@
       "textd938438f232e": "Webhook-Authentifizierung",
       "textd942e3dc737b": "docs.kortix.com",
       "textd948c285986a": "Slack getrennt",
-      "textd94a83e48b64": "Dieser Workspace ist nicht erreichbar. Kehre zu den Projekten zurück und öffne eine andere Sitzung oder erstelle eine neue.",
       "textd952c0d7b0b0": "Zum Zeitpunkt des Aufrufs eingefügt",
       "textd95934d15292": "5.000+ APIs, MCP-Server und OAuth-Apps durchsuchen",
       "textd96a37fc02f0": "Passwort ersetzen",
@@ -17555,7 +17548,6 @@
       "texte478b984a2d9": "Lies den Tracker so, wie er wirklich ist — Issues, Status, Links, Kommentare — und schreibe das bereinigte Ergebnis dort zurück, wo du es erlaubst. Der Tracker bleibt das führende System; der Agent ist kein zweites.",
       "texte47b85588c7c": "Jeder IdP, der „{value0}“ verwendet, verliert sofort den Zugriff. Dies kann nicht rückgängig gemacht werden – Sie müssen ein neues Token prägen, um die Verbindung wiederherzustellen.",
       "texte47c8bae740d": "Schlüssel kopieren",
-      "texte48034ba91dd": "Workspace-Dienste nicht verfügbar",
       "texte4855e715f70": "    sandbox: python",
       "texte493d2f8af71": "Erweiterte Optionen → Namen des Gruppen-Claims anpassen",
       "texte4a075134e2b": "Keine besonderen Anforderungen — dieses Element funktioniert einfach.",
@@ -19707,71 +19699,6 @@
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Image",
-      "modeImageDetail": "Nur das Session-Image.",
-      "modeImageRequested": "Image angefordert: {count}",
-      "modeArtifacts": "Image + Artefakte",
-      "modeArtifactsDetail": "Zusätzlich das Boot-Artefakte-Volume für die neueste Laufzeit.",
-      "modeArtifactsRequested": "Image + Artefakte angefordert: {count}",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Flüchtiger Rechner, Session-Zustand auf einem Volume, dazu Artefakte.",
-      "modeVolumeRequested": "Volume angefordert: {count}",
-      "reasonSessionVolume": "Session-Volume",
-      "reasonArtifactsVolume": "Artefakte-Volume",
-      "reasonVolumeMount": "Volume-Einbindung",
-      "reasonTimeout": "Zeitüberschreitung",
-      "reasonBootHealth": "Rechner wurde nie bereit",
-      "reasonOther": "Sonstiges",
-      "fallBackToTheImage": "Auf das Image zurückfallen",
-      "fallBackToImage": "Rückfall auf Image",
-      "saved": "Boot-Modi gespeichert",
-      "saveFailed": "Boot-Modi konnten nicht gespeichert werden",
-      "title": "Boot-Modi",
-      "description": "Wie neue Sessions eines Projekts mit eingeschalteten Volumes starten und welche Rückfallstufen sie nehmen. Volumes und Zustandslose Sessions sind Feature-Flags des Projekts und werden hier nicht gesetzt. Änderungen erreichen jeden API-Prozess innerhalb von 30 Sekunden.",
-      "discard": "Verwerfen",
-      "save": "Speichern",
-      "off": "Aus",
-      "bootModeTitle": "Boot-Modus",
-      "bootModeDescription": "Wie neue Sessions eines Projekts mit eingeschalteten Volumes starten. Ein Projekt mit eingeschalteten zustandslosen Sessions startet auf einem Volume.",
-      "defaultModeTitle": "Standardmodus",
-      "killSwitchTitle": "Notschalter: jede neue Session vom Image starten",
-      "killSwitchDetail": "Übersteuert alle Modi auf einmal; Dateien und Drives bleiben unverändert. Eine Session, deren Dateien bereits auf einem Volume liegen, behält ihr Volume.",
-      "killSwitchLabel": "Notschalter",
-      "last24HoursTitle": "Letzte 24 Stunden",
-      "last24HoursDescription": "Sessions, die in jedem Modus gestartet sind, und die Rückfälle, die sie genommen haben. Gezählt beim Volume-Anbieter.",
-      "columnFallback": "Rückfall",
-      "columnReason": "Grund",
-      "columnCount": "Anzahl",
-      "columnLatestError": "Letzter Fehler",
-      "noFallbacks": "Keine Rückfälle in den letzten 24 Stunden.",
-      "countsUnavailable": "Zahlen nicht verfügbar: {error}",
-      "unknownError": "unbekannter Fehler",
-      "fallbackTitle": "Rückfall",
-      "fallbackDescription": "Eine Session, deren Starts wiederholt fehlschlagen, stuft sich einmal pro Session herunter und bleibt auf dem erreichten Modus. Eine Session, deren Dateien bereits auf einem Volume liegen, verlässt es nie.",
-      "after": "nach",
-      "failedBoots": "fehlgeschlagenen Starts",
-      "volumeAttemptsLabel": "Volume-Versuche",
-      "artifactsAttemptsLabel": "Artefakte-Versuche",
-      "lastStepNote": "(an, sofern der Standardmodus die letzte Stufe nicht ausschaltet)",
-      "whereModesApplyTitle": "Wo Modi gelten",
-      "whereModesApplyDescription": "Anbieter und Bereitstellungsschalter stammen aus der Umgebung des Servers. Das Artefakte-Volume lässt sich hier festlegen; leer verwendet das der Umgebung.",
-      "volumeProviderTitle": "Volume-Anbieter: {provider}",
-      "volumeProviderConfigured": "Konfiguriert. Sessions darauf starten im Modus, den ihre Regel wählt.",
-      "volumeProviderNotConfigured": "Nicht konfiguriert: Jede Session startet vom Image.",
-      "ready": "Bereit",
-      "otherProvidersTitle": "Andere Anbieter: {providers}",
-      "otherProvidersDriveSync": "Starten immer vom Image. Drives erreichen sie über die Drive-Synchronisierung.",
-      "otherProvidersNoDriveSync": "Starten immer vom Image. Die Drive-Synchronisierung ist aus, daher bleiben Drive-Projekte beim Volume-Anbieter.",
-      "imageOnly": "Nur Image",
-      "artifactsVolumeTitle": "Artefakte-Volume",
-      "artifactsVolumeSet": "Sessions in Image + Artefakte oder Volume binden {source} ein.",
-      "artifactsVolumeFromEnvironment": "Sessions in Image + Artefakte oder Volume binden {source} ein (aus der Umgebung).",
-      "artifactsVolumeNone": "Nichts festgelegt: Artefakte-Modi starten, als gäbe es nur das Image.",
-      "artifactsVolumeLabel": "Artefakte-Volume und Tag",
-      "ephemeralSandboxesOff": "{variable} ist in dieser Bereitstellung aus: Zustandslose Sessions starten mit Image + Artefakte.",
-      "nothingSaved": "Noch nichts gespeichert: Projekte mit eingeschalteten Volumes starten aus dem Image."
     }
   },
   "projectOnboarding": {
@@ -20228,7 +20155,8 @@
     "verified": "Bestätigt",
     "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
     "noFactorTitle": "Zwei-Faktor-Authentifizierung einrichten",
-    "noFactorDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Füge unter Einstellungen → Sicherheit eine Authenticator-App hinzu und versuche es dann erneut."
+    "noFactorDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Füge unter Einstellungen → Sicherheit eine Authenticator-App hinzu und versuche es dann erneut.",
+    "setUp": "Authenticator einrichten"
   },
   "connectorPages": {
     "install": "Installieren",
@@ -20792,5 +20720,23 @@
     "you": "Du",
     "manageFolderAccess": "Zugriff verwalten",
     "viewFolderAccess": "Zugriff ansehen"
+  },
+  "genui": {
+    "showData": "Daten anzeigen",
+    "openImage": "Bild öffnen",
+    "viewAllImages": "Alle {count} anzeigen",
+    "pieFocus": "{label} macht {percent} % der Summe aus",
+    "pieOfTotal": "{value} von {total}",
+    "directions": "Route",
+    "call": "Anrufen",
+    "website": "Website",
+    "label": "Bezeichnung",
+    "value": "Wert",
+    "map": "Karte",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern",
+    "mapTwoFingers": "Verwende zwei Finger, um die Karte zu bewegen",
+    "pick": "Empfehlung",
+    "convertFailed": "Das Transkript konnte nicht vorbereitet werden. Versuche es erneut."
   }
 }

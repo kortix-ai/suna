@@ -3,11 +3,10 @@
  * `/start` long-poll that was already waiting when it landed.
  *
  * The web client long-polls `/start?wait_ms=15000` (no `keep_stopped`) while a
- * session boots. A Stop of an ephemeral box deletes it and leaves the row
- * stopped and retired. The long-poll's next tick used to claim that retired
- * row and allocate a fresh box about a second after the stop, and an open
- * during the stop answered for a box that was being deleted. Only an open
- * formed after the Stop may wake the session again.
+ * session boots. A Stop that leaves the row stopped and retired (no box)
+ * must not be undone by the long-poll's next tick claiming that row and
+ * allocating a fresh box. Only an open formed after the Stop may wake the
+ * session again.
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -15,7 +14,7 @@ import { accountMembers, projectMembers, projectSessions, sessionSandboxes } fro
 import { app } from '../index';
 import { db } from '../shared/db';
 import { config } from '../config';
-import { EPHEMERAL_RETIRED_KEY } from '../platform/services/ephemeral-sandbox';
+import { RETIRED_EXTERNAL_ID_KEY } from '../platform/services/retired-sandbox-row';
 import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from './helpers/compat-views';
 import {
@@ -97,7 +96,7 @@ async function session(sandbox: { status: 'provisioning' | 'active' | 'stopped';
   return { sessionId, sandboxId };
 }
 
-/** What `retireEphemeralOnStop` leaves behind after a user Stop. */
+/** A user Stop that left the row retired: stopped, no box, the old box named. */
 async function landStop(sandboxId: string, stoppedAt: Date, retiredBox = 'stop-wins-old-box', retiredAt = stoppedAt) {
   await db
     .update(sessionSandboxes)
@@ -107,7 +106,7 @@ async function landStop(sandboxId: string, stoppedAt: Date, retiredBox = 'stop-w
       metadata: {
         stopReason: 'manual',
         stoppedAt: stoppedAt.toISOString(),
-        [EPHEMERAL_RETIRED_KEY]: retiredBox,
+        [RETIRED_EXTERNAL_ID_KEY]: retiredBox,
         ephemeralRetiredAt: retiredAt.toISOString(),
         platinumCreateAttempt: 1,
       },
@@ -186,7 +185,7 @@ test('an open formed after the Stop still wakes the session', async () => {
   await landStop(sandboxId, new Date(Date.now() - 1_000));
   const answer = await start(sessionId);
   expect(answer.stage).toBe('provisioning');
-  expect(answer.reason).toBe('ephemeral_wake');
+  expect(answer.reason).toBe('retired_row_wake');
   const rows = await rowsOf(sessionId);
   expect(rows.some((r) => r.sandboxId === sandboxId && r.status === 'stopped')).toBe(false);
 }, 30_000);

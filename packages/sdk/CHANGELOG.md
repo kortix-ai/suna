@@ -5,6 +5,61 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (one saved-history read per session open)
+- `useSession` reads a session's saved copy once per open. The session-open
+  snapshot carries the first window; the read waits up to 2 s for a snapshot
+  in flight, then asks `GET …/transcript?shape=sync&history=true`. Before,
+  every open with a snapshot in flight downloaded the window twice, and the
+  sync layer could read it a third time (KRTX-189).
+- `useSessionSync` with no `mirror` runs the same read. `useSession` passes
+  its answer as `mirror`: the copy, or `null` while the read runs and when
+  the server holds none. A host that mounts a second `useSessionSync` for the
+  root conversation beside `useSession` passes `mirror: null`. Beside
+  `useSession({ chatEngine: false })`, which makes no saved-history read, and
+  on a `savedChild` hook, the host omits `mirror`: that hook makes the read.
+- A host that passes no `mirror` now gets the server's "no saved copy" answer
+  from the snapshot too, so the device copy is dropped for the next open, as
+  the route answer already did.
+
+### Added (saved copy before `useSession` binds)
+- `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` and
+  `SavedSessionCopy` (`{ envelope, empty }`): the same saved-history read,
+  plus the empty-conversation proof (`isEmptyConversation` over the turn
+  record, read only when the copy proves the root empty). Never throws. For a
+  connecting screen that shows the conversation while the computer wakes;
+  apps/mobile uses it. Additive (KRTX-189).
+- The open that follows `readSavedSessionCopy` downloads the window no second
+  time. The SDK holds the copy for up to 5 min (one wake). The session-open
+  snapshot then asks for the pointer only (`?transcript=0`), and the
+  saved-history read answers from the held copy. Before, the connecting view
+  and the thread after it each downloaded the window.
+  `resetIdentityState` forgets the held copy and the session-open snapshots
+  (KRTX-189).
+
+### Added (bounded review reads)
+- `getReviewSummary(projectId)` and `project(id).review.summary()`
+  (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you
+  counts of the review inbox, `{ needs_you_total, needs_you_by_session }`.
+  Read it for a badge or a per-session indicator instead of the list. A
+  connector call the caller may not resolve counts nowhere. Additive
+  (KRTX-2316).
+- `listReviewItems` takes `sessionId`, `limit` and `cursor`
+  (`ReviewItemsQuery`) and resolves to `ReviewItemsPage`, which adds
+  `next_cursor` (null on the last page). The server now returns one page:
+  50 items by default, at most 200, with Needs you first, then Waiting, then
+  Done, newest first within each. A caller that read the whole inbox from one
+  response pages with `cursor` or passes `segment`. Additive types.
+- `listChangeRequests` takes `cursor` and its response adds `next_cursor`.
+  The server now returns one page: 50 change requests by default, at most
+  500 (a larger `limit` answers 400, it no longer clamps). Additive types.
+  `project(id).changeRequests.list(status?, options?)` passes both through,
+  so the facade can page as well. Additive (a widened parameter list).
+- React (`@kortix/sdk/react`): `useReviewSummary(projectId)` (polls every
+  60 s), `useReviewItemPages(projectId, query)` (an infinite query; read the
+  rows with `reviewItemsOf(query.data)`), `nextReviewItemsCursor`, and the
+  keys `qk.project.reviewSummary`, `qk.project.reviewItemsScope` and
+  `qk.project.reviewItemPages`. Additive.
+
 ### Added (who may decide an approval)
 - `SessionAuditAction.can_resolve`: true only on an unresolved connector call
   the viewer may approve or deny, the verdict `resolveApproval` would get

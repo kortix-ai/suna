@@ -220,8 +220,6 @@ A stopped session wakes when it gets:
 - a request to one of its preview ports;
 - a `kortix sessions files` or `kortix sessions cp` call.
 
-On Platinum with the account's **Volumes** switch on, an ephemeral session keeps its files and conversation on a volume when it stops, and a wake boots a new sandbox. See [Sandboxes & previews](/docs/work/runtime#persistent-and-ephemeral-machines).
-
 ### When the sandbox stops during a turn
 
 The provider can stop a sandbox while a turn runs, and a runtime restart (for example, to apply a config change) ends the running turn. Nobody asked for either. After a provider stop the turn ends with the reason "The sandbox stopped unexpectedly while this turn was running." Kortix then gives the work back once:

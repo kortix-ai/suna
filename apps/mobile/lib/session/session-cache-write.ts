@@ -23,7 +23,7 @@
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
 
-import type { SessionPage } from './session-pages';
+import { flattenSessionPages, type SessionPage } from './session-pages';
 
 interface SessionRow {
   session_id: string;
@@ -40,17 +40,39 @@ function isPagedSessions<T>(value: unknown): value is PagedSessions<T> {
   );
 }
 
+/** One session row: the by-id read (`projectKeys.projectSession`). */
+function isSessionRow(value: unknown): value is SessionRow {
+  return typeof value === 'object' && value !== null && typeof (value as SessionRow).session_id === 'string';
+}
+
 /**
- * Apply `update` to one cached list, flat or paged. A page whose rows come
- * back unchanged keeps its identity, and so does the whole cache when no page
- * changed. Any other value is returned as is.
+ * The session rows one cache entry under `projectSessions` holds: a flat page,
+ * a paged list, or one row (the by-id read). Other entries under the prefix
+ * (participants, message authors) hold none.
+ */
+export function sessionRowsOf<T extends SessionRow>(cached: unknown): T[] {
+  if (Array.isArray(cached)) return cached as T[];
+  if (isPagedSessions<T>(cached)) return flattenSessionPages(cached);
+  return isSessionRow(cached) ? [cached as T] : [];
+}
+
+/**
+ * Apply `update` to one cached list, flat or paged, or to one cached row (the
+ * by-id read: it takes the update of its own session only). A page whose rows
+ * come back unchanged keeps its identity, and so does the whole cache when no
+ * page changed. Any other value is returned as is.
  */
 export function applyToSessionCache<T extends SessionRow>(
   cached: unknown,
   update: (rows: T[]) => T[]
 ): unknown {
   if (Array.isArray(cached)) return update(cached as T[]);
-  if (!isPagedSessions<T>(cached)) return cached;
+  if (!isPagedSessions<T>(cached)) {
+    if (!isSessionRow(cached)) return cached;
+    // A delete (no row back) leaves the entry: the thread that reads it closes.
+    const [row] = update([cached as T]).filter((next) => next.session_id === cached.session_id);
+    return row ?? cached;
+  }
   let changed = false;
   const pages = cached.pages.map((page) => {
     const items = update(page.items);
