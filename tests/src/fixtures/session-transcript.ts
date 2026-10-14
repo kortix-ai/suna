@@ -206,6 +206,11 @@ export async function journalSessionLog(
       [input.projectId],
     );
   } finally {
+    // The credential lives for this call only.
+    await fetch(`${env.apiUrl}/accounts/tokens/${credential.token_id}?account_id=${input.accountId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${input.bearer}` },
+    }).catch(() => {});
     await (held.rows.length
       ? db.query('UPDATE kortix.session_sandboxes SET status = $2 WHERE session_id = $1', [input.sessionId, held.rows[0]!.status])
       : db.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1 AND external_id IS NULL', [input.sessionId])

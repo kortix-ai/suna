@@ -20,7 +20,12 @@ function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext, store: Sto
     {
       ...meta,
       specId: id,
-      routes: [...(meta.routes ?? []), "POST /v1/accounts/tokens", "POST /v1/projects/:projectId/sessions/:sessionId/log/journal"],
+      routes: [
+        ...(meta.routes ?? []),
+        "POST /v1/accounts/tokens",
+        "DELETE /v1/accounts/tokens/:tokenId",
+        "POST /v1/projects/:projectId/sessions/:sessionId/log/journal",
+      ],
     },
     (ctx) => fn(ctx, "log"),
   );
@@ -28,7 +33,8 @@ function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext, store: Sto
 
 /** The fixture's `log` option for `store`: the owner's current token mints the journal credential. */
 async function logOption(store: Store, owner: Principal) {
-  if (store === "mirror" || owner.auth.mode !== "bearer") return {};
+  if (store === "mirror") return {};
+  if (owner.auth.mode !== "bearer") throw new Error(`the -log twin needs a bearer owner to journal, got auth mode ${owner.auth.mode}`);
   await owner.auth.ensureFresh?.();
   return { log: { bearer: owner.auth.token } };
 }
