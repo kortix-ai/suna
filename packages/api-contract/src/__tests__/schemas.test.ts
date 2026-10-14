@@ -152,6 +152,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       drives: false,
       ephemeral_sandboxes: false,
       session_log: false,
+      session_log_restore: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -631,6 +632,25 @@ describe('SecretSchema', () => {
     ).not.toThrow();
   });
 
+  test('status is ok or undecryptable, and optional for older servers', () => {
+    for (const status of ['ok', 'undecryptable'] as const) {
+      expect(SecretSchema.strict().parse(secretFixture({ status })).status).toBe(status);
+    }
+    expect(SecretSchema.strict().parse(secretFixture()).status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ status: 'missing' })).success).toBe(false);
+  });
+
+  test("mine.status reports the caller's override apart from the shared status", () => {
+    const mine = { active: true, updated_at: NOW, status: 'undecryptable' };
+    const parsed = SecretSchema.strict().parse(
+      secretFixture({ status: 'ok', effective_source: 'mine', mine }),
+    );
+    expect(parsed.status).toBe('ok');
+    expect(parsed.mine?.status).toBe('undecryptable');
+    expect(SecretSchema.parse(secretFixture({ mine: { active: true, updated_at: NOW } })).mine?.status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ mine: { ...mine, status: 'missing' } })).success).toBe(false);
+  });
+
   test('accepts the system git-auth secret shape', () => {
     expect(() =>
       SecretSchema.parse(
@@ -759,6 +779,7 @@ describe('envelopes', () => {
       'drives',
       'ephemeral_sandboxes',
       'session_log',
+      'session_log_restore',
     ]);
   });
 
@@ -770,6 +791,28 @@ describe('envelopes', () => {
   test('sharing intent normalizes readonly member lists', () => {
     const parsed = SharingIntentSchema.parse({ mode: 'members', memberIds: ['u1'] });
     expect(parsed).toEqual({ mode: 'members', memberIds: ['u1'] });
+  });
+});
+
+describe('SessionCreateInputSchema initial_context', () => {
+  test('accepts a bounded context beside the prompt and drops it when absent', () => {
+    const parsed = SessionCreateInputSchema.parse({
+      initial_prompt: 'Reply with the single word pong',
+      initial_context: '--- session contract ---\nDo not spawn other sessions.',
+    });
+    expect(parsed.initial_context).toMatch(/Do not spawn other sessions/);
+    expect(SessionCreateInputSchema.parse({ initial_prompt: 'hi' }).initial_context).toBeUndefined();
+    expect(SessionCreateInputSchema.parse({}).initial_context).toBeUndefined();
+  });
+
+  test('rejects an empty or oversized context', () => {
+    expect(SessionCreateInputSchema.safeParse({ initial_context: '' }).success).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_193) }).success,
+    ).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_192) }).success,
+    ).toBe(true);
   });
 });
 

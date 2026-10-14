@@ -33,6 +33,7 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
 import { deriveTurnErrorAbortState, deriveTurnErrorPresentation } from './session-chat';
 import { TurnErrorDisplay } from './session-error-banner';
 
@@ -85,9 +86,21 @@ describe('TurnErrorDisplay — an abort renders nothing, whatever its reason', (
 // 2. deriveTurnErrorAbortState — the session-chat.tsx wiring seam.
 // ============================================================================
 
+/** A turn from v1 rows, as the transcript reads it (the `fromV1` view, grouped). */
+function turnOf(replies: Array<{ error?: unknown }>) {
+  const rows = [
+    { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [] },
+    ...replies.map((info, i) => ({
+      info: { id: `msg_a${i}`, sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: { created: 2 + i, completed: 3 + i }, ...info },
+      parts: [{ id: `prt_a${i}`, sessionID: 'ses', messageID: `msg_a${i}`, type: 'text', text: 'x' }],
+    })),
+  ];
+  return sessionLogTurns(sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!)[0]!;
+}
+
 /** Build a minimal turn with a single assistant message carrying `error`. */
 function turnWithError(error: unknown) {
-  return { assistantMessages: [{ info: { error } }] };
+  return turnOf([{ error }]);
 }
 
 describe('deriveTurnErrorAbortState — the wiring that feeds TurnErrorDisplay', () => {
@@ -121,18 +134,16 @@ describe('deriveTurnErrorAbortState — the wiring that feeds TurnErrorDisplay',
   });
 
   test('no error on any message: not an abort', () => {
-    const turn = { assistantMessages: [{ info: {} }, { info: { error: undefined } }] };
+    const turn = turnOf([{}, { error: undefined }]);
     expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: false });
   });
 
   test('reads the FIRST message carrying an error, matching getTurnError', () => {
-    const turn = {
-      assistantMessages: [
-        { info: {} },
-        { info: { error: { name: 'Error', data: { message: 'upstream unreachable' } } } },
-        { info: { error: { name: 'MessageAbortedError', data: { message: 'later' } } } },
-      ],
-    };
+    const turn = turnOf([
+      {},
+      { error: { name: 'Error', data: { message: 'upstream unreachable' } } },
+      { error: { name: 'MessageAbortedError', data: { message: 'later' } } },
+    ]);
     expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: false });
   });
 
@@ -198,6 +209,16 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
         notice: { kind: 'cause', name: 'SomeFutureGuard', message: 'the daemon stopped this turn' },
       }),
     ).toEqual({ text: 'the daemon stopped this turn', isAbort: false, suggestion: undefined });
+  });
+
+  test('a ledger cause that carries the gateway envelope shows its sentence and suggestion, not the JSON', () => {
+    // A failed turn whose transcript error is not on screen (its failed attempt hidden, P5.6)
+    // reads the turn ledger's text, which is the provider body as the daemon recorded it.
+    const message =
+      '400: {"message":"\\"m-x\\" is not a recognized model.","code":"model_not_found","suggestion":"Check the model id, or choose a different model."}';
+    expect(
+      deriveTurnErrorPresentation({ turnError: undefined, isAbort: false, notice: { kind: 'cause', name: 'APIError', message } }),
+    ).toEqual({ text: '"m-x" is not a recognized model.', isAbort: false, suggestion: 'Check the model id, or choose a different model.' });
   });
 
   test('a turn that died unexplained still says it stopped', () => {

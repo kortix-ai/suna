@@ -23,9 +23,16 @@ on:
         required: true
         type: string
 
+# ONE gate against staging at a time, across every ref. Rehearsal 38278168762
+# (2026-10-12) ran beside two other branches' gates: staging dropped database
+# connections and boot prompts timed out, and the run proved nothing. Runs
+# queue; GitHub keeps one waiting run and a newer one replaces it, so do not
+# dispatch a rehearsal while a release gate waits. A run made stale by a newer
+# staging deploy fails its SHA assertion in seconds, so it barely delays the
+# next one.
 concurrency:
-  group: tests-release-${{ github.ref }}
-  cancel-in-progress: true
+  group: tests-release-staging
+  cancel-in-progress: false
 
 # Shared by every job. Top-level env is the only way to avoid repeating this
 # block per matrix job — GitHub Actions has no YAML anchors.
@@ -96,7 +103,7 @@ jobs:
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
@@ -264,7 +271,7 @@ jobs:
           echo "Expected deployed staging SHA: $source_sha (from $origin)"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
@@ -325,7 +332,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-  # The deployed browser journeys, sharded with Playwright's own --shard.
+  # The deployed browser journeys, split by measured spec duration
+  # (tests/src/core/browser-shard.ts, table in tests/e2e/shard-durations.json).
   browser:
     name: deployed browser shard
     needs: sweep-before
@@ -338,10 +346,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
-      # 3 shards x 2 = 6 concurrent browsers, against 2 before sharding.
-      # One browser per shard (3 total) — see the fleet arithmetic on the api job.
+      # Six shards, one browser each: 6 concurrent browsers, the same staging
+      # load as the earlier 3 shards x 2 workers. Three shards split by test
+      # count left shard 2 at ~28 min against a 30-min cap (cancelled in 3 of 4
+      # v0.13.54 runs). The duration table predicts <= 10 min per shard at six.
+      # See the fleet arithmetic on the api job.
       E2E_BROWSER_WORKERS: '1'
       # Specs tagged @quarantine (today: 17-oauth-provider-initiation, which
       # asserts on accounts.google.com / github.com) run in the non-blocking
@@ -405,7 +416,7 @@ jobs:
           echo "Expected deployed staging SHA: $source_sha (from $origin)"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
@@ -421,7 +432,7 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Run this shard of the deployed staging browser journeys
-        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/3
+        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/6
       # No --run-id sweep here: the Playwright specs mint their own Supabase
       # users (@example.test / @kortix.test) with no run-scoped prefix, so there
       # is nothing to scope to. sweep-before now covers those domains, which it
@@ -501,7 +512,7 @@ jobs:
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
@@ -548,3 +559,21 @@ jobs:
             exit 1
           fi
           echo "Every deployed staging API shard and browser shard passed."
+
+  # A run that github-actions[bot] started or approved (promote.yml approves the
+  # release pull request's run) gets no workflow_run event, so
+  # rerun-failed-once.yml never fires on its own. Ask for that one rerun
+  # explicitly; the rerun job waits until this run has ended and reruns only a
+  # first attempt. A run a person started or approved gets workflow_run instead.
+  request-rerun:
+    needs: release-gate
+    if: failure() && github.run_attempt <= 2 && github.triggering_actor == 'github-actions[bot]'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the one rerun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run rerun-failed-once.yml --repo "$GITHUB_REPOSITORY" --ref dev -f run_id="$GITHUB_RUN_ID"

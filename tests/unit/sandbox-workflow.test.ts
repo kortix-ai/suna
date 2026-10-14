@@ -48,7 +48,7 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
     expect(testWorkflow).not.toContain('TEST_MODE');
     expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
-    expect(testWorkflow).toContain('bun-version: 1.3.14');
+    expect(testWorkflow).toContain('bun-version: 1.4.3');
     // A hang detector, ~2x the slowest lane measured on a free runner. A hung
     // lane used to burn 60 min before the trunk verdict could fire.
     expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 40$/m);
@@ -155,7 +155,8 @@ describe('native test-lane workflow', () => {
     // four shards of 137 flows were all killed by their cap ~60% through.
     expect(release).toContain('shard: [1, 2, 3, 4, 5, 6]');
     expect(release).toContain('pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6');
-    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/3');
+    // Six browser shards, split by measured duration (tests/src/core/browser-shard.ts).
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/6');
     expect(release).toContain('fail-fast: false');
     // A cap is a hang detector, not a throttle. 40 minutes throttled: it killed
     // shards that were passing 76/87 and 68/77 of what they had run.
@@ -273,11 +274,12 @@ describe('native test-lane workflow', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('a push to dev runs no suite: the trunk is tested on a daily schedule and cannot block anything', () => {
-    // 2026-10-03 (Actions minutes). The per-merge gate is the local attestation
-    // and the pre-push hook. A scheduled run on `dev` HEAD is the safety net.
+  test('every push to dev runs the suite, queued, and a red run names its suspects once', () => {
+    // 2026-10-12. Half of all release delay over v0.13.45 to v0.13.56 (49 of
+    // 96 hours) was a break merged to `dev` that no check saw before the
+    // staging pull request. A push to `dev` runs every lane; it blocks nothing.
     const on = testWorkflow.slice(testWorkflow.indexOf('\non:'), testWorkflow.indexOf('\nconcurrency:'));
-    expect(on).not.toMatch(/^ {2}push:/m);
+    expect(on).toMatch(/^ {2}push:\n {4}branches: \[dev\]\n/m);
     expect(on).toMatch(/^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '/m);
     expect(on).toContain('workflow_dispatch:');
     // The suite parses markdown (tests/spec/end-to-end.md feeds route coverage).
@@ -285,7 +287,8 @@ describe('native test-lane workflow', () => {
 
     // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
     expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    // A PR cancels its superseded run; a scheduled run queues.
+    // A PR cancels its superseded run. A run on `dev` queues: GitHub keeps one
+    // pending run per group, so a burst of merges costs one extra run.
     expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
@@ -293,20 +296,106 @@ describe('native test-lane workflow', () => {
     // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
     // so `failure()` would miss it. `cancelled()` covers a replaced queued run.
     expect(report).toContain(
-      "if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'",
+      "if: (github.event_name == 'push' || github.event_name == 'schedule') && !cancelled() && needs.lane.result != 'success'",
     );
     expect(report).not.toMatch(/^\s+if:.*failure\(\)/m);
     // Top level is `contents: read`; the commit comment 403s without this.
     expect(report).toContain('contents: write');
 
-    // A red trunk has to reach someone, or nobody learns dev is broken.
+    // A red trunk has to reach someone, or nobody learns dev is broken. It
+    // comments once per new set of failing lanes, not on every merge.
     expect(testWorkflow).toContain('repos/$REPO/commits/$SHA/comments');
     expect(testWorkflow).toContain('::error::dev is red at $SHA');
+    expect(report).toContain('[ "$failed" = "$prev_failed" ]');
+  });
+
+  test('a pull request into staging reuses a green dev run for its head SHA', () => {
+    // A promotion pushes a `dev` SHA unchanged, and the lanes check out the
+    // head SHA, so a green run on `dev` for that SHA is the same proof.
+    const reuse = testWorkflow.slice(testWorkflow.indexOf('\n  reuse:'), testWorkflow.indexOf('\n  lane:'));
+    expect(reuse).toContain(
+      "if: github.event_name == 'pull_request' && github.base_ref == 'staging' && github.event.action != 'labeled'",
+    );
+    // Only runs on `dev` count, never a labelled pull request run.
+    expect(reuse).toContain('branch=dev&head_sha=$HEAD_SHA&status=success');
+    expect(reuse).toContain('select(.event == "push" or .event == "schedule")');
+    // A failed lookup runs the lanes; it never skips them.
+    expect(reuse).toContain('|| true');
+    expect(reuse).not.toContain('set -e');
+    const lane = testWorkflow.slice(testWorkflow.indexOf('\n  lane:'), testWorkflow.indexOf('\n  trunk-report:'));
+    expect(lane).toContain('needs: reuse');
+    expect(lane).toContain("!cancelled() && needs.reuse.outputs.reuse != 'true'");
+    // The lanes test the head SHA, which is what makes the reuse sound.
+    expect(lane).toContain('TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}');
+  });
+
+  test('a failed release gate or staging pull request run reruns its failed jobs exactly once', () => {
+    const rerun = readFileSync(resolve(root, '.github/workflows/rerun-failed-once.yml'), 'utf8');
+    expect(rerun).toContain("workflows: ['Tests - release', 'Tests']");
+    expect(rerun).toContain("github.event.workflow_run.conclusion == 'failure'");
+    // Once: only the first attempt that ran jobs reruns. That is attempt 2
+    // when attempt 1 waited for approval; a rerun that fails again stays red.
+    expect(rerun).toContain('github.event.workflow_run.run_attempt <= 2');
+    expect(rerun).toContain('[ "$(gh api "$run/attempts/1" --jq .conclusion)" = action_required ]');
+    expect(rerun).toContain('if [ "$attempt" != "$first" ]; then');
+    // Never a run on `dev`: it would take the pending slot of a newer SHA.
+    expect(rerun).toContain("github.event.workflow_run.pull_requests[0].base.ref == 'staging'");
+    expect(rerun).toContain('gh run rerun "$RUN_ID" --repo "$REPO" --failed');
+    // The workflow names it reruns must exist.
+    expect(readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8')).toMatch(/^name: Tests - release$/m);
+    expect(testWorkflow).toMatch(/^name: Tests$/m);
+  });
+
+  test('a gate the workflow token started or approved asks for its own rerun', () => {
+    // GitHub sends no workflow_run for such a run (v0.13.57: the rerun never
+    // fired). The gate dispatches the rerun instead.
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
+    const job = release.slice(release.indexOf('\n  request-rerun:'));
+    expect(job).toContain("if: failure() && github.run_attempt <= 2 && github.triggering_actor == 'github-actions[bot]'");
+    expect(job).toContain('actions: write');
+    expect(job).toContain('gh workflow run rerun-failed-once.yml --repo "$GITHUB_REPOSITORY" --ref dev -f run_id="$GITHUB_RUN_ID"');
+    const rerun = readFileSync(resolve(root, '.github/workflows/rerun-failed-once.yml'), 'utf8');
+    expect(rerun).toMatch(/workflow_dispatch:\n {4}inputs:\n {6}run_id:/);
+    expect(rerun).toContain('RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}');
+    // The dispatched job reruns only a finished, failed first attempt.
+    expect(rerun).toContain('[ "$(gh api "$run" --jq .conclusion)" != failure ]');
+    expect(rerun).toContain('attempt="$(gh api "$run" --jq .run_attempt)"');
+  });
+
+  test('one release gate runs against staging at a time, across every ref', () => {
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
+    expect(release).toMatch(/^concurrency:\n {2}group: tests-release-staging\n {2}cancel-in-progress: false$/m);
+  });
+
+  test("Promote to Production approves the release pull request's own gate run", () => {
+    // A pull request opened with the workflow token runs its workflows only
+    // after approval. Only that run's `full suite + quality gates` check counts
+    // for the `prod` ruleset: v0.13.57's dispatched gate passed on the same SHA
+    // and the pull request stayed BLOCKED. Never dispatch a second gate.
+    const promote = readFileSync(resolve(root, '.github/workflows/promote.yml'), 'utf8');
+    expect(promote).toContain('actions: write');
+    expect(promote).not.toContain('gh workflow run tests-release.yml');
+    expect(promote).toContain('actions/workflows/tests-release.yml/runs?event=pull_request&head_sha=$HEAD_SHA');
+    expect(promote).toContain('select(.conclusion == "action_required")');
+    expect(promote).toContain('gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$held/approve"');
+    expect(promote.indexOf('/approve"')).toBeGreaterThan(promote.indexOf('gh pr create --base prod'));
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
+    expect(release).toMatch(/^ {2}workflow_dispatch:\n {4}inputs:\n {6}expected_sha:/m);
+    expect(release).toContain('name: full suite + quality gates');
+  });
+
+  test('pre-push requires no test attestation; the author picks the tests', () => {
+    // 2026-10-13: the attestation gate blocked docs-only pushes behind a ~6 min
+    // run that failed 36 of 80 times. `dev` is gated by the Tests run on every push.
+    const hook = readFileSync(resolve(root, '.githooks/pre-push'), 'utf8');
+    expect(hook).not.toContain('verify-attestation');
   });
 
   test('a push to dev triggers only the cheap guards and path-gated infra applies', () => {
-    // 2026-10-03 (Actions minutes). Dev deploy, Tests, CI, CodeQL, Drata and the
-    // desktop build are dispatch, schedule, or release-branch only.
+    // 2026-10-03 (Actions minutes). Dev deploy, CI, CodeQL, Drata and the
+    // desktop build are dispatch, schedule, or release-branch only. Tests runs
+    // on every push since 2026-10-12: GitHub-hosted runners are free on this
+    // public repo, and a break found at staging cost a release round.
     const dir = resolve(root, '.github/workflows');
     const pushesToMain = (file: string): boolean => {
       const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
@@ -331,6 +420,7 @@ describe('native test-lane workflow', () => {
       'secret-scan.yml', // ~15 s
       'secrets-guard.yml', // ~15 s
       'terraform-apply-global.yml', // path-gated: infra/terraform roots
+      'tests.yml', // every lane, queued; blocks nothing
     ]);
     // Release branches keep their gates.
     for (const file of ['ci.yml', 'tests.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {

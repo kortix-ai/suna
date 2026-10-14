@@ -12,6 +12,9 @@
  *   in-session approval prompt makes. It is never dismissed or sent back.
  * - Native row: `/act` with the verdict and optional feedback.
  *
+ * Which verdicts a viewer may give is `reviewVerdictAllowed` in `@kortix/sdk`
+ * (KRTX-1720), the same rule the web inbox reads.
+ *
  * Pure data: unit-tested under `bun test`.
  */
 import { reviewItemTarget, type ReviewItemKind, type ReviewVerdict } from '@kortix/sdk';

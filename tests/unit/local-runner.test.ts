@@ -115,13 +115,12 @@ describe('local test runner', () => {
     const plan = buildLocalTestPlan(['--browser-only', '--browser-shard=1/2']);
 
     expect(plan.mode).toBe('browser');
-    expect(plan.lanes[0]?.command).toEqual([
-      'bun',
-      'run',
-      'test:browser',
-      '--',
-      '--shard=1/2',
-    ]);
+    // Spec files by measured duration (core/browser-shard.ts), not Playwright's --shard.
+    const command = plan.lanes[0]?.command ?? [];
+    expect(command.slice(0, 4)).toEqual(['bun', 'run', 'test:browser', '--']);
+    expect(command.length).toBeGreaterThan(4);
+    expect(command.slice(4).every((arg) => /^e2e\/specs\/.+\.spec\.ts$/.test(arg))).toBe(true);
+    expect(command).not.toContain('--shard=1/2');
   });
 
   it('rejects invalid browser shards', () => {
@@ -286,13 +285,10 @@ describe('local test runner', () => {
 
     expect(plan.mode).toBe('target-browser-full');
     expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-browser-full']);
-    expect(plan.lanes[0]?.command).toEqual([
-      'bun',
-      'run',
-      'test:browser',
-      '--',
-      '--shard=3/3',
-    ]);
+    const command = plan.lanes[0]?.command ?? [];
+    expect(command.slice(0, 4)).toEqual(['bun', 'run', 'test:browser', '--']);
+    expect(command.slice(4).every((arg) => /^e2e\/specs\/.+\.spec\.ts$/.test(arg))).toBe(true);
+    expect(command.length).toBeGreaterThan(4);
     expect(plan.lanes[0]?.env?.E2E_REQUIRE_ALL_BROWSER).toBe('1');
   });
 

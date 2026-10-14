@@ -74,3 +74,34 @@ describe('needsYouBySession', () => {
     expect(needsYouBySession([]).size).toBe(0);
   });
 });
+
+// KRTX-1739: GET needs-input lists open agent questions (and connector
+// approvals) per session; a session blocked on a question reads Needs you.
+describe('needsYouBySession with the needs-input summary', () => {
+  test('a session only needs-input lists waits for an answer', () => {
+    const result = needsYouBySession([], { total: 1, sessions: { 'session-q': 1 } });
+    expect(result.get('session-q')).toEqual({ count: 1, reason: 'Waiting for your answer', newestAt: 0 });
+  });
+
+  test('a session in both keeps its inbox reason and takes the larger count', () => {
+    // One connector approval (in both lists) and one open question: needs-input says 2.
+    const result = needsYouBySession([item({ title: '(Gmail) Send Email' })], {
+      total: 2,
+      sessions: { 'session-a': 2 },
+    });
+    expect(result.get('session-a')).toMatchObject({ count: 2, reason: 'Approve: (Gmail) Send Email · 1 more' });
+  });
+
+  test('a smaller needs-input count never lowers the inbox count', () => {
+    const result = needsYouBySession([item({ title: 'A' }), item({ title: 'B' })], {
+      total: 1,
+      sessions: { 'session-a': 1 },
+    });
+    expect(result.get('session-a')?.count).toBe(2);
+  });
+
+  test('no summary, or an empty one, changes nothing', () => {
+    expect(needsYouBySession([item()], undefined).get('session-a')?.count).toBe(1);
+    expect(needsYouBySession([], { total: 0, sessions: {} }).size).toBe(0);
+  });
+});

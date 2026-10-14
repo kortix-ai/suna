@@ -52,7 +52,7 @@ function AppsHeader({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return (
-    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')} href={`/projects/${projectId}/apps`}>
+    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')}>
       {showColumns ? (
         <div className="flex shrink-0 items-center pr-1">
           <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
@@ -203,10 +203,6 @@ export function AppsView({ projectId }: { projectId: string }) {
           canWrite={canWrite}
           canDeploy={canDeploy}
           canAdmin={canAdmin}
-          onOpenLinked={(slug) => {
-            const linked = apps.data?.find((item) => item.slug === slug);
-            if (linked) setOpenAppId(linked.app_id);
-          }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenAppId(null);

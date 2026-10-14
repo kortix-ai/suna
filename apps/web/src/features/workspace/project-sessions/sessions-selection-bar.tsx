@@ -42,7 +42,9 @@ export function SessionsSelectionBar({
           disabled={deleting || selectableCount === 0}
           className="h-8 transition-[scale] duration-150 active:scale-[0.96]"
         >
-          {allSelected ? 'Clear' : tI18nComplete.raw('text1fc9a387654d')}
+          {allSelected
+            ? tI18nComplete.raw('text83b12c2216ef')
+            : tI18nComplete.raw('text1fc9a387654d')}
         </Button>
 
         {selectedCount > 0 && (

@@ -54,7 +54,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * in `settings-panel.tsx` guarantees happens only while this tab is active.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -72,6 +72,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useProjectCan } from '@/lib/use-project-can';
+import { useSlashFocus } from '@/hooks/utils';
 import {
   getProject,
   updateFeatureFlag,
@@ -97,8 +98,6 @@ export interface ExperimentalCopy {
   overridden: string;
   /** Origin line of an `operator_only` flag: only Kortix changes it. */
   managedByKortix: string;
-  /** Origin line of an organization flag (`scope: 'organization'`, also operator-only). */
-  organization: string;
   defaultOn: string;
   defaultOff: string;
   search: string;
@@ -114,7 +113,6 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   stability: { experimental: 'Experimental', beta: 'Beta', stable: 'Stable' },
   overridden: 'Overridden for this project',
   managedByKortix: 'Managed by Kortix',
-  organization: 'Whole organization, managed by Kortix',
   defaultOn: 'Default on',
   defaultOff: 'Default off',
   search: 'Search features',
@@ -129,8 +127,6 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
   // An internal-only flag (`apps`) is listed only while on, and
   // `PATCH /features` refuses it to anyone but a Kortix operator.
-  // One value for every project of the organization (`volumes`).
-  if (feature.scope === 'organization') return copy.organization;
   if (feature.operator_only) return copy.managedByKortix;
   if (feature.overridden) return copy.overridden;
   return feature.enabled ? copy.defaultOn : copy.defaultOff;
@@ -315,6 +311,8 @@ export function ExperimentalTabView({
   const pendingKeySet = new Set(pendingKeys);
   // Stateless sessions run on Volumes; with Volumes off the switch is dead.
   const volumesOff = !volumesEnabled;
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef, !isLoading && !isError && showSearch);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -327,6 +325,7 @@ export function ExperimentalTabView({
               <Search />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
+              ref={searchRef}
               placeholder={copy.search}
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
@@ -430,8 +429,8 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
   // a toggle the server would reject.
   const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   const canEdit = !writeCap.isLoading && writeCap.allowed === true;
-  // An `operator_only` flag (`apps`, `volumes`) is written only by a platform
-  // operator; everyone else sees it read-only. Fail-closed while loading.
+  // An `operator_only` flag (`apps`) is written only by a platform operator;
+  // everyone else sees it read-only. Fail-closed while loading.
   const adminRole = useAdminRole();
   const isOperator = adminRole.data?.isAdmin === true;
 
@@ -517,7 +516,6 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
         },
         overridden: t('origin.overridden'),
         managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
-        organization: t('origin.organization'),
         defaultOn: t('origin.defaultOn'),
         defaultOff: t('origin.defaultOff'),
         search: t('search'),

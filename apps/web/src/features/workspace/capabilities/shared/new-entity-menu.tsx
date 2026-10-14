@@ -11,6 +11,40 @@ import Loading from '@/components/ui/loading';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { CaretDownIcon, ChatCircleIcon, GearSixIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
+import type { ComponentType } from 'react';
+
+/**
+ * One row of the New menu: icon, title, description (Paper "New menu" V03,
+ * after `alert.tsx`). The 16px glyph takes `mt-1 ml-0.5` so it sits level
+ * with the title's first line and in from the row edge, not up in the corner;
+ * the title is ink at 550, the description one step down and muted, `mt-0.5`
+ * under it.
+ */
+const RICH_ROW_CLASS = 'items-start gap-2.5 py-2';
+
+function RichRowBody({
+  icon: Glyph,
+  title,
+  description,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <>
+      <Glyph className="text-muted-foreground mt-1 ml-0.5 size-4 shrink-0" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-foreground text-sm font-[550]">{title}</span>
+        {description ? (
+          <span className="text-muted-foreground mt-0.5 text-xs font-normal text-pretty">
+            {description}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+}
 
 /**
  * The one "New" control on the Agents, Skills, Connectors and Triggers tabs
@@ -57,15 +91,7 @@ export function NewEntityMenu({
   }
   const manualLabel = manual.label ?? 'Set up manually';
   const manualBody = (
-    <>
-      <GearSixIcon className="text-muted-foreground size-4 shrink-0" />
-      <span className="min-w-0 flex-1">
-        <span className="block">{manualLabel}</span>
-        {manual.description ? (
-          <span className="text-muted-foreground block text-xs">{manual.description}</span>
-        ) : null}
-      </span>
-    </>
+    <RichRowBody icon={GearSixIcon} title={manualLabel} description={manual.description} />
   );
   return (
     <DropdownMenu>
@@ -76,24 +102,22 @@ export function NewEntityMenu({
           <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem className="items-start gap-2" onSelect={onChat}>
-          <ChatCircleIcon className="text-muted-foreground size-4 shrink-0" />
-          <span className="min-w-0 flex-1">
-            <span className="block">{tI18nComplete.raw('textb1895f6ddd9d')}</span>
-            <span className="text-muted-foreground block text-xs">
-              {tI18nComplete.raw('text31e3ed0f6798')}
-            </span>
-          </span>
+      <DropdownMenuContent align="end" className="w-76">
+        <DropdownMenuItem className={RICH_ROW_CLASS} onSelect={onChat}>
+          <RichRowBody
+            icon={ChatCircleIcon}
+            title={tI18nComplete.raw('textb1895f6ddd9d')}
+            description={tI18nComplete.raw('text31e3ed0f6798')}
+          />
         </DropdownMenuItem>
         {manual.href ? (
-          <DropdownMenuItem asChild className="items-start gap-2">
+          <DropdownMenuItem asChild className={RICH_ROW_CLASS}>
             <Link href={manual.href} prefetch>
               {manualBody}
             </Link>
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuItem className="items-start gap-2" onSelect={manual.onSelect}>
+          <DropdownMenuItem className={RICH_ROW_CLASS} onSelect={manual.onSelect}>
             {manualBody}
           </DropdownMenuItem>
         )}

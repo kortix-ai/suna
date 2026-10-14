@@ -31,6 +31,7 @@ import {
 } from '../lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../channels/approval-card-relay';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { approvalCallerOf } from '../lib/http-approval-caller';
 
 export function registerApprovalsRoutes(): void {
   // GET /v1/projects/:projectId/approvals
@@ -303,33 +304,15 @@ export function registerApprovalsRoutes(): void {
         return c.json({ error: 'Approval already resolved' }, 409);
       }
 
-      // Who may resolve: a project MANAGER (the same project.members.manage IAM
-      // gate the inbox uses — capability-consistent, so a custom role holding the
-      // leaf without the "manager" label still qualifies), OR the human who
-      // launched the session the gated action belongs to. (Founder decision:
-      // managers + launcher.) assertProjectCapability throws on denial, so probe
-      // it — a non-manager launcher must still fall through.
-      let isManager = false;
-      try {
-        await assertProjectCapability(
-          c,
-          loaded.userId,
-          loaded.row.accountId,
-          projectId,
-          PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-        );
-        isManager = true;
-      } catch {
-        isManager = false;
-      }
+      // Who may resolve: a project MANAGER, OR the human who launched the
+      // session the gated action belongs to. (Founder decision: managers +
+      // launcher.) The session audit and the Review Center report this same
+      // verdict as `can_resolve`, from the same `approvalCallerOf`.
       const target = await approvalTargetSession(projectId, row);
       const verdict = mayResolveApproval({
-        isManager,
+        ...(await approvalCallerOf(c, loaded, projectId)),
         targetSessionOrigin: target.origin,
         targetSessionCreatedBy: target.createdBy,
-        callerUserId: loaded.userId,
-        callerAuthType: (c.get('authType') as string | undefined) ?? null,
-        callerSessionId: callerKortixSessionId(c),
       });
       if (!verdict.allowed) {
         return c.json(

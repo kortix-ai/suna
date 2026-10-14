@@ -50,6 +50,7 @@ file (the shadow ladder that never existed, the press value) are recorded in
 | **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
 | **`@/lib/toast`** (deleted; never recreate it), raw `sonner`, `toast.success/error/info/warning()`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx`. An action button is the `button` option (a `Button`), not sonner's `action`. `tests/unit/toast-single-source.test.ts` fails on any other `sonner` import |
 | Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
+| A count beside a label (row, tab, menu item, button) as muted text or a `Badge` | **`CountBadge`** from `apps/web/src/components/ui/count-badge.tsx`: the sidebar Review-count recipe (tabular pill, row text colour, 15% tint, `99+`). Tone by meaning: `waiting`, `reminder`, `conflict`, `neutral`. Mobile: `CountBadge` in `apps/mobile/components/kortix/count-badge.tsx` |
 | **Any icon as a spinner** — `CircleNotchIcon`, `SpinnerIcon`, `SpinnerGapIcon`, or the same glyph aliased to `Loader`/`Loader2`/`IconLoader` | **`Loading`** from `apps/web/src/components/ui/loading.tsx` — the spinner. The one other busy mark is `SessionDotMatrix`, for session-scoped work only (D4f in `decisions.md`) |
 | Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
@@ -231,6 +232,41 @@ Access rows use `py-2.5` (`shared/access/access-row.tsx`). Changes use `py-2`.
 ```
 
 Detail header: `text-2xl font-semibold tracking-tight` title; meta `Badge variant="outline" size="sm"`; toolbar `absolute top-4 right-4` with `ButtonGroup` + `Hint`.
+
+### Dropdown item with icon + title + description
+
+One recipe for every menu row that carries a glyph, a title and a one-line
+explanation (the "New ▾" menu on Agents, Skills, Connectors, Triggers and
+Secrets). Source: `RichRowBody` in
+`apps/web/src/features/workspace/capabilities/shared/new-entity-menu.tsx`;
+Paper "New menu · icon + title + description", V03 (Jay, 2026-10-13).
+
+```tsx
+<DropdownMenuContent align="end" className="w-76">            {/* 280px */}
+  <DropdownMenuItem className="items-start gap-2.5 py-1.5">   {/* px-2 rounded-sm from menuRow */}
+    <ChatCircleIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+    <span className="flex min-w-0 flex-1 flex-col">
+      <span className="text-foreground text-sm font-[550]">Create in chat</span>
+      <span className="text-muted-foreground mt-0.5 text-xs font-normal text-pretty">
+        An agent scaffolds it and opens a change request.
+      </span>
+    </span>
+  </DropdownMenuItem>
+</DropdownMenuContent>
+```
+
+- **First-line alignment, after `alert.tsx`.** `items-start` plus `mt-0.5` on the
+  16px glyph centres it on the title's first 20px line. Never `items-center`
+  (the glyph drifts to the middle of a two-line block) and never a bare
+  `items-start` (the glyph sits on the cap height).
+- **Two tiers.** Title `text-sm font-[550] text-foreground`, ink even before
+  hover; the row's own `text-foreground/80` and `font-medium` would make it read
+  lighter than the description's job. Description `text-xs text-muted-foreground
+  font-normal`, `mt-0.5` under the title.
+- **Width.** `w-76` (280px) lets a one-sentence description wrap at most once.
+  `w-64` wrapped after about 30 characters.
+- **Glyph.** Muted, `size-4`, no tile. Use the row's leading glyph, never a
+  second one at the end.
 
 ### Danger zone (settings)
 
@@ -499,7 +535,7 @@ Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
 - **Default `TabsList`:** the segmented control (recessed track, raised `shadow-xs` chip). A vertical list (a settings rail) is never segmented (`tabs.tsx`, `capability-tabs.tsx`).
 - **Primary section tabs:** `TabsList type="underline"` + `TabsTrigger className="w-fit flex-none"` (`channels-view.tsx`)
 - **Filter / status tabs:** `TabsListCompact` + `TabsTriggerCompact` (`project-sessions-view.tsx`, `secrets-view.tsx`)
-- Tab badge count: `<Badge variant="secondary" size="sm">` inside trigger
+- Tab badge count: `<CountBadge count={n} />` inside trigger
 
 ## Loading pattern (canonical)
 

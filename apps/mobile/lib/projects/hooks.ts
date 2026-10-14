@@ -111,7 +111,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
-import { useRuntimeProviders } from '@kortix/sdk/react';
+import { shouldScanPastEmptySessionPages, useRuntimeProviders } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
@@ -598,17 +598,18 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
 }
 
 /**
- * `query` plus `sessions`. A spread (`{ ...query, sessions }`) reads every
- * field of TanStack's tracked result, which turns off its tracked-field
- * renders: the consumer then re-rendered on every fetch start and end
- * (`isFetching`), also when it never reads it (`useReviewItems` documents
- * the same bug). The proxy passes each read through, so only the fields a
- * consumer reads subscribe it.
+ * `query` plus `extra` (`sessions`, `isScanning`). A spread
+ * (`{ ...query, sessions }`) reads every field of TanStack's tracked result,
+ * which turns off its tracked-field renders: the consumer then re-rendered on
+ * every fetch start and end (`isFetching`), also when it never reads it
+ * (`useReviewItems` documents the same bug). The proxy passes each read
+ * through, so only the fields a consumer reads subscribe it.
  */
-function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T & { sessions: ProjectSession[] } {
+function withSessions<T extends object, E extends { sessions: ProjectSession[] }>(query: T, extra: E): T & E {
   return new Proxy(query, {
-    get: (target, key) => (key === 'sessions' ? sessions : Reflect.get(target, key)),
-  }) as T & { sessions: ProjectSession[] };
+    get: (target, key) =>
+      Object.prototype.hasOwnProperty.call(extra, key) ? extra[key as keyof E] : Reflect.get(target, key),
+  }) as T & E;
 }
 
 /**
@@ -619,6 +620,12 @@ function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T
  * `sessions` is every loaded page, flattened and de-duplicated. A refetch
  * (poll, pull to refresh, invalidation) refetches every loaded page, so the
  * cost is bounded by what the user scrolled to.
+ *
+ * KRTX-1727: the server drops rows the viewer may not see, and deleted ones,
+ * after a bounded scan, so a page can be empty and still carry a cursor.
+ * While every page so far is empty, the hook reads the next one on its own,
+ * up to the SDK's `EMPTY_SESSION_PAGE_SCAN_LIMIT` pages (`isScanning`). A
+ * failed page ends the scan; the list's Show more is the retry.
  */
 export function useProjectSessionsPaged(
   projectId: string | null,
@@ -646,7 +653,19 @@ export function useProjectSessionsPaged(
     },
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return withSessions(query, sessions);
+  // A failed fetch ends the scan: the list's Show more (or a refresh) is the retry.
+  const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;
+  // A refetch that answers the same pages keeps the same `data` (structural
+  // sharing), so the effect also runs on each answer's time. Read only while
+  // scanning: an idle list keeps its tracked-field renders.
+  const answeredAt = isScanning ? query.dataUpdatedAt : 0;
+  const { data, fetchNextPage } = query;
+  useEffect(() => {
+    // `cancelRefetch: false` joins a fetch already running (a poll, a mount
+    // refetch) instead of cancelling it. Its answer runs this again.
+    if (isScanning) void fetchNextPage({ cancelRefetch: false });
+  }, [isScanning, data, answeredAt, fetchNextPage]);
+  return withSessions(query, { sessions, isScanning });
 }
 
 /** Rows a parent shows per "Show more". */
@@ -676,7 +695,7 @@ export function useSessionChildren(
     staleTime: 10_000,
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return withSessions(query, sessions);
+  return withSessions(query, { sessions });
 }
 
 export function useCreateProjectSession(projectId: string | null) {
@@ -1137,15 +1156,27 @@ const retryUnlessDenied = (count: number, err: any) => {
   return count < 3;
 };
 
+/** Entries per folder page. A folder with more shows "Load more items". */
+export const PROJECT_DIRECTORY_PAGE_SIZE = 500;
+
 /**
- * One folder level at a ref (`path` '' is the root). The recursive list stops
- * at 1,000 files, and a tree built from it lost every folder after file 1,000
- * (KRTX-1723).
+ * One folder level at a ref (`path` '' is the root), in pages of
+ * `PROJECT_DIRECTORY_PAGE_SIZE`. The recursive list stops at 1,000 files, and
+ * a tree built from it lost every folder after file 1,000 (KRTX-1723). The
+ * cursor pins the commit the first page read.
  */
 export function useProjectDirectory(projectId: string | null, ref: string, path: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: projectKeys.projectDirectory(projectId, ref, path),
-    queryFn: () => listProjectDirectory(projectId!, { ref, path: path || undefined }),
+    queryFn: ({ pageParam }) =>
+      listProjectDirectory(projectId!, {
+        ref,
+        path: path || undefined,
+        cursor: pageParam,
+        limit: PROJECT_DIRECTORY_PAGE_SIZE,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: !!projectId && !!ref,
     staleTime: 20_000,
     retry: retryUnlessDenied,

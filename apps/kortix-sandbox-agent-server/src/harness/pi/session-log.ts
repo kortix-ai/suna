@@ -34,6 +34,18 @@
  *   the root `task` call whose result names it.
  * - `native_hash` digests the pi entries (or child messages) a record is built
  *   from, its v1 message, its seq and whether it streams.
+ * - `usage.reasoning` is pi's `usage.reasoning` when pi reports a number
+ *   (pi-ai's OpenAI dialects always do, 0 without a breakdown) (P2.10).
+ * - A call's `title` is its v1 part's `state.title` (pi's v1 sets the tool
+ *   name on a completed call; an errored or open call has none) (P2.10).
+ * - `created_at` is pi's own message timestamp (the compaction entry's time
+ *   for a compaction), not the v1 `time.created`. pi-ai stamps an assistant
+ *   message when it sends the model request; the runtime stamps the v1 row at
+ *   pi's `message_start`, when the response starts. So a reply's `created_at`
+ *   is earlier than its v1 row by the time to the response (P2 dev check on a
+ *   real session: -3750..+16 ms). pi-ai stamps a child's initial system
+ *   message 0: that context message gets the thread's `created_at` (P2.10).
+ *   An assistant's `completed_at` is the v1 `time.completed`.
  *
  * The seq rule. `seq` is monotonic per thread and never reused: the API keeps
  * a tombstoned row with its seq and rejects a second row on the same
@@ -44,6 +56,11 @@
  * child has no entries and pi's retry drops a failed message and appends its
  * replacement at the same index, so the runtime issues each child message a
  * seq once (`seqs`) and never issues it again. Seqs have gaps.
+ *
+ * A restored store (P6.2, `session-log-restore.ts`) keeps each record's seq:
+ * the dump maps every entry the restore wrote to its seq (`entrySeqs`), and
+ * an entry appended after it gets its position plus the largest
+ * `seq - position` of a mapped entry, so it numbers above every restored seq.
  *
  * The live seq (P4.3b). pi appends a message's entry at its `message_end`, so
  * the reply it streams has no entry yet. pi's own listener appends every
@@ -73,8 +90,11 @@ import {
   type ToolResultContent,
 } from '@kortix/api-contract/session-log'
 import type { KortixMessage, KortixPart } from '@kortix/api-contract/transcript'
-import type { SessionLogChanges, SessionLogPort } from '../contract/session-log'
+import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges } from '../shared/session-log-journal'
+import { isRestoreNote } from '../shared/session-log-boot'
+import type { BytesReader } from '../shared/session-log-restore'
+import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore'
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
 
@@ -109,6 +129,8 @@ export interface PiSessionSnapshot {
   leafId: string | null
   /** pi entry id → Kortix message id. */
   entryMessageIds: Record<string, string>
+  /** pi entry id → seq of each entry a restore wrote (the seq rule); absent or empty on a store never restored. */
+  entrySeqs?: Record<string, number>
   transcript: KortixMessage[]
   children: PiChildSnapshot[]
   /** A root turn runs now. */
@@ -120,7 +142,7 @@ export interface PiSessionSnapshot {
 }
 
 export const PI_VERSION = PI_HARNESS_VERSION.split('@').pop() ?? PI_HARNESS_VERSION
-export const PI_ADAPTER_VERSION = '1.0.0'
+export const PI_ADAPTER_VERSION = '1.1.0'
 const PRODUCER = { harness: 'pi', harness_version: PI_VERSION, adapter_version: PI_ADAPTER_VERSION }
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const
 /** What pi-ai sends for a call whose result is missing. */
@@ -137,11 +159,15 @@ const native: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // pi-ai replays another model's thinking as text
   freeform_tool_input: false,
 }
-/** Tested in the prototype adapter; restore lands in P6. */
+/**
+ * `harness_versions` and `schema_minors` name what the oracle suites (`pi-session-log-restore.test.ts`,
+ * `pi-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
+ * fails when the pin (package.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
+ */
 export const PI_CAPABILITIES: AdapterCapabilities = {
   harness: 'pi',
-  harness_versions: PI_VERSION,
-  schema_minors: [SESSION_LOG_MINOR],
+  harness_versions: '1.0.3',
+  schema_minors: [1],
   dialects: ['openai-chat'],
   native,
   // A tool-result image becomes a follow-up user turn; a layout compaction is rendered as entries.
@@ -214,6 +240,8 @@ function deriveThread(input: {
   busy: boolean
   child: boolean
   seqOf: (entry: J) => number
+  /** The thread's creation (ms): the time of a message pi-ai stamps 0 (its initial system message). */
+  createdAt: number
 }): Derived[] {
   const { threadId, entries } = input
   const v1 = new Map(input.transcript.map((m) => [m.info.id as string, m]))
@@ -261,7 +289,7 @@ function deriveThread(input: {
     const nativeParts: unknown[] = [e, ...own, row ?? null]
 
     if (msg.role === 'user' || msg.role === 'custom' || msg.role === 'system') {
-      const m = message(threadId, id, msg.role === 'system' ? 'system' : 'user', iso(msg.timestamp))
+      const m = message(threadId, id, msg.role === 'system' ? 'system' : 'user', iso(msg.timestamp || input.createdAt))
       if (msg.role === 'system') m.kind = 'context'
       if (msg.role === 'custom') m.origin = 'automation'
       if (input.child && msg.role === 'user' && !out.some((x) => x.message.role === 'user')) m.origin = 'subagent'
@@ -292,6 +320,7 @@ function deriveThread(input: {
         m.in_context = false
         m.hidden_reason = 'retracted'
       }
+      if (m.role === 'user' && isRestoreNote(m)) m.origin = 'notification'
       out.push({ message: m, native: nativeParts })
       continue
     }
@@ -351,7 +380,9 @@ function deriveThread(input: {
 }
 
 function usageOf(u: J | undefined) {
-  return u ? { input: u.input ?? 0, output: u.output ?? 0, cache_read: u.cacheRead ?? 0, cache_write: u.cacheWrite ?? 0, ...(u.cost?.total ? { cost: u.cost.total } : {}) } : null
+  return u
+    ? { input: u.input ?? 0, output: u.output ?? 0, cache_read: u.cacheRead ?? 0, cache_write: u.cacheWrite ?? 0, ...(typeof u.reasoning === 'number' ? { reasoning: u.reasoning } : {}), ...(u.cost?.total ? { cost: u.cost.total } : {}) }
+    : null
 }
 
 /** The message pi keeps from: the first message entry at or after `firstKeptEntryId`, before the compaction. */
@@ -375,6 +406,7 @@ function toolCall(c: J, part: J | undefined, result: J | undefined, edits: Map<s
     kind: KIND[c.name] ?? (c.name.includes('__') || c.name.startsWith('mcp_') ? 'mcp' : 'other'),
     input: c.arguments,
     status: 'pending',
+    ...(typeof part?.state?.title === 'string' && part.state.title ? { title: part.state.title } : {}),
     ...(time?.start ? { started_at: iso(time.start) } : {}),
   }
   if (c.thoughtSignature) block.ext = { pi: { version: PI_VERSION, data: { thoughtSignature: c.thoughtSignature } } }
@@ -410,15 +442,15 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
       return message
     })
   const all = s.entries as J[]
-  const position = new Map(all.map((e, i) => [e.id as string, i + 1]))
-  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: activeBranch(all, s.leafId), ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => position.get(e.id)! }))
+  const seqOf = rootSeqs(s)
+  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: activeBranch(all, s.leafId), ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => seqOf(e.id), createdAt: Date.parse(created) }))
   const root: SessionLogThread = {
     ...V, thread_id: s.rootId, parent_thread_id: null, spawned_by: null, agent: s.agent, title: s.title, created_at: created, messages: rootMessages,
     ...(s.header ? { ext: { pi: { version: PI_VERSION, native_id: s.header.id, data: { cwd: s.header.cwd, header_version: s.header.version ?? null } } } } : {}),
   }
   const children = s.children.map((child): SessionLogThread => {
     const entries = child.agentMessages.map((m, i) => ({ type: 'message', id: `${child.id}:s${child.seqs[i]}`, index: i, message: m }))
-    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true, seqOf: (e) => child.seqs[e.index]! }))
+    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true, seqOf: (e) => child.seqs[e.index]!, createdAt: child.createdAt }))
     return { ...V, thread_id: child.id, parent_thread_id: s.rootId, spawned_by: spawnedBy(rootMessages, child.id), agent: child.agentName, title: child.title, created_at: iso(child.createdAt), messages }
   })
   const log: SessionLog = {
@@ -429,6 +461,15 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     threads: [root, ...children],
   }
   return { log, hashes }
+}
+
+/** The seq of a root entry by id, and of the next entry (`undefined`): see the seq rule. */
+function rootSeqs(s: PiSessionSnapshot): (entryId?: string) => number {
+  const restored = s.entrySeqs ?? {}
+  const position = new Map(s.entries.map((e, i) => [e.id, i + 1]))
+  let base = 0
+  for (const [id, seq] of Object.entries(restored)) base = Math.max(base, seq - (position.get(id) ?? seq))
+  return (entryId) => (entryId === undefined ? s.entries.length + 1 + base : restored[entryId] ?? position.get(entryId)! + base)
 }
 
 /** The entries from the root to `leafId`, oldest first (`SessionManager.getBranch()`). */
@@ -456,10 +497,10 @@ export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string
   // As deriveThread times each record.
   const at = (m: J | undefined) => iso(m?.timestamp)
   if (threadId === s.rootId) {
-    const i = s.entries.findIndex((e) => s.entryMessageIds[e.id] === messageId)
-    const e = s.entries[i] as J | undefined
-    if (e) return { seq: i + 1, created_at: e.type === 'compaction' ? isoOf(e.timestamp) : at(e.type === 'message' ? e.message : e) }
-    return messageId === s.reply?.id ? { seq: s.entries.length + 1, created_at: at(s.reply) } : null
+    const seqOf = rootSeqs(s)
+    const e = s.entries.find((x) => s.entryMessageIds[x.id] === messageId) as J | undefined
+    if (e) return { seq: seqOf(e.id), created_at: e.type === 'compaction' ? isoOf(e.timestamp) : at(e.type === 'message' ? e.message : e) }
+    return messageId === s.reply?.id ? { seq: seqOf(), created_at: at(s.reply) } : null
   }
   const child = s.children.find((c) => c.id === threadId)
   if (!child) return null
@@ -468,8 +509,8 @@ export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string
   return messageId === child.reply?.id ? { seq: child.nextSeq, created_at: at(child.reply) } : null
 }
 
-/** The session-log port over a live pi runtime. `read` returns null while the runtime is down. */
-export function createPiSessionLogPort(read: () => PiSessionSnapshot | null): SessionLogPort {
+/** The session-log port over a live pi runtime. `read` returns null while the runtime is down; `target` is where `restore` writes. */
+export function createPiSessionLogPort(read: () => PiSessionSnapshot | null, target?: PiRestoreTarget): SessionLogPort {
   let lastSession: string | null = null
   return {
     capabilities: PI_CAPABILITIES,
@@ -481,19 +522,15 @@ export function createPiSessionLogPort(read: () => PiSessionSnapshot | null): Se
       lastSession = out.sessionJson
       return out.changes
     },
-    /**
-     * P6 writes `log` into pi's native store here (root entries with the
-     * header, child agent messages, the v1 transcript and the id maps) before
-     * the runtime starts, and returns one cursor per thread with the native
-     * hash `piSessionLog` computes for each message written. Until then a box
-     * restores nothing from the log: no cursors.
-     */
-    async restore(_log: SessionLog): Promise<ExportCursor[]> {
-      return []
+    /** Writes `log` into the dump the runtime loads at its next start (`session-log-restore.ts`); needs `target`. */
+    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>, readAttachment?: BytesReader): Promise<SessionLogRestoreResult> {
+      if (!target) throw new Error('pi session-log restore needs a target (state dir, session id, workspace)')
+      return restorePiSessionLog(log, readAttachment ? { ...target, readAttachment } : target, seqMax)
     },
-    async fingerprint(): Promise<string> {
+    /** Every message id of the store; null without a dump. pi deletes no message (entries are append-only). */
+    async held() {
       const s = read()
-      return sha256(JSON.stringify(s ? [s.header, s.entries, s.children.map((c) => c.agentMessages)] : null))
+      return s ? new Set(piSessionLog(s).log.threads.flatMap((t) => t.messages.map((m) => m.message_id))) : null
     },
     live(threadId: string, messageId: string) {
       const s = read()

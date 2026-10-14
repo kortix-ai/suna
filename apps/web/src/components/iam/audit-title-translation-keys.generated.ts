@@ -380,6 +380,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Minted Kortix App sign-in token': 'textc0fb28560783',
   'Moved a drive file from a session': 'text2f0e4bb00f98',
   'Moved a drive file or folder': 'text643a5d6f2ae7',
+  'Offboarded a member': 'text2677201ed3eb',
   'Opened Kortix App WebSocket': 'text466d6c658ef8',
   'Opened Slack login link': 'texta982f7e34f86',
   'Opened Teams login link': 'text0ed4cc8a83d2',

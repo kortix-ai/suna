@@ -27,7 +27,7 @@ import {
   type SessionLogMessage,
   type V1Row,
 } from '@kortix/api-contract/session-log'
-import { createOpenCodeSessionLogPort, OPENCODE_CAPABILITIES, openCodeSessionLog, startOpenCodeSessionLog, type SeqState } from '@/harness/open-code/session-log'
+import { createOpenCodeSessionLogPort, OPENCODE_CAPABILITIES, openCodeSessionLog, bootOpenCodeSessionLog, type SeqState } from '@/harness/open-code/session-log'
 import { OpencodeDb, type StoreSnapshot } from '@/harness/open-code/opencode-db'
 import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
 import { readOpenCodeSessionPin, writeOpenCodeSessionPin } from '@/harness/open-code/runtime-state'
@@ -258,7 +258,8 @@ describe('the seq rule: issued once per message, never reused, kept by a tombsto
     expect(await noPin.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
     const noStore = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath })
     expect(await noStore.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
-    expect(await noStore.restore({} as SessionLog)).toEqual([])
+    // P6.3: a port without a restore target (binary, project directory) refuses to restore, as pi's does.
+    await expect(noStore.restore({} as SessionLog)).rejects.toThrow('needs a target')
   })
 })
 
@@ -296,7 +297,7 @@ describe('OpenCode session-log journal wiring', () => {
     const dbPath = join(dir, 'opencode.db')
     writeStore(dbPath, before)
     writeOpenCodeSessionPin(ROOT)
-    // The port `startOpenCodeSessionLog` builds, on a test path: the production
+    // The port `bootOpenCodeSessionLog` builds, on a test path: the production
     // one reads `OPENCODE_HOME` (`paths.ts`), bound to `homedir()` when the
     // module loads, and the hermetic test env does not point HOME at a test dir.
     const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: readOpenCodeSessionPin })
@@ -443,9 +444,9 @@ describe('OpenCode session-log journal wiring', () => {
     for (const p of dumped().flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
   })
 
-  test('without a control plane the boot start journals nothing', () => {
+  test('without a control plane the boot start journals nothing', async () => {
     delete process.env.KORTIX_SESSION_ID
-    startOpenCodeSessionLog()
+    expect(await bootOpenCodeSessionLog({ bin: 'opencode', cwd: dir })).toBe(false)
     expect(existsSync(dump)).toBe(false)
   })
 

@@ -12,6 +12,8 @@ import type { Part } from '../../runtime/client';
 import { isReasoningPart, isToolPart } from '../parts';
 import { humanizeSearchQuery } from '../tools/search-query';
 import { normalizeActivityToolName } from './session-activity-groups';
+import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import type { SessionLogBlock, ToolCallBlock } from '../../session-log/types';
 
 export type StepTier = 'primary' | 'reasoning' | 'plumbing';
 
@@ -135,7 +137,12 @@ function readObject(input: unknown, keys: string[] | undefined): string | undefi
   return undefined;
 }
 
-export function stepLabel(part: Part): StepLabel {
+/**
+ * Reads a session-log tool call block the same way as its v1 part. Any other session-log
+ * block reads by its `type` alone: a reasoning block is a thought, the rest the generic row.
+ */
+export function stepLabel(call: Part | ToolCallBlock | SessionLogBlock): StepLabel {
+  const part = (isToolCallBlock(call) ? toolPartOf(call) : call) as Part;
   if (isReasoningPart(part)) {
     return { verb: 'Thought', running: 'Thinking', object: undefined, tier: 'reasoning' };
   }

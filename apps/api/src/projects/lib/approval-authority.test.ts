@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mayResolveApproval, maySeeSessionApprovals } from './approval-authority';
+import { approvalResolvers, mayResolveApproval, maySeeSessionApprovals } from './approval-authority';
 
 const WRAPPER = 'wrapper-service-account';
 const HUMAN = 'human-1';
@@ -14,6 +14,7 @@ describe('mayResolveApproval', () => {
       targetSessionCreatedBy: WRAPPER,
       callerUserId: WRAPPER,
       callerAuthType: 'supabase',
+      callerCredentialKind: 'jwt',
       callerSessionId: 'my-own-session',
     });
     expect(result).toEqual({ allowed: false, reason: 'session_bound_caller' });
@@ -26,6 +27,7 @@ describe('mayResolveApproval', () => {
       targetSessionCreatedBy: WRAPPER,
       callerUserId: WRAPPER,
       callerAuthType: 'supabase',
+      callerCredentialKind: 'jwt',
       callerSessionId: 'some-other-session',
     });
     expect(result.allowed).toBe(false);
@@ -40,6 +42,7 @@ describe('mayResolveApproval', () => {
       targetSessionCreatedBy: WRAPPER,
       callerUserId: WRAPPER,
       callerAuthType: 'supabase',
+      callerCredentialKind: 'jwt',
       callerSessionId: null,
     });
     expect(result).toEqual({ allowed: false, reason: 'not_launcher_or_manager' });
@@ -52,6 +55,7 @@ describe('mayResolveApproval', () => {
       targetSessionCreatedBy: HUMAN,
       callerUserId: HUMAN,
       callerAuthType: 'supabase',
+      callerCredentialKind: 'jwt',
       callerSessionId: null,
     });
     expect(result.allowed).toBe(true);
@@ -65,6 +69,7 @@ describe('mayResolveApproval', () => {
         targetSessionCreatedBy: HUMAN,
         callerUserId: 'someone-else',
         callerAuthType: 'supabase',
+        callerCredentialKind: 'jwt',
         callerSessionId: null,
       }).allowed,
     ).toBe(false);
@@ -79,6 +84,7 @@ describe('mayResolveApproval', () => {
           targetSessionCreatedBy: WRAPPER,
           callerUserId: 'manager',
           callerAuthType: 'supabase',
+          callerCredentialKind: 'jwt',
           callerSessionId: null,
         }).allowed,
       ).toBe(true);
@@ -98,9 +104,139 @@ describe('mayResolveApproval', () => {
         targetSessionCreatedBy: WRAPPER,
         callerUserId: WRAPPER,
         callerAuthType: 'supabase',
+        callerCredentialKind: 'jwt',
         callerSessionId: 's1',
       }),
     ).toEqual({ allowed: false, reason: 'session_bound_caller' });
+  });
+
+  describe('the person behind the CLI (a personal PAT is the human)', () => {
+    // A personal PAT is the same person their browser session is: the token row
+    // carries a real user, holds no session binding and no service account. The
+    // same manager-or-launcher rule that governs the dashboard therefore governs
+    // `kortix sessions approvals … approve`. Session-bound, service-account,
+    // sandbox and OAuth credentials stay refused below.
+    test('a manager resolving with their own CLI PAT is allowed', () => {
+      const result = mayResolveApproval({
+        isManager: true,
+        targetSessionOrigin: 'backend',
+        targetSessionCreatedBy: WRAPPER,
+        callerUserId: HUMAN,
+        callerAuthType: 'pat',
+        callerCredentialKind: 'pat',
+        callerSessionId: null,
+      });
+      expect(result).toEqual({ allowed: true });
+    });
+
+    test('the launcher resolving their own interactive session with a CLI PAT is allowed', () => {
+      const result = mayResolveApproval({
+        isManager: false,
+        targetSessionOrigin: 'user',
+        targetSessionCreatedBy: HUMAN,
+        callerUserId: HUMAN,
+        callerAuthType: 'pat',
+        callerCredentialKind: 'pat',
+        callerSessionId: null,
+      });
+      expect(result).toEqual({ allowed: true });
+    });
+
+    test('a CLI PAT still needs the human rule — not manager, not launcher, refused', () => {
+      const result = mayResolveApproval({
+        isManager: false,
+        targetSessionOrigin: 'user',
+        targetSessionCreatedBy: HUMAN,
+        callerUserId: 'someone-else',
+        callerAuthType: 'pat',
+        callerCredentialKind: 'pat',
+        callerSessionId: null,
+      });
+      expect(result).toEqual({ allowed: false, reason: 'not_launcher_or_manager' });
+    });
+
+    test('an agent-session connector PAT (a service account behind it) is refused EVEN for a manager', () => {
+      // kind 'agent_session' with NO session binding: the token row names a
+      // service account, so it is an agent credential wearing a PAT coat. It
+      // must never pass the human check, whatever role it inherits.
+      const result = mayResolveApproval({
+        isManager: true,
+        targetSessionOrigin: 'user',
+        targetSessionCreatedBy: HUMAN,
+        callerUserId: HUMAN,
+        callerAuthType: 'pat',
+        callerCredentialKind: 'agent_session',
+        callerSessionId: null,
+      });
+      expect(result).toEqual({ allowed: false, reason: 'non_human_caller' });
+    });
+
+    test('a session-bound connector PAT without a service account (legacy) is still refused', () => {
+      // Legacy connector tokens authorize AS the user but carry a session id —
+      // the session-bound refusal (the self-approval guard) catches them.
+      const result = mayResolveApproval({
+        isManager: true,
+        targetSessionOrigin: 'user',
+        targetSessionCreatedBy: HUMAN,
+        callerUserId: HUMAN,
+        callerAuthType: 'pat',
+        callerCredentialKind: 'pat',
+        callerSessionId: 'sess-own-session',
+      });
+      expect(result).toEqual({ allowed: false, reason: 'session_bound_caller' });
+    });
+
+    test('an unresolved actor (no credential kind) stays refused', () => {
+      // A request that never resolved an actor has no human behind it.
+      const result = mayResolveApproval({
+        isManager: true,
+        targetSessionOrigin: 'user',
+        targetSessionCreatedBy: HUMAN,
+        callerUserId: HUMAN,
+        callerAuthType: 'pat',
+        callerCredentialKind: null,
+        callerSessionId: null,
+      });
+      expect(result).toEqual({ allowed: false, reason: 'non_human_caller' });
+    });
+  });
+});
+
+// KRTX-1724: a viewer who may not decide is told who does. The class must be
+// the one the verdict enforces.
+describe('approvalResolvers', () => {
+  test('a session one person started: managers and that launcher', () => {
+    expect(approvalResolvers({ targetSessionOrigin: 'user', targetSessionCreatedBy: HUMAN })).toBe(
+      'managers_and_launcher',
+    );
+    expect(approvalResolvers({ targetSessionOrigin: 'trigger', targetSessionCreatedBy: HUMAN })).toBe(
+      'managers_and_launcher',
+    );
+  });
+
+  test('a backend session (CLI PAT, service account, API key): managers only', () => {
+    expect(approvalResolvers({ targetSessionOrigin: 'backend', targetSessionCreatedBy: WRAPPER })).toBe(
+      'managers',
+    );
+  });
+
+  test('a session with no creator: managers only', () => {
+    expect(approvalResolvers({ targetSessionOrigin: 'user', targetSessionCreatedBy: null })).toBe('managers');
+  });
+
+  test('managers only means the launcher really is refused', () => {
+    const verdict = (targetSessionOrigin: string) =>
+      mayResolveApproval({
+        isManager: false,
+        targetSessionOrigin,
+        targetSessionCreatedBy: HUMAN,
+        callerUserId: HUMAN,
+        callerAuthType: 'supabase',
+        callerCredentialKind: 'jwt',
+        callerSessionId: null,
+      }).allowed;
+    expect(verdict('backend')).toBe(false);
+    expect(verdict('user')).toBe(true);
   });
 });
 
@@ -150,6 +286,7 @@ describe('non-human credentials cannot resolve approvals', () => {
         targetSessionCreatedBy: WRAPPER,
         callerUserId: 'wrapper-service-account-id',
         callerAuthType: 'service_account',
+        callerCredentialKind: 'service_account',
         callerSessionId: null,
       }).allowed,
     ).toBe(false);
@@ -163,6 +300,7 @@ describe('non-human credentials cannot resolve approvals', () => {
         targetSessionCreatedBy: WRAPPER,
         callerUserId: 'some-service-account',
         callerAuthType: 'service_account',
+        callerCredentialKind: 'service_account',
         callerSessionId: null,
       }).allowed,
     ).toBe(false);
@@ -182,6 +320,7 @@ describe('the browser human (regression: the Supabase sessionId collision)', () 
       targetSessionCreatedBy: WRAPPER,
       callerUserId: HUMAN,
       callerAuthType: 'supabase',
+      callerCredentialKind: 'jwt',
       callerSessionId: null,
     });
     expect(result).toEqual({ allowed: true });
@@ -211,6 +350,7 @@ describe('the browser human (regression: the Supabase sessionId collision)', () 
         targetSessionCreatedBy: WRAPPER,
         callerUserId: WRAPPER,
         callerAuthType: 'supabase',
+        callerCredentialKind: 'jwt',
         callerSessionId: 'sess-real-kortix-session',
       }).allowed,
     ).toBe(false);

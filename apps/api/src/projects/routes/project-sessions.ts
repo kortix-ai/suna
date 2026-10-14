@@ -1,5 +1,5 @@
 /**
- * Project session lifecycle: create, list, read, sharing, patch and soft delete.
+ * Project session lifecycle: create, list, read, sharing, patch, soft delete and restore.
  * Invariant: session_id == sandbox_id == git branch name.
  */
 
@@ -22,7 +22,7 @@ import { projectSessions } from '@kortix/db';
 import { SessionUpdateInputSchema } from '@kortix/api-contract';
 import { and, eq, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
-import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
+import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionDeleteResultSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   hasOwn,
   normalizeString,
@@ -38,7 +38,8 @@ import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bin
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 import { notifySessionShared } from '../lib/notification-recipients';
 import { notificationsEnabled } from '../../notifications/enabled';
-import { createSession, deleteSession } from '../session-lifecycle';
+import { createSession, deleteSession, restoreSession } from '../session-lifecycle';
+import { sessionRestoreUntil } from '../session-log-purge';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -47,6 +48,7 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
@@ -281,6 +283,39 @@ export function registerProjectSessionsRoutes(): void {
     const query = c.req.valid('query');
     const scope = (query.scope ?? 'visible') as ProjectSessionListScope;
 
+    // The poll memo: an If-None-Match repeat of the same (viewer, query) within
+    // the short window is a 304 with no DB work at all. The ETag below is only
+    // known after the full multi-op inventory, so without this every poll paid
+    // 6-14 connection-pool round trips to learn the page was unchanged — and a
+    // poll burst queued its own operations into the p95 (KRTX-468). The key is
+    // built entirely from values the auth middleware already resolved, before
+    // any DB read; the first successful response seeds it, so a burst pays
+    // once and every repeat within the window is free.
+    const pollMemoKey = [
+      c.get('userId'),
+      c.get('iamTokenId'),
+      c.get('authType'),
+      callerKortixSessionId(c),
+      c.req.header('x-kortix-admin-bypass') === '1' ? 'bypass' : '',
+      projectId,
+      c.req.url.split('?')[1] ?? '',
+    ].join('|');
+    const ifNoneMatch = c.req.header('if-none-match');
+    if (ifNoneMatch) {
+      const memoed = peekSessionListPollEtag(pollMemoKey, ifNoneMatch);
+      if (memoed) {
+        // Same binding `loadProjectForUser` performs on the computed path;
+        // a browser-JWT principal has no other source for it, and the audit
+        // snapshot and the post-handler context propagation both read it.
+        c.set('accountId', memoed.accountId);
+        c.header('Cache-Control', 'private, no-cache');
+        c.header('ETag', memoed.etag);
+        if (memoed.nextCursor) c.header('X-Next-Cursor', memoed.nextCursor);
+        c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
+        return c.body(null, 304);
+      }
+    }
+
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
@@ -364,6 +399,11 @@ export function registerProjectSessionsRoutes(): void {
     // client already parses — adding an envelope would have broken all of them.
     if (inventory.nextCursor) c.header('X-Next-Cursor', inventory.nextCursor);
     c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
+    storeSessionListPollEtag(pollMemoKey, {
+      etag,
+      nextCursor: inventory.nextCursor,
+      accountId: loaded.row.accountId,
+    });
     if (c.req.header('if-none-match') === etag) return c.body(null, 304);
     c.header('Content-Type', 'application/json');
     return c.body(serialized, 200);
@@ -760,21 +800,22 @@ export function registerProjectSessionsRoutes(): void {
   );
 
   // DELETE /v1/projects/:projectId/sessions/:sessionId
-  // Soft delete only. We deliberately keep the remote branch so the user can
-  // still merge or recover work.
+  // Soft delete: the session goes to the trash until `restore_until`. The
+  // remote branch is kept for good, so the user can still merge or recover
+  // work after the window.
 
   projectsApp.openapi(
     createRoute({
       method: 'delete',
       path: '/{projectId}/sessions/{sessionId}',
       tags: ['sessions'],
-      summary: 'Delete a session (soft delete; its branch is kept)',
+      summary: 'Delete a session (restorable until restore_until; its branch is kept)',
       ...auth,
         request: {
           params: z.object({ projectId: z.string(), sessionId: z.string() }),
         },
       responses: {
-          200: json(OkSchema, 'Session stopped'),
+          200: json(SessionDeleteResultSchema, 'Session deleted; restorable until restore_until'),
           ...errors(400, 403, 404),
       },
     }),
@@ -798,6 +839,10 @@ export function registerProjectSessionsRoutes(): void {
           403,
         );
     }
+    // A repeated delete (the SDK retries one whose response was lost) answers
+    // with the first stamp: the restore window never moves.
+    const restoreUntil = sessionIsTombstoned(visible.row) ? sessionRestoreUntil(visible.row.metadata?.deletedAt) : null;
+    if (restoreUntil) return c.json({ ok: true as const, restore_until: restoreUntil.toISOString() });
 
     const result = await deleteSession({
       projectId,
@@ -806,6 +851,51 @@ export function registerProjectSessionsRoutes(): void {
       userId: loaded.userId,
     });
     if ('error' in result) return c.json({ error: result.error }, result.status as any);
+    return c.json(result);
+  },
+  );
+
+  // POST /v1/projects/:projectId/sessions/:sessionId/restore
+  // Take a deleted session out of the trash. Same gate as the delete. 409
+  // `session_not_deleted`: nothing to restore. 409
+  // `session_sandbox_removal_pending`: the old sandbox is still being removed;
+  // retry. 410 `session_purged`: past `restore_until`, the content is gone.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/restore',
+      tags: ['sessions'],
+      summary: 'Restore a deleted session before its restore_until',
+      ...auth,
+        request: {
+          params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        },
+      responses: {
+          200: json(OkSchema, 'Session restored; its next start boots a fresh sandbox from its branch'),
+          ...errors(400, 403, 404, 409, 410),
+      },
+    }),
+    async (c) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (!visible.canManageLifecycle) {
+        return c.json(
+          { error: 'Only the session owner or a project manager can restore this session' },
+          403,
+        );
+    }
+
+    const result = await restoreSession({ projectId, sessionId, accountId: loaded.row.accountId });
+    if ('error' in result) return c.json({ error: result.error, code: result.code }, result.status);
     return c.json(result);
   },
   );

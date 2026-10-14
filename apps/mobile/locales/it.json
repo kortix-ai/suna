@@ -138,6 +138,7 @@
     "browseAsGuest": "Sfoglia come ospite",
     "signOutFailed": "Impossibile uscire. Controlla la connessione e riprova.",
     "signingOut": "Uscita in corso…",
+    "ssoRequired": "La tua organizzazione richiede il single sign-on. Continua invece con SSO.",
     "mfa": {
       "title": "Verifica la tua identità",
       "enterCode": "Inserisci il codice a 6 cifre della tua app di autenticazione.",
@@ -1203,5 +1204,39 @@
     "body": "Questa versione di Kortix non è più supportata. Aggiorna l'app per continuare.",
     "bodyNoStore": "Questa versione di Kortix non è più supportata. Aggiorna l'app dall'App Store o da Google Play per continuare.",
     "button": "Aggiorna"
+  },
+  "invites": {
+    "group": "Inviti",
+    "fallbackTitle": "Invito",
+    "invitedYouToProject": "{{inviter}} ti ha invitato a un progetto.",
+    "invitedToProject": "Sei stato invitato a un progetto.",
+    "invitedYouToTeam": "{{inviter}} ti ha invitato a unirti a un team.",
+    "invitedToTeam": "Sei stato invitato a unirti a un team.",
+    "joinProject": "Entrerai in {{project}} come {{role}}.",
+    "joinAccount": "Entrerai in questo account come {{role}} e vedrai i progetti a cui il proprietario ti dà accesso.",
+    "roleMember": "membro",
+    "roleManager": "gestore",
+    "roleAdmin": "amministratore",
+    "accept": "Accetta invito",
+    "accepting": "Accettazione…",
+    "decline": "Rifiuta invito",
+    "declining": "Rifiuto…",
+    "notNow": "Non ora",
+    "acceptFailed": "Impossibile accettare l'invito. Riprova.",
+    "declineFailed": "Impossibile rifiutare l'invito. Riprova.",
+    "notFoundTitle": "Invito non trovato",
+    "notFoundBody": "Questo link di invito non è valido o è stato revocato.",
+    "loadFailed": "Impossibile caricare l'invito",
+    "expiredTitle": "Invito scaduto",
+    "expiredBody": "Chiedi alla persona che ti ha invitato di inviarne uno nuovo.",
+    "wrongAccountTitle": "Cambia account",
+    "wrongAccountBody": "Questo invito è indirizzato a un altro account. Hai effettuato l'accesso come {{email}}.",
+    "signOutAndContinue": "Esci e continua",
+    "backToProjects": "Torna ai progetti"
+  },
+  "approvals": {
+    "waitingManagers": "Chi gestisce questo progetto può approvare o rifiutare la chiamata.",
+    "waitingTitle": "In attesa di approvazione",
+    "waitingWho": "La persona che ha avviato questa sessione o chi gestisce questo progetto può approvare o rifiutare la chiamata."
   }
 }

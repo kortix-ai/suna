@@ -106,6 +106,7 @@ To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId,
 | `status` | `SessionStatus` | The runtime status of the session. |
 | `working` | `WorkingProjection` | `{ state: 'idle' \| 'working', pendingDelivery?, source, turnId, since }`. The one working answer. |
 | `isBusy` | `boolean` | `working.state === 'working'`. |
+| `presenceAwake` | `{ until: Date, capAt: Date } \| null` | With `browserPresence`: `until` is when the sandbox stops after the latest presence renewal, and `capAt` is the time presence cannot keep it awake past. Read again every 5 minutes while the person is present, when a turn ends, when the control plane closes a turn, and when the sandbox becomes ready. `null` while the person is absent, for a person who may not start the session, once the session start reports the sandbox not ready, and from the start of a turn until the next renewal answers. |
 | `isSending` | `boolean` | A `send` request is in flight. |
 | `sendError` | `KortixSendError \| null` | The last `send` failure. A new `send` clears it. |
 | `questions`, `permissions` | arrays | Open agent questions and tool-approval requests. A permission here is one tool approval, not an access-control permission. |
@@ -256,7 +257,7 @@ More on parts, tools and turn grouping: [SDK reference](/docs/sdk/reference#cust
 
 ### Read the session log
 
-`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
+`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?, options?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. `options.throttleMs` paces the v1 rows as `useSessionMessages` paces them (a transcript reads a streaming turn at most once per window). Pass the whole `useSession` result. Both start no request: `useSession` loads the log. `useSessionLog` changes with every message; to read session fields (`restore_grade`, `grade_counts`, `harness`, `ext`) use `useSessionLogRecord(session)`: the session record without threads, null while the session reads v1, unchanged through message puts and deltas, so its consumer re-renders only on a page or a session patch.
 
 ```tsx
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
@@ -269,19 +270,22 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
 }
 ```
 
+On v2, `useSessionLogThread` appends the v1 rows the log does not hold yet (an optimistic send) after the thread's messages, converted with `fromV1`, until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
+
 A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 
 1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
 2. The project flag `session_log` is `true`.
 3. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
-4. The session's thread was converted from v1 (OpenCode). A pi session reads v1.
+
+Both harnesses read v2: an OpenCode thread (converted from v1) and a pi thread (written natively).
 
 An SDK older than its API, or an API older than its SDK, reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
 
 - The runtime side is complete: on `schema=v2` the runtime's stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
-- The API does not relay `schema` yet; that is the remaining step. Until it does, the stream keeps the v1 frames, and a turn in progress streams through them as before.
+- The API relays `schema=v2`: a runtime that lists `session.log.v2` streams its own `log.*` frames, and the API converts the v1 frames of an older runtime.
 
-A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
+A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. A session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. In a thread converted from v1 (OpenCode) the rows are exact. A pi thread's rows carry what its blocks map, with a tool call's `details` as `state.metadata`; render its blocks (`sessionLogTurns`) for the full record. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
 
 ## Hooks
 
@@ -326,7 +330,7 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 
 Rules that apply to several hooks:
 
-- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `project.gitops.push`, never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
+- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
 - The three notification hooks key their cache by `userId`. Pass the signed-in person's id. Gate each with `enabled: useFeatureFlag(projectId, 'notification_center').enabled`. The flag is off by default. See [Notifications](/docs/work/sessions#notifications).
 - After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`. The next read then comes from the new runtime.
 

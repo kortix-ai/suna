@@ -107,6 +107,7 @@ When the balance reaches zero, agents pause and triggers stop starting sessions.
 - The `402` body also carries `billing_state`: `out_of_credits`, `payment_failed`, `no_subscription` or `no_account`.
 - Kortix stops the running Apps of the account. A visitor gets `402` with code `app_account_unfunded` and an **App paused** page. See [Apps](/docs/apps).
 - On a paid plan with auto top-up off, every owner gets one email per UTC day when the balance reaches zero.
+- Buying credits and auto top-up show only to a person who may change billing (`billing.write`), on a plan that may buy credits. A member sees who can add credits instead.
 - A member who cannot add credits can select **Ask an owner** in the out-of-credits notice. Every owner gets an email with the balance and a link to billing. Each member can ask once per 24 hours per account.
 
 ## Track usage

@@ -1,40 +1,8 @@
-# us-east-2 became a production region in July 2026. Keep its edge, alerting,
-# network, and backup-failure controls equivalent to the established us-west-2
-# and eu-west-2 controls.
+# us-east-2 runs the dev stack (environments/dev-us-east-2). Keep its edge,
+# alerting, and backup-failure controls equivalent to the eu-west-2 controls.
 
 data "aws_lbs" "use2" {
   provider = aws.use2
-}
-
-data "aws_vpc" "use2" {
-  provider = aws.use2
-
-  tags = {
-    Name = "kortix-prod-use2-vpc"
-  }
-}
-
-data "aws_subnets" "use2" {
-  provider = aws.use2
-
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.use2.id]
-  }
-}
-
-data "aws_network_acls" "use2_default" {
-  provider = aws.use2
-  vpc_id   = data.aws_vpc.use2.id
-
-  filter {
-    name   = "default"
-    values = ["true"]
-  }
-}
-
-data "aws_iam_role" "flow_logs" {
-  name = "vpc-flow-logs-role"
 }
 
 locals {
@@ -460,6 +428,49 @@ resource "aws_wafv2_web_acl_logging_configuration" "use2" {
   log_destination_configs = [aws_cloudwatch_log_group.use2_waf.arn]
 }
 
+# DCF-406: every VPC carries a flow log. The dev VPC had none until 2026-10-12
+# (environments/dev-us-east-2 creates it; the delivery role lives in
+# security-baseline/main.tf and monitoring.tf reads it).
+data "aws_vpc" "use2_dev" {
+  provider = aws.use2
+  tags     = { Name = "kortix-dev-use2-vpc" }
+}
+
+resource "aws_cloudwatch_log_group" "use2_flow_logs" {
+  provider          = aws.use2
+  name              = "/vpc/flowlogs"
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.use2_logs.arn
+  tags              = local.tags
+}
+
+resource "aws_flow_log" "use2_dev" {
+  provider             = aws.use2
+  iam_role_arn         = data.aws_iam_role.flow_logs.arn
+  log_destination      = aws_cloudwatch_log_group.use2_flow_logs.arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = data.aws_vpc.use2_dev.id
+  tags                 = local.tags
+}
+
+# Drata test 233 (CIS 5.4): the default security group allows no traffic.
+# Nothing attaches it; every ECS service carries its own group.
+resource "aws_default_security_group" "use2_dev" {
+  provider = aws.use2
+  vpc_id   = data.aws_vpc.use2_dev.id
+
+  ingress = []
+  egress  = []
+
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-dev-use2-default"
+  }
+}
+
 resource "aws_cloudwatch_metric_alarm" "use2_target_response_time" {
   provider            = aws.use2
   for_each            = local.use2_albs
@@ -556,162 +567,4 @@ resource "aws_cloudwatch_event_target" "use2_snapshot_failures" {
   rule      = aws_cloudwatch_event_rule.use2_snapshot_failures.name
   target_id = "compliance-sns"
   arn       = aws_sns_topic.use2_alerts.arn
-}
-
-# ── VPC baseline ───────────────────────────────────────────────────────────────
-
-resource "aws_default_security_group" "use2" {
-  provider = aws.use2
-  vpc_id   = data.aws_vpc.use2.id
-
-  ingress = []
-  egress  = []
-
-  tags = {
-    ManagedBy  = "terraform"
-    Stack      = "compliance-monitoring"
-    Compliance = "soc2"
-    Name       = "kortix-prod-use2-default"
-  }
-}
-
-resource "aws_network_acl" "use2_restricted" {
-  # checkov:skip=CKV2_AWS_1:All discovered VPC subnets attach through aws_network_acl_association.use2_restricted below.
-  provider = aws.use2
-  vpc_id   = data.aws_vpc.use2.id
-
-  # Preserve unrestricted VPC-internal traffic.
-  ingress {
-    protocol   = -1
-    rule_no    = 50
-    action     = "allow"
-    cidr_block = data.aws_vpc.use2.cidr_block
-    from_port  = 0
-    to_port    = 0
-  }
-
-  # Permit public TCP except SSH (22) and RDP (3389).
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 100
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 21
-  }
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 110
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 23
-    to_port    = 3388
-  }
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 120
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 3390
-    to_port    = 65535
-  }
-  # Permit public UDP except SSH (22) and RDP (3389), mirroring the TCP carve-out.
-  ingress {
-    protocol   = "udp"
-    rule_no    = 130
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 21
-  }
-  ingress {
-    protocol   = "udp"
-    rule_no    = 140
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 23
-    to_port    = 3388
-  }
-  ingress {
-    protocol   = "udp"
-    rule_no    = 150
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 3390
-    to_port    = 65535
-  }
-  ingress {
-    protocol   = "icmp"
-    rule_no    = 160
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 0
-    icmp_type  = -1
-    icmp_code  = -1
-  }
-
-  egress {
-    protocol   = -1
-    rule_no    = 100
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 0
-  }
-
-  tags = {
-    ManagedBy  = "terraform"
-    Stack      = "compliance-monitoring"
-    Compliance = "soc2"
-    Name       = "kortix-prod-use2-restricted"
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "aws_network_acl_association" "use2_restricted" {
-  provider       = aws.use2
-  for_each       = toset(data.aws_subnets.use2.ids)
-  network_acl_id = aws_network_acl.use2_restricted.id
-  subnet_id      = each.value
-}
-
-# Adopt and lock the unassociated default ACL only after every production subnet
-# uses the fully populated restricted ACL. The AWS provider clears existing
-# default ACL rules during first adoption.
-resource "aws_default_network_acl" "use2" {
-  provider               = aws.use2
-  default_network_acl_id = one(data.aws_network_acls.use2_default.ids)
-
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-default-deny"
-  })
-
-  lifecycle {
-    ignore_changes = [subnet_ids]
-  }
-
-  depends_on = [aws_network_acl_association.use2_restricted]
-}
-
-resource "aws_cloudwatch_log_group" "use2_flow_logs" {
-  provider          = aws.use2
-  name              = "/vpc/flowlogs"
-  retention_in_days = 365
-  kms_key_id        = aws_kms_key.use2_logs.arn
-  tags              = local.tags
-}
-
-resource "aws_flow_log" "use2" {
-  provider                 = aws.use2
-  iam_role_arn             = data.aws_iam_role.flow_logs.arn
-  log_destination          = aws_cloudwatch_log_group.use2_flow_logs.arn
-  log_destination_type     = "cloud-watch-logs"
-  max_aggregation_interval = 60
-  traffic_type             = "ALL"
-  vpc_id                   = data.aws_vpc.use2.id
-  tags                     = local.tags
 }

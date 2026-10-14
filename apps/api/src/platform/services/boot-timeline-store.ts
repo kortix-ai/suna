@@ -18,7 +18,7 @@ export type BootTimelineInput = {
  * where the HOST provisioning timeline is durable
  * (kortix.provider_events.marks, written by provider-events.ts's
  * recordProviderEvent for kind 'provision' | 'migrate') but the equally
- * expensive in-guest boot (repo-materialized, opencode-session-created, ...)
+ * expensive in-guest boot (config-release-fetched, pi-ready, ...)
  * only ever lived in daemon memory, exposed transiently on
  * `GET /kortix/health`'s `boot_timeline` field until the sandbox recycled.
  *

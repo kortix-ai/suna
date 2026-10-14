@@ -3,7 +3,6 @@
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,7 +10,7 @@ import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs'
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { useSessionNeedsYouCounts } from '@/features/review-center/hooks/use-review-session-summary';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
@@ -72,6 +71,7 @@ import {
   toggleSelection,
 } from './project-sessions-helpers';
 import { SessionDetail } from './session-detail';
+import { SessionsBulkDeleteDialog } from './sessions-bulk-delete-dialog';
 import { SessionRow, type SessionRowActions } from './session-row';
 import { SessionsEmptyState } from './sessions-empty-state';
 import { SessionsSelectionBar } from './sessions-selection-bar';
@@ -182,7 +182,7 @@ function SessionsSection({
       <DisclosureTrigger>
         <div className="group/section-header text-muted-foreground flex h-8 cursor-pointer items-center gap-1.5 px-1 text-sm font-medium">
           <span className="truncate">{section.label}</span>
-          <span className="text-muted-foreground/60 text-xs tabular-nums">
+          <span className="text-muted-foreground text-xs tabular-nums">
             {section.sessions.length}
           </span>
           <CaretRightIcon
@@ -340,9 +340,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
   const resetFilters = useSessionFilterStore((s) => s.resetFilters);
 
-  // Review Center feeds `status` grouping's `needs-you` section and the menu's
-  // Show list — the same inbox summary the sidebar reads.
-  const reviewSummary = useReviewSessionSummary(projectId);
+  // What waits on the viewer, by session (the review inbox, open agent
+  // questions, connector approvals): each row's status, `status` grouping's
+  // `needs-you` section and the menu's Show list. The sidebar reads the same.
+  const needsYouBySession = useSessionNeedsYouCounts(projectId);
 
   const visibleSessions = useMemo(
     () =>
@@ -360,7 +361,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         {
           mode: groupMode,
           order: orderMode,
-          reviewCountBySession: reviewSummary.needsYouBySession,
+          reviewCountBySession: needsYouBySession,
           hiddenSections,
           ownerLabels: {
             you: tSidebar('filter.ownerValue.you'),
@@ -374,7 +375,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       visibleSessions,
       groupMode,
       orderMode,
-      reviewSummary.needsYouBySession,
+      needsYouBySession,
       hiddenSections,
       tI18nComplete,
     ],
@@ -628,6 +629,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
           }
           actions={rowActions}
+          needsYouCount={needsYouBySession[session.session_id] ?? 0}
           childCount={childCount}
           childrenOpen={childrenOpen}
           onToggleChildren={() => handleToggleChildren(session)}
@@ -675,7 +677,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     <SessionsToolbar
       projectId={projectId}
       sessions={sessions}
-      reviewCountBySession={reviewSummary.needsYouBySession}
+      reviewCountBySession={needsYouBySession}
       search={search}
       onSearchChange={setSearch}
       searchOpen={searchOpen}
@@ -804,17 +806,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <ConfirmDialog
+      <SessionsBulkDeleteDialog
+        count={selectedCount}
         open={bulkConfirmOpen}
-        onOpenChange={(open) => !bulkDeleteMutation.isPending && setBulkConfirmOpen(open)}
-        title={tI18nComplete('text7ed6733a3900', {
-          value0: selectedCount,
-          value1: selectedCount === 1 ? 'session' : 'sessions',
-        })}
-        description={tI18nComplete.raw('textac371f652a2d')}
-        confirmLabel={`Delete ${selectedCount}`}
-        confirmVariant="destructive"
         isPending={bulkDeleteMutation.isPending}
+        onOpenChange={setBulkConfirmOpen}
         onConfirm={() => bulkDeleteMutation.mutate([...visibleSelection])}
       />
 

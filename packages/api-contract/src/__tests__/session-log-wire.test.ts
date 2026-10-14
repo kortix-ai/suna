@@ -6,6 +6,8 @@ import {
   SessionLogJournalRequestSchema,
   SessionLogJournalResponseSchema,
   SessionLogManifestSchema,
+  SessionLogRestoreMissingSchema,
+  SessionLogRestoreSchema,
   type SessionLog,
   type SessionLogJournalRequest,
 } from '../session-log';
@@ -71,5 +73,29 @@ describe('session-log journal wire', () => {
     expect(SessionLogManifestSchema.safeParse({ messages: [{ message_id: 'm1' }] }).success).toBe(false);
     // `rev` is a JSON number: a stringified int8 from raw SQL is refused.
     expect(SessionLogManifestSchema.safeParse({ ...manifest, messages: [{ ...manifest.messages[0], rev: '1791681474704000' }] }).success).toBe(false);
+  });
+});
+
+describe('session-log restore wire', () => {
+  const restore = () => ({
+    generation: 4,
+    log: structuredClone(golden),
+    revs: { m1: 1_791_681_474_704_000, gone: 2 },
+    blobs: [{ message_id: 'm1', block_id: 'prt_1', ref: 'kortix-attachment://p/s/a', bytes: 300_000, sha256: 'a'.repeat(64) }],
+  });
+
+  test('the golden record with revs and blobs validates', () => {
+    expect(SessionLogRestoreSchema.parse(restore()).log.threads.length).toBe(golden.threads.length);
+  });
+
+  test('generation 0 is never a claim; a rev is a JSON number; a blob names its sha256', () => {
+    expect(SessionLogRestoreSchema.safeParse({ ...restore(), generation: 0 }).success).toBe(false);
+    expect(SessionLogRestoreSchema.safeParse({ ...restore(), revs: { m1: '1791681474704000' } }).success).toBe(false);
+    expect(SessionLogRestoreSchema.safeParse({ ...restore(), blobs: [{ ...restore().blobs[0], sha256: 'abc' }] }).success).toBe(false);
+  });
+
+  test('a 404 for a session without a log is told apart from a 404 of an API without the route', () => {
+    expect(SessionLogRestoreMissingSchema.safeParse({ error: 'no_session_log' }).success).toBe(true);
+    expect(SessionLogRestoreMissingSchema.safeParse({ error: 'Not Found' }).success).toBe(false);
   });
 });

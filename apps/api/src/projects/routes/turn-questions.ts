@@ -12,6 +12,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { deliverThroughQueue } from '../session-lifecycle';
 import {
+  clearOpenQuestions,
   getOpenQuestion,
   recordPendingQuestion,
   renderAnswerPrompt,
@@ -65,6 +66,7 @@ export function registerTurnQuestionsRoutes(): void {
       // The session this credential is BOUND to, when it is a sandbox token.
       // Null for a human caller.
       let callerSandboxSessionId: string | null = null;
+      let humanLoaded: Awaited<ReturnType<typeof loadProjectForUser>> = null;
 
       if (isSessionSandboxCredential(c)) {
         const accountId = (c as any).get('accountId') as string | undefined;
@@ -95,8 +97,8 @@ export function registerTurnQuestionsRoutes(): void {
         // A question card finalizes and re-posts a LIVE turn, so it is a
         // mutation of that session — 'read' is too weak. The sibling turn-stream
         // route already requires more than read for the same reason.
-        const loaded = await loadProjectForUser(c, projectId, 'session');
-        if (!loaded) return c.json({ error: 'Not found' }, 404);
+        humanLoaded = await loadProjectForUser(c, projectId, 'session');
+        if (!humanLoaded) return c.json({ error: 'Not found' }, 404);
       }
 
       let body: Partial<TurnQuestionRelayBody>;
@@ -120,6 +122,14 @@ export function registerTurnQuestionsRoutes(): void {
         !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
       ) {
         return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+      }
+      // A member's token acts only on a session it may see, as the GET/DELETE
+      // siblings require: project scope alone let any member post to a private one.
+      if (
+        humanLoaded &&
+        !(await loadVisibleSession(humanLoaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c)))
+      ) {
+        return c.json({ error: 'Not found' }, 404);
       }
 
       const [turnQuestionSession] = await db
@@ -282,13 +292,23 @@ export function registerTurnQuestionsRoutes(): void {
 
       const runtimeRequestId = body.request_id?.trim();
       if (channel && runtimeRequestId) {
-        await releaseChannelQuestion({
+        const released = await releaseChannelQuestion({
           sessionId,
           requestId: runtimeRequestId,
           questionCount: questions.length,
           channel,
           posted: result.ok,
         });
+        // The runtime no longer waits on it: the thread reply arrives as a new
+        // turn. Unreachable keeps the row; the turn end closes it (KRTX-1739).
+        if (released !== 'unreachable') {
+          await clearOpenQuestions(sessionId, { requestId: runtimeRequestId }).catch((err) =>
+            logger.warn('[turn-question] released question not closed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
 
       if (!result.ok) {

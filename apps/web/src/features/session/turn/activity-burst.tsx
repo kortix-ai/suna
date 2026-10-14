@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * One burst — a maximal run of non-text parts.
+ * One burst — a maximal run of non-text blocks.
  *
  * Renders as a chain of thought: a muted summary line ("Completed 7 steps")
  * that expands into a connected vertical chain. The chain has two levels — a
@@ -23,66 +23,21 @@ import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-tho
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import type { ConversationDensity } from '@/stores/user-preferences-store';
-import { isReasoningPart, type Part } from '@/ui';
+import {
+  sessionLogBurstRunning,
+  sessionLogBurstSteps,
+  sessionLogBurstSummary,
+  sessionLogBurstWorkLabel,
+  type SessionLogBlock,
+} from '@kortix/sdk';
 import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { isAnsweredQuestionPart } from './answered-question-step';
 import { StepBody } from './burst-step-body';
-import { burstSummary, burstSummaryLabel } from './burst-summary';
+import { burstSummaryLabel } from './burst-summary';
 import { BurstSummaryTrigger } from './burst-summary-trigger';
-import { mergeBurstSteps, reasoningIsRunning } from './merge-steps';
 import { samePartsList } from './same-parts';
-import { stepLabel } from './step-label';
 import { ThoughtChainStep } from './thought-chain-step';
 import { WorkFoldContext } from './turn-work-accordion';
 export { ActivityGroupStep, sameActivityGroupStepProps } from './activity-group-step';
-
-/**
- * True when this burst should stay open as "in progress".
- *
- * - Turn idle → closed.
- * - Trailing burst while the turn still works → open. Tool parts often settle
- *   for a beat before the next SSE call arrives; treating that gap as settled
- *   blinks the disclosure shut between every pair of calls.
- * - Non-trailing burst → open only while it still has an unfinished part
- *   (later text/standalone already closed this run).
- */
-export function burstIsRunning(
-  parts: ReadonlyArray<Part>,
-  working: boolean,
-  isTrailing = false,
-): boolean {
-  if (!working) return false;
-  if (isTrailing) return true;
-  return parts.some((part) => {
-    const state = (part as { state?: { status?: string } }).state;
-    if (state?.status === 'pending' || state?.status === 'running') return true;
-    if (isReasoningPart(part)) return reasoningIsRunning(part);
-    return false;
-  });
-}
-
-/**
- * The rows a burst renders. Empty means the burst renders nothing at all
- * (plumbing only, or blank reasoning) — the turn's "Worked for" fold reads
- * this too, so it never counts such a burst as work.
- */
-export function burstSteps(parts: ReadonlyArray<Part>) {
-  const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
-  // An answered question owns its row's disclosure (`AnsweredQuestionStep`
-  // binds trigger + content to the step's own `Disclosure`), so it can never
-  // share a group row with siblings — `groupSteps` buckets `question` into
-  // the `ask` family, and two disclosures in one step means one is silently
-  // dropped. Split such a group back into individual part rows.
-  return merged.flatMap((step) =>
-    step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
-      ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
-      : [step],
-  );
-}
-
-export function burstFailureCount(parts: ReadonlyArray<Part>): number {
-  return burstSummary(parts).failed;
-}
 
 /**
  * A burst of ONE call has nothing to summarise, so it drops the summary line
@@ -116,20 +71,24 @@ export function burstFailureCount(parts: ReadonlyArray<Part>): number {
  * advertises work it cannot show, and the caret promises a body that is not
  * there.
  *
- * The test is `steps`, not `parts`: `parts.length > 0` is exactly the case
- * that produced the empty row, because every one of those parts was filtered
+ * The test is `steps`, not `blocks`: `blocks.length > 0` is exactly the case
+ * that produced the empty row, because every one of those blocks was filtered
  * out downstream. `steps` IS the list the chain below maps over, so this
  * cannot drift from what renders.
  */
 function ActivityBurstImpl({
-  parts,
+  blocks,
   sessionId,
   working,
   isTrailing = false,
   disableNavigation,
   density = 'normal',
 }: {
-  parts: Part[];
+  /** The burst segment's blocks (`sessionLogTurnSegments`). The rows are
+   *  `sessionLogBurstSteps`; whether the burst is still in progress is
+   *  `sessionLogBurstRunning` (the trailing burst stays open for the whole
+   *  working turn, so a gap between two calls does not blink it shut). */
+  blocks: SessionLogBlock[];
   sessionId: string;
   working: boolean;
   /** Last segment in the turn — stay open across SSE gaps between tool calls. */
@@ -148,7 +107,7 @@ function ActivityBurstImpl({
    */
   density?: ConversationDensity;
 }) {
-  const running = burstIsRunning(parts, working, isTrailing);
+  const running = sessionLogBurstRunning(blocks, { working, trailing: isTrailing });
   const autoExpand = density !== 'minimal';
   const [open, setOpen] = useState(autoExpand && running);
   const userToggled = useRef(false);
@@ -161,31 +120,33 @@ function ActivityBurstImpl({
     setOpen(autoExpand && running);
   }, [running, autoExpand]);
 
-  const steps = useMemo(() => burstSteps(parts), [parts]);
-  const summary = useMemo(() => burstSummary(parts), [parts]);
-  // The summary goes through unchanged: `burstSummaryLabel` already ignores
-  // failures while running, so the "no failure count mid-flight" rule lives in
-  // one place rather than being re-applied by every caller.
-  const title = burstSummaryLabel(summary, running);
+  const steps = useMemo(() => sessionLogBurstSteps(blocks), [blocks]);
+  const summary = useMemo(() => sessionLogBurstSummary(blocks), [blocks]);
+  // Under an opened "Worked for" row the burst sits between two sentences of
+  // the agent's narration, so its closed line names the work ("Ran 9 commands,
+  // updated 2 files · 1 failed") instead of counting steps. Thoughts and the
+  // per-call rows stay one click down. Elsewhere the summary goes through
+  // unchanged: `burstSummaryLabel` already ignores failures while running.
+  const inFold = useContext(WorkFoldContext);
+  const title = useMemo(
+    () => (inFold ? sessionLogBurstWorkLabel(blocks) : burstSummaryLabel(summary, running)),
+    [inFold, blocks, summary, running],
+  );
 
   const bare = steps.length === 1 && summary.total === 1;
-  // Under an opened "Worked for" row the summary line is the second door to
-  // the same steps: hide it and keep the chain open. Rows keep their glyphs —
-  // `bare` stays the single-call rule.
-  const flat = useContext(WorkFoldContext);
   if (steps.length === 0) return null;
 
   return (
     <Disclosure
       // Bare is permanently open — there is no trigger to close it with.
-      open={bare || flat || open}
+      open={bare || open}
       onOpenChange={(next) => {
         userToggled.current = true;
         setOpen(next);
       }}
       className="group/burst flex-row"
     >
-      <BurstSummaryTrigger bare={bare || flat} running={running} title={title} />
+      <BurstSummaryTrigger bare={bare} running={running} title={title} />
 
       <DisclosureContent>
         {/*
@@ -201,7 +162,7 @@ function ActivityBurstImpl({
         <ToolActivateContext.Provider value={null}>
           {/* `mt-3` is the gap under the summary line. Bare has no summary
 					    line, so it has no gap to open. */}
-          <div className={bare || flat ? undefined : 'mt-3'}>
+          <div className={bare ? undefined : 'mt-3'}>
             <ChainOfThought>
               {/* A thought row IS a `ChainOfThoughtStep` — it owns the step's
 							    open state so it can open itself while the model thinks. */}
@@ -249,6 +210,6 @@ export const ActivityBurst = memo(
     a.isTrailing === b.isTrailing &&
     a.disableNavigation === b.disableNavigation &&
     a.density === b.density &&
-    samePartsList(a.parts, b.parts),
+    samePartsList(a.blocks, b.blocks),
 );
 ActivityBurst.displayName = 'ActivityBurst';

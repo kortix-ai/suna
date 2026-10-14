@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { listFiles as globalListFiles } from '../files/client';
 import { ApiError } from '../http/api/errors';
 import { isConfigured } from '../http/config';
+import type { ProjectSession } from '../rest/projects-client/sessions';
 import { SessionNotReadyError, createKortix } from './kortix';
 
 // Capture every outbound request the facade makes.
@@ -190,6 +191,28 @@ test('session presence carries alerts, and an absent report survives the page un
   expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, false]);
 });
 
+// KRTX-1729: a present report reads back until when the computer stays on.
+test('session presence returns the awake window the server wrote', async () => {
+  globalThis.fetch = mock(async () =>
+    Response.json({
+      ok: true,
+      awake_until: '2026-10-12T10:15:00.000Z',
+      awake_cap_at: '2026-10-12T11:40:00.000Z',
+    }),
+  ) as unknown as typeof fetch;
+  const res = await kortix
+    .session('PID123', 'SID456')
+    .presence({ tab_id: '00000000-0000-4000-8000-000000000004', active: true });
+  const body: { ok: boolean; awake_until?: string | null; awake_cap_at?: string | null } | undefined =
+    res.data;
+  expect(body).toEqual({
+    ok: true,
+    awake_until: '2026-10-12T10:15:00.000Z',
+    awake_cap_at: '2026-10-12T11:40:00.000Z',
+  });
+  expect(res.data?.awake_cap_at).toBe('2026-10-12T11:40:00.000Z');
+});
+
 // `useSession` sends an absent report without `keepalive` while the project's
 // `notification_center` flag is off, as before KRTX-1742.
 test('session presence takes an explicit keepalive, and the body stays the report', async () => {
@@ -217,6 +240,11 @@ test('session(projectId, sessionId).cost binds project scope without starting th
   expect(calls).toHaveLength(1);
   expect(last().url).toBe('http://test.local/usage/session-costs/SID456?project_id=PID123');
   expect(last().method).toBe('GET');
+});
+
+test('session(...).restore takes the deleted session out of the trash', async () => {
+  await kortix.session('PID123', 'SID456').restore();
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/sessions/SID456/restore' });
 });
 
 test('project(id).session(sid) is the same session handle', async () => {
@@ -714,6 +742,12 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
   expect(last().url).toContain('/billing/tier-configurations');
 });
 
+test('session(...).log reads one page of the stored session log', async () => {
+  // The stub answers no page shape, so the read rejects after the request.
+  await expect(kortix.session('PID123', 'SID456').log({ thread: 'ses_c', limit: 5 })).rejects.toThrow('not a session log page');
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/log?thread=ses_c&limit=5');
+});
+
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {
   await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
   expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');
@@ -975,6 +1009,71 @@ test('ensureReady names the runtime session from runtime_session_id first', asyn
   const ready = await k.session('PROJ', 'SESS-NEUTRAL').ensureReady();
   expect(ready.runtimeSessionId).toBe('rs-neutral');
   expect(ready.opencodeSessionId).toBe('rs-neutral');
+});
+
+function runningSessionRow(sessionId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    session_id: sessionId,
+    project_id: 'PROJ',
+    account_id: 'ACCT',
+    agent_name: 'agent',
+    status: 'running',
+    sandbox_id: 'sbx-row',
+    sandbox_provider: 'platinum',
+    sandbox_url: 'http://test.local/v1/p/sbx-row/8000',
+    runtime_session_id: 'rs-row',
+    opencode_session_id: 'rs-row',
+    metadata: {},
+    created_at: '2026-10-13T00:00:00.000Z',
+    updated_at: '2026-10-13T00:00:00.000Z',
+    ...overrides,
+  } as unknown as ProjectSession;
+}
+
+test('ensureReady adopts a running session row without calling /start', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-RUNNING')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-RUNNING') });
+  expect(startCalls).toEqual([]);
+  expect(ready.runtimeSessionId).toBe('rs-row');
+  expect(ready.sandboxId).toBe('sbx-row');
+});
+
+test('ensureReady never adopts the row of another session', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-MINE')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-SOMEONE-ELSE') });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.sandboxId).toBe('sb-start');
+});
+
+test('ensureReady still calls /start for a row that is not running', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-STOPPED')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-STOPPED', { status: 'stopped' }) });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.runtimeSessionId).toBe('rs-start');
 });
 
 test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {

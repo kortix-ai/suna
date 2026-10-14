@@ -138,6 +138,7 @@
     "browseAsGuest": "Parcourir en tant qu'invité",
     "signOutFailed": "Impossible de se déconnecter. Vérifiez votre connexion et réessayez.",
     "signingOut": "Déconnexion…",
+    "ssoRequired": "Votre organisation exige l’authentification unique. Continuez plutôt avec le SSO.",
     "mfa": {
       "title": "Confirmez votre identité",
       "enterCode": "Saisissez le code à 6 chiffres de votre application d’authentification.",
@@ -1203,5 +1204,39 @@
     "body": "Cette version de Kortix n'est plus prise en charge. Mettez à jour l'application pour continuer.",
     "bodyNoStore": "Cette version de Kortix n'est plus prise en charge. Mettez à jour l'application depuis l'App Store ou Google Play pour continuer.",
     "button": "Mettre à jour"
+  },
+  "invites": {
+    "group": "Invitations",
+    "fallbackTitle": "Invitation",
+    "invitedYouToProject": "{{inviter}} vous a invité à un projet.",
+    "invitedToProject": "Vous avez été invité à un projet.",
+    "invitedYouToTeam": "{{inviter}} vous a invité à rejoindre une équipe.",
+    "invitedToTeam": "Vous avez été invité à rejoindre une équipe.",
+    "joinProject": "Vous rejoindrez {{project}} en tant que {{role}}.",
+    "joinAccount": "Vous rejoindrez ce compte en tant que {{role}} et verrez les projets auxquels le propriétaire vous donne accès.",
+    "roleMember": "membre",
+    "roleManager": "gestionnaire",
+    "roleAdmin": "administrateur",
+    "accept": "Accepter l'invitation",
+    "accepting": "Acceptation…",
+    "decline": "Refuser l'invitation",
+    "declining": "Refus…",
+    "notNow": "Pas maintenant",
+    "acceptFailed": "Impossible d'accepter l'invitation. Réessayez.",
+    "declineFailed": "Impossible de refuser l'invitation. Réessayez.",
+    "notFoundTitle": "Invitation introuvable",
+    "notFoundBody": "Ce lien d'invitation est invalide ou a été révoqué.",
+    "loadFailed": "Impossible de charger l'invitation",
+    "expiredTitle": "Invitation expirée",
+    "expiredBody": "Demandez à la personne qui vous a invité d'en envoyer une nouvelle.",
+    "wrongAccountTitle": "Changer de compte",
+    "wrongAccountBody": "Cette invitation est adressée à un autre compte. Vous êtes connecté en tant que {{email}}.",
+    "signOutAndContinue": "Se déconnecter et continuer",
+    "backToProjects": "Retour aux projets"
+  },
+  "approvals": {
+    "waitingManagers": "Une personne qui gère ce projet peut approuver ou refuser l'appel.",
+    "waitingTitle": "En attente d'approbation",
+    "waitingWho": "La personne qui a démarré cette session ou une personne qui gère ce projet peut approuver ou refuser l'appel."
   }
 }

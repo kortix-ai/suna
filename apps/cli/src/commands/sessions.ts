@@ -29,8 +29,14 @@ import { runSessionsForward } from './sessions-forward.ts';
 import type { Auth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { kortixFromAuth } from '../api/sdk.ts';
-import { sessionModelPin } from '@kortix/sdk';
+import { kortixFromAuth, sdkBackendUrl, withKortixScope } from '../api/sdk.ts';
+import {
+  appendPreviewToken,
+  isSubdomainPreviewUrl,
+  loadPreviewUrlTemplate,
+  rewriteLocalhostUrl,
+  sessionModelPin,
+} from '@kortix/sdk';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
@@ -48,6 +54,7 @@ import {
 import {
   runSessionsCompact,
   runSessionsModel,
+  runSessionsRestore,
   runSessionsStart,
   runSessionsStop,
   runSessionsWarm,
@@ -240,7 +247,11 @@ Subcommands:
                                     Alias: label.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
-  rm <session-id>...                Stop + delete one or more sessions.
+  rm <session-id>...                Stop + delete one or more sessions. Each
+                                    stays restorable for 30 days; its branch
+                                    is kept. --json.
+  restore <session-id>              Restore a deleted session within 30 days.
+                                    Pass the full id. --json.
   open <session-id>                 Open the dashboard URL for a session.
 
 Global options:
@@ -338,6 +349,9 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'start' || sub === 'wake') {
     return runSessionsStart(argv.slice(1));
+  }
+  if (sub === 'restore' || sub === 'undelete') {
+    return runSessionsRestore(argv.slice(1));
   }
   if (sub === 'warm') {
     return runSessionsWarm(argv.slice(1));
@@ -608,7 +622,11 @@ async function sessionsNew(
 
   const body: Record<string, unknown> = {};
   if (prompt && uploads.length === 0) {
-    body.initial_prompt = buildSpawnPrompt(prompt, { fromSandbox });
+    // The prompt is stored verbatim; the contract rides in `initial_context`
+    // and reaches the model as a synthetic (model-only) part.
+    const spawn = buildSpawnPrompt(prompt, { fromSandbox });
+    body.initial_prompt = spawn.prompt;
+    if (spawn.context) body.initial_context = spawn.context;
   }
   // Titles derive from the user's words, not from the session-contract or the
   // --with-file manifest the CLI appends around them.
@@ -714,16 +732,20 @@ async function sessionsNew(
         if (!json) process.stdout.write(`  ${C.dim}uploaded ${u.target}${C.reset}\n`);
       }
       if (prompt) {
+        // A deferred prompt goes to a RUNNING session through the prompt
+        // inbox, which has no synthetic-part carrier yet: the contract still
+        // rides inside the text there (the caller's words stay at the top).
+        const spawn = buildSpawnPrompt(
+          buildPromptWithFiles(
+            prompt,
+            uploads.map((u) => u.target),
+          ),
+          { fromSandbox },
+        );
         await sendPromptToSession(
           ctx,
           created,
-          buildSpawnPrompt(
-            buildPromptWithFiles(
-              prompt,
-              uploads.map((u) => u.target),
-            ),
-            { fromSandbox },
-          ),
+          spawn.context ? `${spawn.prompt}\n\n${spawn.context}` : spawn.prompt,
         );
       }
     } catch (err) {
@@ -932,12 +954,28 @@ async function sessionsPreview(
     return 1;
   }
   const ext = m[1];
-  const base = new URL(auth.api_base);
-  // Kortix subdomain preview: served at root (so SPA/Next assets resolve), the
-  // `?token` authorizes the subdomain (in-memory TTL) and sets a cookie for
-  // subsequent asset requests. `*.localhost` resolves to 127.0.0.1 in browsers.
-  const scheme = base.protocol.replace(':', '');
-  const url = `${scheme}://p${port}-${ext}.${base.host}/?token=${encodeURIComponent(auth.token)}`;
+  // The preview hostname is a deployment fact: `{env}-p{port}-{label}.{domain}`
+  // needs a wildcard DNS record, a wildcard certificate and an edge Worker that
+  // the API host says nothing about, so a client must not derive it — that is
+  // how this command printed `p{port}-{sandbox}.{api-host}`, a family with no
+  // DNS record on any deployed environment. `GET /v1/p/config` states the
+  // template; the SDK substitutes it (label-encoding `_` → `-`) and falls back
+  // to the localhost or path proxy when the deployment serves none. The
+  // one-shot `?token=` is accepted only on a preview origin (it mints the
+  // preview cookie there); the path proxy rejects query tokens, so it stays
+  // off that form.
+  const url = await withKortixScope(auth, async () => {
+    const backendUrl = sdkBackendUrl(auth.api_base);
+    const template = await loadPreviewUrlTemplate(backendUrl);
+    const parsed = new URL(backendUrl);
+    const origin = rewriteLocalhostUrl(port, '/', {
+      sandboxId: ext,
+      apiBaseUrl: backendUrl,
+      backendPort: Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80),
+      previewUrlTemplate: template,
+    });
+    return isSubdomainPreviewUrl(origin) ? appendPreviewToken(origin, auth.token) : origin;
+  });
 
   if (json) {
     emitJson({ session_id: s.session_id, port, sandbox: ext, url });
@@ -1189,7 +1227,14 @@ async function sessionsRm(
     return 2;
   }
 
-  const results: Array<{ session_id: string; deleted: boolean; error?: string }> = [];
+  const results: Array<{
+    session_id: string;
+    project_id?: string;
+    host?: string;
+    deleted: boolean;
+    restore_until?: string;
+    error?: string;
+  }> = [];
   for (const sessionId of ids) {
     const located = await locateSessionAnywhere(
       sessionId,
@@ -1201,15 +1246,32 @@ async function sessionsRm(
       continue;
     }
     const canonicalSessionId = located.located.session.session_id;
+    const { projectId } = located.located;
+    // `restore` cannot locate a deleted session (its read answers 404), so the
+    // hint names where this session was found.
+    const host = located.located.hostName ?? opts.hostArg;
     try {
-      await located.located.client.delete(
-        `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
+      const deleted = await located.located.client.delete<{ ok: boolean; restore_until?: string }>(
+        `/projects/${projectId}/sessions/${canonicalSessionId}`,
       );
-      results.push({ session_id: canonicalSessionId, deleted: true });
+      // An API that predates restore answers without the window.
+      const restoreUntil = deleted?.restore_until;
+      results.push({
+        session_id: canonicalSessionId,
+        project_id: projectId,
+        ...(host ? { host } : {}),
+        deleted: true,
+        ...(restoreUntil ? { restore_until: restoreUntil } : {}),
+      });
       if (!json) {
         process.stdout.write(
           `${status.ok(`Deleted ${C.bold}${shortId(canonicalSessionId)}${C.reset}`)}\n`,
         );
+        if (restoreUntil) {
+          process.stdout.write(
+            `  ${C.dim}Restorable until ${restoreUntil.slice(0, 10)}: kortix sessions restore ${canonicalSessionId} --project ${projectId}${host ? ` --host ${host}` : ''}${C.reset}\n`,
+          );
+        }
       }
     } catch (err) {
       surfaceApiError(err);

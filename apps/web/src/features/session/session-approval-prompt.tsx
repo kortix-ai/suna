@@ -31,6 +31,12 @@ import { useTranslations } from '@/i18n/use-translations';
  * Liveness is unchanged: rows come from the shared `useSessionAudit` query,
  * which polls every 5s here. A decision taken anywhere else — the link, the
  * Audit panel, another tab — drops the row on the next poll.
+ *
+ * Every viewer of the session sees the card, but only a viewer the API lets
+ * decide gets Deny / Approve (`can_resolve`, KRTX-1724). Anyone else reads
+ * the call and who decides it — a project manager or the person who started
+ * the session — instead of a decision that answers 403. The approval page
+ * refuses them too, so they get the link to copy, not to open.
  */
 
 import {
@@ -40,43 +46,51 @@ import {
   ApprovalParameters,
   approvalReviewable,
   ApprovalUnreviewableNotice,
+  ApprovalWaitingNotice,
 } from '@/components/approvals/approval-request';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   approvalArgsSummary,
+  approvalLauncherName,
   approvalNoticeHeadline,
   type ApprovalNoticeRow,
   approvalNoticeRows,
   approvalRequestFromAction,
   type DecidedApproval,
-  nextExpandedApproval,
 } from '@/features/session/session-approval-review';
 import {
   relativeTime,
-  riskTone,
   useResolveApproval,
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   CaretDownIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
   CheckCircleIcon,
   ArrowSquareOutIcon as ExternalLink,
+  LinkIcon,
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
 import { slackChannelNames } from '@/features/session/turn/channel-message';
 import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
+import { useProjectSession } from '@kortix/sdk/react';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 /** How long a just-decided row stays on screen to confirm the outcome. */
 const DECIDED_LINGER_MS = 5_000;
 
-export function SessionApprovalPrompt() {
+export function SessionApprovalPrompt({
+  onDockedChange,
+}: {
+  /** True while a call waits on a decision: the composer docks onto the card,
+   *  the same treatment a pending question gets. */
+  onDockedChange?: (docked: boolean) => void;
+} = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { id: projectId, sessionId: projectSessionId } = useParams<{
     id: string;
@@ -84,8 +98,10 @@ export function SessionApprovalPrompt() {
   }>();
   const { data } = useSessionAudit(projectId, projectSessionId);
   const resolve = useResolveApproval(projectId, projectSessionId);
+  // The session row the page already holds names who else may decide.
+  const { data: session } = useProjectSession(projectId, projectSessionId);
 
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [current, setCurrent] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, ApprovalDecisionValue>>({});
   const [decided, setDecided] = useState<Record<string, DecidedApproval>>({});
 
@@ -100,6 +116,11 @@ export function SessionApprovalPrompt() {
   }, []);
 
   const rows = approvalNoticeRows(data?.actions ?? [], decided);
+  const docked = rows.some((row) => row.decision === null);
+  useEffect(() => {
+    onDockedChange?.(docked);
+  }, [docked, onDockedChange]);
+  useEffect(() => () => onDockedChange?.(false), [onDockedChange]);
   // A Slack connector call names a conversation by id; the project's bindings
   // name it. Read only while an approval is on screen.
   const { data: bindings } = useChannelBindings(rows.length > 0 ? projectId : null);
@@ -117,7 +138,6 @@ export function SessionApprovalPrompt() {
             ...current,
             [executionId]: { action: row.action, decision },
           }));
-          setExpanded((current) => (current === executionId ? null : current));
           successToast(
             decision === tI18nComplete.raw('text74e21680eac7')
               ? tI18nComplete.raw('text0674d4a026cb')
@@ -150,195 +170,263 @@ export function SessionApprovalPrompt() {
   return (
     <SessionApprovalNotice
       rows={rows}
-      expanded={expanded}
+      current={current}
       busy={busy}
-      onToggle={(executionId) =>
-        setExpanded((current) => nextExpandedApproval(current, executionId))
-      }
+      onSelect={setCurrent}
       onDecide={decide}
       channelNames={channelNames}
+      launcherName={approvalLauncherName(session)}
     />
   );
 }
 
 interface SessionApprovalNoticeProps {
   rows: ApprovalNoticeRow[];
-  /** Execution id of the one open row, or null. */
-  expanded: string | null;
+  /** Execution id of the pending call on screen. Null, or one that is no
+   *  longer pending, shows the first pending call. */
+  current: string | null;
   busy: Record<string, ApprovalDecisionValue>;
-  onToggle: (executionId: string) => void;
+  onSelect: (executionId: string) => void;
   onDecide: (executionId: string, decision: ApprovalDecisionValue, note?: string) => void;
   /** Bound Slack conversation ids → names, for the summary and the parameters. */
   channelNames?: ReadonlyMap<string, string>;
+  /** Who besides a project manager decides, for a viewer who may not
+   *  (`can_resolve: false`). Null: the plain wording. */
+  launcherName?: string | null;
 }
 
+const ICON_BUTTON_CLASS =
+  'text-muted-foreground hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-30';
+
 /**
- * The card itself — no data fetching, no mutation, so both the collapsed and
- * the expanded rendering are directly testable.
+ * The card itself — no data fetching, no mutation, so every state is directly
+ * testable. It docks onto the composer the way `QuestionPrompt` does: no card
+ * chrome of its own, a quiet `1 / 2 · headline` line that collapses the body,
+ * then ONE call at a time with its parameters in view and Deny / Approve under
+ * them. Deciding a call drops it from the pending set, so the next one takes
+ * its place without a click.
  */
 export function SessionApprovalNotice({
   rows,
-  expanded,
+  current,
   busy,
-  onToggle,
+  onSelect,
   onDecide,
   channelNames,
+  launcherName = null,
 }: SessionApprovalNoticeProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCommon = useTranslations('common');
+  const tWaiting = useTranslations('hardcodedUi.approvalWaiting');
+  const [collapsed, setCollapsed] = useState(false);
   if (rows.length === 0) return null;
 
-  const pendingCount = rows.filter((row) => row.decision === null).length;
-  const headline = approvalNoticeHeadline(pendingCount, tI18nComplete);
+  const copyApprovalLink = async (url: string) => {
+    if (await copyToClipboard(url)) successToast(tI18nComplete.raw('textd12860c21e78'));
+    else errorToast(tI18nComplete.raw('textfa46ef7689ff'));
+  };
+
+  const pending = rows.filter((row) => row.decision === null);
+  // "Needs your approval" is false for a viewer who may decide none of them.
+  const headline =
+    pending.length > 0 && pending.every((row) => row.action.can_resolve === false)
+    ? { title: tI18nComplete.raw('textdb0e960b68b5'), hint: null }
+    : approvalNoticeHeadline(pending.length, tI18nComplete);
+
+  // Only lingering confirmations left: one quiet line per decided call.
+  if (pending.length === 0) {
+    return (
+      <div className="w-full px-3 py-1 text-xs" role="status">
+        <div className="flex min-h-6 items-center gap-1.5">
+          <CheckCircleIcon weight="fill" className="text-kortix-green size-3.5 shrink-0" />
+          <span className="text-muted-foreground">{headline.title}</span>
+        </div>
+        {rows.map(({ action, decision }) => (
+          <div key={action.execution_id} className="flex min-h-6 items-center gap-1.5 pl-5">
+            <code className="text-foreground min-w-0 truncate font-mono">{action.action}</code>
+            <span
+              className={cn(
+                'shrink-0',
+                decision === 'approve' ? 'text-muted-foreground' : 'text-destructive',
+              )}
+            >
+              {decision === 'approve' ? 'Approved' : 'Denied'}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const index = Math.max(
+    0,
+    pending.findIndex((row) => row.action.execution_id === current),
+  );
+  const { action } = pending[index];
+  const executionId = action.execution_id;
+  const approvalUrl = action.approval_url ?? null;
+  const total = pending.length;
+  const summary = approvalArgsSummary(action, channelNames);
+  const request = approvalRequestFromAction(action, true);
+  // NOT the same test. A shortened value is still a reviewable one — see
+  // `approvalReviewable`. Only a call with nothing to show loses the Approve
+  // button, and it loses the button rather than wearing a disabled one.
+  const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
+  const panelId = `${executionId}-approval-panel`;
+  const collapsedLabel = [action.action, summary].filter(Boolean).join(' · ');
 
   return (
-    <div
-      className={cn(
-        // `w-full`, or the composer's `items-center` strip shrinks this card to
-        // its CONTENT width — so the notice was as wide as whatever tool name
-        // happened to be pending, and looked broken at random. Same reason
-        // `QuestionPrompt` carries it (see composer.tsx). Vertical spacing
-        // belongs to that strip's `gap-2`, not to a margin here.
-        'bg-popover w-full overflow-hidden rounded-md border',
-        pendingCount > 0 ? 'border-kortix-orange/15' : 'border-border',
-      )}
-    >
-      <div
-        className={cn(
-          'flex items-center gap-2 border-b px-3 py-2',
-          pendingCount > 0 ? 'border-kortix-orange/15' : 'border-border',
+    // `w-full`, or the composer's `items-center` strip shrinks this to its
+    // CONTENT width (composer.tsx). Same reason `QuestionPrompt` carries it.
+    <div className="relative isolate z-10 w-full">
+      <div className="flex w-full items-center gap-2 px-3 py-1 pr-1.5">
+        {/* The label is the disclosure. Collapsed, it names the pending call
+            so the ask stays readable while the transcript gets the height. */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-expanded={!collapsed}
+          aria-controls={panelId}
+          className="text-muted-foreground hover:text-foreground flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors"
+        >
+          <ShieldAlert className="text-kortix-orange size-3.5 shrink-0" />
+          {total > 1 && (
+            <span className="shrink-0 tabular-nums">
+              {index + 1} / {total}
+            </span>
+          )}
+          <span className={cn('min-w-0 truncate', collapsed && 'text-foreground')}>
+            {total > 1 && (
+              <span aria-hidden="true" className="text-muted-foreground">
+                ·{' '}
+              </span>
+            )}
+            {collapsed ? collapsedLabel : headline.title}
+          </span>
+          <CaretDownIcon
+            className={cn(
+              'duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none',
+              collapsed && '-rotate-90',
+            )}
+          />
+        </button>
+        {total > 1 && !collapsed && (
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              onClick={() => onSelect(pending[index - 1].action.execution_id)}
+              disabled={index === 0}
+              aria-label={tCommon('back')}
+              className={ICON_BUTTON_CLASS}
+            >
+              <CaretLeftIcon className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelect(pending[index + 1].action.execution_id)}
+              disabled={index === total - 1}
+              aria-label={tCommon('next')}
+              className={ICON_BUTTON_CLASS}
+            >
+              <CaretRightIcon className="size-3.5" />
+            </button>
+          </div>
         )}
-      >
-        {pendingCount > 0 ? (
-          <ShieldAlert className="text-kortix-orange size-4" />
-        ) : (
-          <CheckCircleIcon weight="fill" className="text-kortix-green size-4" />
-        )}
-        <span className="text-foreground text-xs font-medium">{headline.title}</span>
-        {headline.hint ? (
-          <span className="text-muted-foreground text-xs">— {headline.hint}</span>
+        {approvalUrl && action.can_resolve === false ? (
+          // The approval page refuses this viewer too (403). What they can do
+          // is send the link to whoever decides.
+          <Hint label={tWaiting('copyLink')} side="top">
+            <button
+              type="button"
+              onClick={() => void copyApprovalLink(approvalUrl)}
+              aria-label={tWaiting('copyLink')}
+              className={ICON_BUTTON_CLASS}
+            >
+              <LinkIcon className="size-3.5" />
+            </button>
+          </Hint>
+        ) : action.approval_url ? (
+          <Hint label={tI18nComplete.raw('textb7d2844482b4')} side="top">
+            {/* Plain anchor, not next/link: the same absolute URL is what gets
+                relayed out-of-band, so there is one link shape. It opens a new
+                tab — in this tab it would tear down the live session. */}
+            <a
+              href={action.approval_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={tI18nComplete.raw('textb7d2844482b4')}
+              className={ICON_BUTTON_CLASS}
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          </Hint>
         ) : null}
       </div>
-      <ul className="divide-border divide-y">
-        {rows.map(({ action, decision }) => {
-          const executionId = action.execution_id;
-          const summary = approvalArgsSummary(action, channelNames);
-          const request = approvalRequestFromAction(action, decision === null);
-          const open = expanded === executionId;
-          const reviewComplete = request.reviewComplete !== false;
-          // NOT the same test. A shortened value is still a reviewable one —
-          // see `approvalReviewable`. Only a call with nothing to show loses
-          // the Approve button, and it loses the button rather than wearing a
-          // disabled one.
-          const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
 
-          return (
-            <li key={executionId}>
-              <Disclosure open={open} onOpenChange={() => onToggle(executionId)}>
-                <DisclosureTrigger>
-                  <div
-                    className={cn(
-                      'flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors',
-                      'hover:bg-foreground/[0.03]',
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-muted-foreground text-xs">
-                          {tI18nComplete.raw('text00d60e31a4e6')}
-                        </span>
-                        <code className="text-foreground truncate font-mono text-xs font-medium">
-                          {action.action}
-                        </code>
-                        {action.risk ? (
-                          <Badge
-                            variant={riskTone(action.risk)}
-                            size="xs"
-                            className="shrink-0 capitalize"
-                          >
-                            {action.risk}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      {summary ? (
-                        <p className="text-foreground mt-0.5 truncate font-mono text-xs">
-                          {summary}
-                        </p>
-                      ) : null}
-                      <p className="text-muted-foreground mt-0.5 text-xs">
-                        {tI18nComplete.raw('text2d9e28289fac')} {relativeTime(action.at)}
-                      </p>
-                    </div>
-                    {decision ? (
-                      <Badge
-                        variant={decision === 'approve' ? 'success' : 'destructive'}
-                        size="sm"
-                        className="shrink-0"
-                      >
-                        {decision === 'approve' ? 'Approved' : 'Denied'}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
-                        {tI18nComplete.raw('textaff0766a5290')}
-                        <CaretDownIcon
-                          className={cn(
-                            'size-3 transition-transform duration-normal',
-                            open && 'rotate-180',
-                          )}
-                        />
-                      </span>
-                    )}
-                    {action.approval_url ? (
-                      <Hint label={tI18nComplete.raw('textb7d2844482b4')} side="top">
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          className="text-muted-foreground shrink-0"
-                          asChild
-                        >
-                          {/* Plain anchor, not next/link: the same absolute URL is what
-                              gets relayed out-of-band, so there is one link shape. It
-                              opens a new tab, as the ExternalLink icon promises —
-                              in this tab it would tear down the live session. */}
-                          <a
-                            href={action.approval_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={tI18nComplete.raw('textb7d2844482b4')}
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            <ExternalLink className="size-3.5" />
-                          </a>
-                        </Button>
-                      </Hint>
-                    ) : null}
-                  </div>
-                </DisclosureTrigger>
-                <DisclosureContent>
-                  <div className="space-y-2 px-3 pb-3">
-                    <ApprovalAgentContext dense context={request.approvalContext} />
-                    <ApprovalParameters
-                      dense
-                      argsPreview={request.argsPreview}
-                      reviewComplete={reviewComplete}
-                      channelNames={channelNames}
-                    />
-                    {decision === null && !reviewable ? <ApprovalUnreviewableNotice dense /> : null}
-                    {decision === null ? (
-                      <ApprovalDecisionActions
-                        dense
-                        onDecision={(next, note) => onDecide(executionId, next, note)}
-                        busyDecision={busy[executionId] ?? null}
-                        approvable={reviewable}
-                      />
-                    ) : null}
-                  </div>
-                </DisclosureContent>
-              </Disclosure>
-            </li>
-          );
-        })}
-      </ul>
+      {/* The 0fr/1fr grid row animates the collapse without measuring height. */}
+      <div
+        className={cn(
+          'duration-normal grid transition-[grid-template-rows] ease-out motion-reduce:transition-none',
+          collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+        )}
+      >
+        <div
+          id={panelId}
+          inert={collapsed}
+          className={cn(
+            'duration-normal min-h-0 overflow-y-auto transition-opacity ease-out motion-reduce:transition-none',
+            collapsed ? 'opacity-0' : 'max-h-[420px]',
+          )}
+        >
+          <div key={executionId} className="flex flex-col gap-2 px-3 pt-0.5 pb-2.5">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="text-foreground min-w-0 truncate text-sm font-medium">
+                <span className="text-muted-foreground font-normal">
+                  {tI18nComplete.raw('text00d60e31a4e6')}{' '}
+                </span>
+                <code className="font-mono">{action.action}</code>
+              </span>
+              {action.risk ? (
+                <span
+                  className={cn(
+                    'shrink-0 text-xs capitalize',
+                    action.risk === 'destructive' ? 'text-destructive' : 'text-muted-foreground',
+                  )}
+                >
+                  {action.risk}
+                </span>
+              ) : null}
+              <span className="text-muted-foreground ml-auto shrink-0 text-xs">
+                {relativeTime(action.at)}
+              </span>
+            </div>
+            <ApprovalAgentContext dense context={request.approvalContext} />
+            <ApprovalParameters
+              dense
+              argsPreview={request.argsPreview}
+              reviewComplete={request.reviewComplete !== false}
+              channelNames={channelNames}
+            />
+            {action.can_resolve === false ? (
+              <ApprovalWaitingNotice
+                dense
+                resolverName={launcherName}
+                resolvers={action.resolvers}
+              />
+            ) : (
+              <>
+                {!reviewable ? <ApprovalUnreviewableNotice dense /> : null}
+                <ApprovalDecisionActions
+                  dense
+                  onDecision={(next, note) => onDecide(executionId, next, note)}
+                  busyDecision={busy[executionId] ?? null}
+                  approvable={reviewable}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

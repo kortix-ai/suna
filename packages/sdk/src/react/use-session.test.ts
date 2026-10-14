@@ -26,7 +26,7 @@ let sessionPromptImpl: (args: unknown) => Promise<{
 }> = async () => ({ data: {} });
 
 class RuntimeNotReadyError extends Error {
-  constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
+  constructor(message = '[kortix-runtime] Server URL not ready — sandbox is still loading') {
     super(message);
     this.name = 'RuntimeNotReadyError';
   }
@@ -276,7 +276,7 @@ describe('answerPermission', () => {
 
 describe('classifySendError', () => {
   test('classifies a runtime-not-ready error from getClient()', () => {
-    const err = new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    const err = new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
     expect(classifySendError(err).kind).toBe('runtime-not-ready');
   });
 

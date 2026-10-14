@@ -26,7 +26,6 @@ import {
   turnHasSteps,
   turnResponse,
   turnWorkSplit,
-  workParts,
   withoutReasoning,
   type TurnBodyTurn,
 } from './turn-body';
@@ -317,10 +316,11 @@ describe('turnWorkSplit (KRTX-2113, web TurnToolBlocks fold)', () => {
     expect(turnWorkSplit(segmentTurn([shownFile(), text('Done.')]), false)).toBeNull();
   });
 
-  test('work made only of interim text is no work: the sheet would open empty and hide that text', () => {
-    // Mobile drops text from the sheet (`workParts`), so text-only work renders as today.
-    expect(turnWorkSplit(segmentTurn([text('Checking.'), text('Done.')]), false)).toBeNull();
-    expect(turnWorkSplit(segmentTurn([text('Here it is.'), shownFile(), text('Done.')]), false)).toBeNull();
+  test('interim text is work: it folds behind the row and reads inline when opened', () => {
+    expect(turnWorkSplit(segmentTurn([text('Checking.'), text('Done.')]), false)?.work.map((s) => s.kind)).toEqual(['text']);
+    expect(turnWorkSplit(segmentTurn([text('Here it is.'), shownFile(), text('Done.')]), false)?.work.map((s) => s.kind)).toEqual([
+      'text',
+    ]);
   });
 
   test('a burst that renders nothing is no work and does not block the final text', () => {
@@ -666,20 +666,5 @@ describe('turnBodyLayout (KRTX-1678: one render tree for the whole stream)', () 
 
   test('no assistant message yet → no segments list', () => {
     expect(turnBodyLayout({ ...base, hasAssistantContent: false, working: true, hasSteps: false }).segments).toBe(false);
-  });
-});
-
-describe('workParts (KRTX-2113: the "Worked for" row opens these in the activity sheet)', () => {
-  test('every burst and standalone call of the work, in order; interim text is dropped', () => {
-    const read = tool('read');
-    const task = tool('task');
-    const bash = tool('bash');
-    const work = [
-      { kind: 'burst', parts: [read] },
-      { kind: 'text', part: text('Checking the config') },
-      { kind: 'standalone', part: task },
-      { kind: 'burst', parts: [bash] },
-    ] as never;
-    expect(workParts(work).map((part) => part.id)).toEqual([read.id, task.id, bash.id]);
   });
 });

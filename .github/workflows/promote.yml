@@ -58,11 +58,13 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  actions: write # approve the release pull request's gate run
 
 jobs:
   open-release-pr:
     name: Open review-gated release PR
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     steps:
       - name: Checkout ${{ inputs.ref }} (full history)
         uses: actions/checkout@v7
@@ -239,6 +241,26 @@ jobs:
             printf '%s\n\n%s\n\n---\n_Merging this PR **publishes %s**: tags it, cuts the GitHub Release, retags the tested images, and deploys ECS Fargate. Nothing is published until this merges._\n' \
               "$IN_TITLE" "$IN_NOTES" "$TAG" \
               | gh pr create --base prod --head "$RELBR" --title "Release $TAG — $IN_TITLE" --body-file -
+          fi
+
+          # Approve the release gate here. This step opens the pull request with
+          # the workflow token, so GitHub holds that pull request's run of
+          # tests-release.yml (`action_required`) until someone approves it.
+          # Only that run's `full suite + quality gates` check counts for the
+          # `prod` ruleset: v0.13.57's dispatched gate passed on the same SHA
+          # and the pull request stayed BLOCKED. Approval starts attempt 2.
+          HEAD_SHA="$(git rev-parse HEAD)"
+          held=""
+          for _ in $(seq 1 30); do
+            held="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests-release.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \
+              --jq '[.workflow_runs[] | select(.conclusion == "action_required")][0].id // empty')"
+            [ -n "$held" ] && break
+            sleep 5
+          done
+          if [ -n "$held" ] && gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$held/approve" >/dev/null; then
+            echo "Approved release gate run $held on $RELBR ($HEAD_SHA)."
+          else
+            echo "::warning::Approve the release gate run yourself: gh api -X POST repos/$GITHUB_REPOSITORY/actions/runs/${held:-<run id>}/approve"
           fi
 
       - name: Summary

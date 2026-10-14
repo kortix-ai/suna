@@ -70,6 +70,7 @@ export const FeatureFlagMapSchema = z.object({
   drives: z.boolean(),
   ephemeral_sandboxes: z.boolean(),
   session_log: z.boolean(),
+  session_log_restore: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -969,6 +970,9 @@ export const SessionMetadataInputSchema = JsonObjectSchema.refine(
   { message: `metadata must be at most ${SESSION_METADATA_MAX_CHARS} characters of JSON` },
 );
 
+/** The context the CLI's worker contract rides in, and its schema cap. */
+export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -976,6 +980,13 @@ export const SessionCreateInputSchema = z
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
+    /**
+     * Harness context that rides beside `initial_prompt` and is delivered to
+     * the model as a synthetic (model-only) message part — e.g. the CLI's
+     * worker contract. The transcript keeps showing the caller's own words:
+     * every renderer already hides synthetic text parts.
+     */
+    initial_context: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
     provider_secret_pools: z.record(
       z.string().min(1).max(100),
@@ -1034,6 +1045,7 @@ export const SessionCreateInputSchema = z
     agentName: z.string().min(1).optional(),
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
+    initialContext: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
     opencodeModel: z.string().min(1).optional(),
     sessionId: z
       .string()
@@ -1141,6 +1153,17 @@ export const ProjectSessionSchema = z.object({
   updated_at: z.string(),
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
+
+/**
+ * `DELETE /v1/projects/:projectId/sessions/:sessionId`. The session is in the
+ * trash until `restore_until`: `POST .../restore` brings it back before then,
+ * and the retention purge deletes its messages and files after it.
+ */
+export const SessionDeleteResultSchema = z.object({
+  ok: z.literal(true),
+  restore_until: z.string(),
+});
+export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
 
 export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
   status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
@@ -1753,6 +1776,13 @@ export const SessionAuditActionSchema = z.object({
   at: z.string(),
   resolved_at: z.string().nullable(),
   approval_url: z.string().nullable(),
+  /** True only on an unresolved row the CALLER may approve or deny: the verdict
+   *  `POST /approvals/:executionId` enforces (KRTX-1724). False on every other row. */
+  can_resolve: z.boolean(),
+  /** Who decides an unresolved row, as a class: `managers` for a session
+   *  started with an API token or a service account (`origin: 'backend'`),
+   *  else `managers_and_launcher`. Null on every settled row. */
+  resolvers: z.enum(['managers', 'managers_and_launcher']).nullable(),
 });
 export type SessionAuditAction = z.infer<typeof SessionAuditActionSchema>;
 
@@ -1962,6 +1992,14 @@ export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
 export const SecretDeliveryBlockedReasonSchema = z.enum(['no_agent_grant']);
 export type SecretDeliveryBlockedReason = z.infer<typeof SecretDeliveryBlockedReasonSchema>;
 
+/**
+ * Can the server decrypt the stored value? `undecryptable`: the server's
+ * encryption key (`API_KEY_SECRET`) changed after the value was written, or the
+ * stored row is damaged. The value is lost; a person must enter it again.
+ */
+export const SecretValueStatusSchema = z.enum(['ok', 'undecryptable']);
+export type SecretValueStatus = z.infer<typeof SecretValueStatusSchema>;
+
 export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
   z.object({ kind: z.literal('query'), name: z.string() }),
@@ -2041,9 +2079,11 @@ export const SecretSchema = z.object({
   managed_by: z.literal('project_secret').nullable(),
   /** Is a shared project value set at all. */
   configured: z.boolean(),
-  /** The caller's private override (value omitted), or null. Used today only by
-   *  the CODEX_AUTH_JSON per-user provider login. */
-  mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
+  /** The caller's private override (value omitted), or null. `status`: can the
+   *  server decrypt it? While `active`, it is the value the caller's sessions read. */
+  mine: z
+    .object({ active: z.boolean(), updated_at: z.string(), status: SecretValueStatusSchema.optional() })
+    .nullable(),
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),
   can_manage_shared: z.boolean(),
@@ -2066,6 +2106,10 @@ export const SecretSchema = z.object({
   /** Can the caller's sessions use the shared value? False only when it is
    *  shared with specific people and the caller is not one of them. */
   usable: z.boolean().optional(),
+  /** Can the server decrypt the shared value? Absent when none is set
+   *  (`configured: false`). `mine.status` reports the caller's override. Never
+   *  carries the value. */
+  status: SecretValueStatusSchema.optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 

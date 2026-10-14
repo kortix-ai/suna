@@ -1,7 +1,7 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import type { SidebarNavVisibility } from '@/stores/sidebar-nav-store';
@@ -60,13 +60,7 @@ export function ProjectRemindersNavItem({
           <span className="truncate">{t('reminders')}</span>
           {activeCount > 0 ? (
             <span className="ml-auto flex shrink-0 items-center gap-1">
-              <Badge
-                variant="transparent"
-                size="tabular"
-                className="bg-kortix-purple/15 text-current"
-              >
-                {activeCount > 99 ? '99+' : activeCount}
-              </Badge>
+              <CountBadge count={activeCount} tone="reminder" />
             </span>
           ) : null}
         </HoverPrefetchLink>

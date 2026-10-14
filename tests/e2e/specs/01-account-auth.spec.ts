@@ -27,11 +27,7 @@ interface AccountRow {
   account_id: string;
 }
 
-async function requestEmailAuthentication(
-  page: Page,
-  email: string,
-  { existingAccount = false }: { existingAccount?: boolean } = {},
-) {
+async function requestEmailAuthentication(page: Page, email: string) {
   await page.goto("/auth", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: "Welcome to Kortix" }),
@@ -42,7 +38,7 @@ async function requestEmailAuthentication(
     ),
   );
   await page.getByLabel("Email").fill(email);
-  let sentAt = new Date();
+  const sentAt = new Date();
   const continueButton = page.getByRole("button", {
     name: "Continue",
     exact: true,
@@ -52,8 +48,11 @@ async function requestEmailAuthentication(
   for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
     const formRequest = page
       .waitForRequest(
+        // The email-link default posts to the send-code route (#9773); the
+        // password-only path posts the auth server action.
         (request) =>
-          request.method() === "POST" && new URL(request.url()).pathname === "/auth",
+          request.method() === "POST" &&
+          ["/auth", "/api/auth/send-code"].includes(new URL(request.url()).pathname),
         { timeout: 2_000 },
       )
       .then(() => true)
@@ -64,16 +63,7 @@ async function requestEmailAuthentication(
       await expect(continueButton).toBeEnabled();
     }
   }
-  expect(submitted, "the hydrated auth form sends POST /auth").toBe(true);
-  if (existingAccount) {
-    // #9103: Continue for an existing account opens the password form and
-    // sends no email; the link is one explicit choice away.
-    await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-    const linkChoice = page.getByRole("button", { name: "Email me a link instead" });
-    await expect(linkChoice).toBeEnabled();
-    sentAt = new Date();
-    await linkChoice.click();
-  }
+  expect(submitted, "the hydrated auth form submits the email").toBe(true);
   await expect(
     page.getByRole("heading", { name: "Check your email" }),
   ).toBeVisible();
@@ -153,7 +143,7 @@ test.describe("01 - Account authentication", () => {
       });
 
       await test.step("The existing user receives a second email and logs in again", async () => {
-        const sentAt = await requestEmailAuthentication(page, email, { existingAccount: true });
+        const sentAt = await requestEmailAuthentication(page, email);
         const action = await inbox.waitForAuthAction(sentAt);
         await completeEmailAuthentication(page, action);
       });

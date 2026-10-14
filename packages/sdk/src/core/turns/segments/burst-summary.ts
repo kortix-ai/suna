@@ -29,9 +29,10 @@
  * from the `infrastructure` barrel that re-exports it, so this module stays
  * testable without loading 1500 lines of JSX.
  */
-import type { Part } from '../../runtime/client';
+import type { Part, ToolPart } from '../../runtime/client';
 import { isReasoningPart, isToolPart } from '../parts';
 import { partOutcome } from '../tools/tool-outcome';
+import { familyForTool, narrateStep, type StepFamily } from './narration';
 import { stepLabel } from './step-label';
 
 export interface BurstSummary {
@@ -111,4 +112,33 @@ export function burstSummaryLabel(summary: BurstSummary, running: boolean): stri
   // characters, states the fact, and carries no adjective — not "error",
   // not "problem".
   return `Completed ${completed} of ${total} steps · ${failed} failed`;
+}
+
+/**
+ * What a settled burst did, in one line: "Ran 3 commands, read 2 files · 1 failed".
+ *
+ * The row in an opened "Worked for" fold sits between two sentences of the
+ * agent's own narration, so it names the work instead of counting it. Calls
+ * group by family across the whole burst (`narrateStep` per family, in order of
+ * first call); thinking and plumbing never make a clause. A burst with no
+ * visible call keeps `burstSummaryLabel`.
+ */
+export function burstWorkLabel(parts: ReadonlyArray<Part>): string {
+  const families = new Map<StepFamily, ToolPart[]>();
+  let failed = 0;
+  for (const part of parts) {
+    if (!isToolPart(part) || stepLabel(part).tier === 'plumbing') continue;
+    const family = familyForTool(part.tool);
+    if (family === 'hidden') continue;
+    families.set(family, [...(families.get(family) ?? []), part]);
+    if (partOutcome(part) !== 'ok') failed += 1;
+  }
+  if (families.size === 0) return burstSummaryLabel(burstSummary(parts), false);
+  const label = [...families]
+    .map(([family, calls], i) => {
+      const sentence = narrateStep(family, calls);
+      return i === 0 ? sentence : sentence.charAt(0).toLowerCase() + sentence.slice(1);
+    })
+    .join(', ');
+  return failed > 0 ? `${label} · ${failed} failed` : label;
 }
