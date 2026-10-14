@@ -19677,6 +19677,12 @@
     "approvalPage": {
       "title": "{connector}-Aktion genehmigen"
     },
+    "approvalWaiting": {
+      "byManager": "Wartet darauf, dass eine Person, die dieses Projekt verwaltet, den Aufruf genehmigt oder ablehnt.",
+      "byName": "Wartet darauf, dass {name} oder eine Person, die dieses Projekt verwaltet, den Aufruf genehmigt oder ablehnt.",
+      "byOwner": "Wartet darauf, dass die Person, die diese Sitzung gestartet hat, oder eine Person, die dieses Projekt verwaltet, den Aufruf genehmigt oder ablehnt.",
+      "copyLink": "Genehmigungslink kopieren"
+    },
     "secretIntakeWithheld": {
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",

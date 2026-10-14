@@ -1233,5 +1233,10 @@
     "wrongAccountBody": "Esta invitación es para otra cuenta. Iniciaste sesión como {{email}}.",
     "signOutAndContinue": "Cerrar sesión y continuar",
     "backToProjects": "Volver a los proyectos"
+  },
+  "approvals": {
+    "waitingManagers": "Alguien que gestione este proyecto puede aprobar o rechazar la llamada.",
+    "waitingTitle": "Esperando aprobación",
+    "waitingWho": "La persona que inició esta sesión o alguien que gestione este proyecto puede aprobar o rechazar la llamada."
   }
 }
