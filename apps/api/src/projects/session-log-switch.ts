@@ -4,8 +4,8 @@
  * The route is callable by every session reader (the session's own sandbox token too), so the read is
  * bounded: one read-only snapshot, and Postgres projects each block to the few fields
  * `switchPreflight` (`@kortix/api-contract/session-log`, `capabilities.ts`) reads. Text, tool input
- * and output and attachment bytes never leave the database; a reasoning text leaves as its first
- * character (the rule needs only "not blank"); no blob row is read. The projection is cast to
+ * and output and attachment bytes never leave the database; a reasoning text leaves as `x` or `''`
+ * (the rule needs only "not blank", any whitespace, as JS `trim`); no blob row is read. The projection is cast to
  * `SessionLog`: only the fields `switchPreflight` reads are real.
  */
 import {
@@ -30,7 +30,7 @@ const SLIM_BLOCKS = sql<unknown[]>`COALESCE((
   SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
     'type', b->'type', 'mime', b->'mime', 'kind', b->'kind', 'name', b->'name', 'input_format', b->'input_format',
     'opaque', b->'opaque', 'layout', b->'layout', 'trigger', b->'trigger',
-    'text', CASE WHEN b->>'type' = 'reasoning' THEN to_jsonb(left(btrim(b->>'text'), 1)) END,
+    'text', CASE WHEN b->>'type' = 'reasoning' THEN to_jsonb(CASE WHEN (b->>'text') ~ '[^[:space:]]' THEN 'x' ELSE '' END) END,
     'result', CASE WHEN b->>'type' = 'tool_call' AND b->'result' IS NOT NULL THEN jsonb_build_object(
       'is_error', b#>'{result,is_error}',
       'content', (SELECT COALESCE(jsonb_agg(jsonb_build_object('type', c->'type')), '[]'::jsonb)

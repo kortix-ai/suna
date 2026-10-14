@@ -496,6 +496,36 @@ flow(
         (await box.post(JOURNAL, batch(0, [{ rev: REV + 5, message: message("msg_u3", 3) }]), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
       });
 
+      await ctx.step("a converted log (no manifest: every feature native at the source) → pi: the SQL projection gives the JS rules: a tool-result image degraded, a layout compaction degraded, an opaque one lost, another model's reasoning that starts with blank lines lost", async () => {
+        const converted = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId! });
+        ctx.track("session", converted, { projectId: project.id });
+        const second = await sandboxCredential(ctx, project.id, converted);
+        try {
+          const at = { projectId: project.id, sessionId: converted };
+          const image = { ...call("call_img", "screenshot", "other"), result: { content: [{ type: "attachment", mime: "image/png", ref: "blob:synthetic", sha256: "b".repeat(64) }], is_error: false } };
+          const layout = { type: "compaction", id: "prt_layout", summary: "s", first_kept_message_id: null, layout: [{ summary: true }] };
+          const opaque = { type: "compaction", id: "prt_opaque", summary: null, opaque: true, first_kept_message_id: null };
+          const glm = { provider: "kortix", model: "glm-5.3-flash" };
+          (await second.box.post(JOURNAL, Bun.gzipSync(JSON.stringify({
+            generation: 0, threads: [thread("main", null)], tombstones: [],
+            session: { ...session, session_id: converted, harness: { current: "kortix-v1-import", history: [] }, todos: [], selection: { agent: null, model: glm } },
+            puts: [
+              { rev: REV + 1, message: message("msg_x0", 0, { role: "assistant", finish: "stop", blocks: [image, layout, opaque] }) },
+              { rev: REV + 2, message: message("msg_x1", 1, { role: "assistant", finish: "stop", model: { provider: "kortix", model: "other-model" }, blocks: [{ type: "reasoning", id: "prt_think", text: "\n\nthinking" }] }) },
+              { rev: REV + 3, message: message("msg_x2", 2, { role: "assistant", finish: "stop", model: glm, blocks: [{ type: "reasoning", id: "prt_blank", text: "\n \t" }] }) },
+            ],
+          })), { params: at, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
+          (await owner.post(PREFLIGHT, { to: "pi" }, { params: at })).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$.losses", [
+            { feature: "attachments.tool_result", used: 1, status: "degraded" },
+            { feature: "compaction", detail: "layout", used: 1, status: "degraded" },
+            { feature: "compaction", detail: "opaque", used: 1, status: "lost" },
+            { feature: "reasoning_replay", detail: "other_model", used: 1, status: "lost" },
+          ]);
+        } finally {
+          await second.close();
+        }
+      });
+
       await ctx.step("a user with no membership in the project's account → 403, no report", async () => {
         (await preflight("pi", ctx.client.as(ctx.P.NONMEMBER))).status(403);
       });
