@@ -641,6 +641,9 @@ export async function ensureLocalStack(
           KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
           // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
           KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
+          // TRG-19 and SCOPE-6 push kortix.yaml and poll until the API's git
+          // mirror sees it. The 60 s default refresh made them wait ~180 s.
+          KORTIX_GIT_REFRESH_INTERVAL_MS: "1000",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),

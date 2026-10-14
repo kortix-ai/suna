@@ -2658,7 +2658,7 @@ export const sessionContentPurges = kortixSchema.table(
     sessionId: text('session_id').primaryKey(),
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    // Which window fired: the session's own delete, or its account's subscription end.
+    // Which window fired: the session's own delete, or its account's closure (`subscription_ended`, D6b).
     reason: text('reason').notNull(),
     rowsPurgedAt: timestamp('rows_purged_at', { withTimezone: true }).defaultNow().notNull(),
     objectsPurgedAt: timestamp('objects_purged_at', { withTimezone: true }),
@@ -2678,11 +2678,11 @@ export const sessionContentPurges = kortixSchema.table(
 );
 
 /**
- * When the purge first saw an account's subscription dead (Stripe status
- * `canceled`, `unpaid` or `incomplete_expired` on `credit_accounts`).
- * `credit_accounts` keeps no end date, so the purge records its first sight:
- * the end is dated at most one tick late, never early. The purge deletes the
- * row when the subscription is live again, which restarts the clock.
+ * UNUSED since decision D6b (2026-10-14): an account closure, read from
+ * `account_deletion_requests`, is the only subscription end, and that table keeps
+ * its own date. P2.8 recorded here the first sight of a dead Stripe status; that
+ * path never ran (its status set was empty) and is gone. A later release drops the
+ * table, after no running API version names it.
  */
 export const accountSubscriptionEnds = kortixSchema.table(
   'account_subscription_ends',
