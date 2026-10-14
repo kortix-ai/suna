@@ -57,12 +57,18 @@ Fleet:
   to S3 failed — the route falls back to streaming the build, not fatal),
   `quarantine lookup failed`, `recording assignment failed`.
 - The descriptor route, `POST /v1/projects/:projectId/sessions/:sessionId/config-release`:
-  every running box calls it every 60 s (`runtime-truth.ts`), and each call
-  resolves the base tip with a `git fetch` of the project mirror. Prod before
-  graduation (24 h to 2026-10-08 22:40 UTC): 32,058 answered `200` (p50 886 ms,
-  p95 3.3 s, p99 7.5 s, `git;dur` most of it) and 20,910 answered `403
-  feature_disabled` in 27 ms (p50). After graduation those `403`s become
-  `200`s: about +65% Git work on this route.
+  every running box calls it every 60 s (`runtime-truth.ts`). The base tip is
+  asked of the upstream at most once per mirror refresh interval
+  (`KORTIX_GIT_REFRESH_INTERVAL_MS`, 60 s) per `(project, ref)` across every
+  API process (`base-tip.ts`, row `kortix.base_tip_checks`): one request wins
+  the row CAS and runs one `ls-remote` of the branch (a fetch only when it
+  moved); every other request reads the stored tip. A move Kortix makes or
+  proxies expires the project's rows (`notifyBaseBranchMoved`). A push made
+  directly on the upstream reaches a box within one interval plus one tick.
+  Before this (prod, 24 h to 2026-10-14 17:30 UTC) every request ran its own
+  fetch: 119,253 requests over 158 projects, p50 1.07 s, p95 3.7 s; one check
+  per project per 60 s is 19,343 checks for the same traffic. A database
+  failure makes the request ask the upstream itself.
 - `kortix.config_releases` / `kortix.config_release_failures` rows: a release
   proven (`proven_at` set) vs. failed (`failed_release_id` reported by ≥
   `PROJECT_QUARANTINE_SESSIONS` = 2 distinct sessions — see "Fallback chain").

@@ -33,6 +33,12 @@ export interface AppVolumeTag {
   created_at: string;
 }
 
+export interface AppVolumeInfo {
+  size_gb: number;
+  used_bytes: number;
+  last_commit_at: string | null;
+}
+
 export const appVolumeStore = {
   /** Open-or-create by name: a retry after a lost response never makes a second volume. */
   async open(name: string): Promise<void> {
@@ -41,9 +47,19 @@ export const appVolumeStore = {
   async remove(name: string): Promise<void> {
     await call(`${v(name)}?missing_ok=true`, { method: 'DELETE' });
   },
-  /** Pin the head commit (a snapshot). */
+  /**
+   * A snapshot: commit the live mount now (a frozen point in time; an
+   * unmounted volume answers its head), then pin exactly that commit. Tagging
+   * the implicit head could pin an old commit when a mount stopped committing.
+   */
   async tag(name: string, tag: string): Promise<AppVolumeTag> {
-    return (await call(`${v(name)}/tags/${encodeURIComponent(tag)}`, { method: 'PUT', body: '{}' })).json() as Promise<AppVolumeTag>;
+    const { commit_id: commit } = await (await call(`${v(name)}/commit`, { method: 'POST', body: '{}' })).json() as { commit_id: string };
+    return (await call(`${v(name)}/tags/${encodeURIComponent(tag)}`, { method: 'PUT', body: JSON.stringify({ commit }) })).json() as Promise<AppVolumeTag>;
+  },
+  /** What Platinum allots (it ignores a requested size), what is used, and the last commit. */
+  async info(name: string): Promise<AppVolumeInfo> {
+    const body = await (await call(v(name))).json() as { size_limit_bytes: number; logical_bytes: number; last_commit_at: string | null };
+    return { size_gb: Math.round(body.size_limit_bytes / 1024 ** 3), used_bytes: body.logical_bytes, last_commit_at: body.last_commit_at };
   },
   async untag(name: string, tag: string): Promise<void> {
     try {

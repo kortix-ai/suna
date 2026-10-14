@@ -4,7 +4,7 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { ToolSurfaceContext, useToolIndent } from '@/features/session/tool/shared/surface';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import { cn } from '@/lib/utils';
-import { getRetryInfo, getRetryMessage, shouldShowToolPart } from '@/ui';
+import { getRetryInfo, getRetryMessage } from '@/ui';
 import { classifySessionLogMessage, type SessionLogThread, type ToolCallBlock } from '@kortix/sdk';
 import { canQueryRuntimeSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
 import { useParams } from 'next/navigation';
@@ -31,7 +31,6 @@ export function useSubAgentThread(childSessionId: string | undefined): SessionLo
   );
   return useSessionLogThread(source, childSessionId ?? null);
 }
-
 
 /**
  * A sub-agent's steps, listed under the row that dispatched it.

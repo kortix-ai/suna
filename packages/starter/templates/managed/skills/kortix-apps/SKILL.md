@@ -115,8 +115,10 @@ kortix apps scale count <app> 3 --process worker
 kortix apps exec <app> -- ls /data             # project admins; output and exit code
 ```
 
-A group with a mount gets one new, empty volume per new machine. Never
-scale a single-instance database above 1: each machine gets its own volume.
+A group with a mount runs one machine: `scale count` above 1 answers
+`409 volume_single_machine`. Scale a database up with `kortix apps set <app>
+--cpu <n> --memory-gb <n>` (then deploy). `--new-volumes` gives every new
+machine its own, EMPTY volume: only for software that replicates itself.
 
 ## Volumes and snapshots
 
@@ -126,7 +128,7 @@ kortix apps volumes snapshots <app> <volume>        # daily (kept snapshot_reten
 kortix apps volumes snapshot <app> <volume>         # before a risky change
 kortix apps volumes restore <app> <volume> <snapshot>   # admins: its machine stops and comes back on it
 kortix apps volumes fork <app> <volume> <name>      # an instant, unattached copy (a preview with real data)
-kortix apps volumes extend <app> <volume> --size 20 # grows only
+kortix apps volumes set <app> <volume> --retention 30   # keep daily snapshots 30 days
 ```
 
 One machine writes a volume at a time; Kortix enforces it. A release with a
