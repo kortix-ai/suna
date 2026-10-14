@@ -19,7 +19,7 @@ async function availablePort(): Promise<number> {
 }
 
 /** Exercise the real Bun process boundary with a disposable HTTP dev server. */
-async function exerciseWeb(body: string, survivingChild = false): Promise<{ output: string; launches: string[] }> {
+async function exerciseWeb(body: string, survivingChild = false, failFirstReplacement = false): Promise<{ output: string; launches: string[] }> {
   const directory = await mkdtemp(join(tmpdir(), 'kortix-local-web-'));
   const port = await availablePort();
   const launchesPath = join(directory, 'launches');
@@ -29,8 +29,9 @@ process.on('SIGTERM', () => {});
 Bun.serve({ port: ${port}, hostname: '127.0.0.1', fetch: () => new Response('child') });
 `);
   await writeFile(join(directory, 'pnpm'), `#!/usr/bin/env bun
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 appendFileSync(${JSON.stringify(launchesPath)}, process.pid + '\\n');
+${failFirstReplacement ? `if (readFileSync(${JSON.stringify(launchesPath)}, 'utf8').trim().split('\\n').length === 2) process.exit(1);` : ''}
 process.on('SIGTERM', () => process.exit(0));
 ${survivingChild ? `Bun.spawn(['bun', ${JSON.stringify(serverPath)}], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' }); setInterval(() => {}, 1000);` : `Bun.serve({ port: ${port}, hostname: '127.0.0.1', fetch: () => new Response('ready') });`}
 `);
@@ -96,6 +97,16 @@ console.log(JSON.stringify({ recovered }));
     expect(result.launches).toHaveLength(2);
   });
 
+  it('uses the remaining recovery budget when a replacement exits before readiness', async () => {
+    const result = await exerciseWeb(`
+process.kill(launches()[0], 'SIGTERM');
+const recovered = await waitFor(async () => launches().length === 3 && await localWebHealthy(url));
+console.log(JSON.stringify({ recovered }));
+`, false, true);
+    expect(result.output).toContain('"recovered":true');
+    expect(result.launches).toHaveLength(3);
+  });
+
   it('keeps a reused server outside the runner ownership boundary', async () => {
     const result = await exerciseWeb(`
 const reused = await ensureLocalWeb(topology, options);
@@ -128,6 +139,18 @@ console.log(JSON.stringify({ healthy: await localWebHealthy(url) }));
 `, true);
     expect(result.output).toContain('"healthy":false');
     expect(result.launches).toHaveLength(1);
+  });
+
+  it('stops a replacement that has not become ready without launching again', async () => {
+    const result = await exerciseWeb(`
+process.kill(launches()[0], 'SIGTERM');
+if (!await waitFor(async () => launches().length === 2)) throw new Error('replacement not launched');
+await handle.stop();
+await Bun.sleep(300);
+console.log(JSON.stringify({ healthy: await localWebHealthy(url) }));
+`);
+    expect(result.output).toContain('"healthy":false');
+    expect(result.launches).toHaveLength(2);
   });
 
   it('does not restart a server stopped by the runner', async () => {

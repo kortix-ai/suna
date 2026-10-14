@@ -578,19 +578,26 @@ export async function ensureLocalWeb(
         console.error("[local-stack] local web recovery exhausted after 3 restarts; browser failures remain failures.");
         return;
       }
-      restarts++;
       recovery = (async () => {
-        if (stopping) return;
-        console.error(`[local-stack] restarting local web (${restarts}/3).`);
-        web = spawnWeb();
-        await waitUntilReady();
-        if (stopping) return;
-        console.error(`[local-stack] local web recovered at ${webUrl}.`);
-        watchExit();
-      })().catch(async (error: unknown) => {
-        console.error("[local-stack] local web recovery failed; browser failures remain failures:", error);
-        await stopOwnedStack(web);
-      });
+        while (!stopping && restarts < 3) {
+          restarts++;
+          console.error(`[local-stack] restarting local web (${restarts}/3).`);
+          web = spawnWeb();
+          try {
+            await waitUntilReady();
+            if (stopping) return;
+            console.error(`[local-stack] local web recovered at ${webUrl}.`);
+            watchExit();
+            return;
+          } catch (error) {
+            console.error("[local-stack] local web recovery failed; browser failures remain failures:", error);
+            await stopOwnedStack(web);
+          }
+        }
+        if (!stopping) {
+          console.error("[local-stack] local web recovery exhausted after 3 restarts; browser failures remain failures.");
+        }
+      })();
     });
   };
 
