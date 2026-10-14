@@ -278,3 +278,5 @@ details.adv .row:last-child { border-bottom: 0; }
 .ob-card .btn { height: calc(var(--spacing) * 9); padding: 0 calc(var(--spacing) * 5); }
 .ob-card input[type="text"] { width: 100%; height: calc(var(--spacing) * 9); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--popover); color: var(--foreground); padding: 0 calc(var(--spacing) * 2.5); font-size: var(--text-xs); }
 .ob-foot { display: flex; flex-direction: column; align-items: center; gap: calc(var(--spacing) * 0.5); margin-top: calc(var(--spacing) * 4); font-size: var(--text-xs); }
+.ob-field { display: flex; flex-direction: column; align-items: flex-start; gap: calc(var(--spacing) * 1); width: 100%; text-align: left; }
+.ob-field span { color: var(--muted-foreground); font-size: var(--text-xs); line-height: var(--text-xs-line-height); }

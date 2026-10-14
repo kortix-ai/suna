@@ -211,7 +211,7 @@ mod window {
         Close,
         /// Clipboard text for the field in focus (the window has no Edit menu).
         Paste(String),
-        /// The window stops floating once it is in front.
+        /// The window stops floating (it took focus, or enough time passed).
         Unfloat,
     }
 
@@ -276,7 +276,7 @@ mod window {
         let handler_ctx = ctx.clone();
         let ipc_ctx = ctx.clone();
         let close_proxy = proxy.clone();
-        let unfloat_proxy = proxy.clone();
+        let float_proxy = proxy.clone();
         let hash = format!("#{}", urlencoding::encode(&target.to_json().to_string()));
         let builder = WebViewBuilder::new()
             .with_asynchronous_custom_protocol("kmem".into(), move |_id, request, responder| {
@@ -354,22 +354,10 @@ mod window {
                 // An accessory app launched by another process starts behind the others, and a
                 // focus request before the loop runs is ignored: ask again once it runs.
                 Event::NewEvents(StartCause::Init) => {
-                    // Float above the other apps' windows for a moment (an accessory app is not
-                    // activated by a launch from a script), then behave as a normal window.
-                    window.set_always_on_top(true);
-                    window.set_focus();
-                    let p = unfloat_proxy.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(700));
-                        let _ = p.send_event(UiEvent::Unfloat);
-                    });
-                }
-                Event::UserEvent(UiEvent::Unfloat) => {
-                    window.set_always_on_top(false);
+                    raise(&window, &float_proxy);
                 }
                 Event::Reopen { .. } => {
-                    window.set_minimized(false);
-                    window.set_focus();
+                    raise(&window, &float_proxy);
                 }
                 // A kortix-capture:// link LaunchServices delivered to this process.
                 Event::Opened { urls } => {
@@ -379,10 +367,16 @@ mod window {
                                 "window.kmemNavigate && window.kmemNavigate({})",
                                 target.to_json()
                             ));
-                            window.set_minimized(false);
-                            window.set_focus();
+                            raise(&window, &float_proxy);
                         }
                     }
+                }
+                Event::UserEvent(UiEvent::Unfloat)
+                | Event::WindowEvent {
+                    event: WindowEvent::Focused(true),
+                    ..
+                } => {
+                    window.set_always_on_top(false);
                 }
                 Event::UserEvent(UiEvent::Paste(text)) => {
                     let _ = webview.evaluate_script(&format!(
@@ -394,14 +388,7 @@ mod window {
                     let _ = webview.evaluate_script(&format!(
                         "window.kmemNavigate && window.kmemNavigate({v})"
                     ));
-                    window.set_minimized(false);
-                    window.set_focus();
-                    window.set_always_on_top(true);
-                    let p = unfloat_proxy.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(700));
-                        let _ = p.send_event(UiEvent::Unfloat);
-                    });
+                    raise(&window, &float_proxy);
                 }
                 _ => {}
             }
@@ -410,6 +397,36 @@ mod window {
 
     const MIC_SETTINGS_URL: &str =
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+
+    /// Bring the window in front of every other app's windows. An accessory app is not activated
+    /// by a launch from a script, and macOS 14 ignores a plain activation request: the window
+    /// orders itself to the front regardless of the active app.
+    fn raise(window: &tao::window::Window, proxy: &tao::event_loop::EventLoopProxy<UiEvent>) {
+        window.set_minimized(false);
+        // Above the other apps' windows until the person focuses it (or 20 s pass): an inactive
+        // app's window otherwise sits behind the active app's windows.
+        window.set_always_on_top(true);
+        let p = proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(20));
+            let _ = p.send_event(UiEvent::Unfloat);
+        });
+        window.set_focus();
+        #[cfg(target_os = "macos")]
+        #[allow(unexpected_cfgs)]
+        unsafe {
+            use objc::runtime::{Class, Object};
+            use objc::{msg_send, sel, sel_impl};
+            use tao::platform::macos::WindowExtMacOS;
+            let w = window.ns_window() as *mut Object;
+            if let Some(cls) = Class::get("NSApplication") {
+                let app: *mut Object = msg_send![cls, sharedApplication];
+                let _: () = msg_send![app, activateIgnoringOtherApps: true];
+            }
+            let _: () = msg_send![w, orderFrontRegardless];
+            let _: () = msg_send![w, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
+        }
+    }
 
     fn handle_ipc(ctx: &api::Ctx, v: &Value, proxy: &tao::event_loop::EventLoopProxy<UiEvent>) {
         match v["cmd"].as_str() {

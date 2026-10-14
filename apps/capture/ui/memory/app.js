@@ -1632,7 +1632,7 @@ function paintOnboarding(step, job, sync, app) {
   } else {
     const needsUrl = app && app.default_issuer_missing;
     body = `<h1>Connect to Kortix</h1>
-      ${needsUrl ? `<input type="text" id="ob-issuer" class="mono" placeholder="https://kortix.example.com" value="${esc(OB.issuer)}" aria-label="Kortix address">` : ''}
+      ${needsUrl ? `<label class="ob-field"><span>Kortix address</span><input type="text" id="ob-issuer" class="mono" placeholder="https://kortix.example.com" value="${esc(OB.issuer)}" autocomplete="off" spellcheck="false"></label>` : ''}
       <button class="btn primary" id="ob-signin">Sign in with Kortix</button>${err}
       <div class="ob-foot"><button class="link-btn" id="ob-s3">Use your own S3 bucket</button><button class="link-btn" id="ob-skip">Skip. Keep recordings on this ${esc(PC)}</button></div>`;
   }

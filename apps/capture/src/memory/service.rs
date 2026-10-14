@@ -632,24 +632,21 @@ pub fn sign_in_pending(paths: &MemoryPaths) -> bool {
         .is_some_and(|age| age < SIGN_IN_MAX)
 }
 
-/// What the service runs now. A library signed in to Kortix records only while
-/// the sign-in stands (a revoked device or an organization with Capture off
-/// stops it); any other library (local, or its own S3 bucket) records while the
-/// service is on. Actions follow the operator policy's `actions` layer.
+/// What the service runs now. A personal library records while the service is on,
+/// whatever its sync does (signed in, signed out, expired, off, S3). The operator
+/// policy's `recording.paused` and layers narrow it elsewhere; its `actions` layer
+/// decides the action recorder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Want {
     pub recorder: bool,
     pub actions: bool,
 }
 
-pub fn want(sync_status: &Value, pending: bool, have_backend: bool) -> Want {
-    let kortix = sync_status["provider"].as_str() == Some("kortix")
-        || sync_status["kortix"]["signed_in"] == true
-        || sync_status["kortix"]["sign_in_required"] == true;
-    let allowed = !kortix
-        || (sync_status["kortix"]["signed_in"] == true
-            && sync_status["kortix"]["sign_in_required"] != true);
-    let recorder = allowed && !pending;
+pub fn want(sync_status: &Value, _pending: bool, have_backend: bool) -> Want {
+    // Recording does not depend on sync: a signed-out, expired, or never-connected library
+    // records locally, and a sign-in in progress (onboarding) does not pause it. Only a
+    // library the organization manages is gated by its enrollment ([`want_managed`]).
+    let recorder = true;
     let actions_layer = sync_status["policy"]["policy"]["layers"]["actions"] != false;
     Want {
         recorder,
@@ -1323,41 +1320,25 @@ mod tests {
     }
 
     #[test]
-    fn a_kortix_library_records_only_while_its_sign_in_stands() {
+    fn a_personal_library_records_whatever_its_sync_does() {
         let signed = json!({ "provider": "kortix", "kortix": { "signed_in": true, "sign_in_required": false } });
-        assert_eq!(
-            want(&signed, false, true),
-            Want {
-                recorder: true,
-                actions: true
-            }
-        );
-        assert_eq!(
-            want(&signed, true, true),
-            Want::default(),
-            "a sign-in in progress waits"
-        );
+        assert_eq!(want(&signed, false, true), Want { recorder: true, actions: true });
+        // A sign-in in progress (onboarding) never pauses the recording.
+        assert!(want(&signed, true, true).recorder);
+        // An expired sign-in, a signed-out library whose provider is still kortix, a fresh one:
+        // sync stops or waits, the recording goes on.
         let revoked = json!({ "provider": "kortix", "kortix": { "signed_in": false, "sign_in_required": true } });
-        assert_eq!(want(&revoked, false, true), Want::default());
+        assert!(want(&revoked, false, true).recorder);
         let never = json!({ "provider": "kortix", "kortix": { "signed_in": false, "sign_in_required": false } });
-        assert_eq!(want(&never, false, true), Want::default());
+        assert!(want(&never, false, true).recorder);
         let local = json!({ "provider": "s3", "kortix": { "signed_in": false, "sign_in_required": false } });
         assert_eq!(
             want(&local, false, false),
-            Want {
-                recorder: true,
-                actions: false
-            },
+            Want { recorder: true, actions: false },
             "no backend binary, no actions"
         );
         let no_actions = json!({ "provider": "kortix", "kortix": { "signed_in": true }, "policy": { "policy": { "layers": { "actions": false } } } });
-        assert_eq!(
-            want(&no_actions, false, true),
-            Want {
-                recorder: true,
-                actions: false
-            }
-        );
+        assert_eq!(want(&no_actions, false, true), Want { recorder: true, actions: false });
     }
 
     #[test]
