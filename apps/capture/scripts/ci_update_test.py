@@ -110,6 +110,10 @@ def upd():
 def dump():
     out = []
     out.append("update.json: " + json.dumps(upd(), indent=1))
+    out.append("person status: " + json.dumps({k: v for k, v in person().items() if k in ("recorder_running", "state", "counts", "inactive_reason", "effective_state", "recorder")}, indent=1)[:2500])
+    if OS == "linux":
+        me = os.environ.get("USER", "runner")
+        out.append(run(["bash", "-c", f"systemctl --machine={me}@.host --user status kortix-capture.service --no-pager | tail -15; ps -eo pid,args | grep -E 'kortix' | grep -v grep"], check=False).stdout)
     for f in (UPD / "update.log", MACH / "logs" / "machine.log"):
         try:
             text = run(["cat", f], root=True, check=False).stdout if OS != "windows" else f.read_text(errors="replace")
