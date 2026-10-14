@@ -10,12 +10,15 @@
  *
  *   --apply          writes `plan_monthly_usd` from the live subscription. No
  *                    customer-visible effect: renewals already read the
- *                    subscription; this only fills the plan page amount.
+ *                    subscription, and a row without the column falls back to
+ *                    its legacy price (`planMonthlyUsd` in tiers.ts). It fills
+ *                    the plan page amount and lets the legacy fallback go.
  *   --rewrite-tiers  (with --apply) also rewrites the stored tier: a live paid
- *                    subscription → `credits`, a dead one → `free`. This ENDS the
- *                    compute-metering exemption of legacy flat plans
- *                    (LEGACY_PAID_TIERS_UNMETERED reads the raw stored tier), so
- *                    run it only after the customer notice.
+ *                    subscription → `credits`, a dead one → `free`. For a live
+ *                    row this is cosmetic: every legacy key already reads as
+ *                    `credits` (`canonicalTier`), and compute is metered for
+ *                    every plan from the deploy on. A dead row keeps reading as
+ *                    paid until it is rewritten, as it does on dev today.
  *
  * Every write goes through `applyStripeSync`: an admin-pinned (enterprise) tier
  * is never touched, and the billing cache is invalidated.
