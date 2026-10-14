@@ -471,7 +471,7 @@ put replace the whole record.
 The journal folds the v1 frames of each message it has not collected. It
 publishes a live put of a message on the v2 bus only, never into the dirty
 set: apps/api receives the turn end's record alone (its `log_durable_at`
-reacts to a non-streaming assistant message). A live put is published:
+reacts to a non-streaming assistant message or compaction). A live put is published:
 - on the first `message.updated` of a message: the prompt (complete) and each
   assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
 - on each `message.part.updated` of a part the message did not have: a new
@@ -878,7 +878,7 @@ runs (`../services/tools/`):
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
 | `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
-| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
 | `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 
 - **pi** loads them at `start()` and registers each as an `AgentTool`

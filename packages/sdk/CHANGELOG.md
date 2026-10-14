@@ -26,6 +26,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `notebook_path` and `new_source`. `toolKind` maps `MultiEdit` and
   `NotebookEdit` to `edit`; `inputPath` reads `notebook_path`. The
   `file-edit` view model reads the same blocks.
+- Unchanged message arrays keep their rows past 20 sessions
+  (`buildSessionMessages`). This stops the "Maximum update depth exceeded"
+  in a host that reads more than 20 sessions per render (the web session
+  context modal with 20+ sub-agents).
 
 ### Added (block readers a host draws a tool call with)
 - `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),

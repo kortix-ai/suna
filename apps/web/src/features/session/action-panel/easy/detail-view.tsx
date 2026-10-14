@@ -19,13 +19,17 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import type { ToolCallBlock } from '@kortix/sdk';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
@@ -47,17 +51,22 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
-import type { ToolCallBlock } from '@kortix/sdk';
 import { PanelWidthButton } from './viewer-actions';
-import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
-import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
-export function CloseButton({ onClose }: { onClose: () => void }) {
+export function CloseButton({
+  onClose,
+  variant = 'secondary',
+}: {
+  onClose: () => void;
+  /** `secondary` inside a toolbar `ButtonGroup` (every call site but a lone
+   *  drawer close, which stays `ghost`). */
+  variant?: 'secondary' | 'ghost';
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Button
-      variant="ghost"
+      variant={variant}
       size="icon"
       onClick={onClose}
       aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
@@ -568,12 +577,14 @@ export function DetailLayer({
                       <span className="flex min-w-0 items-center gap-2.5">
                         {detail?.icon}
                         <span className="truncate">{detail?.title}</span>
-                        {detail?.meta && <span className="shrink-0 font-normal">{detail.meta}</span>}
+                        {detail?.meta && (
+                          <span className="shrink-0 font-normal">{detail.meta}</span>
+                        )}
                       </span>
-                      <span className="flex shrink-0 items-center gap-1">
+                      <ButtonGroup className="shrink-0">
                         {detail?.actions}
                         <CloseButton onClose={onBack} />
-                      </span>
+                      </ButtonGroup>
                     </DrawerTitle>
                   </DrawerHeader>
                 )}
@@ -690,10 +701,10 @@ export function DetailLayer({
                       </span>
                       {detail.meta && <span className="shrink-0">{detail.meta}</span>}
                     </span>
-                    <span className="flex shrink-0 items-center gap-1">
+                    <ButtonGroup className="shrink-0">
                       {detail.actions}
                       <CloseButton onClose={onBack} />
-                    </span>
+                    </ButtonGroup>
                   </div>
                 )}
                 <div
@@ -738,10 +749,10 @@ export function DetailLayer({
                 {persistentLayer.title}
               </span>
             </span>
-            <span className="flex shrink-0 items-center gap-0.5">
+            <ButtonGroup className="shrink-0">
               <PanelWidthButton isMobile={isMobile} />
               <CloseButton onClose={persistentLayer.onClose} />
-            </span>
+            </ButtonGroup>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">{persistentLayer.body}</div>
         </m.div>

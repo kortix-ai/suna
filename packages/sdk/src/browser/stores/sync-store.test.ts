@@ -2774,12 +2774,6 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect(rowsFor("ses_missing")).toEqual([]);
 	});
 
-	// The actual leak assertion, and the only way to observe the memo from
-	// outside: re-present the SAME arrays it memoized on. A surviving entry
-	// hands back the identical rows — which is precisely the retention being
-	// fixed, since those rows hold the whole transcript. Re-seeding the session
-	// instead would prove nothing: `upsertMessage` builds a new array, so the
-	// memo would rebuild whether or not the old entry was ever dropped.
 	function capture(sessionID: string) {
 		const state = useSyncStore.getState();
 		const msgs = state.messages[sessionID];
@@ -2791,42 +2785,75 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		};
 	}
 
-	test("eviction drops the memoized rows, not just the store slices", () => {
+	// The actual leak assertion: once the store drops a session's arrays, nothing the
+	// memo holds keeps its rows reachable. The memo is weak by the store's array, so
+	// the rows go with it; observed through a WeakRef after a full collection.
+	async function rowsCollectedAfter(sessionID: string, drop: () => void): Promise<boolean> {
+		const ref = new WeakRef(capture(sessionID).rows);
+		drop();
+		// A WeakRef target stays alive until the current job ends.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		Bun.gc(true);
+		return ref.deref() === undefined;
+	}
+
+	test("eviction drops the memoized rows, not just the store slices", async () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_1"));
 		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
 		const held = capture("ses_1");
 		expect(held.rebuild()).toBe(held.rows); // memoized while resident
 
-		store.retainSession("ses_1")();
-		// `DETACHED_SESSION_LIMIT` (8) + 1 detaches push ses_1 out of the window.
-		for (let i = 0; i < 9; i++) {
-			const id = `ses_churn_${i}`;
-			useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
-			useSyncStore.getState().retainSession(id)();
-		}
-		useSyncStore.getState().retainSession("ses_fresh");
+		const collected = await rowsCollectedAfter("ses_1", () => {
+			useSyncStore.getState().retainSession("ses_1")();
+			// `DETACHED_SESSION_LIMIT` (8) + 1 detaches push ses_1 out of the window.
+			for (let i = 0; i < 9; i++) {
+				const id = `ses_churn_${i}`;
+				useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
+				useSyncStore.getState().retainSession(id)();
+			}
+			useSyncStore.getState().retainSession("ses_fresh");
+		});
 
 		expect("ses_1" in useSyncStore.getState().messages).toBe(false);
-		expect(held.rebuild()).not.toBe(held.rows);
+		expect(collected).toBe(true);
 	});
 
-	// The memo is bounded, or a tab that never navigates away still accumulates
-	// one full set of rows per session it has ever rendered.
+	// The row-reuse memo by session is bounded, or a tab that never navigates away
+	// still holds one replaced message array per session it has ever rendered.
+	// Observed through reuse: a changed array reuses the previous rows only while
+	// the session's entry survives.
+
 	test("the memo is bounded — the least recently used session is dropped", () => {
 		// 21 distinct sessions rendered once each, never re-read: probing one
 		// early would count as use and reorder the very thing under test.
-		const held: Array<ReturnType<typeof capture>> = [];
+		const id = (i: number) => `ses_${i}`;
+		const first: Array<ReturnType<typeof capture>["rows"]> = [];
 		for (let i = 0; i < 21; i++) {
+			useSyncStore.getState().upsertMessage(id(i), userMessage(`msg_${i}`, id(i)));
+			first.push(capture(id(i)).rows);
+		}
+
+		// Assert the survivor first — reading the evicted one re-inserts it.
+		useSyncStore.getState().upsertMessage(id(1), userMessage("msg_1_b", id(1)));
+		// 21 > MESSAGE_ROWS_LIMIT dropped ses_0, the least recently used.
+		expect(capture(id(1)).rows[0]).toBe(first[1]![0]);
+		useSyncStore.getState().upsertMessage(id(0), userMessage("msg_0_b", id(0)));
+		expect(capture(id(0)).rows[0]).not.toBe(first[0]![0]);
+	});
+
+	// A subscribed selector (`selectSessionRows` under `useSyncStore`) re-reads its
+	// session on every store change. Past 20 sessions read in one render, a rebuilt
+	// array for unchanged arrays read as a change: the session context modal with
+	// 20+ sub-agent rows re-rendered until React threw "Maximum update depth exceeded".
+	test("unchanged arrays keep their rows past 20 sessions, so a subscribed selector settles", () => {
+		const held: Array<ReturnType<typeof capture>> = [];
+		for (let i = 0; i < 40; i++) {
 			const id = `ses_${i}`;
 			useSyncStore.getState().upsertMessage(id, userMessage(`msg_${i}`, id));
 			held.push(capture(id));
 		}
-
-		// 21 > MESSAGE_ROWS_LIMIT. Assert the survivor first — asking about an
-		// evicted session re-inserts it and would evict this one.
-		expect(held[1].rebuild()).toBe(held[1].rows);
-		expect(held[0].rebuild()).not.toBe(held[0].rows);
+		for (const h of held) expect(h.rebuild()).toBe(h.rows);
 	});
 
 	test("a hit counts as use, so a stable session is not pushed out by other sessions", () => {
@@ -2844,20 +2871,19 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		useSyncStore.getState().upsertMessage("ses_20", userMessage("msg_20", "ses_20"));
 		capture("ses_20");
 
-		expect(held[0].rebuild()).toBe(held[0].rows);
-		expect(held[1].rebuild()).not.toBe(held[1].rows);
+		useSyncStore.getState().upsertMessage("ses_0", userMessage("msg_0_b", "ses_0"));
+		expect(capture("ses_0").rows[0]).toBe(held[0].rows[0]);
+		useSyncStore.getState().upsertMessage("ses_1", userMessage("msg_1_b", "ses_1"));
+		expect(capture("ses_1").rows[0]).not.toBe(held[1].rows[0]);
 	});
 
-	test("clearSession drops the memoized rows too", () => {
+	test("clearSession drops the memoized rows too", async () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_1"));
 		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
-		const held = capture("ses_1");
-		expect(held.rebuild()).toBe(held.rows);
+		expect(capture("ses_1").rebuild()).toBe(capture("ses_1").rows);
 
-		store.clearSession("ses_1");
-
-		expect(held.rebuild()).not.toBe(held.rows);
+		expect(await rowsCollectedAfter("ses_1", () => useSyncStore.getState().clearSession("ses_1"))).toBe(true);
 	});
 });
 

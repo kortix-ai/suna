@@ -326,9 +326,9 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   const budget = input.proofBudgetMs ?? VERIFY_READY_TIMEOUT_MS
   const linkFailures: string[] = []
   /** The one seam that changes what OpenCode reads. A refusal is stated, not thrown. */
-  const point = async (dir: string, why: string): Promise<boolean> => {
+  const point = async (dir: string, why: string, releaseRoot: string | null = null): Promise<boolean> => {
     try {
-      await serveConfigDir(dir, why, root)
+      await serveConfigDir(dir, why, root, releaseRoot)
       return true
     } catch (err) {
       const reason = `the boot link could not be pointed at ${dir}: ${err instanceof Error ? err.message : String(err)}`
@@ -378,7 +378,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
     // sentinel — the pre-release preparation, unchanged.
     await prepare(dir, source === 'image-default')
     input.mark?.('config-deps')
-    await point(dir, `config releases are not in play: ${answer.reason ?? 'no reason given'}`)
+    await point(dir, `config releases are not in play: ${answer.reason ?? 'no reason given'}`, workspaceError ? null : cfg.projectTarget)
     await started
     if (!(await input.refresh?.().catch(() => false))) await input.respawn()
     logger.info('[boot-config] config releases are not in play; opencode reads the checkout', {
@@ -455,7 +455,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
         candidate.root,
       )
     }
-    await point(candidate.dir, `boot candidate ${index + 1} of ${candidates.length}: ${candidate.label}`)
+    await point(candidate.dir, `boot candidate ${index + 1} of ${candidates.length}: ${candidate.label}`, candidate.root)
     if (index === 0 && (await input.refresh?.().catch(() => false))) {
       // The process from step 0 has not read a config dir yet, so repointing
       // the link and rewriting the composed config is enough — no respawn.

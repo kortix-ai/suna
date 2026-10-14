@@ -690,10 +690,28 @@ export async function readBootLinkTarget(root: string = bootConfigRoot()): Promi
   }
 }
 
+/**
+ * `<root>/boot-release`: the release the boot link's config dir comes from,
+ * where project tools load from. Absent when no release is served. A release
+ * with no OpenCode config dir serves the image default, so the boot link
+ * alone cannot name it.
+ */
+export function bootReleaseLinkPath(root: string = bootConfigRoot()): string {
+  return join(root, 'boot-release')
+}
+
+/** The release root the boot link serves from, or null. */
+export async function readBootReleaseRoot(root: string = bootConfigRoot()): Promise<string | null> {
+  try {
+    return resolve(await readlink(bootReleaseLinkPath(root)))
+  } catch {
+    return null
+  }
+}
+
 /** Point the boot link at `target` with one atomic rename. Returns the link path. */
-export async function pointBootLink(target: string, root: string = bootConfigRoot()): Promise<string> {
+export async function pointBootLink(target: string, root: string = bootConfigRoot(), link: string = bootLinkPath(root)): Promise<string> {
   await mkdir(root, { recursive: true })
-  const link = bootLinkPath(root)
   const staged = `${link}.${randomUUID()}.tmp`
   await symlink(resolve(target), staged)
   try {
