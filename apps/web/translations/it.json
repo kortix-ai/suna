@@ -2401,7 +2401,7 @@
         },
         "credit": {
           "question": "Cosa si può comprare con un credito?",
-          "answer": "1 credito vale 0,01 $. I crediti pagano il computer dell'agente, fatturato al secondo per risorsa: 0,0000168 $/vCPU, 0,0000054 $/GiB di RAM, 0,000000036 $/GiB di archiviazione. La macchina predefinita da {spec} usa circa {creditsPerHour} crediti all'ora, quindi 1 credito vale circa {minutes} minuti. Un computer fermo non costa nulla. I crediti pagano anche i modelli Kortix, al prezzo base del provider più una commissione di piattaforma del {fee}%. La tua chiave API o il tuo abbonamento ChatGPT non consumano crediti."
+          "answer": "1 credito vale 0,01 $. I crediti pagano il computer dell'agente, fatturato al secondo per risorsa: {vcpuRate} per vCPU all'ora, {memoryRate} per GB di RAM all'ora, {diskRate} per GB di archiviazione al mese. La macchina predefinita da {spec} usa circa {creditsPerHour} crediti all'ora, quindi 1 credito vale circa {minutes} minuti. Un computer fermo non costa nulla. I crediti pagano anche i modelli Kortix, al prezzo base del provider più una commissione di piattaforma del {fee}%. La tua chiave API o il tuo abbonamento ChatGPT non consumano crediti."
         },
         "amounts": {
           "question": "Quanto pago ogni mese?",
@@ -2459,6 +2459,22 @@
         "tier": {
           "value": "{tierUsd} al mese ≈ {hours} ore",
           "note": "Di computer dell'agente, quando l'uso dei modelli passa dalle tue chiavi."
+        },
+        "rates": {
+          "title": "Tariffe di calcolo",
+          "note": "Fatturato al secondo in base alla dimensione riservata. Un computer fermo non costa nulla.",
+          "vcpu": {
+            "label": "vCPU",
+            "price": "{price} / ora"
+          },
+          "memory": {
+            "label": "Memoria",
+            "price": "{price} / GB-ora"
+          },
+          "disk": {
+            "label": "Archiviazione",
+            "price": "{price} / GB-mese"
+          }
         }
       },
       "models": {
@@ -3261,7 +3277,7 @@
       "contactGeneral": "Generale",
       "contactSecurity": "Sicurezza",
       "faqWhatCreditsQuestion": "Cosa sono i crediti e quanto costano?",
-      "faqWhatCreditsAnswerBefore": "I crediti pagano il computer dell'agente e i modelli Kortix. 1 credito costa 0,01 $ e il computer dell'agente predefinito usa circa 20 crediti all'ora. I modelli Kortix costano il prezzo base del provider più una commissione di piattaforma del 5,5%. La tua chiave API o il tuo abbonamento ChatGPT non usano crediti. Piani, ricariche e come far durare il saldo sono in",
+      "faqWhatCreditsAnswerBefore": "I crediti pagano il computer dell'agente e i modelli Kortix. 1 credito costa 0,01 $ e il computer dell'agente predefinito usa circa 11 crediti all'ora. I modelli Kortix costano il prezzo base del provider più una commissione di piattaforma del 5,5%. La tua chiave API o il tuo abbonamento ChatGPT non usano crediti. Piani, ricariche e come far durare il saldo sono in",
       "faqWhatCreditsLink": "Crediti e utilizzo",
       "faqWhatCreditsAnswerAfter": "."
     }

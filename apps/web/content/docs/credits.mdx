@@ -41,7 +41,15 @@ A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNA
 | Kortix-proxied tools | Each web search, image search or web scraping request that goes through Kortix. |
 
 - Compute meters the spec the sandbox reserves, not what it uses. Set the spec in `kortix.yaml`. See [Sandboxes & previews](/docs/work/runtime#hardware-and-docker).
-- One compute rate applies to every sandbox provider and to every plan. The default 2 vCPU / 4 GiB / 20 GiB sandbox uses about 20 credits an hour.
+- One compute rate applies to every sandbox provider and to every plan, billed per second for the reserved size:
+
+  | Resource | Rate |
+  | --- | --- |
+  | vCPU | $0.0324 per hour |
+  | Memory | $0.0108 per GB-hour |
+  | Storage | $0.0526 per GB-month |
+
+  The default 2 vCPU / 4 GB / 20 GB sandbox costs about $0.11 an hour, about 11 credits.
 - A stopped or sleeping sandbox accrues nothing. See [Sessions](/docs/work/sessions#when-a-session-sleeps).
 - A running sandbox is billed every 5 minutes and again when it stops.
 - A model request on your own provider key or a ChatGPT subscription has no Kortix charge. Your provider bills you.

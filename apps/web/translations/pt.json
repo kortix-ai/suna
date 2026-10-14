@@ -2401,7 +2401,7 @@
         },
         "credit": {
           "question": "O que um crédito compra?",
-          "answer": "1 crédito equivale a US$ 0,01. Os créditos pagam o computador do agente, cobrado por segundo e por recurso: US$ 0,0000168/vCPU, US$ 0,0000054/GiB de RAM, US$ 0,000000036/GiB de armazenamento. A máquina padrão de {spec} usa cerca de {creditsPerHour} créditos por hora, então 1 crédito equivale a cerca de {minutes} minutos. Um computador parado não custa nada. Os créditos também pagam os modelos da Kortix, pelo preço base do provedor mais {fee}% de taxa de plataforma. Sua própria chave de API ou assinatura do ChatGPT não consome créditos."
+          "answer": "1 crédito equivale a US$ 0,01. Os créditos pagam o computador do agente, cobrado por segundo e por recurso: {vcpuRate} por vCPU por hora, {memoryRate} por GB de RAM por hora, {diskRate} por GB de armazenamento por mês. A máquina padrão de {spec} usa cerca de {creditsPerHour} créditos por hora, então 1 crédito equivale a cerca de {minutes} minutos. Um computador parado não custa nada. Os créditos também pagam os modelos da Kortix, pelo preço base do provedor mais {fee}% de taxa de plataforma. Sua própria chave de API ou assinatura do ChatGPT não consome créditos."
         },
         "amounts": {
           "question": "Quanto pago por mês?",
@@ -2459,6 +2459,22 @@
         "tier": {
           "value": "{tierUsd} por mês ≈ {hours} horas",
           "note": "De computador do agente, quando o uso de modelos roda nas suas próprias chaves."
+        },
+        "rates": {
+          "title": "Preços de computação",
+          "note": "Cobrado por segundo pelo tamanho reservado. Um computador parado não custa nada.",
+          "vcpu": {
+            "label": "vCPU",
+            "price": "{price} / hora"
+          },
+          "memory": {
+            "label": "Memória",
+            "price": "{price} / GB-hora"
+          },
+          "disk": {
+            "label": "Armazenamento",
+            "price": "{price} / GB-mês"
+          }
         }
       },
       "models": {
@@ -3261,7 +3277,7 @@
       "contactGeneral": "Geral",
       "contactSecurity": "Segurança",
       "faqWhatCreditsQuestion": "O que são créditos e quanto custam?",
-      "faqWhatCreditsAnswerBefore": "Os créditos pagam o computador do agente e os modelos Kortix. 1 crédito custa US$ 0,01, e o computador do agente padrão usa cerca de 20 créditos por hora. Os modelos Kortix custam o preço base do provedor mais uma taxa de plataforma de 5,5%. Sua própria chave API ou assinatura do ChatGPT não usa créditos. Planos, recargas e como fazer o saldo durar estão em",
+      "faqWhatCreditsAnswerBefore": "Os créditos pagam o computador do agente e os modelos Kortix. 1 crédito custa US$ 0,01, e o computador do agente padrão usa cerca de 11 créditos por hora. Os modelos Kortix custam o preço base do provedor mais uma taxa de plataforma de 5,5%. Sua própria chave API ou assinatura do ChatGPT não usa créditos. Planos, recargas e como fazer o saldo durar estão em",
       "faqWhatCreditsLink": "Créditos e uso",
       "faqWhatCreditsAnswerAfter": "."
     }

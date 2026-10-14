@@ -2401,7 +2401,7 @@
         },
         "credit": {
           "question": "What does a credit buy?",
-          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key or ChatGPT subscription uses no credits."
+          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: {vcpuRate} per vCPU-hour, {memoryRate} per GB of RAM per hour, {diskRate} per GB of storage per month. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key or ChatGPT subscription uses no credits."
         },
         "amounts": {
           "question": "How much do I pay each month?",
@@ -2459,6 +2459,22 @@
         "tier": {
           "value": "{tierUsd} a month ≈ {hours} hours",
           "note": "Of agent computer, when model usage runs on your own keys."
+        },
+        "rates": {
+          "title": "Compute rates",
+          "note": "Billed per second for the size you reserve. A stopped computer costs nothing.",
+          "vcpu": {
+            "label": "vCPU",
+            "price": "{price} / hour"
+          },
+          "memory": {
+            "label": "Memory",
+            "price": "{price} / GB-hour"
+          },
+          "disk": {
+            "label": "Storage",
+            "price": "{price} / GB-month"
+          }
         }
       },
       "models": {
@@ -3272,7 +3288,7 @@
       "contactGeneral": "General",
       "contactSecurity": "Security",
       "faqWhatCreditsQuestion": "What are credits, and what do they cost?",
-      "faqWhatCreditsAnswerBefore": "Credits pay for the agent computer and for Kortix models. 1 credit is $0.01, and the default agent computer uses about 20 credits an hour. Kortix models cost the provider's base price plus a 5.5% platform fee. Your own API key or ChatGPT subscription uses no credits. Plans, top-ups and how to make a balance last are in",
+      "faqWhatCreditsAnswerBefore": "Credits pay for the agent computer and for Kortix models. 1 credit is $0.01, and the default agent computer uses about 11 credits an hour. Kortix models cost the provider's base price plus a 5.5% platform fee. Your own API key or ChatGPT subscription uses no credits. Plans, top-ups and how to make a balance last are in",
       "faqWhatCreditsLink": "Credits & usage",
       "faqWhatCreditsAnswerAfter": "."
     }

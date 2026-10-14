@@ -50,10 +50,10 @@ describe('App machine limits', () => {
 describe('always-on cost', () => {
   const machine = { cpuCores: 1, memoryGb: 2, diskGb: 10 };
 
-  test('the default machine costs about 73 USD for a month of 24/7 at list rates', () => {
-    // 730 h × (1 × 0.0000168 + 2 × 0.0000054 + 10 × 0.000000036) USD/s
-    expect(appMonthlyEstimateUsd(machine)).toBe(73.48);
-    expect(appMonthlyEstimateUsd({ cpuCores: 2, memoryGb: 4, diskGb: 20 })).toBe(146.96);
+  test('the default machine costs about 40 USD for a month of 24/7 at list rates', () => {
+    // 730 h × (1 × $0.0324 + 2 × $0.0108) + 10 GB × $0.0526 per month
+    expect(appMonthlyEstimateUsd(machine)).toBe(39.95);
+    expect(appMonthlyEstimateUsd({ cpuCores: 2, memoryGb: 4, diskGb: 20 })).toBe(79.89);
   });
 
 });

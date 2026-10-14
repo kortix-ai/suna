@@ -71,7 +71,7 @@ const { countBillingInvariantViolations, countStaleLivenessWindows, reconcileOrp
 
 const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 /** 2 vCPU / 4 GB / 20 GB for one hour, at list price. */
-const HOURLY = 0.201312;
+const HOURLY = 0.10944109589041096;
 const MINUTE = 60_000;
 const USER = '00000000-0000-4000-a000-000000009d01';
 

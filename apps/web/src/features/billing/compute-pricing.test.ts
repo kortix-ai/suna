@@ -58,21 +58,22 @@ describe('credit tier ladder', () => {
 });
 
 describe('what credits buy', () => {
-  test('the default computer uses about 20 credits a running hour', () => {
-    expect(DEFAULT_COMPUTE_HOURLY_PRICE_USD).toBeCloseTo(0.201312, 8);
-    expect(DEFAULT_COMPUTE_CREDITS_PER_HOUR).toBe(20);
+  test('the default computer uses about 11 credits a running hour, at Platinum rates', () => {
+    // 2 × $0.0324 + 4 × $0.0108 + 20 GB × $0.0526 / 730 h
+    expect(DEFAULT_COMPUTE_HOURLY_PRICE_USD).toBeCloseTo(0.109441, 6);
+    expect(DEFAULT_COMPUTE_CREDITS_PER_HOUR).toBe(11);
   });
 
-  test('one credit is 3 minutes of agent computer', () => {
-    expect(MINUTES_PER_CREDIT).toBe(3);
-    expect(DEFAULT_COMPUTE_SPEC).toBe('2 vCPU / 4 GiB / 20 GiB');
+  test('one credit is about 5 minutes of agent computer', () => {
+    expect(MINUTES_PER_CREDIT).toBe(5);
+    expect(DEFAULT_COMPUTE_SPEC).toBe('2 vCPU / 4 GB / 20 GB');
   });
 
-  test('hours estimate: credits / credits per hour, rounded to 10 from 100 up', () => {
-    expect(agentHoursForCredits(20_000)).toBe(1000);
-    expect(agentHoursForCredits(5_000)).toBe(250);
-    expect(agentHoursForCredits(1_000)).toBe(50);
-    expect(agentHoursForCredits(2_130)).toBe(110);
+  test('hours estimate: credits / hourly price, rounded to 10 from 100 up', () => {
+    expect(agentHoursForCredits(20_000)).toBe(1830);
+    expect(agentHoursForCredits(5_000)).toBe(460);
+    expect(agentHoursForCredits(1_000)).toBe(91);
+    expect(agentHoursForCredits(2_130)).toBe(190);
   });
 
   test('the platform fee on Kortix models is 5.5%', () => {

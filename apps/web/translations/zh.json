@@ -2401,7 +2401,7 @@
         },
         "credit": {
           "question": "一个积分能买到什么？",
-          "answer": "1 个积分等于 0.01 美元。积分用于支付智能体计算机，按秒、按资源计费：每 vCPU 0.0000168 美元，每 GiB 内存 0.0000054 美元，每 GiB 存储 0.000000036 美元。默认的 {spec} 机器每小时约消耗 {creditsPerHour} 个积分，因此 1 个积分约等于 {minutes} 分钟。停止的计算机不收费。积分也用于支付 Kortix 模型，价格为提供商基础价格加 {fee}% 平台费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。"
+          "answer": "1 个积分等于 0.01 美元。积分用于支付智能体计算机，按秒、按资源计费：每 vCPU 每小时 {vcpuRate}，每 GB 内存每小时 {memoryRate}，每 GB 存储每月 {diskRate}，每 GiB 存储 0.000000036 美元。默认的 {spec} 机器每小时约消耗 {creditsPerHour} 个积分，因此 1 个积分约等于 {minutes} 分钟。停止的计算机不收费。积分也用于支付 Kortix 模型，价格为提供商基础价格加 {fee}% 平台费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。"
         },
         "amounts": {
           "question": "我每月需要支付多少？",
@@ -2459,6 +2459,22 @@
         "tier": {
           "value": "每月 {tierUsd} ≈ {hours} 小时",
           "note": "智能体计算机的时长，前提是模型使用走你自己的密钥。"
+        },
+        "rates": {
+          "title": "计算价格",
+          "note": "按预留规格逐秒计费。已停止的计算机不收费。",
+          "vcpu": {
+            "label": "vCPU",
+            "price": "{price} / 小时"
+          },
+          "memory": {
+            "label": "内存",
+            "price": "{price} / GB·小时"
+          },
+          "disk": {
+            "label": "存储",
+            "price": "{price} / GB·月"
+          }
         }
       },
       "models": {
@@ -3261,7 +3277,7 @@
       "contactGeneral": "一般咨询",
       "contactSecurity": "安全问题",
       "faqWhatCreditsQuestion": "什么是积分，费用是多少？",
-      "faqWhatCreditsAnswerBefore": "积分用于支付智能体计算机和 Kortix 模型。1 积分为 $0.01，默认智能体计算机每小时约消耗 20 积分。Kortix 模型按提供商基础价格加 5.5% 平台费计费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。套餐、充值以及如何让余额更持久，请见",
+      "faqWhatCreditsAnswerBefore": "积分用于支付智能体计算机和 Kortix 模型。1 积分为 $0.01，默认智能体计算机每小时约消耗 11 积分。Kortix 模型按提供商基础价格加 5.5% 平台费计费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。套餐、充值以及如何让余额更持久，请见",
       "faqWhatCreditsLink": "积分与用量",
       "faqWhatCreditsAnswerAfter": "。"
     }

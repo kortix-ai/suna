@@ -1,5 +1,27 @@
 export const CREDITS_PER_USD = 100;
-export const DEFAULT_COMPUTE_HOURLY_PRICE_USD = 0.201312;
+
+/**
+ * Compute list rates: Platinum's, at 1× on every provider. Mirrors the rate
+ * card in apps/api (`platform/providers/compute-rates.ts`), which bills per
+ * second for the reserved spec.
+ */
+export const COMPUTE_RATES_USD = {
+  vcpuHour: 0.0324,
+  memoryGbHour: 0.0108,
+  diskGbMonth: 0.0526,
+} as const;
+
+/** Hours in a billing month for the per-month disk rate (365 × 24 / 12). */
+const HOURS_PER_MONTH = 730;
+
+/** The default agent computer, as the plan pages name it. */
+export const DEFAULT_COMPUTE_RESOURCES = { vcpu: 2, memoryGb: 4, diskGb: 20 } as const;
+
+/** USD a running hour of the default agent computer costs. */
+export const DEFAULT_COMPUTE_HOURLY_PRICE_USD =
+  DEFAULT_COMPUTE_RESOURCES.vcpu * COMPUTE_RATES_USD.vcpuHour +
+  DEFAULT_COMPUTE_RESOURCES.memoryGb * COMPUTE_RATES_USD.memoryGbHour +
+  (DEFAULT_COMPUTE_RESOURCES.diskGb * COMPUTE_RATES_USD.diskGbMonth) / HOURS_PER_MONTH;
 
 /**
  * The credits plan: one paid plan, sold as a tier ladder of monthly amounts.
@@ -71,7 +93,7 @@ export const DEFAULT_COMPUTE_CREDITS_PER_HOUR = Math.round(
 );
 
 /** The default agent computer, as the plan pages name it. */
-export const DEFAULT_COMPUTE_SPEC = '2 vCPU / 4 GiB / 20 GiB';
+export const DEFAULT_COMPUTE_SPEC = `${DEFAULT_COMPUTE_RESOURCES.vcpu} vCPU / ${DEFAULT_COMPUTE_RESOURCES.memoryGb} GB / ${DEFAULT_COMPUTE_RESOURCES.diskGb} GB`;
 
 /** Minutes of default agent computer one credit buys (60 / credits per hour). */
 export const MINUTES_PER_CREDIT = Math.round(60 / DEFAULT_COMPUTE_CREDITS_PER_HOUR);
@@ -85,7 +107,7 @@ export const PLATFORM_FEE_PERCENT = 5.5;
 
 /** Hours of default agent computer a credit amount buys, rounded to 10 from 100 up. */
 export function agentHoursForCredits(credits: number): number {
-  const hours = credits / DEFAULT_COMPUTE_CREDITS_PER_HOUR;
+  const hours = credits / (DEFAULT_COMPUTE_HOURLY_PRICE_USD * CREDITS_PER_USD);
   return hours >= 100 ? Math.round(hours / 10) * 10 : Math.round(hours);
 }
 

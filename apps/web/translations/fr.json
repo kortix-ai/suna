@@ -2401,7 +2401,7 @@
         },
         "credit": {
           "question": "Que permet d'acheter un crédit ?",
-          "answer": "1 crédit vaut 0,01 $. Les crédits paient l'ordinateur d'agent, facturé à la seconde et par ressource : 0,0000168 $/vCPU, 0,0000054 $/Gio de RAM, 0,000000036 $/Gio de stockage. La machine par défaut de {spec} consomme environ {creditsPerHour} crédits par heure, soit environ {minutes} minutes par crédit. Un ordinateur à l'arrêt ne coûte rien. Les crédits paient aussi les modèles Kortix, au prix de base du fournisseur plus {fee} % de frais de plateforme. Votre propre clé d'API ou abonnement ChatGPT ne consomme aucun crédit."
+          "answer": "1 crédit vaut 0,01 $. Les crédits paient l'ordinateur d'agent, facturé à la seconde et par ressource : {vcpuRate} par vCPU et par heure, {memoryRate} par Go de RAM et par heure, {diskRate} par Go de stockage et par mois. La machine par défaut de {spec} consomme environ {creditsPerHour} crédits par heure, soit environ {minutes} minutes par crédit. Un ordinateur à l'arrêt ne coûte rien. Les crédits paient aussi les modèles Kortix, au prix de base du fournisseur plus {fee} % de frais de plateforme. Votre propre clé d'API ou abonnement ChatGPT ne consomme aucun crédit."
         },
         "amounts": {
           "question": "Combien dois-je payer chaque mois ?",
@@ -2459,6 +2459,22 @@
         "tier": {
           "value": "{tierUsd} par mois ≈ {hours} heures",
           "note": "D'ordinateur d'agent, quand l'usage des modèles passe par vos propres clés."
+        },
+        "rates": {
+          "title": "Tarifs de calcul",
+          "note": "Facturé à la seconde selon la taille réservée. Un ordinateur arrêté ne coûte rien.",
+          "vcpu": {
+            "label": "vCPU",
+            "price": "{price} / heure"
+          },
+          "memory": {
+            "label": "Mémoire",
+            "price": "{price} / Go-heure"
+          },
+          "disk": {
+            "label": "Stockage",
+            "price": "{price} / Go-mois"
+          }
         }
       },
       "models": {
@@ -3261,7 +3277,7 @@
       "contactGeneral": "Général",
       "contactSecurity": "Sécurité",
       "faqWhatCreditsQuestion": "Que sont les crédits et combien coûtent-ils ?",
-      "faqWhatCreditsAnswerBefore": "Les crédits paient l'ordinateur de l'agent et les modèles Kortix. 1 crédit vaut 0,01 $, et l'ordinateur d'agent par défaut utilise environ 20 crédits par heure. Les modèles Kortix coûtent le prix de base du fournisseur plus des frais de plateforme de 5,5 %. Votre propre clé API ou votre abonnement ChatGPT n'utilise aucun crédit. Les offres, les recharges et comment faire durer un solde sont dans",
+      "faqWhatCreditsAnswerBefore": "Les crédits paient l'ordinateur de l'agent et les modèles Kortix. 1 crédit vaut 0,01 $, et l'ordinateur d'agent par défaut utilise environ 11 crédits par heure. Les modèles Kortix coûtent le prix de base du fournisseur plus des frais de plateforme de 5,5 %. Votre propre clé API ou votre abonnement ChatGPT n'utilise aucun crédit. Les offres, les recharges et comment faire durer un solde sont dans",
       "faqWhatCreditsLink": "Crédits et utilisation",
       "faqWhatCreditsAnswerAfter": "."
     }

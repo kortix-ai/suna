@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/marketing/button';
 import SectionHeader from '@/features/marketing/component/section-header';
 import {
   agentHoursForCredits,
+  COMPUTE_RATES_USD,
   DEFAULT_COMPUTE_CREDITS_PER_HOUR,
   DEFAULT_COMPUTE_SPEC,
   DEFAULT_TIER_USD,
@@ -50,6 +51,23 @@ const FAQ_IDS = [
   'existing',
   'enterprise',
 ] as const;
+
+/** The compute rate card rows, in display order. */
+const RATE_ROWS = [
+  { id: 'vcpu', usd: COMPUTE_RATES_USD.vcpuHour },
+  { id: 'memory', usd: COMPUTE_RATES_USD.memoryGbHour },
+  { id: 'disk', usd: COMPUTE_RATES_USD.diskGbMonth },
+] as const;
+
+/** `$0.0324` — a rate in USD with up to four decimals. */
+function formatRateUsd(amount: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(amount);
+}
 
 /** "Models are separate": the three ways a model call is paid, in display order. */
 const MODEL_SOURCES = ['keys', 'chatgpt', 'kortix'] as const;
@@ -102,6 +120,9 @@ export default function PricingPage() {
     smallestBonusUsd: formatWholeUsd(bonusSmallest.minUsd, locale),
     largestBonus: bonusLargest.percent,
     largestBonusUsd: formatWholeUsd(bonusLargest.minUsd, locale),
+    vcpuRate: formatRateUsd(COMPUTE_RATES_USD.vcpuHour, locale),
+    memoryRate: formatRateUsd(COMPUTE_RATES_USD.memoryGbHour, locale),
+    diskRate: formatRateUsd(COMPUTE_RATES_USD.diskGbMonth, locale),
   };
   const faq: readonly FaqItem[] = FAQ_IDS.map((id) => ({
     id,
@@ -154,6 +175,22 @@ export default function PricingPage() {
               </div>
             </Reveal>
           ))}
+        </div>
+        <div className="bg-card mt-6 rounded-lg border p-6">
+          <div className="text-foreground text-sm font-medium">{t('hours.rates.title')}</div>
+          <p className="text-muted-foreground mt-1 text-sm text-pretty">{t('hours.rates.note')}</p>
+          <dl className="mt-4 grid gap-4 sm:grid-cols-3">
+            {RATE_ROWS.map(({ id, usd }) => (
+              <div key={id} className="flex flex-col gap-1">
+                <dt className="text-muted-foreground font-mono text-xs uppercase">
+                  {t(`hours.rates.${id}.label`)}
+                </dt>
+                <dd className="text-lg font-medium tabular-nums">
+                  {t(`hours.rates.${id}.price`, { price: formatRateUsd(usd, locale) })}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
 
