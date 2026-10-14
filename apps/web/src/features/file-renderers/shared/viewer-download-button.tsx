@@ -16,9 +16,9 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { Download } from '@/features/icon/icons/download';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { Download } from '@/features/icon/icons/download';
 
 export function ViewerDownloadButton({
   onDownload,
@@ -28,9 +28,8 @@ export function ViewerDownloadButton({
   className,
 }: {
   onDownload: () => void;
-  /** `ghost` where every neighbouring control is ghost — the session detail
-   *  header. */
-  variant?: 'outline' | 'ghost';
+  /** `secondary` inside the session detail toolbar's `ButtonGroup`. */
+  variant?: 'outline' | 'ghost' | 'secondary';
   /** The bytes are still being fetched — the button spins and ignores clicks,
    *  so a slow download is not started twice. */
   pending?: boolean;

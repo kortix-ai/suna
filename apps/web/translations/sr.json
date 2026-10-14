@@ -20744,5 +20744,21 @@
     "mapTwoFingers": "Користите два прста да померите мапу",
     "pick": "Избор",
     "convertFailed": "Није могуће припремити транскрипт. Покушајте поново."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobilni",
+    "badge": "Novo",
+    "title": "Kortix, sada na vašem telefonu",
+    "description": "Vaši projekti, sesije i agenti, gde god da ste. Započnite posao za stolom i nastavite ga s bilo kog mesta.",
+    "feature": {
+      "sessions": "Nastavite gde ste stali",
+      "sessionsDescription": "Svaka sesija sa veba, spremna na vašem telefonu.",
+      "notifications": "Saznajte čim je gotovo",
+      "notificationsDescription": "Push obaveštenje kada se sesija završi ili čeka vaš odgovor.",
+      "dictation": "Recite i pošaljite",
+      "dictationDescription": "Izdiktirajte prompt umesto da ga kucate."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }

@@ -374,6 +374,38 @@ describe('journal', () => {
     });
   });
 
+  test('while another batch of the session holds its lock, a batch answers 429 at once and writes nothing; it lands after the release', async () => {
+    // OTHER: its own log, so the manifest of SESSION stays exact.
+    const busy = batch({ puts: [{ rev: REV + 900, message: message('msg_busy', 0) }], threads: [thread('main')] });
+    const busyRow = () =>
+      db.select({ rev: sessionLogMessages.rev }).from(sessionLogMessages)
+        .where(and(eq(sessionLogMessages.sessionId, OTHER), eq(sessionLogMessages.messageId, 'msg_busy')))
+        .then((rows) => rows[0]);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((resolve) => { locked = resolve; });
+    // A slow batch of the same session: it holds `session-log:<session>` until released.
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${OTHER}`}))`);
+      locked();
+      await held;
+    });
+    await lockTaken;
+    const started = Date.now();
+    const res = await journal(busy, tokens[OTHER]!, OTHER);
+    const waited = Date.now() - started;
+    release();
+    await holder;
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('2');
+    expect(waited).toBeLessThan(5_000);
+    expect(await busyRow()).toBeUndefined();
+    const retry = await journal(busy, tokens[OTHER]!, OTHER);
+    expect(retry.status).toBe(200);
+    expect((await busyRow())?.rev).toBe(REV + 900);
+  });
+
   test('bodies: invalid JSON shape 400, over 2 MB gzipped 413, over 16 MB raw 413', async () => {
     expect((await journal(batch({ puts: [{ rev: -1, message: {} }] }))).status).toBe(400);
     expect((await journal(new Uint8Array(2 * 1024 * 1024 + 1))).status).toBe(413);

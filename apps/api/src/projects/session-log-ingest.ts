@@ -114,6 +114,7 @@ export type SessionLogJournalOutcome =
   | { status: 200; body: SessionLogJournalResponse }
   | { status: 404; body: { error: string } }
   | { status: 409; body: SessionLogJournalConflict }
+  | { status: 429; body: { error: string } }
   | { status: 422; body: SessionLogJournalSeqConflict };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -130,6 +131,13 @@ export const SESSION_LOG_CAPTURE_REV_LIMIT = 2 ** 31;
 /** A capture write: `current` runs under the lock and answers false when a newer mirror capture ran. */
 type CaptureWrite = { current: (tx: Tx) => Promise<boolean> };
 const NO_SESSION = { status: 404, body: { error: 'Session not found' } } as const;
+/**
+ * Another batch of the session holds its lock. Waiting for it queued every retry of the
+ * daemon behind a batch the daemon had already abandoned (its post times out at 15 s, the
+ * transaction runs on), until the 25 s statement timeout cancelled the wait: 57014 in a loop,
+ * hundreds per session (KRTX-2344). The daemon backs off on 429 and keeps its dirty set.
+ */
+const BUSY = { status: 429, body: { error: 'Session log busy' } } as const;
 
 class SeqConflict extends Error {
   constructor(readonly body: SessionLogJournalSeqConflict) {
@@ -203,7 +211,10 @@ async function applyBatch(
   for (const put of batch.puts) records.push(await offloadLargeTexts(scope, put.message));
   try {
     return await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
+      const [lock] = await tx.execute<{ locked: boolean }>(
+        sql`SELECT pg_try_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`})) AS locked`,
+      );
+      if (!lock?.locked) return capture ? ('skipped' as const) : BUSY;
       if (capture && !(await capture.current(tx))) return 'skipped' as const;
       const current = await upsertSession(tx, scope, batch, capture !== null);
       if (current === 'journal') return 'skipped' as const;

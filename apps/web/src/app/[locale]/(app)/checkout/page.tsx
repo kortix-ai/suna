@@ -2,9 +2,12 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
+import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { OutcomeTitle } from '@/features/auth/auth-consent';
+import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Script from 'next/script';
 import { Suspense, useEffect, useState } from 'react';
@@ -145,50 +148,56 @@ function CheckoutContent() {
         }}
       />
 
-      <div className="bg-background flex min-h-screen items-center justify-center p-4">
-        {error ? (
-          <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
-              <CardTitle className="text-foreground">
-                {tHardcodedUi.raw('appCheckoutPage.line144JsxTextCheckoutError')}
-              </CardTitle>
-              <CardDescription className="text-muted-foreground">
-                {tHardcodedUi.raw('appCheckoutPage.line145JsxTextUnableToLoadCheckout')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Alert variant="destructive">
-                <AlertDescription className="text-center">{error}</AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
-        ) : isLoading ? (
-          <div className="flex flex-col items-center gap-4">
-            <KortixHyperLogo size={80} startOnView={false} loop className="text-foreground" />
-            <p className="text-muted-foreground text-sm">
-              {tHardcodedUi.raw('appCheckoutPage.line158JsxTextLoadingSecureCheckout')}
-            </p>
-          </div>
-        ) : (
-          // Embedded checkout container
-          <div className="w-full max-w-4xl">
-            <div id="checkout-container"></div>
-          </div>
-        )}
-      </div>
+      {error ? (
+        <AuthFrame footerVariant="none">
+          <Rise>
+            <StepHeader
+              title={
+                <OutcomeTitle tone="destructive">
+                  {tHardcodedUi.raw('appCheckoutPage.line145JsxTextUnableToLoadCheckout')}
+                </OutcomeTitle>
+              }
+              description={error}
+            />
+          </Rise>
+          <Rise delay={0.06}>
+            <Button size="lg" variant="secondary" className="w-full" asChild>
+              <Link href="/">{tHardcodedUi.raw('i18nComplete.text5fae82827f98')}</Link>
+            </Button>
+          </Rise>
+        </AuthFrame>
+      ) : isLoading ? (
+        <CheckoutPending
+          label={tHardcodedUi.raw('appCheckoutPage.line158JsxTextLoadingSecureCheckout')}
+        />
+      ) : (
+        // Embedded checkout container
+        <div className="bg-background flex min-h-svh justify-center px-4 py-10">
+          <div id="checkout-container" className="w-full max-w-4xl" />
+        </div>
+      )}
     </>
+  );
+}
+
+/** The quiet auth frame with the app's one spinner, while Stripe.js mounts. */
+function CheckoutPending({ label }: { label?: string }) {
+  return (
+    <AuthFrame footerVariant="none">
+      <div
+        role="status"
+        className="text-muted-foreground flex items-center justify-center gap-2 text-sm"
+      >
+        <Loading className="size-4 shrink-0" />
+        {label}
+      </div>
+    </AuthFrame>
   );
 }
 
 export default function CheckoutPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="bg-background flex min-h-screen items-center justify-center">
-          <KortixHyperLogo size={72} startOnView={false} loop className="text-foreground" />
-        </div>
-      }
-    >
+    <Suspense fallback={<CheckoutPending />}>
       <CheckoutContent />
     </Suspense>
   );
