@@ -42,7 +42,7 @@ const { BillingTab } = await import('./billing-tab');
 
 /**
  * The Plan pane of an account with no paid subscription: the plan card names
- * Free, shows its 200 credits, and offers the amount picker with a Subscribe
+ * Free, shows its 200 credits, and offers the tier select with a Subscribe
  * action. The wallet (balance, spend) belongs to the Credits pane and the
  * wallet-first view, so the Plan pane must not print it.
  */
@@ -63,7 +63,7 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     );
   }
 
-  test('shows the Free plan with its monthly credits and the amount picker', () => {
+  test('shows the Free plan with its monthly credits and the tier select on the most popular tier', () => {
     billingEnabled = true;
     accountStateData = freeState();
     const html = renderPlan();
@@ -71,17 +71,17 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     expect(html).toContain('>Free</p>');
     expect(html).toContain('200 credits / month');
     expect(html).toContain('Monthly credits');
-    expect(html).toContain('Subscribe for $100 / month');
-    expect(html).toContain('10,000 credits / month');
+    expect(html).toContain('Subscribe for $200 / month');
+    expect(html).toContain('20,000 credits / month');
     expect(html).not.toContain('Available balance');
   });
 
-  test('the picker offers the three named amounts', () => {
+  test('the tier select marks the most popular tier and estimates sessions', () => {
     accountStateData = freeState();
     const html = renderPlan();
-    for (const label of ['Starter', 'Pro', 'Scale']) expect(html).toContain(label);
-    expect(html).toContain('$20');
-    expect(html).toContain('$500');
+    expect(html).toContain('Most popular');
+    expect(html).toContain('About 830 to 3,300 agent sessions a month.');
+    expect(html).not.toContain('Starter');
   });
 
   test('a member who may not change billing sees who to ask, not the picker', () => {
