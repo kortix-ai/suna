@@ -38,6 +38,7 @@ import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
 import { CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
 import { BaseRefUnresolvedError, resolveDesiredRelease } from './desired';
+import { notePublishedTip } from './publish';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
 import { serveConfigArchive } from './serve-archive';
 import { configReleaseSnapshot } from './snapshot';
@@ -268,6 +269,8 @@ export function registerConfigReleaseRoutes(): void {
           format,
         });
         const { descriptor } = desired;
+        // A push made directly on the upstream reaches the API only through a read like this one.
+        if (isDaemon) notePublishedTip(projectId, baseRef, desired.baseSha);
         if (format === CONFIG_RELEASE_FORMAT_V3) {
           descriptor.snapshot = descriptor.files
             ? await configReleaseSnapshot(project, baseRef, descriptor.source_commit)

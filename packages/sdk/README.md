@@ -505,6 +505,11 @@ server-validated runtime session id and lets the live read reconcile the saved m
 A live read that returns no messages keeps the saved messages on screen: it means the computer
 lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
+An open reads the saved window once: the session-open snapshot carries it (the read waits up
+to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A host that shows
+the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
+plus the empty-conversation proof. The SDK holds that copy for the open that follows (up to 5 min):
+the snapshot then asks for no window, and the saved-history read answers from the held copy.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -725,6 +730,10 @@ still v1:
   of one runtime session's v1 rows, the log `useSessionLogThread` returns on v1,
   for rows a host reads without a `useSession` (a sub-agent's chat). One message
   per row object, kept while the row is unchanged. It goes away with the v1 rows.
+
+A host draws a `ToolCallBlock` with `toolCallStatus(call)` (`completed`, not
+`complete`), `toolCallRawOutput(call)`, `toolCallError(call)` (the semantic error,
+else the result text) and, for a sub-agent row, `subAgentCalls(thread)`.
 
 `getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,
 reads one page of the stored session log (`SessionLogPage`: the session record,
@@ -1240,6 +1249,7 @@ per-release changes.
 ### Agent repository access
 
 Agent configuration accepts `repository_access?: boolean` (default `true`).
+The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository`.
 Set `false` to run new sessions without the project repository or repository API access.
 Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
 `AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.

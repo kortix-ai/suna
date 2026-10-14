@@ -73,9 +73,14 @@ export type SessionLogBoot = {
   cursors: ExportCursor[]
   /** Set on every session patch the journal sends (D3). */
   session?: SessionLogSessionPatch
+  /** The restored log's harness history: the journal keeps it and appends this box's harness when it is another (P7.1). */
+  harness?: HarnessCarry
 }
 
-type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch }
+/** The log's harness history at the restore, and the root seq and time from which this box's harness serves the session. */
+export type HarnessCarry = { history: SessionLog['harness']['history']; from_seq: number; at: string }
+
+type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry }
 
 export const sessionLogBootStatePath = () => join(resolveKortixRuntimeStateDirectory(), 'session-log-restore.json')
 
@@ -96,7 +101,7 @@ function writeState(s: BootState): void {
   renameSync(`${path}.tmp`, path)
 }
 
-const kept = (s: BootState): SessionLogBoot => ({ generation: s.generation, cursors: [], ...(s.session && { session: s.session }) })
+const kept = (s: BootState): SessionLogBoot => ({ generation: s.generation, cursors: [], ...(s.session && { session: s.session }), ...(s.harness && { harness: s.harness }) })
 
 export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_000 } = {}): Promise<SessionLogBoot | null> {
   const ctx = sandboxRelayContext()
@@ -181,14 +186,16 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
     writeState({ version: 1, generation: answer.generation, unwritten: [] })
     return { generation: answer.generation, cursors: [] }
   }
+  const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0]!
+  const floor = Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq))
+  const harness: HarnessCarry = { history: restoredHistory(log), from_seq: floor + 1, at: new Date().toISOString() }
   let result = await port.restore(log, seq_max, read)
   let note: SessionLogMessage | null = null
   const notice = partialNotice(log, result.dropped, truncated, answer.generation)
   // One note per loss: a partial log that already holds an earlier note gets none for the old loss.
   const earlierNote = log.threads.some((t) => t.messages.some(isRestoreNote))
   if (notice && (Object.keys(result.dropped).length > 0 || truncated.length > 0 || !earlierNote)) {
-    const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0]!
-    note = noteMessage(root, Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq)) + 1, answer.generation, notice.text)
+    note = noteMessage(root, floor + 1, answer.generation, notice.text)
     root.messages.push(note)
     result = await port.restore(log, seq_max, read)
   }
@@ -196,9 +203,31 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   const unwritten = log.threads.flatMap((t) => t.messages.map((m) => m.message_id)).filter((id) => !written.has(id))
   // The journal sends the note as the store holds it.
   if (note) for (const c of result.cursors) delete c.native_hashes[note.message_id]
-  writeState({ version: 1, generation: answer.generation, unwritten, ...(notice && { session: notice.session }) })
+  writeState({ version: 1, generation: answer.generation, unwritten, ...(notice && { session: notice.session }), harness })
   logger.info('[session-log] restored', { generation: answer.generation, threads: result.cursors.length, unwritten: unwritten.length, dropped: result.dropped, truncated: truncated.length })
-  return { generation: answer.generation, cursors: result.cursors, ...(notice && { session: notice.session }) }
+  return { generation: answer.generation, cursors: result.cursors, ...(notice && { session: notice.session }), harness }
+}
+
+/** The stored history; a log without one (a converted log) starts with the harness it names. */
+function restoredHistory(log: SessionLog): HarnessCarry['history'] {
+  const { current, history } = log.harness ?? { current: '', history: [] }
+  if (history?.length) return history
+  return current && current !== 'unknown' ? [{ harness: current, version: 'unknown', from_seq: 1, at: log.created_at }] : []
+}
+
+/**
+ * The harness the journal sends (P7.1). An adapter exports a one-entry history (its own harness);
+ * after a restore the journal sends the restored history instead, with one more entry when this box's
+ * harness is another than the last one that served the session. A new version of the same harness
+ * adds no entry. The entry starts at the first root seq after the restore, so P5.6 draws the switch
+ * before the first turn this harness serves.
+ */
+export function carryHarness(carry: HarnessCarry | undefined, exported: SessionLog['harness']): SessionLog['harness'] {
+  const last = carry?.history.at(-1)
+  if (!carry || !last) return exported
+  if (last.harness === exported.current) return { current: exported.current, history: carry.history }
+  const version = exported.history.at(-1)?.version ?? 'unknown'
+  return { current: exported.current, history: [...carry.history, { harness: exported.current, version, from_seq: carry.from_seq, at: carry.at }] }
 }
 
 /**
