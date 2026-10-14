@@ -114,3 +114,23 @@ Download `capture-evidence-<os>` from the run. `Assert` prints the failing line
 and the files it read. Reproduce a Rust failure with a scratch library:
 `KORTIX_CAPTURE_DIR=$(mktemp -d) cargo test --release --features capture-engine`
 in `apps/capture`. Never install the packages on a development machine.
+
+## Known red (not hidden)
+
+- `cargo test --test sync_s3` on Linux has two failures at app commit 828f658e7b:
+  `device_status_and_policy_files` (the device policy source path) and
+  `settings_window_sets_up_syncs_restores_and_forgets_like_the_cli`
+  ("The bucket refused these keys"). The step is `continue-on-error` in
+  `capture-build.yml` and prints a warning. Delete `continue-on-error` when the
+  app lane fixes them.
+- Windows runs the protocol, `managed`, enrollment and format suites, not the
+  whole library: `service::tests::the_packaged_app_is_its_own_host_and_shows_the_tray`
+  asserts macOS paths.
+
+## Syncing the app from the old repository
+
+`apps/capture` was imported as a file copy (no history) from `kortix-ai/capture`
+`apps/recorder` at `origin/capture-standalone`. The only edits the move needed
+are path, doc and CI glue. Edits to app code: `Cargo.toml` license, the WiX folder
+ACL (`PermissionEx`, fixed component GUIDs), the pkg `postinstall` bootstrap retry,
+the settings stamp in `action_exclusions.rs`, and a split test token in `redaction.rs`.
