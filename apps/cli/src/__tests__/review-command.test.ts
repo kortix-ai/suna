@@ -19,6 +19,10 @@ let entry: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
 let forbidden = false;
+/** The per-item route reads `cr:` rows (KRTX-2316); false: an older API. */
+let adaptedById = true;
+/** The list answers in two pages joined by `next_cursor`. */
+let paged = false;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -100,6 +104,13 @@ function startServer(): string {
         );
       }
 
+      if (paged && url.pathname === `${base}/review/items` && req.method === 'GET') {
+        const second = url.searchParams.get('cursor') === 'c2';
+        return Response.json({
+          review_items: second ? [item({ review_item_id: 'rv_3' })] : [item(), item({ review_item_id: 'rv_2' }), item({ review_item_id: 'rv_4' })],
+          next_cursor: second ? null : 'c2',
+        });
+      }
       if (url.pathname === `${base}/review/items` && req.method === 'GET') {
         return Response.json({
           review_items: [
@@ -117,6 +128,11 @@ function startServer(): string {
       }
       if (url.pathname === `${base}/review/items/rv_1` && req.method === 'GET') {
         return Response.json({ review_item: item() });
+      }
+      if (adaptedById && url.pathname === `${base}/review/items/cr%3Acr_9` && req.method === 'GET') {
+        return Response.json({
+          review_item: item({ review_item_id: 'cr:cr_9', kind: 'change', title: 'Rename the flag' }),
+        });
       }
       if (url.pathname === `${base}/review/items/rv_missing` && req.method === 'GET') {
         return Response.json({ error: 'Review item not found' }, { status: 404 });
@@ -184,6 +200,8 @@ describe('kortix review', () => {
     process.env = { ...ORIGINAL_ENV };
     calls = [];
     forbidden = false;
+    adaptedById = true;
+    paged = false;
   });
 
   afterEach(() => {
@@ -251,12 +269,38 @@ describe('kortix review', () => {
     expect(r.stdout).toContain('sess_1');
   });
 
-  test('show reads the LIST for an adapted id — the per-item route only holds native rows', async () => {
+  // KRTX-2316: the inbox is paged, so the per-item route reads `cr:` and
+  // `call:` rows too; a list scan finds only what is on page one.
+  test('show reads the per-item route for an adapted id', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['show', 'cr:cr_9', '--project', PROJECT, '--json'], config);
     expect(r.code).toBe(0);
-    expect(calls[0].path).toBe(`/v1/projects/${PROJECT}/review/items`);
+    expect(calls.map((c) => c.path)).toEqual([`/v1/projects/${PROJECT}/review/items/cr%3Acr_9`]);
     expect(JSON.parse(r.stdout).review_item_id).toBe('cr:cr_9');
+  });
+
+  test('show falls back to the LIST for an adapted id on an older API — its per-item route holds native rows only', async () => {
+    adaptedById = false;
+    const config = writeConfig(startServer());
+    const r = await runCli(['show', 'cr:cr_9', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    expect(calls.map((c) => c.path)).toEqual([
+      `/v1/projects/${PROJECT}/review/items/cr%3Acr_9`,
+      `/v1/projects/${PROJECT}/review/items`,
+    ]);
+    expect(JSON.parse(r.stdout).review_item_id).toBe('cr:cr_9');
+  });
+
+  test('ls follows next_cursor until the last page', async () => {
+    const config = writeConfig(startServer());
+    paged = true;
+    const r = await runCli(['ls', '--segment', 'done', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    expect(calls.map((c) => c.path)).toEqual([
+      `/v1/projects/${PROJECT}/review/items?segment=done`,
+      `/v1/projects/${PROJECT}/review/items?segment=done&limit=200&cursor=c2`,
+    ]);
+    expect(JSON.parse(r.stdout).review_items).toHaveLength(4);
   });
 
   test('act on a native id POSTs {verdict, feedback} to /act', async () => {
