@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
@@ -70,6 +71,8 @@ export default function PublicSessionSharePage() {
   const [loading, setLoading] = useState(true);
   const [hasAuth, setHasAuth] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const tCommon = useTranslations('common');
   // A transcript share is titled by the session's name. The share row's own
   // label is the generic "Conversation".
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
@@ -156,14 +159,15 @@ export default function PublicSessionSharePage() {
 
   async function startSession() {
     if (!meta) return;
-    const authToken = await getAuthToken();
-    if (!authToken) {
-      // nav-contract: prefetch-only — a defensive bounce for a token that expired between render and click; the offline panel's Sign in <Link> already prefetches this href.
-      router.push(`/auth?next=${encodeURIComponent(`/share/session/${token}`)}`);
-      return;
-    }
     setStarting(true);
+    setStartError(null);
     try {
+      const authToken = await getAuthToken();
+      if (!authToken) {
+        // nav-contract: prefetch-only — a defensive bounce for a token that expired between render and click; the offline panel's Sign in <Link> already prefetches this href.
+        router.push(`/auth?next=${encodeURIComponent(`/share/session/${token}`)}`);
+        return;
+      }
       await startSessionWithToken(meta.share.project_id, meta.share.session_id, {
         backendUrl: base,
         accessToken: authToken,
@@ -175,6 +179,8 @@ export default function PublicSessionSharePage() {
         cache: 'no-store',
       });
       setMeta(body);
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : tCommon.raw('error'));
     } finally {
       setStarting(false);
     }
@@ -331,12 +337,19 @@ export default function PublicSessionSharePage() {
             <div className="max-w-sm">
               <h2 className="text-base font-semibold">{offlineTitle}</h2>
               <p className="text-muted-foreground mt-2 text-sm">{offlineDescription}</p>
+              {startError && (
+                <InfoBanner className="mt-5" tone="destructive" role="alert">
+                  {startError}
+                </InfoBanner>
+              )}
               {hasAuth ? (
                 <Button className="mt-5" onClick={startSession} disabled={starting}>
                   {starting ? <Loading /> : <Play />}
-                  {tI18nHardcoded.raw(
-                    'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
-                  )}
+                  {startError
+                    ? tCommon.raw('retry')
+                    : tI18nHardcoded.raw(
+                        'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
+                      )}
                 </Button>
               ) : (
                 <Button className="mt-5" asChild>
