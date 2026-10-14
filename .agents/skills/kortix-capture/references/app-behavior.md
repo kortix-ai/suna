@@ -185,8 +185,10 @@ Default location: `~/Library/Application Support/ai.kortix.capture` (macOS),
 
 5. **Retain**: every 10 min, `storage_cap` mode deletes (or downscales) the
    oldest chunks until the library is 5% under `limit_gb`; `retention` mode
-   acts on chunks older than `retention_days`. Text, titles, URLs and search
-   survive; the timeline shows "removed to save storage".
+   acts on chunks older than `retention_days`. The default ("Keep recordings on this
+   computer": 7 days) is `retention`, 7 days, `delete`; with sync on it never deletes a
+   chunk that is not uploaded yet. Text, titles, URLs and search survive; the timeline
+   shows "removed to save storage".
 
 ### Experimental local personal-data masking
 

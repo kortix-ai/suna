@@ -1808,7 +1808,7 @@ function paintSync() {
   const box = $('#sync-box');
   if (!box || !syncData || !appData) return;
   const view = syncData.view || { destination: 'off', line: 'Off', tone: 'off' };
-  if (!draft.dest) draft.dest = syncShown(view);
+  if (!draft.dest) draft.dest = view.destination;
   const kortix = syncData.status?.kortix || {};
   const job = syncData.jobs?.connect;
   const errHtml = (adv) => (draft.syncError && draft.syncErrorAdv === adv ? `<div class="note err">${esc(draft.syncError)}</div>` : '');
@@ -1832,35 +1832,50 @@ function paintSync() {
   const adv = $('#sync-adv');
   if (!adv) return;
   if (appData.managed) { setKeyed(adv, 'managed', ''); return; }
-  const chosen = draft.dest;
+  // Picking a destination changes nothing: a different one shows what it means and waits
+  // for an explicit Save, and leaving Settings drops it.
+  const now = view.destination, chosen = draft.dest, pending = chosen !== now;
   const seg = `<div class="seg" role="radiogroup" aria-label="Where recordings go">${DESTINATIONS.map(([k, n]) =>
-    `<button type="button" role="radio" aria-checked="${chosen === k}" data-dest="${k}" class="${chosen === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
-  let body = '';
-  if (draft.confirmOff) {
-    body = `<div class="note warn"><strong>${draft.confirmOff === 'signout' ? 'Sign out and stop syncing?' : 'Stop syncing?'}</strong>
-      New recordings stay only on this ${PC}. Nothing is backed up, and they are gone when this ${PC} is lost or reset.
-      <div class="actions"><button class="btn" id="sync-keep">Keep syncing</button><button class="btn danger" id="sync-stop">${draft.confirmOff === 'signout' ? 'Sign out' : 'Stop syncing'}</button></div></div>`;
-  } else if (chosen === 's3') {
+    `<button type="button" role="radio" aria-checked="${chosen === k}" data-dest="${k}" class="${chosen === k ? 'on' : ''}">${n}${k === now ? ' <small>(on)</small>' : ''}</button>`).join('')}</div>`;
+  const cancel = '<button class="btn" id="sync-cancel">Cancel</button>';
+  const leaving = now !== 'off' ? ` Recordings stop going to ${now === 'kortix' ? 'Kortix' : 'your S3 bucket'}.` : '';
+  const s3Form = () => {
     const f = s3Draft();
-    body = `<div class="form">
+    return `<div class="form">
         ${field('s3-endpoint', 'Endpoint', f.endpoint, { ph: 'https://s3.us-east-1.amazonaws.com' })}
         ${field('s3-bucket', 'Bucket', f.bucket)}
         ${field('s3-region', 'Region', f.region)}
         ${field('s3-prefix', 'Folder', f.prefix)}
         ${field('s3-key', 'Access key ID', f.access_key_id)}
         ${field('s3-secret', 'Secret access key', f.secret_access_key, { type: 'password', ph: syncData.credentials?.saved ? 'Saved. Leave blank to keep it.' : '' })}
-      </div>
-      <div class="actions"><button class="btn primary" id="s3-save"${draft.busy === 's3' ? ' disabled' : ''}>${draft.busy === 's3' ? 'Testing...' : 'Save and test'}</button></div>`;
+      </div>`;
+  };
+  const busy = draft.busy === 's3';
+  let body = '';
+  if (draft.confirmOff === 'signout') {
+    body = `<div class="note warn"><strong>Sign out and stop syncing?</strong>
+      New recordings stay only on this ${PC}. Nothing is backed up, and they are gone when this ${PC} is lost or reset.
+      <div class="actions"><button class="btn" id="sync-keep">Keep syncing</button><button class="btn danger" id="sync-stop">Sign out</button></div></div>`;
+  } else if (pending && chosen === 'off') {
+    body = `<div class="note warn"><strong>Stop syncing?</strong>
+      New recordings stay only on this ${PC}. Nothing is backed up, and they are gone when this ${PC} is lost or reset.
+      <div class="actions">${cancel}<button class="btn danger" id="sync-stop">Stop syncing</button></div></div>`;
+  } else if (pending && chosen === 's3') {
+    body = `${s3Form()}<div class="note warn"><strong>Not saved.</strong> Switch to your S3 bucket?${leaving} Kortix Capture tests the bucket before it switches.
+      <div class="actions">${cancel}<button class="btn primary" id="s3-save"${busy ? ' disabled' : ''}>${busy ? 'Testing...' : 'Save and switch'}</button></div></div>`;
+  } else if (pending && chosen === 'kortix') {
+    body = `<div class="note warn"><strong>Not saved.</strong> Switch to Kortix?${leaving} Sign in to switch.
+      <div class="actions">${cancel}<button class="btn primary" id="kortix-connect">Sign in with Kortix</button></div></div>`;
+  } else if (chosen === 's3') {
+    body = `${s3Form()}<div class="actions"><button class="btn" id="s3-save"${busy ? ' disabled' : ''}>${busy ? 'Testing...' : 'Save changes'}</button></div>`;
   } else if (chosen === 'kortix') {
-    body = appData.signed_in
-      ? row('Sign out of Kortix', 'Stops sync. Recording continues.', '<button class="btn" id="kortix-signout">Sign out</button>')
-      : '<p class="hint">Sign in under Sync, above.</p>';
+    body = row('Sign out of Kortix', 'Stops sync. Recording continues.', '<button class="btn" id="kortix-signout">Sign out</button>');
   } else {
     body = `<p class="hint">Recordings stay on this ${PC}.</p>`;
   }
-  const rule = chosen !== 'off' && !draft.confirmOff ? `<p class="hint small">${esc(syncData.switch_rule || '')}</p>` : '';
-  const advKey = [chosen, draft.confirmOff || '', !!appData.signed_in, draft.busy, !!syncData.credentials?.saved, draft.syncErrorAdv ? draft.syncError : ''].join('|');
-  setKeyed(adv, advKey, `<div class="row stack"><div class="lab">Sync destination<small>Where recordings go.</small></div></div>${seg}${body}${rule}${errHtml(true)}`);
+  const rule = pending && chosen !== 'off' ? `<p class="hint small">${esc(syncData.switch_rule || '')}</p>` : '';
+  const advKey = [now, chosen, draft.confirmOff || '', !!appData.signed_in, draft.busy, !!syncData.credentials?.saved, draft.syncErrorAdv ? draft.syncError : ''].join('|');
+  setKeyed(adv, advKey, `<div class="row stack"><div class="lab">Sync destination<small>Where recordings go. Nothing changes until you save.</small></div></div>${seg}${body}${rule}${errHtml(true)}`);
 }
 /* The status line and the pause control: repainted by the poll. */
 function paintRecording() {
@@ -2044,9 +2059,8 @@ settingsEl.addEventListener('click', async (e) => {
   if (b.dataset.dest) {
     const to = b.dataset.dest;
     draft.syncError = '';
-    // Turning sync off asks first; nothing changes until "Stop syncing".
-    if (to === 'off' && syncData?.view?.destination !== 'off') draft.confirmOff = 'off';
-    else { draft.confirmOff = null; draft.dest = to; }
+    // A pick only marks the change; Save (or Stop syncing, or Sign in) applies it.
+    draft.confirmOff = null; draft.dest = to;
     paintSync();
     return;
   }
@@ -2069,13 +2083,14 @@ settingsEl.addEventListener('click', async (e) => {
       break;
     }
     case 'kortix-connect':
-      draft.syncError = ''; draft.syncErrorAdv = false;
+      draft.syncError = ''; draft.syncErrorAdv = draft.dest !== (syncData?.view?.destination || 'off');
       if (await act('/api/kortix/connect', { issuer: draft.issuer.trim() }, true)) refreshLive();
       else { draft.syncError = actError; paintSync(); }
       break;
     case 'kortix-approve': post({ cmd: 'open_url', url: syncData.jobs.connect?.progress?.approve_url }); break;
     case 'kortix-signout': draft.confirmOff = 'signout'; paintSync(); break;
     case 'sync-keep': draft.confirmOff = null; paintSync(); break;
+    case 'sync-cancel': draft.dest = syncData?.view?.destination || 'off'; draft.syncError = ''; draft.s3 = null; paintSync(); break;
     case 'sync-stop': {
       const signout = draft.confirmOff === 'signout';
       draft.confirmOff = null;

@@ -614,7 +614,6 @@ pub fn adopt(paths: &MemoryPaths, a: &Adoption) -> Result<Registration> {
     s.sync.kortix.url = issuer.to_string();
     s.sync.encrypt = false;
     s.sync.enabled = true;
-    s.follow_sync_default(true);
     s.airgap = false;
     s.validate()?;
     s.save(paths)?;

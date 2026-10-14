@@ -34,7 +34,11 @@ assert.equal(syncShown({ destination: 's3' }), 's3');
 assert.equal(syncPanel({}, { destination: 'off' }, syncShown({ destination: 'off' }), {}, null).kind, 'kortix-out');
 // Turning sync off or signing out asks first: no one-click path to Off.
 assert.ok(!/act\('\/api\/sync\/off'\)[^;]*\n?[^;]*dataset\.dest/.test(src));
-assert.match(src, /to === 'off' && syncData\?\.view\?\.destination !== 'off'\) draft\.confirmOff = 'off'/);
+// A pick only marks the change; nothing is posted from the destination buttons.
+const pick = src.slice(src.indexOf('if (b.dataset.dest) {'), src.indexOf('if (b.dataset.confirm && !armed(b)) return;'));
+assert.ok(pick.length > 0 && !/act\(|api\(/.test(pick), 'choosing a destination never saves');
+assert.match(src, /pending && chosen === 'off'[\s\S]{0,400}id="sync-stop">Stop syncing/);
+assert.match(src, /pending && chosen === 's3'[\s\S]{0,600}Save and switch/);
 assert.match(src, /case 'kortix-signout': draft\.confirmOff = 'signout'/);
 const offView = { destination: 'off' }, kortixView = { destination: 'kortix' }, s3View = { destination: 's3' };
 // A managed computer shows the organization and no controls.

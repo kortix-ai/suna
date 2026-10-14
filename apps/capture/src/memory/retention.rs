@@ -77,7 +77,11 @@ pub fn enforce(
 ) -> Result<()> {
     match s.storage.management_mode.as_str() {
         "storage_cap" => enforce_cap(conn, paths, engine, s),
-        "retention" => enforce_retention(conn, paths, engine, s),
+        // By age first; the library size cap still holds (a busy week, an upload backlog).
+        "retention" => {
+            enforce_retention(conn, paths, engine, s)?;
+            enforce_cap(conn, paths, engine, s)
+        }
         _ => Ok(()),
     }
 }
@@ -428,6 +432,7 @@ mod tests {
         );
         // A cap that forces about two files out.
         let mut s = Settings::default();
+        s.storage.management_mode = "storage_cap".into();
         s.storage.limit_gb = (used.total() as f64 - 700_000.0) / 1e9;
         let mut engine = crate::memory::engine::Engine::without_process_for_test();
         enforce(&conn, &paths, &mut engine, &s).unwrap();
@@ -465,4 +470,34 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn keep_seven_days_still_holds_the_size_cap() {
+        let dir = std::env::temp_dir().join(format!("kmem-ret-cap-{}", uuid::Uuid::new_v4()));
+        let paths = MemoryPaths::at(&dir);
+        let conn = store::open(&paths).unwrap();
+        std::fs::create_dir_all(paths.audio_dir()).unwrap();
+        // Two recent audio segments, well inside 7 days; the cap has room for one.
+        let now = now_ms();
+        for (i, t) in [now - 2_000, now - 1_000].iter().enumerate() {
+            std::fs::write(paths.audio_dir().join(format!("{i}.m4a")), vec![0u8; 400_000]).unwrap();
+            conn.execute(
+                "INSERT INTO audio(start_ms, end_ms, path, size_bytes) VALUES (?1, ?2, ?3, 400000)",
+                rusqlite::params![t, t + 500, format!("{i}.m4a")],
+            )
+            .unwrap();
+        }
+        let mut s = Settings::default();
+        assert_eq!(s.storage.management_mode, "retention");
+        s.storage.limit_gb = (usage(&paths).total() as f64 - 300_000.0) / 1e9;
+        let mut engine = crate::memory::engine::Engine::without_process_for_test();
+        enforce(&conn, &paths, &mut engine, &s).unwrap();
+        let st = |id: i64| -> i64 {
+            conn.query_row("SELECT status FROM audio WHERE id = ?1", [id], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!((st(1), st(2)), (STATUS_DELETED, 0), "the oldest goes to fit the cap");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
 }

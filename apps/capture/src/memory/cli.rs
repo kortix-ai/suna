@@ -1871,7 +1871,6 @@ pub fn sync_setup_s3(paths: &MemoryPaths, a: S3Setup) -> Result<Value> {
     )?;
     sync::save_credentials(paths, &a.creds)?;
     s.sync.enabled = true;
-    s.follow_sync_default(true);
     super::onboarding::set(paths, super::onboarding::State::Done);
     s.sync.encrypt = s.sync.encrypt || a.encrypt;
     s.save(paths)?;
@@ -1939,7 +1938,6 @@ pub fn sync_setup_kortix(
     };
     sync::view::apply_switch(paths, prev.as_deref(), &sync::view::kortix_key(&reg.issuer, &reg.prefix))?;
     s.sync.enabled = true;
-    s.follow_sync_default(true);
     s.save(paths)?;
     super::onboarding::set(paths, super::onboarding::State::Done);
     write_connect_state(paths, &json!({"running": false, "ok": true, "started_ms": started, "finished_ms": now_ms()}));
@@ -2017,7 +2015,6 @@ pub fn sync_sign_out(paths: &MemoryPaths) -> Result<Value> {
         s.sync.enabled = false;
         // Back to Off: not a "kortix" provider with no sign-in.
         s.sync.provider = "s3".into();
-        s.follow_sync_default(false);
         s.save(paths)?;
     }
     // Back to onboarding on the next open (never forced at login).
@@ -2044,7 +2041,6 @@ pub fn sync_set_enabled(paths: &MemoryPaths, on: bool) -> Result<Value> {
         super::sync::view::apply_switch(paths, None, "resume")?;
     }
     s.sync.enabled = on;
-    s.follow_sync_default(on);
     s.save(paths)?;
     Ok(json!({"enabled": on}))
 }
