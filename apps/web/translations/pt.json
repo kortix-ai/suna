@@ -686,6 +686,7 @@
     "appearance": {
       "theme": "Tema",
       "themeDescription": "Escolha a aparência do Kortix neste dispositivo.",
+      "moreThemes": "Mais temas…",
       "conversationDensity": "Densidade da conversa",
       "conversationDensityDescription": "Escolha quantos detalhes o agente mostra na conversa enquanto trabalha.",
       "richAnswers": "Respostas enriquecidas",
@@ -695,8 +696,15 @@
       "defaultWallpaper": "Padrão",
       "themes": {
         "light": "Claro",
+        "pureLight": "Claro puro",
         "dark": "Escuro",
-        "system": "Sistema"
+        "pureDark": "Escuro puro",
+        "system": "Sistema",
+        "kortix": "Kortix",
+        "lightThemes": "Temas claros",
+        "darkThemes": "Temas escuros",
+        "search": "Pesquisar temas…",
+        "noResults": "Nenhum tema encontrado"
       },
       "densities": {
         "normal": {
@@ -19188,6 +19196,10 @@
       "text8295f9d4861b": "Verificação do domínio SSO da conta definida",
       "text7beaff63a7d3": "Arquivo de configuração do projeto baixado",
       "text5176d59f25fd": "Versão de configuração da sessão resolvida",
+      "text64ad7399fb9e": "Tema claro puro",
+      "texte6ebf219f591": "tema modo claro puro branco",
+      "textc433363f9a4e": "Tema escuro puro",
+      "textbc9543239440": "tema modo escuro puro preto",
       "text273c48dbf3b9": "Dispositivo de notificações push registrado",
       "textbb666ddf7a57": "Dispositivo de notificações push removido",
       "text397ab5aecbbf": "Solicitação de permissão da sessão repassada",
@@ -20744,5 +20756,21 @@
     "mapTwoFingers": "Use dois dedos para mover o mapa",
     "pick": "Escolha",
     "convertFailed": "Não foi possível preparar a transcrição. Tente novamente."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobile",
+    "badge": "Novo",
+    "title": "Kortix, agora no seu celular",
+    "description": "Seus projetos, sessões e agentes, onde você estiver. Comece o trabalho na sua mesa e faça ele avançar de qualquer lugar.",
+    "feature": {
+      "sessions": "Continue de onde parou",
+      "sessionsDescription": "Todas as sessões da web, prontas no seu celular.",
+      "notifications": "Saiba na hora em que terminar",
+      "notificationsDescription": "Um aviso push quando uma sessão termina ou precisa da sua resposta.",
+      "dictation": "Fale e envie",
+      "dictationDescription": "Dite um prompt em vez de digitar."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }

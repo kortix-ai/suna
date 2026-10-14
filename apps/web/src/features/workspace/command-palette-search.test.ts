@@ -7,6 +7,7 @@ import {
   settingsPaletteSearchText,
   type SettingsPaletteParams,
 } from '@/features/workspace/settings-palette-items';
+import { TERMINAL_THEMES } from '@/lib/interface-themes';
 import { getItemsForSurface, menuRegistry } from '@/lib/menu-registry';
 
 /**
@@ -92,7 +93,24 @@ function matches(row: Row, query: string): boolean {
   return words.every((word) => haystack.includes(word));
 }
 
-const hits = (query: string) => allRows.filter((row) => matches(row, query)).map((row) => row.key);
+/**
+ * Generated terminal-theme rows (one per `TERMINAL_THEMES` entry) carry proper
+ * nouns the palette cannot curate — "Sonokai Espresso" legitimately contains
+ * "sso". The navigation assertions below guard the hand-written rows, so they
+ * run against the palette minus those generated rows; theme search is covered
+ * in its own block.
+ */
+const TERMINAL_THEME_ROW_KEYS = new Set(TERMINAL_THEMES.map((theme) => `nav:theme-${theme.id}`));
+
+const hits = (query: string) =>
+  allRows
+    .filter((row) => !TERMINAL_THEME_ROW_KEYS.has(row.key) && matches(row, query))
+    .map((row) => row.key);
+
+const themeHits = (query: string) =>
+  allRows
+    .filter((row) => TERMINAL_THEME_ROW_KEYS.has(row.key) && matches(row, query))
+    .map((row) => row.key);
 
 // ============================================================================
 // 1. Selection identity — cmdk uses `value` as the row's identity and requires
@@ -442,4 +460,24 @@ describe('genuine synonyms still answer', () => {
       expect(hits(query)).toContain(key);
     });
   }
+});
+
+describe('terminal themes are searchable', () => {
+  test('every generated theme has exactly one palette row', () => {
+    const rowKeys = new Set(allRows.map((row) => row.key));
+    for (const key of TERMINAL_THEME_ROW_KEYS) expect(rowKeys.has(key)).toBe(true);
+    expect(TERMINAL_THEME_ROW_KEYS.size).toBe(TERMINAL_THEMES.length);
+  });
+
+  test('a family name finds every variant of that family and nothing else', () => {
+    const tokyoNight = TERMINAL_THEMES.filter((theme) => theme.family === 'tokyo-night');
+    expect(themeHits('tokyo night').sort()).toEqual(
+      tokyoNight.map((theme) => `nav:theme-${theme.id}`).sort(),
+    );
+    expect(tokyoNight.length).toBeGreaterThan(1);
+  });
+
+  test('a full theme name finds that theme', () => {
+    expect(themeHits('iceberg dark')).toEqual(['nav:theme-iceberg-dark']);
+  });
 });

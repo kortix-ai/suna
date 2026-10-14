@@ -28,6 +28,7 @@ import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { notificationCenterOn } from '@/features/notifications/use-notification-center';
 import { FirstChat } from './home/first-chat';
+import { MobileAppPromo } from './home/mobile-app-promo';
 import { SandboxPicker } from './home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
 
@@ -280,6 +281,8 @@ export function ProjectHome({
         to={accessRequestsTo}
         notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
       />
+      {/* Not over the first chat: onboarding owns that screen. */}
+      {firstChat ? null : <MobileAppPromo />}
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the
