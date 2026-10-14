@@ -896,7 +896,7 @@ flow(
     const MIN = 60_000;
     // Fixed timestamps: the same document read again is the same not-recording spell.
     const t0 = Date.now();
-    const stalledDoc = statusDoc(t0, { lastFrameMs: t0 - 20 * MIN });
+    const stalledDoc = statusDoc(t0, { lastFrameMs: t0 - 40 * MIN });
     const silentDoc = statusDoc(t0 - 45 * MIN);
     const names = ['recording', 'locked', 'paused', 'stalled', 'silent'] as const;
     const computers = new Map<(typeof names)[number], { device_id: string; prefix: string }>();
@@ -919,7 +919,7 @@ flow(
       Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.notifications WHERE account_id = $1 AND user_id = $2 AND kind = $3`, [team.id, userId, kind])).rows[0]!.n);
 
     try {
-      await ctx.step('five computers report: recording, locked, paused by the person, recording with no frame for 20 awake minutes, and silent for 45 minutes → the summary counts 1 recording · 1 idle · 1 needs attention · 2 not recording, each with its reason', async () => {
+      await ctx.step('five computers report: recording, locked, paused by the person, recording with no frame for 40 awake minutes, and silent for 45 minutes → the summary counts 1 recording · 1 idle · 1 needs attention · 2 not recording, each with its reason', async () => {
         const now = t0;
         await report('recording', statusDoc(now));
         await report('locked', statusDoc(now, { recording: 'paused', reason: 'locked', lastFrameMs: now - 40 * MIN }));
@@ -987,7 +987,7 @@ flow(
 
       await ctx.step('a new not-recording spell on the same computer alerts again (a new spell key)', async () => {
         const ownerId = ctx.P.OWNER.userId!;
-        await report('stalled', statusDoc(Date.now(), { lastFrameMs: Date.now() - 25 * MIN, host: { awakeSinceMs: Date.now() - 3_600_000 } }));
+        await report('stalled', statusDoc(Date.now(), { lastFrameMs: Date.now() - 35 * MIN, host: { awakeSinceMs: Date.now() - 3_600_000 } }));
         if ((await stored('capture_device_down', ownerId)) !== 3) throw new Error(`second spell ${await stored('capture_device_down', ownerId)}`);
       });
     } finally {
