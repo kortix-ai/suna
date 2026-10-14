@@ -661,6 +661,46 @@ describe('pi harness', () => {
     expect(text).toContain('event: permission.replied')
   })
 
+  test('a new prompt dismisses an open question, so an unattended session never wedges behind it', async () => {
+    // Prod 2026-10-09: a keyed cron session called `question`, nobody answered,
+    // and every later fire queued behind the blocked turn for 5 days.
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'went on without an answer' },
+        { text: 'second prompt answered' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 0 && !runtime.busy() && runtime.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: { role: string }; parts: Array<Record<string, any>> }> }
+    const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'question')!
+    expect(tool.state.status).not.toBe('running')
+    const texts = page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)
+    expect(texts).toContain('second prompt answered')
+    const text = await readSse(await r.bearer('/kortix/opencode/events?since=0'), (t) => t.includes('event: question.rejected'))
+    expect(text).toContain('event: question.rejected')
+  })
+
+  test('a steered message dismisses an open question, so the turn reads it', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'read the steer' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect(runtime.steer({ messageID: runtime.activeTurnMessageId()!.replace(/.$/, 'z'), text: 'STEERED while asked', parts: [] } as never)).toBe('steered')
+    await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
+  })
+
   test('a rejected permission blocks the tool and the turn still ends', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo never' } }, { text: 'blocked, sorry' }],
