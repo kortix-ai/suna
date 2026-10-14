@@ -33,8 +33,10 @@ when Kortix queues the create. Read the session with
 
 With only a `session_id`, `GET /v1/sessions/<session_id>` returns the same
 session with its `project_id`, under the same access rules: a session you
-cannot read, an unknown id, and a deleted session all return `404`. A key scoped
-to one project cannot call it. Use the project route with that key.
+cannot read, an unknown id, and a deleted session all return `404`. A session
+in an account or project you have no access to also returns `404`, so the id
+alone never shows that a session exists. A key scoped to one project cannot
+call it. Use the project route with that key.
 
 ## Pick a surface
 

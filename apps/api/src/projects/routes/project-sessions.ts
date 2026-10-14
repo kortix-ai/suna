@@ -21,6 +21,7 @@ import type { AppEnv } from '../../types';
 
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { projectSessions } from '@kortix/db';
 import { SessionUpdateInputSchema } from '@kortix/api-contract';
 import { and, eq, sql } from 'drizzle-orm';
@@ -111,9 +112,12 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
  * `GET /v1/sessions/:sessionId`: one session by id, in whichever project holds
  * it. A client that has only the id (an SDK `restartSandbox(id)`) reads it here
  * instead of listing every project's sessions (KRTX-2316). The answer is the
- * project route's own (`sessionReadResponse`): an unknown id, a session the
- * caller may not see and a deleted one are all `404`. A project-scoped token is
- * refused before this handler (`enforceTokenProjectScope`: no project in the path).
+ * project route's own (`sessionReadResponse`), with one difference: the
+ * project gate's `403` (no member of the account, no access to the project, no
+ * session read) is `404` here. The id alone must not tell a caller that a
+ * session exists, so an unknown id, a session the caller may not see and a
+ * deleted one are all `404`. A project-scoped token is refused before this
+ * handler (`enforceTokenProjectScope`: no project in the path).
  */
 export function registerSessionLookupRoutes(): void {
   sessionsApp.use('/*', supabaseAuth);
@@ -138,7 +142,12 @@ export function registerSessionLookupRoutes(): void {
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const projectId = await sessionProjectId(sessionId);
       if (!projectId) return c.json({ error: 'Not found' }, 404);
-      return sessionReadResponse(c, projectId, sessionId);
+      try {
+        return await sessionReadResponse(c, projectId, sessionId);
+      } catch (error) {
+        if (error instanceof HTTPException && error.status === 403) return c.json({ error: 'Not found' }, 404);
+        throw error;
+      }
     },
   );
 }

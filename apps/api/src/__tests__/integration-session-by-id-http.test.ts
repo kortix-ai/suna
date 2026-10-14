@@ -6,7 +6,9 @@
  * to list every project's first sessions page to find it, and a session older
  * than that page was "not found". The account-scoped route reads it by id. It
  * must not become a second, looser door: for each caller and each session the
- * status and the body equal the project route's.
+ * status and the body equal the project route's. One answer is stricter: a
+ * caller the project gate refuses (403 on the project route) gets the
+ * unknown-id 404, so the id alone never proves that a session exists.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
@@ -23,6 +25,8 @@ const PROJECT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 const OUTSIDER = crypto.randomUUID();
+/** A member of ACCOUNT with no role on PROJECT. */
+const NON_PROJECT_MEMBER = crypto.randomUUID();
 const AGENT = 'kortix';
 
 /** Private to OWNER. */
@@ -33,10 +37,11 @@ const SHARED = crypto.randomUUID();
 const DELETED = crypto.randomUUID();
 
 const minted: string[] = [];
-const keys: Record<'owner' | 'member' | 'outsider' | 'projectScoped', string> = {
+const keys: Record<'owner' | 'member' | 'outsider' | 'nonProjectMember' | 'projectScoped', string> = {
   owner: '',
   member: '',
   outsider: '',
+  nonProjectMember: '',
   projectScoped: '',
 };
 
@@ -76,6 +81,7 @@ beforeAll(async () => {
     { userId: OWNER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: OUTSIDER, accountId: OTHER_ACCOUNT, accountRole: 'owner', isSuperAdmin: false },
+    { userId: NON_PROJECT_MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
   await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: OWNER, projectRole: 'member' },
@@ -101,6 +107,7 @@ beforeAll(async () => {
   keys.owner = await mint(ACCOUNT, OWNER);
   keys.member = await mint(ACCOUNT, MEMBER);
   keys.outsider = await mint(OTHER_ACCOUNT, OUTSIDER);
+  keys.nonProjectMember = await mint(ACCOUNT, NON_PROJECT_MEMBER);
   keys.projectScoped = await mint(ACCOUNT, OWNER, PROJECT);
 });
 
@@ -142,11 +149,21 @@ describe('GET /v1/sessions/:sessionId', () => {
     expect(lookup).toEqual(await inProject(PRIVATE, keys.member));
   });
 
-  test('a caller from another account gets the project route`s answer, never the row', async () => {
+  // The id alone must not prove a session exists: a refused project gate
+  // answers exactly as an unknown id does. The project route, where the caller
+  // already names the project, keeps its 403.
+  test('a caller from another account gets the unknown-id 404, never a 403 or the row', async () => {
     const lookup = await byId(SHARED, keys.outsider);
-    expect([403, 404]).toContain(lookup.status);
-    expect(lookup.status).toBe((await inProject(SHARED, keys.outsider)).status);
-    expect(JSON.stringify(lookup.body)).not.toContain(SHARED);
+    expect(lookup.status).toBe(404);
+    expect(lookup).toEqual(await byId(crypto.randomUUID(), keys.outsider));
+    expect((await inProject(SHARED, keys.outsider)).status).toBe(403);
+  });
+
+  test('an account member with no role on the project gets the unknown-id 404', async () => {
+    const lookup = await byId(SHARED, keys.nonProjectMember);
+    expect(lookup.status).toBe(404);
+    expect(lookup).toEqual(await byId(crypto.randomUUID(), keys.nonProjectMember));
+    expect((await inProject(SHARED, keys.nonProjectMember)).status).toBe(403);
   });
 
   test('a deleted session is 404 by id, as on the project route', async () => {

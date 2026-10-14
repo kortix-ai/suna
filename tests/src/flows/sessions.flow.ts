@@ -1393,7 +1393,9 @@ flow(
  * SESS-52 — one session by id, in any project (KRTX-2316). A client that holds
  * only a session id (the SDK's `restartSandbox(id)`) reads it here instead of
  * walking every project's first sessions page. The answer is the project
- * route's own, for every caller. Local profile: database sessions.
+ * route's own, except that a caller the project gate refuses gets the
+ * unknown-id 404, not 403: the id alone never proves a session exists. Local
+ * profile: database sessions.
  */
 flow(
   'SESS-52',
@@ -1459,6 +1461,13 @@ flow(
       (await owner.get(byId, { params: { sessionId: crypto.randomUUID() } })).status(404);
       (await owner.get(byId, { params: { sessionId: 'not-a-session' } })).status(400);
       (await ctx.client.as(ctx.P.ANON).get(byId, { params: { sessionId: sharedId } })).status(401);
+    });
+
+    await ctx.step('a caller outside the account gets 404 by id, as for an unknown id; the project route answers 403', async () => {
+      const outsider = ctx.client.as(ctx.P.NONMEMBER);
+      (await outsider.get(byId, { params: { sessionId: sharedId } })).status(404);
+      (await outsider.get(byId, { params: { sessionId: crypto.randomUUID() } })).status(404);
+      (await outsider.get(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(403);
     });
 
     await ctx.step('a deleted session is gone by id → 404', async () => {
