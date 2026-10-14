@@ -1,5 +1,5 @@
 {
-  "source_hash": "09b4133cc94d5b272c4f931f3edc9040c8ee617258cd598d12acaa2f049c4c53",
+  "source_hash": "52d863f5422e680ca1fba7ddfa992443fde99d4eaface83763953d5c01177d6c",
   "diff_files": [
     ".agents/skills/kortix-capture/SKILL.md",
     ".agents/skills/kortix-capture/references/app-behavior.md",
@@ -353,7 +353,6 @@
     "apps/web/src/lib/desktop.ts",
     "apps/web/src/lib/menu-registry.ts",
     "apps/web/src/lib/menu-translation-keys.generated.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/lib/web-notifications.ts",
     "apps/web/src/middleware.ts",
     "apps/web/translations/de.json",
@@ -383,13 +382,13 @@
     "packages/db/drizzle/meta/20261013234642_snapshot.json",
     "packages/db/drizzle/meta/20261014034706_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261013210000000_capture.sql",
-    "packages/db/migrations/20261013210000001_capture_permissions.sql",
-    "packages/db/migrations/20261013210000002_capture_displays.sql",
-    "packages/db/migrations/20261013210000003_capture_enrollment.sql",
-    "packages/db/migrations/20261013210000004_capture_device_first.sql",
-    "packages/db/migrations/20261013234642889_capture_enrollment_token_person.sql",
-    "packages/db/migrations/20261014034706159_capture_health_notification_kinds.sql",
+    "packages/db/migrations/20261014190000000_capture.sql",
+    "packages/db/migrations/20261014190000001_capture_permissions.sql",
+    "packages/db/migrations/20261014190000002_capture_displays.sql",
+    "packages/db/migrations/20261014190000003_capture_enrollment.sql",
+    "packages/db/migrations/20261014190000004_capture_device_first.sql",
+    "packages/db/migrations/20261014190000005_capture_enrollment_token_person.sql",
+    "packages/db/migrations/20261014190000006_capture_health_notification_kinds.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/sdk/package.json",
@@ -431,13 +430,13 @@
     "tests/src/flows/notifications.flow.ts",
     "tests/unit/release-record-workflow.test.ts"
   ],
-  "diff_hash": "73fb3ff5239a89188a97331f1c5d8aa31f4416e7302b220b0bf2e36a50faffdb",
-  "head": "31fee157dbabb164991772375ff70034bee600c2",
-  "passed": true,
+  "diff_hash": "a76800b24eac464d3ca7471048210dc8de5ead05f4c4deea7125e379bb5862fc",
+  "head": "6d41e160a0e808c9dcaea89603b64a93cd2ca622",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "fail",
+    "db-suites": "fail"
   },
-  "at": "2026-10-14T06:26:00.984Z"
+  "at": "2026-10-14T16:37:37.858Z"
 }

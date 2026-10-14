@@ -35,7 +35,7 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
    (`packages/starter/templates/managed/skills/kortix-genui/SKILL.md`), generated from
    `buildGenuiPrompt()` by `bun packages/sdk/scripts/genui-skill.ts`; `packages/sdk/src/genui/skill.test.ts`
    fails while it is stale. It is never in the system prompt. Project flag off = kortixd hides the skill
-   (`apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui.ts`).
+   (`apps/kortix-sandbox-agent-server/src/lib/config/genui.ts`).
 5. No raw model output reaches Slack, push, email, or the CLI. Run `toMarkdown`.
 6. Query, Mutation, Form, Input, and Button are Phase 4 only, with the guards in
    `references/spec.md` §9.
