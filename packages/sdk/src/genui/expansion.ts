@@ -145,23 +145,11 @@ function bracketDepth(text: string): number {
 }
 
 /**
- * Statement id → expression AST and tokens, as `createStreamingParser` would build them for
- * this full text: `preprocess`, completed statements cut at a newline at depth 0 (with ternary
- * continuation), each cut through lang-core's own `split(tokenize(…))`, then the pending tail
- * auto-closed. A later definition replaces an earlier one; a pending, incomplete redefinition of a
- * completed statement is ignored (a repeated id within the pending tail still replaces). Nothing is materialized.
+ * `cleaned` cut the way the streaming parser cuts it: completed statements end at a newline at
+ * depth 0 (with ternary continuation); `pending` is the trimmed tail after the last cut.
  */
-function statementsOf(cleaned: string): Map<string, { ast: ASTNode; tokens: Token[] }> {
-  const statements = new Map<string, { ast: ASTNode; tokens: Token[] }>();
-  const add = (text: string, skipCompleted: boolean) => {
-    // lang-core skips only ids of completed statements; a repeated id inside the same text replaces.
-    const completed = skipCompleted ? new Set(statements.keys()) : null;
-    for (const raw of split(tokenize(text))) {
-      if (completed?.has(raw.id)) continue;
-      statements.set(raw.id, { ast: parseExpression(raw.tokens), tokens: raw.tokens });
-    }
-  };
-
+function splitStatements(cleaned: string): { completed: string[]; pending: string } {
+  const completed: string[] = [];
   let depth = 0;
   let ternary = 0;
   let quote = '';
@@ -191,16 +179,48 @@ function statementsOf(cleaned: string): Map<string, { ast: ASTNode; tokens: Toke
       while (peek < cleaned.length && ' \t\r\n'.includes(cleaned[peek]!)) peek++;
       if (peek < cleaned.length && (cleaned[peek] === '?' || (cleaned[peek] === ':' && ternary > 0))) continue;
       const text = cleaned.slice(start, i).trim();
-      if (text) add(text, false);
+      if (text) completed.push(text);
       start = i + 1;
     }
   }
-  const pending = cleaned.slice(start).trim();
+  return { completed, pending: cleaned.slice(start).trim() };
+}
+
+/**
+ * Statement id → expression AST and tokens, as `createStreamingParser` would build them for
+ * this full text: `preprocess`, completed statements cut by `splitStatements`, each cut through
+ * lang-core's own `split(tokenize(…))`, then the pending tail auto-closed. A later definition
+ * replaces an earlier one; a pending, incomplete redefinition of a completed statement is ignored
+ * (a repeated id within the pending tail still replaces). Nothing is materialized.
+ */
+function statementsOf(cleaned: string): Map<string, { ast: ASTNode; tokens: Token[] }> {
+  const statements = new Map<string, { ast: ASTNode; tokens: Token[] }>();
+  const add = (text: string, skipCompleted: boolean) => {
+    // lang-core skips only ids of completed statements; a repeated id inside the same text replaces.
+    const completed = skipCompleted ? new Set(statements.keys()) : null;
+    for (const raw of split(tokenize(text))) {
+      if (completed?.has(raw.id)) continue;
+      statements.set(raw.id, { ast: parseExpression(raw.tokens), tokens: raw.tokens });
+    }
+  };
+  const { completed, pending } = splitStatements(cleaned);
+  for (const text of completed) add(text, false);
   if (pending) {
     const { text, wasIncomplete } = autoClose(pending);
     add(text, wasIncomplete);
   }
   return statements;
+}
+
+/**
+ * Id of the statement the model is still writing: the last statement in the pending tail, split
+ * as the streaming parser splits it, so a statement that spans lines inside brackets counts as one.
+ * Null when the tail is empty or has no `name =` yet.
+ */
+export function pendingStatementId(code: string): string | null {
+  const { pending } = splitStatements(preprocess(code));
+  if (!pending) return null;
+  return split(tokenize(autoClose(pending).text)).at(-1)?.id ?? null;
 }
 
 // lang-core token types for brackets (its `T` enum is a `const enum`, not available at runtime).

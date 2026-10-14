@@ -108,6 +108,16 @@ describe('parse + validate', () => {
     expect(issues.map((i) => i.code)).toContain('cut-off');
   });
 
+  test('a stream that ends inside a multi-line statement is cut off, not complete data', () => {
+    const code = 'root = Stack([c, t])\nc = Callout("info", "hi")\nt = Table(["a", "b"], [\n  ["1", "x"],\n  ["2", "y';
+    const settled = parseGenui(code);
+    expect((settled.root?.props.children as { type: string }[]).map((n) => n.type)).toEqual(['Callout']);
+    expect(settled.issues.map((i) => i.code)).toContain('cut-off');
+    const live = createGenuiParser().update(code, true);
+    const children = live.root?.props.children as { id: string; partial: boolean }[];
+    expect(children.map((n) => `${n.id}:${n.partial}`)).toEqual(['c:false', 't:true']);
+  });
+
   test('Query, Mutation, and $state are recorded and never become nodes', () => {
     const { root, issues } = parseGenui('root = Stack([b])\nb = Badge("x")\n$tab = "a"\nq = Query("tool", {})');
     expect((root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Badge']);

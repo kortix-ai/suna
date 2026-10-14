@@ -1,7 +1,7 @@
 import { createStreamingParser, type LibraryJSONSchema, type ValidationError } from '@openuidev/lang-core';
 
 import { GENUI_LIBRARY } from './catalog';
-import { expansionIssue } from './expansion';
+import { expansionIssue, pendingStatementId } from './expansion';
 import { shareNodes } from './share';
 import { GENUI_SCHEMA_VERSION, type GenuiIssue, type GenuiNode, type GenuiParseResult } from './types';
 import { sanitizeTree } from './validate';
@@ -15,22 +15,6 @@ const fromLangCore = (error: ValidationError): GenuiIssue => ({
   statementId: error.statementId,
   message: error.message,
 });
-
-const STATEMENT = /^\s*(\$?[A-Za-z_]\w*)\s*=/;
-
-/**
- * The statement the model is still writing: OpenUI Lang puts one statement per line, so it is the
- * last non-empty line, when the input is incomplete. Null when that line has no `name =` yet.
- */
-export function unfinishedStatement(code: string, incomplete: boolean): string | null {
-  if (!incomplete) return null;
-  const lines = code.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i]!.trim() === '') continue;
-    return STATEMENT.exec(lines[i]!)?.[1] ?? null;
-  }
-  return null;
-}
 
 /** At most this many issues per result (plus a cut-off issue past the cap); the first ones are kept. */
 const MAX_ISSUES = 50;
@@ -66,7 +50,7 @@ export function createGenuiParser(version: number = GENUI_SCHEMA_VERSION): Genui
       const rejected = expansionIssue(code);
       if (rejected) return { root: null, pending: [], issues: [rejected], streaming };
       raw = parser.set(code);
-      sanitized = sanitizeTree(raw.root, { streaming, unfinished: unfinishedStatement(code, raw.meta.incomplete) });
+      sanitized = sanitizeTree(raw.root, { streaming, unfinished: raw.meta.incomplete ? pendingStatementId(code) : null });
     } catch (error) {
       // The parser's state is unknown after a throw: start the next call from scratch.
       parser = createStreamingParser(schema(), 'Stack');
