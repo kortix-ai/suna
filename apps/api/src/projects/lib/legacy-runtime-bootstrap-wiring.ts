@@ -491,7 +491,7 @@ export async function guaranteeCurrentRuntimeOnOpen(
   }
 
   const manifestBuild = await deps.manifestBuild();
-  if (bootstrapWouldSkip(row.metadata, manifestBuild, deps.now())) {
+  if (bootstrapWouldSkip(row.metadata, manifestBuild, deps.now(), row.externalId)) {
     // The scheduled repair would return without touching the box: a
     // `current` check from before this deploy (6 h TTL), or an agent already
     // staged for this build. Reporting `repairing` held idle, serving boxes in

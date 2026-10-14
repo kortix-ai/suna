@@ -522,6 +522,9 @@ export interface LegacyCheckRecord {
   klass: RuntimeClass;
   /** `[]` for every klass but `stale`. */
   staleReasons: StaleReason[];
+  /** The manifest build and the box the verdict was taken against. A check from another build or box proves nothing; absent on rows written before 2026-10-15. */
+  manifestBuild?: number | null;
+  externalId?: string | null;
 }
 
 export type LegacyBootstrapOutcome =
@@ -666,12 +669,26 @@ function readCheck(metadata: Record<string, unknown> | null | undefined): Legacy
     klass: r.klass as RuntimeClass,
     // Absent on a check written before this deploy — never invented.
     staleReasons: Array.isArray(r.staleReasons) ? (r.staleReasons as StaleReason[]) : [],
+    manifestBuild: typeof r.manifestBuild === 'number' || r.manifestBuild === null ? r.manifestBuild : undefined,
+    externalId: typeof r.externalId === 'string' ? r.externalId : undefined,
   };
 }
 
-/** A `current` verdict younger than {@link LEGACY_CHECK_TTL_MS}: an unforced bootstrap skips the box. */
-function recentCurrentCheck(check: LegacyCheckRecord | null, nowMs: number): boolean {
+/**
+ * A `current` verdict younger than {@link LEGACY_CHECK_TTL_MS}, taken against
+ * this manifest build on this box: an unforced bootstrap skips the box. A deploy
+ * (new build) or a new box under the row (new `externalId`) expires it, so the
+ * guarantee, the repair and the reaper re-probe once.
+ */
+function recentCurrentCheck(
+  check: LegacyCheckRecord | null,
+  nowMs: number,
+  manifestBuild: number | null,
+  externalId: string | null,
+): boolean {
   if (check?.klass !== 'current') return false;
+  if (check.manifestBuild === undefined || check.manifestBuild !== manifestBuild) return false;
+  if (check.externalId !== externalId) return false;
   const atMs = Date.parse(check.at);
   return Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS;
 }
@@ -686,8 +703,9 @@ export function bootstrapWouldSkip(
   metadata: Record<string, unknown> | null | undefined,
   currentManifestBuild: number | null,
   nowMs: number,
+  externalId: string | null,
 ): boolean {
-  if (recentCurrentCheck(readCheck(metadata), nowMs)) return true;
+  if (recentCurrentCheck(readCheck(metadata), nowMs, currentManifestBuild, externalId)) return true;
   const record = readRecord(metadata);
   return record?.state === 'staged' && record.manifestBuild === currentManifestBuild;
 }
@@ -809,6 +827,8 @@ export async function bootstrapLegacyRuntime(
         at: nowIso,
         klass: classification.klass,
         staleReasons: classification.staleReasons,
+        manifestBuild: build,
+        externalId: input.externalId,
       } satisfies LegacyCheckRecord,
     },
     new Date(nowMs - LEGACY_BOOTSTRAP_STALE_RUNNING_MS).toISOString(),
@@ -862,7 +882,8 @@ async function probeRuntimeForBootstrap(
       return { result: { outcome: 'skipped-in-progress' } };
     }
   }
-  if (!input.force && recentCurrentCheck(check, nowMs)) {
+  const manifestBuild = await deps.manifestBuild();
+  if (!input.force && recentCurrentCheck(check, nowMs, manifestBuild, input.externalId)) {
     return { result: { outcome: 'skipped-recent-check' } };
   }
 
@@ -940,6 +961,8 @@ async function probeRuntimeForBootstrap(
         at: nowIso,
         klass: 'blocked',
         staleReasons: [],
+        manifestBuild,
+        externalId: input.externalId,
       } satisfies LegacyCheckRecord,
     });
     deps.log('daemon is pinned after a rollback — blocked, not repaired', {
@@ -965,7 +988,7 @@ async function probeRuntimeForBootstrap(
     });
   } else if (classification.klass === 'current') {
     const patch: Record<string, unknown> = {
-      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
+      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [], manifestBuild, externalId: input.externalId } satisfies LegacyCheckRecord,
     };
     // A bootstrap that was mid-flight is proven done by a current daemon.
     if (record && record.state !== 'converged') {
@@ -1219,7 +1242,13 @@ async function settleBootstrapReport(
       (after.opencodeComponent === 'current' || after.opencodeComponent === 'updated')
     ) {
       await deps.patchMetadata({
-        [LEGACY_CHECK_METADATA_KEY]: { at: new Date(deps.now()).toISOString(), klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
+        [LEGACY_CHECK_METADATA_KEY]: {
+          at: new Date(deps.now()).toISOString(),
+          klass: 'current',
+          staleReasons: [],
+          manifestBuild: attempt.running.manifestBuild,
+          externalId: input.externalId,
+        } satisfies LegacyCheckRecord,
       });
       const converged = await finishBootstrap(attempt, 'converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
       // `updated` = this daemon installed OpenCode during its boot pass. Daemon

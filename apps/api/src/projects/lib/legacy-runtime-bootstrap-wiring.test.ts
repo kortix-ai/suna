@@ -236,7 +236,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
   // ran; the stall ended only when the daemon swapped itself.
   test('a box with a recent current check: proceed — the repair would skip it, so never report repairing', async () => {
     let scheduled = 0;
-    const metadata = { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [] } };
+    const metadata = { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [], manifestBuild: 1790538288, externalId: 'ext_sb-recent-current' } };
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       { ...row('sb-recent-current'), metadata },
       fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
@@ -249,6 +249,28 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(outcome.classification?.klass).toBe('stale');
     expect(scheduled).toBe(0);
   });
+
+  // A `current` check proves only what was true for one manifest build on one
+  // box. Each case below would otherwise proceed on a box that needs the repair.
+  const repairsDespiteCheck = (name: string, check: Record<string, unknown>, health: unknown) =>
+    test(name, async () => {
+      let scheduled = 0;
+      const sandboxId = `sb-${name.length}`;
+      const outcome = await guaranteeCurrentRuntimeOnOpen(
+        { ...row(sandboxId), metadata: { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [], externalId: `ext_${sandboxId}`, ...check } } },
+        fakeDeps({ health, status: {} }),
+        () => {
+          scheduled += 1;
+          return true;
+        },
+      );
+      expect(outcome.action).toBe('repairing');
+      expect(scheduled).toBe(1);
+    });
+  const { capabilities: _dropped, ...MISSING_CAPABILITY_HEALTH } = CURRENT_HEALTH;
+  repairsDespiteCheck('a deploy added a required capability: a check from the previous build repairs', { manifestBuild: 1790538287 }, MISSING_CAPABILITY_HEALTH);
+  repairsDespiteCheck('the row got a new box: a check from another box repairs', { manifestBuild: 1790538288, externalId: 'ext_an-older-box' }, REAL_STALE_HEALTH);
+  repairsDespiteCheck('a check written before checks carried a build repairs (one extra probe per box)', { manifestBuild: undefined }, REAL_STALE_HEALTH);
 
   test('a current check older than the 6 h TTL still repairs', async () => {
     let scheduled = 0;
