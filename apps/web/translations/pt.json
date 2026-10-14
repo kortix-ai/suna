@@ -19678,8 +19678,10 @@
       "title": "Aprovar uma ação do {connector}"
     },
     "approvalWaiting": {
+      "byManager": "Aguardando alguém que gerencia este projeto aprovar ou negar a chamada.",
       "byName": "Aguardando {name} ou alguém que gerencia este projeto aprovar ou negar a chamada.",
-      "byOwner": "Aguardando a pessoa que iniciou esta sessão ou alguém que gerencia este projeto aprovar ou negar a chamada."
+      "byOwner": "Aguardando a pessoa que iniciou esta sessão ou alguém que gerencia este projeto aprovar ou negar a chamada.",
+      "copyLink": "Copiar link de aprovação"
     },
     "secretIntakeWithheld": {
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",

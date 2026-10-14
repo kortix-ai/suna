@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { CheckCircleIcon, ClockIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
+import type { SessionAuditAction } from '@kortix/sdk';
 import { useEffect, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
@@ -18,6 +19,9 @@ const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
   minute: 'numeric',
   second: 'numeric',
 });
+
+/** Who may decide a call, as the API names it (`resolvers`, KRTX-1724). */
+export type ApprovalResolvers = NonNullable<SessionAuditAction['resolvers']>;
 
 export interface ApprovalRequestData {
   action: string;
@@ -34,6 +38,9 @@ export interface ApprovalRequestData {
    *  KRTX-1724): the card then says who decides instead of offering a
    *  decision the API answers with 403. */
   canResolve?: boolean;
+  /** Who decides the call, for a viewer who may not (`resolvers`). Null or
+   *  absent: the plain wording. */
+  resolvers?: ApprovalResolvers | null;
   /** The agent's own description of the call's effect (`--reason`). Shown as
    *  unverified: the parameters stay the evidence. */
   approvalContext?: string | null;
@@ -348,16 +355,32 @@ export function ApprovalUnreviewableNotice({
 }
 
 /**
- * Shown in place of the decision to a viewer who may not decide the call:
- * today a project manager or the person who started the session decides
- * (KRTX-1724). `resolverName` names that person when it is known.
+ * Who decides a call, in one sentence, for a viewer who may not (KRTX-1724).
+ * A session started with an API token or a service account is decided by
+ * managers only (`resolvers: 'managers'`). Otherwise the person who started
+ * it decides too: `resolverName` names them when it is known.
  */
+export function useApprovalWaitingText(
+  resolvers?: ApprovalResolvers | null,
+  resolverName?: string | null,
+): string {
+  const t = useTranslations('hardcodedUi.approvalWaiting');
+  if (resolvers === 'managers') return t('byManager');
+  return resolverName ? t('byName', { name: resolverName }) : t('byOwner');
+}
+
+/** Shown in place of the decision to a viewer who may not decide the call. */
 export function ApprovalWaitingNotice({
   resolverName,
+  resolvers,
   dense = false,
   className,
-}: DenseProp & { resolverName?: string | null; className?: string }) {
-  const t = useTranslations('hardcodedUi.approvalWaiting');
+}: DenseProp & {
+  resolverName?: string | null;
+  resolvers?: ApprovalResolvers | null;
+  className?: string;
+}) {
+  const text = useApprovalWaitingText(resolvers, resolverName);
   return (
     <p
       className={cn(
@@ -367,7 +390,7 @@ export function ApprovalWaitingNotice({
       )}
     >
       <ClockIcon className="mt-px size-3.5 shrink-0" />
-      {resolverName ? t('byName', { name: resolverName }) : t('byOwner')}
+      {text}
     </p>
   );
 }
@@ -544,7 +567,9 @@ export function ApprovalRequest({
         />
       ) : null}
 
-      {waiting ? <ApprovalWaitingNotice resolverName={resolverName} /> : null}
+      {waiting ? (
+        <ApprovalWaitingNotice resolverName={resolverName} resolvers={request.resolvers} />
+      ) : null}
     </section>
   );
 }

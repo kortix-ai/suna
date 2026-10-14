@@ -19689,8 +19689,10 @@
       "title": "Approve this {connector} action"
     },
     "approvalWaiting": {
+      "byManager": "Waiting for anyone who manages this project to approve or deny it.",
       "byName": "Waiting for {name} or anyone who manages this project to approve or deny it.",
-      "byOwner": "Waiting for the person who started this session or anyone who manages this project to approve or deny it."
+      "byOwner": "Waiting for the person who started this session or anyone who manages this project to approve or deny it.",
+      "copyLink": "Copy approval link"
     },
     "secretIntakeWithheld": {
       "title": "Saved, but {agent} can't read it yet",

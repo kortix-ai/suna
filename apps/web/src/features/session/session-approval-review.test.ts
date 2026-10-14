@@ -94,6 +94,7 @@ describe('approvalRequestFromAction', () => {
       resolution: null,
       pending: true,
       canResolve: true,
+      resolvers: null,
       status: 'pending_approval',
       resolvedAt: null,
     });
@@ -148,6 +149,11 @@ describe('can_resolve (KRTX-1724)', () => {
     expect(approvalRequestFromAction(action({ can_resolve: false })).canResolve).toBe(false);
     expect(approvalRequestFromAction(action({ can_resolve: true })).canResolve).toBe(true);
     expect(approvalRequestFromAction(action()).canResolve).toBe(true);
+  });
+
+  test('the request carries who decides; an older API (absent) names nobody', () => {
+    expect(approvalRequestFromAction(action({ resolvers: 'managers' })).resolvers).toBe('managers');
+    expect(approvalRequestFromAction(action()).resolvers).toBeNull();
   });
 
   test('the launcher a waiting viewer is told about is a person who started the session', () => {

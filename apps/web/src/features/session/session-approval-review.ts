@@ -91,6 +91,7 @@ export function approvalRequestFromAction(
     pending,
     // Absent from an API older than KRTX-1724: keep offering the decision.
     canResolve: action.can_resolve !== false,
+    resolvers: action.resolvers ?? null,
     status: action.status,
     resolvedAt: action.resolved_at,
   };

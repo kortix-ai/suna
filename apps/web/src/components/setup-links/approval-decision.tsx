@@ -5,9 +5,11 @@ import {
   ApprovalDecisionActions,
   type ApprovalDecisionValue,
   ApprovalParameters,
+  type ApprovalResolvers,
   approvalReviewable,
   resolvedLabel,
   resolvedTone,
+  useApprovalWaitingText,
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -231,8 +233,7 @@ export function ApprovalDecisionView({
  * reads and decides the same way on both surfaces.
  *
  * No `onDecision` = read-only: the viewer may see the call but not decide it.
- * A pending call then says who decides: a project manager or the person who
- * started the session (KRTX-1724).
+ * A pending call then says who decides (`resolvers`, KRTX-1724).
  */
 export function ApprovalDecisionPanel({
   details,
@@ -243,6 +244,7 @@ export function ApprovalDecisionPanel({
   onOpenSession,
   previewAuthorized = true,
   markOnMobile = false,
+  resolvers = null,
 }: {
   details: ApprovalLinkDetails;
   outcome: ApprovalDecisionValue | null;
@@ -255,9 +257,12 @@ export function ApprovalDecisionPanel({
   previewAuthorized?: boolean;
   /** Keep the connector mark on mobile (the modal has no corner logo). */
   markOnMobile?: boolean;
+  /** Who decides the call, for a viewer who may not. Null: the plain wording. */
+  resolvers?: ApprovalResolvers | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const waitingText = useApprovalWaitingText(resolvers);
   const resolved = !details.pending || outcome !== null;
   const waiting = !resolved && !onDecision;
   const reviewable = approvalReviewable(details.args_preview, details.review_complete);
@@ -313,7 +318,7 @@ export function ApprovalDecisionPanel({
             resolved
               ? undefined
               : waiting
-                ? tHardcodedUi('approvalWaiting.byOwner')
+                ? waitingText
                 : tI18nComplete.raw('text32c6817c8380')
           }
         />

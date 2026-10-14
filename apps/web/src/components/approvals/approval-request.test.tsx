@@ -61,6 +61,17 @@ describe('ApprovalRequest', () => {
       <ApprovalRequest request={{ ...request, canResolve: false }} onDecision={() => undefined} />,
     );
     expect(plain).toContain('Waiting for the person who started this session or anyone who manages this project to approve or deny it.');
+
+    // A session started with an API token: its launcher does not decide.
+    const managers = renderToStaticMarkup(
+      <ApprovalRequest
+        request={{ ...request, canResolve: false, resolvers: 'managers' }}
+        resolverName="Ada"
+        onDecision={() => undefined}
+      />,
+    );
+    expect(managers).toContain('Waiting for anyone who manages this project to approve or deny it.');
+    expect(managers).not.toContain('Ada');
   });
 
   test("shows the agent's description as unverified, next to the parameters", () => {

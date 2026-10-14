@@ -35,7 +35,8 @@ import { useTranslations } from '@/i18n/use-translations';
  * Every viewer of the session sees the card, but only a viewer the API lets
  * decide gets Deny / Approve (`can_resolve`, KRTX-1724). Anyone else reads
  * the call and who decides it — a project manager or the person who started
- * the session — instead of a decision that answers 403.
+ * the session — instead of a decision that answers 403. The approval page
+ * refuses them too, so they get the link to copy, not to open.
  */
 
 import {
@@ -64,12 +65,14 @@ import {
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   CaretDownIcon,
   CaretLeftIcon,
   CaretRightIcon,
   CheckCircleIcon,
   ArrowSquareOutIcon as ExternalLink,
+  LinkIcon,
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
 import { slackChannelNames } from '@/features/session/turn/channel-message';
@@ -214,8 +217,14 @@ export function SessionApprovalNotice({
 }: SessionApprovalNoticeProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tCommon = useTranslations('common');
+  const tWaiting = useTranslations('hardcodedUi.approvalWaiting');
   const [collapsed, setCollapsed] = useState(false);
   if (rows.length === 0) return null;
+
+  const copyApprovalLink = async (url: string) => {
+    if (await copyToClipboard(url)) successToast(tI18nComplete.raw('textd12860c21e78'));
+    else errorToast(tI18nComplete.raw('textfa46ef7689ff'));
+  };
 
   const pending = rows.filter((row) => row.decision === null);
   // "Needs your approval" is false for a viewer who may decide none of them.
@@ -255,6 +264,7 @@ export function SessionApprovalNotice({
   );
   const { action } = pending[index];
   const executionId = action.execution_id;
+  const approvalUrl = action.approval_url ?? null;
   const total = pending.length;
   const summary = approvalArgsSummary(action, channelNames);
   const request = approvalRequestFromAction(action, true);
@@ -322,7 +332,20 @@ export function SessionApprovalNotice({
             </button>
           </div>
         )}
-        {action.approval_url ? (
+        {approvalUrl && action.can_resolve === false ? (
+          // The approval page refuses this viewer too (403). What they can do
+          // is send the link to whoever decides.
+          <Hint label={tWaiting('copyLink')} side="top">
+            <button
+              type="button"
+              onClick={() => void copyApprovalLink(approvalUrl)}
+              aria-label={tWaiting('copyLink')}
+              className={ICON_BUTTON_CLASS}
+            >
+              <LinkIcon className="size-3.5" />
+            </button>
+          </Hint>
+        ) : action.approval_url ? (
           <Hint label={tI18nComplete.raw('textb7d2844482b4')} side="top">
             {/* Plain anchor, not next/link: the same absolute URL is what gets
                 relayed out-of-band, so there is one link shape. It opens a new
@@ -385,7 +408,11 @@ export function SessionApprovalNotice({
               channelNames={channelNames}
             />
             {action.can_resolve === false ? (
-              <ApprovalWaitingNotice dense resolverName={launcherName} />
+              <ApprovalWaitingNotice
+                dense
+                resolverName={launcherName}
+                resolvers={action.resolvers}
+              />
             ) : (
               <>
                 {!reviewable ? <ApprovalUnreviewableNotice dense /> : null}
