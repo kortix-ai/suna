@@ -28,6 +28,7 @@ export {
   continueSession,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
+  retireWarmProjectSessions,
 } from './session-lifecycle';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
@@ -47,6 +48,12 @@ export {
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
+
+// Who may decide a gated connector call (consumed by ../setup-links/approval-app,
+// so the approval page refuses exactly whom the resolve route refuses).
+export { mayResolveApproval } from './lib/approval-authority';
+export { approvalCallerOf } from './lib/http-approval-caller';
+export { approvalTargetSession } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';

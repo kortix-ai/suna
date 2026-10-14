@@ -1162,6 +1162,7 @@
     "title": "Settings",
     "preferences": "Preferences",
     "sounds": "Sounds",
+    "richAnswers": "Rich answers",
     "workspace": "Workspace",
     "accounts": "Accounts",
     "help": "Help",
@@ -1201,6 +1202,17 @@
     "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
     "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
   },
+  "genui": {
+    "chartTapHint": "Tap to read a value",
+    "map": "Map",
+    "mapUnavailable": "Map unavailable",
+    "openImage": "Open image",
+    "openMap": "Open map",
+    "pick": "Pick",
+    "pieFocus": "{{label}} is {{percent}}% of the total",
+    "pieOfTotal": "{{value}} of {{total}}",
+    "showData": "Show data"
+  },
   "updateRequired": {
     "title": "Update required",
     "body": "This version of Kortix is no longer supported. Update the app to continue.",
@@ -1235,5 +1247,10 @@
     "wrongAccountBody": "This invite is addressed to a different account. You're signed in as {{email}}.",
     "signOutAndContinue": "Sign out and continue",
     "backToProjects": "Back to projects"
+  },
+  "approvals": {
+    "waitingManagers": "Anyone who manages this project can approve or deny it.",
+    "waitingTitle": "Waiting on approval",
+    "waitingWho": "The person who started this session or anyone who manages this project can approve or deny it."
   }
 }

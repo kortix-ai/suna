@@ -15,6 +15,8 @@
  * (`lib/markdown/math-plugin.ts`), which pair dollars the way web's remark-math
  * does. Mermaid fences, and unlabelled fences that start with a diagram type,
  * render as diagrams (`components/markdown/mermaid/MermaidBlock.tsx`).
+ * ```openui fences (`openui-lang`, `openui-vN`) render as generative UI
+ * (`components/genui/genui-message-block.tsx`).
  *
  * Selection is native on both platforms: long press selects a range, and the
  * handles extend it within one block (a paragraph, heading, list item, or
@@ -55,6 +57,7 @@ import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
+import { genuiVersionOf, separateGenuiClosers } from '@kortix/sdk/genui/fence';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
 import { InlineCode } from '@/components/markdown/inline-code';
 import { BlockMath, InlineMath } from '@/components/markdown/math';
@@ -85,6 +88,7 @@ import {
   type AstNode,
 } from '@/components/markdown/markdown-table';
 import { IOSSelectableMarkdown } from '@/components/markdown/ios-selection-fallback';
+import { GenuiMessageBlock } from '@/components/genui/genui-message-block';
 
 
 // Suppress known warning from react-native-markdown-display library
@@ -179,9 +183,48 @@ function hasParent(parents: AstNode[], type: string): boolean {
   return parents.some((parent) => parent.type === type);
 }
 
-/** Web's `MarkdownCode` routing: Mermaid first, then math fences, then code. */
+/**
+ * false inside a generative-UI fallback: an ```openui fence there renders as
+ * code, so a fallback can never re-enter `GenuiBlock`, and the fallback adds
+ * no second iOS selection Pressable inside the message's own.
+ */
+const GenuiRoutingContext = createContext(true);
+
+/**
+ * A generative-UI block's markdown fallback, under the message's remote-image
+ * policy. `GenuiBlock` needs a stable renderer, so there is one per theme.
+ */
+function GenuiFallback({ markdown, isDark }: { markdown: string; isDark: boolean }) {
+  const remoteImages = useContext(MarkdownImagesContext);
+  return (
+    <GenuiRoutingContext.Provider value={false}>
+      <SelectableMarkdownText isDark={isDark} remoteImages={remoteImages}>
+        {markdown}
+      </SelectableMarkdownText>
+    </GenuiRoutingContext.Provider>
+  );
+}
+const genuiFallback = (isDark: boolean) => (markdown: string) =>
+  markdown ? <GenuiFallback markdown={markdown} isDark={isDark} /> : null;
+const GENUI_FALLBACK_LIGHT = genuiFallback(false);
+const GENUI_FALLBACK_DARK = genuiFallback(true);
+
+/** Web's `MarkdownCode` routing: generative UI, then Mermaid, then math fences, then code. */
 function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
   const isStreaming = useContext(OpenFenceContext);
+  const routeGenui = useContext(GenuiRoutingContext);
+  // The raw first word of the info string: `fenceLanguage` may normalize `openui-lang` away.
+  const genuiVersion = routeGenui ? genuiVersionOf((node.sourceInfo ?? '').trim().split(/\s+/)[0] ?? '') : null;
+  if (genuiVersion !== null) {
+    return (
+      <GenuiMessageBlock
+        code={fenceCode(node.content)}
+        version={genuiVersion}
+        isStreaming={isStreaming}
+        renderMarkdown={isDark ? GENUI_FALLBACK_DARK : GENUI_FALLBACK_LIGHT}
+      />
+    );
+  }
   const code = fenceCode(node.content);
   const language = fenceLanguage(node.sourceInfo);
   if (isMermaidCode(language, code)) {
@@ -633,14 +676,17 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
   function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder', surface }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
+    // A generative-UI fallback sits inside its message: the message's double tap covers it.
+    const isOutermost = useContext(GenuiRoutingContext);
 
-    // Trailing whitespace would add empty space below the last block.
-    const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
+    // Trailing whitespace would add empty space below the last block. A closer the model glued to the
+    // last statement of a generative-UI block moves to its own line, so the block ends where it should.
+    const text = separateGenuiClosers(typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd());
 
     return (
       <MarkdownImagesContext.Provider value={remoteImages}>
         <MarkdownSurfaceContext.Provider value={surface}>
-          {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
+          {Platform.OS === 'ios' && !IOS_TEXT_VIEW && isOutermost ? (
             <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming}>
               <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
             </IOSSelectableMarkdown>

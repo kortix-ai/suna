@@ -8,8 +8,8 @@ import { getCurrentRuntimeSandboxId, setCurrentRuntime } from '../core/session/c
 import { useSession } from './opencode';
 
 /**
- * An ephemeral session keeps its `sandbox_id` (the session id) while its box
- * changes: Stop deletes the box, the next message boots a new one. The view must
+ * A session keeps its `sandbox_id` (the session id) while its box changes: a
+ * restored or re-provisioned session boots a new one. The view must
  * follow the new box as soon as `/start` names it. It used to key the switch on
  * `sandbox_id`, so it stayed bound to the deleted box ("Lost contact") until a
  * reload.

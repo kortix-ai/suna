@@ -350,7 +350,7 @@ To bump a harness or the minor:
    `pnpm install`. OpenCode: `runtime-versions.json`; the oracle downloads the
    npm platform package of the new version once into
    `~/.kortix/opencode/<version>/` (60 MB, about 2 s).
-2. Run the oracle suites: `bun run test session-log` in this app (8 files, 141
+2. Run the oracle suites: `bun run test session-log` in this app (8 files, 145
    tests, about 2 min on a laptop): both adapters' export and restore against
    the real harness and the mock LLM (`helpers/fake-model.ts`, dummy key,
    isolated home), the golden and recorded logs, the boot, the journal, the
@@ -365,7 +365,7 @@ The suites run in the `packages` lane (`tests/bin/package-quality.ts` runs
 prove the oracle can fail: OpenCode's golden test checks a log with one changed
 answer against the request and expects a difference, and pi's partial-log test
 expects exactly the one difference the restore dropped. A broken mapping fails
-the suites: dropping pi's reasoning fails 2 of 19 pi restore tests, writing
+the suites: dropping pi's reasoning fails 1 of 22 pi restore tests, writing
 OpenCode reasoning as text fails 1 of 26 OpenCode restore tests. Not covered:
 no fixture holds an assistant text with `model_text` (no harness exports one),
 so OpenCode's restore passes when it drops that field.
@@ -409,7 +409,8 @@ in `subscriberCount`. The journal's v1 listener is a tap too. The
 The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
 (the store is at rest: the stream gets the session and its threads before the
-first turn streams), at each turn end and at the daemon stop. The delta frames
+first turn streams), at each turn end, when pi stores a compaction between
+turns, and at the daemon stop. The delta frames
 come from the v1 bus: both harnesses stream text with the v1 session, message
 and part ids, which are the thread, message and block ids of the records.
 
@@ -504,7 +505,11 @@ them dirty until apps/api acknowledges `(message_id, rev)`.
 
 Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
 orphan path through `relayTurnEnd`, OpenCode's normal turn end through
-`relayTurnEndToApi`. The memory-guard turn end does not flush. The daemon
+`relayTurnEndToApi`. pi also flushes it when it stores a compaction between
+turns (`compact()`, `/session/:id/summarize`, P2.12): that compaction has no
+turn end, and it ends after the summarize request returns, so without this
+flush the log got it only at the next turn end. A compaction inside a turn
+(threshold, overflow) waits for the turn's end. The memory-guard turn end does not flush. The daemon
 shutdown (SIGTERM, SIGINT, the agent swap) flushes it before `harness.stop()`.
 Each flush waits at most 3 s, or until the first failed post; a batch not
 acknowledged by then keeps retrying in the background. A provider stop is not
@@ -781,6 +786,22 @@ message flagged `summary` with the summary text or an error,
 transcript keeps every message. A project's `settings.json` in the pi config
 dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
+
+Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
+block that another model wrote as visible assistant text, and pi's summarizers
+(compaction, branch summary) flatten every thinking block into the prompt
+text. `pi/reasoning.ts` removes the thinking of another model on both paths,
+with pi-ai's own test (provider, api, model id): `withoutForeignReasoning`
+wraps the stream function of the root and every child agent, and the hidden
+`kortix-reasoning` extension filters the summarizer input in
+`session_before_compact` and `session_before_tree`. A model switch (a prompt's
+`model`, `POST /kortix/env`) and a restored log written by another model or
+harness both go through it. The same model's thinking goes back unchanged, and
+the store and the session log keep every block.
+`PI_CAPABILITIES.native.reasoning_replay` is `same_model`. modelView compares
+provider and model only, so the restore gives a `kortix` message without `api`
+(a v1 or OpenCode-converted log) the gateway dialect `openai-completions`;
+pi-ai then sees the same model and keeps its reasoning.
 
 `GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
 dir, and the templates of pi packages) as slash commands.

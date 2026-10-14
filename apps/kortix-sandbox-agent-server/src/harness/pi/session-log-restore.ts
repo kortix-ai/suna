@@ -33,7 +33,7 @@
  *   A model-invisible block stays in the v1 transcript only.
  * - Assistant content is what the model saw: `model_text ?? text`, no
  *   synthetic text, reasoning as `thinking` (pi-ai replays it to the model that
- *   wrote it and lowers it to text for any other), signatures from `ext.pi`.
+ *   wrote it; `reasoning.ts` drops it from a request to any other), signatures from `ext.pi`.
  *   A call input that is not an object is `{ input }` (a string) or `{}`
  *   (`dropped.tool_input`).
  * - A tool result is a `toolResult` entry (`ext.pi.native_id` keeps pi's entry
@@ -104,7 +104,8 @@ const SUMMARY_SUFFIX = '\n</summary>'
 function piUsage(u: SessionLogMessage['usage']) {
   const x = u ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 }
   return {
-    input: x.input, output: x.output, cacheRead: x.cache_read, cacheWrite: x.cache_write, totalTokens: x.input + x.output + x.cache_read + x.cache_write,
+    input: x.input, output: x.output, cacheRead: x.cache_read, cacheWrite: x.cache_write, ...(x.reasoning !== undefined ? { reasoning: x.reasoning } : {}),
+    totalTokens: x.input + x.output + x.cache_read + x.cache_write,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: x.cost ?? 0 },
   }
 }
@@ -212,7 +213,9 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
     type: 'message', id, timestamp: m.created_at,
     message: {
       role: 'assistant', content,
-      ...(m.model?.api ? { api: API[m.model.api] ?? m.model.api } : {}),
+      // A log without `api` (v1, OpenCode-converted) names a gateway model by provider and model, as modelView
+      // compares them: give it the dialect every pi gateway model uses (model.ts), so pi-ai sees the same model.
+      ...(m.model?.api ? { api: API[m.model.api] ?? m.model.api } : m.model?.provider === 'kortix' ? { api: 'openai-completions' } : {}),
       provider: m.model?.provider ?? 'unknown', model: m.model?.model ?? 'unknown',
       usage: piUsage(m.usage), stopReason,
       ...(m.error ? { errorMessage: m.error.message } : {}),

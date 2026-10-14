@@ -14,7 +14,7 @@
  * this file re-exports it.
  */
 
-import { projectWebhooksApp, projectsApp } from './lib/app';
+import { projectWebhooksApp, projectsApp, sessionsApp } from './lib/app';
 import { registerProjectsRoutes } from './routes/projects';
 import { registerTriggerWebhooksRoutes } from './routes/trigger-webhooks';
 import { registerEventIngressRoutes } from './trigger-events/routes';
@@ -55,7 +55,7 @@ import { registerProjectInvitesRoutes } from './routes/project-invites';
 import { registerGroupGrantsRoutes } from './routes/group-grants';
 import { registerWarmSessionsRoutes } from './routes/warm-sessions';
 import { registerProviderSecretPoolsRoutes } from './routes/provider-secret-pools';
-import { registerProjectSessionsRoutes } from './routes/project-sessions';
+import { registerProjectSessionsRoutes, registerSessionLookupRoutes } from './routes/project-sessions';
 import { registerSessionTranscriptsRoutes } from './routes/session-transcripts';
 import { registerSessionAttachmentsRoutes } from './routes/session-attachments';
 import { registerSessionOpenBundleRoutes } from './routes/session-open-bundle';
@@ -175,7 +175,9 @@ export function registerAllProjectRoutes(): void {
 }
 
 // The Hono app instances. app.ts registers their routes and mounts them.
-export { projectsApp, projectWebhooksApp };
+export { projectsApp, projectWebhooksApp, sessionsApp };
+// `/v1/sessions` (one session by id). app.ts calls it right before mounting sessionsApp.
+export { registerSessionLookupRoutes };
 
 // The service surface (git-proxy, session, trigger and manifest helpers).
 export * from './surface';
