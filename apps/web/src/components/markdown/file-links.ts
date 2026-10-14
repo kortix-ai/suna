@@ -18,8 +18,7 @@ const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 /**
  * Resolves a document-relative href against the directory of the document
  * that contains the link, lexically (`.` and `..` only — no filesystem
- * access). Returns `null` when the result climbs above `baseDir`, so a
- * traversal never becomes a clickable path.
+ * access). The caller validates the normalized result against sandbox roots.
  */
 function resolveDocumentRelative(baseDir: string, href: string): string | null {
   const segments = baseDir.split('/');
@@ -57,8 +56,11 @@ export function workspaceFileLinkPath(url: string | undefined, baseDir?: string)
   } catch {
     // A stray `%` is a literal character in a file name.
   }
-  if (baseDir && path && !path.startsWith('/')) {
-    return resolveDocumentRelative(baseDir, path);
+  if (baseDir && path) {
+    const resolved = path.startsWith('/')
+      ? resolveDocumentRelative('', path)
+      : resolveDocumentRelative(baseDir, path);
+    return resolved && isUnderSandboxRoot(resolved) ? resolved : null;
   }
   return path || null;
 }

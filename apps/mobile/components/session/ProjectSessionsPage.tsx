@@ -100,7 +100,7 @@ import {
 import { useAuthContext } from '@/contexts';
 import { parentKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { useReviewItems } from '@/lib/review/use-review';
+import { useReviewNeedsYou } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import type { SessionStarter } from '@/lib/session/session-tree';
 import {
@@ -414,11 +414,11 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   // sessions whose agent waits on a question (KRTX-1739). ProjectScreen, the
   // project stack's layout, polls both while this route shows; this reads the
   // same query caches without a second poll.
-  const reviewItems = useReviewItems(projectId, { poll: false });
+  const reviewNeedsYou = useReviewNeedsYou(projectId, { poll: false });
   const needsInput = useSessionsNeedingInput(projectId, { enabled: false });
   const needsYou = React.useMemo(
-    () => needsYouBySession(reviewItems.data ?? [], needsInput.data),
-    [reviewItems.data, needsInput.data]
+    () => needsYouBySession(reviewNeedsYou.items, needsInput.data),
+    [reviewNeedsYou.items, needsInput.data]
   );
 
   // The status filter is client-side over the loaded rows (the server has no

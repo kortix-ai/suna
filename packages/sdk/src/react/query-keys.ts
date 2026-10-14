@@ -51,6 +51,7 @@
  * prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
+import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
 type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels'>;
@@ -221,6 +222,23 @@ export const qk = {
 
     /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
     needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
+
+    /** `getReviewSummary` — the needs-you counts the always-mounted badges poll. */
+    reviewSummary: (id: string) => [...qk.project.scope(id), 'review-summary'] as const,
+    /** Invalidation prefix for every page set `useReviewItemPages` caches.
+     *  Never pass this as a `queryKey`. */
+    reviewItemsScope: (id: string) => [...qk.project.scope(id), 'review-items'] as const,
+    /** The paged inbox (`useInfiniteQuery` over `listReviewItems`): one slot
+     *  per filter, because each filter is a different server request. */
+    reviewItemPages: (id: string, query: ReviewItemsQuery = {}) =>
+      [
+        ...qk.project.reviewItemsScope(id),
+        'pages',
+        query.segment ?? 'all',
+        query.kind ?? 'all',
+        query.sessionId ?? 'all',
+        query.limit ?? 'default',
+      ] as const,
 
     /**
      * The bare project row — `getProject`, `GET /projects/:id`, a

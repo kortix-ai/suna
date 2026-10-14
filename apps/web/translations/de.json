@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "OpenCode Go trennen",
     "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Nicht entschlüsselbar",
+      "hint": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Der Schlüssel hat sich geändert, oder der Wert ist beschädigt. Jeder, der dieses Projekt verwaltet, kann ihn neu eingeben.",
+      "reenter": "Wert neu eingeben",
+      "dialog": "Kortix kann den gespeicherten Wert nicht entschlüsseln. Geben Sie ihn erneut ein, um zu speichern.",
+      "keyHint": "Kortix kann diesen API-Schlüssel nicht entschlüsseln. Der Verschlüsselungsschlüssel des Servers hat sich geändert, oder der gespeicherte Schlüssel ist beschädigt. Kortix verwendet ihn erst wieder, wenn sein Besitzer oder ein Konto-Admin ihn neu eingibt.",
+      "loginHint": "Kortix kann diese Anmeldung nicht entschlüsseln. Der Verschlüsselungsschlüssel des Servers hat sich geändert, oder die gespeicherte Anmeldung ist beschädigt. Kortix verwendet sie erst wieder, wenn ihr Besitzer sie neu verbindet.",
+      "reenterKey": "Schlüssel neu eingeben",
+      "mineHint": "Kortix kann Ihren eigenen Wert dieses Geheimnisses nicht entschlüsseln. Ihre Sitzungen lesen ihn statt des gemeinsamen Werts und schlagen fehl, bis Sie ihn löschen.",
+      "deleteMine": "Meinen Wert löschen",
+      "mineDeleted": "Wert gelöscht",
+      "mineDeleteError": "Ihr Wert konnte nicht gelöscht werden. Versuchen Sie es erneut."
+    }
+  },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
   },
@@ -673,6 +688,8 @@
       "themeDescription": "Wählen Sie das Erscheinungsbild von Kortix auf diesem Gerät.",
       "conversationDensity": "Gesprächsdichte",
       "conversationDensityDescription": "Legt fest, wie viele Details der Agent während seiner Arbeit im Gespräch zeigt.",
+      "richAnswers": "Erweiterte Antworten",
+      "richAnswersDescription": "Zeigt Vergleiche, Tabellen, Diagramme und Karten in Antworten als Grafiken. Wenn deaktiviert, zeigen Antworten denselben Inhalt als Text.",
       "wallpaper": "Hintergrund",
       "wallpaperDescription": "Der Hintergrund Ihres Projekts.",
       "defaultWallpaper": "Standard",
@@ -1193,6 +1210,10 @@
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
         },
+        "genui": {
+          "name": "Generative UI",
+          "description": "Der Agent kann statt langer Texte mit Karten, Vergleichen, Diagrammen, Landkarten und Tabs antworten."
+        },
         "reminders": {
           "name": "Erinnerungen",
           "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."
@@ -1211,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Geteilte Dateien und Sitzungen auf Volumes für dieses Projekt."
-        },
-        "stateless_sessions": {
-          "name": "Zustandslose Sitzungen",
-          "description": "Bei jedem Aufwecken ein frischer Computer; nur Dateien und Chat bleiben. Erfordert aktivierte Volumes."
+          "description": "Geteilte Dateien für dieses Projekt."
         },
         "drives": {
           "name": "Drive",
           "description": "Geteilte Ordner, die mit Sitzungen synchron bleiben: dein eigenes Drive, eines pro Agent und Firmen-Drives, die ein Admin dem Projekt zuweist. Neue Sitzungen sehen sie unter /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Kurzlebige Sandboxes",
-          "description": "Eine gestoppte Session behält ihre Dateien und ihr Gespräch auf einem Volume und gibt ihren Rechner ab. Beim Aufwecken startet ein neuer Rechner mit dem neuesten Image. Laufende Prozesse überstehen einen Stopp nicht."
         },
         "session_log": {
           "name": "Session-Log v2",
@@ -1890,6 +1903,26 @@
       "commandsAndActions": "Befehle und Aktionen",
       "toUse": "zur Verwendung",
       "use": "Verwenden"
+    },
+    "history": {
+      "restoreTitle": "Einige frühere Inhalte konnten nicht wiederhergestellt werden",
+      "restoreMissing": "Fehlt: {items}.",
+      "restoreAgent": "Der Agent weiß, was fehlt.",
+      "restoreDismiss": "Hinweis zur Wiederherstellung schließen",
+      "missingAttachment": "{count, plural, one {# Anhang} other {# Anhänge}}",
+      "missingText": "{count, plural, one {# langer Text} other {# lange Texte}}",
+      "missingToolInput": "{count, plural, one {# Tool-Eingabe} other {# Tool-Eingaben}}",
+      "missingToolResult": "{count, plural, one {# Tool-Ergebnis} other {# Tool-Ergebnisse}}",
+      "missingCutPoint": "{count, plural, one {# Komprimierungspunkt} other {# Komprimierungspunkte}}",
+      "missingOther": "{count, plural, one {# weiteres Element} other {# weitere Elemente}}",
+      "restoreNote": "Sitzung aus gespeichertem Verlauf wiederhergestellt",
+      "harnessSwitch": "Weiter mit {harness}",
+      "showOutOfContext": "Nachrichten außerhalb des Kontexts anzeigen",
+      "fullTextPreview": "{count, plural, one {Ein langer Text zeigt hier seine ersten 16 kB.} other {# lange Texte zeigen hier ihre ersten 16 kB.}}",
+      "fullTextShow": "Vollständigen Text anzeigen ({size})",
+      "fullTextDownload": "Vollständigen Text herunterladen ({size})",
+      "fullTextError": "Der vollständige Text konnte nicht geladen werden.",
+      "fullTextRetry": "Erneut versuchen"
     }
   },
   "agents": {
@@ -10870,6 +10903,7 @@
       "text265e52a33b53": "Setzen Sie userName auf die E-Mail-Adresse, die Kortix verwendet: Öffnen Sie „Attribute Mapping“ (getrennt vom Authentifizierungsbildschirm), erweitern Sie in der Spalte „PingOne Directory“ den Eintrag „Username“ und wählen Sie „Email Address“. Setzen Sie anschließend in den Einstellungen/Aktionen der Verbindung „User Identifier“ = userName und „User Filter Expression“ = `userName eq \"%s\"`. Eine falsche Einstellung ist der häufigste PingOne-Fehler – standardmäßig wird der interne Benutzername statt der E-Mail verwendet.",
       "text266240ec402c": "Abrechnungsmodell",
       "text2672651736ac": "- Arbeit erreicht main nur über einen Change Request",
+      "text2677201ed3eb": "Offboarding eines Mitglieds durchgeführt",
       "text267d2e1cb01e": "Die wichtigste Frage für jedes Unternehmen, das KI einführt: Kannst du das Modell austauschen, ohne die institutionelle Expertise zu verlieren, die du aufgebaut hast? Eine Souveränitäts-Checkliste zur Bewertung deiner KI-Plattform.",
       "text268bc1833e83": "Vielen Dank",
       "text268f14bbfe11": "Diagnose",
@@ -19661,75 +19695,16 @@
     "approvalPage": {
       "title": "{connector}-Aktion genehmigen"
     },
+    "approvalWaiting": {
+      "byManager": "Wartet darauf, dass eine Person, die dieses Projekt verwaltet, den Aufruf genehmigt oder ablehnt.",
+      "byName": "Wartet darauf, dass {name} oder eine Person, die dieses Projekt verwaltet, den Aufruf genehmigt oder ablehnt.",
+      "byOwner": "Wartet darauf, dass die Person, die diese Sitzung gestartet hat, oder eine Person, die dieses Projekt verwaltet, den Aufruf genehmigt oder ablehnt.",
+      "copyLink": "Genehmigungslink kopieren"
+    },
     "secretIntakeWithheld": {
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Image",
-      "modeImageDetail": "Nur das Session-Image.",
-      "modeImageRequested": "Image angefordert: {count}",
-      "modeArtifacts": "Image + Artefakte",
-      "modeArtifactsDetail": "Zusätzlich das Boot-Artefakte-Volume für die neueste Laufzeit.",
-      "modeArtifactsRequested": "Image + Artefakte angefordert: {count}",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Flüchtiger Rechner, Session-Zustand auf einem Volume, dazu Artefakte.",
-      "modeVolumeRequested": "Volume angefordert: {count}",
-      "reasonSessionVolume": "Session-Volume",
-      "reasonArtifactsVolume": "Artefakte-Volume",
-      "reasonVolumeMount": "Volume-Einbindung",
-      "reasonTimeout": "Zeitüberschreitung",
-      "reasonBootHealth": "Rechner wurde nie bereit",
-      "reasonOther": "Sonstiges",
-      "fallBackToTheImage": "Auf das Image zurückfallen",
-      "fallBackToImage": "Rückfall auf Image",
-      "saved": "Boot-Modi gespeichert",
-      "saveFailed": "Boot-Modi konnten nicht gespeichert werden",
-      "title": "Boot-Modi",
-      "description": "Wie neue Sessions eines Projekts mit eingeschalteten Volumes starten und welche Rückfallstufen sie nehmen. Volumes und Zustandslose Sessions sind Feature-Flags des Projekts und werden hier nicht gesetzt. Änderungen erreichen jeden API-Prozess innerhalb von 30 Sekunden.",
-      "discard": "Verwerfen",
-      "save": "Speichern",
-      "off": "Aus",
-      "bootModeTitle": "Boot-Modus",
-      "bootModeDescription": "Wie neue Sessions eines Projekts mit eingeschalteten Volumes starten. Ein Projekt mit eingeschalteten zustandslosen Sessions startet auf einem Volume.",
-      "defaultModeTitle": "Standardmodus",
-      "killSwitchTitle": "Notschalter: jede neue Session vom Image starten",
-      "killSwitchDetail": "Übersteuert alle Modi auf einmal; Dateien und Drives bleiben unverändert. Eine Session, deren Dateien bereits auf einem Volume liegen, behält ihr Volume.",
-      "killSwitchLabel": "Notschalter",
-      "last24HoursTitle": "Letzte 24 Stunden",
-      "last24HoursDescription": "Sessions, die in jedem Modus gestartet sind, und die Rückfälle, die sie genommen haben. Gezählt beim Volume-Anbieter.",
-      "columnFallback": "Rückfall",
-      "columnReason": "Grund",
-      "columnCount": "Anzahl",
-      "columnLatestError": "Letzter Fehler",
-      "noFallbacks": "Keine Rückfälle in den letzten 24 Stunden.",
-      "countsUnavailable": "Zahlen nicht verfügbar: {error}",
-      "unknownError": "unbekannter Fehler",
-      "fallbackTitle": "Rückfall",
-      "fallbackDescription": "Eine Session, deren Starts wiederholt fehlschlagen, stuft sich einmal pro Session herunter und bleibt auf dem erreichten Modus. Eine Session, deren Dateien bereits auf einem Volume liegen, verlässt es nie.",
-      "after": "nach",
-      "failedBoots": "fehlgeschlagenen Starts",
-      "volumeAttemptsLabel": "Volume-Versuche",
-      "artifactsAttemptsLabel": "Artefakte-Versuche",
-      "lastStepNote": "(an, sofern der Standardmodus die letzte Stufe nicht ausschaltet)",
-      "whereModesApplyTitle": "Wo Modi gelten",
-      "whereModesApplyDescription": "Anbieter und Bereitstellungsschalter stammen aus der Umgebung des Servers. Das Artefakte-Volume lässt sich hier festlegen; leer verwendet das der Umgebung.",
-      "volumeProviderTitle": "Volume-Anbieter: {provider}",
-      "volumeProviderConfigured": "Konfiguriert. Sessions darauf starten im Modus, den ihre Regel wählt.",
-      "volumeProviderNotConfigured": "Nicht konfiguriert: Jede Session startet vom Image.",
-      "ready": "Bereit",
-      "otherProvidersTitle": "Andere Anbieter: {providers}",
-      "otherProvidersDriveSync": "Starten immer vom Image. Drives erreichen sie über die Drive-Synchronisierung.",
-      "otherProvidersNoDriveSync": "Starten immer vom Image. Die Drive-Synchronisierung ist aus, daher bleiben Drive-Projekte beim Volume-Anbieter.",
-      "imageOnly": "Nur Image",
-      "artifactsVolumeTitle": "Artefakte-Volume",
-      "artifactsVolumeSet": "Sessions in Image + Artefakte oder Volume binden {source} ein.",
-      "artifactsVolumeFromEnvironment": "Sessions in Image + Artefakte oder Volume binden {source} ein (aus der Umgebung).",
-      "artifactsVolumeNone": "Nichts festgelegt: Artefakte-Modi starten, als gäbe es nur das Image.",
-      "artifactsVolumeLabel": "Artefakte-Volume und Tag",
-      "ephemeralSandboxesOff": "{variable} ist in dieser Bereitstellung aus: Zustandslose Sessions starten mit Image + Artefakte.",
-      "nothingSaved": "Noch nichts gespeichert: Projekte mit eingeschalteten Volumes starten aus dem Image."
     }
   },
   "projectOnboarding": {
@@ -20186,7 +20161,8 @@
     "verified": "Bestätigt",
     "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
     "noFactorTitle": "Zwei-Faktor-Authentifizierung einrichten",
-    "noFactorDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Füge unter Einstellungen → Sicherheit eine Authenticator-App hinzu und versuche es dann erneut."
+    "noFactorDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Füge unter Einstellungen → Sicherheit eine Authenticator-App hinzu und versuche es dann erneut.",
+    "setUp": "Authenticator einrichten"
   },
   "connectorPages": {
     "install": "Installieren",
@@ -20750,5 +20726,23 @@
     "you": "Du",
     "manageFolderAccess": "Zugriff verwalten",
     "viewFolderAccess": "Zugriff ansehen"
+  },
+  "genui": {
+    "showData": "Daten anzeigen",
+    "openImage": "Bild öffnen",
+    "viewAllImages": "Alle {count} anzeigen",
+    "pieFocus": "{label} macht {percent} % der Summe aus",
+    "pieOfTotal": "{value} von {total}",
+    "directions": "Route",
+    "call": "Anrufen",
+    "website": "Website",
+    "label": "Bezeichnung",
+    "value": "Wert",
+    "map": "Karte",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern",
+    "mapTwoFingers": "Verwende zwei Finger, um die Karte zu bewegen",
+    "pick": "Empfehlung",
+    "convertFailed": "Das Transkript konnte nicht vorbereitet werden. Versuche es erneut."
   }
 }

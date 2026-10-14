@@ -862,6 +862,8 @@ for (const runtime of runtimes) {
         pooledResource = { accountId, secretId: key.secret_id };
         await resize(720, 480);
         await page.goto(`${baseURL}/projects/${project.id}/customize/models`);
+        // Since #9801 a provider's keys open in its sheet; below 48rem it covers the list.
+        await page.locator('[data-provider-row="anthropic"]').click();
         const providerKeys = page.getByRole('region', { name: 'Anthropic API keys' });
         await expect(providerKeys.getByText('Desktop pooled key')).toBeVisible();
         const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });

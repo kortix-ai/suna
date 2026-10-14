@@ -27,6 +27,12 @@ describe('workspaceFileLinkPath — document-relative resolution', () => {
     expect(workspaceFileLinkPath('../../../../etc/passwd', '/tmp')).toBeNull();
   });
 
+  for (const href of ['../../etc/passwd', '/workspace/../../etc/passwd', 'sandbox:/etc/passwd', '%2fetc/passwd']) {
+    test(`document links reject outside-root target ${href}`, () => {
+      expect(workspaceFileLinkPath(href, DIR)).toBeNull();
+    });
+  }
+
   test('encoded traversal decodes before resolution and stays null', () => {
     expect(workspaceFileLinkPath('%2e%2e/%2e%2e/%2e%2e/etc/passwd', DIR)).toBeNull();
   });

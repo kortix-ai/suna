@@ -147,6 +147,21 @@
     "opencodeGoDisconnect": "Déconnecter OpenCode Go",
     "opencodeGoFailed": "Impossible de connecter OpenCode Go"
   },
+  "secrets": {
+    "undecryptable": {
+      "badge": "Indéchiffrable",
+      "hint": "Kortix ne peut pas déchiffrer la valeur enregistrée. La clé de chiffrement a changé ou la valeur est endommagée. Toute personne qui gère ce projet peut la saisir à nouveau.",
+      "reenter": "Saisir à nouveau la valeur",
+      "dialog": "Kortix ne peut pas déchiffrer la valeur enregistrée. Saisissez-la à nouveau pour enregistrer.",
+      "keyHint": "Kortix ne peut pas déchiffrer cette clé API. La clé de chiffrement du serveur a changé ou la clé enregistrée est endommagée. Kortix ne l'utilise plus tant que son propriétaire ou un administrateur du compte ne l'a pas saisie à nouveau.",
+      "loginHint": "Kortix ne peut pas déchiffrer cette connexion. La clé de chiffrement du serveur a changé ou la connexion enregistrée est endommagée. Kortix ne l'utilise plus tant que son propriétaire ne l'a pas reconnectée.",
+      "reenterKey": "Saisir à nouveau la clé",
+      "mineHint": "Kortix ne peut pas déchiffrer votre propre valeur de ce secret. Vos sessions la lisent à la place de la valeur partagée et échouent tant que vous ne l'avez pas supprimée.",
+      "deleteMine": "Supprimer ma valeur",
+      "mineDeleted": "Valeur supprimée",
+      "mineDeleteError": "Impossible de supprimer votre valeur. Réessayez."
+    }
+  },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"
   },
@@ -673,6 +688,8 @@
       "themeDescription": "Choisissez l'apparence de Kortix sur cet appareil.",
       "conversationDensity": "Densité de la conversation",
       "conversationDensityDescription": "Choisissez le niveau de détail affiché par l'agent dans la conversation pendant son travail.",
+      "richAnswers": "Réponses enrichies",
+      "richAnswersDescription": "Affiche les comparaisons, tableaux, graphiques et cartes sous forme visuelle dans les réponses. Si l'option est désactivée, le même contenu apparaît en texte.",
       "wallpaper": "Fond d'écran",
       "wallpaperDescription": "L'arrière-plan de votre projet.",
       "defaultWallpaper": "Par défaut",
@@ -1193,6 +1210,10 @@
           "name": "Harness Pi (dans le bac à sable)",
           "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
         },
+        "genui": {
+          "name": "UI générative",
+          "description": "L'agent peut répondre avec des cartes, des comparatifs, des graphiques, des cartes géographiques et des onglets plutôt qu'avec de longs textes."
+        },
         "reminders": {
           "name": "Rappels",
           "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Rappels, l’indicateur de rappels de la session et `kortix remind`."
@@ -1211,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Fichiers partagés et sessions sur volumes pour ce projet."
-        },
-        "stateless_sessions": {
-          "name": "Sessions sans état",
-          "description": "Un ordinateur neuf à chaque réveil ; seuls les fichiers et le chat sont conservés. Nécessite les volumes activés."
+          "description": "Fichiers partagés pour ce projet."
         },
         "drives": {
           "name": "Drive",
           "description": "Des dossiers partagés synchronisés avec les sessions : votre propre drive, un par agent, et les drives d’entreprise qu’un administrateur associe au projet. Les nouvelles sessions les voient sous /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Sandboxes éphémères",
-          "description": "Une session arrêtée garde ses fichiers et sa conversation sur un volume et libère sa machine. La réveiller démarre une nouvelle machine avec l’image la plus récente. Les processus en cours ne survivent pas à un arrêt."
         },
         "session_log": {
           "name": "Journal de session v2",
@@ -1890,6 +1903,26 @@
       "commandsAndActions": "Commandes et actions",
       "toUse": "à utiliser",
       "use": "Utiliser"
+    },
+    "history": {
+      "restoreTitle": "Une partie du contenu précédent n’a pas pu être restaurée",
+      "restoreMissing": "Manquant : {items}.",
+      "restoreAgent": "L’agent sait ce qui manque.",
+      "restoreDismiss": "Fermer l’avis de restauration",
+      "missingAttachment": "{count, plural, one {# pièce jointe} other {# pièces jointes}}",
+      "missingText": "{count, plural, one {# texte long} other {# textes longs}}",
+      "missingToolInput": "{count, plural, one {# entrée d’outil} other {# entrées d’outil}}",
+      "missingToolResult": "{count, plural, one {# résultat d’outil} other {# résultats d’outil}}",
+      "missingCutPoint": "{count, plural, one {# point de compaction} other {# points de compaction}}",
+      "missingOther": "{count, plural, one {# autre élément} other {# autres éléments}}",
+      "restoreNote": "Session restaurée depuis l’historique enregistré",
+      "harnessSwitch": "Poursuivie avec {harness}",
+      "showOutOfContext": "Afficher les messages hors contexte",
+      "fullTextPreview": "{count, plural, one {Un texte long affiche ici ses premiers 16 ko.} other {# textes longs affichent ici leurs premiers 16 ko.}}",
+      "fullTextShow": "Afficher le texte complet ({size})",
+      "fullTextDownload": "Télécharger le texte complet ({size})",
+      "fullTextError": "Impossible de charger le texte complet.",
+      "fullTextRetry": "Réessayer"
     }
   },
   "agents": {
@@ -10870,6 +10903,7 @@
       "text265e52a33b53": "Définissez userName sur l’adresse email utilisée par Kortix : ouvrez la section « Attribute Mapping » (distincte de l’écran d’authentification), dans la colonne « PingOne Directory », développez « Username » et sélectionnez « Email Address ». Dans les préférences/actions de la connexion, définissez ensuite « User Identifier » = userName et « User Filter Expression » = `userName eq \"%s\"`. Une erreur ici est la cause n°1 des échecs PingOne — la valeur par défaut est le nom d’utilisateur interne, pas l’adresse email.",
       "text266240ec402c": "Modèle de facturation",
       "text2672651736ac": "- Le code n’atteint main que via une demande de modification",
+      "text2677201ed3eb": "Départ d’un membre traité",
       "text267d2e1cb01e": "La question la plus importante pour toute entreprise qui adopte l’IA : pouvez-vous remplacer le modèle sans perdre l’expertise institutionnelle acquise ? Une checklist de souveraineté pour évaluer votre plateforme IA.",
       "text268bc1833e83": "Merci",
       "text268f14bbfe11": "Diagnostics",
@@ -19661,75 +19695,16 @@
     "approvalPage": {
       "title": "Approuver une action {connector}"
     },
+    "approvalWaiting": {
+      "byManager": "En attente d’une personne qui gère ce projet pour approuver ou refuser l’appel.",
+      "byName": "En attente de {name} ou d’une personne qui gère ce projet pour approuver ou refuser l’appel.",
+      "byOwner": "En attente de la personne qui a démarré cette session ou d’une personne qui gère ce projet pour approuver ou refuser l’appel.",
+      "copyLink": "Copier le lien d’approbation"
+    },
     "secretIntakeWithheld": {
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",
       "grant": "{names} {count, plural, one {ne fait pas} other {ne font pas}} partie des secrets de l'agent {agent}. Ouvrez Personnaliser → Agents → {agent} → Secrets et {count, plural, one {activez-le} other {activez-les}}.",
       "allowlist": "{names} {count, plural, one {est} other {sont}} hors des secrets de cette session. Démarrez une nouvelle session pour {count, plural, one {l'utiliser} other {les utiliser}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Image",
-      "modeImageDetail": "L’image de session seule.",
-      "modeImageRequested": "Image demandée : {count}",
-      "modeArtifacts": "Image + artefacts",
-      "modeArtifactsDetail": "Plus le volume d’artefacts de démarrage pour le runtime le plus récent.",
-      "modeArtifactsRequested": "Image + artefacts demandés : {count}",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Machine éphémère, état de session sur un volume, plus les artefacts.",
-      "modeVolumeRequested": "Volume demandé : {count}",
-      "reasonSessionVolume": "Volume de session",
-      "reasonArtifactsVolume": "Volume d’artefacts",
-      "reasonVolumeMount": "Montage de volume",
-      "reasonTimeout": "Délai dépassé",
-      "reasonBootHealth": "La machine n’a jamais été prête",
-      "reasonOther": "Autre",
-      "fallBackToTheImage": "Se replier sur l’image",
-      "fallBackToImage": "Repli sur l’image",
-      "saved": "Modes de démarrage enregistrés",
-      "saveFailed": "Impossible d’enregistrer les modes de démarrage",
-      "title": "Modes de démarrage",
-      "description": "Comment démarrent les nouvelles sessions d’un projet dont les volumes sont activés, et les replis qu’elles prennent. Les volumes et les sessions sans état sont des feature flags du projet, pas des réglages d’ici. Les modifications atteignent chaque processus API en moins de 30 secondes.",
-      "discard": "Annuler les modifications",
-      "save": "Enregistrer",
-      "off": "Désactivé",
-      "bootModeTitle": "Mode de démarrage",
-      "bootModeDescription": "Comment démarrent les nouvelles sessions d’un projet dont les volumes sont activés. Un projet dont les sessions sans état sont activées démarre sur un volume.",
-      "defaultModeTitle": "Mode par défaut",
-      "killSwitchTitle": "Coupe-circuit : démarrer chaque nouvelle session depuis l’image",
-      "killSwitchDetail": "Remplace tous les modes d’un coup ; Fichiers et les drives restent tels quels. Une session dont les fichiers sont déjà sur un volume garde son volume.",
-      "killSwitchLabel": "Coupe-circuit",
-      "last24HoursTitle": "Dernières 24 heures",
-      "last24HoursDescription": "Sessions démarrées dans chaque mode, et les replis qu’elles ont pris. Comptées sur le fournisseur de volumes.",
-      "columnFallback": "Repli",
-      "columnReason": "Raison",
-      "columnCount": "Nombre",
-      "columnLatestError": "Dernière erreur",
-      "noFallbacks": "Aucun repli au cours des dernières 24 heures.",
-      "countsUnavailable": "Comptages indisponibles : {error}",
-      "unknownError": "erreur inconnue",
-      "fallbackTitle": "Repli",
-      "fallbackDescription": "Une session dont les démarrages échouent à répétition descend d’un cran, une fois par session ; elle reste sur le mode atteint. Une session dont les fichiers sont déjà sur un volume ne le quitte jamais.",
-      "after": "après",
-      "failedBoots": "démarrages échoués",
-      "volumeAttemptsLabel": "Tentatives sur volume",
-      "artifactsAttemptsLabel": "Tentatives avec artefacts",
-      "lastStepNote": "(activé sauf si le mode par défaut désactive la dernière étape)",
-      "whereModesApplyTitle": "Où les modes s’appliquent",
-      "whereModesApplyDescription": "Les fournisseurs et les interrupteurs de déploiement proviennent de l’environnement du serveur. Le volume d’artefacts peut être défini ici ; vide, celui de l’environnement est utilisé.",
-      "volumeProviderTitle": "Fournisseur de volumes : {provider}",
-      "volumeProviderConfigured": "Configuré. Les sessions qui l’utilisent démarrent dans le mode choisi par leur règle.",
-      "volumeProviderNotConfigured": "Non configuré : chaque session démarre depuis l’image.",
-      "ready": "Prêt",
-      "otherProvidersTitle": "Autres fournisseurs : {providers}",
-      "otherProvidersDriveSync": "Démarrent toujours depuis l’image. Les drives les atteignent via la synchronisation des drives.",
-      "otherProvidersNoDriveSync": "Démarrent toujours depuis l’image. La synchronisation des drives est désactivée, donc les projets avec drive restent sur le fournisseur de volumes.",
-      "imageOnly": "Image uniquement",
-      "artifactsVolumeTitle": "Volume d’artefacts",
-      "artifactsVolumeSet": "Les sessions en Image + artefacts ou Volume montent {source}.",
-      "artifactsVolumeFromEnvironment": "Les sessions en Image + artefacts ou Volume montent {source} (depuis l’environnement).",
-      "artifactsVolumeNone": "Aucun défini : les modes avec artefacts démarrent comme si l’image était seule.",
-      "artifactsVolumeLabel": "Volume d’artefacts et tag",
-      "ephemeralSandboxesOff": "{variable} est désactivé dans ce déploiement : les sessions sans état démarrent en Image + artefacts.",
-      "nothingSaved": "Rien d’enregistré pour l’instant : les projets dont les volumes sont activés démarrent depuis l’image."
     }
   },
   "projectOnboarding": {
@@ -20186,7 +20161,8 @@
     "verified": "Vérifié",
     "invalidCode": "Ce code n’a pas fonctionné. Vérifiez votre application d’authentification et réessayez.",
     "noFactorTitle": "Configurer l’authentification à deux facteurs",
-    "noFactorDescription": "Cette action nécessite l’authentification à deux facteurs. Ajoutez une application d’authentification dans Paramètres → Sécurité, puis réessayez."
+    "noFactorDescription": "Cette action nécessite l’authentification à deux facteurs. Ajoutez une application d’authentification dans Paramètres → Sécurité, puis réessayez.",
+    "setUp": "Configurer l’authentificateur"
   },
   "connectorPages": {
     "install": "Installer",
@@ -20750,5 +20726,23 @@
     "you": "Vous",
     "manageFolderAccess": "Gérer l’accès",
     "viewFolderAccess": "Voir l’accès"
+  },
+  "genui": {
+    "showData": "Afficher les données",
+    "openImage": "Ouvrir l'image",
+    "viewAllImages": "Tout voir ({count})",
+    "pieFocus": "{label} représente {percent} % du total",
+    "pieOfTotal": "{value} sur {total}",
+    "directions": "Itinéraire",
+    "call": "Appeler",
+    "website": "Site web",
+    "label": "Libellé",
+    "value": "Valeur",
+    "map": "Carte",
+    "zoomIn": "Augmenter le zoom",
+    "zoomOut": "Réduire le zoom",
+    "mapTwoFingers": "Utilisez deux doigts pour déplacer la carte",
+    "pick": "Choix",
+    "convertFailed": "Impossible de préparer la transcription. Réessayez."
   }
 }

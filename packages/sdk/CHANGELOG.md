@@ -5,6 +5,67 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (bounded review reads)
+- `getReviewSummary(projectId)` and `project(id).review.summary()`
+  (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you
+  counts of the review inbox, `{ needs_you_total, needs_you_by_session }`.
+  Read it for a badge or a per-session indicator instead of the list. A
+  connector call the caller may not resolve counts nowhere. Additive
+  (KRTX-2316).
+- `listReviewItems` takes `sessionId`, `limit` and `cursor`
+  (`ReviewItemsQuery`) and resolves to `ReviewItemsPage`, which adds
+  `next_cursor` (null on the last page). The server now returns one page:
+  50 items by default, at most 200, with Needs you first, then Waiting, then
+  Done, newest first within each. A caller that read the whole inbox from one
+  response pages with `cursor` or passes `segment`. Additive types.
+- `listChangeRequests` takes `cursor` and its response adds `next_cursor`.
+  The server now returns one page: 50 change requests by default, at most
+  500 (a larger `limit` answers 400, it no longer clamps). Additive types.
+  `project(id).changeRequests.list(status?, options?)` passes both through,
+  so the facade can page as well. Additive (a widened parameter list).
+- React (`@kortix/sdk/react`): `useReviewSummary(projectId)` (polls every
+  60 s), `useReviewItemPages(projectId, query)` (an infinite query; read the
+  rows with `reviewItemsOf(query.data)`), `nextReviewItemsCursor`, and the
+  keys `qk.project.reviewSummary`, `qk.project.reviewItemsScope` and
+  `qk.project.reviewItemPages`. Additive.
+
+### Added (who may decide an approval)
+- `SessionAuditAction.can_resolve`: true only on an unresolved connector call
+  the viewer may approve or deny, the verdict `resolveApproval` would get
+  (today a project manager, or the session's launcher unless an API token or a
+  service account started the session). False on every other
+  row. Show Approve / Deny only when it is true. Also on the session snapshot's
+  `audit` leg. Optional, absent on an older server. Additive (KRTX-1724).
+- `ApiReviewItem.can_resolve` (connector-call items) and
+  `ReviewApprovalAction.canResolve`, set by `mapApiReviewItem`. A viewer who
+  may not decide the call gets it with status `waiting`, not `needs_you`. On an
+  older server `canResolve` follows `args_preview_authorized`, which the same
+  rule decided. Additive.
+- `reviewVerdictAllowed` refuses approve and reject on a connector call whose
+  `canResolve` is false.
+- `SessionAuditAction.resolvers`, `ApiReviewItem.resolvers` and
+  `ReviewApprovalAction.resolvers` (set by `mapApiReviewItem`): who decides a
+  pending call, for a viewer whose `can_resolve` is false. `managers` for a
+  session started with an API token or a service account (`origin: 'backend'`),
+  else `managers_and_launcher`. Null on a settled audit row; optional, absent
+  on an older server. Additive (KRTX-1724).
+
+### Added (undecryptable stored values)
+- `ProjectSecret.status` and `AccountSecretResource.status`: `'ok'`, or
+  `'undecryptable'` when the server can no longer decrypt the stored value
+  (its encryption key changed, or the row is damaged). The value is lost;
+  re-enter it with `upsertProjectSecret` or `rotateAccountSecretResource`.
+  `ProjectSecret.status` reports the shared value and is absent when none is
+  set. `ProjectSecret.mine.status` reports the caller's own override, which
+  the caller's sessions read while it is active: set it again with
+  `setPersonalProjectSecret`, or remove it with `deletePersonalProjectSecret`.
+  `SecretValueStatus` is the new public type. Optional: absent on older
+  servers. A connector call on such a credential fails with
+  `ConnectorCallError.code === 'credential_undecryptable'`. Any other request
+  that needs such a value answers `409` with
+  `ApiError.code === 'SECRET_UNDECRYPTABLE'` and a message that names it.
+  Additive (KRTX-1719).
+
 ### Added (session restore)
 - `restoreProjectSession(projectId, sessionId)` and `session.restore()`
   (`POST /v1/projects/:p/sessions/:s/restore`) take a deleted session out of

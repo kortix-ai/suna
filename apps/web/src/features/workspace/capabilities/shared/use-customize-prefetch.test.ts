@@ -2,8 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 import { qk } from '@kortix/sdk/react';
 
-import { reviewKeys } from '@/features/review-center/hooks/use-review-items';
-
 import {
   CUSTOMIZE_PREFETCH_GC_MS,
   type CustomizePrefetchApi,
@@ -75,7 +73,7 @@ describe('prefetchCustomize', () => {
       qk.project.triggers(PROJECT),
       qk.project.connectors(PROJECT),
       qk.project.secrets(PROJECT),
-      reviewKeys.list(PROJECT),
+      qk.project.reviewItemPages(PROJECT, { segment: 'needs_you' }),
       qk.project.resourceGrants(PROJECT),
       qk.project.modelPicker(PROJECT),
       ['model-defaults', PROJECT],

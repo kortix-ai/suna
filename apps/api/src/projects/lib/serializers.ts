@@ -40,6 +40,7 @@ import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './open
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { isWarmProjectSession } from './warm-sessions';
+import { probeProjectSecret } from '../secrets/envelope';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -552,9 +553,14 @@ export function buildSecretView(input: {
     managed_by: isGitAuth ? 'project_secret' : null,
     // Is a shared project value set at all.
     configured: Boolean(shared),
-    // MY private override (value never returned), and whether I'm using it.
+    // MY private override (value never returned), whether I'm using it, and
+    // whether the server can decrypt it: an active one is what my sessions read.
     mine: personal
-      ? { active: personal.active, updated_at: personal.updatedAt.toISOString() }
+      ? {
+          active: personal.active,
+          updated_at: personal.updatedAt.toISOString(),
+          status: probeProjectSecret(personal.projectId, personal.valueEnc),
+        }
       : null,
     // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
@@ -581,6 +587,9 @@ export function buildSecretView(input: {
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
     requires_rotation: requiresRotation,
+    // One decrypt of the SHARED value, the one a shared write replaces; the
+    // plaintext is discarded. No shared value, no status: `mine.status` says it.
+    status: shared ? probeProjectSecret(shared.projectId, shared.valueEnc) : undefined,
   };
 }
 

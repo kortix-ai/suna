@@ -8,6 +8,7 @@ import {
   createdSessionListRow,
   mergeRenamed,
   renameInRows,
+  sessionRowsOf,
   upsertIntoSessionCache,
   withoutSession,
   writeSessionLists,
@@ -59,6 +60,28 @@ describe('applyToSessionCache', () => {
     const other = { total: 3 };
     expect(applyToSessionCache(other, (rows) => rows.slice(1))).toBe(other);
     expect(applyToSessionCache(undefined, (rows) => rows.slice(1))).toBeUndefined();
+  });
+
+  // KRTX-2316: the by-id read caches ONE row under the same prefix.
+  test('a single row (the by-id read) takes a rename; a delete or an insert of another session leaves it', () => {
+    const one = row('a', { name: 'Old' });
+    expect(applyToSessionCache<ProjectSession>(one, (rows) => renameInRows(rows, 'a', 'New'))).toMatchObject({ session_id: 'a', name: 'New' });
+    expect(applyToSessionCache(one, (rows) => withoutSession(rows, 'a'))).toBe(one);
+    expect(applyToSessionCache(one, (rows) => [row('b'), ...rows])).toBe(one);
+    expect(applyToSessionCache<ProjectSession>(one, (rows) => renameInRows(rows, 'zzz', 'New'))).toBe(one);
+  });
+});
+
+describe('sessionRowsOf', () => {
+  test('the rows of a flat page, a paged list and a single row', () => {
+    expect(sessionRowsOf([row('a'), row('b')]).map((s) => s.session_id)).toEqual(['a', 'b']);
+    expect(sessionRowsOf(paged([row('a')], [row('b'), row('a')])).map((s) => s.session_id)).toEqual(['a', 'b']);
+    expect(sessionRowsOf(row('a')).map((s) => s.session_id)).toEqual(['a']);
+  });
+
+  test('no rows in another entry under the prefix (message authors) or in nothing', () => {
+    expect(sessionRowsOf({ authors: {} })).toEqual([]);
+    expect(sessionRowsOf(undefined)).toEqual([]);
   });
 });
 
