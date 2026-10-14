@@ -146,7 +146,8 @@ export async function collectInboxItems(
   opts: {
     segment?: ReviewSegment;
     kind?: ReviewItemRow['kind'];
-    canExposeConnectorCallPreview?: (row: ConnectorCallRow) => boolean;
+    /** The caller's resolve verdict for one pending call (`mayResolveApproval`). */
+    canResolveConnectorCall?: (row: ConnectorCallRow) => boolean;
   } = {},
 ) {
   const [nativeRows, crRows, execRows] = await Promise.all([
@@ -154,12 +155,13 @@ export async function collectInboxItems(
     safeSource('change_requests', sources.changeRequests),
     safeSource('connector_calls', sources.connectorApprovals),
   ]);
-  const items = [
+  // `can_resolve` is set on connector calls only: the caller's resolve verdict.
+  const items: Array<ReturnType<typeof serializeReviewItem> & { can_resolve?: boolean }> = [
     ...safeMap('native', nativeRows, serializeReviewItem),
     ...safeMap('change_requests', crRows, changeRequestToReviewItem),
     ...safeMap('connector_calls', execRows, (row) =>
       connectorCallToReviewItem(row, {
-        includeArgsPreview: opts.canExposeConnectorCallPreview?.(row) === true,
+        canResolve: opts.canResolveConnectorCall?.(row) === true,
       }),
     ),
   ];
@@ -178,7 +180,7 @@ export async function listInboxItems(
   opts: {
     segment?: ReviewSegment;
     kind?: ReviewItemRow['kind'];
-    canExposeConnectorCallPreview?: (row: ConnectorCallRow) => boolean;
+    canResolveConnectorCall?: (row: ConnectorCallRow) => boolean;
   } = {},
 ) {
   return collectInboxItems(

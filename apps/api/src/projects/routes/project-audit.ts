@@ -52,6 +52,8 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { readSessionAuditActions } from '../lib/session-audit-read';
+import { mayResolveApproval } from '../lib/approval-authority';
+import { approvalCallerOf } from '../lib/http-approval-caller';
 
 /**
  * The human a session acts on behalf of, for OpenCode audit ingestion. A
@@ -802,6 +804,12 @@ export function registerProjectAuditRoutes(): void {
         agentName: (visible.row.agentName as string | null) ?? null,
         audited,
         limit,
+        canResolve: async () =>
+          mayResolveApproval({
+            ...(await approvalCallerOf(c, loaded, projectId)),
+            targetSessionOrigin: visible.row.origin ?? null,
+            targetSessionCreatedBy: visible.row.createdBy ?? null,
+          }).allowed,
       });
 
       return c.json({

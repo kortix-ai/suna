@@ -15,8 +15,8 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { mayResolveApproval } from '../lib/approval-authority';
-import { actorOf } from '../../middleware/actor';
-import { callerKortixSessionId } from '../../middleware/caller-session';
+import { approvalTargetOf } from '../lib/connector-approval-decision';
+import { approvalCallerOf } from '../lib/http-approval-caller';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isAdaptedId } from '../review-adapters';
@@ -75,24 +75,14 @@ export function registerReviewItemsRoutes(): void {
         return c.json({ error: 'Invalid kind' }, 400);
       }
 
-      // `args_preview` can contain email bodies, recipients, URLs, and other
-      // sensitive values. The broad `project.review.read` leaf may list the row,
-      // but only the same human authority that can resolve the exact approval may
-      // receive its parameters. New rows that race this query fail closed because
-      // their execution id will not be present in this set.
-      let isManager = false;
-      try {
-        await assertProjectCapability(
-          c,
-          loaded.userId,
-          loaded.row.accountId,
-          projectId,
-          PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-        );
-        isManager = true;
-      } catch {
-        isManager = false;
-      }
+      // One verdict per pending connector call, the resolve route's own
+      // (`approvalCallerOf` + `mayResolveApproval`). It decides what this
+      // caller sees: `args_preview` (email bodies, recipients, URLs) only for a
+      // human who may resolve the exact call — the broad `project.review.read`
+      // leaf may list the row, no more — plus `can_resolve` and the status
+      // (Needs you for a resolver, Waiting for everyone else; KRTX-1724). New
+      // rows that race this query fail closed: their execution id is not in
+      // this set.
       const pendingExecutions = await db
         .select({
           executionId: connectorCalls.executionId,
@@ -129,34 +119,30 @@ export function registerReviewItemsRoutes(): void {
             )
         : [];
       const sessionById = new Map(sessions.map((session) => [session.sessionId, session]));
-      // The resolved actor carries the credential kind, so a personal PAT (the
-      // person's own CLI token) counts as the human it belongs to — same rule
-      // as the resolve endpoint itself.
-      const actor = await actorOf(c, loaded.row.accountId);
-      const previewExecutionIds = new Set(
-        pendingExecutions
-          .filter((execution) => {
-            const session = execution.sessionId
-              ? sessionById.get(String(execution.sessionId))
-              : undefined;
-            return mayResolveApproval({
-              isManager,
-              targetSessionOrigin: session?.origin ?? (execution.sessionId ? null : 'user'),
-              targetSessionCreatedBy:
-                session?.createdBy ?? (execution.sessionId ? null : execution.actingUserId),
-              callerUserId: loaded.userId,
-              callerAuthType: (c.get('authType') as string | undefined) ?? null,
-              callerCredentialKind: actor.credential.kind,
-              callerSessionId: callerKortixSessionId(c),
-            }).allowed;
-          })
-          .map((execution) => execution.executionId),
+      // The caller probe runs only when something is pending.
+      const caller = pendingExecutions.length ? await approvalCallerOf(c, loaded, projectId) : null;
+      const resolvableExecutionIds = new Set(
+        caller
+          ? pendingExecutions
+              .filter((execution) => {
+                const target = approvalTargetOf(
+                  execution,
+                  execution.sessionId ? sessionById.get(String(execution.sessionId)) : undefined,
+                );
+                return mayResolveApproval({
+                  ...caller,
+                  targetSessionOrigin: target.origin,
+                  targetSessionCreatedBy: target.createdBy,
+                }).allowed;
+              })
+              .map((execution) => execution.executionId)
+          : [],
       );
 
       const items = await listInboxItems(projectId, {
         segment: segment as ReviewSegment | undefined,
         kind: kind as (typeof KINDS)[number] | undefined,
-        canExposeConnectorCallPreview: (execution) => previewExecutionIds.has(execution.executionId),
+        canResolveConnectorCall: (execution) => resolvableExecutionIds.has(execution.executionId),
       });
       return c.json({ review_items: items });
     },

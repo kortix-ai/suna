@@ -1776,6 +1776,9 @@ export const SessionAuditActionSchema = z.object({
   at: z.string(),
   resolved_at: z.string().nullable(),
   approval_url: z.string().nullable(),
+  /** True only on an unresolved row the CALLER may approve or deny: the verdict
+   *  `POST /approvals/:executionId` enforces (KRTX-1724). False on every other row. */
+  can_resolve: z.boolean(),
 });
 export type SessionAuditAction = z.infer<typeof SessionAuditActionSchema>;
 

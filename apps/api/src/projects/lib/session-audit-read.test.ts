@@ -87,6 +87,7 @@ describe('readSessionAuditActions', () => {
       agentName: 'kortix',
       audited: true,
       limit: 100,
+      canResolve: async () => true,
     });
 
     expect(result).toEqual({
@@ -110,6 +111,7 @@ describe('readSessionAuditActions', () => {
           at: '2026-09-27T10:00:00.000Z',
           resolved_at: null,
           approval_url: null,
+          can_resolve: false,
         },
       ],
     });
@@ -137,6 +139,7 @@ describe('readSessionAuditActions', () => {
       agentName: null,
       audited: true,
       limit: 100,
+      canResolve: async () => true,
     });
 
     expect(result.actions[0]?.approval_url).toBe(
@@ -167,6 +170,7 @@ describe('readSessionAuditActions', () => {
       agentName: null,
       audited: true,
       limit: 100,
+      canResolve: async () => true,
     });
 
     expect(result.actions[0]?.approval_url).toBeNull();
@@ -195,6 +199,7 @@ describe('readSessionAuditActions', () => {
       agentName: null,
       audited: true,
       limit: 100,
+      canResolve: async () => true,
     });
 
     expect(emailLookupCalls).toHaveLength(1);
@@ -214,6 +219,7 @@ describe('readSessionAuditActions', () => {
       agentName: 'kortix',
       audited: false,
       limit: 100,
+      canResolve: async () => true,
     });
     expect(result).toEqual({
       session_id: SESSION_ID,
@@ -221,6 +227,84 @@ describe('readSessionAuditActions', () => {
       audit_access: false,
       count: 0,
       actions: [],
+    });
+  });
+
+  describe('can_resolve (KRTX-1724)', () => {
+    const pendingRow = (executionId: string, overrides: Record<string, unknown> = {}) => ({
+      executionId,
+      connectorId: null,
+      actionPath: 'gmail.send_email',
+      actingUserId: USER_ID,
+      status: 'pending_approval',
+      risk: 'write',
+      resultSummary: null,
+      approvedBy: null,
+      createdAt: new Date('2026-09-27T10:05:00.000Z'),
+      resolvedAt: null,
+      ...overrides,
+    });
+
+    test('a pending row carries the caller verdict; a settled row carries false', async () => {
+      rows = [
+        pendingRow('exec-pending'),
+        pendingRow('exec-ok', { status: 'ok', approvedBy: USER_ID, resolvedAt: new Date() }),
+      ];
+      const result = await readSessionAuditActions({
+        projectId: PROJECT_ID,
+        sessionId: SESSION_ID,
+        agentName: null,
+        audited: true,
+        limit: 100,
+        canResolve: async () => true,
+      });
+      expect(result.actions.map((action) => [action.execution_id, action.can_resolve])).toEqual([
+        ['exec-pending', true],
+        ['exec-ok', false],
+      ]);
+    });
+
+    test('a caller the resolve route refuses reads can_resolve false on a pending row', async () => {
+      rows = [pendingRow('exec-pending')];
+      const result = await readSessionAuditActions({
+        projectId: PROJECT_ID,
+        sessionId: SESSION_ID,
+        agentName: null,
+        audited: true,
+        limit: 100,
+        canResolve: async () => false,
+      });
+      expect(result.actions[0]?.can_resolve).toBe(false);
+    });
+
+    test('asks for the verdict once for many pending rows, and never when none is pending', async () => {
+      let calls = 0;
+      const canResolve = async () => {
+        calls += 1;
+        return true;
+      };
+      rows = [pendingRow('exec-a'), pendingRow('exec-b'), pendingRow('exec-c')];
+      await readSessionAuditActions({
+        projectId: PROJECT_ID,
+        sessionId: SESSION_ID,
+        agentName: null,
+        audited: true,
+        limit: 100,
+        canResolve,
+      });
+      expect(calls).toBe(1);
+
+      // The badge poll of a session with nothing pending pays no authority probe.
+      rows = [pendingRow('exec-ok', { status: 'ok', resolvedAt: new Date() })];
+      await readSessionAuditActions({
+        projectId: PROJECT_ID,
+        sessionId: SESSION_ID,
+        agentName: null,
+        audited: true,
+        limit: 100,
+        canResolve,
+      });
+      expect(calls).toBe(1);
     });
   });
 
@@ -248,6 +332,7 @@ describe('readSessionAuditActions', () => {
       agentName: null,
       audited: true,
       limit: 100,
+      canResolve: async () => true,
     });
     expect(result.actions[0]?.connector).toBeNull();
     expect(result.actions[0]?.connector_id).toBeNull();

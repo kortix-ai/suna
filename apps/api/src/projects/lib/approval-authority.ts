@@ -74,6 +74,15 @@ export function mayResolveApproval(input: {
   return humanMayResolveApproval(input);
 }
 
+/** The caller half of `mayResolveApproval`'s input. Every surface that shows or
+ *  takes a decision reads it from the request through `approvalCallerOf`
+ *  (`http-approval-caller.ts`), so `can_resolve` and the resolve route's 403
+ *  come from the same facts. */
+export type ApprovalCaller = Omit<
+  Parameters<typeof mayResolveApproval>[0],
+  'targetSessionOrigin' | 'targetSessionCreatedBy'
+>;
+
 /**
  * The rule for a caller already known to be a human (a Supabase session, a
  * personal CLI PAT, or a chat identity a person linked by signing in): a

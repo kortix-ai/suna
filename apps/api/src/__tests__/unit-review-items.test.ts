@@ -147,12 +147,39 @@ describe('collectInboxItems connector-call preview authorization', () => {
 
   test('includes the full redacted preview only for an authorized execution', async () => {
     const [item] = await collectInboxItems(sources, {
-      canExposeConnectorCallPreview: (row) => row.executionId === execution.executionId,
+      canResolveConnectorCall: (row) => row.executionId === execution.executionId,
     });
     expect(item.detail).toMatchObject({
       args_preview: { to: ['private@example.com'], body: 'sensitive body' },
       args_preview_authorized: true,
       args_preview_complete: true,
     });
+  });
+
+  // KRTX-1724: one verdict per call, the resolve route's. The resolver finds it
+  // under Needs you; everyone else finds it under Waiting, with no decision.
+  test('a call the caller may resolve is needs_you with can_resolve true', async () => {
+    const items = await collectInboxItems(sources, {
+      segment: 'needs_you',
+      canResolveConnectorCall: () => true,
+    });
+    expect(items.map((item) => [item.review_item_id, item.status, item.can_resolve])).toEqual([
+      ['call:exec-sensitive', 'needs_you', true],
+    ]);
+  });
+
+  test('a call the caller may not resolve is waiting with can_resolve false', async () => {
+    const needsYou = await collectInboxItems(sources, {
+      segment: 'needs_you',
+      canResolveConnectorCall: () => false,
+    });
+    expect(needsYou).toEqual([]);
+    const waiting = await collectInboxItems(sources, {
+      segment: 'waiting',
+      canResolveConnectorCall: () => false,
+    });
+    expect(waiting.map((item) => [item.review_item_id, item.status, item.can_resolve])).toEqual([
+      ['call:exec-sensitive', 'waiting', false],
+    ]);
   });
 });
