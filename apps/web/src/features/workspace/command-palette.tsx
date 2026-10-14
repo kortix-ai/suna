@@ -30,13 +30,9 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
 import { useWorkspaceSearch } from '@/features/files';
-import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
-import {
-  OPEN_CHANGE_REQUESTS_LIMIT,
-  changeRequestKeys,
-} from '@/features/project-files/hooks/use-change-requests';
+import { openChangeRequestListQuery } from '@/features/project-files/hooks/use-change-requests';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
@@ -583,15 +579,15 @@ function FileSearchPage({
  * The 'changes' page — this workspace's OPEN change requests, listed by number
  * and title, each opening its own detail dialog.
  *
- * **Why it reads the list itself instead of `useChangeRequests`.** That hook
- * takes its project id from `ProjectFilesContext`, and the palette mounts
+ * **Why it reads the list itself instead of `useOpenChangeRequestList`.** That
+ * hook takes its project id from `ProjectFilesContext`, and the palette mounts
  * outside every provider that supplies one (`AppHeader` and `ProjectShell`
  * both render it as a sibling of the file explorer, not inside it). Wrapping
  * the whole palette in a `ProjectFilesProvider` to satisfy one page would put
  * the file feature's context on every route the palette mounts on. Reading
- * `fetchChangeRequests` directly under the SAME query key the hook uses
- * (`changeRequestKeys.list`) costs nothing extra: the sidebar pill's cache
- * entry is reused when it is mounted, and populated for it when it is not.
+ * `openChangeRequestListQuery` (the hook's own key and read) costs nothing
+ * extra: the count badge's cache entry is reused when it is mounted, and
+ * populated for it when it is not.
  *
  * The detail dialog DOES need the context (it resolves the project id for the
  * manifest filename and every mutation), so it — and only it — is wrapped, in
@@ -608,8 +604,7 @@ function ChangeRequestsPage({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading } = useQuery({
-    queryKey: changeRequestKeys.list(projectId, 'open'),
-    queryFn: () => fetchChangeRequests(projectId, 'open', { limit: OPEN_CHANGE_REQUESTS_LIMIT }),
+    ...openChangeRequestListQuery(projectId),
     staleTime: 5_000,
   });
 
@@ -971,14 +966,13 @@ export function CommandPalette() {
   /**
    * The open change requests, for the count on the "Review changes" row.
    *
-   * Same query key the sidebar pill and the 'changes' page use
-   * (`changeRequestKeys.list`), so the three share one cache entry and one
+   * Same key and read as the count badge and the 'changes' page
+   * (`openChangeRequestListQuery`), so the three share one cache entry and one
    * request. `enabled` on `open` keeps it off every route the palette merely
    * mounts on.
    */
   const { data: openChangeRequests } = useQuery({
-    queryKey: changeRequestKeys.list(projectId ?? '', 'open'),
-    queryFn: () => fetchChangeRequests(projectId!, 'open'),
+    ...openChangeRequestListQuery(projectId ?? ''),
     enabled: open && !!projectId,
     staleTime: 5_000,
   });
