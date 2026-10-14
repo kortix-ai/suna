@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@/lib/utils';
 import {
-  WarningCircleIcon as AlertCircle,
   WarningIcon as AlertTriangle,
   ArrowRightIcon as ArrowRight,
   TextBIcon as Bold,
@@ -37,7 +36,6 @@ import {
   Alert,
   AlertContent,
   AlertDescription,
-  AlertMedia,
   AlertTitle,
 } from '@/components/ui/alert';
 import {
@@ -2661,9 +2659,6 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="space-y-3">
                       <Alert>
-                        <AlertMedia>
-                          <Info className="size-4" />
-                        </AlertMedia>
                         <AlertContent>
                           <AlertTitle>
                             {tHardcodedUi.raw(
@@ -2678,9 +2673,6 @@ export default function BrandPage() {
                         </AlertContent>
                       </Alert>
                       <Alert variant="destructive">
-                        <AlertMedia>
-                          <AlertCircle className="size-4" />
-                        </AlertMedia>
                         <AlertContent>
                           <AlertTitle>
                             {tI18nHardcoded.raw('i18nComplete.textc3e58a73609d')}
@@ -2693,9 +2685,6 @@ export default function BrandPage() {
                         </AlertContent>
                       </Alert>
                       <Alert variant="warning">
-                        <AlertMedia>
-                          <TriangleAlert className="size-4" />
-                        </AlertMedia>
                         <AlertContent>
                           <AlertTitle>
                             {tI18nHardcoded.raw('i18nComplete.texte981ddae45d8')}
