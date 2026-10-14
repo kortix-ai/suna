@@ -5,12 +5,12 @@
     "apps/web/src/features/workspace/settings/tabs/sandbox-tab.tsx"
   ],
   "diff_hash": "56aa48461cc88520456d8913f3d9a56878037ef0ce1996b8f5f9f88f2207f214",
-  "head": "649828bebb33903a414fad31a7f341462fe1168c",
+  "head": "aac249b35a291dddd6c5c523d56fcb54e338e231",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-14T07:55:19.397Z"
+  "at": "2026-10-14T08:58:49.684Z"
 }
