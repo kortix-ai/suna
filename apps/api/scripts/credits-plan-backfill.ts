@@ -20,16 +20,29 @@
  *                    every plan from the deploy on. A dead row keeps reading as
  *                    paid until it is rewritten, as it does on dev today.
  *
+ * A second pass ADOPTS paying subscriptions the account rows lost track of.
+ * It lists every live, paying Stripe subscription (about 25 minutes: the
+ * Stripe account also holds every Free account's $0 subscription) and, for
+ * each one whose account row does not point at it:
+ *   - adopt      the row has no other live paid subscription → with --apply,
+ *                point the row at this one and put it on Credits at its amount.
+ *                A 2026-10-15 prod audit found paying customers left on Free.
+ *   - duplicate  the row already pays through another live subscription →
+ *                listed for an operator (refund or cancel one), never changed.
+ *   - orphan     no account row at all → counted and listed for an operator.
+ *
  * Every write goes through `applyStripeSync`: an admin-pinned (enterprise) tier
  * is never touched, and the billing cache is invalidated.
  */
-import { creditAccounts } from '@kortix/db';
+import { billingCustomers, creditAccounts } from '@kortix/db';
+import type Stripe from 'stripe';
 import { inArray, or, eq } from 'drizzle-orm';
 import { db } from '../src/shared/db';
 import { getStripe } from '../src/shared/stripe';
 import { applyStripeSync } from '../src/billing/services/account-write-owner';
 import { isDeadSubscriptionStatus } from '../src/billing/services/billing-state';
 import {
+  billingPeriodForSubscription,
   LEGACY_PAID_PLAN_KEYS,
   monthlyCreditsForSubscription,
   paidMonthlyUsd,
@@ -117,7 +130,74 @@ async function main() {
       `${totals.amount} with an amount (Σ ${totals.monthlyUsd.toFixed(2)} USD/month) · ` +
       `${totals.toCredits} → credits · ${totals.toFree} → free · ${totals.skipped} left as is`,
   );
+  await adoptPayingSubscriptions();
   process.exit(0);
+}
+
+/** List-price USD per month of a subscription, discounts ignored (the allowance rule). */
+function listMonthlyUsd(sub: Stripe.Subscription): number {
+  return sub.items.data.reduce((total, item) => {
+    const cents = (item.price?.unit_amount ?? 0) * (item.quantity ?? 1);
+    return total + cents / 100 / (item.price?.recurring?.interval === 'year' ? 12 : 1);
+  }, 0);
+}
+
+async function adoptPayingSubscriptions() {
+  const stripe = getStripe();
+  const customerAccount = new Map(
+    (await db.select({ id: billingCustomers.id, accountId: billingCustomers.accountId }).from(billingCustomers)).map(
+      (c) => [c.id, c.accountId],
+    ),
+  );
+  const totals = { adopt: 0, adoptUsd: 0, duplicate: 0, orphan: 0, orphanUsd: 0 };
+  for (const status of ['active', 'past_due', 'trialing'] as const) {
+    for await (const sub of stripe.subscriptions.list({ status, limit: 100 })) {
+      if (sub.metadata?.contract_id) continue;
+      const usd = listMonthlyUsd(sub);
+      if (usd <= 0 || planForSubscription(sub) !== 'credits') continue;
+      const customer = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
+      const accountId = sub.metadata?.account_id || customerAccount.get(customer) || null;
+      const [row] = accountId
+        ? await db.select(projection).from(creditAccounts).where(eq(creditAccounts.accountId, accountId)).limit(1)
+        : [];
+      if (!row) {
+        totals.orphan++;
+        totals.orphanUsd += usd;
+        console.log(['orphan', sub.id, accountId ?? '-', usd.toFixed(2), sub.status].join('\t'));
+        continue;
+      }
+      if (row.stripeSubscriptionId === sub.id) continue;
+      const stored = row.stripeSubscriptionId
+        ? await stripe.subscriptions.retrieve(row.stripeSubscriptionId).catch(() => null)
+        : null;
+      if (stored && !isDeadSubscriptionStatus(stored.status) && listMonthlyUsd(stored) > 0) {
+        totals.duplicate++;
+        console.log(['duplicate', sub.id, row.accountId, usd.toFixed(2), `also pays ${stored.id}`].join('\t'));
+        continue;
+      }
+      const monthlyUsd = paidMonthlyUsd(sub, { tier: row.tier, seatCount: row.seatCount });
+      totals.adopt++;
+      totals.adoptUsd += monthlyUsd;
+      console.log(['adopt', sub.id, row.accountId, monthlyUsd.toFixed(2), `row was ${row.tier ?? 'none'}`].join('\t'));
+      if (!apply) continue;
+      await applyStripeSync(
+        row.accountId,
+        {
+          stripeSubscriptionId: sub.id,
+          stripeSubscriptionStatus: sub.status,
+          provider: 'stripe',
+          tier: 'credits',
+          planMonthlyUsd: String(monthlyUsd),
+          planType: billingPeriodForSubscription(sub),
+        },
+        { account: row, mode: 'update', reason: 'credits-only-backfill:adopt' },
+      );
+    }
+  }
+  console.log(
+    `\n${apply ? 'APPLIED' : 'DRY RUN'} adoption: ${totals.adopt} adopted (Σ ${totals.adoptUsd.toFixed(2)} USD/month) · ` +
+      `${totals.duplicate} duplicates for an operator · ${totals.orphan} orphans for an operator (Σ ${totals.orphanUsd.toFixed(2)} USD/month)`,
+  );
 }
 
 main().catch((err) => {

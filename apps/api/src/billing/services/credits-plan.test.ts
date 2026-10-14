@@ -91,7 +91,16 @@ describe('planForSubscription: the price decides', () => {
 
   test('an unknown price falls back to our metadata, canonicalized', () => {
     expect(planForSubscription(sub([{ id: 'price_machine' }], { tier_key: 'pro' }))).toBe('credits');
-    expect(planForSubscription(sub([{ id: 'price_machine' }]))).toBeNull();
+    // The oldest subscriptions carry `tier`, not `tier_key`.
+    expect(planForSubscription(sub([{ id: 'price_old_free', unit: 0 }], { tier: 'free' }))).toBe('free');
+  });
+
+  // 2026-10-15 prod audit: paying subscriptions with neither a known price nor
+  // plan metadata resolved to no plan, so their accounts stayed on Free.
+  test('with no known price and no metadata, the amount decides', () => {
+    expect(planForSubscription(sub([{ id: 'price_unknown', unit: 2000 }], { trial_start: 'x' }))).toBe('credits');
+    expect(planForSubscription(sub([{ id: 'price_unknown', unit: 0 }]))).toBe('free');
+    expect(planForSubscription({ items: { data: [] } })).toBeNull();
   });
 
   test('billing period comes from the price', () => {
