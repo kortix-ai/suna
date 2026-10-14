@@ -130,7 +130,7 @@ test('an action that never settles still answers within the route bound', async 
   await new Promise((resolve) => setImmediate(resolve));
   jest.advanceTimersByTime(AUTH_ROUTE_TIMEOUT_MS);
   const res = await pending;
-  expect(res.status).toBe(200);
+  expect(res.status).toBe(503);
   const body = await res.json() as { message?: string };
   expect(body.message).toBeTruthy();
   expect(String(body.message).toLowerCase()).toContain('try again');
