@@ -161,7 +161,10 @@ test('read-only query view still runs SELECT', async () => {
   await click(view, 'i18nComplete.text00d60e31a4e6');
   expect(queries).toContain('SELECT id FROM "a""table" ORDER BY id');
   expect(view.root.findAllByType('div').some((node) => node.children.includes('Database is open read-only'))).toBe(false);
-  await act(async () => {}); // flush the lazy query-results grid
+  // The query-results grid loads lazily: wait for it (a few ticks), not exactly one flush.
+  for (let i = 0; i < 50 && view.root.findAllByType(Grid).length === 0; i++) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  }
   expect(view.root.findByType(Grid).props.rowData).toEqual([{ id: 1 }, { id: 2 }]);
 });
 
