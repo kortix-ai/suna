@@ -218,6 +218,10 @@ A list route that pages takes `limit` and `cursor`. Pass the next cursor back as
 | `GET /v1/accounts/<account_id>/audit` | `next_cursor` in the body | Default 50, maximum 200 |
 | `GET /v1/projects/<project_id>/files?depth=1` | `next_cursor` in the body | Default 500, maximum 2,000. Without `limit` or `cursor`: one response of up to 5,000 entries |
 
+A session page holds only the sessions you may open, and it is full while more
+remain: only the last page holds fewer than `limit` sessions. A delete does not
+move a session in the list order.
+
 The session list also returns an `ETag`. Send it back as `If-None-Match` and an
 unchanged list answers `304` with no body.
 
