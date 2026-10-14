@@ -173,3 +173,51 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
     }
   });
 });
+
+describe('SubSessionSection with more sub-agents than the row memo holds', () => {
+  // 40 loaded sub-agent threads plus a subscribed root reader: past 20 sessions the
+  // store's row memo rebuilt the root's rows on every read, the subscribed root
+  // re-rendered, and React threw "Maximum update depth exceeded" (the session page
+  // showed "Something went wrong" when the context modal opened).
+  test('renders and settles after a store change', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const { useSessionSync } = await import('@kortix/sdk/react');
+    const ROOT = 'ses_many_root';
+    const reply = (sessionID: string, id: string) => ({
+      info: {
+        id, sessionID, role: 'assistant' as const, time: { created: 1_700_000_000_000 }, parentID: 'u',
+        modelID: 'm', providerID: 'synthetic', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' },
+        cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+      parts: [],
+    });
+    const ids = Array.from({ length: 40 }, (_, i) => `ses_many_${i}`);
+    const sessions = [{ id: ROOT, title: 'Root' }, ...ids.map((id) => ({ id, parentID: ROOT, title: id }))] as unknown as Session[];
+    const store = useSessionStateStore.getState();
+    store.hydrate(ROOT, [reply(ROOT, 'm_many_root')] as never);
+    for (const id of ids) store.hydrate(id, [reply(id, `m_${id}`)] as never);
+    function RootReader() {
+      useSessionSync(ROOT, { networkEnabled: false, mirror: null });
+      return null;
+    }
+    let renderer: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <RootReader />
+          <SubSessionSection
+            source={{ projectId: '', sessionId: '', runtimeSessionId: ROOT }}
+            session={sessions[0]}
+            allSessions={sessions}
+            pricingLookup={() => null}
+            fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+    await act(async () => { useSessionStateStore.getState().hydrate(ids[0]!, [reply(ids[0]!, 'm_a'), reply(ids[0]!, 'm_b')] as never); });
+    // Combined messages: the root's 1, 39 × 1, and the changed thread's 3 (its first plus 2 more).
+    expect(JSON.stringify(renderer!.toJSON())).toContain('"43"');
+    await act(async () => { renderer!.unmount(); });
+  });
+});
