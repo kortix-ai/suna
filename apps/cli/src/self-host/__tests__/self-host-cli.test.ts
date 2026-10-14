@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -749,6 +749,57 @@ esac
     expect(code).toBe(0);
     expect(stdout).not.toContain(SIGN_UP_RISK);
   });
+
+  // GoTrue reads DISABLE_SIGNUP and ENABLE_EMAIL_AUTOCONFIRM only through
+  // Compose interpolation into supabase-auth, so a new value reaches it only
+  // when that container is recreated. The API reads ENABLE_EMAIL_AUTOCONFIRM
+  // too (KRTX-1715), so the two must restart together. Docker is stubbed as a
+  // running stack that records every call.
+  function runningStackDocker() {
+    const bin = join(tmp, 'bin');
+    mkdirSync(bin, { recursive: true });
+    const log = join(tmp, 'docker-calls.log');
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh
+echo "$*" >> '${log}'
+case " $* " in
+  *" ps --quiet "*) echo fixture-container ;;
+esac
+exit 0
+`, { mode: 0o755 });
+    return {
+      env: { PATH: `${bin}:${process.env.PATH}` },
+      // The services each `up --force-recreate --no-deps` call recreated.
+      recreated: () => (existsSync(log) ? readFileSync(log, 'utf8') : '').split('\n')
+        .filter((line) => line.includes(' up -d --force-recreate --no-deps '))
+        .map((line) => line.split(' --no-deps ')[1]),
+    };
+  }
+
+  test('env set DISABLE_SIGNUP recreates supabase-auth, and ENABLE_EMAIL_AUTOCONFIRM recreates supabase-auth with kortix-api', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    const signUp = await run(['env', 'set', 'DISABLE_SIGNUP=true'], docker.env);
+    expect(signUp.code).toBe(0);
+    expect(signUp.stdout).toContain('restarted: supabase-auth');
+    const autoconfirm = await run(['env', 'set', 'ENABLE_EMAIL_AUTOCONFIRM=false'], docker.env);
+    expect(autoconfirm.code).toBe(0);
+    expect(docker.recreated()).toEqual(['supabase-auth', 'kortix-api supabase-auth']);
+  }, 60_000);
+
+  test('update --disable-signup recreates supabase-auth after the rollout', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    const { code } = await run(['update', '--disable-signup'], docker.env);
+    expect(code).toBe(0);
+    expect(readEnv().DISABLE_SIGNUP).toBe('true');
+    expect(docker.recreated()).toEqual(['supabase-auth']);
+
+    // A flag that changes nothing recreates nothing.
+    expect((await run(['update', '--disable-signup'], docker.env)).code).toBe(0);
+    expect(docker.recreated()).toEqual(['supabase-auth']);
+  }, 60_000);
 
   test('doctor checks open sign-up on a tunnel instance, and not on a laptop instance', async () => {
     await run(['init', '--yes']);

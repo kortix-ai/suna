@@ -739,7 +739,9 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // moves image tags, so an explicit flag is honored (non-interactively;
   // `update` never prompts) but nothing here resets a value the operator
   // already set via `configure`/`env set`.
+  const beforeFlags = { ...env };
   applyFeatureFlags(env, flags);
+  const changedFlagKeys = Object.keys(env).filter((key) => env[key] !== beforeFlags[key]);
   applyReachabilityFlags(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
@@ -774,6 +776,14 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
       + `${C.dim}Details: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}${C.dim} (per-service outcome, drift, last error)${C.reset}\n`,
     );
     return rollout;
+  }
+
+  // The rollout recreates only the app services whose image moved. A flag this
+  // run changed reaches its readers through the same restart `env set` does:
+  // GoTrue reads DISABLE_SIGNUP only when supabase-auth is recreated.
+  if (changedFlagKeys.length > 0) {
+    const restart = restartServicesForKeys(flags.instance, env, changedFlagKeys);
+    if (restart !== 0) return restart;
   }
 
   // Tunnel reachability mode only, and deliberately AFTER the zero-downtime
@@ -1755,6 +1765,8 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok('Updated self-host connection config')}\n`);
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
+  // `configure` writes the files only; `start` recreates what they changed.
+  process.stdout.write(`  ${C.dim}Apply        ${C.reset}${C.cyan}kortix self-host start${flags.instance === DEFAULT_INSTANCE ? '' : ` --instance ${flags.instance}`}${C.reset}\n`);
   if (reachabilityMode(env) !== 'domain') {
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
