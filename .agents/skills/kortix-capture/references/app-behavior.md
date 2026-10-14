@@ -72,8 +72,46 @@ device's live status (`memory::cli::device_status`): `recording`, `paused`,
 `permission_missing` (with the missing permissions) or `not_recording` with a
 reason; audio on or off; sync `ok`, `queued` (count), `error` (class) or `off`;
 the newest frame; whether actions record; the policy in force; the app version;
-`reportedAtMs`. A reader shows a device as offline when `reportedAtMs` is older
-than 120 s.
+`host.awakeSinceMs` (when the computer last woke from sleep or the app started;
+a gap over 120 s between sync ticks counts as a sleep); `reportedAtMs`. A reader
+shows a device as offline when `reportedAtMs` is older than 120 s.
+
+## Fleet health and alerts
+
+The API classifies every device from its last `status.json`
+(`apps/api/src/capture/health.ts`, one pure function). The Devices page, the
+`health` field of `GET /v1/accounts/:id/capture/devices` and the alert worker
+all use it. States: `healthy`, `attention`, `not_recording`. A healthy device
+that is locked, inactive or silent while idle is `idle`.
+
+| Rule | Result |
+|---|---|
+| Silent over 120 s, last report `locked`, `inactive` or `paused` | healthy, idle (asleep or off) |
+| Silent for 30 min or more (`KORTIX_CAPTURE_ALERT_AFTER_MINUTES`), last report otherwise | `not_recording`, reason `offline` |
+| Silent over 7 days | `attention`, `unseen` |
+| Never reported | `attention`, `never_reported` |
+| `recording`, no frame for 5 min of awake time (since `host.awakeSinceMs`) | `not_recording`, `stalled` |
+| `not_recording` (not locked, inactive), no frame for 5 min of awake time | `not_recording`, `error` |
+| `permission_missing` | `attention` |
+| `paused` by a person | `attention` |
+| sync `error` | `attention`, `sync_error` |
+| items pending, no upload for 30 min of awake time | `attention`, `backlog` |
+| app older than the newest version in `capture-update.json` | `attention`, `behind_version` |
+
+A closed laptop cannot report. A computer that was recording when it went
+silent therefore shows `offline` after 30 min and clears when it wakes. The
+host cannot tell a closed lid from a dead app until it reports again.
+
+Alerts: the leader worker `workers/capture-health-worker.ts` runs
+`capture/health-alerts.ts` every 60 s. A device `not_recording` for the
+threshold (default 30 min) writes one `capture_device_down` inbox row for each
+member with `capture.manage`; when the spell ends it writes one
+`capture_device_recovered` row. The row's dedupe key is
+`capture-down:<device_id>:<since_ms>` (and `capture-up:`), so a repeat tick or a
+second replica writes nothing. Push and email follow each person's notification
+preferences (default on for down, push only for recovered). The device sync
+route runs the same check for its account, which is how the CAP-8 flow
+observes it (the local profile runs no leader loops).
 
 ## Architecture
 
