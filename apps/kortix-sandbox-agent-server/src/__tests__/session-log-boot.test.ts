@@ -358,13 +358,28 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(state()).toEqual({ version: 1, generation: 0, unwritten: [], claiming: true })
   })
 
-  test('while the mark stands, a manifest that answers 503 (no claim readable) fails the boot and keeps the mark', async () => {
+  test('while the mark stands, a manifest that answers 403/404 boots on the store and keeps the mark', async () => {
     fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
     await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
-    const api = fakeApi({ manifest: [new Response('{}', { status: 503 })] })
-    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow(/claim/)
-    expect(api.count.restore).toBe(0)
+    for (const status of [403, 404]) {
+      const api = fakeApi({ manifest: [new Response('{}', { status })] })
+      expect(await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+      expect(api.count.restore).toBe(0)
+      expect(state().claiming).toBe(true)
+    }
+  })
+
+  test('the ingest kill switch (503 manifest) with the mark: the box boots and keeps the mark; the next boot with a readable manifest above it restores and clears it', async () => {
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
+    const off = fakeApi({ manifest: [new Response('{}', { status: 503 })] })
+    expect(await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(off.count.restore).toBe(0)
     expect(state().claiming).toBe(true)
+    const on = fakeApi({ manifest: [manifest(3, [...LIVE, ['m3']])], restore: [restoreAnswer(4, log([...STORED.threads[0]!.messages, message('m3', 3, 'three')]))] })
+    expect((await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY))?.generation).toBe(4)
+    expect(on.count.restore).toBe(1)
+    expect(state().claiming).toBeUndefined()
   })
 
   test('a manifest above this box\'s generation whose messages are all tombstoned restores; it does not clear the mark as current', async () => {

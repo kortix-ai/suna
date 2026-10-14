@@ -256,9 +256,12 @@ root. No turn runs at either point.
   does a 404 or 503 to the first attempt (nothing was claimed), and a later boot
   whose manifest shows no claim above this box. A 404 or 503 after a failed
   attempt settles nothing: that attempt may have claimed, so the boot fails
-  with the mark kept. While the mark stands, a manifest that cannot be read or
-  answers no claim (403, 404, 503) fails the boot even with a store: a box
-  that claimed and then failed or died may hold a store below the claim. A
+  with the mark kept. While the mark stands, a manifest that cannot be read
+  (5xx, network) fails the boot even with a store: a box that claimed and then
+  failed or died may hold a store below the claim. A manifest that answers
+  403, 404 or 503 (the ingest kill switch) boots the store and keeps the mark:
+  the journal route has the same gates, so nothing posts below a claim, and
+  the first boot that reads a manifest restores or clears the mark. A
   manifest above this box's generation reads as behind even when every message
   in it is tombstoned. A brand-new session (no store, the manifest lists no
   live message or answers 404) boots empty, as before.

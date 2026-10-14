@@ -27,7 +27,8 @@
  *   mark. A restore clears it; so does a 404 or 503 to the first attempt (nothing was claimed), and a
  *   later boot whose manifest shows no claim above this box. A 404 or 503 after a failed attempt
  *   settles nothing: that attempt may have claimed. While the mark stands, a manifest that cannot be
- *   read or answers no claim (403, 404, 503) fails the boot even with a store. `POST …/log/restore` claims the next generation; the attachment bytes are
+ *   read (5xx, network) fails the boot even with a store; one that answers 403, 404 or 503 boots the
+ *   store and keeps the mark (the journal has the same gates, so nothing posts below a claim). `POST …/log/restore` claims the next generation; the attachment bytes are
  *   read while the texts are; the adapter writes the log; this box's generation, the ids the
  *   write left out and the D3 notice persist in `session-log-restore.json` in the runtime state
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
@@ -133,11 +134,9 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
     logger.warn('[session-log] the manifest did not answer; the box keeps its native store', { err: String(err), generation: state.generation })
     return kept(state)
   }
-  if (!manifest) {
-    // A 403/404/503 manifest reads no claim, so it cannot settle one: with the mark, the store may be below it.
-    if (state.claiming) throw new Error('session-log manifest answered no claim while a restore claim may stand')
-    return kept(state)
-  }
+  // A 403/404/503 manifest reads no claim, so it settles none: the mark stays for the first boot that reads one.
+  // The journal route has the same gates, so this box cannot post below a claim meanwhile.
+  if (!manifest) return kept(state)
   const why = behind(manifest, held, state)
   // A claim that committed raised the manifest generation above this box's, which reads as behind.
   if (!why) return settled(state)
