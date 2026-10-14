@@ -235,6 +235,17 @@ flow(
       (await asMember.del(path(R.revoke), { params: { accountId, deviceId: device.device_id } })).status(200);
       (await anon.withBearer(device.device_token).post(path(R.credentials))).status(401);
     });
+
+    await ctx.step('the member signs the computer in again after their own revoke → same device; after the owner revokes it, the member’s approval → 403 capture_device_revoked', async () => {
+      const again = await signInDevice(ctx, member, accountId, machineKey);
+      if (again.device_id !== device.device_id) throw new Error('a new sign-in on the same computer made a new device');
+      (await ctx.client.as(ctx.P.OWNER).del(path(R.revoke), { params: { accountId, deviceId: again.device_id } })).status(200);
+      const started = (await anon.post(path(R.authorize), engineAuthorize(machineKey))).status(200).json<{ user_code: string }>();
+      (await asMember.post(path(R.approve), { account_id: accountId }, { params: { user_code: started.user_code } }))
+        .status(403)
+        .body()
+        .has('$.code', 'capture_device_revoked');
+    });
   },
 );
 
@@ -633,8 +644,10 @@ flow(
     const domain = member.email!.split('@')[1]!.toLowerCase();
     const stranger = `${ctx.fixtures.name('cap7-stranger')}@${domain}`.toLowerCase();
     const machine = (label: string) => syntheticMachineKey(ctx.fixtures.name(`cap7-${label}`));
-    const [pcA, pcB, pcC, pcD] = [machine('a'), machine('b'), machine('c'), machine('d')];
-    const enroll = (token: string, machineKey: string, principal: string | null) => anon.post(path(R.enroll), engineEnroll(token, machineKey, principal));
+    const [pcA, pcB, pcC, pcD, pcE, pcF] = [machine('a'), machine('b'), machine('c'), machine('d'), machine('e'), machine('f')];
+    // `proof`: the computer's current device token, sent as Bearer like the app does.
+    const enroll = (token: string, machineKey: string, principal: string | null, proof?: string) =>
+      (proof ? anon.withBearer(proof) : anon).post(path(R.enroll), engineEnroll(token, machineKey, principal));
     let token = { token_id: '', token: '', created_by: '' };
     let deviceA = { device_token: '', device_id: '' };
     let deviceB = { device_token: '', device_id: '' };
@@ -669,15 +682,15 @@ flow(
       (await enroll(token.token, pcA, 'someone@elsewhere.example')).status(403).body().has('$.code', 'enrollment_domain_not_allowed');
     });
 
-    await ctx.step('the member’s Windows sign-in (UPN, upper case) on computer A → 200 enrolled: a kortix_cap_ device token, prefix orgs/<account>, the account name and the member; the device lists with the token id; the device token buys credentials (503 on a store without STS, not 401)', async () => {
+    await ctx.step('the member’s Windows sign-in (UPN, upper case) on computer A → 200 enrolled: a kortix_cap_ device token, prefix orgs/<account>, the account name, and no member (a reported sign-in name links no one on a company token); the device lists with the token id; the device token buys credentials (503 on a store without STS, not 401)', async () => {
       const r = await enroll(token.token, pcA, member.email!.toUpperCase());
-      r.status(200).body().has('$.status', 'enrolled').has('$.token_type', 'Bearer').has('$.prefix', `orgs/${team.id}`).has('$.member.email', member.email!);
+      r.status(200).body().has('$.status', 'enrolled').has('$.token_type', 'Bearer').has('$.prefix', `orgs/${team.id}`).has('$.member', null);
       deviceA = r.json();
       if (!deviceA.device_token.startsWith('kortix_cap_')) throw new Error('device token prefix');
       if (!r.json<{ account: { name: string } }>().account.name) throw new Error('no account name');
       const devices = (await owner.get(path(R.devices), { params, query: { scope: 'account' } })).status(200).json<{ devices: Array<Record<string, unknown>> }>();
       const row = devices.devices.find((d) => d.device_id === deviceA.device_id);
-      if (row?.user_id !== member.userId || row?.enrollment_token_id !== token.token_id || row?.os !== 'windows') throw new Error(`device ${JSON.stringify(row)}`);
+      if (row?.user_id !== null || row?.enrollment_token_id !== token.token_id || row?.os !== 'windows') throw new Error(`device ${JSON.stringify(row)}`);
       (await anon.withBearer(deviceA.device_token).post(path(R.credentials))).status(503).body().has('$.code', 'capture_credentials_unavailable');
     });
 
@@ -736,7 +749,12 @@ flow(
         async () => (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', device_id: deviceB.device_id } })).json<{ hits: unknown[] }>().hits.length,
         { until: (n) => n > 0, timeoutMs: 60_000, intervalMs: 1_000, description: 'the unlinked recordings to move to the member' },
       );
-      (await enroll(token.token, pcB, stranger)).status(200).body().has('$.member.email', member.email!);
+      // The machine key alone does not re-mint B's token: without B's current token it waits for an admin.
+      (await enroll(token.token, pcB, stranger)).status(202).body().has('$.reason', 'approval_required');
+      (await anon.withBearer(deviceB.device_token).post(path(R.credentials))).status(503);
+      const relinked = await enroll(token.token, pcB, stranger, deviceB.device_token);
+      relinked.status(200).body().has('$.member.email', member.email!);
+      deviceB = relinked.json();
     });
 
     await ctx.step('unlink: the owner sets user_id null → B lists linked to no one again; what moved to the member stays theirs', async () => {
@@ -746,14 +764,14 @@ flow(
     });
 
     await ctx.step('the owner denies computer B → its device token stops working (401) and its calls → 403 enrollment_denied', async () => {
-      const b = (await enroll(token.token, pcB, stranger)).status(200).json<{ device_token: string }>();
+      const b = (await enroll(token.token, pcB, stranger, deviceB.device_token)).status(200).json<{ device_token: string }>();
       (await owner.post(path(R.enrollDeny), {}, { params: { ...params, enrollmentId: enrollmentB } })).status(200).body().has('$.status', 'denied');
       (await anon.withBearer(b.device_token).post(path(R.credentials))).status(401).body().has('$.code', 'capture_device_unauthorized');
       (await enroll(token.token, pcB, stranger)).status(403).body().has('$.code', 'enrollment_denied');
     });
 
     await ctx.step('a device the owner revoked is not revived by enroll: computer A → 202 approval_required until the owner approves; then enrolled with the same device id, and the token before it → 401', async () => {
-      const before = (await enroll(token.token, pcA, member.email!)).status(200).json<{ device_token: string; device_id: string }>();
+      const before = (await enroll(token.token, pcA, member.email!, deviceA.device_token)).status(200).json<{ device_token: string; device_id: string }>();
       if (before.device_id !== deviceA.device_id) throw new Error('re-enroll changed the device id');
       (await anon.withBearer(deviceA.device_token).post(path(R.credentials))).status(401);
       (await owner.del(path(R.revoke), { params: { ...params, deviceId: deviceA.device_id } })).status(200);
@@ -775,8 +793,26 @@ flow(
       strictToken = strict.token;
       const waiting = await enroll(strict.token, pcD, member.email!);
       waiting.status(202).body().has('$.reason', 'approval_required');
-      (await owner.post(path(R.enrollApprove), { user_id: member.userId }, { params: { ...params, enrollmentId: waiting.json<{ enrollment_id: string }>().enrollment_id } })).status(200);
-      (await enroll(strict.token, pcD, member.email!)).status(200).body().has('$.status', 'enrolled');
+      const enrollmentId = waiting.json<{ enrollment_id: string }>().enrollment_id;
+      // The reported sign-in name suggests the member; only the admin's approval links it.
+      const listed = (await owner.get(path(R.enrollments), { params })).status(200).json<{ enrollments: Array<Record<string, unknown>> }>();
+      if (listed.enrollments.find((e) => e.enrollment_id === enrollmentId)?.user_id !== member.userId) throw new Error('no suggested member');
+      (await owner.post(path(R.enrollApprove), { user_id: member.userId }, { params: { ...params, enrollmentId } })).status(200);
+      (await enroll(strict.token, pcD, member.email!)).status(200).body().has('$.status', 'enrolled').has('$.member.email', member.email!);
+    });
+
+    await ctx.step('a personal token: for a non-member → 400; for the member, 1 computer → 201 with user_id; whoever signs in to computer E, it links to the member; a second computer → 403 enrollment_limit_reached', async () => {
+      (await owner.post(path(R.enrollTokenCreate), { name: 'Not a member', user_id: crypto.randomUUID() }, { params })).status(400).body().has('$.code', 'capture_enrollment_invalid');
+      const created = await owner.post(path(R.enrollTokenCreate), { name: 'Member laptop', user_id: member.userId, max_devices: 1 }, { params });
+      created.status(201).body().has('$.user_id', member.userId).has('$.email_domains', []);
+      const personal = created.json<{ token: string; token_id: string }>();
+      const listed = (await owner.get(path(R.enrollTokens), { params })).status(200).json<{ tokens: Array<Record<string, unknown>> }>();
+      if (listed.tokens.find((t) => t.token_id === personal.token_id)?.user_id !== member.userId) throw new Error('listed token has no user_id');
+      const r = await enroll(personal.token, pcE, stranger);
+      r.status(200).body().has('$.status', 'enrolled').has('$.member.email', member.email!);
+      const devices = (await owner.get(path(R.devices), { params, query: { scope: 'account' } })).status(200).json<{ devices: Array<Record<string, unknown>> }>();
+      if (devices.devices.find((d) => d.device_id === r.json<{ device_id: string }>().device_id)?.user_id !== member.userId) throw new Error('computer E is not linked to the member');
+      (await enroll(personal.token, pcF, member.email!)).status(403).body().has('$.code', 'enrollment_limit_reached');
     });
 
     await ctx.step('the owner revokes the first token → new enrolls 401; computer A keeps its device token (503, not 401); the list shows revoked', async () => {

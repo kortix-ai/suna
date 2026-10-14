@@ -20626,6 +20626,7 @@
       "description": "Vérifie que ce code correspond à celui de l’app, puis choisis le compte dans lequel elle enregistre.",
       "approvingAs": "Connexion en tant que {email}",
       "notice": "L’app enregistre votre écran et vos actions, et l’audio quand le compte l’autorise. Vous pouvez le voir. Les propriétaires et admins du compte aussi, ainsi que toute personne qu’un rôle personnalisé autorise. Chaque consultation par quelqu’un d’autre est journalisée.",
+      "ownCodeOnly": "N’approuvez qu’un code que vous voyez dans Kortix Capture sur votre propre ordinateur. N’approuvez jamais un code qu’on vous a envoyé : cette personne enregistrerait en votre nom.",
       "approve": "Approuver la connexion",
       "deny": "Refuser",
       "approvedTitle": "Kortix Capture est connecté",
@@ -20956,7 +20957,7 @@
     },
     "rollout": {
       "title": "Installer sur les ordinateurs de l’entreprise",
-      "description": "Créez un jeton d’inscription ; l’IT installe Kortix Capture avec sur chaque ordinateur : une commande, ou Intune et d’autres outils de gestion. Chaque ordinateur commence l’enregistrement seul, personne ne se connecte. Les ordinateurs apparaissent dans Appareils, associés au membre qui a le même e-mail ; associez vous-même tout autre ordinateur à une personne.",
+      "description": "Créez un jeton d’inscription, puis l’IT installe Kortix Capture avec : une commande, ou Intune et une autre gestion des appareils. Chaque ordinateur commence à enregistrer seul et personne ne se connecte. Un jeton d’entreprise inscrit les ordinateurs sans les lier ; liez-les à des personnes dans Appareils, ou activez Approuver chaque ordinateur pour confirmer la personne suggérée. Un jeton personnel lie tous les ordinateurs à une personne.",
       "tokensTitle": "Vos jetons d’inscription",
       "tokensEmpty": "Aucun jeton d’inscription pour l’instant.",
       "guide": "Guide de configuration pour l’IT",
@@ -20964,10 +20965,14 @@
       "newTitle": "Nouveau jeton d’inscription",
       "name": "Nom",
       "namePlaceholder": "Portables de l’ingénierie",
+      "for": "Pour",
+      "forHint": "Tout le monde : les ordinateurs s’inscrivent sans être liés, et vous les liez. Une personne : tous les ordinateurs lui sont liés.",
+      "forAnyone": "Tout le monde dans l’entreprise",
+      "forPerson": "Pour {person}",
       "domains": "Domaines e-mail",
       "domainsHint": "Seulement les personnes qui ouvrent leur session avec un e-mail de ces domaines. Vide : tout le monde.",
       "limit": "Limite d’ordinateurs",
-      "limitHint": "Combien d’ordinateurs peuvent utiliser ce jeton. Vide : aucune limite.",
+      "limitHint": "Un plafond au cas où le jeton fuite. Vide : aucune limite.",
       "expires": "Valable pendant",
       "never": "Jamais",
       "days": "{days, plural, one {# jour} other {# jours}}",
@@ -21012,7 +21017,7 @@
       },
       "unnamed": "Ordinateur sans nom",
       "reason": {
-        "approval_required": "Le jeton exige l’approbation de chaque ordinateur, ou un admin a révoqué celui-ci."
+        "approval_required": "Le jeton approuve chaque ordinateur, un admin l’a révoqué, ou il a demandé un nouveau jeton sans l’actuel (une réinstallation)."
       },
       "deny": "Refuser",
       "approve": "Approuver",

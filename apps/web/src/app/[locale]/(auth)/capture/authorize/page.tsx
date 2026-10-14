@@ -179,6 +179,7 @@ function CaptureAuthorize() {
           </div>
 
           <p className="text-muted-foreground text-xs text-pretty">{t('notice')}</p>
+          <p className="text-foreground text-xs font-medium text-pretty">{t('ownCodeOnly')}</p>
 
           <div className="space-y-3">
             {approve.error ? <ErrorStrip message={approve.error.message} /> : null}

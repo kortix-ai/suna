@@ -242,6 +242,10 @@ test('enrollment: tokens for an IT rollout, and the computers that wait for an a
   });
   expect(created.token).toBe('kortix_enr_x');
 
+  // A personal token: every computer it enrolls is linked to this member.
+  await Capture.createCaptureEnrollmentToken('a1', { name: 'Jane laptop', user_id: 'u7' });
+  expect(last()).toMatchObject({ method: 'POST', url: `${P}/enrollment-tokens`, body: { name: 'Jane laptop', user_id: 'u7' } });
+
   await Capture.revokeCaptureEnrollmentToken('a1', 't2');
   expect(last()).toMatchObject({ method: 'DELETE', url: `${P}/enrollment-tokens/t2` });
 

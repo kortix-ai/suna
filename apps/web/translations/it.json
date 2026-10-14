@@ -20626,6 +20626,7 @@
       "description": "Controlla che questo codice corrisponda a quello dell’app, poi scegli l’account in cui registra.",
       "approvingAs": "Accesso come {email}",
       "notice": "L’app registra il tuo schermo e le tue azioni, e l’audio quando l’account lo consente. Tu puoi vederlo. Anche i proprietari e gli admin dell’account, e chiunque un ruolo personalizzato autorizzi. Ogni accesso da parte di altri viene registrato.",
+      "ownCodeOnly": "Approva solo un codice che vedi in Kortix Capture sul tuo computer. Non approvare mai un codice che qualcuno ti ha inviato: registrerebbe a tuo nome.",
       "approve": "Approva accesso",
       "deny": "Rifiuta",
       "approvedTitle": "Kortix Capture ha effettuato l'accesso",
@@ -20956,7 +20957,7 @@
     },
     "rollout": {
       "title": "Installa sui computer aziendali",
-      "description": "Crea un token di registrazione e l’IT installa Kortix Capture con esso su ogni computer: un comando, oppure Intune e altri strumenti di gestione. Ogni computer inizia a registrare da solo e nessuno accede. I computer compaiono in Dispositivi, collegati al membro con la stessa email; collega tu qualsiasi altro computer a una persona.",
+      "description": "Crea un token di registrazione, poi l’IT installa Kortix Capture con esso: un comando, oppure Intune e altri strumenti di gestione dei dispositivi. Ogni computer inizia a registrare da solo e nessuno accede. Un token aziendale registra i computer senza collegarli; collegali alle persone in Dispositivi, oppure attiva Approva ogni computer per confermare la persona suggerita. Un token personale collega ogni computer a una persona.",
       "tokensTitle": "I tuoi token di registrazione",
       "tokensEmpty": "Ancora nessun token di registrazione.",
       "guide": "Guida di configurazione per l’IT",
@@ -20964,10 +20965,14 @@
       "newTitle": "Nuovo token di registrazione",
       "name": "Nome",
       "namePlaceholder": "Portatili ingegneria",
+      "for": "Per",
+      "forHint": "Chiunque: i computer si registrano senza collegamento e li colleghi tu. Una persona: ogni computer è collegato a lei.",
+      "forAnyone": "Chiunque in azienda",
+      "forPerson": "Per {person}",
       "domains": "Domini email",
       "domainsHint": "Solo le persone che accedono al computer con un’email di questi domini. Vuoto: chiunque.",
       "limit": "Limite di computer",
-      "limitHint": "Quanti computer possono usare questo token. Vuoto: nessun limite.",
+      "limitHint": "Un limite nel caso il token venga divulgato. Vuoto: nessun limite.",
       "expires": "Valido per",
       "never": "Mai",
       "days": "{days, plural, one {# giorno} other {# giorni}}",
@@ -21012,7 +21017,7 @@
       },
       "unnamed": "Computer senza nome",
       "reason": {
-        "approval_required": "Il token richiede l’approvazione di ogni computer, oppure un admin ha revocato questo."
+        "approval_required": "Il token approva ogni computer, un amministratore lo ha revocato, oppure ha chiesto un nuovo token senza quello attuale (una reinstallazione)."
       },
       "deny": "Rifiuta",
       "approve": "Approva",

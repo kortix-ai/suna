@@ -15,6 +15,7 @@ export const GRANT_TTL_MS = 15 * 60_000;
 /** RFC 8628 §3.2 default. A poll faster than this answers `slow_down`. */
 export const POLL_INTERVAL_S = 5;
 export const DEVICE_TOKEN_PREFIX = 'kortix_cap_';
+export const DEVICE_TOKEN_SHAPE = /^kortix_cap_[A-Za-z0-9]{40}$/;
 
 export type Grant = typeof captureDeviceGrants.$inferSelect;
 export type Device = typeof captureDevices.$inferSelect;
@@ -104,7 +105,8 @@ export async function pollDeviceGrant(deviceCode: string): Promise<PollOutcome> 
 /** The device behind a bearer device token, or null. Always read from the row: a revoke on any replica wins. */
 export async function deviceForToken(header: string | undefined): Promise<Device | null> {
   const token = bearerToken(header)?.trim() ?? '';
-  if (!token.startsWith(DEVICE_TOKEN_PREFIX)) return null;
+  // Refuse a malformed token before the (costly) hash.
+  if (!DEVICE_TOKEN_SHAPE.test(token)) return null;
   const [device] = await db
     .select()
     .from(captureDevices)
@@ -130,6 +132,22 @@ export async function grantByUserCode(userCode: string): Promise<Grant | null> {
 }
 
 /** Pair the device to `userId` in the account. Null when the grant was decided meanwhile. */
+/** True when someone other than the person revoked their device for this computer: only an admin restores it. */
+export async function revokedByAdmin(grant: Grant, owner: { accountId: string; userId: string }): Promise<boolean> {
+  const [device] = await db
+    .select({ revokedAt: captureDevices.revokedAt, revokedBy: captureDevices.revokedBy })
+    .from(captureDevices)
+    .where(
+      and(
+        eq(captureDevices.accountId, owner.accountId),
+        eq(captureDevices.machineKeySha256, grant.machineKeySha256),
+        eq(captureDevices.userId, owner.userId),
+      ),
+    )
+    .limit(1);
+  return Boolean(device?.revokedAt && device.revokedBy && device.revokedBy !== owner.userId);
+}
+
 export async function approveDeviceGrant(grant: Grant, owner: { accountId: string; userId: string }): Promise<Grant | null> {
   const fields = deviceFields(grant.deviceInfo);
   return db.transaction(async (tx) => {

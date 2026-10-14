@@ -20626,6 +20626,7 @@
       "description": "Confirme que este código corresponde ao do app e escolha a conta em que ele grava.",
       "approvingAs": "Entrando como {email}",
       "notice": "O app grava sua tela e suas ações, e o áudio quando a conta permite. Você pode ver. Os proprietários e admins da conta também, e qualquer pessoa que uma função personalizada permita. Cada acesso de outra pessoa é registrado.",
+      "ownCodeOnly": "Aprove só um código que você vê no Kortix Capture no seu próprio computador. Nunca aprove um código que alguém enviou: essa pessoa gravaria como você.",
       "approve": "Aprovar login",
       "deny": "Negar",
       "approvedTitle": "O Kortix Capture está conectado",
@@ -20956,7 +20957,7 @@
     },
     "rollout": {
       "title": "Instalar nos computadores da empresa",
-      "description": "Crie um token de registro e a TI instala o Kortix Capture com ele em cada computador: um comando, ou o Intune e outras ferramentas de gerenciamento. Cada computador começa a gravar sozinho e ninguém precisa entrar. Os computadores aparecem em Dispositivos, vinculados ao membro com o mesmo e-mail; vincule você mesmo qualquer outro computador a uma pessoa.",
+      "description": "Crie um token de inscrição e a TI instala o Kortix Capture com ele: um comando, ou Intune e outra gestão de dispositivos. Cada computador começa a gravar sozinho e ninguém inicia sessão. Um token da empresa inscreve computadores sem vínculo; vincule-os a pessoas em Dispositivos, ou ative Aprovar cada computador para confirmar a pessoa sugerida. Um token pessoal vincula todos os computadores a uma pessoa.",
       "tokensTitle": "Seus tokens de registro",
       "tokensEmpty": "Ainda não há token de registro.",
       "guide": "Guia de configuração para TI",
@@ -20964,10 +20965,14 @@
       "newTitle": "Novo token de registro",
       "name": "Nome",
       "namePlaceholder": "Notebooks de engenharia",
+      "for": "Para",
+      "forHint": "Qualquer pessoa: os computadores são inscritos sem vínculo e você os vincula. Uma pessoa: todos os computadores são vinculados a ela.",
+      "forAnyone": "Qualquer pessoa da empresa",
+      "forPerson": "Para {person}",
       "domains": "Domínios de e-mail",
       "domainsHint": "Só pessoas que entram no computador com um e-mail destes domínios. Vazio: qualquer pessoa.",
       "limit": "Limite de computadores",
-      "limitHint": "Quantos computadores podem usar este token. Vazio: sem limite.",
+      "limitHint": "Um limite caso o token vaze. Vazio: sem limite.",
       "expires": "Válido por",
       "never": "Nunca",
       "days": "{days, plural, one {# dia} other {# dias}}",
@@ -21012,7 +21017,7 @@
       },
       "unnamed": "Computador sem nome",
       "reason": {
-        "approval_required": "O token exige aprovar cada computador, ou um administrador revogou este."
+        "approval_required": "O token aprova cada computador, um admin o revogou, ou ele pediu um token novo sem o atual (uma reinstalação)."
       },
       "deny": "Recusar",
       "approve": "Aprovar",

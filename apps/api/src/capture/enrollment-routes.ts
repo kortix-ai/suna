@@ -10,6 +10,7 @@
  *   GET    /enrollments?status=pending     (computers that wait for a decision)
  *   POST   /enrollments/:id/approve {user_id?} · POST /enrollments/:id/deny
  */
+import { createHash } from 'crypto';
 import { createRoute, type OpenAPIHono, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { accountsRouter } from '../accounts/core/app';
@@ -17,7 +18,7 @@ import { auth, errors, json } from '../openapi';
 import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import { readJsonObject } from '../shared/http-body';
 import { TokenBucketRateLimiter, type RateLimitPolicy } from '../shared/rate-limit';
-import { hashSecretKey } from '../shared/crypto';
+import { bearerToken } from '../shared/bearer-token';
 import type { AppEnv } from '../types';
 import { captureAccessWithPowers, isResponse, refuse, type Ctx } from './account-routes';
 import {
@@ -25,6 +26,7 @@ import {
   createEnrollmentToken,
   denyEnrollment,
   enroll,
+  ENROLLMENT_TOKEN_SHAPE,
   enrollmentInAccount,
   enrollmentView,
   ENROLL_RETRY_S,
@@ -124,8 +126,13 @@ export function registerDeviceEnrollRoute(app: OpenAPIHono<AppEnv>) {
       if (!/^[0-9a-f]{64}$/.test(machineKey)) {
         return c.json({ error: 'machine_key_sha256 must be 64 hex characters', code: 'invalid_request' }, 400);
       }
-      const blocked = limited(c, 'enrollToken', hashSecretKey(token).slice(0, 16)) ?? limited(c, 'enrollMachine', machineKey);
+      // Cheap checks first: the machine limit, then the token's shape, before any costly hash.
+      const blocked =
+        limited(c, 'enrollMachine', machineKey) ?? limited(c, 'enrollToken', createHash('sha256').update(token).digest('hex').slice(0, 16));
       if (blocked) return blocked as never;
+      if (!ENROLLMENT_TOKEN_SHAPE.test(token)) {
+        return c.json({ error: 'Unknown, revoked or expired enrollment token', code: 'enrollment_token_invalid' }, 401);
+      }
       const deviceInfo = Object.fromEntries(
         ['hostname', 'computer_name', 'os', 'os_version', 'arch', 'app_version']
           .map((key) => [key, str(device[key])] as const)
@@ -137,6 +144,7 @@ export function registerDeviceEnrollRoute(app: OpenAPIHono<AppEnv>) {
         principalName: str(user.principal_name, 320),
         accountName: str(user.account_name, 320),
         deviceInfo,
+        deviceToken: bearerToken(c.req.header('Authorization'))?.trim() || null,
       });
       if ('accountId' in outcome) {
         // The token is the caller: an IdP-less machine has no Kortix user until it is matched.
@@ -208,6 +216,7 @@ const TokenSchema = z.object({
   max_devices: z.number().nullable(),
   device_count: z.number(),
   require_approval: z.boolean(),
+  user_id: z.string().nullable(),
   expires_at: z.string().nullable(),
   revoked_at: z.string().nullable(),
   last_used_at: z.string().nullable(),
@@ -283,6 +292,12 @@ export function registerCaptureEnrollmentRoutes() {
                 max_devices: z.number().int().min(1).max(100_000).nullable().optional(),
                 require_approval: z.boolean().optional().describe('Every new computer waits for an admin'),
                 expires_in_days: z.number().int().min(1).max(365).nullable().optional().describe('Default 30; null: never expires'),
+                user_id: z
+                  .string()
+                  .uuid()
+                  .nullable()
+                  .optional()
+                  .describe('Link every computer this token enrolls to this member (a personal install). Absent: matched by sign-in email'),
               }),
             },
           },
@@ -297,6 +312,10 @@ export function registerCaptureEnrollmentRoutes() {
       const emailDomains = normalizeDomains(body.email_domains ?? []);
       if (!emailDomains) return refuse(c, 400, 'capture_enrollment_invalid', 'email_domains must be domain names, like corp.example');
       const days = body.expires_in_days === undefined ? 30 : body.expires_in_days;
+      const userId = body.user_id ?? null;
+      if (userId && !(await isAccountMember(access.accountId, userId))) {
+        return refuse(c, 400, 'capture_enrollment_invalid', 'user_id must be a member of the account');
+      }
       const { row, token } = await createEnrollmentToken(
         access.accountId,
         {
@@ -305,6 +324,7 @@ export function registerCaptureEnrollmentRoutes() {
           maxDevices: body.max_devices ?? null,
           requireApproval: body.require_approval ?? false,
           expiresAt: days === null ? null : new Date(Date.now() + days * 86_400_000),
+          userId,
         },
         access.viewer,
       );

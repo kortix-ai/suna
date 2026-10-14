@@ -20626,6 +20626,7 @@
       "description": "Check that this code matches the one in the app, then pick the account it records into.",
       "approvingAs": "Signing in as {email}",
       "notice": "The app records your screen and your actions, and audio when the account allows it. You can see it. So can the account’s owners and admins, and anyone a custom role allows. Every view by someone else is logged.",
+      "ownCodeOnly": "Approve only a code you see in Kortix Capture on your own computer. Never approve a code someone sent you: they would record as you.",
       "approve": "Approve sign-in",
       "deny": "Deny",
       "approvedTitle": "Kortix Capture is signed in",
@@ -20956,7 +20957,7 @@
     },
     "rollout": {
       "title": "Install on company computers",
-      "description": "Create an enrollment token, then IT installs Kortix Capture with it on every computer: one command, or Intune and other device management. Each computer starts recording on its own and nobody signs in. Computers appear in Devices, linked to the member with the same email; link any other computer to a person yourself.",
+      "description": "Create an enrollment token, then IT installs Kortix Capture with it: one command, or Intune and other device management. Each computer starts recording on its own and nobody signs in. A company token enrolls computers linked to no one; link them to people in Devices, or turn on Approve each computer to confirm the suggested person. A personal token links every computer to one person.",
       "tokensTitle": "Your enrollment tokens",
       "tokensEmpty": "No enrollment token yet.",
       "guide": "IT setup guide",
@@ -20964,10 +20965,14 @@
       "newTitle": "New enrollment token",
       "name": "Name",
       "namePlaceholder": "Engineering laptops",
+      "for": "For",
+      "forHint": "Anyone: computers enroll linked to no one, and you link them. A person: every computer links to them.",
+      "forAnyone": "Anyone at the company",
+      "forPerson": "For {person}",
       "domains": "Email domains",
       "domainsHint": "Only people who sign in to their computer with an email at these domains. Empty: anyone.",
       "limit": "Computer limit",
-      "limitHint": "How many computers can use this token. Empty: no limit.",
+      "limitHint": "A cap in case the token leaks. Empty: no limit.",
       "expires": "Valid for",
       "never": "Never",
       "days": "{days, plural, one {# day} other {# days}}",
@@ -21012,7 +21017,7 @@
       },
       "unnamed": "Unnamed computer",
       "reason": {
-        "approval_required": "The token approves each computer, or an admin revoked this one."
+        "approval_required": "The token approves each computer, an admin revoked it, or it asked for a new token without its current one (a reinstall)."
       },
       "deny": "Deny",
       "approve": "Approve",

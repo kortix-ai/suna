@@ -20626,6 +20626,7 @@
       "description": "Prüfe, dass dieser Code dem in der App entspricht, und wähle dann das Konto, in das sie aufzeichnet.",
       "approvingAs": "Anmeldung als {email}",
       "notice": "Die App zeichnet deinen Bildschirm und deine Aktionen auf, und Audio, wenn das Konto es erlaubt. Du kannst es sehen. Ebenso die Owner und Admins des Kontos und alle, denen eine benutzerdefinierte Rolle es erlaubt. Jeder Zugriff durch andere wird protokolliert.",
+      "ownCodeOnly": "Bestätige nur einen Code, den du in Kortix Capture auf deinem eigenen Computer siehst. Bestätige nie einen Code, den dir jemand geschickt hat: Diese Person würde als du aufnehmen.",
       "approve": "Anmeldung bestätigen",
       "deny": "Ablehnen",
       "approvedTitle": "Kortix Capture ist angemeldet",
@@ -20956,7 +20957,7 @@
     },
     "rollout": {
       "title": "Auf Firmencomputern installieren",
-      "description": "Erstelle ein Registrierungstoken; die IT installiert Kortix Capture damit auf jedem Computer: mit einem Befehl oder über Intune und andere Geräteverwaltung. Jeder Computer beginnt selbst mit der Aufnahme, niemand meldet sich an. Die Computer erscheinen unter Geräte, zugeordnet zum Mitglied mit derselben E-Mail; jeden anderen Computer ordnest du selbst einer Person zu.",
+      "description": "Erstelle ein Registrierungstoken; die IT installiert Kortix Capture damit: ein Befehl, oder Intune und andere Geräteverwaltung. Jeder Computer startet die Aufnahme selbst, niemand meldet sich an. Ein Firmentoken registriert Computer ohne Zuordnung; ordne sie unter Geräte Personen zu, oder schalte „Jeden Computer bestätigen“ ein, um die vorgeschlagene Person zu bestätigen. Ein persönliches Token ordnet jeden Computer einer Person zu.",
       "tokensTitle": "Deine Registrierungstokens",
       "tokensEmpty": "Noch kein Registrierungstoken.",
       "guide": "Einrichtungsanleitung für die IT",
@@ -20964,10 +20965,14 @@
       "newTitle": "Neues Registrierungstoken",
       "name": "Name",
       "namePlaceholder": "Engineering-Laptops",
+      "for": "Für",
+      "forHint": "Alle: Computer werden ohne Zuordnung registriert, und du ordnest sie zu. Eine Person: jeder Computer wird ihr zugeordnet.",
+      "forAnyone": "Alle in der Firma",
+      "forPerson": "Für {person}",
       "domains": "E-Mail-Domains",
       "domainsHint": "Nur Personen, die sich mit einer E-Mail dieser Domains am Computer anmelden. Leer: alle.",
       "limit": "Computer-Limit",
-      "limitHint": "Wie viele Computer dieses Token nutzen können. Leer: kein Limit.",
+      "limitHint": "Eine Obergrenze, falls das Token in falsche Hände gerät. Leer: kein Limit.",
       "expires": "Gültig für",
       "never": "Nie",
       "days": "{days, plural, one {# Tag} other {# Tage}}",
@@ -21012,7 +21017,7 @@
       },
       "unnamed": "Unbenannter Computer",
       "reason": {
-        "approval_required": "Das Token verlangt eine Freigabe für jeden Computer, oder ein Admin hat diesen widerrufen."
+        "approval_required": "Das Token verlangt eine Bestätigung pro Computer, ein Admin hat ihn widerrufen, oder er hat ohne sein aktuelles Token ein neues angefordert (eine Neuinstallation)."
       },
       "deny": "Ablehnen",
       "approve": "Freigeben",

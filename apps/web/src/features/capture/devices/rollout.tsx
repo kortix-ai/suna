@@ -165,8 +165,9 @@ function NewTokenForm({
 }) {
   const t = useTranslations('capture.rollout');
   const create = useCreateCaptureEnrollmentToken(accountId);
-  const ids = { name: useId(), domains: useId(), limit: useId(), approval: useId() };
+  const ids = { name: useId(), person: useId(), domains: useId(), limit: useId(), approval: useId() };
   const [name, setName] = useState('');
+  const [person, setPerson] = useState<string | null>(null);
   const [domains, setDomains] = useState('');
   const [limit, setLimit] = useState('');
   const [expiry, setExpiry] = useState<ExpiryDays>(30);
@@ -175,10 +176,11 @@ function NewTokenForm({
     create.mutate(
       {
         name: name.trim(),
-        email_domains: parseDomains(domains),
+        email_domains: person ? [] : parseDomains(domains),
         max_devices: parseLimit(limit),
         require_approval: approval,
         expires_in_days: expiry,
+        user_id: person,
       },
       { onSuccess: onCreated, onError: (error) => errorToast(errorText(error, t('createFailed'))) },
     );
@@ -203,18 +205,40 @@ function NewTokenForm({
         </div>
         <div className="grid gap-2 px-4 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-center">
           <span>
-            <Label htmlFor={ids.domains} className="text-sm font-medium">
-              {t('domains')}
-            </Label>
-            <p className="text-muted-foreground mt-0.5 text-xs">{t('domainsHint')}</p>
+            <p id={ids.person} className="text-sm font-medium">
+              {t('for')}
+            </p>
+            <p className="text-muted-foreground mt-0.5 text-xs">{t('forHint')}</p>
           </span>
-          <Input
-            id={ids.domains}
-            value={domains}
-            placeholder={t('domainsPlaceholder')}
-            onChange={(event) => setDomains(event.target.value)}
+          <MemberSelect
+            accountId={accountId}
+            enabled
+            value={person}
+            noneLabel={t('forAnyone')}
+            labelledBy={ids.person}
+            onChange={(next) => {
+              setPerson(next);
+              // A personal token installs that person's computer: cap it at one unless the admin says more.
+              setLimit(next ? '1' : '');
+            }}
           />
         </div>
+        {person ? null : (
+          <div className="grid gap-2 px-4 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-center">
+            <span>
+              <Label htmlFor={ids.domains} className="text-sm font-medium">
+                {t('domains')}
+              </Label>
+              <p className="text-muted-foreground mt-0.5 text-xs">{t('domainsHint')}</p>
+            </span>
+            <Input
+              id={ids.domains}
+              value={domains}
+              placeholder={t('domainsPlaceholder')}
+              onChange={(event) => setDomains(event.target.value)}
+            />
+          </div>
+        )}
         <div className="grid gap-2 px-4 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-center">
           <span>
             <Label htmlFor={ids.limit} className="text-sm font-medium">
@@ -310,6 +334,10 @@ function TokenRow({ accountId, token }: { accountId: string; token: CaptureEnrol
   const locale = useLocale();
   const revoke = useRevokeCaptureEnrollmentToken(accountId);
   const [confirm, setConfirm] = useState(false);
+  const people = useCaptureDirectory(accountId, token.user_id !== null);
+  const person = token.user_id
+    ? (people.members.find((member) => member.user_id === token.user_id)?.email ?? token.user_id)
+    : null;
   const usage =
     token.max_devices === null
       ? t('usage', { count: token.device_count })
@@ -337,7 +365,12 @@ function TokenRow({ accountId, token }: { accountId: string; token: CaptureEnrol
         </p>
         <p className="text-muted-foreground mt-0.5 truncate text-xs tabular-nums">
           <code className="font-mono">{token.token_prefix}…</code> · {usage} ·{' '}
-          {token.email_domains.length ? token.email_domains.join(', ') : t('anyDomain')} · {expiry}
+          {person
+            ? t('forPerson', { person })
+            : token.email_domains.length
+              ? token.email_domains.join(', ')
+              : t('anyDomain')}{' '}
+          · {expiry}
         </p>
       </div>
       {token.state === 'active' ? (
@@ -517,11 +550,16 @@ function MemberSelect({
   accountId,
   enabled,
   value,
+  noneLabel,
+  labelledBy,
   onChange,
 }: {
   accountId: string;
   enabled: boolean;
   value: string | null;
+  /** The label of the null choice; default "Linked to no one". */
+  noneLabel?: string;
+  labelledBy?: string;
   onChange: (userId: string | null) => void;
 }) {
   const t = useTranslations('capture.rollout');
@@ -531,11 +569,15 @@ function MemberSelect({
       value={value ?? NO_ONE}
       onValueChange={(next) => onChange(next === NO_ONE ? null : next)}
     >
-      <SelectTrigger aria-label={t('member')} className="w-full">
+      <SelectTrigger
+        aria-label={labelledBy ? undefined : t('member')}
+        aria-labelledby={labelledBy}
+        className="w-full"
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NO_ONE}>{t('noOne')}</SelectItem>
+        <SelectItem value={NO_ONE}>{noneLabel ?? t('noOne')}</SelectItem>
         {people.members.map((member) => (
           <SelectItem key={member.user_id} value={member.user_id}>
             {member.email ?? member.user_id}

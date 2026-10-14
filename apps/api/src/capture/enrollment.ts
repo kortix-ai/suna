@@ -13,6 +13,7 @@
  * or denies it; the device polls by calling enroll again. A token is stored
  * only as `hashSecretKey(token)`.
  */
+import { timingSafeEqual } from 'crypto';
 import { accounts, captureDevices, captureEnrollments, captureEnrollmentTokens } from '@kortix/db';
 import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { lookupEmailsByUserIds } from '../accounts/core/owner-emails';
@@ -60,6 +61,8 @@ export interface TokenInput {
   maxDevices: number | null;
   requireApproval: boolean;
   expiresAt: Date | null;
+  /** Every computer the token enrolls is linked to this member; null: matched by sign-in email. */
+  userId: string | null;
 }
 
 export async function createEnrollmentToken(accountId: string, input: TokenInput, createdBy: string) {
@@ -75,6 +78,7 @@ export async function createEnrollmentToken(accountId: string, input: TokenInput
       maxDevices: input.maxDevices,
       requireApproval: input.requireApproval,
       expiresAt: input.expiresAt,
+      userId: input.userId,
       createdBy,
     })
     .returning();
@@ -82,9 +86,11 @@ export async function createEnrollmentToken(accountId: string, input: TokenInput
 }
 
 /** Computers per token: one per machine, a denied one not counted. */
-async function deviceCounts(tokenIds: string[]): Promise<Map<string, number>> {
+type Exec = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function deviceCounts(tokenIds: string[], exec: Exec = db): Promise<Map<string, number>> {
   if (tokenIds.length === 0) return new Map();
-  const rows = await db
+  const rows = await exec
     .select({ tokenId: captureEnrollments.tokenId, n: sql<number>`count(distinct ${captureEnrollments.machineKeySha256})::int` })
     .from(captureEnrollments)
     .where(and(inArray(captureEnrollments.tokenId, tokenIds), ne(captureEnrollments.status, 'denied')))
@@ -107,6 +113,8 @@ export function tokenView(row: EnrollmentToken, deviceCount: number) {
     max_devices: row.maxDevices,
     device_count: deviceCount,
     require_approval: row.requireApproval,
+    /** Every computer the token enrolls is linked to this member; null: matched by sign-in email. */
+    user_id: row.userId,
     expires_at: row.expiresAt?.toISOString() ?? null,
     revoked_at: row.revokedAt?.toISOString() ?? null,
     last_used_at: row.lastUsedAt?.toISOString() ?? null,
@@ -148,6 +156,8 @@ export interface EnrollInput {
   principalName: string | null;
   accountName: string | null;
   deviceInfo: Record<string, string>;
+  /** The computer's current device token (`Authorization: Bearer`), its proof that it is the enrolled device. */
+  deviceToken: string | null;
 }
 
 export type EnrollOutcome =
@@ -169,10 +179,40 @@ export type EnrollOutcome =
       memberEmail: string | null;
     };
 
+/** The shape of every enrollment token: anything else is refused before the (costly) hash. */
+export const ENROLLMENT_TOKEN_SHAPE = /^kortix_enr_[A-Za-z0-9]{40}$/;
+
 async function tokenRow(token: string): Promise<EnrollmentToken | null> {
-  if (!token.startsWith(ENROLLMENT_TOKEN_PREFIX)) return null;
-  const [row] = await db.select().from(captureEnrollmentTokens).where(eq(captureEnrollmentTokens.tokenHash, hashSecretKey(token))).limit(1);
-  return row ?? null;
+  if (!ENROLLMENT_TOKEN_SHAPE.test(token)) return null;
+  // The stored prefix narrows the candidates first, so a guessed token costs one indexed read and no scrypt.
+  const candidates = await db
+    .select()
+    .from(captureEnrollmentTokens)
+    .where(eq(captureEnrollmentTokens.tokenPrefix, token.slice(0, ENROLLMENT_TOKEN_PREFIX.length + 4)));
+  if (candidates.length === 0) return null;
+  const hash = hashSecretKey(token);
+  return candidates.find((row) => sameSecret(row.tokenHash, hash)) ?? null;
+}
+
+function sameSecret(a: string | null, b: string): boolean {
+  if (!a || a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/** The member a personal token links its computers to, or null for a company token. */
+export async function enrollmentTokenPerson(tokenId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ userId: captureEnrollmentTokens.userId })
+    .from(captureEnrollmentTokens)
+    .where(eq(captureEnrollmentTokens.tokenId, tokenId))
+    .limit(1);
+  return row?.userId ?? null;
+}
+
+/** The member a reported sign-in name points to, for an admin to confirm: a trusted email, else an earlier decision. */
+async function suggestedMember(accountId: string, principal: string): Promise<string | null> {
+  const emailShaped = emailDomain(principal) ? principal : null;
+  return (emailShaped && (await memberByEmail(accountId, emailShaped))) || (await memberByDecision(accountId, principal));
 }
 
 /** The account member a trusted email names, or null. */
@@ -202,8 +242,8 @@ async function memberByDecision(accountId: string, principal: string): Promise<s
 }
 
 /** Record that this computer + person asked, and return its row (the poll state). */
-async function upsertEnrollment(token: EnrollmentToken, input: EnrollInput, principal: string): Promise<Enrollment> {
-  const [row] = await db
+async function upsertEnrollment(token: EnrollmentToken, input: EnrollInput, principal: string, exec: Exec): Promise<Enrollment> {
+  const [row] = await exec
     .insert(captureEnrollments)
     .values({
       accountId: token.accountId,
@@ -228,8 +268,8 @@ async function upsertEnrollment(token: EnrollmentToken, input: EnrollInput, prin
   return row!;
 }
 
-async function machineIsNewToToken(token: EnrollmentToken, machineKey: string): Promise<boolean> {
-  const [row] = await db
+async function machineIsNewToToken(token: EnrollmentToken, machineKey: string, exec: Exec): Promise<boolean> {
+  const [row] = await exec
     .select({ id: captureEnrollments.enrollmentId })
     .from(captureEnrollments)
     .where(and(eq(captureEnrollments.tokenId, token.tokenId), eq(captureEnrollments.machineKeySha256, machineKey), ne(captureEnrollments.status, 'denied')))
@@ -274,6 +314,8 @@ async function existingDevice(row: Enrollment, userId: string | null) {
 export async function enroll(input: EnrollInput): Promise<EnrollOutcome> {
   const token = await tokenRow(input.token);
   if (!token || tokenState(token) !== 'active') return { kind: 'invalid_token' };
+  // A personal token ends with its person's membership.
+  if (token.userId && !(await isAccountMember(token.accountId, token.userId))) return { kind: 'invalid_token' };
   const ids = { tokenId: token.tokenId, accountId: token.accountId };
   if (!(await captureEnabled(token.accountId))) return { kind: 'capture_disabled' };
   const principal = principalOf({ principal_name: input.principalName, account_name: input.accountName });
@@ -298,21 +340,35 @@ export async function enroll(input: EnrollInput): Promise<EnrollOutcome> {
     await db.update(captureEnrollments).set({ lastSeenAt: sql`now()` }).where(eq(captureEnrollments.enrollmentId, existing.enrollmentId));
     return { kind: 'denied', ...ids, enrollmentId: existing.enrollmentId };
   }
-  if (!existing && token.maxDevices !== null && (await machineIsNewToToken(token, input.machineKey))) {
-    const count = (await deviceCounts([token.tokenId])).get(token.tokenId) ?? 0;
-    if (count >= token.maxDevices) return { kind: 'limit_reached', ...ids };
-  }
-  const row = await upsertEnrollment(token, input, principal);
+  const maxDevices = token.maxDevices;
+  const row = await db.transaction(async (tx) => {
+    if (maxDevices === null || existing) return upsertEnrollment(token, input, principal, tx);
+    // One new computer per token at a time: parallel calls cannot pass the limit together.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${token.tokenId}::text, 0))`);
+    if (await machineIsNewToToken(token, input.machineKey, tx)) {
+      const count = (await deviceCounts([token.tokenId], tx)).get(token.tokenId) ?? 0;
+      if (count >= maxDevices) return null;
+    }
+    return upsertEnrollment(token, input, principal, tx);
+  });
+  if (!row) return { kind: 'limit_reached', ...ids };
   const decided = row.decidedBy !== null && (row.status === 'approved' || row.status === 'enrolled');
 
-  // Who: an admin's decision for this row, else a trusted member email, else an earlier decision for this person.
+  // Who. The computer reports its sign-in name, and nothing proves it, so that name never links a device
+  // on its own: an admin's decision for this row, else the token's own person (a personal token).
   let userId = decided && row.userId && (await isAccountMember(token.accountId, row.userId)) ? row.userId : null;
-  const emailShaped = emailDomain(principal) ? principal : null;
-  userId ??= (emailShaped && (await memberByEmail(token.accountId, emailShaped))) || (await memberByDecision(token.accountId, principal));
+  if (!userId && token.userId && (await isAccountMember(token.accountId, token.userId))) userId = token.userId;
+  // On an approve-each token the reported name suggests a member; the admin confirms it when approving.
+  const suggested =
+    userId ?? (token.requireApproval && !decided ? await suggestedMember(token.accountId, principal) : null);
   const device = await existingDevice(row, userId);
+  // A computer that already has a device proves it with its current token. Without that proof (a reinstall,
+  // or someone replaying the machine key) an admin approves one new token; `approved` is that unspent approval.
+  const proven =
+    !device?.tokenHash || row.status === 'approved' || (input.deviceToken !== null && sameSecret(device.tokenHash, hashSecretKey(input.deviceToken)));
   // An admin approves a computer of an approval-only token once; a revoked device only by a new approval.
-  if ((token.requireApproval && !decided) || device?.revokedAt) {
-    await setPending(row, userId);
+  if ((token.requireApproval && !decided) || device?.revokedAt || !proven) {
+    await setPending(row, suggested);
     return { kind: 'pending', reason: 'approval_required', ...ids, enrollmentId: row.enrollmentId };
   }
   return mintDeviceToken(token, row, device, userId);

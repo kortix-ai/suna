@@ -143,6 +143,8 @@ export interface CaptureEnrollmentToken {
   device_count: number;
   /** Every new computer waits for an admin, also when its person is a member. */
   require_approval: boolean;
+  /** Every computer the token enrolls is linked to this member; null: matched by the sign-in email. */
+  user_id: string | null;
   expires_at: string | null;
   revoked_at: string | null;
   last_used_at: string | null;
@@ -162,6 +164,8 @@ export interface CaptureEnrollmentTokenInput {
   require_approval?: boolean;
   /** Default 30; null: never expires. */
   expires_in_days?: number | null;
+  /** Link every computer this token enrolls to this member (a personal install). Absent: matched by the sign-in email. */
+  user_id?: string | null;
 }
 
 export type CaptureEnrollmentStatus = 'pending' | 'approved' | 'denied' | 'enrolled';

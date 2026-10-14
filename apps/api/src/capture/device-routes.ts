@@ -33,6 +33,7 @@ import {
   POLL_INTERVAL_S,
   approveDeviceGrant,
   denyDeviceGrant,
+  revokedByAdmin,
   deviceForToken,
   grantByUserCode,
   grantView,
@@ -45,6 +46,7 @@ import { CAPTURE_DISABLED, registerCaptureAgentRoutes } from './account-routes';
 import { captureAccountsFor, captureEnabled, isAccountMember } from './workspace';
 import { ensurePolicyObject } from './policy';
 import { linkDevice } from './reads';
+import { enrollmentTokenPerson } from './enrollment';
 import { registerDeviceEnrollRoute } from './enrollment-routes';
 
 /** RFC 8628 / RFC 6749 §5.2 error body. */
@@ -281,8 +283,9 @@ function registerDeviceIssuerRoutes(app: OpenAPIHono<AppEnv>) {
       const blocked = limited(c, 'captureCredentials', device.deviceId);
       if (blocked) return blocked as never;
       if (device.userId && !(await isAccountMember(device.accountId, device.userId))) {
-        // A computer IT enrolled belongs to the organization: it keeps recording, linked to no one.
-        if (!device.enrollmentTokenId) {
+        // A computer IT enrolled with a company token belongs to the organization: it keeps recording,
+        // linked to no one. One the person signed in, or enrolled with a token for them, stops.
+        if (!device.enrollmentTokenId || (await enrollmentTokenPerson(device.enrollmentTokenId)) === device.userId) {
           return c.json({ error: 'The person left the account; sign in again', code: 'capture_device_unauthorized' }, 401);
         }
         await linkDevice(device, null);
@@ -387,6 +390,9 @@ function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
       if (!grant) return c.json({ error: 'Unknown code', code: 'capture_grant_unknown' }, 404);
       if (grant.status !== 'pending' || grant.expiresAt.getTime() < Date.now()) {
         return c.json({ error: `This sign-in is ${grantView(grant).status}`, code: 'capture_grant_not_pending' }, 409);
+      }
+      if (await revokedByAdmin(grant, { accountId, userId })) {
+        return c.json({ error: 'An admin revoked this computer; ask them to restore it', code: 'capture_device_revoked' }, 403);
       }
       const approved = await approveDeviceGrant(grant, { accountId, userId });
       if (!approved) return c.json({ error: 'This sign-in was decided already', code: 'capture_grant_not_pending' }, 409);

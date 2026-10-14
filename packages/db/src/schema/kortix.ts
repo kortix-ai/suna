@@ -7304,6 +7304,8 @@ export const captureEnrollmentTokens = kortixSchema.table(
     maxDevices: integer('max_devices'),
     /** Every new computer waits for an admin, also when its person is a member. */
     requireApproval: boolean('require_approval').default(false).notNull(),
+    /** Every computer the token enrolls is linked to this member. Null: matched by the sign-in email. */
+    userId: uuid('user_id'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: uuid('revoked_by'),

@@ -20626,6 +20626,7 @@
       "description": "Провери да ли се овај код поклапа са кодом у апликацији, па изабери налог у који снима.",
       "approvingAs": "Пријава као {email}",
       "notice": "Aplikacija snima tvoj ekran i tvoje radnje, i zvuk kada nalog to dozvoljava. Ti možeš da ga vidiš. Takođe vlasnici i administratori naloga, i svako kome prilagođena uloga to dozvoljava. Svaki pregled od strane drugih se beleži.",
+      "ownCodeOnly": "Odobri samo kod koji vidiš u Kortix Capture na svom računaru. Nikad ne odobravaj kod koji ti je neko poslao: ta osoba bi snimala kao ti.",
       "approve": "Odobri prijavu",
       "deny": "Odbij",
       "approvedTitle": "Kortix Capture је пријављен",
@@ -20956,7 +20957,7 @@
     },
     "rollout": {
       "title": "Инсталирај на рачунаре фирме",
-      "description": "Направи токен за регистрацију, а ИТ њиме инсталира Kortix Capture на сваки рачунар: једном командом или преко Intune-а и других алата за управљање. Сваки рачунар сам почиње снимање и нико се не пријављује. Рачунари се појављују у Уређајима, повезани са чланом исте е-поште; сваки други рачунар сам повежи са особом.",
+      "description": "Napravi token za upis, a IT pomoću njega instalira Kortix Capture: jedna komanda, ili Intune i drugo upravljanje uređajima. Svaki računar sam počinje snimanje i niko se ne prijavljuje. Firmeni token upisuje računare bez povezivanja; poveži ih sa osobama u Uređajima, ili uključi Odobri svaki računar da potvrdiš predloženu osobu. Lični token povezuje svaki računar sa jednom osobom.",
       "tokensTitle": "Твоји токени за регистрацију",
       "tokensEmpty": "Још нема токена за регистрацију.",
       "guide": "Водич за подешавање за ИТ",
@@ -20964,10 +20965,14 @@
       "newTitle": "Нови токен за регистрацију",
       "name": "Назив",
       "namePlaceholder": "Лаптопови инжењеринга",
+      "for": "Za",
+      "forHint": "Bilo ko: računari se upisuju bez povezivanja, a ti ih povezuješ. Osoba: svaki računar se povezuje sa njom.",
+      "forAnyone": "Bilo ko u firmi",
+      "forPerson": "Za {person}",
       "domains": "Домени е-поште",
       "domainsHint": "Само особе које се на рачунар пријављују е-поштом са ових домена. Празно: било ко.",
       "limit": "Ограничење рачунара",
-      "limitHint": "Колико рачунара може да користи овај токен. Празно: без ограничења.",
+      "limitHint": "Gornja granica u slučaju da token procuri. Prazno: bez ograničenja.",
       "expires": "Важи",
       "never": "Никад",
       "days": "{days, plural, one {# дан} few {# дана} other {# дана}}",
@@ -21012,7 +21017,7 @@
       },
       "unnamed": "Неименовани рачунар",
       "reason": {
-        "approval_required": "Токен захтева одобрење сваког рачунара, или је администратор опозвао овај."
+        "approval_required": "Token traži odobrenje za svaki računar, administrator ga je opozvao, ili je tražio novi token bez trenutnog (ponovna instalacija)."
       },
       "deny": "Одбиј",
       "approve": "Одобри",

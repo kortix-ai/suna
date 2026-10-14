@@ -21,10 +21,10 @@ their own computer, see [Capture → Install Kortix Capture](/docs/capture#insta
 3. At each Windows sign-in the service reads the person's Windows sign-in
    name (the user principal name, for example `jane@corp.example`) and enrolls
    the computer with the token.
-4. The computer gets a device token and starts recording. When an account
-   member has that email, the computer is linked to them and records into
-   their timeline. Otherwise it records **linked to no one** until an admin
-   links it to a person.
+4. The computer gets a device token and starts recording. It belongs to the
+   account. A personal token links it to its person. Any other computer
+   records **linked to no one**, which is a normal state: an admin links it to
+   a person when that is wanted.
 5. The person sees an icon in the notification area and, at every sign-in, a
    notice that names the organization.
 
@@ -39,21 +39,22 @@ see it.
 - Turn on Capture for the account and set the policy: what is recorded, the
   frame rate, exclusions, retention and **the notice** the person sees. See
   [Capture → The policy](/docs/capture#the-policy).
-- People do not need Kortix accounts. When a person is a member with the
-  email they sign in to Windows with (SCIM provisioning or an invite), their
-  computer is linked to them at once; any other computer records linked to no
-  one, and you link it later.
+- People do not need Kortix accounts. A computer records for the account
+  whether or not it is linked to a person. To link computers to members as
+  they enroll, turn on **Approve each computer**: Kortix suggests the member
+  with the computer's sign-in email, and you confirm it.
 - You need the `capture.manage` permission. Account owners and admins have it.
 
 ## 1. Create an enrollment token
 
-In Kortix, open **Capture → Devices**, then **Roll out**. Fill in:
+In Kortix, open **Capture → Devices**, then **Company install**. Fill in:
 
 | Field | What it does |
 |---|---|
-| Name | A name for the rollout, for example the computer group. |
-| Email domains | Only people who sign in to Windows with these domains enroll. Empty: any member. |
-| Computer limit | At most this many computers enroll with the token. Empty: no limit. |
+| Name | A name for the token, for example the computer group. |
+| For | **Anyone at the company**: one token for many computers. They enroll linked to no one; you link them, or confirm the suggested member with **Approve each computer**. **A member**: a personal token. Every computer it installs links to that person, whoever signs in. It stops working when that person leaves the account. |
+| Email domains | Anyone tokens only. Only people who sign in to the computer with these domains enroll. Empty: anyone. |
+| Computer limit | A cap in case the token leaks. A personal token starts at 1. Empty: no limit. |
 | Expires | 7, 30 or 90 days, or never. Computers enrolled before it expires keep recording. |
 | Approve each computer | Every new computer waits for an admin, also when its person is a member. |
 
@@ -63,6 +64,8 @@ account until you revoke it, so handle it like a password.
 
 From the API: `POST /v1/accounts/<account_id>/capture/enrollment-tokens` with
 `{"name": "Pilot laptops", "email_domains": ["corp.example"], "max_devices": 20}`.
+For a personal token, add `"user_id": "<member>"`: the member must belong to the
+account, else the API answers `400` `capture_enrollment_invalid`.
 
 ## 2. Install on each Windows computer
 
@@ -118,7 +121,7 @@ signed-in session.
 
 | To | Do |
 |---|---|
-| Stop new computers from enrolling | Revoke the token in **Roll out**. Enrolled computers keep recording. |
+| Stop new computers from enrolling | Revoke the token in **Company install**. Enrolled computers keep recording. |
 | Stop one computer | Revoke the device in **Devices**, or deny it in **Waiting for approval**. Its device token stops working at once. The computer does not enroll again until an admin approves it. |
 | Remove Kortix Capture | `msiexec /x KortixCapture-x64.msi /qn`. The service and the program files go away. Recordings on the computer stay in each person's profile until retention deletes them. |
 
@@ -128,10 +131,13 @@ signed-in session.
   expiry. It cannot read anything.
 - A device token, which each enrolled computer gets, uploads that computer's
   recordings and reads the account's policy. It cannot read recordings.
-- Kortix trusts the Windows sign-in name the way a badge reader trusts a
-  badge. An administrator of a computer can change what that computer
-  reports. If that matters to you, turn on **Approve each computer** and check
-  each computer before you approve it.
+- The sign-in name a computer reports is not proof of who uses it: an
+  administrator of that computer can change it. So the name never links a
+  computer on its own. It is a suggestion you confirm under **Approve each
+  computer**.
+- An enrolled computer proves itself with its current device token when it
+  enrolls again. A copy of its machine key alone gets a new token only after
+  an admin approves it, for example after a reinstall.
 - Every enrollment, token change and decision is in the account's audit log:
   `capture.device.enroll`, `capture.enrollment_token.create`,
   `capture.enrollment_token.revoke`, `capture.enrollment.approve`,
@@ -145,7 +151,7 @@ retries on its own.
 | Answer | Means | The computer |
 |---|---|---|
 | `enrolled` | The token is valid. `member` names the linked person, or is `null` while the computer is linked to no one. | records |
-| `pending` `approval_required` | The token approves each computer, or an admin revoked this one. | waits; asks again every minute |
+| `pending` `approval_required` | The token approves each computer, an admin revoked this one, or it asked for a new token without its current one. | waits; asks again every minute |
 | `401` `enrollment_token_invalid` | The token is unknown, revoked or expired. | asks again every hour |
 | `403` `enrollment_domain_not_allowed` | The sign-in domain is not one of the token's. | asks again every 6 hours |
 | `403` `enrollment_limit_reached` | The token reached its computer limit. | asks again every hour |

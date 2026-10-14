@@ -20626,6 +20626,7 @@
       "description": "Comprueba que este código coincide con el de la app y elige la cuenta en la que graba.",
       "approvingAs": "Iniciando sesión como {email}",
       "notice": "La app graba tu pantalla y tus acciones, y el audio cuando la cuenta lo permite. Tú puedes verlo. También los propietarios y administradores de la cuenta, y cualquiera a quien un rol personalizado lo permita. Cada acceso de otra persona queda registrado.",
+      "ownCodeOnly": "Aprueba solo un código que veas en Kortix Capture en tu propio equipo. Nunca apruebes un código que alguien te haya enviado: grabaría como tú.",
       "approve": "Aprobar inicio de sesión",
       "deny": "Denegar",
       "approvedTitle": "Kortix Capture ha iniciado sesión",
@@ -20956,7 +20957,7 @@
     },
     "rollout": {
       "title": "Instalar en los equipos de la empresa",
-      "description": "Crea un token de inscripción y TI instala Kortix Capture con él en cada equipo: con un comando, o con Intune y otras herramientas de gestión. Cada equipo empieza a grabar solo y nadie inicia sesión. Los equipos aparecen en Dispositivos, vinculados al miembro con el mismo correo; vincula tú cualquier otro equipo a una persona.",
+      "description": "Crea un token de inscripción y TI instala Kortix Capture con él: un comando, o Intune y otra gestión de dispositivos. Cada equipo empieza a grabar solo y nadie inicia sesión. Un token de empresa inscribe equipos sin vincular; vincúlalos a personas en Dispositivos, o activa Aprobar cada equipo para confirmar la persona sugerida. Un token personal vincula todos los equipos a una persona.",
       "tokensTitle": "Tus tokens de inscripción",
       "tokensEmpty": "Aún no hay ningún token de inscripción.",
       "guide": "Guía de configuración para TI",
@@ -20964,10 +20965,14 @@
       "newTitle": "Nuevo token de inscripción",
       "name": "Nombre",
       "namePlaceholder": "Portátiles de ingeniería",
+      "for": "Para",
+      "forHint": "Cualquiera: los equipos se inscriben sin vincular y tú los vinculas. Una persona: todos los equipos se vinculan a ella.",
+      "forAnyone": "Cualquiera de la empresa",
+      "forPerson": "Para {person}",
       "domains": "Dominios de correo",
       "domainsHint": "Solo personas que inician sesión en su equipo con un correo de estos dominios. Vacío: cualquiera.",
       "limit": "Límite de equipos",
-      "limitHint": "Cuántos equipos pueden usar este token. Vacío: sin límite.",
+      "limitHint": "Un límite por si el token se filtra. Vacío: sin límite.",
       "expires": "Válido durante",
       "never": "Nunca",
       "days": "{days, plural, one {# día} other {# días}}",
@@ -21012,7 +21017,7 @@
       },
       "unnamed": "Equipo sin nombre",
       "reason": {
-        "approval_required": "El token pide aprobar cada equipo, o un administrador revocó este."
+        "approval_required": "El token aprueba cada equipo, un administrador lo revocó, o pidió un token nuevo sin el actual (una reinstalación)."
       },
       "deny": "Rechazar",
       "approve": "Aprobar",

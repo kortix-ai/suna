@@ -91,7 +91,7 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
   const folder = `${accountPrefix(device.accountId)}/${device.deviceId}`;
   const patch: Partial<typeof captureDevices.$inferInsert> = {};
 
-  const status = await captureStore.getBytes(`${folder}/status.json`);
+  const status = await captureStore.getBytes(`${folder}/status.json`, { maxBytes: 1024 * 1024 });
   if (status) {
     const doc = decodeJson(status);
     const reported = statusReportedAt(doc);
@@ -100,7 +100,7 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
       patch.statusReportedAt = new Date(reported);
     }
   }
-  const described = await captureStore.getBytes(`${folder}/device.json`);
+  const described = await captureStore.getBytes(`${folder}/device.json`, { maxBytes: 1024 * 1024 });
   if (described) {
     const doc = decodeJson(described);
     if (doc) Object.assign(patch, { deviceInfo: doc, ...deviceFields(doc) });

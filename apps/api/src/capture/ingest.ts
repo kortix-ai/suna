@@ -11,6 +11,7 @@
  *      the same key finds the chunk row and does nothing
  */
 import { createHash } from 'node:crypto';
+import * as zlib from 'node:zlib';
 import {
   captureDevices,
   timelineActions,
@@ -44,15 +45,26 @@ const INSERT_BATCH = 500;
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
+/** A device writes the objects, so their sizes are capped before anything is read. */
+const MAX_OBJECT_BYTES = 256 * 1024 * 1024;
+const MAX_INDEX_LINES_BYTES = 64 * 1024 * 1024;
+
 async function readObject(key: string, expected: { size: number; sha256: string }): Promise<Uint8Array> {
-  const bytes = await captureStore.getBytes(key);
+  if (expected.size > MAX_OBJECT_BYTES) throw new Error(`object too large: ${key}: ${expected.size} bytes`);
+  const bytes = await captureStore.getBytes(key, { maxBytes: expected.size });
   if (!bytes) throw new Error(`object missing: ${key}`);
   if (bytes.byteLength !== expected.size) throw new Error(`size mismatch for ${key}: ${bytes.byteLength} != ${expected.size}`);
   if (sha256(bytes) !== expected.sha256) throw new Error(`sha256 mismatch for ${key}`);
   return bytes;
 }
 
-const zstdLines = (bytes: Uint8Array) => jsonLines(new TextDecoder().decode(Bun.zstdDecompressSync(bytes)));
+// Bun implements node:zlib zstd with `maxOutputLength`; this @types/node predates it.
+const { zstdDecompressSync } = zlib as unknown as {
+  zstdDecompressSync(bytes: Uint8Array, opts: { maxOutputLength: number }): Uint8Array;
+};
+// Bounded: a small zstd bomb cannot inflate past the cap.
+const zstdLines = (bytes: Uint8Array) =>
+  jsonLines(new TextDecoder().decode(zstdDecompressSync(bytes, { maxOutputLength: MAX_INDEX_LINES_BYTES })));
 
 async function insertBatched<T>(rows: T[], insert: (batch: T[]) => Promise<unknown>): Promise<void> {
   for (let i = 0; i < rows.length; i += INSERT_BATCH) await insert(rows.slice(i, i + INSERT_BATCH));
@@ -80,8 +92,9 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
     .limit(1);
   if (existing) return { status: 'duplicate', reason: 'already indexed' };
 
-  const manifestText = await captureStore.getText(key);
-  if (manifestText === null) throw new Error(`manifest missing: ${key}`);
+  const manifestBytes = await captureStore.getBytes(key, { maxBytes: 1024 * 1024 });
+  if (manifestBytes === null) throw new Error(`manifest missing: ${key}`);
+  const manifestText = new TextDecoder().decode(manifestBytes);
   let raw: unknown;
   try {
     raw = JSON.parse(manifestText);
