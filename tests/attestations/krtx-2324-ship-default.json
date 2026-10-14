@@ -1,5 +1,5 @@
 {
-  "source_hash": "fedc6880d567569a938c8cc0d6b81793015d921dee833b59a5143c70b59ffb9f",
+  "source_hash": "cd0dc691e2752037732931fd003e73e95b2d710e48aed73d6e3551a179f1f005",
   "diff_files": [
     "apps/cli/README.md",
     "apps/cli/src/__tests__/ship-host.blackbox.test.ts",
@@ -8,12 +8,12 @@
     "tests/src/flows/cli-ship.flow.ts"
   ],
   "diff_hash": "89c230f08a8ed3e7f2cb3c7952c4f05cab72e40d788f6412ff4f405bd3bc279a",
-  "head": "2f953259535c5894c353ba458add70b789f5c27f",
+  "head": "77427469348526d37a662b7744d2e671a60cdd19",
   "passed": false,
   "lanes": {
     "core": "fail",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T18:18:44.212Z"
+  "at": "2026-10-14T18:36:41.457Z"
 }
