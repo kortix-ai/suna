@@ -6,21 +6,29 @@
  * next model request from the first tool call on, so the provider prompt cache misses.
  *
  * The order is a shape: the input with every leaf as 0 (keys only, no values: a
- * write tool's file text is not stored twice). One entry per block, `null` for a
+ * write tool's file text is not stored twice; an array without objects is one leaf). One entry per block, `null` for a
  * block that is not a tool_call with an object input.
  */
 type J = Record<string, unknown>;
 const isObject = (v: unknown): v is J => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/** An array that holds no object or array is a leaf: one `0`, not one per item. */
 const shape = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(shape) : isObject(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x)])) : 0;
+  Array.isArray(v) ? (v.some((x) => x !== null && typeof x === 'object') ? v.map(shape) : 0)
+  : isObject(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x)]))
+  : 0;
 
-/** `value` with the keys of every object in the order of `order`; a key `order` lacks keeps its place after them. */
+/**
+ * `value` with the keys of every object in the order of `order`. An object whose key set
+ * differs from its shape keeps its own order: the shape is stale (an old API replica wrote
+ * the record and left the previous shape).
+ */
 function ordered(value: unknown, order: unknown): unknown {
   if (Array.isArray(value)) return Array.isArray(order) ? value.map((x, i) => ordered(x, order[i])) : value;
   if (!isObject(value) || !isObject(order)) return value;
-  const keys = new Set([...Object.keys(order).filter((k) => Object.hasOwn(value, k)), ...Object.keys(value)]);
-  return Object.fromEntries([...keys].map((k) => [k, ordered(value[k], order[k])]));
+  const keys = Object.keys(order);
+  if (keys.length !== Object.keys(value).length || !keys.every((k) => Object.hasOwn(value, k))) return value;
+  return Object.fromEntries(keys.map((k) => [k, ordered(value[k], order[k])]));
 }
 
 type Block = { type?: unknown; input?: unknown };
