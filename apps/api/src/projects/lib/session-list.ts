@@ -23,8 +23,10 @@
  *     lookup. Dropping the redundant `inArray` lets it run CONCURRENTLY with
  *     the sessions read; a row for a session that is not in the list is simply
  *     never looked up.
- *  2. The share subject and the manager-standing probe depend only on the
- *     caller, so they can start at the same time as the sessions read.
+ *  2. The share subject depends only on the caller, so it runs at the same
+ *     time as the first sessions read. The manager-standing probe and, in
+ *     `scope=project`, the oversight verdict run BEFORE that read: the page
+ *     WHERE (`sessionListViewerSql`) needs both (KRTX-2316).
  *  3. Owner identities can be resolved for the SUPERSET of `created_by` over
  *     all rows rather than only the selected ones — again a Map consumed by
  *     lookup — so it runs concurrently with the grants read instead of after
@@ -545,8 +547,10 @@ export async function loadProjectSessionInventory(input: {
       .orderBy(desc(sortAt), desc(projectSessions.sessionId))
       .limit(chunkSize);
 
-  // Step 1 — everything that depends only on the CALLER runs together with the
-  // first row chunk. Both are needed before a single row can be folded.
+  // Step 1 — the reads that depend only on the CALLER. The share subject runs
+  // together with the first row chunk. Manager standing, and in
+  // `scope=project` the oversight verdict, run before it: the chunk's WHERE
+  // needs both. All of them are needed before a single row can be folded.
   //
   // Manager standing must be derived exactly as the lifecycle routes derive
   // it (loadVisibleSession): a session-bound agent credential never inherits
