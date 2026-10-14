@@ -200,7 +200,7 @@ describe('native theme persistence', () => {
     const choice = { light: 'light', dark: 'dark' };
     expect(themeState.backgroundForTheme?.('light', true, choice)).toBe('#F0F0F0');
     expect(themeState.backgroundForTheme?.('dark', false, choice)).toBe('#090909');
-    // Generated terminal-theme palettes resolve from terminal-theme-backgrounds.json.
+    // Generated Kortix themes resolve from kortix-theme-backgrounds.json.
     expect(themeState.backgroundForTheme?.('light', false, { light: 'catppuccin-latte' })).toBe(
       '#EFF1F5',
     );

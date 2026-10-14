@@ -12,15 +12,15 @@
  * resolves to Pure light and Pure dark.
  */
 
-import terminalThemes from './terminal-themes.generated.json';
+import terminalThemes from './kortix-themes.generated.json';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 /**
  * Terminal themes: one generated entry per curated terminalcolors.com palette
- * (`terminal-themes.generated.json`, CSS in `app/terminal-themes.generated.css`).
+ * (`kortix-themes.generated.json`, CSS in `app/kortix-themes.generated.css`).
  * The curated list — the popular, well-made palettes only — is
- * `scripts/terminal-themes/sources.txt`. A stored id that is no longer listed
+ * `scripts/kortix-themes/sources.txt`. A stored id that is no longer listed
  * falls back to the default palette (`normalizeLightTheme` / `normalizeDarkTheme`).
  * `family` groups variants in the picker (e.g. Catppuccin Mocha / Latte).
  */

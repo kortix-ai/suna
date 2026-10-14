@@ -1318,7 +1318,7 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'theme dark mode pure black',
   },
   // One row per generated terminal theme (`TERMINAL_THEMES`,
-  // `lib/terminal-themes.generated.json`) — 112 proper-noun palettes from
+  // `lib/kortix-themes.generated.json`) — 39 proper-noun palettes from
   // terminalcolors.com, e.g. "Catppuccin Mocha", "Tokyo Night Storm". The
   // label is a proper noun and MUST NOT be translated: `translateMenuText`
   // looks it up in `MENU_TRANSLATION_KEYS` and, finding no entry, falls

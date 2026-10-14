@@ -29,7 +29,7 @@ const TERMINAL_TOTAL = TERMINAL_LIGHT_COUNT + TERMINAL_DARK_COUNT;
 const EXPECTED_TOKEN_COUNT = 39;
 
 const generatedCss = readFileSync(
-  join(import.meta.dir, '../app/terminal-themes.generated.css'),
+  join(import.meta.dir, '../app/kortix-themes.generated.css'),
   'utf8',
 );
 

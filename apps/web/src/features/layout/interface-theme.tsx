@@ -66,7 +66,7 @@ const KORTIX_LABELS: readonly {
 /**
  * Picker rows in display order: System, then the four Kortix-designed
  * palettes, then one row per generated terminal theme
- * (`TERMINAL_THEMES`, `lib/terminal-themes.generated.json`) in that file's
+ * (`TERMINAL_THEMES`, `lib/kortix-themes.generated.json`) in that file's
  * own order — light and dark modes interleaved, grouped alphabetically by
  * family. A surface that wants light-only or dark-only rows filters on
  * `group`; `AppearanceTabView` does exactly that to build its three Select

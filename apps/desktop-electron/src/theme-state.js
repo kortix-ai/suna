@@ -1,4 +1,4 @@
-const terminalThemeBackgrounds = require('./terminal-theme-backgrounds.json');
+const terminalThemeBackgrounds = require('./kortix-theme-backgrounds.json');
 
 const THEMES = new Set(['light', 'dark', 'system']);
 
@@ -8,8 +8,8 @@ const THEMES = new Set(['light', 'dark', 'system']);
  * before the page does, so it must match the canvas or every launch flashes.
  *
  * The Kortix-designed palettes are hand-written here; the 112 generated
- * terminal-theme palettes (apps/web/src/lib/terminal-themes.generated.json)
- * are merged in from `terminal-theme-backgrounds.json`, which is regenerated
+ * generated Kortix themes (apps/web/src/lib/kortix-themes.generated.json)
+ * are merged in from `kortix-theme-backgrounds.json`, which is regenerated
  * alongside that file.
  */
 const LIGHT_BACKGROUNDS = {
