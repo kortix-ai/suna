@@ -2609,7 +2609,7 @@ harnessFlow(
         if (description !== markerA) throw new Error(`the kortix agent's description is ${JSON.stringify(description)}, not the release's`);
       });
 
-      await ctx.step('a push moves the base: the box converges to the new release from the project snapshot', async () => {
+      await ctx.step('a push moves the base: the box converges to the new release from the project snapshot or a git fetch', async () => {
         await fixture.commit({ '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerB) }, 'next release over the cap');
         // The snapshot is built in the background; the box retries once a minute until it is ready.
         const release = await waitFor(releaseOf, {
@@ -2620,7 +2620,12 @@ harnessFlow(
         });
         if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
         const transport = await materialized(String(release.running_release_id));
-        if (transport !== 'snapshot') throw new Error(`the new release was materialized from ${transport}, not the project snapshot`);
+        // #9770: the box converges as soon as the base moves. The snapshot of the
+        // new commit is built in the background, so the box takes a depth-1 git
+        // fetch when it is not ready yet. Never the API archive: it is over the cap.
+        if (transport !== 'snapshot' && transport !== 'git') {
+          throw new Error(`the new release was materialized from ${transport}, not the project snapshot or a git fetch`);
+        }
       });
 
       await ctx.step('the runtime serves the agent of the new release, and a turn runs on it', async () => {

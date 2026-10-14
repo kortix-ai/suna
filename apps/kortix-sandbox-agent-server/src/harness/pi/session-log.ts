@@ -147,11 +147,15 @@ const native: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // pi-ai replays another model's thinking as text
   freeform_tool_input: false,
 }
-/** Tested in the prototype adapter; restore lands in P6. */
+/**
+ * `harness_versions` and `schema_minors` name what the oracle suites (`pi-session-log-restore.test.ts`,
+ * `pi-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
+ * fails when the pin (package.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
+ */
 export const PI_CAPABILITIES: AdapterCapabilities = {
   harness: 'pi',
-  harness_versions: PI_VERSION,
-  schema_minors: [SESSION_LOG_MINOR],
+  harness_versions: '1.0.3',
+  schema_minors: [1],
   dialects: ['openai-chat'],
   native,
   // A tool-result image becomes a follow-up user turn; a layout compaction is rendered as entries.

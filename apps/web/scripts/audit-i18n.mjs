@@ -977,7 +977,7 @@ function scanFile(file) {
           catalogRoot === 'openSource' &&
           localizedRemainingUiText.has(node.text)) ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
-          catalogRoot === 'TOOL_PARTS' &&
+          catalogRoot === 'TOOL_CALLS' &&
           node.text === 'Run the billing suite') ||
         (file === path.join(srcDir, 'features/project-files/components/drive-grid-view.tsx') &&
           catalogRoot === 'ELEVATED_DIR_META') ||
@@ -1013,7 +1013,7 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/marketing/landing/code-panels.tsx') &&
           catalogRoot === 'TOKEN_CLASS') ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
-          catalogRoot === 'TOOL_PARTS' &&
+          catalogRoot === 'TOOL_CALLS' &&
           node.text === 'bun test apps/api/src/billing') ||
         (file === path.join(srcDir, 'features/session/attachment-mime.ts') &&
           catalogRoot === 'MIME_BY_EXTENSION') ||
