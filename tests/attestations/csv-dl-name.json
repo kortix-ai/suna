@@ -1,16 +1,17 @@
 {
-  "source_hash": "7da6fabe7034755ebe62e0d8251cb95261967ea8a2e0591b8a90946dc8b8ef73",
+  "source_hash": "0a83769beb170056c32df058c09f58ba25330181c5da94fb6330daa9ecf6d28d",
   "diff_files": [
     "apps/web/src/features/file-renderers/csv/csv-viewer.test.tsx",
-    "apps/web/src/features/file-renderers/csv/csv-viewer.tsx"
+    "apps/web/src/features/file-renderers/csv/csv-viewer.tsx",
+    "pnpm-lock.yaml"
   ],
-  "diff_hash": "ca7705755c1b144c3f58e2b9eaf5b81f3386a8f68414d49ad6a42f469d736261",
-  "head": "d311ccdc4ca85e99c982605c5372e477ae26849e",
+  "diff_hash": "efa050f3d798ebf43a5baa30d78f994fcec5f1bc0ebb92c8846e78b2a5201769",
+  "head": "f309d8314158b3cffede23d04f6e938b6cbbd99f",
   "passed": false,
   "lanes": {
-    "core": "pass",
+    "core": "fail",
     "packages": "fail",
-    "db-suites": "pass"
+    "db-suites": "fail"
   },
-  "at": "2026-10-14T16:58:09.821Z"
+  "at": "2026-10-14T19:39:02.653Z"
 }
