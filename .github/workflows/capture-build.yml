@@ -711,6 +711,13 @@ jobs:
           until grep -q "\[notify\] notice" "$HOME/Library/Application Support/ai.kortix.capture/logs/tray.log" 2>/dev/null || [ $((SECONDS - t0)) -ge 150 ]; do sleep 5; done
           grep -h "notify\|tray" "$HOME/Library/Application Support/ai.kortix.capture/logs/tray.log" 2>/dev/null | tail -5 | tee "$EV/notice.txt"
           ps -axo pid,command | grep -E "Kortix Capture tray" | grep -v grep | tee "$EV/tray.txt" || true
+          # macOS quits the tray (a clean exit 0) when a person changes a privacy permission
+          # in System Settings. The service starts it again: there is no Quit.
+          tq_old="$(pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture tray' | head -1)"
+          osascript -e 'tell application id "ai.kortix.capture" to quit' 2>&1 | tee "$EV/tray-quit.txt" || true
+          t0=$SECONDS; tq_new=""
+          until [ -n "$tq_new" ] && [ "$tq_new" != "$tq_old" ] || [ $((SECONDS - t0)) -ge 60 ]; do sleep 2; tq_new="$(pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture tray' | head -1)"; done
+          printf '{"old": "%s", "new": "%s", "back_after_s": %d}\n' "$tq_old" "$tq_new" $((SECONDS - t0)) | tee "$EV/tray-quit.json"
           # Kill the agent; launchd brings it back (KeepAlive).
           old="$(pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' | head -1)"
           sudo pkill -9 -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' || true
@@ -816,6 +823,8 @@ jobs:
               assert "screen" not in granted, ("no frames although Screen Recording is granted", granted, text("user-logs.txt")[-1500:])
           kill = load("kill.json"); print("kill", kill)
           assert kill["new"] and kill["new"] != kill["old"] and kill["back_after_s"] <= 60, kill
+          tq = load("tray-quit.json"); print("tray quit", tq, text("tray-quit.txt"))
+          assert tq["old"] and tq["new"] and tq["new"] != tq["old"], ("the tray did not come back after macOS quit it", tq)
           conf = text("configure.txt"); print(conf)
           assert "configure exit: 0" in conf and re.search(r"-rw-------\s+1\s+0\s+0", conf) and "configure wrote url http://127.0.0.1:8787 token ok True" in conf, conf
           re_ = text("reinstall.txt"); print(re_)

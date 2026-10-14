@@ -692,9 +692,6 @@ struct Slot {
     started: Option<Instant>,
     not_before: Option<Instant>,
     last_exit: Option<String>,
-    /// The process ended itself with exit code 0 (the tray's "Quit", or a second
-    /// tray finding the first): do not start it again.
-    quit: bool,
 }
 
 impl Slot {
@@ -707,7 +704,6 @@ impl Slot {
             started: None,
             not_before: None,
             last_exit: None,
-            quit: false,
         }
     }
 
@@ -724,9 +720,10 @@ impl Slot {
         let Some(child) = self.child.as_mut() else {
             return;
         };
+        // Every exit restarts, exit 0 too: there is no Quit, and macOS quits the tray
+        // (exit 0) when a person changes one of its privacy permissions.
         if let Ok(Some(status)) = child.try_wait() {
             self.last_exit = Some(status.to_string());
-            self.quit = self.name == "tray" && status.success();
             self.child = None;
             self.stdin = None;
             let ran = self.started.map(|s| s.elapsed()).unwrap_or_default();
@@ -929,9 +926,7 @@ pub fn run_with(
                     slot.stop().await;
                     slot.crashes = 0;
                     slot.not_before = None;
-                    slot.quit = false;
                 } else if slot.child.is_none()
-                    && !slot.quit
                     && slot.not_before.is_none_or(|t| Instant::now() >= t)
                 {
                     match spawn_logged(&log_dir, slot.name, program, args, pipe) {
@@ -986,8 +981,8 @@ pub fn run_with(
             let _ = write_private(&paths.root.join(HEARTBEAT_FILE), &beat.to_string());
             // A recorder that should run and does not (the agent just restarted while the old
             // recorder drained, or a crash backoff): look again in 3 s, not after the 30 s tick.
-            let hurry = (w.recorder && recorder.child.is_none() && !recorder.quit)
-                || (w.actions && actions.child.is_none() && !actions.quit);
+            let hurry = (w.recorder && recorder.child.is_none())
+                || (w.actions && actions.child.is_none());
             let wait = if hurry { Duration::from_secs(3) } else { tick };
             tokio::select! {
                 _ = &mut shutdown => break,

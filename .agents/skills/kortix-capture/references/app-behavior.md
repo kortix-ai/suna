@@ -578,12 +578,14 @@ and search over those recordings. No account is needed.
   Changing the destination never needs the recording stopped. Only recordings made after the
   change go to the new destination; earlier ones stay on this computer (`local_only` in the
   database). Signing out of Kortix turns sync off, keeps the recordings, and keeps recording.
-- **Menu bar / tray.** Status line, sync line, "Open Kortix Capture", "Pause for 1 hour" /
-  "Resume", "Quit". A managed computer shows the organization and has no Pause or Quit.
+- **Menu bar / tray.** Status line, sync line, "Open Kortix Capture", "Settings…", the
+  pauses (1 hour, until tomorrow, until resumed) or "Resume". There is no Quit. A managed
+  computer shows the organization and has no pauses.
 - **Errors** in the window are one short sentence. The detail is in the log
   (Settings, About, Open logs).
 
-Quit in the tray ends the tray only.
+The service starts the tray again after every exit, exit 0 too: macOS quits it when a
+person changes one of its privacy permissions in System Settings.
 
 ### IT enrolls the computer
 

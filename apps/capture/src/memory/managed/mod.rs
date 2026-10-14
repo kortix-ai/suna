@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_offers_pause_and_quit_and_nothing_when_managed() {
+    fn the_tray_offers_pauses_and_nothing_when_managed() {
         assert_eq!(tray_actions(true, false), vec![]);
         assert_eq!(tray_actions(true, true), vec![]);
         assert_eq!(

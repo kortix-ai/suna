@@ -809,7 +809,7 @@ pub fn run(cli: Cli) -> Result<()> {
 /// Kortix Capture opened from Finder, the Dock, Spotlight, the Start menu or the
 /// desktop. It opens the window (the timeline). Behind the window the app is the
 /// menu-bar / tray app: the 24/7 service is installed and started at once (the app is
-/// its host) and the tray runs until Quit. Signing in to Kortix is optional, in Settings. Closing the window leaves the recording and the tray running.
+/// its host) and the tray always runs (there is no Quit). Signing in to Kortix is optional, in Settings. Closing the window leaves the recording and the tray running.
 /// On a computer the organization manages, or with a tray already running, it only
 /// opens the window (the agent runs the recording and the tray).
 pub fn app(paths: &MemoryPaths) -> Result<()> {
