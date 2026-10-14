@@ -161,6 +161,23 @@ export function sessionLogFullTextAction(refs: readonly SessionLogReferencedText
 }
 
 /**
+ * Which of `refs` a host shows inline and which it downloads: the smallest texts fill the inline
+ * budget ({@link SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES} in all) first, the rest download. Both
+ * lists keep record order. Nothing downloads exactly when {@link sessionLogFullTextAction} says
+ * `'inline'`.
+ */
+export function sessionLogFullTextPlan(refs: readonly SessionLogReferencedText[]): { inline: SessionLogReferencedText[]; download: SessionLogReferencedText[] } {
+  const fits = new Set<SessionLogReferencedText>();
+  let total = 0;
+  for (const r of [...refs].sort((a, b) => a.bytes - b.bytes)) {
+    if (total + r.bytes > SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES) break;
+    total += r.bytes;
+    fits.add(r);
+  }
+  return { inline: refs.filter((r) => fits.has(r)), download: refs.filter((r) => !fits.has(r)) };
+}
+
+/**
  * `thread` with each text whose `ref` is in `texts` replaced by the whole text, without its
  * `ref` and `bytes`. A message with no such text keeps its identity, and so does the thread when
  * no message changes; the same message and the same `texts` map give the same object.
