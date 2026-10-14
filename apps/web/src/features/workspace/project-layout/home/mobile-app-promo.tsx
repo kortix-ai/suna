@@ -69,7 +69,13 @@ export function MobileAppPromo() {
         if (!open) close();
       }}
     >
-      <ModalContent className="space-y-0 lg:max-w-3xl">
+      {/* No entrance animation: it opens on its own when the project page
+          loads, so it appears at once. Closing still fades (Radix exit). */}
+      <ModalContent
+        animation="none"
+        overlayClassName="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 duration-200"
+        className="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 space-y-0 duration-200 lg:max-w-3xl"
+      >
         {/* 55 / 45: copy first, the art on the trailing side. From `sm` up
             only: on a phone the copy and the store buttons stand alone. The
             art is the download page's mobile poster
