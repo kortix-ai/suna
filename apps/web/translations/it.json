@@ -7277,6 +7277,8 @@
       "tokensIn": "Token in entrata",
       "tokensOut": "Token in uscita",
       "treeMessages": "messaggi",
+      "subAgentsLoaded": "{loaded} di {total} sub-agenti caricati",
+      "loadAll": "Carica tutti",
       "detailInput": "Token di input",
       "detailOutput": "Token di output",
       "detailReasoning": "Token di ragionamento",
