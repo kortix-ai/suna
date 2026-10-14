@@ -13,12 +13,12 @@ import { BasicTool, partInput } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 
-export function ProjectDeleteTool({ part }: ToolProps) {
+export function ProjectDeleteTool({ call }: ToolProps) {
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TrashIcon}
-      trigger={projectDeleteTrigger(partInput(part))}
+      trigger={projectDeleteTrigger(partInput(call))}
     />
   );
 }

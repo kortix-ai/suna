@@ -576,6 +576,17 @@ const child = getChildSessionId(call); // a running task's child session
 const command = toolCallMetadata(call).command; // bash
 ```
 
+### Reading a tool call
+
+What a host draws a `ToolCallBlock` with. Block-native: they stay.
+
+| Name | What it does |
+| --- | --- |
+| `toolCallStatus(call)` | The status in the words a renderer compares: `pending`, `running`, `completed` or `error`. |
+| `toolCallRawOutput(call)` | A completed call's output text as the tool returned it (its result's text items, joined); `''` for any other call. One string per call object. |
+| `toolCallError(call)` | A failed call's error text: its semantic error (`result.error.message`), else its result text, as `toV1` gives a v1 part's `state.error`. A harness that closes a failed call with `is_error` and the tool's text only still shows that text. `undefined` for a call that did not fail. |
+| `subAgentCalls(thread)` | The tool calls a sub-agent row lists: every shown call (`shouldShowToolPart`) of the thread's replies, in order. One array per thread object; the same empty array for `null`. |
+
 ### Block turns
 
 The turn model over session-log blocks: what a transcript renders a thread from. Each name replaces a v1 helper over `MessageWithParts` (see [Turns, status and helpers](#turns-status-and-helpers)); the v1 helpers stay until the next major.

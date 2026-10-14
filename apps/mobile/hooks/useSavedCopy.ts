@@ -1,15 +1,14 @@
 /**
- * The saved copy of a session, for the connecting view: the transcript to show
+ * The saved copy of a session, for the connecting view: the thread to show
  * while the session's computer wakes, and whether the conversation is proven
  * empty. The SDK reads it (`readSavedSessionCopy`, the same saved-history read
  * the web makes) and paints it into its session store (`useSessionSync`), so
  * the thread that opens next starts from the same messages. The SDK holds the
  * copy for that open: the thread downloads the window no second time.
  */
-import { useEffect, useState } from 'react';
-import { readSavedSessionCopy, type SavedSessionCopy } from '@kortix/sdk';
+import { useEffect, useMemo, useState } from 'react';
+import { readSavedSessionCopy, sessionLogOfV1Rows, type SavedSessionCopy, type SessionLogThread } from '@kortix/sdk';
 import { useSessionSync } from '@kortix/sdk/react';
-import type { MessageWithParts } from '@/lib/session/types';
 
 export interface SavedCopyTarget {
   projectId: string;
@@ -21,7 +20,8 @@ export interface SavedCopyTarget {
 }
 
 export function useSavedCopy(target: SavedCopyTarget | null): {
-  messages: MessageWithParts[] | undefined;
+  /** The copy as a session-log thread (the `fromV1` view of its rows); undefined while it holds no message. */
+  thread: SessionLogThread | undefined;
   empty: boolean;
 } {
   const key = target ? `${target.projectId}/${target.sessionId}/${target.rootId}/${target.child ? 'child' : 'root'}` : null;
@@ -56,8 +56,10 @@ export function useSavedCopy(target: SavedCopyTarget | null): {
     savedChild: target?.child ?? false,
   });
 
-  return {
-    messages: target && sync.messages.length > 0 ? sync.messages : undefined,
-    empty: mine?.empty ?? false,
-  };
+  const rows = target && sync.messages.length > 0 ? sync.messages : null;
+  const thread = useMemo(
+    () => (target && rows ? sessionLogOfV1Rows(target.sessionId, target.rootId, rows).threads[0] : undefined),
+    [target, rows],
+  );
+  return { thread, empty: mine?.empty ?? false };
 }

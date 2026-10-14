@@ -18,8 +18,8 @@
  * `Loading variant="spokes"`), and the stack glyph uses the app weight (web
  * duotone weight; only the fill weight may be passed).
  *
- * Which turn is a compaction, and whether it is running, is the SDK's
- * `compactionTurnInfo(turn)` — the same helper web calls.
+ * Which turn is a compaction, and whether it is running, is the SDK's block
+ * turn (`SessionLogTurn.compaction`) — the same field web reads.
  */
 
 import { memo, useEffect, useState } from 'react';
@@ -61,7 +61,7 @@ const PILL_BOX = {
 } as const;
 
 interface CompactionMarkerProps {
-  /** The summarize is still producing (`working || compactionTurnInfo(turn).inFlight`). */
+  /** The summarize is still producing (`working || turn.compaction.inFlight`). */
   running: boolean;
   /** The landed summary markdown, if any. */
   summary?: string;

@@ -8,9 +8,8 @@ import {
   editResendAttachments,
   extractReplyContexts,
   interruptedTurnIds,
-  isUserMessageEdited,
   parseUserMessageText,
-  parseUserMessageParts,
+  parseUserMessageBlocks,
   queuedPromptStatusLabel,
   quoteMarginBottom,
   rewindHiddenMessageIds,
@@ -18,6 +17,8 @@ import {
   userMessageSentLabel,
   webSpace,
 } from './user-message';
+import { optimisticUserParts } from './optimistic-parts';
+import { blocksOf, threadOf } from '@/lib/testing/session-log';
 
 describe('webSpace', () => {
   test('one web spacing step is 0.23rem = 3.68px', () => {
@@ -177,53 +178,27 @@ describe('parseUserMessageText', () => {
   });
 });
 
-describe('isUserMessageEdited', () => {
-  test('true when a visible text part carries metadata.edited', () => {
-    expect(
-      isUserMessageEdited([{ type: 'text', text: 'x', metadata: { edited: true } }]),
-    ).toBe(true);
-  });
-
-  test('ignores synthetic, ignored, and empty parts', () => {
-    expect(
-      isUserMessageEdited([
-        { type: 'text', text: 'x', synthetic: true, metadata: { edited: true } },
-        { type: 'text', text: 'y', ignored: true, metadata: { edited: true } },
-        { type: 'text', text: '  ', metadata: { edited: true } },
-        { type: 'file', metadata: { edited: true } },
-      ]),
-    ).toBe(false);
-  });
-});
-
 describe('userMessageSentLabel', () => {
   // Local-time dates: the label reads the device's clock.
   const now = new Date(2026, 8, 27, 18, 5).getTime();
 
   test('today, yesterday, this year, another year', () => {
-    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 27, 15, 42).getTime(), edited: false, now })).toBe(
+    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 27, 15, 42).getTime(), now })).toBe(
       'Today, 3:42 PM',
     );
-    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 26, 9, 5).getTime(), edited: false, now })).toBe(
+    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 26, 9, 5).getTime(), now })).toBe(
       'Yesterday, 9:05 AM',
     );
-    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 3, 0, 15).getTime(), edited: false, now })).toBe(
+    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 3, 0, 15).getTime(), now })).toBe(
       'Sep 3, 12:15 AM',
     );
-    expect(userMessageSentLabel({ timestamp: new Date(2025, 11, 31, 12, 0).getTime(), edited: false, now })).toBe(
+    expect(userMessageSentLabel({ timestamp: new Date(2025, 11, 31, 12, 0).getTime(), now })).toBe(
       'Dec 31, 2025, 12:00 PM',
     );
   });
 
-  test('an edited message says so', () => {
-    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 27, 15, 42).getTime(), edited: true, now })).toBe(
-      'Today, 3:42 PM · Edited',
-    );
-  });
-
-  test('no timestamp: only "Edited", or nothing', () => {
-    expect(userMessageSentLabel({ timestamp: null, edited: true, now })).toBe('Edited');
-    expect(userMessageSentLabel({ timestamp: null, edited: false, now })).toBe('');
+  test('no timestamp: nothing', () => {
+    expect(userMessageSentLabel({ timestamp: null, now })).toBe('');
   });
 });
 
@@ -237,10 +212,15 @@ describe('queuedPromptStatusLabel', () => {
   });
 });
 
-type T = { userMessage: { info: { id: string } }; assistantMessages: { info: { error?: unknown } }[] };
-const turn = (id: string, assistant: { error?: unknown }[] = []): T => ({
-  userMessage: { info: { id } },
-  assistantMessages: assistant.map((info) => ({ info })),
+/** A turn's id and its replies as session-log messages (the `fromV1` view of v1 assistant infos). */
+const turn = (id: string, assistant: { error?: unknown }[] = []) => ({
+  id,
+  assistant: threadOf(
+    assistant.map((info, i) => ({
+      info: { id: `${id}_a${i}`, role: 'assistant', time: { created: i + 1, completed: i + 2 }, ...info },
+      parts: [{ type: 'text', id: `${id}_p${i}`, text: 'x' }],
+    })),
+  ).messages,
 });
 const aborted = { name: 'MessageAbortedError', data: { message: 'aborted' } };
 
@@ -267,7 +247,10 @@ describe('interruptedTurnIds', () => {
 });
 
 describe('rewindHiddenMessageIds', () => {
-  const msg = (id: string, created?: number) => ({ info: { id, time: created ? { created } : undefined } });
+  const msg = (id: string, created?: number) => ({
+    message_id: id,
+    created_at: created ? new Date(created).toISOString() : '',
+  });
 
   test('the boundary and every later message, in created order', () => {
     const messages = [msg('m3', 30), msg('m1', 10), msg('m2', 20), msg('m4', 40)];
@@ -471,24 +454,35 @@ describe('no user message can freeze the app', () => {
 });
 
 
-describe('parseUserMessageParts', () => {
-  test('merges file tags before file parts and filters synthetic, ignored and empty text', () => {
-    const parts = [
-      { type: 'text', text: 'hello' },
-      { type: 'text', text: 'synthetic', synthetic: true },
-      { type: 'text', text: 'ignored', ignored: true },
-      { type: 'text', text: '  ' },
-      { type: 'text', text: '<file path="/w/a.png" mime="image/png" filename="a.png">x</file>' },
-      { type: 'file', id: 'file-1', filename: 'other.pdf', mime: 'application/pdf', url: 'https://example.test/file', localUri: 'file:///tmp/other.pdf' },
-    ];
-    expect(parseUserMessageParts(parts as Parameters<typeof parseUserMessageParts>[0])).toEqual({
+describe('parseUserMessageBlocks', () => {
+  test('merges file tags before file blocks and filters synthetic, ignored and empty text', () => {
+    const blocks = blocksOf([
+      { type: 'text', id: 't1', text: 'hello' },
+      { type: 'text', id: 't2', text: 'synthetic', synthetic: true },
+      { type: 'text', id: 't3', text: 'ignored', ignored: true },
+      { type: 'text', id: 't4', text: '  ' },
+      { type: 'text', id: 't5', text: '<file path="/w/a.png" mime="image/png" filename="a.png">x</file>' },
+      { type: 'file', id: 'file-1', filename: 'other.pdf', mime: 'application/pdf', url: 'https://example.test/file' },
+      { type: 'file', id: 'file-2', filename: 'notes.txt', mime: 'text/plain', url: 'file:///workspace/notes.txt' },
+    ]);
+    expect(parseUserMessageBlocks(blocks)).toEqual({
       rawText: 'hello\n<file path="/w/a.png" mime="image/png" filename="a.png">x</file>',
       content: { text: 'hello', quotes: [], sessions: [], files: [{ path: '/w/a.png', mime: 'image/png', filename: 'a.png' }], pasted: [] },
       attachments: [
         { key: 'upload:0:/w/a.png', filename: 'a.png', mime: 'image/png', src: '/w/a.png', path: '/w/a.png' },
-        { key: 'file-1', filename: 'other.pdf', mime: 'application/pdf', src: 'https://example.test/file', localUri: 'file:///tmp/other.pdf' },
+        { key: 'file-1', filename: 'other.pdf', mime: 'application/pdf', src: 'https://example.test/file', localUri: undefined },
+        // A text/plain mention is a harness `file` block: still a tile.
+        { key: 'file-2', filename: 'notes.txt', mime: 'text/plain', src: 'file:///workspace/notes.txt', localUri: undefined },
       ],
     });
+  });
+
+  test('an optimistic attachment finds the picked file by its id', () => {
+    const parts = optimisticUserParts('', [{ uri: 'file:///tmp/other.pdf', name: 'other.pdf', mimeType: 'application/pdf', isImage: false } as never], 1);
+    const { attachments } = parseUserMessageBlocks(blocksOf(parts));
+    expect(attachments).toEqual([
+      { key: parts[0]!.id, filename: 'other.pdf', mime: 'application/pdf', src: undefined, localUri: 'file:///tmp/other.pdf' },
+    ]);
   });
 });
 
@@ -496,10 +490,10 @@ describe('parseUserMessageParts', () => {
 const SAVED_COPY =
   'kortix-attachment://00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000002/00000000-0000-4000-8000-000000000003';
 
-describe('parseUserMessageParts — an upload ref keeps its path and saved copy', () => {
+describe('parseUserMessageBlocks — an upload ref keeps its path and saved copy', () => {
   test('the tile carries the workspace path and the kortix-attachment ref; src stays the path', () => {
     const text = `<file path="/workspace/uploads/.kortix-inbox/a.png" mime="image/png" filename="a.png" attachment="${SAVED_COPY}">x</file>`;
-    const { attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    const { attachments } = parseUserMessageBlocks(blocksOf([{ type: 'text', id: 't', text }]));
     expect(attachments).toEqual([
       {
         key: 'upload:0:/workspace/uploads/.kortix-inbox/a.png',
@@ -595,9 +589,9 @@ describe('pasted text — `<pasted_content>` blocks become tiles', () => {
     expect(userMessageCopyText(typed, [PASTE])).toBe(`${PASTE.text}\n\n${typed}`);
   });
 
-  test('parseUserMessageParts draws each paste as a tile ahead of the files', () => {
+  test('parseUserMessageBlocks draws each paste as a tile ahead of the files', () => {
     const text = `${serializePromptWithPastes('hi', [PASTE])}\n\n<file path="/w/a.png" mime="image/png" filename="a.png">x</file>`;
-    const { content, attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    const { content, attachments } = parseUserMessageBlocks(blocksOf([{ type: 'text', id: 't', text }]));
     expect(content.text).toBe('hi');
     expect(attachments.map((a) => a.key)).toEqual(['pasted:0a1b2c3d', 'upload:0:/w/a.png']);
     expect(attachments[0]).toEqual({ key: 'pasted:0a1b2c3d', filename: 'Pasted text', pasted: PASTE });
@@ -606,7 +600,7 @@ describe('pasted text — `<pasted_content>` blocks become tiles', () => {
   test('a paste repeated (a command template repeats its args) is one tile, sent once on edit', () => {
     const block = serializePromptWithPastes('', [PASTE]);
     const text = `${block}\n\nrun it\n\n${block}`;
-    const { content, attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    const { content, attachments } = parseUserMessageBlocks(blocksOf([{ type: 'text', id: 't', text }]));
     expect(content.pasted).toEqual([PASTE]);
     expect(attachments.map((a) => a.key)).toEqual(['pasted:0a1b2c3d']);
     expect(editResendAttachments(attachments, 'run it').text).toBe(serializePromptWithPastes('run it', [PASTE]));
