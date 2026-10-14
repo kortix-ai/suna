@@ -22,6 +22,7 @@ import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 type Thread = SessionLog['threads'][number];
 
@@ -36,7 +37,7 @@ const SLIM_BLOCKS = sql<unknown[]>`COALESCE((
       'content', (SELECT COALESCE(jsonb_agg(jsonb_build_object('type', c->'type')), '[]'::jsonb)
         FROM jsonb_array_elements(COALESCE(b#>'{result,content}', '[]'::jsonb) || COALESCE(b#>'{result,model_content}', '[]'::jsonb)) c)
     ) END
-  ))) FROM jsonb_array_elements(${sessionLogMessages.record}->'blocks') b
+  ))) FROM jsonb_array_elements(${qualifiedColumn(sessionLogMessages.record)}->'blocks') b
 ), '[]'::jsonb)`;
 
 export async function sessionLogSwitchPreflight(input: {

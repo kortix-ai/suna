@@ -160,7 +160,12 @@ mock.module('../session-turn-ledger', () => ({
     result.outcome === 'no_active_turn',
 }));
 
+const realSessionLifecycle = await import('../session-lifecycle');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../session-lifecycle', () => ({
+  ...realSessionLifecycle,
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
   },
@@ -200,7 +205,12 @@ mock.module('../lib/session-runtime-projection-refresh', () => ({
   },
 }));
 
+const realTitleGenerate = await import('../session-title-generate');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../session-title-generate', () => ({
+  ...realTitleGenerate,
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
   },

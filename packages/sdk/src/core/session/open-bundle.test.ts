@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../http/config';
+import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
 import {
   OPEN_BUNDLE_SHARE_MS,
   OPEN_BUNDLE_TRANSCRIPT_LIMIT,
   claimOpenBundle,
+  heldSavedWindow,
+  holdSavedWindow,
   openBundleAudit,
   openBundleHistory,
   openBundleQueue,
@@ -144,6 +147,46 @@ describe('the session-open bundle coalescer', () => {
     openSessionBundle(PID, SID, { now: () => now });
     await claimOpenBundle(PID, SID, now);
     expect(requests).toHaveLength(2);
+  });
+});
+
+describe('the saved-window hold — one slot per session, not one global slot', () => {
+  const envelopeFor = (root: string) =>
+    ({
+      available: true,
+      reason: null,
+      source: 'mirror',
+      complete: true,
+      captured_at: '2026-09-26T10:00:00Z',
+      opencode_session_id: root,
+      message_count: 0,
+      messages: [],
+    }) as unknown as SessionTranscriptSyncEnvelope;
+
+  test('a late hold for session B does not evict session A\'s hold', () => {
+    holdSavedWindow(PID, 'A', envelopeFor('ses_a'));
+    holdSavedWindow(PID, 'B', envelopeFor('ses_b'));
+    expect(heldSavedWindow(PID, 'A')?.opencode_session_id).toBe('ses_a');
+    expect(heldSavedWindow(PID, 'B')?.opencode_session_id).toBe('ses_b');
+  });
+
+  test('the bind asks the pointer only while its own hold lives, even after another session held', async () => {
+    holdSavedWindow(PID, SID, envelopeFor('ses_root'));
+    // Another session's connecting view settles late and holds its own window.
+    holdSavedWindow(PID, 'LATE', envelopeFor('ses_late'));
+    openSessionBundle(PID, SID);
+    await claimOpenBundle(PID, SID);
+    expect(requests[0]).toContain('transcript=0');
+  });
+
+  test('the cap keeps the hold map bounded: the oldest hold gives its slot', () => {
+    for (let i = 0; i < 16; i++) holdSavedWindow(PID, `s${i}`, envelopeFor(`ses_${i}`));
+    expect(heldSavedWindow(PID, 's0')?.opencode_session_id).toBe('ses_0');
+    holdSavedWindow(PID, 's16', envelopeFor('ses_16'));
+    expect(heldSavedWindow(PID, 's0')).toBeNull();
+    expect(heldSavedWindow(PID, 's16')?.opencode_session_id).toBe('ses_16');
+    // The surviving holds keep their envelopes.
+    expect(heldSavedWindow(PID, 's15')?.opencode_session_id).toBe('ses_15');
   });
 });
 
