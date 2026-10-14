@@ -99,8 +99,8 @@ export async function deleteSession(input: {
   // Merged in SQL: the tombstone must not write back a metadata object read
   // earlier, which would erase any key a concurrent writer added since.
   const tombstone = { deletedAt: deletedAt.toISOString(), deletedBy: userId };
+  // The transition keeps `updated_at`: the session keeps its list position.
   const deleted = await transitionSession('delete', sessionId, {
-    at: deletedAt,
     metadata: tombstone,
     guard: and(
       eq(projectSessions.projectId, projectId),

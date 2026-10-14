@@ -20228,7 +20228,8 @@
     "verified": "Potvrđeno",
     "invalidCode": "Taj kod nije uspeo. Proverite aplikaciju za autentifikaciju i pokušajte ponovo.",
     "noFactorTitle": "Podesite dvofaktorsku autentifikaciju",
-    "noFactorDescription": "Ova radnja zahteva dvofaktorsku autentifikaciju. Dodajte aplikaciju za autentifikaciju u Podešavanja → Bezbednost, pa pokušajte ponovo."
+    "noFactorDescription": "Ova radnja zahteva dvofaktorsku autentifikaciju. Dodajte aplikaciju za autentifikaciju u Podešavanja → Bezbednost, pa pokušajte ponovo.",
+    "setUp": "Podesi autentifikator"
   },
   "connectorPages": {
     "install": "Инсталирај",

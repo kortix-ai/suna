@@ -4,7 +4,7 @@
  * assert the contract (201 provisioning, status transitions) without blocking on
  * a full boot. Gated on the `daytona` capability, except SESS-36 and SESS-51,
  * which run on the local profile against a database session with a saved
- * transcript.
+ * transcript, and SESS-52, which seeds its sessions as database rows.
  */
 import {
   CreateSessionPromptResultSchema,
@@ -3076,6 +3076,120 @@ flow(
       });
     } finally {
       await turn.cleanup();
+      await db.end();
+    }
+  },
+);
+
+/**
+ * SESS-52 — a list page reads only the rows its viewer may see (KRTX-2316).
+ * The page WHERE carries the visibility, tombstone and warm-draft rules, so a
+ * page is full however many newer rows are someone else's private sessions or
+ * deleted ones. A delete keeps the session's place in the list order. Runs on
+ * the local profile: the sessions are database rows.
+ */
+flow(
+  'SESS-52',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['GET /v1/projects/:projectId/sessions', 'DELETE /v1/projects/:projectId/sessions/:sessionId'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const shared = await team.project();
+    const trash = await team.project();
+    const author = await team.addMember('member');
+    const reader = await team.addMember('member');
+    for (const projectId of [shared.id, trash.id]) {
+      for (const member of [author, reader]) await team.grantProjectRole(projectId, member.userId!, 'member');
+    }
+    type Row = { session_id: string; deleted_at: string | null };
+    const route = '/v1/projects/:projectId/sessions';
+    const list = async (as: ReturnType<typeof ctx.client.as>, projectId: string, query: Record<string, string>) => {
+      const r = await as.get(route, { params: { projectId }, query });
+      r.status(200);
+      return { rows: r.json<Row[]>(), cursor: r.header('x-next-cursor') ?? null };
+    };
+    const expectIds = (got: Row[], want: string[], what: string) => {
+      const ids = got.map((row) => row.session_id);
+      if (JSON.stringify(ids) !== JSON.stringify(want)) throw new Error(`${what}: got ${JSON.stringify(ids)}, want ${JSON.stringify(want)}`);
+    };
+
+    const db = await openFlowDb(ctx.env);
+    // `count` rows in one statement, returned newest first. The projects'
+    // teardown deletes them: the sessions cascade with the project.
+    const seed = async (input: {
+      projectId: string;
+      owner: string;
+      visibility: 'private' | 'project';
+      count: number;
+      newestMinutesAgo: number;
+      deleted?: true;
+    }): Promise<string[]> => {
+      const metadata = input.deleted ? { deletedAt: new Date().toISOString(), deletedBy: input.owner } : {};
+      const result = await db.query<{ session_id: string; updated_at: Date }>(
+        `INSERT INTO kortix.project_sessions
+           (session_id, account_id, project_id, branch_name, created_by, visibility,
+            initiator_type, initiator_id, metadata, created_at, updated_at)
+         SELECT s.id, $1::uuid, $2::uuid, 'session/' || s.id, $3::uuid, $4::kortix.project_session_visibility,
+                'member', $8::text, $5::jsonb, s.at, s.at
+           FROM (SELECT gen_random_uuid()::text AS id,
+                        now() - make_interval(mins => $6::int) - make_interval(secs => g) AS at
+                   FROM generate_series(1, $7::int) AS g) AS s
+         RETURNING session_id, updated_at`,
+        [team.id, input.projectId, input.owner, input.visibility, JSON.stringify(metadata), input.newestMinutesAgo, input.count, input.owner],
+      );
+      return result.rows
+        .sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime())
+        .map((row) => row.session_id);
+    };
+
+    try {
+      const [sharedOld] = await seed({ projectId: shared.id, owner: author.userId!, visibility: 'project', count: 1, newestMinutesAgo: 2 * 1440 });
+      const authorPrivate = new Set(
+        await seed({ projectId: shared.id, owner: author.userId!, visibility: 'private', count: 1000, newestMinutesAgo: 0 }),
+      );
+
+      await ctx.step('a member’s Shared query reads past 1,000 newer private sessions: page 1 holds the shared one, with no cursor', async () => {
+        const page = await list(ctx.client.as(reader), shared.id, { parent: 'root', started_by: 'others', limit: '20' });
+        expectIds(page.rows, [sharedOld!], 'shared');
+        if (page.cursor) throw new Error('the last page carries a cursor');
+      });
+
+      await ctx.step('the member never receives the other member’s private sessions', async () => {
+        const page = await list(ctx.client.as(reader), shared.id, { limit: '200' });
+        expectIds(page.rows, [sharedOld!], 'flat');
+        if (page.cursor) throw new Error('the last page carries a cursor');
+        if (page.rows.some((row) => authorPrivate.has(row.session_id))) throw new Error('a private session leaked');
+      });
+
+      const live = await seed({ projectId: trash.id, owner: reader.userId!, visibility: 'project', count: 60, newestMinutesAgo: 60 });
+      await seed({ projectId: trash.id, owner: reader.userId!, visibility: 'private', count: 1500, newestMinutesAgo: 0, deleted: true });
+
+      await ctx.step('with 1,500 tombstones newer than them, the owner’s first page holds 50 live sessions and the second the last 10', async () => {
+        const asReader = ctx.client.as(reader);
+        const first = await list(asReader, trash.id, { limit: '50' });
+        expectIds(first.rows, live.slice(0, 50), 'page 1');
+        if (!first.cursor) throw new Error('page 1 has no cursor');
+        const second = await list(asReader, trash.id, { limit: '50', cursor: first.cursor });
+        expectIds(second.rows, live.slice(50), 'page 2');
+        if (second.cursor) throw new Error('the last page carries a cursor');
+      });
+
+      await ctx.step('a deleted session keeps its place: the manager inventory lists the tombstone where the session was', async () => {
+        const deleted = live[5]!;
+        (await ctx.client
+          .as(reader)
+          .del('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId: trash.id, sessionId: deleted } })
+        ).status(200);
+        const inventory = await list(ctx.client.as(ctx.P.OWNER), trash.id, { scope: 'project', limit: '10' });
+        expectIds(inventory.rows, live.slice(0, 10), 'manager inventory');
+        if (!inventory.rows[5]!.deleted_at) throw new Error('the deleted session carries no deleted_at');
+        const visible = await list(ctx.client.as(reader), trash.id, { limit: '50' });
+        expectIds(visible.rows, [...live.slice(0, 5), ...live.slice(6, 51)], 'owner after delete');
+      });
+    } finally {
       await db.end();
     }
   },
