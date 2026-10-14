@@ -237,11 +237,33 @@ test('a snapshot that answered "no copy is saved" serves the history read too', 
   expect(requests).toHaveLength(1);
 });
 
-test('a snapshot still in flight is never waited for: the history route answers', async () => {
-  const requests = serve(() => new Promise<Response>(() => {}));
+test('a snapshot still in flight is waited for: its window answers, and the history route is not read', async () => {
+  // KRTX-189: one saved-history read per open. Racing the snapshot downloaded
+  // the same window twice (the snapshot leg, then this route).
+  let answer!: (response: Response) => void;
+  const requests = serve(
+    () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+  );
   openSessionBundle('p1', 's1');
   const hook = await mount(true);
+  expect(hook.value().isLoading).toBe(true);
+  await act(async () => {
+    answer(Response.json(snapshot()));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
   expect(hook.value().isLoading).toBe(false);
+  expect(hook.value().rootSessionId).toBe('ses_history');
+  expect(historyReads(requests)).toHaveLength(0);
+  expect(requests).toHaveLength(1);
+});
+
+test('a snapshot in flight that fails leaves the answer to the history route', async () => {
+  const requests = serve(async () => Response.json({ error: 'Not found' }, { status: 404 }));
+  openSessionBundle('p1', 's1');
+  const hook = await mount(true);
   expect(hook.value().rootSessionId).toBe('ses_history');
   expect(historyReads(requests)).toHaveLength(1);
 });
