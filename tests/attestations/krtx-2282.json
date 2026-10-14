@@ -1,0 +1,16 @@
+{
+  "source_hash": "e4e6060c979f0f345bf5c40dfed0a76f7c8045a92a4092bdf6d2c896fca5d7bf",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(public)/(seo)/seo-shell.test.tsx",
+    "apps/web/src/app/[locale]/(public)/(seo)/seo-shell.tsx"
+  ],
+  "diff_hash": "020b286854d70b39cda619044b68a724d335f40ddac1c356598ae752bee7aa10",
+  "head": "4a244175bc706fd0567cd258b327937443215c8a",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-14T16:08:38.433Z"
+}
