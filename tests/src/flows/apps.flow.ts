@@ -1466,7 +1466,7 @@ flow(
           throw new Error(`capabilities with a volume and no server release: ${JSON.stringify(capabilities)}`);
         }
         const ls = await cli.run(["apps", "volumes", slug, "--project", project.id]);
-        if (ls.exitCode !== 0 || !/data\s+app\s+10 GB/.test(ls.stdout)) throw new Error(`kortix apps volumes: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
+        if (ls.exitCode !== 0 || !/data\s+app\s+-\s+10 GB/.test(ls.stdout)) throw new Error(`kortix apps volumes: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
       });
 
       await ctx.step("a volume has a fixed size: 101 GB → 400 volume_size_invalid, retention 61 → 400, any other size without a provider → 503 volume_size_unknown; retention 7 → 200 and reads back; the CLI sets retention 30", async () => {
