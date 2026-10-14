@@ -186,3 +186,30 @@ describe('hostile input', () => {
   });
 });
 
+
+describe('model strings cannot inject markdown structure', () => {
+  test('a Callout body cannot open a live openui fence; every body line stays quoted', () => {
+    const md = genuiToMarkdown(
+      'Hi\n\n```openui\nroot = Stack([c])\nc = Callout("info", "line\\n```openui\\nroot = Stack([b])\\nb = Badge(\\"injected\\")\\n```")\n```',
+    );
+    expect(md.split('\n').some((line) => line.trimStart().startsWith('```'))).toBe(false);
+    expect(md.split('\n').slice(2).every((line) => line.startsWith('>'))).toBe(true);
+    // Converting the output again changes nothing: no block survives inside it.
+    expect(genuiToMarkdown(md)).toBe(md);
+  });
+
+  test('a Link label cannot close the link and open a javascript: one', () => {
+    const md = genuiToMarkdown('```openui\nroot = Stack([l])\nl = Link("x](javascript:alert(1)) [y", "https://ok.example")\n```');
+    expect(md).not.toContain('](javascript:');
+    expect(md).toContain('(https://ok.example/)');
+  });
+
+  test('inline text collapses newlines and escapes markdown characters', () => {
+    expect(genuiToMarkdown('```openui\nroot = Stack([b])\nb = Badge("a\\n*b* `c`")\n```')).toBe('[a \\*b\\* \\`c\\`]');
+  });
+
+  test('a table cell cannot form a link', () => {
+    const md = genuiToMarkdown('```openui\nroot = Stack([t])\nt = Table(["k"], [["[x](javascript:alert(1))"]])\n```');
+    expect(md).not.toContain('](javascript:');
+  });
+});

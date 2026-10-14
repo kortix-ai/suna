@@ -98,14 +98,24 @@ function component(input: {
 
 // ── Markdown helpers ────────────────────────────────────────────────────────
 
-const cell = (value: unknown): string =>
-  String(value ?? '')
-    .replace(/\|/g, '\\|')
-    .replace(/\n/g, ' ');
+/**
+ * A model string as inline markdown text: newlines collapse to one space, and the characters that
+ * open links, emphasis, code, fences, or HTML are escaped. Every `toMarkdown` passes model strings
+ * through this, so a string can never add markdown structure (a link, a fence, a new block).
+ */
+const escapeLine = (value: string): string => value.replace(/[\\`*_[\]()<]/g, '\\$&');
+const inline = (value: unknown): string => escapeLine(String(value ?? '').replace(/\s*[\r\n]+\s*/g, ' '));
 
+/** A safe URL as a markdown link target: parentheses would end the target early. */
+const target = (value: unknown): string => String(value ?? '').replace(/\(/g, '%28').replace(/\)/g, '%29');
+
+/** A table cell: a string goes through `inline`, a number prints as is; `|` is escaped. */
+const cell = (value: unknown): string => (typeof value === 'number' ? String(value) : inline(value)).replace(/\|/g, '\\|');
+
+/** `head` is markdown already (escaped); `rows` are raw cell values. */
 const mdTable = (head: string[], rows: unknown[][]): string =>
   [
-    `| ${head.map(cell).join(' | ')} |`,
+    `| ${head.map((text) => text.replace(/\|/g, '\\|')).join(' | ')} |`,
     `| ${head.map(() => '---').join(' | ')} |`,
     ...rows.map((row) => `| ${head.map((_, i) => cell(row[i] ?? '')).join(' | ')} |`),
   ].join('\n');
@@ -121,12 +131,13 @@ const joinChildren = (value: unknown, child: GenuiChildToMarkdown, separator = '
 const formatNumber = (value: unknown): string =>
   typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('en-US') : '';
 
-const withUnit = (value: string, unit: unknown): string => (unit ? `${value} ${String(unit)}` : value);
+/** `value` is markdown already; `unit` is a model string. */
+const withUnit = (value: string, unit: unknown): string => (unit ? `${value} ${inline(unit)}` : value);
 
-const sourceLine = (source: unknown): string => `Source: ${String(source ?? '')}`;
+const sourceLine = (source: unknown): string => `Source: ${inline(source)}`;
 
 function seriesTable(labels: string[], series: GenuiNode[], unit: unknown): string {
-  const head = ['', ...series.map((s) => withUnit(String(s.props.name ?? ''), unit ? `(${unit})` : ''))];
+  const head = ['', ...series.map((s) => `${inline(s.props.name)}${unit ? ` \\(${inline(unit)}\\)` : ''}`)];
   const rows = labels.map((label, i) => [
     label,
     ...series.map((s) => formatNumber((s.props.values as unknown[] | undefined)?.[i])),
@@ -149,7 +160,7 @@ component({
   name: 'Badge',
   description: 'Short status tag. tone: neutral, good, warn, bad',
   fields: { label: text(24), tone: z.enum(['neutral', 'good', 'warn', 'bad']).optional() },
-  toMarkdown: (p) => `[${p.label}]`,
+  toMarkdown: (p) => `[${inline(p.label)}]`,
 });
 
 component({
@@ -157,7 +168,7 @@ component({
   description: 'A link to a source, booking page, or document',
   fields: { label: text(80), href: url() },
   urls: { href: 'required' },
-  toMarkdown: (p) => `[${p.label}](${p.href})`,
+  toMarkdown: (p) => `[${inline(p.label)}](${target(p.href)})`,
 });
 
 component({
@@ -165,14 +176,20 @@ component({
   description: 'A picture. Use only URLs from tool results or files',
   fields: { src: url(), alt: text(200), caption: optText(200) },
   urls: { src: 'required' },
-  toMarkdown: (p) => [`![${p.alt}](${p.src})`, p.caption ? `*${p.caption}*` : ''].filter(Boolean).join('\n\n'),
+  toMarkdown: (p) =>
+    [`![${inline(p.alt)}](${target(p.src)})`, p.caption ? `*${inline(p.caption)}*` : ''].filter(Boolean).join('\n\n'),
 });
 
 component({
   name: 'Callout',
   description: 'A key takeaway or warning. tone: info, warn, success',
   fields: { tone: z.enum(['info', 'warn', 'success']), body: text(400), title: optText(80) },
-  toMarkdown: (p) => `> ${p.title ? `**${p.title}** ` : ''}${p.body}`,
+  // Every body line is quoted, so no line of the body leaves the blockquote.
+  toMarkdown: (p) =>
+    String(p.body ?? '')
+      .split(/\r?\n/)
+      .map((line, i) => `> ${i === 0 && p.title ? `**${inline(p.title)}** ` : ''}${escapeLine(line.trim())}`.trimEnd())
+      .join('\n'),
 });
 
 // ── Data components ─────────────────────────────────────────────────────────
@@ -187,7 +204,7 @@ component({
     trend: z.enum(['up', 'down', 'flat']).optional(),
     unit: optText(12),
   },
-  toMarkdown: (p) => `**${p.label}:** ${withUnit(String(p.value), p.unit)}${p.delta ? ` (${p.delta})` : ''}`,
+  toMarkdown: (p) => `**${inline(p.label)}:** ${withUnit(inline(p.value), p.unit)}${p.delta ? ` (${inline(p.delta)})` : ''}`,
 });
 
 component({
@@ -206,7 +223,7 @@ component({
     caption: optText(120),
   },
   toMarkdown: (p) =>
-    [p.caption ? `*${p.caption}*` : '', mdTable(p.columns as string[], p.rows as unknown[][])]
+    [p.caption ? `*${inline(p.caption)}*` : '', mdTable((p.columns as string[]).map(inline), p.rows as unknown[][])]
       .filter(Boolean)
       .join('\n\n'),
 });
@@ -223,9 +240,9 @@ component({
   },
   toMarkdown: (p) =>
     [
-      `**${p.name}**`,
-      ...((p.pros as string[] | undefined) ?? []).map((pro) => `- + ${pro}`),
-      ...((p.cons as string[] | undefined) ?? []).map((con) => `- − ${con}`),
+      `**${inline(p.name)}**`,
+      ...((p.pros as string[] | undefined) ?? []).map((pro) => `- + ${inline(pro)}`),
+      ...((p.cons as string[] | undefined) ?? []).map((con) => `- − ${inline(con)}`),
     ].join('\n'),
 });
 
@@ -244,13 +261,13 @@ component({
     if (specsList.length > 0) {
       parts.push(
         mdTable(
-          ['', ...items.map((item) => String(item.props.name ?? ''))],
+          ['', ...items.map((item) => inline(item.props.name))],
           specsList.map((spec, i) => [spec, ...items.map((item) => (item.props.values as string[])[i] ?? '—')]),
         ),
       );
     }
     parts.push(...items.map(child));
-    if (p.winner) parts.push(`**Pick:** ${p.winner}`);
+    if (p.winner) parts.push(`**Pick:** ${inline(p.winner)}`);
     return parts.join('\n\n');
   },
 });
@@ -262,7 +279,7 @@ component({
   fields: { title: text(80), reason: text(240), meta: optText(80), image: url().optional(), href: url().optional() },
   urls: { image: 'optional', href: 'optional' },
   toMarkdown: (p) =>
-    `**${p.title}** — ${p.reason}${p.meta ? ` (${p.meta})` : ''}${p.href ? ` [Open](${p.href})` : ''}`,
+    `**${inline(p.title)}** — ${inline(p.reason)}${p.meta ? ` (${inline(p.meta)})` : ''}${p.href ? ` [Open](${target(p.href)})` : ''}`,
 });
 
 component({
@@ -279,7 +296,7 @@ component({
   description: 'One named series of numbers inside a chart',
   block: false,
   fields: { name: text(40), values: z.array(z.number()).max(365) },
-  toMarkdown: (p) => `${p.name}: ${(p.values as number[]).map(formatNumber).join(', ')}`,
+  toMarkdown: (p) => `${inline(p.name)}: ${(p.values as number[]).map(formatNumber).join(', ')}`,
 });
 
 const chartA11y = (kind: string) => (p: Record<string, any>) =>
@@ -319,7 +336,7 @@ component({
   description: 'One part of a PieChart',
   block: false,
   fields: { label: text(40), value: z.number().nonnegative() },
-  toMarkdown: (p) => `${p.label}: ${formatNumber(p.value)}`,
+  toMarkdown: (p) => `${inline(p.label)}: ${formatNumber(p.value)}`,
 });
 
 component({
@@ -341,7 +358,7 @@ component({
     const lines = slices.map((s) => {
       const value = Number(s.props.value) || 0;
       const percent = total > 0 ? Math.round((value / total) * 100) : 0;
-      return `- ${s.props.label}: ${withUnit(formatNumber(value), p.unit)} (${percent}%)`;
+      return `- ${inline(s.props.label)}: ${withUnit(formatNumber(value), p.unit)} (${percent}%)`;
     });
     return `${lines.join('\n')}\n\n${sourceLine(p.source)}`;
   },
@@ -373,7 +390,7 @@ component({
   },
   urls: { href: 'optional', image: 'optional' },
   toMarkdown: (p) =>
-    `**${p.label}**${p.value ? ` (${p.value})` : ''}${p.description ? ` — ${p.description}` : ''} ([map](${osmLink(p.lat, p.lng)}))`,
+    `**${inline(p.label)}**${p.value ? ` (${inline(p.value)})` : ''}${p.description ? ` — ${inline(p.description)}` : ''} ([map](${osmLink(p.lat, p.lng)}))`,
 });
 
 component({
@@ -413,14 +430,14 @@ component({
   urls: { image: 'optional', href: 'optional' },
   toMarkdown: (p, child) =>
     [
-      `### ${p.title}`,
+      `### ${inline(p.title)}`,
       p.rating != null ? `★ ${p.rating}${p.reviews != null ? ` (${formatNumber(p.reviews)})` : ''}` : '',
-      p.subtitle ? `*${p.subtitle}*` : '',
-      p.price ? String(p.price) : '',
-      p.body ?? '',
+      p.subtitle ? `*${inline(p.subtitle)}*` : '',
+      p.price ? inline(p.price) : '',
+      p.body ? inline(p.body) : '',
       joinChildren(p.badges, child, ' '),
-      p.image ? `![${p.title}](${p.image})` : '',
-      p.href ? `[Open](${p.href})` : '',
+      p.image ? `![${inline(p.title)}](${target(p.image)})` : '',
+      p.href ? `[Open](${target(p.href)})` : '',
     ]
       .filter(Boolean)
       .join('\n\n'),
@@ -439,7 +456,7 @@ component({
   description: 'One tab inside Tabs: a label and its blocks',
   block: false,
   fields: { label: text(30), children: { accepts: INNER_BLOCKS, min: 1, max: 8, lazy: true } },
-  toMarkdown: (p, child) => `#### ${p.label}\n\n${joinChildren(p.children, child)}`,
+  toMarkdown: (p, child) => `#### ${inline(p.label)}\n\n${joinChildren(p.children, child)}`,
 });
 
 component({
@@ -455,7 +472,7 @@ component({
   description: 'One collapsible section inside Accordion',
   block: false,
   fields: { title: text(80), children: { accepts: INNER_BLOCKS, min: 1, max: 8, lazy: true } },
-  toMarkdown: (p, child) => `#### ${p.title}\n\n${joinChildren(p.children, child)}`,
+  toMarkdown: (p, child) => `#### ${inline(p.title)}\n\n${joinChildren(p.children, child)}`,
 });
 
 component({
