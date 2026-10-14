@@ -18,10 +18,25 @@
  * - an attachment the API's capture uploaded keeps the `kortix-attachment://` url the mirror row
  *   has only when the journal sent it; the daemon never sees that url.
  * - object key order: the log path builds its own; key order is not a wire contract.
+ * - a text over 200,000 characters: the mirror cuts it (`MIRROR_MAX_PART_CHARS`); the log keeps
+ *   the whole text. A text over 256 kB is a preview in the row (F3, `session-log-blobs.ts`):
+ *   this read puts the whole text back from its object, after the transaction.
  * Paging assumes `seq` order is the mirror order (`created`, then id): the OpenCode adapter issues
  * seqs in `fromV1`'s order, which is that order. A cursor that names a message anchors on the
  * `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the column
  * then holds the ingest time). The two agree for every row with a creation time.
+ *
+ * The log also cannot answer when it is behind the mirror: the mirror's content time is more than
+ * `STALE_LOG_MS` after the log's last write (the newest message or session write). The content time
+ * is the newest `session_transcript_messages.captured_at`, which moves only when a row's info or
+ * parts change. It is not `session_transcript_mirrors.captured_at`: that moves on every capture, and
+ * the tail capture at stop changes nothing, so it would send every stopped session to the mirror.
+ * The capture keeps the mirror current without a journal, so a log that stopped (the daemon's journal
+ * off for a boot, a daemon build without one) must not freeze what a reader sees. A healthy journal
+ * writes within seconds of the capture, so the margin is far above the normal gap. Caveat: a rewind
+ * the mirror applied with no new rows deletes rows and does not move that max; the next turn's rows do.
+ * The read warns once per session per process, and never again for that session: a second stale
+ * episode in one process is silent.
  *
  * `readSessionLogPage` answers `'unknown_thread'` for a `thread` the session does not have.
  */
@@ -33,9 +48,10 @@ import {
   type V1Row,
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
-import { projects, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
+import { projects, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTranscriptMessages } from '@kortix/db';
 import { and, asc, desc, eq, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import {
@@ -44,12 +60,17 @@ import {
   UnknownTranscriptCursorError,
   type MirrorSnapshot,
 } from './lib/session-transcript-mirror';
+import { rehydrateLargeTexts } from './session-log-blobs';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type J = Record<string, unknown>;
 type ThreadRow = { threadId: string; parentThreadId: string | null; record: J };
 
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
+/** The mirror may lead the log by this long before the v1 window serves the mirror (see the module header). */
+const STALE_LOG_MS = 60_000;
+// replica-local: sessions already warned about by this process; a restart warns again.
+const warnedStale = new Set<string>();
 /** Where `fromV1` keeps a superseded row's runtime session id. */
 const RUNTIME_PATH = `$.ext.* ? (@.version == "${KORTIX_TRANSCRIPT_SCHEMA}").data.runtime_session_id`;
 
@@ -163,15 +184,26 @@ export async function readLogTranscriptWindow(input: {
     .select({
       record: sessionLogs.record,
       updatedAt: sessionLogs.updatedAt,
+      projectId: sessionLogs.projectId,
       metadata: projects.metadata,
-      accountId: projects.accountId,
+      mirrorMs: sql<number | null>`(SELECT extract(epoch from max(${sessionTranscriptMessages.capturedAt})) * 1000 FROM ${sessionTranscriptMessages} WHERE ${sessionTranscriptMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
+      lastWriteMs: sql<number | null>`(SELECT extract(epoch from max(${sessionLogMessages.updatedAt})) * 1000 FROM ${sessionLogMessages} WHERE ${sessionLogMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
       threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})`,
     })
     .from(sessionLogs)
     .innerJoin(projects, eq(projects.projectId, sessionLogs.projectId))
     .where(eq(sessionLogs.sessionId, input.sessionId))
     .limit(1);
-  if (!log || !resolveFeatureFlag(log.metadata, 'session_log', log.accountId)) return null;
+  if (!log || !resolveFeatureFlag(log.metadata, 'session_log')) return null;
+  const lastWriteMs = Math.max(new Date(log.updatedAt).getTime(), log.lastWriteMs ?? 0);
+  if (log.mirrorMs !== null && log.mirrorMs - lastWriteMs > STALE_LOG_MS) {
+    if (!warnedStale.has(input.sessionId)) {
+      if (warnedStale.size > 10_000) warnedStale.clear();
+      warnedStale.add(input.sessionId);
+      logger.warn('[session-log] log is behind the mirror; serving the mirror', { sessionId: input.sessionId, behindMs: Math.round(log.mirrorMs - lastWriteMs) });
+    }
+    return null;
+  }
   const threads = log.threads ?? [];
   const root = rootOf(threads);
   const stated = v1Ext(log.record)?.data;
@@ -182,8 +214,11 @@ export async function readLogTranscriptWindow(input: {
   // Decided before BEGIN: a pi session (no v1 ext) costs one query, not a transaction.
   if (!target || !thread || !v1Ext(thread.record)) return null;
 
-  return db.transaction(async (tx) => {
+  const toRows = (records: J[]) =>
+    toV1({ ...(log.record as object), session_id: input.sessionId, threads: [{ ...thread.record, messages: records }] } as unknown as SessionLog)
+      .rows.filter((r) => r.runtime_session_id === target);
 
+  const read = await db.transaction(async (tx) => {
     // The rows `toV1` gives runtime session `target`. Only a superseded (out-of-context) message
     // carries its own runtime id; every other message has its thread's.
     const nativeIsTarget = nativeOf(thread) === target;
@@ -207,12 +242,7 @@ export async function readLogTranscriptWindow(input: {
       })
       .from(sessionLogMessages)
       .where(scope);
-    const total = totals?.total ?? 0;
-    if (total === 0) return null;
-
-    const toRows = (records: J[]) =>
-      toV1({ ...(log.record as object), session_id: input.sessionId, threads: [{ ...thread.record, messages: records }] } as unknown as SessionLog)
-        .rows.filter((r) => r.runtime_session_id === target);
+    if (!totals?.total) return null;
 
     const anchor = input.before ? await anchorOf(tx, scope, input.before, toRows) : null;
     const window = await tx
@@ -227,24 +257,29 @@ export async function readLogTranscriptWindow(input: {
       .orderBy(desc(sessionLogMessages.seq))
       // Every message is at least one row; an inclusive anchor drops its own summary row.
       .limit(input.limit + 1 + (anchor?.inclusive ? 1 : 0));
-
-    const rows = toRows(window.map((w) => w.record).reverse())
-      .filter((r) => anchor === null || keyCompare(keyOf(r), anchor.key) < 0)
-      .sort((a, b) => keyCompare(keyOf(b), keyOf(a)));
-    const kept = rows.slice(0, input.limit);
-    return {
-      opencode_session_id: target,
-      root_opencode_session_id: rootId,
-      captured_at: new Date(Math.max(new Date(log.updatedAt).getTime(), Math.floor(totals?.writtenMs ?? 0))).toISOString(),
-      total,
-      head_complete: true,
-      next_cursor: rows.length > input.limit ? idOf(kept.at(-1)!) : null,
-      messages: kept.reverse().map((r) => ({
-        info: r.info as unknown as J,
-        parts: restoreStrippedToolParts((Array.isArray(r.parts) ? r.parts : []) as unknown as J[]),
-      })),
-    };
+    return { totals, anchor, records: window.map((w) => w.record).reverse() };
   }, READ_ONLY);
+  if (!read) return null;
+  const { totals, anchor } = read;
+
+  // F3: a text over 256 kB is a preview in the row; v1 bodies carry the whole text. Read after COMMIT, off the connection.
+  const records = await rehydrateLargeTexts({ projectId: log.projectId, sessionId: input.sessionId }, read.records);
+  const rows = toRows(records)
+    .filter((r) => anchor === null || keyCompare(keyOf(r), anchor.key) < 0)
+    .sort((a, b) => keyCompare(keyOf(b), keyOf(a)));
+  const kept = rows.slice(0, input.limit);
+  return {
+    opencode_session_id: target,
+    root_opencode_session_id: rootId,
+    captured_at: new Date(Math.max(new Date(log.updatedAt).getTime(), Math.floor(totals.writtenMs ?? 0))).toISOString(),
+    total: totals.total,
+    head_complete: true,
+    next_cursor: rows.length > input.limit ? idOf(kept.at(-1)!) : null,
+    messages: kept.reverse().map((r) => ({
+      info: r.info as unknown as J,
+      parts: restoreStrippedToolParts((Array.isArray(r.parts) ? r.parts : []) as unknown as J[]),
+    })),
+  };
 }
 
 type Anchor = { seq: number; inclusive: boolean; key: { at: number; id: string } };

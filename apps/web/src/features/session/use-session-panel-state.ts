@@ -1,6 +1,5 @@
 'use client';
 
-import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
@@ -10,7 +9,7 @@ import {
 } from '@/stores/session-browser-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
+import { useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
 import { useEffect } from 'react';
 
 export function useSessionPanelView({
@@ -26,10 +25,8 @@ export function useSessionPanelView({
   transient: boolean;
   booting: boolean;
 }) {
-  // Tool parts and message info only: the action panel and the deliverable
-  // detector never read streamed text, so a text delta must not re-render the
-  // layout (and every panel consumer under its provider) once per ~16 ms batch.
-  const { data: messages } = useRuntimeMessages(sessionId, { ignoreStreamedText: true });
+  // The transcript is not read here: `SessionPanelProvider` reads the session
+  // log itself, so a streamed delta never re-renders the layout.
 
   const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
   const panelView = normalizeSessionPanelLayoutView(storedPanelView);
@@ -60,10 +57,6 @@ export function useSessionPanelView({
       ? working.state === 'working'
       : sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  // W1/W9 — announce finished deliverables and blocked-on-you states while the
-  // panel is closed. Headless: writes the ready chip; the header renders it.
-  useDeliverableReadiness(sessionId, messages, isSessionBusy);
-
   // Easy mode is only ever the card home — the other views are engineer
   // surfaces reached through the (hidden) tab strip. Force the view and skip
   // their bodies entirely; `session-browser-store`'s `viewBySession` stays
@@ -80,7 +73,7 @@ export function useSessionPanelView({
   });
   const auditPendingCount = (auditData?.actions ?? []).filter(isPendingAction).length;
 
-  return { messages, isSessionBusy, isEasy, effectiveView, auditPendingCount, togglePanelMode };
+  return { isSessionBusy, isEasy, effectiveView, auditPendingCount, togglePanelMode };
 }
 
 export function useSessionPanelSessionSync({

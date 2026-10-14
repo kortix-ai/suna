@@ -29,17 +29,17 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { SessionTurnMeta } from '@/features/session/session-turn-meta';
 import { sessionTurnDurationMs, sessionTurnEndedAt } from '@/features/session/session-turn-meta-rows';
 import { ToolPartRenderer, TurnLiveContext } from '@/features/session/tool/tool-renderers';
-import { ActivityBurst, burstSteps } from '@/features/session/turn/activity-burst';
+import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import { TurnWorkAccordion } from '@/features/session/turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker } from '@/features/session/turn/compaction-card';
-import { compactionTurnInfo } from '@/features/session/turn/compaction-state';
+import { compactionTurnInfo } from '@kortix/sdk';
 import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
   type QueuedPromptState,
 } from '@/features/session/turn/queued-prompt-bubbles';
 import { ShowGroupRenderer } from '@/features/session/tool/show-group-renderer';
-import { segmentTurn } from '@/features/session/turn/segment-turn';
+import { segmentTurn } from '@kortix/sdk';
 import { ThrottledMarkdown } from '@/features/session/turn/throttled-markdown';
 import { UserMessage } from '@/features/session/turn/user-message';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
@@ -66,7 +66,7 @@ import {
   shouldShowToolPart,
   unwrapError,
 } from '@/ui';
-import { groupShowSegments, isAbortError, splitTurnWork, isCompactionPart, isPatchPart, isQuestionTool, isSnapshotPart, toolKind } from '@kortix/sdk';
+import { groupShowSegments, isAbortError, splitTurnWork, isCompactionPart, isPatchPart, isQuestionTool, isSnapshotPart, sessionLogBurstSteps, sessionLogOfV1Rows, sessionLogTurns, toolCallBlock, toolKind, type SessionLogBlock, type ToolCallBlock } from '@kortix/sdk';
 
 const NOOP_PERMISSION_REPLY = async () => {};
 
@@ -120,6 +120,13 @@ export function FixtureTurn({
 }: FixtureTurnProps) {
   const [copied, setCopied] = useState(false);
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
+  // The turn's blocks by id (the `fromV1` view the transcript reads): a burst
+  // and a show group render blocks.
+  const { blockOf, logTurn } = useMemo(() => {
+    const thread = sessionLogOfV1Rows(sessionId, sessionId, [turn.userMessage, ...turn.assistantMessages]).threads[0]!;
+    const byId = new Map<string, SessionLogBlock>(thread.messages.flatMap((m) => m.blocks.map((b) => [b.id, b] as const)));
+    return { blockOf: (part: { id: string }) => byId.get(part.id)!, logTurn: sessionLogTurns(thread)[0]! };
+  }, [turn, sessionId]);
   const hasSteps = useMemo(
     () =>
       allParts.some(({ part }) => {
@@ -222,7 +229,7 @@ export function FixtureTurn({
       return (
         <ActivityBurst
           key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
-          parts={segment.parts}
+          blocks={segment.parts.map(blockOf)}
           sessionId={sessionId}
           working={working}
           isTrailing={segment === segments[segments.length - 1]}
@@ -234,9 +241,9 @@ export function FixtureTurn({
       const visible = segment.parts.filter(shouldShowToolPart);
       if (visible.length === 0) return null;
       return visible.length === 1 ? (
-        <ToolPartRenderer key={visible[0].id} part={visible[0]} sessionId={sessionId} />
+        <ToolPartRenderer key={visible[0].id} call={toolCallBlock(visible[0])} sessionId={sessionId} />
       ) : (
-        <ShowGroupRenderer key={visible[0].id} parts={visible} sessionId={sessionId} />
+        <ShowGroupRenderer key={visible[0].id} calls={visible.map((p) => blockOf(p) as ToolCallBlock)} sessionId={sessionId} />
       );
     }
     if (segment.kind === 'standalone') {
@@ -244,7 +251,7 @@ export function FixtureTurn({
       return (
         <ToolPartRenderer
           key={segment.part.id}
-          part={segment.part}
+          call={toolCallBlock(segment.part)}
           sessionId={sessionId}
           permission={getPermissionForTool(permissions, segment.part.callID)}
           onPermissionReply={NOOP_PERMISSION_REPLY}
@@ -267,7 +274,7 @@ export function FixtureTurn({
     ? null
     : splitTurnWork(
         segments.filter((segment) =>
-          segment.kind === 'burst' ? burstSteps(segment.parts).length > 0 : renderSegment(segment) !== null,
+          segment.kind === 'burst' ? sessionLogBurstSteps(segment.parts.map(blockOf)).length > 0 : renderSegment(segment) !== null,
         ),
         { working },
       );
@@ -306,7 +313,7 @@ export function FixtureTurn({
         className={cn('duration-slow transition-opacity', queueState && QUEUED_BUBBLE_OPACITY_CLASS)}
       >
         <UserMessage
-          message={turn.userMessage}
+          message={sessionLogOfV1Rows(sessionId, sessionId, [turn.userMessage]).threads[0]!.messages[0]!}
           agentNames={agentNames}
           sessionId={sessionId}
           ownsPlan={false}
@@ -323,7 +330,7 @@ export function FixtureTurn({
                 text stay below it. */}
             {split
               ? [
-                  <TurnWorkAccordion key="turn-work" durationMs={sessionTurnDurationMs(turn)}>
+                  <TurnWorkAccordion key="turn-work" durationMs={sessionTurnDurationMs(logTurn)}>
                     {split.work.map(renderSegment)}
                   </TurnWorkAccordion>,
                   ...split.hoisted.map(renderSegment),
@@ -379,8 +386,8 @@ export function FixtureTurn({
             </Button>
           ) : null}
           <SessionTurnMeta
-            endedAt={sessionTurnEndedAt(turn)}
-            durationMs={sessionTurnDurationMs(turn)}
+            endedAt={sessionTurnEndedAt(logTurn)}
+            durationMs={sessionTurnDurationMs(logTurn)}
             cost={costInfo}
             className="flex items-center justify-center"
           />

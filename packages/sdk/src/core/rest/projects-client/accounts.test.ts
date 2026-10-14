@@ -2,7 +2,12 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { configureKortix } from '../../http/config';
-import { listMyAccountInvites, validateToken } from './accounts';
+import {
+  acceptAccountInviteAndLand,
+  accountInviteLanding,
+  listMyAccountInvites,
+  validateToken,
+} from './accounts';
 
 let calls: { url: string; method: string }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -86,4 +91,73 @@ test('listMyAccountInvites hits GET /account-invites and returns the invites arr
   expect(invites).toHaveLength(1);
   expect(invites[0]?.account_name).toBe('Acme');
   expect(invites[0]?.projects[0]?.name).toBe('Launch');
+});
+
+/**
+ * Where an accepted invite lands (KRTX-1731): every host (web invite page,
+ * selector Join, sidebar Join, mobile) reads this one rule. The plain door
+ * reopened the project the browser remembered, in the account the user came from.
+ */
+test('accountInviteLanding: the first project the accept granted', () => {
+  const accepted = {
+    account_id: 'acc-1',
+    bootstrap_grants_applied: [
+      { project_id: 'p-1', role: 'member' },
+      { project_id: 'p-2', role: 'member' },
+    ],
+  };
+  expect(accountInviteLanding(accepted)).toEqual({ kind: 'project', projectId: 'p-1', accountId: 'acc-1' });
+});
+
+test('accountInviteLanding: without a grant, the first project the invite names', () => {
+  // An admin invite (grants apply to members only), or an invite accepted before.
+  const invite = { projects: [{ project_id: 'p-9', name: 'Launch', role: 'member' }] };
+  expect(accountInviteLanding({ account_id: 'acc-1', bootstrap_grants_applied: [] }, invite)).toEqual({
+    kind: 'project',
+    projectId: 'p-9',
+    accountId: 'acc-1',
+  });
+  expect(accountInviteLanding({ account_id: 'acc-1' }, invite)).toEqual({
+    kind: 'project',
+    projectId: 'p-9',
+    accountId: 'acc-1',
+  });
+});
+
+test('accountInviteLanding: a granted project wins over the one the invite names', () => {
+  const accepted = { account_id: 'acc-1', bootstrap_grants_applied: [{ project_id: 'p-1', role: 'member' }] };
+  const invite = { projects: [{ project_id: 'p-9', name: 'Other', role: 'member' }] };
+  expect(accountInviteLanding(accepted, invite)).toEqual({ kind: 'project', projectId: 'p-1', accountId: 'acc-1' });
+});
+
+test('accountInviteLanding: a workspace invite lands in the joined account', () => {
+  expect(accountInviteLanding({ account_id: 'acc-1', bootstrap_grants_applied: [] }, { projects: [] })).toEqual({
+    kind: 'account',
+    accountId: 'acc-1',
+  });
+  expect(accountInviteLanding({ account_id: 'acc-1' }, null)).toEqual({ kind: 'account', accountId: 'acc-1' });
+});
+
+test('acceptAccountInviteAndLand accepts with POST /account-invites/:id/accept and returns the landing', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      account_id: 'acc-1',
+      account_role: 'member',
+      already_accepted: false,
+      bootstrap_grants_applied: [{ project_id: 'p-1', role: 'member' }],
+    },
+  };
+  const result = await acceptAccountInviteAndLand('inv-1');
+  expect(last().url).toMatch(/\/account-invites\/inv-1\/accept$/);
+  expect(last().method).toBe('POST');
+  expect(result.accepted.account_role).toBe('member');
+  expect(result.landing).toEqual({ kind: 'project', projectId: 'p-1', accountId: 'acc-1' });
+});
+
+test('acceptAccountInviteAndLand falls back to the projects of the invite it is given', async () => {
+  nextResponse = { status: 200, body: { account_id: 'acc-1', account_role: 'admin', bootstrap_grants_applied: [] } };
+  const invite = { projects: [{ project_id: 'p-7', name: 'Ops', role: 'manager' }] };
+  const result = await acceptAccountInviteAndLand('inv-2', invite);
+  expect(result.landing).toEqual({ kind: 'project', projectId: 'p-7', accountId: 'acc-1' });
 });

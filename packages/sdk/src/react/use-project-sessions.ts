@@ -124,17 +124,21 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
     },
   });
 
-  const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage);
-  const { isFetching, fetchNextPage } = query;
+  // A failed fetch ends the scan: Load more (or a refetch) is the retry.
+  const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;
+  const { isFetching, data, dataUpdatedAt, fetchNextPage } = query;
   useEffect(() => {
+    // `data` and `dataUpdatedAt` run this on each answer: a fast page can land
+    // before React renders its fetch, and `isFetching` then reads false twice.
     if (isScanning && !isFetching) void fetchNextPage();
-  }, [isScanning, isFetching, fetchNextPage]);
+  }, [isScanning, isFetching, data, dataUpdatedAt, fetchNextPage]);
 
   return {
     ...query,
     /**
      * True while every page so far was empty and the list reads the next one
-     * on its own. Render it as loading, never as "no sessions".
+     * on its own. Render it as loading, never as "no sessions". A failed
+     * fetch ends it: offer Load more, which is the retry.
      */
     isScanning,
     /**

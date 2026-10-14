@@ -31,9 +31,7 @@ export function featureDisabledBody(key: FeatureFlagKey): {
   const def = featureFlagDef(key);
   return {
     error: def?.derivedFrom
-      ? `${def.name} is not enabled for this organization.`
-      : def?.scope === 'organization'
-      ? `${def.name} is not enabled for this organization. An organization admin can enable it in Settings → Feature flags.`
+      ? `${def.name} is not enabled for this project. Turn on Volumes in Settings → Feature flags.`
       : def?.catalogHidden
       ? `${def.name} is not enabled for this project. Contact Kortix to enable it.`
       : `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,

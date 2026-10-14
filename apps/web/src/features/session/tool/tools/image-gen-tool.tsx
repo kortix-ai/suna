@@ -24,10 +24,10 @@ const TITLE_BY_ACTION: Record<string, string> = {
   remove_bg: 'Remove Background',
 };
 
-export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ImageGenTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const prompt = input.prompt as string | undefined;
   const action = input.action as string | undefined;
 

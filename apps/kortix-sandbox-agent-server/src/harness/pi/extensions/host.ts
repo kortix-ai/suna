@@ -146,6 +146,9 @@ class ScopedSettingsStorage {
  * follow the compiled agent config). Every skill read in pi — the prompt's
  * skill list and `/skill:` expansion — goes through `getSkills()`.
  */
+/** Holds no project resources: discovery for a config with no tree. */
+const NO_PROJECT_DIR = '/nonexistent/kortix-no-project'
+
 class KortixResourceLoader extends DefaultResourceLoader {
   constructor(
     options: ConstructorParameters<typeof DefaultResourceLoader>[0],
@@ -172,6 +175,14 @@ export interface PiSessionInput {
   agentDir: string
   projectConfigDir?: string | null
   projectPackages: readonly PackageSource[]
+  /** Where a `./` entry of `projectPackages` resolves: the release root while a release runs, else `cwd`. */
+  packageRoot?: string
+  /**
+   * Where pi discovers project-local resources (`.pi/{extensions,skills,prompts}`,
+   * `.agents/skills`): the running config's root. Null: none (the image default).
+   * Never `cwd` while a release runs: the workspace is not config.
+   */
+  discoveryRoot: string | null
   /** The unpacked node_modules fallback (`<root>/node_modules/<name>`) for npm entries in `projectPackages`, or null. */
   projectBundleRoot: string | null
   /** Pre-built project packages (prebuilt.ts): their folders for skills/prompts, and their npm names. */
@@ -297,7 +308,7 @@ export function resolveProjectPackages(
 
 export async function createPiSession(input: PiSessionInput): Promise<PiSession> {
   const globalSettings = readSettings(join(input.agentDir, 'settings.json'))
-  const project = resolveProjectPackages(input.projectPackages, { cwd: input.cwd, bundleRoot: input.projectBundleRoot })
+  const project = resolveProjectPackages(input.projectPackages, { cwd: input.packageRoot ?? input.cwd, bundleRoot: input.projectBundleRoot })
   const projectSettings = input.projectConfigDir ? readSettings(join(input.projectConfigDir, 'settings.json')) : {}
   // The repository supplies pi-native settings as-is; explicit agent packages
   // from the manifest remain additive and are already installed by the API.
@@ -348,6 +359,10 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
     input.systemPrompt,
     input.skillAllowed,
   )
+  // pi discovers project-local resources from its package manager's cwd, which
+  // is the loader's (the workspace). Only discovery moves to the running config:
+  // extensions keep the workspace as their cwd.
+  ;(loader as unknown as { packageManager: { cwd: string } }).packageManager.cwd = input.discoveryRoot ?? NO_PROJECT_DIR
   await loader.reload()
 
   const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })

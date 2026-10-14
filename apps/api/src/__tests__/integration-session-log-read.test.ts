@@ -8,16 +8,24 @@
  * Every v1 read (`transcript?shape=sync` paged to the end, the child read,
  * `shape=compact`, the open bundle, the public share) must answer the same body
  * with the project flag `session_log` off (the mirror) and on (the log). The one
- * field that differs is `captured_at`.
+ * field that differs is `captured_at`. One tool output is 150,000 three-byte
+ * characters (450 kB): the mirror keeps it (under 200,000 characters), the log
+ * stores it by reference (F3, P2.3), and the v1 reads put it back. The Storage
+ * bucket is `helpers/fake-session-storage.ts`.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { fromV1, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import { accountMembers, projectSessions, projects, sessionLogs, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
+import { fakeSessionStorage } from './helpers/fake-session-storage';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
+
+const bucket = fakeSessionStorage();
+const realSupabase = await import('../shared/supabase');
+mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
@@ -28,6 +36,8 @@ const OWNER = crypto.randomUUID();
 const ROOT = 'ses_logreadroot000000000001';
 const CHILD = 'ses_logreadchild00000000001';
 const REV = 1_791_681_474_704_000;
+/** Over 256 kB as UTF-8, under the mirror's 200,000-character cut. */
+const WIDE_OUTPUT = '€'.repeat(150_000);
 
 let project: SeededProject;
 let session = '';
@@ -45,6 +55,8 @@ const setFlag = (on: boolean) =>
 /** Store one synthetic session in the mirror (the capture) and in the log (the ingest of fromV1 of the same rows). */
 async function storeBothWays(sessionId: string, turns: number, options: { nativeThreads?: boolean } = {}) {
   const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns });
+  const bash = root.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'bash' && (p.state as { status: string }).status === 'completed')!;
+  (bash.state as { output: string }).output = WIDE_OUTPUT;
   await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, sessionId));
   const captured = await captureSessionTranscriptMirror(sessionId, {
     readMessages: async () => ({ opencodeSessionId: ROOT, payload: root, headComplete: true, complete: true, children: [{ opencodeSessionId: CHILD, payload: child, complete: true }] }),
@@ -67,6 +79,10 @@ async function storeBothWays(sessionId: string, turns: number, options: { native
   };
   const outcome = await ingestSessionLogJournal({ sessionId, projectId: project.project_id, accountId: project.account_id }, batch);
   expect(outcome.status).toBe(200);
+  // F3: the log row holds a preview and a reference; the object holds the output.
+  const [offloaded] = await db.execute<{ n: number }>(sql`select count(*)::int as n from kortix.session_log_messages where session_id = ${sessionId} and record::text like '%kortix-attachment://%'`);
+  expect(offloaded!.n).toBe(1);
+  expect([...bucket.objects.keys()].filter((k) => k.startsWith(`${project.project_id}/${sessionId}/`))).toHaveLength(1);
   return { rows: rows.length, messages: batch.puts.length };
 }
 
@@ -141,6 +157,7 @@ describe('the v1 reads answer the same body from the mirror (flag off) and from 
     expect(off.pages.length).toBe(4); // 140+ rows in windows of 40
     expect((off.pages[0] as { total: number }).total).toBe(stored.rows - 2); // the root read leaves out the child's 2 rows
     expect(on.pages).toEqual(off.pages);
+    expect(JSON.stringify(on.pages)).toContain(WIDE_OUTPUT);
     expect(on.child).toEqual(off.child);
     expect((on.child as { message_count: number }).message_count).toBe(2);
     expect(on.compact).toEqual(off.compact);
@@ -230,8 +247,27 @@ describe('GET .../log', () => {
     await setFlag(true);
   });
 
-  test('refuses the sandbox credential, a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
-    expect((await get(`${base()}/log`, sandboxToken)).status).toBe(403);
+  test('a session-bound token reads the log wherever the v1 transcript route serves it, and nowhere else', async () => {
+    const other = await seedProject('session-log-read-other', { accountId: project.account_id });
+    const otherSession = await seedSession(other, OWNER);
+    try {
+      const statuses = async (path: string) => [
+        (await get(`${path}/transcript?shape=sync`, sandboxToken)).status,
+        (await get(`${path}/log`, sandboxToken)).status,
+      ];
+      // (a) its own session, (b) a sibling session of its project, (c) a session of another project.
+      expect(await statuses(base())).toEqual([200, 200]);
+      expect(await statuses(base(nativeSession))).toEqual([200, 200]);
+      expect(await statuses(`/v1/projects/${other.project_id}/sessions/${otherSession}`)).toEqual([403, 403]);
+      const own = (await (await get(`${base()}/log?limit=500`, sandboxToken)).json()) as Page;
+      const owner = (await (await get(`${base()}/log?limit=500`)).json()) as Page;
+      expect(own).toEqual(owner);
+    } finally {
+      await db.delete(projects).where(eq(projects.projectId, other.project_id));
+    }
+  });
+
+  test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);
     expect((await get(`${base()}/log?thread=ses_not_a_thread`)).status).toBe(404);

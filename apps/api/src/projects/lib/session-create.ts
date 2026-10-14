@@ -759,7 +759,6 @@ async function resolveSessionSandboxPlacement(params: {
   agentName: string;
   loadedAgents: LoadedProjectAgents;
   platformMetaAgent: boolean;
-  accountId: string;
 }): Promise<
   SessionCreateStep<{
     sandboxSlug: string;
@@ -768,7 +767,7 @@ async function resolveSessionSandboxPlacement(params: {
     persistentMachine: boolean;
   }>
 > {
-  const { project, body, agentName, loadedAgents, platformMetaAgent, accountId } = params;
+  const { project, body, agentName, loadedAgents, platformMetaAgent } = params;
   // Explicit request wins. The selected agent environment is next. The
   // project default and platform default remain the final fallbacks.
   const projectDefaultSandboxSlug = normalizeString(
@@ -822,10 +821,8 @@ async function resolveSessionSandboxPlacement(params: {
   const providerLocked = sessionProviderIsLocked(picked);
   // A persistent machine boots from a Platinum root volume: it takes Platinum
   // unless the request or the project pinned another provider.
-  // Only for an organization with Volumes on; otherwise the option does not exist.
-  const persistentMachine =
-    body.persistent_machine === true &&
-    (await import('../../platform/services/boot-mode-setting')).volumesEnabledFor(accountId);
+  // Only for a project with Volumes on; otherwise the option does not exist.
+  const persistentMachine = body.persistent_machine === true && resolveFeatureFlag(project.metadata, 'volumes');
   if (persistentMachine && platformMetaAgent) {
     return {
       error: { status: 400, body: { error: 'The meta agent cannot run on a persistent machine', code: 'PERSISTENT_MACHINE_UNSUPPORTED' } },
@@ -1679,7 +1676,6 @@ export async function createProjectSession(input: {
     agentName,
     loadedAgents,
     platformMetaAgent,
-    accountId,
   });
   if (placement.error) return { error: placement.error };
   let { sandboxSlug } = placement;

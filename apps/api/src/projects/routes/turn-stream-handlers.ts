@@ -17,9 +17,12 @@ import {
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { turnEndNotificationContext } from '../lib/notification-recipients';
+import { clearOpenQuestions } from '../lib/pending-questions';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
+import { notifyTurnEnded } from '../lib/config-convergence-triggers';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
@@ -194,7 +197,10 @@ export async function beginTurn(
     runtimeSessionId: opencodeSessionId,
     messageId,
   });
-  return c.json({ ok: outcome === 'adopted' || outcome === 'open_turn_exists', outcome });
+  return c.json({
+    ok: outcome === 'adopted' || outcome === 'identity_bound' || outcome === 'open_turn_exists',
+    outcome,
+  });
 }
 
 /** The durable half of a turn end: settle the ledger and attach a bare cause. */
@@ -342,6 +348,11 @@ async function promoteAfterTurnEnd(
             error: error instanceof Error ? error.message : String(error),
           }),
         );
+      } else {
+        // Nothing was promoted, so the box is idle: converge its config now,
+        // while nobody waits, and the next turn runs it. A promoted prompt
+        // starts a turn right away; the queue's last turn end converges instead.
+        notifyTurnEnded(sessionId);
       }
     }
     console.info('[turn-stream] terminal turn settlement', {
@@ -488,6 +499,19 @@ export async function settleTurnEnd(
   ctx: TurnEndContext,
 ): Promise<Response> {
   const settled = await settleTurnLedger(ctx.sessionId, body, ctx.childSession);
+  // THE TURN ENDED, SO NOTHING WAITS ON ITS QUESTION. Only an end that closed
+  // the turn in this call: a retrying error has not ended it, and the reaper's
+  // `TurnAwaitingInput` end (and the late frame of that turn, `already_closed`)
+  // parks a question that still waits for its answer. Before the promotion, so
+  // a question the next turn asks is never the one closed.
+  if (settled.turnCompletion.outcome === 'closed') {
+    await clearOpenQuestions(ctx.sessionId).catch((err) =>
+      logger.warn('[turn-stream] open questions not closed at turn end', {
+        sessionId: ctx.sessionId,
+        err: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);

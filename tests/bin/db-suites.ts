@@ -84,7 +84,7 @@ async function dropLeftoverDatabases(adminUrl: string, currentTemplate: string):
     const { rows } = await admin.query<{ datname: string; last_used: string | null }>(
       `select datname, shobj_description(oid, 'pg_database') as last_used
          from pg_database where left(datname, length($1)) = $1`,
-      [`${SUITE_DATABASE_PREFIX}%`],
+      [SUITE_DATABASE_PREFIX],
     );
     for (const { datname, last_used } of rows) {
       const suitePid = suiteDatabaseOwnerPid(datname);

@@ -53,6 +53,7 @@ function deps(roster: DeclaredAgentRoster = ROSTER): DesiredReleaseDeps {
       return releaseFor(variant);
     },
     resolveBase: async () => TIP,
+    readBase: async () => TIP,
     loadRoster: async () => roster,
     invalidate: () => {},
   };

@@ -99,7 +99,7 @@ import {
   runtimeSessionsOf,
   sessionParentId,
 } from '@kortix/sdk';
-import { KortixProjectProvider, useNotificationInbox } from '@kortix/sdk/react';
+import { KortixProjectProvider, useNotificationInbox, useSessionsNeedingInput } from '@kortix/sdk/react';
 import { NOTIFICATION_INBOX_LIMIT } from '@/lib/notifications/inbox';
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
@@ -265,8 +265,14 @@ export function ProjectScreen() {
     () => countReviewItemsBySegment(reviewItems.data ?? []).needs_you,
     [reviewItems.data]
   );
-  // The same items per originating session: the drawer's Needs you group.
-  const needsYouSessions = useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
+  // The same items per originating session, plus the sessions whose agent
+  // waits on a question (GET needs-input, polled every 30 s while this screen
+  // is focused; KRTX-1739): the drawer's Needs you group.
+  const needsInput = useSessionsNeedingInput(projectId ?? '', { enabled: isFocused });
+  const needsYouSessions = useMemo(
+    () => needsYouBySession(reviewItems.data ?? [], needsInput.data),
+    [reviewItems.data, needsInput.data]
+  );
 
   // The caller's notifications across every project (KRTX-1742): the drawer's
   // Notifications count. The Notifications page reads the same query (same

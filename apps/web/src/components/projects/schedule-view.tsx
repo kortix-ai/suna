@@ -52,8 +52,6 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import {
   type ProjectTrigger,
@@ -72,7 +70,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { EventAppsStrip } from './schedule/event-apps-strip';
 import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
@@ -100,6 +98,7 @@ import {
 } from './schedule/trigger-filter';
 import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { useEventTitles } from './schedule/use-event-titles';
+import { useSlashFocus } from '@/hooks/utils';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -174,21 +173,22 @@ export function TriggerPauseSwitch({
  * page's warning banner, which is real, actionable information; only the
  * control moved.
  *
- * **Access gate — deliberately NOT `canWrite`, on purpose, do not merge
- * them.** `ScheduleView` below computes a `canWrite` from
- * `PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE` for its own create button. This
- * control is the project-wide kill switch, and the route behind it
- * (`PATCH /projects/:id/triggers/activation`, `routes/triggers.ts`) asserts
- * `project.trigger.update` — a DIFFERENT leaf, independently grantable. So this
- * component probes that leaf directly instead of re-deriving it from a role
+ * **Access gate — the update control, not the create one.** `ScheduleView`
+ * below offers New trigger on `canCreate`. This control is the project-wide
+ * kill switch, and the route behind it (`PATCH /projects/:id/triggers/activation`,
+ * `routes/triggers.ts`) loads the project for write and asserts
+ * `project.trigger.update` — a DIFFERENT leaf, independently grantable. So it
+ * reads `canUpdate` from the same trigger controls (KRTX-1720), never a role
  * label, which is what it used to do (`effective_project_role === 'manager'`).
  *
  * Reads `qk.project.triggers(projectId)` with its OWN `useQuery` — the SAME
  * key `ScheduleView` queries below. React Query dedupes both calls into one
  * request and one cache write, so this switch and `ScheduleView`'s paused
  * banner can never disagree or double-fetch.
+ *
+ * Exported for `trigger-activation-menu.test.tsx`, which renders it per role.
  */
-function TriggerActivationMenu({ projectId }: { projectId: string }) {
+export function TriggerActivationMenu({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const queryKey = qk.project.triggers(projectId);
@@ -199,10 +199,10 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
-  // The exact leaf the activation route asserts — see this component's header
-  // comment for why this is its OWN probe rather than `ScheduleView`'s create gate.
-  const canManage =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE).allowed === true;
+  // The leaves the activation route asserts (project.write +
+  // project.trigger.update) — see this component's header comment for why this
+  // is the update control rather than `ScheduleView`'s create gate.
+  const canManage = useTriggerControls(projectId).canUpdate;
 
   const mutation = useMutation({
     mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
@@ -388,6 +388,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       ),
     [triggersQuery.data],
   );
+  // The search only renders over a non-empty list; focus it once it does.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef, showContent && triggers.length > 0);
   const eventNames = useEventTitles(projectId, triggers, eventsOn, eventApps.data?.apps);
   const counts = useMemo(() => triggerCounts(triggers), [triggers]);
   const ofKind = useMemo(() => filterTriggers(triggers, filter), [triggers, filter]);
@@ -435,6 +438,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               <SearchIcon />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
+              ref={searchRef}
               placeholder={copy.searchPlaceholder}
               value={query}
               onChange={(e) => setQuery(e.target.value)}

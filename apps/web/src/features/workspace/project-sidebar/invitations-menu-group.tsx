@@ -9,12 +9,11 @@ import {
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import { joinDestination } from '@/features/workspace/project-selector/project-selector-model';
+import { inviteLandingPath } from '@/features/workspace/project-selector/project-selector-model';
 import { useMyInvites } from '@/hooks/account/use-my-invites';
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { acceptAccountInvite, type MyAccountInvite } from '@kortix/sdk';
+import { acceptAccountInviteAndLand, type MyAccountInvite } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -33,14 +32,16 @@ export function InvitationsMenuGroup() {
   const invites = invitesQuery.data ?? [];
 
   const join = useMutation({
-    mutationFn: (invite: MyAccountInvite) => acceptAccountInvite(invite.invite_id),
-    onSuccess: async (_result, invite) => {
+    mutationFn: (invite: MyAccountInvite) => acceptAccountInviteAndLand(invite.invite_id, invite),
+    onSuccess: async ({ landing }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.accounts.scope() }),
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
       ]);
-      setSelectedAccountId(invite.account_id);
-      router.push(joinDestination(invite) ?? PROJECT_LANDING_PATH);
+      setSelectedAccountId(landing.accountId);
+      // A workspace invite lands on the joined account's door; the plain door
+      // reopened the project this browser remembered (KRTX-1731).
+      router.push(inviteLandingPath(landing));
     },
     onError: (error: unknown) => {
       errorToast(error instanceof Error ? error.message : t('joinError'));

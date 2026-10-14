@@ -11,10 +11,12 @@
 # necessarily account-wide read. It is read-only (ReadOnlyAccess) and the
 # inline policy then subtracts the parts of "read" that are really data
 # exfiltration: secret values, parameter decryption, and KMS decrypt. Plan does
-# not need any of them — no drift-matrix root reads a secret at plan time, and
-# the state bucket is SSE-S3 (AES256), so state access does not touch KMS.
+# not need them — no drift-matrix root reads a secret at plan time. The one
+# exception is the two regional state keys: state objects are encrypted with
+# them (terraform-state-euw2.tf, terraform-state-use2.tf), so the role may
+# decrypt with those two keys, and only through S3.
 #
-# The job runs with -lock=false, so no DynamoDB write is required.
+# The job runs with -lock=false, so it writes no lock object.
 # ════════════════════════════════════════════════════════════════════════════
 
 resource "aws_iam_role" "gha_tf_plan" {
@@ -62,19 +64,54 @@ resource "aws_iam_role_policy" "gha_tf_plan_deny_secrets" {
   role = aws_iam_role.gha_tf_plan.id
   policy = jsonencode({
     Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DenySecretMaterial"
+        Effect = "Deny"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid         = "DenyDecryptExceptStateKeys"
+        Effect      = "Deny"
+        Action      = "kms:Decrypt"
+        NotResource = local.terraform_state_key_arns
+      },
+    ]
+  })
+}
+
+# ReadOnlyAccess has no kms:Decrypt, so reading a KMS-encrypted state object
+# needs this grant.
+resource "aws_iam_role_policy" "gha_tf_plan_read_state" {
+  name = "read-terraform-state"
+  role = aws_iam_role.gha_tf_plan.id
+  policy = jsonencode({
+    Version = "2012-10-17"
     Statement = [{
-      Sid    = "DenySecretMaterial"
-      Effect = "Deny"
-      Action = [
-        "secretsmanager:GetSecretValue",
-        "kms:Decrypt",
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath",
-      ]
-      Resource = "*"
+      Sid      = "DecryptStateThroughS3"
+      Effect   = "Allow"
+      Action   = "kms:Decrypt"
+      Resource = local.terraform_state_key_arns
+      Condition = {
+        StringEquals = {
+          "kms:ViaService" = ["s3.eu-west-2.amazonaws.com", "s3.us-east-2.amazonaws.com"]
+        }
+      }
     }]
   })
+}
+
+locals {
+  terraform_state_key_arns = [
+    aws_kms_key.terraform_state_euw2.arn,
+    aws_kms_key.terraform_state_use2.arn,
+  ]
 }
 
 output "gha_tf_plan_role_arn" {

@@ -366,6 +366,38 @@ class ReconcilerTest(unittest.TestCase):
         self.assertEqual(cloudwatch.delete_calls, [])
         self.assertEqual(len(cloudwatch.alarms), 4)
 
+    def test_deletes_its_own_alarms_for_a_load_balancer_that_is_gone(self):
+        lb = load_balancer("a", "app/a/a-id")
+        gone = load_balancer("gone", "app/gone/gone-id")
+        first_cloudwatch = FakeCloudWatch()
+        reconcile(
+            FakeElbv2([{"LoadBalancers": [lb, gone]}]), first_cloudwatch, self.topic
+        )
+        cloudwatch = FakeCloudWatch(first_cloudwatch.put_calls)
+
+        result = reconcile(FakeElbv2([{"LoadBalancers": [lb]}]), cloudwatch, self.topic)
+
+        # zero-healthy-hosts exists only in this Lambda, so the Lambda removes
+        # it. elb-5xx and unhealthy-hosts are Terraform resources: Terraform
+        # removes them with the load balancer, never the Lambda. The
+        # target-response-time name falls under RETIRED_ALARM_SUFFIXES.
+        self.assertEqual(
+            result["deleted_alarms"],
+            [
+                "kortix-alb-gone-target-response-time",
+                "kortix-alb-gone-zero-healthy-hosts",
+            ],
+        )
+        self.assertEqual(
+            sorted(
+                alarm["AlarmName"]
+                for alarm in cloudwatch.alarms
+                if alarm["AlarmName"].startswith("kortix-alb-gone-")
+            ),
+            ["kortix-alb-gone-elb-5xx", "kortix-alb-gone-unhealthy-hosts"],
+        )
+        self.assertEqual(result["updated_alarms"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

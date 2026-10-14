@@ -27,6 +27,33 @@ describe('startDestination', () => {
   test('no project anywhere and the upgrade screen seen: /new, never an empty list', () => {
     expect(startDestination({ kind: 'empty' }, true)).toEqual({ kind: 'new' });
   });
+
+  // KRTX-1731: a project invite stays pending until it is accepted (the
+  // account list claims only workspace invites), so the door opens it first —
+  // web `decideDoor` shows the selector for a pending invite.
+  const invites = [{ invite_id: 'inv-1' }, { invite_id: 'inv-2' }];
+
+  test('a pending invite opens before a project, the upgrade screen, or /new', () => {
+    expect(startDestination(project, true, invites)).toEqual({ kind: 'invite', inviteId: 'inv-1' });
+    expect(startDestination({ kind: 'empty' }, false, invites)).toEqual({ kind: 'invite', inviteId: 'inv-1' });
+    expect(startDestination({ kind: 'empty' }, true, invites)).toEqual({ kind: 'invite', inviteId: 'inv-1' });
+  });
+
+  test('an invite put off with Not now is passed over', () => {
+    expect(startDestination(project, true, invites, new Set(['inv-1']))).toEqual({
+      kind: 'invite',
+      inviteId: 'inv-2',
+    });
+    expect(startDestination(project, true, invites, new Set(['inv-1', 'inv-2']))).toEqual(project);
+    expect(startDestination({ kind: 'empty' }, true, invites, new Set(['inv-1', 'inv-2']))).toEqual({
+      kind: 'new',
+    });
+  });
+
+  test('no pending invite: the destination is unchanged', () => {
+    expect(startDestination(project, false, [])).toEqual(project);
+    expect(startDestination({ kind: 'empty' }, false, [])).toEqual({ kind: 'welcome' });
+  });
 });
 
 describe('onboardingAccountId', () => {

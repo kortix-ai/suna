@@ -20,12 +20,12 @@ import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function GrepTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const { enabled: navigationEnabled } = useToolNavigation();
   const { openFile, toDisplayPath } = useOcFileOpen();
   const directory =

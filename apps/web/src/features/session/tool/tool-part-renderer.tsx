@@ -20,15 +20,15 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { cn } from '@/lib/utils';
+import { partError, partStreamingInput } from '@/features/session/tool/shared/infrastructure-parts';
 import {
   PERMISSION_LABELS,
   type PermissionRequest,
   type QuestionRequest,
-  type ToolPart,
   getChildSessionId,
   shouldShowToolPart,
 } from '@/ui';
-import { toolKind } from '@kortix/sdk';
+import { sessionLogCallStatus, sessionLogOpenCall, toolKind, type ToolCallBlock } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -93,7 +93,12 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
 }
 
 interface ToolPartRendererProps {
-  part: ToolPart;
+  /**
+   * The session-log tool call. A caller that still holds a v1 part (a child
+   * session's rows) passes `toolCallBlock(part)`. A closure-rule block is read
+   * open (`sessionLogOpenCall`), so a dead call renders the same on v1 and v2.
+   */
+  call: ToolCallBlock;
   permission?: PermissionRequest;
   question?: QuestionRequest;
   onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
@@ -104,7 +109,7 @@ interface ToolPartRendererProps {
 }
 
 function ToolPartRendererImpl({
-  part,
+  call: given,
   sessionId,
   permission,
   question,
@@ -115,17 +120,20 @@ function ToolPartRendererImpl({
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // One open block per call object (`sessionLogOpenCall` caches it), so the memos
+  // below and the renderers' own memos hold while the call is unchanged.
+  const call = sessionLogOpenCall(given);
   const toolDurationMs = useMemo(() => {
-    const s = (part.state as any)?.time?.start;
-    const e = (part.state as any)?.time?.end;
+    const s = call.started_at ? Date.parse(call.started_at) : undefined;
+    const e = call.ended_at ? Date.parse(call.ended_at) : undefined;
     if (typeof s === 'number' && typeof e === 'number' && e > s) return e - s;
     return undefined;
-  }, [part.state]);
+  }, [call]);
 
   const onActivate = useContext(ToolActivateContext);
   const boundActivate = useMemo(
-    () => (onActivate ? () => onActivate(part.callID) : null),
-    [onActivate, part.callID],
+    () => (onActivate ? () => onActivate(call.call_id) : null),
+    [onActivate, call.call_id],
   );
 
   const surface = useContext(ToolSurfaceContext);
@@ -133,16 +141,16 @@ function ToolPartRendererImpl({
   // returns — a `useContext` down beside its use site is a conditional hook,
   // and the order would break on the first errored tool part in a turn.
   const turnLive = useContext(TurnLiveContext);
-  const fillsPanel = surface === 'panel' && (part.tool === 'show' || part.tool === 'show-user');
+  const fillsPanel = surface === 'panel' && (call.name === 'show' || call.name === 'show-user');
 
   // One verdict per part, computed once here and read by every BasicTool below
   // it. See `partOutcome` — a tool that RETURNS its error looks identical to a
   // tool that threw as far as the reader is concerned, so it must look
   // identical on the row too.
-  const outcome = useMemo(() => partOutcome(part), [part]);
+  const outcome = useMemo(() => partOutcome(call), [call]);
 
   // The SDK's verdict on tools that never render (a todo read, context bookkeeping).
-  if (!shouldShowToolPart(part)) return null;
+  if (!shouldShowToolPart(call)) return null;
 
   // A failed `task` dispatch is still a dispatch. OpenCode keeps the child
   // session alive through the failure (its id rides the part's
@@ -155,19 +163,15 @@ function ToolPartRendererImpl({
   // row too. Only the task tool takes this route: the other errored tools have
   // no child thread to lose, and the generic card is the only renderer that
   // shows the error text of a tool that does not draw it itself.
+  const errorStr = partError(call);
   const childBearingTaskError =
-    part.state.status === 'error' &&
-    'error' in part.state &&
-    toolKind(part.tool) === 'task' &&
-    Boolean(getChildSessionId(part));
+    errorStr !== undefined && toolKind(call.name) === 'task' && Boolean(getChildSessionId(call));
 
-  if (part.state.status === 'error' && 'error' in part.state && !childBearingTaskError) {
-    const errorStr = (part.state as { error: string }).error;
-
+  if (errorStr !== undefined && !childBearingTaskError) {
     const { display, server } = (() => {
-      const slashIdx = part.tool.lastIndexOf('/');
-      const s = slashIdx > 0 ? part.tool.slice(0, slashIdx) : null;
-      const n = slashIdx > 0 ? part.tool.slice(slashIdx + 1) : part.tool;
+      const slashIdx = call.name.lastIndexOf('/');
+      const s = slashIdx > 0 ? call.name.slice(0, slashIdx) : null;
+      const n = slashIdx > 0 ? call.name.slice(slashIdx + 1) : call.name;
       const d = n.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
       return { display: d, server: s };
     })();
@@ -197,7 +201,7 @@ function ToolPartRendererImpl({
               forceOpen={!!permission || !!question}
               locked={!!permission || !!question}
             >
-              <ToolError error={errorStr} toolName={part.tool} />
+              <ToolError error={errorStr} toolName={call.name} />
             </BasicTool>
           </ToolDurationContext.Provider>
         </ToolOutcomeContext.Provider>
@@ -205,7 +209,7 @@ function ToolPartRendererImpl({
     );
   }
 
-  const RegisteredComponent = ToolRegistry.get(part.tool);
+  const RegisteredComponent = ToolRegistry.get(call.name);
   const forceOpen = !!permission || !!question;
   const isLocked = !!permission || !!question;
 
@@ -220,17 +224,15 @@ function ToolPartRendererImpl({
   // the frozen-looking row under a status line that was still saying
   // "Making changes...".
   const isStalePending =
-    !turnLive &&
-    part.state.status === 'pending' &&
-    Object.keys(part.state.input ?? {}).length === 0 &&
-    !(part.state as any).raw;
+    sessionLogCallStatus(call, turnLive) === 'interrupted' &&
+    call.status === 'pending' &&
+    Object.keys(partStreamingInput(call)).length === 0;
 
-  const isRunning =
-    !isStalePending && (part.state.status === 'running' || part.state.status === 'pending');
+  const isRunning = !isStalePending && (call.status === 'running' || call.status === 'pending');
 
   const toolElement = RegisteredComponent ? (
     <RegisteredComponent
-      part={part}
+      call={call}
       sessionId={sessionId}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
@@ -243,7 +245,7 @@ function ToolPartRendererImpl({
     // fallback for every unregistered/MCP tool, and dropping them left that
     // whole class of call permanently closed and unopenable on the panel — the
     // one surface where a single call IS the view.
-    <GenericTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={isLocked} />
+    <GenericTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={isLocked} />
   );
 
   return (
@@ -290,7 +292,7 @@ function ToolPartRendererImpl({
  * computed the props — so without a boundary here, a fifty-turn transcript
  * re-parses every tool's output on every SSE frame.
  *
- * The default shallow compare is right: `part` objects are replaced, not
+ * The default shallow compare is right: `call` objects are replaced, not
  * mutated, when they change; `onPermissionReply` and `onQuestionReply` are
  * `useCallback`s; `permission` is either `undefined` or a store object.
  *

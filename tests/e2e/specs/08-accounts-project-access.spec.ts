@@ -685,19 +685,22 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     ).toBeVisible();
     await expect(page.getByText(memberEmail)).toBeVisible();
     await expect(page.getByText(invitedEmail)).toBeVisible();
-    await expect(page.getByText(/Invited · 1/i)).toBeVisible();
+    // A pending invite is a row in the members table, its role marked
+    // "(Invited)" like Linear's "Admin (Invited)".
+    await expect(page.getByText("Member (Invited)").first()).toBeVisible();
     const uiInviteResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/v1/accounts/${account.account_id}/members`) &&
         response.request().method() === "POST",
     );
     await page.getByRole("button", { name: "Invite", exact: true }).click();
-    // One shared "Grant access" dialog for every access surface (2026-08-19,
+    // One shared "Grant access" form for every access surface (2026-08-19,
     // `features/workspace/shared/access/access-dialog.tsx`): the account
-    // Invite button opens it in grant mode. A new person is invited by
-    // typing their email into the principal picker and choosing the
-    // "Invite <email>" row it surfaces — no separate email composer.
-    const grantDialog = page.getByRole("dialog", { name: "Grant access" });
+    // Invite button opens it in grant mode, in a split sheet beside the
+    // members list (an `<aside>`, so `complementary`, not `dialog`). A new
+    // person is invited by typing their email into the principal picker and
+    // choosing the "Invite <email>" row it surfaces.
+    const grantDialog = page.getByRole("complementary", { name: "Grant access" });
     await expect(grantDialog).toBeVisible();
     await grantDialog
       .getByPlaceholder("Search or type an email")
@@ -856,15 +859,27 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     if (page.url().includes(`/invites/${accountInviteId}`)) {
       await expect(page.getByText(accountName, { exact: true })).toBeVisible();
       await expect(page.getByText(/Team account/i)).toBeVisible();
-      const acceptAccountInviteResponse = page.waitForResponse(
-        (response) =>
-          response
-            .url()
-            .includes(`/v1/account-invites/${accountInviteId}/accept`) &&
-          response.request().method() === "POST",
-      );
-      await page.getByRole("button", { name: "Accept" }).click();
-      expect((await acceptAccountInviteResponse).status()).toBe(200);
+      // The invited address signed up a moment ago, so the server may claim the
+      // invite on first sign-in and the page replaces itself while this renders
+      // (invites/[inviteId]/page.tsx, "Auto-claimed invites"). Accept the invite
+      // by hand when the button is still there; both paths end as a member,
+      // which the landing and the Members heading below prove.
+      const acceptAccountInviteResponse = page
+        .waitForResponse(
+          (response) =>
+            response
+              .url()
+              .includes(`/v1/account-invites/${accountInviteId}/accept`) &&
+            response.request().method() === "POST",
+          { timeout: 15_000 },
+        )
+        .catch(() => null);
+      await page
+        .getByRole("button", { name: "Accept" })
+        .click({ timeout: 10_000 })
+        .catch(() => undefined);
+      const acceptResponse = await acceptAccountInviteResponse;
+      if (acceptResponse) expect(acceptResponse.status()).toBe(200);
     }
     await settleIamPropagation();
     // An account invite (no project) lands on the door for the joined account,

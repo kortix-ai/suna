@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
+import { fromV1, toV1 } from '@kortix/api-contract/session-log'
 import type {
   AdapterCapabilities,
   ExportCursor,
@@ -148,7 +149,7 @@ function fakeAdapter() {
         }
         cursors.push(cursor)
       }
-      return cursors
+      return { cursors, dropped: {} }
     },
     async fingerprint() {
       return sha(JSON.stringify([...native]))
@@ -332,7 +333,7 @@ describe('session-log journal', () => {
       pending: { questions: [], permissions: [] },
       threads: [{ schema: 'kortix.session/2', v: 1, thread_id: 'thr_root', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '2026-10-11T00:00:00.000Z', messages: [restored] }],
     }
-    const cursors = await fake.port.restore(log)
+    const { cursors } = await fake.port.restore(log)
     fake.put('n1', 2, 'new after restore')
     const journal = new SessionLogJournal(fake.port, { generation: 2, cursors })
 
@@ -503,6 +504,71 @@ describe('session-log journal', () => {
     expect(await journal.flush()).toBe(true)
     expect(putIds(api.received.slice(1))).toEqual(['m2'])
     expect((journal as unknown as { live: Map<string, unknown> }).live.size).toBe(0)
+    await journal.stop(0)
+  })
+
+  test('live turn (P4.7): a running call keeps its v1 metadata and a pending call its partial input; a tool part puts on a status or metadata-key change only', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    fake.liveSeq('m4', 4)
+    const info = { id: 'm4', sessionID: T, role: 'assistant', parentID: 'u3', time: { created: 4_000 }, modelID: 'fake-1', providerID: 'fake' }
+    const head = { messageID: 'm4', sessionID: T, type: 'tool' }
+    const task = (state: Record<string, unknown>) => ({ ...head, id: 'm4-task', callID: 'c-task', tool: 'task', state })
+    const bash = (state: Record<string, unknown>) => ({ ...head, id: 'm4-bash', callID: 'c-bash', tool: 'bash', state })
+    const write = { ...head, id: 'm4-write', callID: 'c-write', tool: 'write', state: { status: 'pending', input: {}, raw: '{"filePath":"/w/a.ts","content":"exp' } }
+    const taskRunning = task({ status: 'running', input: { description: 'sub', prompt: 'p', subagent_type: 'general' }, title: 'sub', metadata: { sessionId: 'thr_child' }, time: { start: 4_120 } })
+    const bashRunning = (output: string) => bash({ status: 'running', input: { command: 'ls -la', description: 'Lists' }, title: 'Lists', metadata: { command: 'ls -la', output }, time: { start: 4_200 } })
+    const puts = () => frames.filter((f) => f.type === 'log.message').map((f) => f.payload.message as SessionLogMessage)
+    /** The v1 parts `toV1` rebuilds from a live put. */
+    const partsBack = (m: SessionLogMessage): unknown[] => {
+      const log = fromV1({ session_id: 's', root_id: T, rows: [{ runtime_session_id: T, info: info as never, parts: [] }] }, { live: true })
+      log.threads[0]!.messages = [m]
+      return toV1(JSON.parse(JSON.stringify(log))).rows[0]!.parts
+    }
+    bus.publish('message.updated', { sessionID: T, info }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: task({ status: 'pending', input: {}, raw: '' }) }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: task({ status: 'running', input: { description: 'sub', prompt: 'p', subagent_type: 'general' }, title: 'sub', metadata: {}, time: { start: 4_120 } }) }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: taskRunning }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: taskRunning }, T) // nothing changed: no put
+    bus.publish('message.part.updated', { sessionID: T, part: bashRunning('total 0') }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: bashRunning('total 0\na') }, T) // only output grew: no put
+    const undefinedKey = bashRunning('total 0\na')
+    ;(undefinedKey.state.metadata as Record<string, unknown>).truncation = undefined // a key JSON drops (pi bash): no put
+    bus.publish('message.part.updated', { sessionID: T, part: undefinedKey }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: write }, T)
+    expect(puts().map((m) => m.blocks.map((b) => (b.type === 'tool_call' ? `${b.name}/${b.status}` : b.type)).join(','))).toEqual([
+      '', // message.updated
+      'task/pending', // new part
+      'task/running', // status change
+      'task/running', // metadata keys change: sessionId arrived
+      'task/running,bash/running', // new part
+      'task/running,bash/running,write/pending', // new part
+    ])
+    const last = puts().at(-1)!
+    expect(last).toMatchObject({ seq: 4, status: 'streaming', completed_at: null, finish: null })
+    expect(last.blocks.every((b) => b.type !== 'tool_call' || b.result === undefined)).toBe(true)
+    // The running calls keep their display metadata: toV1 gives back the frames (bash with the output of its last put).
+    expect(partsBack(puts()[3]!)).toEqual([taskRunning])
+    expect(partsBack(last)).toEqual([taskRunning, bashRunning('total 0\na'), write])
+    // The pending call carries its partial input as its input.
+    expect(last.blocks[2]).toMatchObject({ type: 'tool_call', status: 'pending', input: '{"filePath":"/w/a.ts","content":"exp' })
+    // The live puts never entered the dirty set, and nothing live reached the API.
+    expect(journal.clean).toBe(true)
+    expect(api.received).toHaveLength(1)
+    // The turn end: the collection's put is the adapter's record, unchanged, at a higher rev.
+    fake.put('m4', 4, 'done')
+    expect(await journal.flush()).toBe(true)
+    const stored = api.received[1]!.body.puts
+    expect(stored.map((p) => p.message)).toEqual([{ ...message('m4', 4, 'done'), model: null, usage: null }])
+    expect(frames.at(-1)!.payload).toEqual(stored[0])
+    expect(stored[0]!.rev).toBeGreaterThan(Math.max(...frames.filter((f) => f.payload.message?.status === 'streaming').map((f) => f.payload.rev)))
     await journal.stop(0)
   })
 

@@ -6,7 +6,10 @@ import {
   dateParam,
   daysBetween,
   focusMonth,
-  layoutChips,
+  fold,
+  hourCells,
+  minuteAt,
+  minuteLabel,
   monthEntries,
   nearEdge,
   nearestFireDay,
@@ -143,7 +146,9 @@ describe('labels', () => {
     // Day: the one day in view, in full. The comma after the weekday is the ICU
     // build's as well ("Wednesday, 14" vs "Wednesday 14"), so pin the date, not
     // the punctuation.
-    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toMatch(/^Wednesday,? 14 October 2026$/);
+    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toMatch(
+      /^Wednesday,? 14 October 2026$/,
+    );
   });
 
   test('clock time is 24-hour; relative time scales minute → hour → day', () => {
@@ -155,7 +160,17 @@ describe('labels', () => {
   });
 });
 
-describe('layoutChips', () => {
+describe('minuteAt', () => {
+  test('maps a y offset to the minute of the day, clamped to the grid', () => {
+    expect(minuteAt(0, 1440)).toBe(0);
+    expect(minuteAt(937.5, 1440)).toBe(937);
+    expect(minuteAt(-5, 1440)).toBe(0);
+    expect(minuteAt(2000, 1440)).toBe(1439);
+    expect(minuteLabel(937, 'en')).toBe('15:37');
+  });
+});
+
+describe('hourCells', () => {
   const fire = (h: number, m: number): ReminderFire => ({
     reminder: reminder({}),
     at: local(2026, 10, 7, h, m).getTime(),
@@ -163,28 +178,23 @@ describe('layoutChips', () => {
     confirmed: false,
   });
 
-  test('apart chips each take the full width', () => {
-    const chips = layoutChips([fire(9, 0), fire(14, 0)], 30);
-    expect(chips.map((c) => [c.top, c.lane, c.lanes])).toEqual([
-      [540, 0, 1],
-      [840, 0, 1],
-    ]);
+  test('each fire lands in its hour, sorted by time', () => {
+    const cells = hourCells([fire(15, 40), fire(9, 0), fire(15, 5), fire(23, 59)]);
+    expect(cells).toHaveLength(24);
+    expect(cells[15]!.map((f) => new Date(f.at).getMinutes())).toEqual([5, 40]);
+    expect(cells[9]).toHaveLength(1);
+    expect(cells[23]).toHaveLength(1);
+    expect(cells[10]).toEqual([]);
+  });
+});
+
+describe('fold', () => {
+  test('a list within the limit shows whole', () => {
+    expect(fold([1, 2], 2)).toEqual({ shown: [1, 2], rest: 0 });
   });
 
-  test('overlapping chips split a cluster; a free lane is reused', () => {
-    const chips = layoutChips([fire(9, 20), fire(9, 0), fire(9, 10), fire(9, 35), fire(11, 0)], 30);
-    expect(chips.map((c) => [c.top, c.lane, c.lanes])).toEqual([
-      [540, 0, 3],
-      [550, 1, 3],
-      [560, 2, 3],
-      [575, 0, 3],
-      [660, 0, 1],
-    ]);
-  });
-
-  test('a lone chip with free room below is drawn tall; a crowded one stays short', () => {
-    const chips = layoutChips([fire(9, 0), fire(9, 45), fire(14, 0), fire(23, 30)], 30, 60);
-    expect(chips.map((c) => c.span)).toEqual([30, 60, 60, 30]);
+  test('a longer list keeps limit - 1 and counts the rest, so "+N" takes the last line', () => {
+    expect(fold([1, 2, 3, 4, 5], 2)).toEqual({ shown: [1], rest: 4 });
   });
 });
 
@@ -197,10 +207,9 @@ describe('calendarModel', () => {
     expect(model.total).toBe(1);
     expect(model.days[3]!.chips.map((f) => f.at)).toEqual([at.getTime()]);
     expect(model.days.map((d) => d.total)).toEqual([0, 0, 0, 1, 0, 0, 0]);
-    expect(model.frequent).toEqual([]);
   });
 
-  test('a frequent reminder is counted per day, never chipped, and lane-listed once', () => {
+  test('a frequent reminder is counted per day and never chipped', () => {
     // Every 5 minutes, created Monday 00:00, next fire 13:35 today.
     const r = reminder({
       id: 'often',
@@ -218,9 +227,6 @@ describe('calendarModel', () => {
       [local(2026, 10, 7, 13, 35).getTime(), 288],
     ]);
     expect(model.days[1]!.groups[0]!.fire.at).toBe(local(2026, 10, 6).getTime());
-    expect(model.frequent).toHaveLength(1);
-    // The lane's fire is the first upcoming one, not Monday 00:00.
-    expect(model.frequent[0]!.fire.at).toBe(local(2026, 10, 7, 13, 35).getTime());
   });
 
   test('a month window with a 5-minute reminder is not capped at 2000 fires', () => {

@@ -179,27 +179,43 @@ describe('runInstall', () => {
     expect(drafts).toHaveLength(1);
   });
 
+  /** A create whose first sync reports `error` for the new connector. */
+  const syncFails = (error: string): Partial<InstallDeps> => ({
+    createConnector: async () => ({
+      sync: { synced: 1, errors: [{ slug: 'resend-abc123', error }] },
+    }),
+  });
+
   test('an MCP server that answers 401 is installed: the sign-in comes with the account', async () => {
-    const { deps } = fakeDeps({
-      createConnector: async () => ({
-        sync: { errors: [{ slug: 'resend-abc123', error: 'MCP tools/list failed: HTTP 401' }] },
-      }),
-    } as Partial<InstallDeps>);
+    const { deps } = fakeDeps(syncFails('MCP tools/list failed: HTTP 401'));
     expect(await runInstall(deps, { projectId: 'p1', target: mcp(false), connectors: [] })).toEqual(
       { status: 'installed', slug: 'resend-abc123' },
     );
   });
 
-  test('any other sync failure is reported', async () => {
-    const { deps } = fakeDeps({
-      createConnector: async () => ({
-        sync: { errors: [{ slug: 'resend-abc123', error: 'manifest rejected' }] },
-      }),
-    } as Partial<InstallDeps>);
+  test('any other sync failure is reported with the slug, so the caller can open its page', async () => {
+    const { deps } = fakeDeps(syncFails('manifest rejected'));
     expect(await runInstall(deps, { projectId: 'p1', target: mcp(true), connectors: [] })).toEqual({
       status: 'sync_failed',
+      slug: 'resend-abc123',
       name: 'Resend',
       error: 'manifest rejected',
+    });
+  });
+
+  test('a 401 from a direct API that is not MCP is a sync failure, not a pending sign-in', async () => {
+    const openapi = discoverInstallTarget('Resend', {
+      id: 'resend-openapi',
+      kind: 'openapi',
+      name: 'Resend API',
+      template: { provider: 'openapi', spec: 'https://api.example.com/openapi.json' },
+    });
+    const { deps } = fakeDeps(syncFails('spec fetch failed: HTTP 401'));
+    expect(await runInstall(deps, { projectId: 'p1', target: openapi, connectors: [] })).toEqual({
+      status: 'sync_failed',
+      slug: 'resend-abc123',
+      name: 'Resend',
+      error: 'spec fetch failed: HTTP 401',
     });
   });
 

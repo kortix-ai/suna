@@ -49,6 +49,40 @@ export function requestTimingLogField(durationMs: number, status: number): strin
   return formatStageEntries(stageSnapshot()).join(', ');
 }
 
+/** Per-statement db wall past which the db stage reads as connection-pool
+ *  queueing rather than statement cost. Prod statements are ~2.5 ms server-side
+ *  (KRTX-532's pg_stat_statements cross-check) and the chronically contended
+ *  200 tail sat near ~275 ms per statement, while every 25 s deadline death of
+ *  the 2026-10-04 saturation episode measured 1.6–3.6 s per statement
+ *  (KRTX-1571). 1 s sits between the two regimes. */
+const DB_POOL_WAIT_SUSPECT_MS_PER_STATEMENT = 1_000;
+
+const DB_STAGE_RE = /\bdb;dur=(\d+);desc="n=(\d+)"/;
+
+/**
+ * Whether a slow completion's `Server-Timing` breakdown reads as the request
+ * having queued for a db pool connection instead of running expensive
+ * statements — `db;dur ÷ n` far above per-statement exec cost.
+ *
+ * KRTX-1571 (prod, 2026-10-04): `GET /v1/projects/:id` 5xx'd 503s whose own
+ * completion lines carried `db;dur=20755;desc="n=6"` — ~3.5 s per statement
+ * for statements that execute in ~2.5 ms, i.e. the request spent its budget
+ * waiting for a pool connection. Attributing that from the raw `server_timing`
+ * string took a manual division plus the pg_stat_statements cross-check; this
+ * derives the same verdict per line so the NEXT saturation episode names
+ * itself in one grep (`db_pool_wait_suspected: true`) instead of a
+ * four-session investigation. Only the `db` stage counts: auth/iam wall is
+ * mostly the same statements (stages overlap), and an `n`-less or unparseable
+ * entry proves nothing.
+ */
+export function dbPoolWaitSuspected(serverTiming: string): boolean {
+  const match = DB_STAGE_RE.exec(serverTiming);
+  if (!match) return false;
+  const statements = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(statements) || statements <= 0) return false;
+  return Number.parseInt(match[1], 10) / statements >= DB_POOL_WAIT_SUSPECT_MS_PER_STATEMENT;
+}
+
 /**
  * Whether the post-request `Request completed:` line is suppressed entirely as
  * expected sandbox-proxy noise — a designed answer, not a server failure.

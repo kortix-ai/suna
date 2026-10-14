@@ -145,3 +145,16 @@ describe('SSO card — domain verification', () => {
     expect(flatSource).toContain('(!domainVerified && !provider.enforce_sso)');
   });
 });
+
+// PUT /iam/sso/provider and verify-domain can answer 500 `sso_sign_out_failed`
+// after the change is saved (KRTX-1716). A refetch only on success left the
+// switch off while enforcement was on.
+describe('SSO card — the provider refetches after a failed write too', () => {
+  const settleRefetch = "onSettled: () => queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] })";
+  for (const name of ['enforceSsoMutation', 'verifyDomainMutation']) {
+    test(`${name} refetches the provider when it settles`, () => {
+      const block = source.match(new RegExp(`const ${name} = useMutation\\(\\{[\\s\\S]*?\\n  \\}\\);`))?.[0] ?? '';
+      expect(block.replace(/\s+/g, ' ')).toContain(settleRefetch);
+    });
+  }
+});

@@ -20,6 +20,10 @@ const shellSend = readFileSync(
   fileURLToPath(new URL('./use-instant-session-send.ts', import.meta.url)),
   'utf8',
 );
+const queueList = readFileSync(
+  fileURLToPath(new URL('./composer/queued-prompt-list.tsx', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -47,7 +51,7 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     // module (KRTX-355); the shell still passes the turn's props here.
     const turn = flat(between(chat, '<TranscriptTurnRow', 'sessionWorking={lastTurnWorking}'));
     expect(turn).toContain(
-      'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.userMessage.info.id, originId: optimisticOriginOf(sessionId, turn.userMessage.info.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.userMessage.info.id, )?.attachments, })}',
+      'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.id, originId: optimisticOriginOf(sessionId, turn.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.id, )?.attachments, })}',
     );
     // The first prompt's identities outlive its handover, in the chat and in the boot shell.
     expect(shell).toContain('useInstantSessionSend({');
@@ -145,10 +149,10 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     // during render receives `handleSend`, which reads refs.
     expect(chat).not.toContain('heldSendUploadStatuses');
     expect(chat.replace(/\s+/g, ' ')).toContain(
-      'uploadStatus={ heldSendFailures?.[turn.userMessage.info.id] ? {',
+      'uploadStatus={ heldSendFailures?.[turn.id] ? {',
     );
     expect(chat.replace(/\s+/g, ' ')).toContain(
-      'onRetry: () => retryHeldSend( sessionId, turn.userMessage.info.id, resendHeldSend,',
+      'onRetry: () => retryHeldSend( sessionId, turn.id, resendHeldSend,',
     );
   });
 
@@ -294,9 +298,28 @@ describe('stop reaches the queue that actually holds the messages', () => {
 });
 
 describe('queue row actions address the inbox that holds the row', () => {
-  test('there is no per-row "send now": reordering is a non-goal, and Resume releases the hold', () => {
+  test('"Send now" reuses the one retry handler; the interrupting stop-then-send orchestration stays gone', () => {
+    // The row affordance lives in `QueuedPromptList` and is asserted
+    // behaviourally in `queued-prompt-list.test.tsx`. The chat keeps ONE client
+    // side path: the SAME `handleRetryQueuedMessage` → `promptInbox.retry`
+    // primitive answers a failed row's "Retry" and a queued row's "Send now"
+    // (the server promotes the row past the ordering gate — its own route
+    // comment names the two labels one primitive). The removed
+    // `stopThenSendNow` (stop the turn, then send) stays out: "Stop and send"
+    // is the server's interrupt primitive, named as the stop it is.
     expect(chat).not.toContain('handleQueueSendNow');
     expect(chat).not.toContain('stopThenSendNow');
+    expect(chat).toContain('onRetry={handleRetryQueuedMessage}');
+    // And the affordance itself is this PR's decision (KRTX-1587): the list
+    // row's Send now branch exists and is gated to rows the viewer owns that
+    // the running turn has not already taken (`steer` with no fallback is
+    // already being read at the next step — nothing to hurry). The test-source
+    // reader inlines the catalog value after each `copy.raw('key')`, so the
+    // assertions match on the keys and the gate fragments.
+    expect(queueList).toContain("copy.raw('text588032878324')");
+    expect(queueList).toMatch(/row\.state === 'queued'/);
+    expect(queueList).toContain('!row.fromAnotherMember');
+    expect(queueList).toContain('!(row.steer && !row.steerFallback)');
     const resume = between(chat, 'const handleResumeQueue = useCallback(', '}, [promptInbox.hold]);');
     expect(resume).toContain('promptInbox.hold(false)');
     expect(resume).toContain('setResumePending(false)');
@@ -372,7 +395,7 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 
   test('a row already on screen — by id, by re-mint alias, or by elimination — is never a queued bubble', () => {
-    expect(chat).toContain('store.optimisticOriginOf(sessionId, message.info.id)');
+    expect(chat).toContain('store.optimisticOriginOf(sessionId, message.message_id)');
     // The set the queue projection reads is the id set PLUS the row claimed by
     // elimination (`claimFirstTurnRow`). The ids alone are not enough for the
     // one window where the drain has re-minted and this tab has not polled
@@ -409,8 +432,11 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
 
   test('the claimed bubble keeps its queued dimming', () => {
     // Hiding the duplicate must not let the surviving copy read as running
-    // while the server still holds the prompt.
-    expect(chat).toContain('if (firstTurnClaim) ids.add(firstTurnClaim.messageId);');
+    // while the server still holds the prompt: its id is held (`sessionLogTurns`
+    // `held`) until a reply names it.
+    const held = between(chat, 'const heldTurnIds = useMemo(() => {', '}, [pendingDisplayIds, firstTurnClaim, messages]);');
+    expect(held).toContain('const claimed = firstTurnClaim?.messageId;');
+    expect(held).toContain('ids.unshift(claimed);');
   });
 
   test('the re-mint alias is announced from an EFFECT, never from the memo that reads it', () => {
@@ -433,7 +459,7 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     // The origin key keeps one element across the re-mint swap; the
     // uniqueness pass keeps React sane when an old echo and its re-placed
     // copy transiently share an origin (duplicate keys corrupt the list).
-    expect(chat).toContain('key={turnRenderKeys.get(turn.userMessage.info.id)}');
+    expect(chat).toContain('key={turnRenderKeys.get(turn.id)}');
     expect(chat).toContain('const origin = optimisticOriginOf(sessionId, id);');
     expect(chat).toContain('while (used.has(key)) key = `${key}~`;');
   });
@@ -490,7 +516,7 @@ describe('Up and the pencil edit a queued entry in place', () => {
     const synthetic = between(
       chat,
       'const queuedSyntheticMessages = useMemo(',
-      'const rawTurns = useMemo(',
+      'const pendingDisplayIds = useMemo(',
     );
     expect(synthetic).toContain("if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;");
   });

@@ -8,6 +8,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { visibleDirectory } from '../../iam/directory-visibility';
 import { isAudienceObjectType } from '../../iam/audience-grants';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { accountGroupIds, accountGroupMembershipRows } from '../../iam/group-read';
@@ -142,14 +143,14 @@ export function registerMemberRoutes(): void {
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
-      // The member directory is visible to EVERY member of the account (the way
-      // Slack / GitHub show teammates within one company), so all rows are
-      // returned. What stays gated is the SENSITIVE per-member data (PAT count,
-      // MFA, group memberships, project grants): member-managers (owner / admin /
-      // member.invite) see it on every row, everyone else only on their own —
-      // enforced by canSeeSensitiveMemberColumns in the map below.
+      // Which ROWS: `member.read` (owners and admins) lists every member. A
+      // plain member lists only the people they share access with
+      // (iam/directory-visibility.ts). Which COLUMNS: the SENSITIVE per-member
+      // data (PAT count, MFA, group memberships, project grants) shows on every
+      // row to member-managers (owner / admin / member.invite) and on their own
+      // row to everyone else — canSeeSensitiveMemberColumns in the map below.
       //
-      // Seven independent reads, each scoped to this account — none needs
+      // Eight independent reads, each scoped to this account — none needs
       // another's result (`emails` is the one exception: it needs the member
       // user ids, so it's kicked off separately right below once `rows` is
       // known). These used to run one at a time (measured: 10 DB round trips
@@ -158,8 +159,10 @@ export function registerMemberRoutes(): void {
       // degrades independently (groups/PAT/MFA catch their own failures) so a
       // `Promise.all` rejection from the authorize/identity/role reads is the
       // only one allowed to fail the request — same as before.
+      const actor = await actorOf(c, accountId);
       const [
         canManageMembers,
+        visible,
         identityRows,
         accountRoles,
         [assignedGrants, activeProjects],
@@ -167,7 +170,8 @@ export function registerMemberRoutes(): void {
         patCountByUser,
         mfaByUser,
       ] = await Promise.all([
-        authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE).then((r) => r.allowed),
+        authorize(actor, ACCOUNT_ACTIONS.MEMBER_INVITE).then((r) => r.allowed),
+        visibleDirectory(actor),
         // `account_members` is the DIRECTORY (who is here, since when, and the
         // is_super_admin bypass flag). The ROLE comes from `role_assignments` —
         // the one store the engine reads — so this list can no longer disagree
@@ -251,13 +255,13 @@ export function registerMemberRoutes(): void {
         accountRole: accountRoles.get(r.userId) ?? 'member',
       }));
 
-      // Everyone in the account sees the full directory; sensitive columns are
-      // gated per-row below.
-      const visibleRows = rows;
+      const visibleRows = visible.userIds
+        ? rows.filter((r) => visible.userIds!.has(r.userId))
+        : rows;
 
       // The one read that genuinely depends on another (`rows`'s user ids), so
       // it cannot join the batch above.
-      const emails = await lookupEmailsByUserIds(rows.map((r) => r.userId));
+      const emails = await lookupEmailsByUserIds(visibleRows.map((r) => r.userId));
 
       const projectNameById = new Map(activeProjects.map((p) => [p.projectId, p.name] as const));
       const projectGrantRows = assignedGrants

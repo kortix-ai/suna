@@ -13,7 +13,7 @@
  * the same rows and never navigates away from itself.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Empty, EmptyContent, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
@@ -104,9 +104,7 @@ function CardTitleRow({
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="text-foreground truncate text-sm font-semibold">{title}</span>
           {typeof count === 'number' && count > 0 && (
-            <Badge variant="secondary" size="tabular" className="tabular-nums">
-              {count}
-            </Badge>
+            <CountBadge count={count} />
           )}
           {/* `self-center`, against the row's `items-baseline`: a badge has a
               baseline to sit on and an indicator is a glyph, which would

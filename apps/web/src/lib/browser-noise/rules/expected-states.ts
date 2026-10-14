@@ -4,7 +4,7 @@ import type { NoiseRule } from '../evidence';
 import { normalizeString } from '../evidence';
 
 // Transient "the session runtime / sandbox URL hasn't pinned yet" throws. The
-// SDK throws `RuntimeNotReadyError` (`[opencode-sdk] Server URL not ready —
+// SDK throws `RuntimeNotReadyError` (`[kortix-runtime] Server URL not ready —
 // sandbox is still loading`) from `getClient()` for the ~1s window before a
 // new/switched session's runtime URL resolves; sibling guards reuse the same
 // wording for the pty/env paths (`[kortix-pty] Server URL not ready …`). It is
@@ -250,7 +250,7 @@ export function isGitMirrorUnavailableNoiseMessage(message: unknown): boolean {
 
 /**
  * Whether a message is the transient, self-healing "session runtime not ready
- * yet" state — `[opencode-sdk] Server URL not ready — sandbox is still loading`
+ * yet" state — `[kortix-runtime] Server URL not ready — sandbox is still loading`
  * and its sibling variants. Such a message must NEVER page Better Stack: it
  * resolves on its own within ~1s (every session switch/provisioning window).
  */

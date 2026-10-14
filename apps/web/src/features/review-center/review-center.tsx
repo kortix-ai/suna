@@ -13,6 +13,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -169,9 +170,10 @@ function ItemRow({
    *  Omitted in the grouped view (the session already names the group). */
   sessionLabel?: string;
   onOpen: () => void;
-  /** Row menu — the mouse path to the `e` and `d` shortcuts. */
-  onAskChanges: () => void;
-  onDismiss: () => void;
+  /** Row menu — the mouse path to the `e` and `d` shortcuts. Absent when the
+   *  viewer may not give that verdict on this item. */
+  onAskChanges?: () => void;
+  onDismiss?: () => void;
   onOpenSession?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -267,18 +269,18 @@ function ItemRow({
                 {tI18nComplete.raw('textb205bb47f81a')}
               </DropdownMenuItem>
             )}
-            {pending && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onAskChanges}>
-                  {tI18nComplete.raw('text705364916412')}
-                  <DropdownMenuShortcut>e</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem variant="destructive" onClick={onDismiss}>
-                  {tI18nComplete.raw('text48845bff334a')}
-                  <DropdownMenuShortcut>d</DropdownMenuShortcut>
-                </DropdownMenuItem>
-              </>
+            {pending && (onAskChanges || onDismiss) && <DropdownMenuSeparator />}
+            {pending && onAskChanges && (
+              <DropdownMenuItem onClick={onAskChanges}>
+                {tI18nComplete.raw('text705364916412')}
+                <DropdownMenuShortcut>e</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
+            {pending && onDismiss && (
+              <DropdownMenuItem variant="destructive" onClick={onDismiss}>
+                {tI18nComplete.raw('text48845bff334a')}
+                <DropdownMenuShortcut>d</DropdownMenuShortcut>
+              </DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -326,6 +328,12 @@ function KeyboardHelp({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
+/** How long the prototype's Undo toast stays up: a display time, not motion. */
+const UNDO_TOAST_MS = 6000;
+
+/** The prototype inbox's rule: every verdict, since nothing reaches a route. */
+const EVERY_VERDICT = () => true;
+
 export function ReviewCenter({
   initialItems,
   onAct,
@@ -339,6 +347,7 @@ export function ReviewCenter({
   isFetched,
   isError,
   sessionLabels,
+  verdictAllowed = EVERY_VERDICT,
 }: {
   /** When provided, the inbox renders real data instead of the mock fixtures. */
   initialItems?: ReviewItem[];
@@ -365,6 +374,10 @@ export function ReviewCenter({
   isError?: boolean;
   /** sessionId → human name, for the per-session filter + group headers. */
   sessionLabels?: Record<string, string>;
+  /** Connected mode: whether this viewer may give `verdict` on `item`
+   *  (`reviewVerdictAllowed`, KRTX-1720). A control or shortcut for a verdict
+   *  it refuses does nothing and does not render. Absent: every verdict. */
+  verdictAllowed?: (item: ReviewItem, verdict: ReviewVerdict) => boolean;
 } = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const segments = useMemo(
@@ -531,7 +544,7 @@ export function ReviewCenter({
     setItems(next);
     const toastFn = tone === 'info' ? infoToast : successToast;
     toastFn(message, {
-      duration: 6000,
+      duration: UNDO_TOAST_MS,
       button: (
         <Button
           variant="outline"
@@ -570,9 +583,16 @@ export function ReviewCenter({
     }
   }
 
+  /** Every verdict path checks here first, so a refused verdict never commits. */
+  const allowsId = (id: string, verdict: ReviewVerdict) => {
+    const item = items.find((i) => i.id === id) ?? sourceItems.find((i) => i.id === id);
+    return !!item && verdictAllowed(item, verdict);
+  };
+
   const actions: ReviewActions = {
     resolve: (id, status, message, feedback) => {
       const verdict = statusToVerdict(status);
+      if (verdict && !allowsId(id, verdict)) return;
       if (connected && (status === 'approved' || status === 'rejected')) {
         setPendingId(id);
         setPendingDecision(status === 'approved' ? 'approve' : 'deny');
@@ -589,6 +609,7 @@ export function ReviewCenter({
     openSession: onOpenSession,
     recoverChange: onRecoverChange,
     recoveringCrId,
+    allows: verdictAllowed,
     connected,
     pendingId,
     pendingDecision,
@@ -616,6 +637,7 @@ export function ReviewCenter({
       setSelectedId(item.id); // needs a choice / full context — open the detail
       return;
     }
+    if (!verdictAllowed(item, 'approve')) return;
     apply(
       setStatus(items, item.id, 'approved'),
       `${item.primaryAction} · done`,
@@ -630,6 +652,7 @@ export function ReviewCenter({
       return;
     }
     if (item.kind === 'change' || item.kind === 'output') {
+      if (!verdictAllowed(item, 'changes')) return;
       apply(
         setStatus(items, item.id, 'changes_requested'),
         'Sent back to the agent',
@@ -649,7 +672,8 @@ export function ReviewCenter({
     return resolveBulkOutcome(ids, verdict, (id) => riskById.get(id));
   };
 
-  const dismissIds = (ids: string[]) => {
+  const dismissIds = (requested: string[]) => {
+    const ids = requested.filter((id) => allowsId(id, 'dismiss'));
     if (ids.length === 0) return;
     if (connected && onBulkAct) {
       const outcome = connectedBulkOutcome(ids, 'dismiss');
@@ -760,8 +784,8 @@ export function ReviewCenter({
       fresh={freshIds.has(item.id)}
       sessionLabel={!inGroup && item.sessionId ? labelFor(item.sessionId) : undefined}
       onOpen={() => setSelectedId(item.id)}
-      onAskChanges={() => quickAskChanges(item)}
-      onDismiss={() => dismissIds([item.id])}
+      onAskChanges={verdictAllowed(item, 'changes') ? () => quickAskChanges(item) : undefined}
+      onDismiss={verdictAllowed(item, 'dismiss') ? () => dismissIds([item.id]) : undefined}
       onOpenSession={
         item.sessionId && onOpenSession ? () => onOpenSession(item.sessionId!) : undefined
       }
@@ -814,7 +838,8 @@ export function ReviewCenter({
       previewAuthorized={approvalCall?.previewAuthorized !== false}
       busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
       onDecision={
-        connected && selected
+        // Only the viewer the API lets decide this call gets the decision.
+        connected && selected && verdictAllowed(selected, 'approve')
           ? (decision, note) =>
               actions.resolve(
                 selected.id,
@@ -891,9 +916,7 @@ export function ReviewCenter({
                       <DropdownMenuRadioItem key={f.value} value={f.value} side="left">
                         {f.label}
                         {(kindCounts[f.value] ?? 0) > 0 && (
-                          <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
-                            {kindCounts[f.value]}
-                          </Badge>
+                          <CountBadge count={kindCounts[f.value] ?? 0} className="ml-auto" />
                         )}
                       </DropdownMenuRadioItem>
                     ))}
@@ -926,20 +949,18 @@ export function ReviewCenter({
                     <DropdownMenuRadioGroup value={sessionFilter} onValueChange={setSessionFilter}>
                       <DropdownMenuRadioItem value="all" side="left">
                         {tI18nComplete.raw('text78648d4d6649')}
-                        <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
-                          {filterItems(items, segment, kindFilter, query, 'all').length}
-                        </Badge>
+                        <CountBadge
+                          count={filterItems(items, segment, kindFilter, query, 'all').length}
+                          className="ml-auto"
+                        />
                       </DropdownMenuRadioItem>
                       {sessionOpts.map((s) => (
                         <DropdownMenuRadioItem key={s.sessionId} value={s.sessionId} side="left">
                           <span className="truncate">{s.label}</span>
-                          <Badge
-                            variant="secondary"
-                            size="xs"
-                            className="ml-auto shrink-0 tabular-nums"
-                          >
-                            {filterItems(items, segment, kindFilter, query, s.sessionId).length}
-                          </Badge>
+                          <CountBadge
+                            count={filterItems(items, segment, kindFilter, query, s.sessionId).length}
+                            className="ml-auto"
+                          />
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>

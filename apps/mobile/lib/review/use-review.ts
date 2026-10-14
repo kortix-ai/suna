@@ -27,7 +27,14 @@ import {
   type ReviewItemStatus,
   type ReviewVerdict,
 } from '@kortix/sdk';
-import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
+import { qk } from '@kortix/sdk/react';
+import {
+  type QueryClient,
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import { closeChangeRequest, mergeChangeRequest } from '@/lib/projects/projects-client';
@@ -39,6 +46,16 @@ export const reviewKeys = {
   list: (projectId: string | null | undefined) => ['review-items', projectId] as const,
   verdict: (projectId: string | null | undefined) => ['review-verdict', projectId] as const,
 };
+
+/**
+ * Refetch the review list after a decision, and GET needs-input with it: the
+ * drawer and the Sessions page count a pending connector call from both
+ * (`needsYouBySession`, KRTX-1739).
+ */
+export function invalidateReviewItems(queryClient: QueryClient, projectId: string): void {
+  queryClient.invalidateQueries({ queryKey: reviewKeys.list(projectId) });
+  queryClient.invalidateQueries({ queryKey: qk.project.needsInput(projectId) });
+}
 
 /** One verdict on one review item: the call to run, and the item it moves. */
 export interface ReviewVerdictInput {
@@ -152,7 +169,7 @@ export function useReviewVerdict(
     },
     onError: (error) => onError?.(error),
     onSettled: (_data, _error, { plan }) => {
-      queryClient.invalidateQueries({ queryKey: reviewKeys.list(projectId) });
+      invalidateReviewItems(queryClient, projectId);
       if (plan.call === 'merge' || plan.call === 'close' || plan.call === 'request_changes') {
         // Same keys the Changes page invalidates after a merge or a close.
         queryClient.invalidateQueries({ queryKey: ['change-requests', projectId] });

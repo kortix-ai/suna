@@ -11,7 +11,7 @@ import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs'
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { useSessionNeedsYouCounts } from '@/features/review-center/hooks/use-review-session-summary';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
@@ -64,6 +64,7 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
+  bulkDeleteConfirmLabel,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -182,7 +183,7 @@ function SessionsSection({
       <DisclosureTrigger>
         <div className="group/section-header text-muted-foreground flex h-8 cursor-pointer items-center gap-1.5 px-1 text-sm font-medium">
           <span className="truncate">{section.label}</span>
-          <span className="text-muted-foreground/60 text-xs tabular-nums">
+          <span className="text-muted-foreground text-xs tabular-nums">
             {section.sessions.length}
           </span>
           <CaretRightIcon
@@ -340,9 +341,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
   const resetFilters = useSessionFilterStore((s) => s.resetFilters);
 
-  // Review Center feeds `status` grouping's `needs-you` section and the menu's
-  // Show list — the same inbox summary the sidebar reads.
-  const reviewSummary = useReviewSessionSummary(projectId);
+  // What waits on the viewer, by session (the review inbox, open agent
+  // questions, connector approvals): each row's status, `status` grouping's
+  // `needs-you` section and the menu's Show list. The sidebar reads the same.
+  const needsYouBySession = useSessionNeedsYouCounts(projectId);
 
   const visibleSessions = useMemo(
     () =>
@@ -360,7 +362,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         {
           mode: groupMode,
           order: orderMode,
-          reviewCountBySession: reviewSummary.needsYouBySession,
+          reviewCountBySession: needsYouBySession,
           hiddenSections,
           ownerLabels: {
             you: tSidebar('filter.ownerValue.you'),
@@ -374,7 +376,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       visibleSessions,
       groupMode,
       orderMode,
-      reviewSummary.needsYouBySession,
+      needsYouBySession,
       hiddenSections,
       tI18nComplete,
     ],
@@ -628,6 +630,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
           }
           actions={rowActions}
+          needsYouCount={needsYouBySession[session.session_id] ?? 0}
           childCount={childCount}
           childrenOpen={childrenOpen}
           onToggleChildren={() => handleToggleChildren(session)}
@@ -675,7 +678,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     <SessionsToolbar
       projectId={projectId}
       sessions={sessions}
-      reviewCountBySession={reviewSummary.needsYouBySession}
+      reviewCountBySession={needsYouBySession}
       search={search}
       onSearchChange={setSearch}
       searchOpen={searchOpen}
@@ -812,7 +815,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           value1: selectedCount === 1 ? 'session' : 'sessions',
         })}
         description={tI18nComplete.raw('textac371f652a2d')}
-        confirmLabel={`Delete ${selectedCount}`}
+        confirmLabel={bulkDeleteConfirmLabel(selectedCount, tI18nComplete)}
         confirmVariant="destructive"
         isPending={bulkDeleteMutation.isPending}
         onConfirm={() => bulkDeleteMutation.mutate([...visibleSelection])}

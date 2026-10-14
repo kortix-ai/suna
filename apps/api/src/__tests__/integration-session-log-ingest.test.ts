@@ -6,8 +6,9 @@
  * credential a session sandbox holds as `KORTIX_TOKEN`) and a gzipped body,
  * the way the daemon sends it. The assertions read the rows back.
  */
+import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accountMembers, accounts, projectSessions, projects, sessionLogMessages, sessionLogs, sessionSandboxes, sessionTurns } from '@kortix/db';
+import { accountMembers, accounts, projectSessions, projects, sessionLogMessages, sessionLogThreads, sessionLogs, sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -129,6 +130,34 @@ describe('journal', () => {
     expect(await durable()).toEqual(firstDurable!);
   });
 
+  test('a lone UTF-16 surrogate is stored as U+FFFD, never a 500 (KRTX-211 poison batch)', async () => {
+    // A harness slicing an emoji in half emits `\ud83d` alone; JSON keeps it
+    // ("\\ud83d") and Postgres jsonb rejects the escape — one such record
+    // failed the whole 730 KB INSERT and the daemon retried it forever
+    // (2026-10-12: 243 5xx on this route in a day). The ingest must sanitize
+    // to U+FFFD, like a terminal, and ack the batch. Runs in the OTHER
+    // session so the manifest test's exact message list stays closed.
+    const res = await journal(batch({
+      puts: [{ rev: REV + 70, message: message('msg_well', 7, { blocks: [{ type: 'text', id: 'blk_well', text: 'sliced emoji \ud83d done' }] }) }],
+    }), tokens[OTHER]!, OTHER);
+    expect(res.status).toBe(200);
+    const [row] = await db
+      .select({ record: sessionLogMessages.record })
+      .from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, OTHER), eq(sessionLogMessages.messageId, 'msg_well')));
+    const block = (row!.record as { blocks: Array<{ id?: string; text?: string }> }).blocks.find((b) => b.id === 'blk_well');
+    expect(block!.text).toBe('sliced emoji \uFFFD done');
+  });
+
+  test('nested own __proto__ JSON data survives journal persistence', async () => {
+    const future = JSON.parse('{"__proto__":{"kept":"😀 café"},"nested":[{"__proto__":{"note":"nul\\u0000"},"bad\\u0000key":"漢字"}]}');
+    const record = message('msg_own_proto', 8, { future });
+    expect((await journal(batch({ puts: [{ rev: REV + 71, message: record }] }), tokens[OTHER]!, OTHER)).status).toBe(200);
+    const [row] = await db.select({ record: sessionLogMessages.record }).from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, OTHER), eq(sessionLogMessages.messageId, 'msg_own_proto')));
+    expect(row?.record.future).toEqual(JSON.parse('{"__proto__":{"kept":"😀 café"},"nested":[{"__proto__":{"note":"nul�"},"bad�key":"漢字"}]}'));
+  });
+
   test('the highest rev wins; a lower rev is acknowledged and changes nothing', async () => {
     const edited = message('msg_u1', 0, { status: 'aborted' });
     expect((await journal(batch({ puts: [{ rev: REV + 10, message: edited }] }))).status).toBe(200);
@@ -199,6 +228,95 @@ describe('journal', () => {
     expect(log!.record).toMatchObject({ title: 'Renamed', session_id: SESSION, restore_grade: 'partial' });
   });
 
+  test('tool output with NUL and lone surrogates stores with each as U+FFFD, and content_hash stays the sanitized record', async () => {
+    // A harness tool read a binary file: its result text carries NUL (\u0000) and lone
+    // surrogate code units. Postgres jsonb refuses both (22P05, the prod incident:
+    // `insert into "kortix"."session_log_messages"` fails and the daemon retries the
+    // batch forever), so the ingest replaces each bad unit with U+FFFD in the stored
+    // copy instead of answering 500 to the whole batch. A valid surrogate pair (an
+    // emoji) survives.
+    const put = {
+      rev: REV + 60,
+      message: message('msg_bin', 6, {
+        role: 'assistant',
+        producer: { harness: 'opencode\u0000', harness_version: '1.18.15', adapter_version: '1' },
+        blocks: [
+          {
+            type: 'tool_call',
+            id: 'blk_bin',
+            call_id: 'call_bin',
+            name: 'read',
+            kind: 'read',
+            status: 'complete',
+            result: { content: [{ type: 'text', text: 'HTTP 200 2346\n \u0000,\u0000Q\u0000I\u0000H\u0000U\u0000H\u0000 end \uD83D tail' }], is_error: false, details: { note: 'nul\u0000' } },
+            ext: { raw: { version: '1', data: 'x\u0000y' }, 'bad\u0000key': { version: '1', data: 'v' } },
+          },
+        ],
+        ext: { out: { version: '1', data: 'ok \uD83D\uDE00 pair \uDE00 lone' } },
+      }),
+    };
+    const res = await journal(batch({ generation: 2, puts: [put] }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ acked: [{ message_id: 'msg_bin', rev: REV + 60 }] });
+
+    const row = await stored('msg_bin');
+    // The KRTX-211 contract: content_hash describes the stored record — the
+    // sanitized form. Built here with an independent walk (every string, keys
+    // included; the /u class never matches inside a valid surrogate pair).
+    const safe = (s: string): string => s.replace(/[\0\uD800-\uDFFF]/gu, '\uFFFD');
+    const sanitized = JSON.parse(
+      JSON.stringify(put.message, (_k, v: unknown) => {
+        if (typeof v === 'string') return safe(v);
+        if (v && typeof v === 'object' && !Array.isArray(v)) return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([key, item]) => [safe(key), item]));
+        return v;
+      }),
+    );
+    expect(row?.hash).toBe(`sha256:${createHash('sha256').update(JSON.stringify(sanitized)).digest('hex')}`);
+    const record = row!.record as {
+      blocks: Array<{ result?: { content: Array<{ type: string; text: string }>; details?: unknown }; ext?: Record<string, unknown> }>;
+      ext?: Record<string, unknown>;
+      producer?: { harness: string };
+    };
+    expect(record.blocks[0]!.result!.content[0]).toEqual({ type: 'text', text: 'HTTP 200 2346\n \uFFFD,\uFFFDQ\uFFFDI\uFFFDH\uFFFDU\uFFFDH\uFFFD end \uFFFD tail' });
+    expect(record.blocks[0]!.result!.details).toEqual({ note: 'nul\uFFFD' });
+    expect(record.blocks[0]!.ext).toEqual({ raw: { version: '1', data: 'x\uFFFDy' }, 'bad\uFFFDkey': { version: '1', data: 'v' } });
+    expect(record.ext).toEqual({ out: { version: '1', data: 'ok \uD83D\uDE00 pair \uFFFD lone' } });
+    expect(record.producer!.harness).toBe('opencode\uFFFD');
+    // Nothing jsonb refuses reached the row: Postgres renders a NUL as \u0000 and a
+    // lone surrogate is not storable at all.
+    const [text_row] = await db.execute(sql`select record::text as r, producer::text as p from kortix.session_log_messages where session_id = ${SESSION} and message_id = 'msg_bin'`);
+    expect((text_row as { r: string }).r).not.toContain('\\u0000');
+    expect((text_row as { r: string }).r).not.toContain('\\ud83d');
+    expect((text_row as { r: string }).r).not.toContain('\\ude00');
+    // The `producer` jsonb column is a projection of the record: sanitized too.
+    expect(JSON.parse((text_row as { p: string }).p).harness).toBe('opencode\uFFFD');
+
+    const [log] = await db.select({ harnessCurrent: sessionLogs.harnessCurrent }).from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect(log?.harnessCurrent).toBe('opencode');
+  });
+
+  test('a session patch and thread the stored columns cannot hold (a NUL) store as U+FFFD', async () => {
+    // `harness_current` is a text column: a raw NUL byte fails the UPDATE with 22021
+    // the way jsonb fails a \u0000 escape with 22P05. The patch record and the thread
+    // record are jsonb; all three store sanitized.
+    const res = await journal(
+      batch({
+        generation: 2,
+        session: { title: 'read \u0000bin', harness: { current: 'opencode\u0000', history: [] } },
+        threads: [{ ...thread('bin2'), ext: { note: { version: '1', data: 't\u0000' } } }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const [log] = await db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, SESSION));
+    expect(log).toMatchObject({ harnessCurrent: 'opencode\uFFFD' });
+    expect(log!.record).toMatchObject({ title: 'read \uFFFDbin' });
+    const [thread_row] = await db
+      .select({ record: sessionLogThreads.record })
+      .from(sessionLogThreads)
+      .where(and(eq(sessionLogThreads.sessionId, SESSION), eq(sessionLogThreads.threadId, 'bin2')));
+    expect(thread_row?.record).toEqual({ ...thread('bin2'), ext: { note: { version: '1', data: 't\uFFFD' } } });
+  });
+
   test('bodies: invalid JSON shape 400, over 2 MB gzipped 413, over 16 MB raw 413', async () => {
     expect((await journal(batch({ puts: [{ rev: -1, message: {} }] }))).status).toBe(400);
     expect((await journal(new Uint8Array(2 * 1024 * 1024 + 1))).status).toBe(413);
@@ -225,6 +343,7 @@ describe('manifest', () => {
       ['msg_a1', REV + 20, true],
       ['msg_u2', REV + 11, false],
       ['msg_u3', REV + 40, false],
+      ['msg_bin', REV + 60, false],
     ]);
     expect(body.messages[0]!.content_hash).toBe((await stored('msg_u1'))!.hash);
   });

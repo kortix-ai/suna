@@ -49,6 +49,7 @@ Each session also has an `origin`, the class of caller that started it.
 You need the `project.session.start` permission. The agent you pick, or the project's default agent, must be one you may launch.
 
 - **Web, desktop, or mobile app:** write a prompt in the composer and send it. See [Web, desktop & mobile](/docs/clients).
+- **Desktop app, from any other app:** press **Command+Shift+Space** (**Ctrl+Shift+Space** on Windows and Linux), type the prompt, and press Enter. See [Quick Entry](/docs/clients#quick-entry).
 - **CLI:** run `kortix sessions new` from a linked project directory.
 - **API and SDK:** `POST /v1/projects/<project_id>/sessions` answers `201` with the session, or `202` when the create continues in the background. See [Sessions from code](/docs/sdk/sessions).
 - **Slack, Microsoft Teams, and email:** a message to the bot starts a session. See [Slack, Teams & email](/docs/connect/channels).
@@ -144,7 +145,20 @@ kortix sessions approve <session_id> [<request_id>] --always # or --reject, --me
 kortix sessions answer <session_id> [<request_id>] --option "<value>" --text "<answer>"
 ```
 
-A turn that waits does no work. It keeps its sandbox for at most 2 hours. A session with origin `trigger`, `schedule`, or `system` has no one to ask, and its limit is 30 minutes. Then the turn ends and the sandbox stops. Kortix stores an open question outside the sandbox, so the session still shows it. Send a message to continue.
+A turn that waits does no work. It keeps its sandbox for at most 2 hours. A session with origin `trigger`, `schedule`, or `system` has no one to ask, and its limit is 30 minutes. Then the turn ends and the sandbox stops. Kortix stores an open question outside the sandbox, so the session still reads **Needs you**. The session page then shows no answer card, and `kortix sessions answer` finds no question: send a message to continue. That message answers the question and closes it.
+
+### Needs you in the session lists
+
+A session reads **Needs you** in the sidebar, on the Sessions page, and in the mobile app while something waits on you: an open agent question, a connector call under an **Ask** policy, or a review item. `GET /v1/projects/<project_id>/approvals/needs-input` lists the sessions with an open question or a pending connector call. The lists read it every 30 seconds, and again when a question opens or closes in an open session or you decide a connector call. A project manager sees every session. Any other member sees the sessions they started.
+
+An open question closes when:
+
+- you answer or dismiss it,
+- a new message starts a turn in the session,
+- the turn ends, or
+- a Slack or Teams thread takes the question. Your reply in the thread starts a new turn.
+
+A message that joins a running turn does not close that turn's question: the turn still waits for the answer. A question stays open while its sandbox is stopped after the wait limit. A permission request shows on the session page only.
 
 A connector call under an **Ask** policy is a different thing: a durable approval that waits until a person decides.
 
@@ -160,13 +174,13 @@ See [Connectors](/docs/connect/connectors#policies-and-approvals).
 
 | Read | CLI | API |
 | --- | --- | --- |
-| Recent messages | `kortix sessions log [<id>] [--limit N]` | `GET .../sessions/<session_id>/transcript` |
+| Recent messages | `kortix sessions log [<id>] [--limit N] [--json]` | `GET .../sessions/<session_id>/log` |
 | One session's fields | `kortix sessions info <id>` | `GET .../sessions/<session_id>` |
 | What every agent does now | `kortix sessions status [--all]` | — |
 | Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
 | Live events | — | `GET .../sessions/<session_id>/events` |
 
-The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the saved transcript of a stopped session. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `"provisional": true`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
 
 ## Stop, resume and delete
 
@@ -204,6 +218,7 @@ Kortix stops a sandbox when nothing keeps it awake. Each event below keeps the s
 
 - The stop check runs about every 5 minutes. An idle session stops about 15 to 20 minutes after its last turn.
 - An open page counts only for a person who may start sessions in the project. A read-only viewer's tab never keeps a sandbox awake.
+- Above the composer, a line shows how much longer the open page can keep the sandbox awake. Within 15 minutes of the 2-hour page limit, the line shows when the sandbox stops instead. The line is hidden while a turn runs. It is also hidden while another event in the table, such as preview port use, keeps the sandbox awake past the page limit.
 - A new message starts a turn and resets the 2-hour page limit.
 - Other requests a sandbox makes itself, with its own token or its own `kortix` CLI, never keep it awake. Only its LLM calls through the gateway count.
 
@@ -376,7 +391,7 @@ A session's notifications go to:
 
 - **The bell**, at the top of the project sidebar and on the projects page, in the web and desktop apps. Choose a notification to open its session, or the **Triggers** or **Reminders** page for an alert. **Mark all as read** clears the count. Opening a session marks its notifications read, in every app. A new notification also shows as a toast, unless it is about the session on your screen.
 - **The mobile app** gets a push for each kind your **Push** switches allow. **Notifications** in the drawer lists them across projects.
-- **The browser**, with every Kortix tab closed, through Web Push in Chrome, Edge, Firefox, and Safari on macOS. Open **Settings → Notifications**, turn on **Enable notifications**, and allow it when the browser asks. The setting is per browser. Signing out stops it.
+- **The browser**, with every Kortix tab closed, through Web Push in Chrome, Edge, Firefox, and Safari on macOS. Open **Settings → Notifications**, turn on **Enable notifications**, and allow it when the browser asks. The setting is per browser. Signing out stops it. An account that requires MFA sends browser push only to a browser signed in with MFA; its super admins get it either way, as the app lets them in without MFA.
 - **The desktop app** checks about once a minute while its window is open. When the window is not in focus, it shows up to 3 new ones per check as OS notifications.
 - **Email:** `automation_failed` goes at once. A digest kind joins your next digest when it is still unread 15 minutes after it arrives. You get at most one digest per hour, listing up to 10 notifications plus a count of the rest. A self-hosted instance needs an email provider. Without one, the **Email** switches do not show.
 

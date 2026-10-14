@@ -8,6 +8,8 @@
 
 import type { ToolPart } from '../../runtime/client';
 import { toolKind } from '../tool-kind';
+import { asToolPart, isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
 import { humanizeSearchQuery } from './search-query';
 import { stripTrailingSlashes } from '../text-scan';
 
@@ -64,8 +66,10 @@ function truncate(s: string, max = 60): string {
 /**
  * Extract the one thing that identifies a tool call in a one-liner.
  * Used for context-group item labels and any future compact views.
+ * Reads a session-log tool call block the same way as its v1 part.
  */
-export function getToolPrimaryArg(part: ToolPart): string {
+export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
+  const part = asToolPart(call);
   const state = (part.state ?? {}) as any;
   const input = (state.input ?? {}) as Record<string, any>;
   const key = normalizeName(part.tool);
@@ -173,16 +177,17 @@ export const DEFAULT_CONTEXT_TOOL_TRIGGER_LABELS: Readonly<ContextToolTriggerLab
 
 /**
  * Build a trigger { title, subtitle } for any tool inside the expanded
- * UnifiedGroup. Context tools get friendly names; others use their
+ * UnifiedGroup (a v1 tool part or a session-log tool call block). Context tools get friendly names; others use their
  * canonical name in Title Case.
  */
 export function contextToolTrigger(
-  part: ToolPart,
+  call: ToolPart | ToolCallBlock,
   labels: Partial<ContextToolTriggerLabels> = {},
 ): {
   title: string;
   subtitle: string;
 } {
+  const part = isToolCallBlock(call) ? toolPartOf(call) : call;
   const l = { ...DEFAULT_CONTEXT_TOOL_TRIGGER_LABELS, ...labels };
   const n = normalizeName(part.tool);
   const sub = getToolPrimaryArg(part);

@@ -723,6 +723,11 @@
       "count": 3
     }
   },
+  "src/channels/teams/installs.ts": {
+    "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
   "src/channels/teams/interactivity.ts": {
     "kortix-api/projects-surface": {
       "count": 2
@@ -2836,7 +2841,7 @@
       "count": 9
     },
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/sandbox-proxy/forward/upstream.ts": {

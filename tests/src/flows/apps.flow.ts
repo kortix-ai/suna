@@ -1,5 +1,5 @@
 /**
- * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
+ * Kortix Apps — project-owned App CRUD, artifact registration, and
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
  * or one deployment together with its provider images, and the machine, scale,
  * exec and volume routes. Maps to spec section 28 (APP-1..8,
@@ -838,10 +838,11 @@ flow(
     let appHost = "";
 
     // The gate, at the App's own hostname. Local Apps answer under
-    // `<route-key>.apps.localhost`; the API honours `x-kortix-app-host` there.
+    // `<route-key>.apps.localhost`: the Host names the App (an unsigned
+    // `x-kortix-app-host` claim is never trusted).
     const gate = async (pathAndQuery: string, headers: Record<string, string> = {}) => {
       const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
-        headers: { accept: "application/json", "x-kortix-app-host": appHost, ...headers },
+        headers: { accept: "application/json", host: `${appHost}:${new URL(apiOrigin).port}`, ...headers },
         redirect: "manual",
       });
       const text = await response.text();
@@ -1182,7 +1183,7 @@ flow(
 
     const page = async (path: string, headers: Record<string, string> = {}) => {
       const response = await fetch(`${apiOrigin}${path}`, {
-        headers: { "x-kortix-app-host": appHost, ...headers },
+        headers: { host: `${appHost}:${new URL(apiOrigin).port}`, ...headers },
         redirect: "manual",
       });
       return { status: response.status, headers: response.headers, text: await response.text() };

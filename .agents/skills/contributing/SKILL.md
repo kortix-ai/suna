@@ -54,15 +54,14 @@ Done when the commit exists and the hooks passed.
 
 ### 3. Verify in your box
 
-Run the narrowest relevant test first, then `pnpm test` (the **testing** skill). Then run
+Run the tests that cover the change, narrowest first (the **testing** skill). A diff that
+no test reads (docs, a skill, a standalone script) needs no run. Then run
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
-`pnpm test` writes `tests/attestations/<branch>.json` and deletes every other file
-there: commit `tests/attestations/` (`git add -A tests/attestations`). If a merge of
-`origin/main` conflicts on the legacy `tests/test-attestation.json`, delete it. The pre-push hook and the
-merge gate run `pnpm test:verify` against the pushed head and reject a stale or red
-attestation. Never push with `--no-verify`.
+No hook or merge gate requires a test run on a PR into `dev`. A green `pnpm test` writes
+`tests/attestations/<branch>.json`; committing it is optional. If a merge of `origin/dev`
+conflicts on the legacy `tests/test-attestation.json`, delete it.
 
 Done when the commands you will list under "How was this tested?" passed, with output
 captured.
@@ -195,16 +194,18 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
-| PR into `main` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
-| Push to `main` (the merge) | `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
-| Dispatch / schedule on `main` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
-| PR into `staging` | the `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
-| PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
+| PR into `dev` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
+| Push to `dev` (the merge) | every `Tests` lane (queued), `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. | no merge; a red `Tests` run blocks the next promotion |
+| Dispatch / schedule on `dev` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
+| PR into `staging` | the `Tests` lanes (skipped when the head SHA has a green `dev` run), `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
+| PR into `prod` | the same scanners plus `tests-release.yml` (dispatched by Promote to Production); its `full suite + quality gates` check is the only required check in the repo | yes |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
-`tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to a schedule, a dispatch, or the release
-PRs, never to PRs into `main`. Add it to `push: main` only when it takes seconds: a
-push runs on GitHub-billed minutes, and the factory merges ~37 PRs a day.
+`tests.yml` and `deploy-preview.yml` triggers on a pull request into `dev`. Move a new check to a schedule, a dispatch, the
+push to `dev`, or the release PRs, never to PRs into `dev`. GitHub-hosted runners are
+free on this public repo; the limit is the organization's concurrent-job cap, so a
+new `push: dev` workflow must queue (`cancel-in-progress: false` per ref), never run
+once per merge in parallel.
 
 ## Labels
 

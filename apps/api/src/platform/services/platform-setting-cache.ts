@@ -33,8 +33,12 @@ export function createCachedPlatformSetting<T>(
 ): CachedPlatformSetting<T> {
   let cache: { value: T; at: number } | null = null;
   let inflight: Promise<void> | null = null;
+  // Reads can finish out of order; an older read never overwrites a newer one.
+  let started = 0;
+  let stored = 0;
 
-  async function refresh(): Promise<void> {
+  async function load(): Promise<T> {
+    const seq = ++started;
     let value: T = parse(undefined);
     try {
       const { hasDatabase, db } = await import('../../shared/db');
@@ -51,7 +55,15 @@ export function createCachedPlatformSetting<T>(
     } catch {
       /* database hiccup -> "nothing stored"; consumers fall back to env */
     }
-    cache = { value, at: Date.now() };
+    if (seq > stored) {
+      stored = seq;
+      cache = { value, at: Date.now() };
+    }
+    return value;
+  }
+
+  async function refresh(): Promise<void> {
+    await load();
   }
 
   function ensureFresh(): void {

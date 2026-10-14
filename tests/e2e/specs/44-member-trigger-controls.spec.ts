@@ -1,6 +1,7 @@
 import { type Page, expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
+import { setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
@@ -26,6 +27,18 @@ async function openTrigger(page: Page, projectId: string) {
   await page.goto(`/projects/${projectId}/customize/triggers`, { waitUntil: 'domcontentloaded' });
   await dismissOnboarding(page);
   await page.getByRole('button', { name: TRIGGER, exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: TRIGGER, exact: true });
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
+
+/** The same trigger, opened from the Agent page's Triggers section. */
+async function openTriggerFromAgentPage(page: Page, projectId: string) {
+  await page.goto(`/projects/${projectId}/customize/agents/kortix?section=triggers`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await dismissOnboarding(page);
+  await page.getByRole('button', { name: new RegExp(`^${TRIGGER}`) }).click();
   const sheet = page.getByRole('dialog', { name: TRIGGER, exact: true });
   await expect(sheet).toBeVisible();
   return sheet;
@@ -124,6 +137,131 @@ test('44 — a member gets Run now on a trigger, and no Pause or Delete', async 
   } finally {
     await project?.dispose().catch(() => undefined);
     await deleteAuthUser(member.id, authOptions).catch(() => undefined);
+    await deleteAuthUser(owner.id, authOptions).catch(() => undefined);
+  }
+});
+
+/**
+ * KRTX-1720: a custom role that may update triggers, and may not fire or
+ * delete them, gets Pause and the editors and no Run now and no More actions
+ * (Delete), on the Triggers page and on the Agent page. The update routes load
+ * the project for write, so the role holds `project.write` with
+ * `project.trigger.update`; it holds no fire, create or delete leaf.
+ */
+test('44 — a custom update-only role pauses a trigger, with no Run now and no Delete, on the Triggers and Agent pages', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const env = loadEnv();
+  if (!env.databaseUrl) throw new Error('KE2E_DATABASE_URL is required');
+  const runId = Date.now().toString(36);
+  const ownerEmail = `e2e-trigger-editor-owner-${runId}@example.test`;
+  const editorEmail = `e2e-trigger-editor-${runId}@example.test`;
+  const owner = await createAuthUser(ownerEmail, authOptions);
+  const editor = await createAuthUser(editorEmail, authOptions);
+  let project: ManifestProject | undefined;
+
+  try {
+    const ownerAuth = await signIn(ownerEmail, authOptions);
+    const accounts = await api<{ account_id: string; personal_account?: boolean }[]>(
+      ownerAuth.access_token,
+      'GET',
+      '/accounts',
+    );
+    const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
+    project = await createManifestProject({
+      api,
+      accessToken: ownerAuth.access_token,
+      accountId,
+      userId: owner.id,
+      name: `Trigger editor ${runId}`,
+      databaseUrl: env.databaseUrl,
+    });
+    const projectId = project.id;
+    // Custom roles need the account's rbac entitlement; the enterprise demo
+    // turns it on for this synthetic account.
+    await setDatabaseEnterpriseDemo(env, accountId, true);
+    await api(ownerAuth.access_token, 'POST', `/accounts/${accountId}/members`, { email: editorEmail, role: 'member' }, 201);
+    const role = await api<{ role_id: string }>(
+      ownerAuth.access_token,
+      'POST',
+      `/accounts/${accountId}/iam/roles`,
+      {
+        key: `trigger_editor_${runId}`,
+        name: 'Trigger editor',
+        resourceType: 'project',
+        actions: [
+          'project.read',
+          'project.write',
+          'project.agent.read',
+          'project.trigger.read',
+          'project.trigger.update',
+        ],
+      },
+      201,
+    );
+    await api(
+      ownerAuth.access_token,
+      'POST',
+      `/accounts/${accountId}/iam/policies`,
+      { principalType: 'member', principalId: editor.id, roleId: role.role_id, scopeType: 'project', scopeId: projectId },
+      201,
+    );
+    // Agents are deny-by-default: the Agent page lists only the agents a person
+    // was given. The marker role holds no permission, so it adds no control.
+    await api(
+      ownerAuth.access_token,
+      'POST',
+      `/accounts/${accountId}/iam/assignments`,
+      {
+        principal_type: 'user',
+        principal_id: editor.id,
+        role_key: 'agent-user',
+        scope_type: 'project',
+        scope_id: projectId,
+        object_type: 'agent',
+        object_id: 'kortix',
+      },
+      201,
+    );
+    await api(
+      ownerAuth.access_token,
+      'POST',
+      `/projects/${projectId}/triggers`,
+      { name: TRIGGER, type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.', agent: 'kortix' },
+      201,
+    );
+
+    const editorAuth = await signIn(editorEmail, authOptions);
+    await installBrowserSessionDirect(page, editorAuth, `/projects/${projectId}`, authOptions);
+    await selectAccountForUi(page, accountId);
+
+    await test.step('Triggers page: Pause, and no Run now and no More actions (Delete)', async () => {
+      const sheet = await openTrigger(page, projectId);
+      await expect(sheet.getByRole('button', { name: 'Pause' })).toBeVisible();
+      await expect(sheet.getByRole('button', { name: 'Run now' })).toHaveCount(0);
+      await expect(sheet.getByRole('button', { name: 'More actions' })).toHaveCount(0);
+    });
+
+    await test.step('Pause reaches the update route, and the API accepts it', async () => {
+      const update = page.waitForResponse(
+        (r) => r.request().method() === 'PATCH' && /\/v1\/projects\/[^/]+\/triggers\/[^/]+$/.test(r.url()),
+      );
+      await page.getByRole('dialog', { name: TRIGGER, exact: true }).getByRole('button', { name: 'Pause' }).click();
+      const response = await update;
+      expect(response.status()).toBe(200);
+      expect(response.request().postDataJSON()).toEqual({ enabled: false });
+    });
+
+    await test.step('Agent page: the same trigger offers Resume, and no Run now and no More actions', async () => {
+      const sheet = await openTriggerFromAgentPage(page, projectId);
+      await expect(sheet.getByRole('button', { name: 'Resume' })).toBeVisible();
+      await expect(sheet.getByRole('button', { name: 'Run now' })).toHaveCount(0);
+      await expect(sheet.getByRole('button', { name: 'More actions' })).toHaveCount(0);
+    });
+  } finally {
+    await project?.dispose().catch(() => undefined);
+    await deleteAuthUser(editor.id, authOptions).catch(() => undefined);
     await deleteAuthUser(owner.id, authOptions).catch(() => undefined);
   }
 });

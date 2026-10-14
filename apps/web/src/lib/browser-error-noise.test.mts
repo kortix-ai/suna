@@ -238,7 +238,7 @@ test('flags the injected embed widget source as third-party noise', () => {
 
 // Reproduces the Kortix Frontend (prod) RuntimeNotReadyError cluster (patterns
 // 1a9acfd0…, 4c20d52d…, 7e2697b4…, a58cd1cb…, …). `getClient()` throws
-// `RuntimeNotReadyError: [opencode-sdk] Server URL not ready — sandbox is
+// `RuntimeNotReadyError: [kortix-runtime] Server URL not ready — sandbox is
 // still loading` for the ~1s window before a session's runtime URL pins — an
 // expected, self-healing state on every session switch/provisioning. The
 // render-path UI handling lives in `app/error.tsx` + `SandboxLoadingBoundary`,
@@ -248,9 +248,9 @@ test('flags the injected embed widget source as third-party noise', () => {
 // backstop that drops it regardless of capture path.
 const RUNTIME_NOT_READY_EVENTS = [
   // The canonical SDK throw (RuntimeNotReadyError).
-  'RuntimeNotReadyError: [opencode-sdk] Server URL not ready — sandbox is still loading',
+  'RuntimeNotReadyError: [kortix-runtime] Server URL not ready — sandbox is still loading',
   // The bare message (env.ts path / re-wrapped).
-  '[opencode-sdk] Server URL not ready — sandbox is still loading',
+  '[kortix-runtime] Server URL not ready — sandbox is still loading',
   // The pty guard variant.
   '[kortix-pty] Server URL not ready — sandbox is still loading',
   // An unhandled-rejection wrapper preserving the message.
@@ -295,7 +295,7 @@ test('suppresses a runtime-not-ready unhandled rejection from the browser', () =
   assert.equal(
     shouldIgnoreBrowserRuntimeNoise({
       message:
-        'Unhandled promise rejection: [opencode-sdk] Server URL not ready — sandbox is still loading',
+        'Unhandled promise rejection: [kortix-runtime] Server URL not ready — sandbox is still loading',
     }),
     true,
   );

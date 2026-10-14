@@ -1,3 +1,4 @@
+import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -58,7 +59,7 @@ Build succeeded.
 describe('PtyReadTool folds the scrollback, keeps the tail', () => {
   test('the last 24 lines stay on screen and the rest folds behind a counted trigger', () => {
     const html = renderToStaticMarkup(
-      withProviders(<PtyReadTool part={makePart(LONG_BUFFER)} defaultOpen />),
+      withProviders(<PtyReadTool call={toolCallBlock(makePart(LONG_BUFFER))} defaultOpen />),
     );
 
     // Tail: the newest output, which is the answer.
@@ -79,7 +80,7 @@ describe('PtyReadTool folds the scrollback, keeps the tail', () => {
 
   test('a short buffer is not folded at all — there is nothing to hide', () => {
     const html = renderToStaticMarkup(
-      withProviders(<PtyReadTool part={makePart(SHORT_BUFFER)} defaultOpen />),
+      withProviders(<PtyReadTool call={toolCallBlock(makePart(SHORT_BUFFER))} defaultOpen />),
     );
 
     expect(html).toContain('pnpm build');
@@ -91,7 +92,7 @@ describe('PtyReadTool folds the scrollback, keeps the tail', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <PtyReadTool part={makePart(LONG_BUFFER)} defaultOpen />
+          <PtyReadTool call={toolCallBlock(makePart(LONG_BUFFER))} defaultOpen />
         </ToolSurfaceContext.Provider>,
       ),
     );
