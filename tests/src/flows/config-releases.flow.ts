@@ -300,7 +300,14 @@ async function commitTo(
     await run('git', ['add', '-A'], work);
     await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', message], work);
     await run('git', [...repo.auth, 'push', '-q', 'origin', `HEAD:refs/heads/${repo.branch}`], work);
-    return (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+    const tip = (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+    // A push straight to a path upstream (the local target) bypasses Kortix, as
+    // a push straight to GitHub does: the API sees it within one mirror refresh
+    // interval (apps/api/src/config-releases/base-tip.ts), which the local
+    // stack sets to 1 s (`KORTIX_GIT_REFRESH_INTERVAL_MS`). A push through the
+    // git proxy is seen at once.
+    if (repo.url.startsWith('/')) await sleep(1_100);
+    return tip;
   } finally {
     await rm(work, { recursive: true, force: true });
   }
