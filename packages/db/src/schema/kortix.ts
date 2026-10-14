@@ -8,6 +8,7 @@ import {
   foreignKey,
   index,
   integer,
+  json,
   jsonb,
   numeric,
   pgSchema,
@@ -2656,6 +2657,12 @@ export const sessionLogMessages = kortixSchema.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     // The whole Message record.
     record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    // The key order of each tool_call input in `record` (jsonb sorts keys), by
+    // block index: the input with every leaf as 0, `null` for other blocks. A
+    // restore puts the keys back in this order, so the next model request is
+    // byte-equal and keeps the provider prompt cache. `json` keeps its text as
+    // written. Null: no tool_call input, or a row written before this column.
+    toolInputOrder: json('tool_input_order').$type<unknown[]>(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
