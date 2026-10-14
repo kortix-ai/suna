@@ -68,7 +68,7 @@ route, the body, the credential, the retries and the dead-token breaker.
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 
-## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b, P6.2, P6.3, P6.4)
+## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b, P6.2, P6.3, P6.4, P6.5)
 
 An adapter implements `SessionLogPort` (`contract/session-log.ts`):
 `changes(cursors)` returns the messages, tombstones, thread upserts and session
@@ -328,6 +328,47 @@ Known limits of the OpenCode export:
 - OpenCode 1.18.23's compaction part has no `tail_start_id` on a live box, so the compaction block's `first_kept_message_id` is `null` (what OpenCode stored; a restore into another harness counts it as a missing cut point).
 - A daemon restart sends every message again in its first batch: only a boot that restored gives the journal its cursors.
 - A lost or corrupt `opencode-session-log.json` issues seqs again from 1 (a corrupt one logs a warning) until a restore (P6.3) writes the seqs of the API's log.
+
+### Bumping a harness (P6.5)
+
+Each adapter declares in its capabilities what its oracle suites passed against:
+`PI_CAPABILITIES` (`pi/session-log.ts`) and `OPENCODE_CAPABILITIES`
+(`open-code/session-log.ts`), field `harness_versions` (a semver range, today
+`1.0.3` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
+by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
+reads them and fails when a pin leaves them:
+
+- pi: the four `@earendil-works/pi-*` deps in `package.json` (the daemon bundles
+  them) and `PI_HARNESS_VERSION` (`pi/version.ts`).
+- OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
+  installs it; `opencode-db.test.ts` also gates its minor line).
+- Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
+
+To bump a harness or the minor:
+
+1. Change the pin. pi: the four deps and `PI_HARNESS_VERSION`, then
+   `pnpm install`. OpenCode: `runtime-versions.json`; the oracle downloads the
+   npm platform package of the new version once into
+   `~/.kortix/opencode/<version>/` (60 MB, about 2 s).
+2. Run the oracle suites: `bun run test session-log` in this app (8 files, 141
+   tests, about 2 min on a laptop): both adapters' export and restore against
+   the real harness and the mock LLM (`helpers/fake-model.ts`, dummy key,
+   isolated home), the golden and recorded logs, the boot, the journal, the
+   guard.
+3. Fix the adapter until they pass. Then add the version to the adapter's
+   `harness_versions` (`1.18.23 || 1.18.24` while boxes on the old pin still
+   run) or the minor to `schema_minors`.
+
+The suites run in the `packages` lane (`tests/bin/package-quality.ts` runs
+`pnpm --filter kortixd test`) and in the diff-scoped `pnpm test` when this app,
+`packages/shared` or `packages/api-contract` changes. The negative controls
+prove the oracle can fail: OpenCode's golden test checks a log with one changed
+answer against the request and expects a difference, and pi's partial-log test
+expects exactly the one difference the restore dropped. A broken mapping fails
+the suites: dropping pi's reasoning fails 2 of 19 pi restore tests, writing
+OpenCode reasoning as text fails 1 of 26 OpenCode restore tests. Not covered:
+no fixture holds an assistant text with `model_text` (no harness exports one),
+so OpenCode's restore passes when it drops that field.
 
 ### The v2 stream (P4.3)
 
