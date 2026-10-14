@@ -63,6 +63,7 @@ pub struct Settings {
     /// default). The tray installs or removes the OS login entry when it changes.
     pub launch_at_login: bool,
     pub shortcuts: ShortcutSettings,
+    pub experimental: ExperimentalSettings,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
     /// The operator's policy, set only by [`Settings::effective`]; never saved.
@@ -95,6 +96,17 @@ pub struct StorageSettings {
     /// below 0.5 GB, so SQLite and the video finalizer can still write while the
     /// user frees space. It is re-created once free space recovers.
     pub reserve_mb: u64,
+}
+
+/// Features still being shaped. They are hidden until switched on; hiding a control
+/// never changes what applies.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ExperimentalSettings {
+    /// Show the Never record controls (exclusion groups, private browsing, own excluded
+    /// apps and websites) in Settings. On a computer under a Kortix policy, the policy's
+    /// `experimental.privacy_controls` decides instead.
+    pub privacy_controls: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -182,6 +194,7 @@ impl Default for Settings {
             airgap: false,
             launch_at_login: true,
             shortcuts: ShortcutSettings::default(),
+            experimental: ExperimentalSettings::default(),
             extra: BTreeMap::new(),
             policy: None,
             own_bundle_ids: Vec::new(),

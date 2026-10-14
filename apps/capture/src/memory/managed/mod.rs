@@ -117,13 +117,15 @@ pub fn read_config() -> Option<ManagedConfig> {
     }
 }
 
-/// The organization manages this computer: the machine service is installed
-/// (Windows), or a managed configuration exists (macOS profile or config file,
+/// The organization manages this computer: the machine service is installed and IT
+/// configured it (Windows), or a managed configuration exists (macOS profile or config file,
 /// Linux `/etc/kortix/capture.json`; readable or not). Recording is the organization's.
 pub fn machine_service_installed() -> bool {
     #[cfg(all(windows, feature = "capture-engine"))]
     {
-        machine::service_installed()
+        // The MSI installs the service on every computer; it manages only once IT has
+        // configured it (its public state says so).
+        machine::service_installed() && machine_state_configured()
     }
     #[cfg(unix)]
     {
@@ -133,6 +135,15 @@ pub fn machine_service_installed() -> bool {
     {
         false
     }
+}
+
+/// `machine.json` (readable by every user) says the machine service has IT's configuration.
+#[cfg(all(windows, feature = "capture-engine"))]
+fn machine_state_configured() -> bool {
+    std::fs::read(state_path())
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .is_some_and(|v| v["configured"] == true)
 }
 
 /// The OS user running this process, for `sync enroll`.
@@ -462,7 +473,7 @@ pub fn agent(paths: &MemoryPaths) -> Result<()> {
     }
 }
 
-// ─── The tray notice ────────────────────────────────────────────────────────
+// ─── The tray text and the organization's notice ───────────────────────────
 
 /// What the tray shows.
 #[derive(Debug, Clone, PartialEq)]
@@ -471,53 +482,69 @@ pub struct TrayText {
     pub tip: String,
     /// The first menu line.
     pub status: String,
-    pub balloon_title: String,
-    pub balloon: String,
 }
 
 /// The tray's words for this library now. `recording`: the service's recorder runs.
 pub fn tray_text(paths: &MemoryPaths, recording: bool) -> TrayText {
-    let account = issuer::registration(paths)
-        .and_then(|r| r.account_name)
-        .unwrap_or_else(|| "your organization".into());
-    let s = Settings::effective(paths);
-    let notice = super::policy::read(paths).and_then(|p| p.policy.notice().map(str::to_string));
-    let reason = s.inactive_reason(super::store::now_ms());
-    tray_words(&account, notice.as_deref(), recording, reason)
+    let account = issuer::registration(paths).and_then(|r| r.account_name);
+    let reason = Settings::effective(paths).inactive_reason(super::store::now_ms());
+    tray_words(account.as_deref(), recording, reason)
 }
 
-pub fn tray_words(
-    account: &str,
-    notice: Option<&str>,
-    recording: bool,
-    reason: Option<&str>,
-) -> TrayText {
+/// Labels and status only. The account is named when it is known.
+pub fn tray_words(account: Option<&str>, recording: bool, reason: Option<&str>) -> TrayText {
     let status = match (reason, recording) {
-        (Some("policy_paused"), _) => format!("Paused by {account}"),
-        (Some("policy_off"), _) => format!("Screen recording is off for {account}"),
+        (Some("policy_paused"), _) => account.map_or("Paused by policy".into(), |a| format!("Paused by {a}")),
+        (Some("policy_off"), _) => account.map_or("Screen recording is off by policy".into(), |a| format!("Screen recording is off for {a}")),
         (Some(_), _) => "Paused".to_string(),
-        (None, true) => format!("Recording for {account}"),
-        (None, false) => "Starting…".to_string(),
+        (None, true) => account.map_or("Recording".into(), |a| format!("Recording for {a}")),
+        (None, false) => "Not recording".to_string(),
     };
     let tip: String = format!("Kortix Capture — {}", status.to_lowercase_first())
         .chars()
         .take(127)
         .collect();
-    let balloon = notice
-        .map(str::trim)
-        .filter(|n| !n.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            format!(
-                "Kortix Capture records this computer's screen and actions for {account}. Your organization's recording policy applies."
-            )
-        });
-    TrayText {
-        tip,
-        status,
-        balloon_title: format!("Kortix Capture — {account}"),
-        balloon: balloon.chars().take(255).collect(),
-    }
+    TrayText { tip, status }
+}
+
+/// The organization's notice, shown once per person per notice text: `(title, body, hash)`.
+/// Nothing when the organization set none, or when `shown_hash` is this text's hash.
+/// The title is the account name, else the app name. No placeholder sentence.
+pub fn notice_to_show(
+    notice: Option<&str>,
+    account: Option<&str>,
+    shown_hash: &str,
+) -> Option<(String, String, String)> {
+    use sha2::{Digest, Sha256};
+    let text = notice.map(str::trim).filter(|n| !n.is_empty())?;
+    let hash = format!("{:x}", Sha256::digest(text.as_bytes()));
+    (hash != shown_hash.trim()).then(|| {
+        (
+            account
+                .map(str::trim)
+                .filter(|a| !a.is_empty())
+                .unwrap_or("Kortix Capture")
+                .to_string(),
+            text.chars().take(255).collect(),
+            hash,
+        )
+    })
+}
+
+fn notice_marker(paths: &MemoryPaths) -> std::path::PathBuf {
+    paths.root.join("notice-shown")
+}
+
+/// The notice this library has not shown yet, if the organization's policy has one.
+pub fn pending_notice(paths: &MemoryPaths) -> Option<(String, String, String)> {
+    let policy = super::policy::read(paths)?;
+    let account = issuer::registration(paths).and_then(|r| r.account_name);
+    let shown = std::fs::read_to_string(notice_marker(paths)).unwrap_or_default();
+    notice_to_show(policy.policy.notice(), account.as_deref(), &shown)
+}
+
+pub fn mark_notice_shown(paths: &MemoryPaths, hash: &str) {
+    let _ = std::fs::write(notice_marker(paths), hash);
 }
 
 trait LowerFirst {
@@ -582,13 +609,6 @@ pub fn tray_status(
         },
         _ => "Not recording".into(),
     }
-}
-
-/// The one-time notice at the start of a session: the organization's words when
-/// the computer is managed or signed in, nothing for a computer that records only
-/// for itself.
-pub fn logon_notice(text: &TrayText, managed: bool, signed_in: bool) -> Option<(String, String)> {
-    (managed || signed_in).then(|| (text.balloon_title.clone(), text.balloon.clone()))
 }
 
 /// `kortix-capture tray`. `autostart`: started by the desktop's autostart entry;
@@ -730,28 +750,19 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_names_the_organization_and_shows_its_notice() {
-        let t = tray_words("Example Org", None, true, None);
+    fn the_tray_says_status_only_and_names_the_account_when_known() {
+        let t = tray_words(Some("Example Org"), true, None);
         assert_eq!(t.tip, "Kortix Capture — recording for Example Org");
         assert_eq!(t.status, "Recording for Example Org");
-        assert!(t.balloon.contains("Example Org"), "{}", t.balloon);
-        let t = tray_words(
-            "Example Org",
-            Some("  Recorded for process analysis.  "),
-            true,
-            None,
-        );
-        assert_eq!(t.balloon, "Recorded for process analysis.");
-        assert_eq!(
-            tray_words("Example Org", None, true, Some("policy_paused")).status,
-            "Paused by Example Org"
-        );
-        assert_eq!(
-            tray_words("Example Org", None, false, None).status,
-            "Starting…"
-        );
+        assert_eq!(tray_words(None, true, None).status, "Recording");
+        assert_eq!(tray_words(None, false, None).status, "Not recording");
+        assert_eq!(tray_words(Some("Example Org"), true, Some("policy_paused")).status, "Paused by Example Org");
+        assert_eq!(tray_words(None, true, Some("policy_paused")).status, "Paused by policy");
+        for t in [tray_words(None, true, Some("policy_off")), tray_words(None, false, None)] {
+            assert!(!t.status.to_lowercase().contains("your organization"), "{}", t.status);
+        }
         let long = "x".repeat(400);
-        assert_eq!(tray_words(&long, None, true, None).tip.chars().count(), 127);
+        assert_eq!(tray_words(Some(&long), true, None).tip.chars().count(), 127);
     }
 
     #[test]
@@ -809,27 +820,21 @@ mod tests {
     }
 
     #[test]
-    fn the_logon_notice_is_for_managed_or_signed_in_computers_only() {
-        let t = tray_words(
-            "Example Org",
-            Some("Recorded for process analysis."),
-            true,
-            None,
-        );
-        assert_eq!(
-            logon_notice(&t, true, false),
-            Some((
-                "Kortix Capture — Example Org".to_string(),
-                "Recorded for process analysis.".to_string()
-            ))
-        );
-        assert!(logon_notice(&t, false, true).is_some());
-        assert_eq!(logon_notice(&t, false, false), None);
-        let default = tray_words("Example Org", None, true, None);
-        assert!(logon_notice(&default, true, true)
-            .unwrap()
-            .1
-            .contains("Example Org"));
+    fn the_organizations_notice_shows_once_per_text_and_never_as_a_placeholder() {
+        // No notice set: nothing, whoever the account is.
+        assert_eq!(notice_to_show(None, Some("Example Org"), ""), None);
+        assert_eq!(notice_to_show(Some("   "), Some("Example Org"), ""), None);
+        let (title, body, hash) =
+            notice_to_show(Some("  Recorded for process analysis.  "), Some("Example Org"), "").unwrap();
+        assert_eq!((title.as_str(), body.as_str()), ("Example Org", "Recorded for process analysis."));
+        // Shown once: the same text with its hash stored is not shown again.
+        assert_eq!(notice_to_show(Some("Recorded for process analysis."), Some("Example Org"), &hash), None);
+        // A changed text shows again; no account name falls back to the app name.
+        let (title, _, h2) = notice_to_show(Some("New text."), None, &hash).unwrap();
+        assert_eq!(title, "Kortix Capture");
+        assert_ne!(h2, hash);
+        let long = "y".repeat(400);
+        assert_eq!(notice_to_show(Some(&long), None, "").unwrap().1.chars().count(), 255);
     }
 
     #[test]
@@ -871,7 +876,7 @@ mod tests {
             tray_actions(false, true),
             vec![TrayAction::Resume, TrayAction::Quit]
         );
-        let t = tray_words("Example Org", None, true, None);
+        let t = tray_words(Some("Example Org"), true, None);
         assert_eq!(tray_status(&t, false, "recording", None), "Recording");
         assert_eq!(tray_status(&t, false, "not_recording", None), "Not recording");
         assert_eq!(

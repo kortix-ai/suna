@@ -1,21 +1,68 @@
-//! The logon notice: one desktop notification at the start of each session, with
-//! the organization's notice (or a sentence naming the account). Best effort: a
-//! computer without a notification service shows nothing, and the tray's hover
-//! text and menu still carry the notice.
+//! The organization's notice, as a plain desktop notification, only when the
+//! organization's policy set one. Best effort: a computer without a notification
+//! service shows nothing, and the menu still shows the status.
 //!
-//! - Windows: a toast through PowerShell's WinRT bridge (PowerShell's own app id).
-//! - macOS: `osascript` (`display notification`). The notification shows under
-//!   Script Editor's name; a native `UNUserNotificationCenter` call needs the
-//!   app's own notification permission and is a follow-up.
-//! - Linux: `org.freedesktop.Notifications.Notify` over the session D-Bus
-//!   (`gdbus`), else `notify-send`.
+//! - Windows: a toast through PowerShell's WinRT bridge.
+//! - macOS: the app's own notification (`NSUserNotificationCenter`), so it carries the
+//!   app icon and name. Never `osascript`, which shows a script icon.
+//! - Linux: `org.freedesktop.Notifications.Notify` over the session D-Bus (`gdbus`) with
+//!   the app icon name, else `notify-send`.
 
 use std::process::{Command, Stdio};
 
 /// Show the notice. Never blocks and never fails.
 pub fn show(title: &str, body: &str) {
+    tracing::info!("[notify] notice: {title}");
+    #[cfg(target_os = "macos")]
+    {
+        if macos::deliver(title, body) {
+            tracing::info!("[notify] delivered by the app");
+        } else {
+            tracing::warn!("[notify] the notification center took no notice");
+        }
+        return;
+    }
+    #[cfg(not(target_os = "macos"))]
+    show_with_commands(title, body);
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+mod macos {
+    use objc::runtime::{Class, Object};
+    use objc::{msg_send, sel, sel_impl};
+    use std::ffi::CString;
+
+    unsafe fn ns_string(s: &str) -> *mut Object {
+        let c = CString::new(s.replace('\0', "")).unwrap_or_default();
+        let cls = Class::get("NSString").expect("NSString");
+        let o: *mut Object = msg_send![cls, alloc];
+        msg_send![o, initWithUTF8String: c.as_ptr()]
+    }
+
+    /// `NSUserNotification` from the app bundle: app icon, app name, no permission prompt.
+    pub fn deliver(title: &str, body: &str) -> bool {
+        unsafe {
+            let Some(note_cls) = Class::get("NSUserNotification") else { return false };
+            let Some(center_cls) = Class::get("NSUserNotificationCenter") else { return false };
+            let pool: *mut Object = msg_send![Class::get("NSAutoreleasePool").expect("pool"), new];
+            let note: *mut Object = msg_send![note_cls, new];
+            let () = msg_send![note, setTitle: ns_string(title)];
+            let () = msg_send![note, setInformativeText: ns_string(body)];
+            let center: *mut Object = msg_send![center_cls, defaultUserNotificationCenter];
+            let ok = !center.is_null();
+            if ok {
+                let () = msg_send![center, deliverNotification: note];
+            }
+            let () = msg_send![pool, drain];
+            ok
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_with_commands(title: &str, body: &str) {
     let (title, body) = (title.to_string(), body.to_string());
-    tracing::info!("[notify] logon notice: {title}");
     let _ = std::thread::Builder::new()
         .name("logon-notice".into())
         .spawn(move || {
@@ -53,10 +100,6 @@ pub fn commands(title: &str, body: &str) -> Vec<Command> {
         .env("KC_TITLE", title)
         .env("KC_BODY", body);
         vec![c]
-    } else if cfg!(target_os = "macos") {
-        let mut c = Command::new("/usr/bin/osascript");
-        c.args(osascript_args(title, body));
-        vec![c]
     } else {
         let mut gdbus = Command::new("gdbus");
         gdbus.args(gdbus_args(title, body));
@@ -64,23 +107,6 @@ pub fn commands(title: &str, body: &str) -> Vec<Command> {
         send.args(["--app-name=Kortix Capture", title, body]);
         vec![gdbus, send]
     }
-}
-
-/// The title and body travel as script arguments, never inside the script text.
-pub fn osascript_args(title: &str, body: &str) -> Vec<String> {
-    [
-        "-e",
-        "on run argv",
-        "-e",
-        "display notification (item 2 of argv) with title (item 1 of argv)",
-        "-e",
-        "end run",
-        title,
-        body,
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
 }
 
 /// A GVariant text string: single quotes, `\` and `'` escaped.
@@ -100,7 +126,7 @@ pub fn gdbus_args(title: &str, body: &str) -> Vec<String> {
         "org.freedesktop.Notifications.Notify",
         "'Kortix Capture'",
         "0",
-        "''",
+        "'kortix-capture'",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -130,13 +156,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_text_never_enters_a_script() {
-        let a = osascript_args("T \" x", "B ' \\ y");
-        assert_eq!(&a[a.len() - 2..], ["T \" x", "B ' \\ y"]);
-        assert!(a[..a.len() - 2].iter().all(|s| !s.contains("B '")));
-    }
-
-    #[test]
     fn gvariant_strings_escape_quotes_and_backslashes() {
         assert_eq!(gvariant_string("it's a \\ b"), r"'it\'s a \\ b'");
         let a = gdbus_args(
@@ -144,6 +163,7 @@ mod tests {
             "Recorded for it's analysis.",
         );
         assert_eq!(a[8], "'Kortix Capture'");
+        assert_eq!(a[10], "'kortix-capture'", "the app icon, by name");
         assert_eq!(a[11], "'Kortix Capture — Example Org'");
         assert_eq!(a[12], r"'Recorded for it\'s analysis.'");
         assert_eq!(&a[13..], ["[]", "{}", "15000"]);

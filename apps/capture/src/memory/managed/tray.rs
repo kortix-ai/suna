@@ -18,11 +18,11 @@
 //! platforms instead of per-OS tray APIs.
 //!
 //! One tray runs per library (`tray.lock`); a second one exits at once. At the
-//! start of each session the tray shows the logon notice once ([`super::notify`]),
-//! after the policy's notice has had time to arrive. "Quit" exits with code 0,
+//! start of each session the tray shows the organization's notice, only if its policy
+//! set one, once per notice text ([`super::notify`]). "Quit" exits with code 0,
 //! and the service does not start a tray that exited that way again.
 
-use super::{logon_notice, notify, tray_text, TrayAction};
+use super::{mark_notice_shown, notify, pending_notice, tray_text, TrayAction};
 use crate::memory::paths::MemoryPaths;
 use crate::memory::settings::Settings;
 use anyhow::{Context, Result};
@@ -43,13 +43,12 @@ const ICON_IDLE: &[u8] = include_bytes!("../../../assets/icons/trayIdle.png");
 /// macOS draws a template image in the menu bar's own color.
 const TEMPLATE: bool = cfg!(target_os = "macos");
 const OPEN: &str = "kortix.open";
+const SETTINGS: &str = "kortix.settings";
+const STATUS: &str = "kortix.status";
 const PAUSE: &str = "kortix.pause";
 const RESUME: &str = "kortix.resume";
 const QUIT: &str = "kortix.quit";
-const REFRESH: Duration = Duration::from_secs(15);
-/// How soon after the start the logon notice waits for the policy's own notice.
-const NOTICE_WAIT: Duration = Duration::from_secs(45);
-/// How often the tray looks for the moment to show the logon notice.
+/// How often the tray looks for a notice it has not shown yet.
 const NOTICE_POLL: Duration = Duration::from_secs(5);
 
 /// The icon for a state: the PNG decoded to the RGBA a tray icon takes.
@@ -76,7 +75,8 @@ struct View {
     sync: String,
     tooltip: String,
     managed: bool,
-    notice: Option<(String, String)>,
+    /// Screen Recording is missing: the status line asks for it when clicked.
+    needs_permission: bool,
 }
 
 /// A Wayland session: the recorder cannot capture it (X11 only). The engine's own test.
@@ -106,13 +106,13 @@ fn view(paths: &MemoryPaths) -> View {
     View {
         recording: state == "recording",
         paused: paused_until.is_some(),
-        notice: logon_notice(&text, managed, signed_in),
         sync: crate::memory::cli::sync_view(paths).line,
         tooltip: if managed || signed_in {
             text.tip
         } else {
             format!("Kortix Capture — {}", status.to_lowercase_first_char())
         },
+        needs_permission: state == "permission_missing",
         status,
         managed,
     }
@@ -135,12 +135,14 @@ impl LowerFirstChar for String {
 /// The menu for `v`, and its status item (updated in place every refresh).
 fn menu(v: &View) -> (Menu, MenuItem, MenuItem) {
     let menu = Menu::new();
-    let status = MenuItem::new(&v.status, false, None);
+    // The status line is a plain label, except while Screen Recording is missing: then a click asks.
+    let status = MenuItem::with_id(STATUS, &v.status, v.needs_permission, None);
     let sync = MenuItem::new(&v.sync, false, None);
     let _ = menu.append(&status);
     let _ = menu.append(&sync);
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id(OPEN, "Open Kortix Capture", true, None));
+    let _ = menu.append(&MenuItem::with_id(SETTINGS, "Settings…", true, None));
     for action in super::tray_actions(v.managed, v.paused) {
         match action {
             TrayAction::Pause => {
@@ -192,7 +194,7 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
     icon(false)?;
     #[allow(unused_mut)]
     let mut event_loop = EventLoopBuilder::<()>::with_user_event().build();
-    // A one-second heartbeat wakes the loop: the refresh, the logon notice and the
+    // A one-second heartbeat wakes the loop: the refresh, the notice and the
     // menu clicks (muda's channel does not wake it) do not wait on a platform timer.
     let proxy = event_loop.create_proxy();
     std::thread::spawn(move || {
@@ -212,8 +214,6 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
     let mut tray: Option<TrayIcon> = None;
     let mut status_item: Option<(MenuItem, MenuItem)> = None;
     let mut shown = view(&paths);
-    let started = Instant::now();
-    let mut noticed = false;
     let mut next_refresh = Instant::now() + NOTICE_POLL;
 
     event_loop.run(move |event, _target, control_flow| {
@@ -247,25 +247,20 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
             // The app's Dock or Finder icon, clicked while it runs: show the window.
             Event::Reopen { .. } => spawn_self(&["ui"]),
             Event::UserEvent(()) if Instant::now() >= next_refresh => {
-                next_refresh = Instant::now() + if noticed { REFRESH } else { NOTICE_POLL };
+                next_refresh = Instant::now() + NOTICE_POLL;
                 let v = view(&paths);
-                // The logon notice, once: when the policy's notice is cached, or
-                // after NOTICE_WAIT without one (the default sentence).
-                if !noticed {
-                    let policy =
-                        v.notice.is_some() && crate::memory::policy::read(&paths).is_some();
-                    if policy || started.elapsed() >= NOTICE_WAIT {
-                        noticed = true;
-                        if let Some((title, body)) = &v.notice {
-                            notify::show(title, body);
-                        }
-                    }
+                // The organization's notice, if its policy set one: once per notice text.
+                if let Some((title, body, hash)) = pending_notice(&paths) {
+                    mark_notice_shown(&paths, &hash);
+                    notify::show(&title, &body);
                 }
                 if let Some(t) = &tray {
                     if v.recording != shown.recording {
                         show_icon(t, v.recording);
                     }
-                    if (v.managed, v.paused) != (shown.managed, shown.paused) {
+                    if (v.managed, v.paused, v.needs_permission)
+                        != (shown.managed, shown.paused, shown.needs_permission)
+                    {
                         // Enrolled or paused since: the menu changes, not just its words.
                         let (m, status, sync) = menu(&v);
                         t.set_menu(Some(Box::new(m)));
@@ -285,6 +280,8 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
         while let Ok(menu_event) = MenuEvent::receiver().try_recv() {
             match menu_event.id.as_ref() {
                 OPEN => spawn_self(&["ui"]),
+                SETTINGS => spawn_self(&["open", "kortix-capture://settings"]),
+                STATUS => spawn_self(&["permissions", "--request"]),
                 PAUSE | RESUME => {
                     spawn_self(if menu_event.id.as_ref() == PAUSE {
                         &["pause", "--for", "1h"]

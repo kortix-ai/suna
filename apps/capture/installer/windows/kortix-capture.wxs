@@ -26,7 +26,7 @@
            Scope="perMachine"
            InstallerVersion="500"
            Compressed="yes">
-    <SummaryInformation Description="Kortix Capture: records each person who signs in to this computer, for the organization that installed it." />
+    <SummaryInformation Description="Kortix Capture" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of Kortix Capture is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
@@ -95,7 +95,7 @@
         <ServiceInstall Id="MachineService"
                         Name="KortixCapture"
                         DisplayName="Kortix Capture"
-                        Description="Records the screen and actions of each person who signs in to this computer, for the organization that installed it."
+                        Description="Records the screen of each person who signs in to this computer."
                         Type="ownProcess"
                         Start="auto"
                         ErrorControl="normal"

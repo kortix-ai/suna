@@ -28,7 +28,16 @@ pub struct Policy {
     pub recording: PolicyRecording,
     /// Shown to the person on the device (tray menu and settings window).
     pub notice: Option<String>,
+    pub experimental: PolicyExperimental,
     pub updated_at_ms: i64,
+}
+
+/// Features the organization switches on for its devices. All default off.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct PolicyExperimental {
+    /// Show the Never record controls in Settings. What is set applies either way.
+    pub privacy_controls: bool,
 }
 
 /// `false` turns a layer off. An absent layer is allowed.
@@ -102,6 +111,7 @@ impl Default for Policy {
             retention: PolicyRetention::default(),
             recording: PolicyRecording::default(),
             notice: None,
+            experimental: PolicyExperimental::default(),
             updated_at_ms: 0,
         }
     }
@@ -270,6 +280,19 @@ mod tests {
         assert!(s.exclude_private_browsing);
         s.policy = None;
         s.validate().unwrap();
+    }
+
+    #[test]
+    fn privacy_controls_are_hidden_unless_the_policy_says_so_and_hiding_changes_nothing() {
+        let off: Policy = serde_json::from_str(r#"{"schema":2,"privacy":{"exclusion_groups":["banking"]}}"#).unwrap();
+        assert!(!off.experimental.privacy_controls, "default off");
+        let on: Policy = serde_json::from_str(r#"{"schema":2,"experimental":{"privacy_controls":true},"recording":{"interval_ms":null}}"#).unwrap();
+        assert!(on.experimental.privacy_controls);
+        // The flag only shows or hides controls: exclusions apply with it off.
+        let mut s = Settings::default();
+        off.apply(&mut s);
+        assert!(s.enabled_exclusion_groups.iter().any(|g| g == "banking"));
+        assert!(!Settings::default().experimental.privacy_controls);
     }
 
     #[test]

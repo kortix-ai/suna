@@ -229,17 +229,6 @@ details.adv .row:last-child { border-bottom: 0; }
 .day-row.cur { background: var(--active); }
 .day-row.cur .name { font-weight: 500; }
 
-/* welcome: the first screen until the person signs in */
-#welcome { position: absolute; inset: 0; z-index: 20; background: var(--background); display: grid; place-items: center; padding: calc(var(--spacing) * 6); overflow: auto; }
-.welcome-card { display: flex; flex-direction: column; align-items: center; gap: calc(var(--spacing) * 3); text-align: center; max-width: 24rem; }
-.welcome-icon { width: calc(var(--spacing) * 20); height: calc(var(--spacing) * 20); }
-.welcome-card h1 { margin: 0; font-size: var(--text-lg); line-height: var(--text-lg-line-height); font-weight: 500; }
-.welcome-sub { margin: 0; color: var(--muted-foreground); text-wrap: pretty; }
-.welcome-hint { margin: 0; color: var(--muted-foreground); font-size: var(--text-xs); line-height: var(--text-xs-line-height); text-wrap: pretty; }
-.welcome-hint.err { color: var(--destructive); }
-.welcome-code { font-size: var(--text-lg); letter-spacing: 0.12em; padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4); border-radius: var(--radius-md); background: var(--muted); user-select: all; -webkit-user-select: all; }
-.welcome-card .btn { height: calc(var(--spacing) * 9); padding: 0 calc(var(--spacing) * 4); }
-.welcome-card input[type="text"] { width: 100%; height: calc(var(--spacing) * 9); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--popover); color: var(--foreground); padding: 0 calc(var(--spacing) * 2.5); font-size: var(--text-xs); }
 .link-btn { border: 0; background: transparent; color: var(--muted-foreground); text-decoration: underline; text-underline-offset: 3px; padding: calc(var(--spacing) * 1); }
 .link-btn:hover { color: var(--foreground); }
 .tag.locked { padding-right: calc(var(--spacing) * 2); color: var(--muted-foreground); }
@@ -263,3 +252,17 @@ details.adv .row:last-child { border-bottom: 0; }
 .form .field:nth-child(1) { grid-column: 1 / -1; }
 .actions { display: flex; gap: calc(var(--spacing) * 2); margin: calc(var(--spacing) * 2) 0; }
 @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
+
+/* a quiet line over the stage: Screen Recording is missing */
+.perm-line { position: absolute; top: calc(var(--spacing) * 3); left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 1) calc(var(--spacing) * 1) calc(var(--spacing) * 1) calc(var(--spacing) * 3); border-radius: var(--radius-md); background: var(--muted); color: var(--muted-foreground); font-size: var(--text-xs); line-height: var(--text-xs-line-height); }
+.perm-line .btn { height: calc(var(--spacing) * 6); }
+/* never record: one list, locked entries first */
+.never .row .lab { display: flex; flex-direction: column; }
+.never .row .name { display: flex; align-items: center; gap: calc(var(--spacing) * 1.5); }
+.never .row .name.mono { font-family: var(--font-mono-system); font-size: var(--text-xs); }
+.never .lock { color: var(--muted-foreground); width: calc(var(--spacing) * 3.5); height: calc(var(--spacing) * 3.5); }
+.never .rm { border: 0; background: transparent; color: var(--muted-foreground); width: calc(var(--spacing) * 6); height: calc(var(--spacing) * 6); border-radius: var(--radius-sm); display: grid; place-items: center; padding: 0; }
+.never .rm:hover { background: var(--active); color: var(--foreground); }
+.add-row { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2.5) 0; border-bottom: 1px solid var(--border); }
+.add-row input { flex: 1; min-width: 0; height: calc(var(--spacing) * 8); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--popover); color: var(--foreground); font: inherit; font-size: var(--text-xs); padding: 0 calc(var(--spacing) * 2.5); }
+.add-row input:focus { outline: 0; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 15%, transparent); }

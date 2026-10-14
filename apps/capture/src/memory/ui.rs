@@ -31,11 +31,13 @@ pub struct Target {
     pub q: Option<String>,
     /// Settings only: the sync destination to show first (`off`, `kortix` or `s3`).
     pub sync: Option<String>,
+    /// Settings only: the section to scroll to (`recording`, `sync`, `never`, `storage`, `about`).
+    pub section: Option<String>,
 }
 
 impl Target {
     fn to_json(&self) -> Value {
-        json!({"view": self.view, "t": self.t_ms, "q": self.q, "sync": self.sync})
+        json!({"view": self.view, "t": self.t_ms, "q": self.q, "sync": self.sync, "section": self.section})
     }
 }
 
@@ -74,6 +76,9 @@ pub fn parse_link(url: &str) -> Result<Target> {
             }
             "q" => t.q = Some(v),
             "sync" if ["off", "kortix", "s3"].contains(&v.as_str()) => t.sync = Some(v),
+            "section" if ["recording", "sync", "never", "storage", "about"].contains(&v.as_str()) => {
+                t.section = Some(v)
+            }
             _ => {}
         }
     }
@@ -161,6 +166,7 @@ pub fn run(paths: &MemoryPaths, a: UiArgs) -> Result<()> {
             t_ms: Some(parse_moment(&at, now_ms())?),
             q: None,
             sync: None,
+            section: None,
         }
     } else if a.search {
         Target {
@@ -480,6 +486,9 @@ mod tests {
         let t = parse_link("kortix-capture://settings?sync=s3").unwrap();
         assert_eq!((t.view.as_str(), t.sync.as_deref()), ("settings", Some("s3")));
         assert_eq!(parse_link("kortix-capture://settings?sync=nope").unwrap().sync, None);
+        let t = parse_link("kortix-capture://settings?section=never").unwrap();
+        assert_eq!(t.section.as_deref(), Some("never"));
+        assert_eq!(parse_link("kortix-capture://settings?section=x").unwrap().section, None);
     }
 
     #[test]
@@ -526,6 +535,7 @@ mod tests {
             q: Some("x".into()),
             t_ms: None,
             sync: None,
+            section: None,
         };
         assert!(
             !forward(&paths, &target).unwrap(),

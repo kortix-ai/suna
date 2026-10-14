@@ -671,7 +671,9 @@ jobs:
           } 2>&1 | tee -a "$EV/configure.txt"
           # Reinstall over the installed pkg: the configuration stays and the services come back.
           sudo installer -pkg "$RUNNER_TEMP/pkg/KortixCapture-$TAG-universal.pkg" -target / 2>&1 | tail -3 | tee "$EV/reinstall.txt"
-          sleep 15
+          # The daemon starts the agent again after the reinstall: wait for it (up to 2 min).
+          t0=$SECONDS; until pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' > /dev/null || [ $((SECONDS - t0)) -ge 120 ]; do sleep 3; done
+          sleep 5
           {
             echo "config kept: $(sudo test -f '/Library/Application Support/Kortix/Capture/config.json' && echo yes || echo no)"
             echo "daemon: $(sudo launchctl print system/ai.kortix.capture.machine 2>&1 | grep -c 'state = running')"

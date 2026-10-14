@@ -15,6 +15,7 @@ pub mod cli;
 pub mod engine;
 pub mod exclusions;
 pub mod frames;
+pub mod legacy;
 pub mod managed;
 pub mod paths;
 pub mod policy;

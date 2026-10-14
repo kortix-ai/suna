@@ -732,18 +732,25 @@ fn export_session_env() {
 }
 
 /// `kortix-capture agent`: what the global launchd agent / systemd user unit
-/// runs in every graphical session. It waits for a managed configuration, then
-/// is `service run --managed` (the recorder follows the library's enrollment;
-/// the tray shows the notice). A computer without a configuration records
-/// nothing from here: people sign in from the tray.
+/// runs in every graphical session. It is `service run --managed` (the recorder follows the library's enrollment;
+/// the tray shows the notice) when IT configured the computer, else `service run`:
+/// the recorder starts at once and records locally, silently.
 pub fn agent(paths: &MemoryPaths) -> Result<()> {
     let exe = std::env::current_exe()?;
+    export_session_env();
     loop {
-        if super::machine_service_installed() {
-            export_session_env();
-            return crate::memory::service::run(paths, &exe, true);
+        // IT's configuration present: the recorder follows the enrollment. Without it
+        // the computer records locally with sync Off, until the person connects.
+        let managed = super::machine_service_installed();
+        let changed = crate::memory::service::run_with(
+            paths,
+            &exe,
+            managed,
+            Some(&super::machine_service_installed),
+        )?;
+        if !changed {
+            return Ok(());
         }
-        std::thread::sleep(Duration::from_secs(30));
     }
 }
 

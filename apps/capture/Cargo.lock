@@ -2446,6 +2446,7 @@ dependencies = [
  "jsonschema",
  "libc",
  "mime_guess",
+ "objc",
  "ort",
  "parking_lot",
  "proptest",

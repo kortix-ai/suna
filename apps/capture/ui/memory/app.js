@@ -24,6 +24,7 @@ const ICONS = {
   pause: '<path d="M8 5v14M16 5v14"/>',
   sound: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   muted: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   wave: '<path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 10.5v3M21 12h0"/>',
 };
 const icon = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
@@ -304,7 +305,7 @@ function showEmpty(on) {
   if (on) {
     stage.style.visibility = 'hidden';
     showNotice(null, null);
-    notice.innerHTML = '<p>Recordings show up here once Kortix Capture has recorded your screen.</p>';
+    notice.innerHTML = '<p>No recordings yet.</p>';
   } else { stage.style.visibility = ''; notice.hidden = true; }
 }
 
@@ -627,15 +628,15 @@ const DESTINATIONS = [['off', 'Off'], ['kortix', 'Kortix'], ['s3', 'Your S3 buck
    kind: managed | off | kortix-wait | kortix-in | kortix-ready | kortix-out | s3 */
 function syncPanel(app, view, chosen, kortix, job) {
   const a = app || {}, v = view || { destination: 'off' }, k = kortix || {};
-  const org = k.account_name || 'your organization';
-  if (a.managed) return { kind: 'managed', title: `Managed by ${org}`, sub: 'Your organization chooses where recordings go. You cannot change it here.' };
-  if (chosen === 'off') return { kind: 'off', sub: 'Recordings stay on this computer. Nothing is uploaded.' };
+  const org = k.account_name || '';
+  if (a.managed) return { kind: 'managed', title: org ? `Managed by ${org}` : 'Managed', sub: `Set by ${org || 'policy'}.` };
+  if (chosen === 'off') return { kind: 'off', sub: 'Recordings stay on this computer.' };
   if (chosen === 's3') return { kind: 's3' };
   if (job && job.running) return { kind: 'kortix-wait', code: job.progress ? job.progress.user_code : null };
   const who = k.member_email ? `Signed in as ${k.member_email}` : '';
   if (a.signed_in && v.destination === 'kortix') return { kind: 'kortix-in', title: `Kortix · ${k.account_name || 'your account'}`, sub: who };
   if (a.signed_in) return { kind: 'kortix-ready', title: `Kortix · ${k.account_name || 'your account'}`, sub: who ? `${who}. Sync is off.` : 'Sync is off.' };
-  return { kind: 'kortix-out', sub: k.sign_in_required ? 'Kortix no longer accepts this computer. Sign in again to resume.' : 'Sign in to keep a copy of your recordings in your Kortix organization.' };
+  return { kind: 'kortix-out', sub: k.sign_in_required ? 'Sign in again to resume.' : 'Not connected.' };
 }
 /* Path-style URLs (`endpoint/bucket/key`) suit MinIO and most self-hosted S3. Hosted services want the bucket in the host name. */
 function guessPathStyle(endpoint) {
@@ -659,9 +660,33 @@ function plainError(msg) {
   const first = m.split(/(?<=[.!?])\s/)[0];
   return first.length > 140 ? first.slice(0, 137).trimEnd() + '...' : first;
 }
-/* After "Start recording": macOS still needs the Screen Recording permission, other systems are done. */
-function startNext(mac, state) {
-  return !mac || state === 'recording' ? 'done' : 'permission';
+/* Never record: one list. Entries the organization requires come first, locked, then the
+   person's own groups, private browsing and entries. `pp` is the policy's privacy block (only
+   while synced to Kortix); `org` is the account name or null.
+   Row: {kind: group|private|app|site, id, label, sub, locked, on, key}. */
+/* Whether the Never record controls show. A Kortix policy decides while synced to Kortix
+   (and then the local switch is not shown); otherwise the local experimental switch does.
+   Hiding never changes what applies. */
+function privacyControls(view, policy, settings) {
+  if (view && view.destination === 'kortix' && policy) return { on: policy.experimental?.privacy_controls === true, local: false };
+  return { on: settings?.experimental?.privacy_controls === true, local: true };
+}
+const GROUP_DESC = { password_managers: 'Password manager apps and websites', messaging: 'Messaging apps and websites', banking: 'Bank and finance apps and websites' };
+function neverRows(s, groups, pp, org) {
+  pp = pp || {};
+  const by = org ? `Required by ${org}` : 'Required by policy';
+  const rows = [];
+  for (const g of groups) if ((pp.exclusion_groups || []).includes(g.id)) rows.push({ kind: 'group', id: g.id, label: g.name, sub: by, locked: true, on: true });
+  if (pp.exclude_private_browsing) rows.push({ kind: 'private', id: 'private', label: 'Private browsing windows', sub: by, locked: true, on: true });
+  // An entry both lists hold shows once, locked.
+  const orgItems = exclusionItems({}, pp).filter((i) => i.locked);
+  for (const i of orgItems) rows.push({ kind: i.kind, id: i.v, label: i.v, sub: by, locked: true });
+  const required = new Set(orgItems.map((i) => i.kind + i.v));
+  const ownItems = exclusionItems(s, {}).filter((i) => !required.has(i.kind + i.v));
+  for (const g of groups) if (!(pp.exclusion_groups || []).includes(g.id)) rows.push({ kind: 'group', id: g.id, label: g.name, sub: GROUP_DESC[g.id] || '', locked: false, on: (s.enabled_exclusion_groups || []).includes(g.id) });
+  if (!pp.exclude_private_browsing) rows.push({ kind: 'private', id: 'private', label: 'Private browsing windows', sub: 'Skip private and incognito windows', locked: false, on: !!s.exclude_private_browsing });
+  for (const i of ownItems) rows.push({ kind: i.kind, id: i.v, label: i.v, sub: '', locked: false, key: i.key });
+  return rows;
 }
 /* ---- end sync: pure ---- */
 /* The status line from /api/app `state` and the pause end (epoch ms or null). */
@@ -744,7 +769,7 @@ function audioStateText(enabled, audio) {
 function policyText(cached) {
   if (!cached || !cached.policy) return null;
   const n = (cached.policy.notice || '').trim();
-  return n || 'Your organization manages recording on this computer.';
+  return n || 'Managed by policy.';
 }
 
 /* ---- end settings: pure ---- */
@@ -1232,7 +1257,7 @@ $('#btn-settings').onclick = () => openSettings();
 
 /* ---------- search ---------- */
 const searchEl = $('#search');
-const panelOpen = () => !searchEl.hidden || !$('#settings').hidden || !$('#welcome').hidden;
+const panelOpen = () => !searchEl.hidden || !$('#settings').hidden;
 let searchBuilt = false, results = [], total = 0, offset = 0, loading = false, searchSeq = 0, heat = null;
 
 function buildSearch() {
@@ -1538,107 +1563,8 @@ async function datePop(anchor) {
   pop = p;
 }
 
-/* ---------- welcome: the first screen, until the person starts recording ---------- */
-/* One sentence, one button. Kortix is an optional second choice, never a gate. */
-const welcomeEl = $('#welcome');
-const W = { step: 'intro', error: '', requested: false, poll: 0, issuer: '', busy: false };
 let appData = null;
 const MAC = PC === 'Mac';
-
-async function signInJob() {
-  const j = (await api('/api/sync')).jobs?.connect;
-  return j || null;
-}
-/* Install and start the 24/7 service, then ask for the permission macOS still needs. */
-async function startRecording() {
-  W.busy = true;
-  paintWelcome();
-  const ok = await act('/api/app/start', {}, true);
-  W.busy = false;
-  if (!ok) { W.error = plainError(actError); W.step = 'intro'; paintWelcome(); return; }
-  appData = await api('/api/app');
-  paintChip();
-  W.error = '';
-  if (startNext(MAC, appData.state) === 'done') return finishWelcome();
-  W.step = 'permission';
-  paintWelcome();
-}
-function showWelcome(on) {
-  welcomeEl.hidden = !on;
-  clearInterval(W.poll);
-  if (!on) return;
-  paintWelcome();
-  W.poll = setInterval(tickWelcome, 1500);
-}
-async function tickWelcome() {
-  try {
-    if (W.step === 'waiting') {
-      const j = await signInJob();
-      if (j && !j.running) {
-        if (j.ok) { W.error = ''; await startRecording(); return; }
-        W.step = 'connect';
-        W.error = plainError(j.error || 'The sign-in did not finish.');
-      }
-      paintWelcome(j);
-    } else if (W.step === 'permission') {
-      appData = await api('/api/app');
-      if (appData.state === 'recording') return finishWelcome();
-      paintWelcome();
-    }
-  } catch (e) { console.error(e); }
-}
-function finishWelcome() {
-  showWelcome(false);
-  refreshBounds();
-  paintChip();
-}
-function paintWelcome(job) {
-  const icon = '<img class="welcome-icon" src="/brand/app-icon.png" alt="">';
-  const err = W.error ? `<p class="welcome-hint err">${esc(W.error)}</p>` : '';
-  let body;
-  if (W.step === 'waiting') {
-    const p = job?.progress;
-    body = `<p class="welcome-sub">Waiting for approval in your browser.</p>
-      ${p ? `<div class="welcome-code mono" id="welcome-code">${esc(p.user_code)}</div><p class="welcome-hint">Check that this code matches the one in your browser, then approve.</p>
-      <button class="btn" id="welcome-approve">Open approval page</button>` : '<p class="welcome-hint">Starting sign-in...</p>'}`;
-  } else if (W.step === 'permission') {
-    body = `<p class="welcome-sub">One step left. ${MAC ? 'macOS' : 'Your system'} asks you to allow Screen Recording. Nothing is recorded before you allow it.</p>
-      <button class="btn primary" id="welcome-grant"${W.requested ? ' disabled' : ''}>${W.requested ? 'Waiting for permission...' : 'Allow Screen Recording'}</button>
-      <p class="welcome-hint">${W.requested ? 'Turn on Kortix Capture in System Settings, Privacy &amp; Security, Screen Recording. This screen closes when recording starts.' : 'You can change this later in System Settings.'}</p>
-      <button class="link-btn" id="welcome-skip">Not now</button>`;
-  } else if (W.step === 'connect') {
-    const needsUrl = appData && appData.default_issuer_missing;
-    body = `<p class="welcome-sub">Sign in to keep a copy of your recordings in your Kortix organization. You can also do this later in Settings.</p>
-      ${needsUrl ? `<input type="text" id="welcome-issuer" class="mono" placeholder="https://kortix.example.com" value="${esc(W.issuer)}" aria-label="Kortix address">` : ''}
-      <button class="btn primary" id="welcome-signin">Sign in with Kortix</button>${err}
-      <button class="link-btn" id="welcome-back">Back</button>`;
-  } else {
-    body = `<p class="welcome-sub">Kortix Capture records your screen on this ${esc(PC)} so you can search everything you saw. Recordings stay here.</p>
-      <button class="btn primary" id="welcome-start"${W.busy ? ' disabled' : ''}>${W.busy ? 'Starting...' : 'Start recording'}</button>${err}
-      <button class="link-btn" id="welcome-connect">Connect to Kortix</button>`;
-  }
-  setHtml(welcomeEl, `<div class="welcome-card">${icon}<h1>Kortix Capture</h1>${body}</div>`);
-}
-welcomeEl.addEventListener('input', (e) => { if (e.target.id === 'welcome-issuer') W.issuer = e.target.value; });
-welcomeEl.addEventListener('click', async (e) => {
-  const b = e.target.closest('button');
-  if (!b || b.disabled) return;
-  if (b.id === 'welcome-start') await startRecording();
-  else if (b.id === 'welcome-connect') { W.step = 'connect'; W.error = ''; paintWelcome(); }
-  else if (b.id === 'welcome-back') { W.step = 'intro'; W.error = ''; paintWelcome(); }
-  else if (b.id === 'welcome-signin') {
-    W.error = '';
-    if (await act('/api/kortix/connect', { issuer: W.issuer.trim() }, true)) { W.step = 'waiting'; paintWelcome(); tickWelcome(); }
-    else { W.error = plainError(actError); paintWelcome(); }
-  } else if (b.id === 'welcome-approve') {
-    const j = await signInJob();
-    if (j?.progress?.approve_url) post({ cmd: 'open_url', url: j.progress.approve_url });
-  } else if (b.id === 'welcome-grant') {
-    W.requested = true;
-    paintWelcome();
-    await act('/api/app/permissions');
-  } else if (b.id === 'welcome-skip') finishWelcome();
-});
 
 /* ---------- the status chip: recording, paused or needs permission ---------- */
 const chipEl = $('#status-chip');
@@ -1648,12 +1574,18 @@ function paintChip() {
   const html = `<span class="status-dot${v.tone ? ' ' + v.tone : ''}"></span>${esc(v.text)}`;
   setHtml(chipEl, html);
   chipEl.dataset.state = appData.state;
+  const perm = $('#perm-line');
+  if (perm) {
+    perm.hidden = appData.state !== 'permission_missing';
+    setHtml(perm, '<span>Screen Recording is off.</span><button class="btn" id="perm-grant">Grant</button>');
+  }
 }
+$('#perm-line').addEventListener('click', async (e) => {
+  if (e.target.closest('#perm-grant')) { await act('/api/app/permissions'); toast('Allow Screen Recording in the dialog'); }
+});
 async function refreshApp() {
   try {
     appData = await api('/api/app');
-    // Set up somewhere else (the command line, IT): the welcome screen has nothing left to ask.
-    if (!welcomeEl.hidden && W.step === 'intro' && appData.welcome_done) finishWelcome();
     if (!settingsEl.hidden) paintRecording();
     paintChip();
   } catch (e) { console.error(e); }
@@ -1672,13 +1604,14 @@ const settingsEl = $('#settings');
 let settingsData = null, syncData = null, saveTimer = 0, pending = {}, livePoll = 0;
 const draft = { forget: null, audioDevices: null, dest: null, s3: null, issuer: '', syncError: '', busy: '' };
 
-async function openSettings(dest) {
+async function openSettings(dest, section) {
   draft.dest = dest || null;
   draft.syncError = '';
   closePop();
   searchEl.hidden = true;
   settingsEl.hidden = false;
   await loadSettings();
+  if (section) $(`#sec-${section}`)?.scrollIntoView();
   clearInterval(livePoll);
   // Live account, status and sign-in progress while the panel is open.
   livePoll = setInterval(() => {
@@ -1750,12 +1683,8 @@ const sw = (path, on, extra = '') => `<label class="switch"><input type="checkbo
 const num = (path, v, { min, max, step = 1, type = 'int', scale } = {}) =>
   `<input type="number" data-path="${path}" data-type="${type}"${scale ? ` data-scale="${scale}"` : ''}${min != null ? ` min="${min}"` : ''}${max != null ? ` max="${max}"` : ''} step="${step}" value="${scale ? v / scale : v}">`;
 const row = (label, help, control) => `<div class="row"><div class="lab">${label}${help ? `<small>${help}</small>` : ''}</div>${control}</div>`;
-const lockedSwitch = (on) => `<label class="switch"><input type="checkbox" disabled${on ? ' checked' : ''}><i></i></label>`;
-const tags = (items, org) => items.length ? `<div class="tags">${items.map((i) => i.locked
-  ? `<span class="tag locked" title="Set by ${esc(org)}">${esc(i.v)}</span>`
-  : `<span class="tag">${esc(i.v)}<button data-rm="${i.key}" data-v="${esc(i.v)}" title="Remove ${esc(i.v)}">${icon('x')}</button></span>`).join('')}</div>` : '';
-const orgName = () => syncData?.status?.kortix?.account_name || 'your organization';
-const policyPrivacy = () => (syncData?.status?.policy?.policy?.privacy) || {};
+const orgName = () => syncData?.status?.kortix?.account_name || 'policy';
+const policyPrivacy = () => (syncData?.view?.destination === 'kortix' ? syncData?.status?.policy?.policy?.privacy : null) || {};
 function gb(b) { return b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : (b / 1e6).toFixed(1) + ' MB'; }
 
 /* Repaint `el` only when `key` changed, so a poll never wipes text a person is typing. */
@@ -1797,8 +1726,7 @@ function paintSync() {
       <div class="actions"><button class="btn primary" id="kortix-connect">Sign in with Kortix</button></div>`; break;
     case 's3': {
       const f = s3Draft();
-      inner = `<p class="hint">Any S3-compatible storage: AWS S3, Cloudflare R2, MinIO. The secret stays on this ${esc(PC)}.</p>
-        <div class="form">
+      inner = `<div class="form">
           ${field('s3-endpoint', 'Endpoint', f.endpoint, { ph: 'https://s3.us-east-1.amazonaws.com' })}
           ${field('s3-bucket', 'Bucket', f.bucket)}
           ${field('s3-region', 'Region', f.region)}
@@ -1840,10 +1768,25 @@ function paintRecording() {
     au.innerHTML = `<span class="status-dot${on ? ' live' : ''}"></span>${esc(audioStateText(s.audio.enabled, st.audio))}`;
   }
 }
+function neverRow(r) {
+  const glyph = r.locked ? icon('lock').replace('<svg ', '<svg class="lock" ') : '';
+  const name = `<span class="name${r.kind === 'app' || r.kind === 'site' ? ' mono' : ''}">${glyph}${esc(r.label)}</span>`;
+  const lab = `<div class="lab">${name}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</div>`;
+  let ctl = '';
+  if (!r.locked) {
+    if (r.kind === 'group') ctl = `<label class="switch"><input type="checkbox" data-group="${esc(r.id)}"${r.on ? ' checked' : ''} aria-label="${esc(r.label)}"><i></i></label>`;
+    else if (r.kind === 'private') ctl = sw('exclude_private_browsing', r.on, ' aria-label="Private browsing windows"');
+    else ctl = `<button class="rm" data-rm="${esc(r.key)}" data-v="${esc(r.id)}" title="Remove ${esc(r.id)}">${icon('x')}</button>`;
+  }
+  return `<div class="row">${lab}${ctl}</div>`;
+}
 function renderSettings() {
   const s = settingsData.settings, st = settingsData.status, g = settingsData.groups;
   const res = settingsData.resolution;
   const pp = policyPrivacy();
+  const orgKnown = syncData?.status?.kortix?.account_name || '';
+  const never = neverRows(s, g, pp, orgKnown);
+  const pc = privacyControls(syncData?.view, syncData?.status?.policy?.policy, s);
   const managed = !!appData?.managed;
   const items = exclusionItems(s, pp);
   const keep = keepChoice(s.storage);
@@ -1853,37 +1796,33 @@ function renderSettings() {
   settingsEl.innerHTML = `
     <div class="panel-head"><button class="icon-btn" id="set-back" title="Back (Esc)">${icon('back')}</button><strong>Settings</strong></div>
     <div class="panel-body"><div class="settings">
-      <h3>Recording</h3>
+      <h3 id="sec-recording">Recording</h3>
       <div id="rec-box"></div>
       ${audioBlocked ? '' : audioHtml(s)}
 
-      <h3>Sync</h3>
+      <h3 id="sec-sync">Sync</h3>
       <div id="sync-status" class="sync-status"></div>
       <div id="sync-box"></div>
 
-      <h3>Privacy</h3>
-      ${g.map((x) => {
-        const locked = (pp.exclusion_groups || []).includes(x.id);
-        return row(`Never record: ${esc(x.name)}`, locked ? `Set by ${by}` : `${x.bundle_ids.length} apps, ${x.domains.length} sites`,
-          locked ? lockedSwitch(true) : `<label class="switch"><input type="checkbox" data-group="${x.id}"${s.enabled_exclusion_groups.includes(x.id) ? ' checked' : ''}><i></i></label>`);
-      }).join('')}
-      ${pp.exclude_private_browsing ? row('Skip private browsing windows', `Set by ${by}`, lockedSwitch(true)) : row('Skip private browsing windows', '', sw('exclude_private_browsing', s.exclude_private_browsing))}
-      ${row('Excluded apps and websites', 'A website such as <span class="mono">example.com</span>, or an app such as <span class="mono">com.example.App</span> or <span class="mono">app.exe</span>.',
-        `<span><input type="text" id="add-ex" placeholder="App or website" autocomplete="off" spellcheck="false"> <button class="btn" id="add-ex-btn">Add</button></span>`)}
-      ${tags(items, by)}
+      ${pc.on ? `<h3 id="sec-never">Never record</h3>      <p class="hint">Kortix Capture skips these before it records. Nothing here is saved or uploaded.</p>
+      ${never.some((r) => r.locked) ? `<p class="hint">${esc(orgKnown ? orgKnown + ' requires the locked ones.' : 'Policy requires the locked ones.')}</p>` : ''}
+      <div class="never">${never.map((r) => neverRow(r)).join('')}
+        <div class="add-row"><input type="text" id="add-ex" placeholder="Add an app or website, such as example.com" aria-label="Add an app or website" autocomplete="off" spellcheck="false"><button class="btn" id="add-ex-btn">Add</button></div>
+      </div>` : ''}
 
-      <h3>Storage</h3>
+      <h3 id="sec-storage">Storage</h3>
       ${row('Library size', esc(st.library), `<span>${gb(st.usage_total_bytes || 0)}</span>`)}
       ${row('Keep recordings on this computer', keep === 'space' ? `The oldest go first when the library reaches ${s.storage.limit_gb} GB or the disk runs low.` : '',
         `<select id="keep-for">${KEEP_CHOICES.map(([k, n]) => `<option value="${k}"${keep === k ? ' selected' : ''}>${n}</option>`).join('')}${keep === 'custom' ? '<option value="custom" selected>Custom (set with the command line)</option>' : ''}</select>`)}
       ${forgetHtml()}
 
-      <h3>About</h3>
+      <h3 id="sec-about">About</h3>
       ${row('Version', '', `<span class="mono">${esc(appData?.version || '')}</span>`)}
       ${managed ? '' : row('Launch at login', 'Start Kortix Capture when you log in, and restart it if it quits unexpectedly.', sw('launch_at_login', s.launch_at_login !== false))}
-      ${row('Logs', 'Open the folder that holds the log files, for support.', '<button class="btn" id="open-logs">Open logs</button>')}
+      ${row('Logs', '', '<button class="btn" id="open-logs">Open logs</button>')}
 
       <details class="adv"${draft.adv ? ' open' : ''}><summary>Advanced</summary>
+        ${pc.local ? row('Privacy controls<small>Off hides these controls. What is set keeps applying.</small>', '', sw('experimental.privacy_controls', !!s.experimental?.privacy_controls, ' aria-label="Privacy controls"')) : ''}
         ${row('Capture interval', '', `<span>${num('interval_ms', s.interval_ms, { min: 0.5, step: 0.5, type: 'float', scale: 1000 })} s</span>`)}
         ${row('Screenshot size', 'Screenshots are scaled down to fit, never up.',
           `<select id="resolution">${settingsData.resolution_presets.map((p) => `<option value="${p.name}"${res === p.name ? ' selected' : ''}>${p.name} (${p.max_width} × ${p.max_height})</option>`).join('')}${res === 'custom' ? `<option value="custom" selected>Custom (${s.max_width} × ${s.max_height})</option>` : ''}</select>`)}
@@ -1938,8 +1877,7 @@ function bindSettings() {
     patch({ [key]: [...s[key], c.value] });
     renderSettings();
   };
-  $('#add-ex-btn').onclick = addEx;
-  $('#add-ex').onkeydown = (e) => e.key === 'Enter' && addEx();
+  if ($('#add-ex-btn')) { $('#add-ex-btn').onclick = addEx; $('#add-ex').onkeydown = (e) => e.key === 'Enter' && addEx(); }
 }
 const SYNC_FIELDS = { 's3-endpoint': 'endpoint', 's3-bucket': 'bucket', 's3-region': 'region', 's3-prefix': 'prefix', 's3-key': 'access_key_id', 's3-secret': 'secret_access_key' };
 settingsEl.addEventListener('input', (e) => {
@@ -1975,7 +1913,7 @@ settingsEl.addEventListener('change', async (e) => {
   if (typeof v === 'number' && Number.isNaN(v)) return;
   if (t.dataset.scale) v = Math.round(v * +t.dataset.scale);
   patch(pathPatch(t.dataset.path, v));
-  if (t.dataset.path === 'audio.enabled') renderSettings();
+  if (t.dataset.path === 'audio.enabled' || t.dataset.path === 'experimental.privacy_controls') renderSettings();
 });
 settingsEl.addEventListener('click', async (e) => {
   const b = e.target.closest('button, [data-rm]');
@@ -2065,6 +2003,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearch(); return; }
+  if (mod && e.key === ',') { e.preventDefault(); openSettings(); return; }
   if (mod && e.key.toLowerCase() === 'w') { e.preventDefault(); post({ cmd: 'close' }); return; }
   if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoom(1 / 1.6); return; }
   if (mod && e.key === '-') { e.preventDefault(); zoom(1.6); return; }
@@ -2100,7 +2039,7 @@ window.addEventListener('keydown', (e) => {
 async function navigate(t) {
   if (!t) return;
   if (t.view === 'search') { openSearch(t.q || ''); return; }
-  if (t.view === 'settings') { openSettings(t.sync); return; }
+  if (t.view === 'settings') { openSettings(t.sync, t.section); return; }
   closePanels();
   if (t.q) S.terms = termsOf(t.q);
   await refreshBounds();
@@ -2129,9 +2068,7 @@ window.addEventListener('resize', () => { fitStage(); resizeTrack(); });
   try { if (location.hash.length > 1) target = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (_) {}
   history.replaceState(null, '', location.pathname);
   resizeTrack();
-  // Not signed in and not managed: the welcome screen first. The timeline sits behind it.
   try { appData = await api('/api/app'); } catch (e) { console.error(e); }
-  if (appData && !appData.managed && !appData.welcome_done) showWelcome(true);
   paintChip();
   setInterval(refreshApp, 5000);
   await refreshBounds();

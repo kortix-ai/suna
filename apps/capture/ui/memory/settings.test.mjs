@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('/* ---- settings: pure ---- */'), src.indexOf('/* ---- end settings: pure ---- */'));
-const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,startNext,DESTINATIONS,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
+const names = 'deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,neverRows,privacyControls,DESTINATIONS,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
 const f = new Function(block + `;return {${names}}`)();
-const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, startNext, DESTINATIONS, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
+const { deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, neverRows, privacyControls, DESTINATIONS, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
 
 // The copy names the machine by platform.
 assert.equal(deviceNoun('MacIntel'), 'Mac');
@@ -30,12 +30,13 @@ assert.deepEqual(DESTINATIONS.map(([k]) => k), ['off', 'kortix', 's3']);
 const offView = { destination: 'off' }, kortixView = { destination: 'kortix' }, s3View = { destination: 's3' };
 // A managed computer shows the organization and no controls.
 assert.deepEqual(syncPanel({ managed: true }, kortixView, 'off', { account_name: 'Example Org' }, null),
-  { kind: 'managed', title: 'Managed by Example Org', sub: 'Your organization chooses where recordings go. You cannot change it here.' });
+  { kind: 'managed', title: 'Managed by Example Org', sub: 'Set by Example Org.' });
 // Off: one sentence.
-assert.deepEqual(syncPanel({}, offView, 'off', {}, null), { kind: 'off', sub: 'Recordings stay on this computer. Nothing is uploaded.' });
+assert.deepEqual(syncPanel({}, offView, 'off', {}, null), { kind: 'off', sub: 'Recordings stay on this computer.' });
 // Kortix: signed out asks to sign in; an expired sign-in says so; a running job shows its code.
 assert.equal(syncPanel({}, offView, 'kortix', {}, null).kind, 'kortix-out');
 assert.match(syncPanel({}, offView, 'kortix', { sign_in_required: true }, null).sub, /Sign in again/);
+assert.equal(syncPanel({}, offView, 'kortix', {}, null).sub, 'Not connected.');
 assert.deepEqual(syncPanel({}, offView, 'kortix', {}, { running: true, progress: { user_code: 'ABCD-1234' } }), { kind: 'kortix-wait', code: 'ABCD-1234' });
 assert.deepEqual(syncPanel({}, offView, 'kortix', {}, { running: true }), { kind: 'kortix-wait', code: null });
 // Signed in and syncing: names the account and the person. Signed in but Off: offers to turn sync on.
@@ -74,11 +75,34 @@ assert.equal(plainError(''), 'Something went wrong. Try again.');
 assert.equal(plainError(undefined), 'Something went wrong. Try again.');
 assert.ok(plainError('x'.repeat(400)).length <= 140);
 
-// After "Start recording": macOS asks for the permission, the others are done.
-assert.equal(startNext(true, 'permission_missing'), 'permission');
-assert.equal(startNext(true, 'not_recording'), 'permission');
-assert.equal(startNext(true, 'recording'), 'done');
-assert.equal(startNext(false, 'not_recording'), 'done');
+// Never record: one list. The organization's entries come first, locked, named by the account;
+// the person's own groups, private browsing and entries follow, the entries removable.
+const groups = [{ id: 'password_managers', name: 'Password managers' }, { id: 'messaging', name: 'Messaging apps' }, { id: 'banking', name: 'Banking and finance' }];
+const own = { excluded_bundle_ids: ['com.example.Mine'], excluded_domains: ['mine.example'], enabled_exclusion_groups: ['messaging'], exclude_private_browsing: false };
+const plain = neverRows(own, groups, null, null);
+assert.deepEqual(plain.map((r) => [r.kind, r.id, r.locked, r.on ?? null]), [
+  ['group', 'password_managers', false, false], ['group', 'messaging', false, true], ['group', 'banking', false, false],
+  ['private', 'private', false, false], ['app', 'com.example.Mine', false, null], ['site', 'mine.example', false, null]]);
+assert.equal(plain.find((r) => r.id === 'banking').sub, 'Bank and finance apps and websites');
+assert.ok(plain.every((r) => !/\d+ (apps|sites)/.test(r.sub)), 'no counts');
+assert.deepEqual(plain.filter((r) => r.key).map((r) => r.key), ['excluded_bundle_ids', 'excluded_domains']);
+const pp = { exclusion_groups: ['banking'], exclude_private_browsing: true, excluded_bundle_ids: ['com.example.Required'], excluded_domains: ['mine.example'] };
+const withOrg = neverRows(own, groups, pp, 'Example Org');
+assert.deepEqual(withOrg.map((r) => [r.kind, r.id, r.locked]), [
+  ['group', 'banking', true], ['private', 'private', true], ['app', 'com.example.Required', true], ['site', 'mine.example', true],
+  ['group', 'password_managers', false], ['group', 'messaging', false], ['app', 'com.example.Mine', false]]);
+assert.ok(withOrg.filter((r) => r.locked).every((r) => r.sub === 'Required by Example Org'));
+assert.equal(neverRows(own, groups, pp, null)[0].sub, 'Required by policy');
+assert.ok(!JSON.stringify(withOrg).includes('your organization'));
+
+// Privacy controls are hidden by default. A Kortix policy decides while synced; else the local switch.
+assert.deepEqual(privacyControls({ destination: 'off' }, null, {}), { on: false, local: true });
+assert.deepEqual(privacyControls({ destination: 'off' }, null, { experimental: { privacy_controls: true } }), { on: true, local: true });
+assert.deepEqual(privacyControls({ destination: 'kortix' }, { experimental: { privacy_controls: true } }, {}), { on: true, local: false });
+assert.deepEqual(privacyControls({ destination: 'kortix' }, { experimental: { privacy_controls: false } }, { experimental: { privacy_controls: true } }), { on: false, local: false }, 'the policy wins');
+assert.deepEqual(privacyControls({ destination: 'kortix' }, {}, {}), { on: false, local: false });
+assert.deepEqual(privacyControls({ destination: 'kortix' }, null, { experimental: { privacy_controls: true } }), { on: true, local: true }, 'no policy cached yet');
+assert.deepEqual(privacyControls({ destination: 's3' }, { experimental: { privacy_controls: true } }, {}), { on: false, local: true }, 'a policy applies only while synced to Kortix');
 
 // The window never tells a person to stop recording to change the destination.
 assert.ok(!/Stop recording before/i.test(src), 'switching accounts must not require stopping');
@@ -125,17 +149,20 @@ assert.deepEqual(items.map((i) => [i.v, i.locked]), [['a.b.C', false], ['x.com',
 // Notice and audio row.
 assert.equal(policyText(null), null);
 assert.equal(policyText({ policy: { notice: ' Recorded for support ' } }), 'Recorded for support');
-assert.equal(policyText({ policy: {} }), 'Your organization manages recording on this computer.');
+assert.equal(policyText({ policy: {} }), 'Managed by policy.');
 assert.equal(audioStateText(false, { state: 'recording' }), 'Off');
 assert.equal(audioStateText(true, { state: 'recording', sources: { microphone: { state: 'recording' }, system: { state: 'silent' } } }), 'Recording microphone + system audio');
 assert.equal(audioStateText(true, { state: 'permission_missing', sources: {} }), 'Needs permission to record');
 
 // The window shows five sections (plus a folded Advanced) and nothing from the old settings.
 const ui = src.slice(src.indexOf('function renderSettings()'), src.indexOf('/* ---- audio: one switch'));
-assert.deepEqual([...ui.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Recording', 'Sync', 'Privacy', 'Storage', 'About']);
+assert.deepEqual([...ui.matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Recording', 'Sync', 'Never record', 'Storage', 'About']);
 assert.ok(ui.includes('<summary>Advanced</summary>'));
 for (const gone of ['staging_quality', 'video_quality', 'chunk_max_frames', 'ocr_languages', 'ax_enabled', 'record_unknown_bundle_ids', 'airgap', 'min_free_gb', 'reserve_mb', 'pause_on_inactivity', 'inactivity_seconds', 'management_mode', 'shortcuts', 'agent_routing', 'sync-provider']) {
   assert.ok(!ui.includes(gone), `${gone} is not in the settings window`);
 }
+// No marketing, no hero: labels and status only.
+for (const phrase of ['know your work', 'Kortix agents', 'so you can search', 'Start recording', 'Connect to Kortix instead']) assert.ok(!src.includes(phrase), phrase);
+assert.ok(!/welcome/i.test(src), 'no welcome screen');
 assert.ok(!/control plane|control_plane|dashboard_url|enrolled_url/.test(src), 'no old control plane copy');
 console.log('settings ok');

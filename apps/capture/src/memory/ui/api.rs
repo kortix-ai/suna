@@ -270,7 +270,6 @@ impl Ctx {
             (_, "/brand/app-icon.png") => Response::new(200, "image/png", APP_ICON_PNG.into()),
             ("GET", "/api/status") => Response::json(cli::status_value(&self.paths)),
             ("GET", "/api/app") => Response::json(self.app_info()),
-            ("POST", "/api/app/start") => self.app_start()?,
             ("POST", "/api/app/permissions") => {
                 spawn_self(&["permissions", "--request"]);
                 Response::json(json!({"ok": true}))
@@ -919,7 +918,7 @@ impl Ctx {
         ))
     }
 
-    // ---- the app: what the welcome screen and the About section use ----
+    // ---- the app: what the window and the About section use ----
 
     /// The version, the library and the sign-in in the words the window shows.
     fn app_info(&self) -> Value {
@@ -935,21 +934,10 @@ impl Ctx {
             "signed_in": k["signed_in"],
             "account_name": k["account_name"],
             "member_email": k["member_email"],
-            // A build without a baked-in Kortix address asks for it on the welcome screen.
+            // A build without a baked-in Kortix address asks for it where the person connects.
             "default_issuer_missing": k["issuer_url"].is_null(),
             "state": cli::recording_state(&self.paths),
             "service": cli::service_status_value(&self.paths),
-            // The welcome screen has nothing left to ask.
-            "welcome_done": cli::welcome_done(&self.paths, managed),
-        })
-    }
-
-    /// After the sign-in: install and start the per-user 24/7 service (this app is its host).
-    fn app_start(&self) -> Result<Response> {
-        cli::mark_welcomed(&self.paths)?;
-        Ok(match cli::service_start(&self.paths, &Default::default()) {
-            Ok(v) => Response::json(v),
-            Err(e) => Response::error(500, &sync::view::humanize(&e)),
         })
     }
 
@@ -1009,7 +997,7 @@ impl Ctx {
         {
             return Ok(Response::error(
                 403,
-                "Your organization manages sync on this computer.",
+                "Sync is set by policy on this computer.",
             ));
         }
         let v = match action {
@@ -1871,6 +1859,7 @@ mod tests {
         ("sync.key_id", r#""k1""#),
         ("airgap", "true"),
         ("launch_at_login", "false"),
+        ("experimental.privacy_controls", "true"),
         ("shortcuts.open_timeline", r#""CmdOrCtrl+Shift+T""#),
         ("shortcuts.open_search", r#""""#),
         ("agent_routing.agent", r#""codex""#),
@@ -1891,6 +1880,7 @@ mod tests {
         "storage.retention_days",
         "storage.retention_action",
         "launch_at_login",
+        "experimental.privacy_controls",
         "interval_ms",
         "max_width",
         "max_height",
@@ -1959,33 +1949,15 @@ mod tests {
     }
 
     #[test]
-    fn the_welcome_screen_ends_when_recording_starts_not_when_kortix_signs_in() {
+    fn a_personal_install_is_not_managed_and_needs_no_account() {
         let (_d, ctx) = bare();
         let app = get(&ctx, "/api/app");
-        assert_eq!(app["welcome_done"], false, "a fresh install shows the welcome");
-        cli::mark_welcomed(&ctx.paths).unwrap();
-        let app = get(&ctx, "/api/app");
-        assert_eq!(app["welcome_done"], true);
-        assert_eq!(app["signed_in"], false, "no Kortix account is needed");
-    }
-
-    #[test]
-    fn the_window_page_has_a_strict_csp_and_no_inline_script() {
-        let (_d, ctx) = bare();
-        let r = ctx.handle("GET", "/", None, &[]);
-        let html = String::from_utf8(r.body).unwrap();
-        assert!(html.contains("Content-Security-Policy"));
-        assert!(html.contains("default-src 'none'"));
-        assert!(html.contains("object-src 'none'") && html.contains("frame-src 'none'"));
-        // No remote host in the policy, no inline or eval script.
-        let csp = html.split("Content-Security-Policy\" content=\"").nth(1).unwrap().split('"').next().unwrap();
-        assert!(!csp.contains("'unsafe-eval'") && !csp.split(';').any(|d| d.trim().starts_with("script-src") && d.contains("unsafe-inline")), "{csp}");
-        assert!(!csp.contains("http://") || csp.matches("http://").count() == csp.matches("http://kmem.localhost").count());
-        assert!(!html.contains("<script>"), "scripts load from /app.js");
-        for line in APP_JS.lines() {
-            assert!(!line.contains(" onclick=") && !line.contains(" onerror=") && !line.contains(" onload="), "inline handler: {line}");
-        }
-        assert!(!APP_JS.contains("eval(") && !APP_JS.contains("new Function"));
+        assert_eq!(app["managed"], false);
+        assert_eq!(app["signed_in"], false);
+        assert!(app.get("welcome_done").is_none(), "there is no welcome screen");
+        // The window has no welcome page and no start-recording action.
+        assert!(!APP_JS.contains("welcome"));
+        assert_eq!(ctx.handle("POST", "/api/app/start", None, b"{}").status, 404);
     }
 
     #[test]
@@ -2015,7 +1987,7 @@ mod tests {
     }
 
     #[test]
-    fn the_welcome_screen_reads_the_app_and_its_icon() {
+    fn the_window_reads_the_app_and_its_icon() {
         let (_d, ctx) = bare();
         let app = get(&ctx, "/api/app");
         assert_eq!(app["signed_in"], false);

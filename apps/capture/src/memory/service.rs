@@ -119,11 +119,14 @@ pub fn runner(host: Option<&Host>, exe: &Path, library: &Path) -> Runner {
     }
 }
 
-/// This executable is the standalone app (macOS: inside `Kortix Capture.app`): its
-/// per-user service shows the tray, which is where a person signs in.
+/// This executable is the standalone app (macOS: inside `Kortix Capture.app`; Windows):
+/// its per-user service shows the menu-bar / tray icon, the recording indicator. Linux
+/// starts its tray from the desktop's autostart entry.
 pub fn standalone(exe: &Path) -> bool {
-    exe.to_string_lossy()
-        .contains("Kortix Capture.app/Contents/MacOS/")
+    cfg!(windows)
+        || exe
+            .to_string_lossy()
+            .contains("Kortix Capture.app/Contents/MacOS/")
 }
 
 pub fn read_host(paths: &MemoryPaths) -> Option<Host> {
@@ -802,6 +805,18 @@ fn self_json(exe: &Path, args: &[&str]) -> Value {
 /// `managed`: started by the machine service ([`want_managed`]; Kortix sync
 /// stays on; the tray shows the notice while recording).
 pub fn run(paths: &MemoryPaths, exe: &Path, managed: bool) -> Result<()> {
+    run_with(paths, exe, managed, None).map(|_| ())
+}
+
+/// [`run`], and with `watch_config` (the agent) it returns `Ok(true)` when the answer of
+/// that function changes: the organization's configuration appeared or went away, so the
+/// caller starts the service again in the other mode.
+pub fn run_with(
+    paths: &MemoryPaths,
+    exe: &Path,
+    managed: bool,
+    watch_config: Option<&dyn Fn() -> bool>,
+) -> Result<bool> {
     // The recorders it starts inherit the class: the person's apps win the CPU.
     crate::os_proc::below_normal_priority();
     fs::create_dir_all(&paths.root)?;
@@ -812,7 +827,7 @@ pub fn run(paths: &MemoryPaths, exe: &Path, managed: bool) -> Result<()> {
         .open(paths.root.join("service.lock"))?;
     if lock.try_lock().is_err() {
         println!("another Kortix Capture service runs this library");
-        return Ok(());
+        return Ok(false);
     }
     // A hard kill of this supervisor (Task Manager, Stop-Process -Force, the
     // scheduled task ending, kill -9) must take the recorders along: the action
@@ -832,6 +847,7 @@ pub fn run(paths: &MemoryPaths, exe: &Path, managed: bool) -> Result<()> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
+    let mut config_changed = false;
     rt.block_on(async {
         let mut recorder = Slot::new("recorder");
         let mut actions = Slot::new("actions");
@@ -843,6 +859,10 @@ pub fn run(paths: &MemoryPaths, exe: &Path, managed: bool) -> Result<()> {
             recorder.reap();
             actions.reap();
             tray.reap();
+            if watch_config.is_some_and(|f| f() != managed) {
+                config_changed = true;
+                break;
+            }
             if managed {
                 super::managed::keep_sync_on(paths);
             }
@@ -852,7 +872,7 @@ pub fn run(paths: &MemoryPaths, exe: &Path, managed: bool) -> Result<()> {
             } else {
                 want(&sync, sign_in_pending(paths), backend.exists())
             };
-            if cfg!(target_os = "macos") && managed && w.recorder {
+            if cfg!(target_os = "macos") && w.recorder {
                 // Once per library: the system prompts for Screen Recording and
                 // Accessibility, named for this app. The person approves them
                 // (an MDM profile can pre-grant Accessibility and Input Monitoring).
@@ -972,7 +992,7 @@ pub fn run(paths: &MemoryPaths, exe: &Path, managed: bool) -> Result<()> {
         let _ = fs::remove_file(paths.root.join(HEARTBEAT_FILE));
         let _ = fs::remove_file(super::actions::heartbeat_path(paths));
     });
-    Ok(())
+    Ok(config_changed)
 }
 
 async fn shutdown_signal() {

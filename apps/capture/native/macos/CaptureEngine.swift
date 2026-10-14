@@ -1484,6 +1484,10 @@ func transcribe(_ req: JSON) -> JSON {
 
 // MARK: - Main loop
 
+// A background helper: no Dock icon and no app switcher entry. Without this, AppKit
+// registers the process as a foreground app and the Dock shows it while recording.
+NSApplication.shared.setActivationPolicy(.accessory)
+
 if CommandLine.arguments.count > 1 && CommandLine.arguments[1] == "audio" {
     runAudioSource(Array(CommandLine.arguments.dropFirst(2)))
 }

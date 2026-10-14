@@ -130,6 +130,8 @@ windows = { version = "0.58", optional = true, features = [
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# The organization's notice, delivered as the app's own notification (src/memory/managed/notify.rs).
+objc = "0.2"
 cocoa = { version = "0.22", optional = true }
 core-graphics = { version = "0.19", optional = true }
 core-foundation = { version = "0.9", optional = true }

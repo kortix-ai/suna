@@ -19,10 +19,29 @@ fn main() {
         _ => "arm64",
     };
     let output = out_dir.join("kortix-capture-engine");
+    // The engine is a background helper: an embedded Info.plist with LSUIElement keeps it out
+    // of the Dock from its first instant. It keeps the app's bundle id, so macOS attributes
+    // its permissions to Kortix Capture as before.
+    let plist = out_dir.join("engine-info.plist");
+    std::fs::write(
+        &plist,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>ai.kortix.capture</string>
+<key>CFBundleName</key><string>Kortix Capture</string>
+<key>CFBundleExecutable</key><string>kortix-capture-engine</string>
+<key>LSUIElement</key><true/>
+</dict></plist>
+"#,
+    )
+    .expect("write engine-info.plist");
     let status = Command::new("xcrun")
         .args(["swiftc", "-O", "-swift-version", "5", "-target"])
         .arg(format!("{arch}-apple-macosx14.0"))
         .arg(source)
+        .args(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker"])
+        .arg(&plist)
         .arg("-o")
         .arg(&output)
         .status();

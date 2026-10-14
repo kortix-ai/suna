@@ -479,6 +479,8 @@ struct Session {
     last_check: Option<Instant>,
     crashes: u32,
     started: Option<Instant>,
+    /// The recorder is the local one (`service run`, no configuration from IT).
+    local: bool,
 }
 
 struct Machine {
@@ -564,6 +566,7 @@ impl Machine {
             last_check: None,
             crashes: 0,
             started: None,
+            local: false,
         });
         if entry.sid != sid {
             // Someone else signed in to this session id.
@@ -578,10 +581,31 @@ impl Machine {
         }
         entry.state.user = user.clone();
         let Some(cfg) = cfg else {
-            entry.state.state = "not_configured".into();
-            entry.state.detail = Some(format!(r"HKLM\{POLICY_KEY} has no Url or EnrollmentToken"));
+            // No configuration from IT: a personal install. The recorder starts at once,
+            // silently, records locally, and syncs only after the person connects.
+            if entry.child.is_none() && due(entry) {
+                let exe = self.exe.clone();
+                let child = spawn_as(&token, &exe, &["service", "run"], None)?;
+                let entry = self.sessions.get_mut(&id).unwrap();
+                entry.state.child_pid = Some(child.pid);
+                entry.child = Some(child);
+                entry.started = Some(Instant::now());
+                entry.local = true;
+                entry.state.detail = None;
+            }
+            let entry = self.sessions.get_mut(&id).unwrap();
+            entry.state.state = "recording".into();
             return Ok(());
         };
+        if entry.local {
+            // IT's configuration arrived: replace the local recorder with the managed one.
+            if let Some(c) = entry.child.take() {
+                c.kill();
+            }
+            entry.local = false;
+            entry.state.child_pid = None;
+            entry.next_attempt = None;
+        }
         let running = entry.child.is_some();
         if running && entry.last_check.is_some_and(|t| t.elapsed() < RECHECK) {
             return Ok(());

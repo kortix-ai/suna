@@ -768,10 +768,9 @@ pub fn run(cli: Cli) -> Result<()> {
 }
 
 /// Kortix Capture opened from Finder, the Dock, Spotlight, the Start menu or the
-/// desktop. It always opens the window: the welcome screen until the person starts
-/// recording, the timeline after. Behind the window the app is the menu-bar / tray
-/// app: once the person has started recording, the 24/7 service is installed (the
-/// app is its host) and the tray runs until Quit. Signing in to Kortix is optional. Closing the window leaves the recording and the tray running.
+/// desktop. It opens the window (the timeline). Behind the window the app is the
+/// menu-bar / tray app: the 24/7 service is installed and started at once (the app is
+/// its host) and the tray runs until Quit. Signing in to Kortix is optional, in Settings. Closing the window leaves the recording and the tray running.
 /// On a computer the organization manages, or with a tray already running, it only
 /// opens the window (the agent runs the recording and the tray).
 pub fn app(paths: &MemoryPaths) -> Result<()> {
@@ -785,9 +784,10 @@ pub fn app(paths: &MemoryPaths) -> Result<()> {
         open_window()?;
         return Ok(());
     }
-    if onboarded(paths) {
-        service_start(paths, &ServiceHostArgs::default())?;
-    }
+    // Earlier installs left agents and processes that fight this one: remove them first.
+    super::legacy::remove_legacy();
+    // Opened by the person and not recording yet: start recording in the background at once.
+    service_start(paths, &ServiceHostArgs::default())?;
     let mut window = open_window()?;
     if !super::managed::TRAY_AVAILABLE {
         // No tray on this build: the app lives as long as its window.
@@ -1032,8 +1032,11 @@ pub fn service_start(paths: &MemoryPaths, a: &ServiceHostArgs) -> Result<Value> 
         // The machine service already records every person who signs in here.
         return Ok(json!({ "ok": true, "managed": true, "service": service_status_value(paths) }));
     }
-    // Starting the service is the person's choice to record: the welcome screen is done.
-    mark_welcomed(paths)?;
+    // The pkg and the deb install a system agent that records in the background for every
+    // person. Start that one; a per-user unit beside it would only race it for the library.
+    if super::legacy::system_agent_installed() && super::legacy::start_system_agent() {
+        return Ok(json!({ "ok": true, "agent": true, "service": service_status_value(paths) }));
+    }
     let (sys, unit, runner) = service_unit(paths, Some(a), true)?;
     let st = super::service::unit_status(&sys, &unit, &runner);
     if st["installed"] == true && st["up_to_date"] == true {
@@ -1057,38 +1060,7 @@ pub fn logout(paths: &MemoryPaths) -> Result<Value> {
 /// recording goes on. (`logout` is the command line's: it also removes the service.)
 pub fn sign_out_keep_recording(paths: &MemoryPaths) -> Result<Value> {
     refuse_when_managed("sign out")?;
-    mark_welcomed(paths)?;
     sync_sign_out(paths)
-}
-
-/// The person finished the welcome screen: recording was started on purpose.
-fn welcomed_marker(paths: &MemoryPaths) -> std::path::PathBuf {
-    paths.root.join("welcomed")
-}
-
-pub fn mark_welcomed(paths: &MemoryPaths) -> Result<()> {
-    paths.ensure()?;
-    std::fs::write(welcomed_marker(paths), b"1")?;
-    Ok(())
-}
-
-/// The person chose to record on this computer (the welcome screen, or a sign-in):
-/// the app starts the 24/7 service at every launch.
-pub fn onboarded(paths: &MemoryPaths) -> bool {
-    welcomed_marker(paths).exists()
-        || super::sync::issuer::registration(paths).is_some_and(|r| r.rejected_at_ms.is_none())
-}
-
-/// True when the welcome screen has nothing left to ask: onboarded, managed, or a
-/// library that already holds recordings (an install from before the welcome screen).
-pub fn welcome_done(paths: &MemoryPaths, managed: bool) -> bool {
-    onboarded(paths)
-        || managed
-        || Settings::load(paths).sync.enabled
-        || store::open_readonly(paths)
-            .ok()
-            .and_then(|c| c.query_row("SELECT 1 FROM frame LIMIT 1", [], |r| r.get::<_, i64>(0)).ok())
-            .is_some()
 }
 
 pub fn service_stop(paths: &MemoryPaths) -> Result<Value> {
