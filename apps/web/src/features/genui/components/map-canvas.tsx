@@ -14,7 +14,7 @@
 
 import type { MapOptions } from 'maplibre-gl';
 import { useTheme } from 'next-themes';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { MarkdownImage } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
@@ -155,11 +155,14 @@ export default function GenuiMapCanvas({
   route,
   zoom,
   styles,
+  fallback,
 }: {
   places: MapPlace[];
   route: [number, number][] | undefined;
   zoom: number | undefined;
   styles: { light: MapStyleOption; dark: MapStyleOption };
+  /** Shown in the well when the basemap style fails to load. */
+  fallback?: ReactNode;
 }) {
   const t = useTranslations('genui');
   const { resolvedTheme } = useTheme();
@@ -185,6 +188,7 @@ export default function GenuiMapCanvas({
     <MapLibreMap
       theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
       styles={styles}
+      fallback={fallback}
       {...view}
       {...canvasOptions(t)}
     >

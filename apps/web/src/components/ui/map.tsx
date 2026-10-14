@@ -76,6 +76,8 @@ type MapProps = {
   theme: Theme;
   /** Basemap style per theme. There is no default basemap. */
   styles: { light: MapStyleOption; dark: MapStyleOption };
+  /** Shown in place of the map when its style fails to load. Without it the failed map is blank, never a spinner. */
+  fallback?: ReactNode;
 } & Omit<MapLibreGL.MapOptions, 'container' | 'style'>;
 
 /**
@@ -90,11 +92,38 @@ const MAPLIBRE_OVERRIDES = cn(
   '[&_.maplibregl-ctrl-attrib_a]:text-muted-foreground! [&_.maplibregl-ctrl-attrib_a:hover]:text-foreground!',
 );
 
-function Map({ children, className, theme, styles, ...props }: MapProps) {
+type MapEvents = { on(type: string, listener: () => void): unknown; off(type: string, listener: () => void): unknown };
+
+/**
+ * Wires the load gates. An `error` before the first `style.load` means the style (or the worker)
+ * failed, so `load` never comes: report `fail` so the spinner does not stay forever. A tile error
+ * after the style loaded still ends in `load` (an errored tile counts as loaded), so it is ignored.
+ */
+function watchMapLoad(map: MapEvents, gates: { load: () => void; styleLoad: () => void; fail: () => void }) {
+  let styled = false;
+  const styleLoad = () => {
+    styled = true;
+    gates.styleLoad();
+  };
+  const error = () => {
+    if (!styled) gates.fail();
+  };
+  map.on('load', gates.load);
+  map.on('style.load', styleLoad);
+  map.on('error', error);
+  return () => {
+    map.off('load', gates.load);
+    map.off('style.load', styleLoad);
+    map.off('error', error);
+  };
+}
+
+function Map({ children, className, theme, styles, fallback, ...props }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapInstance, setMapInstance] = useState<MapLibreGL.Map | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   const currentStyleRef = useRef<MapStyleOption | null>(null);
   const stableStyles = useStableValue(styles);
 
@@ -112,16 +141,15 @@ function Map({ children, className, theme, styles, ...props }: MapProps) {
       ...props,
     });
 
-    const styleLoadHandler = () => setIsStyleLoaded(true);
-    const loadHandler = () => setIsLoaded(true);
-
-    map.on('load', loadHandler);
-    map.on('style.load', styleLoadHandler);
+    const unwatch = watchMapLoad(map, {
+      load: () => setIsLoaded(true),
+      styleLoad: () => setIsStyleLoaded(true),
+      fail: () => setFailed(true),
+    });
     setMapInstance(map);
 
     return () => {
-      map.off('load', loadHandler);
-      map.off('style.load', styleLoadHandler);
+      unwatch();
       map.remove();
       setIsLoaded(false);
       setIsStyleLoaded(false);
@@ -147,13 +175,17 @@ function Map({ children, className, theme, styles, ...props }: MapProps) {
   return (
     <MapContext.Provider value={contextValue}>
       <div ref={containerRef} className={cn('relative h-full w-full', MAPLIBRE_OVERRIDES, className)}>
-        {!isLoaded && (
-          <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-            <Loading />
-          </div>
+        {failed ? (
+          <div className="bg-background absolute inset-0 z-10 overflow-auto">{fallback}</div>
+        ) : (
+          !isLoaded && (
+            <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
+              <Loading />
+            </div>
+          )
         )}
         {/* SSR-safe: children render only when map is loaded on client */}
-        {mapInstance && children}
+        {mapInstance && !failed && children}
       </div>
     </MapContext.Provider>
   );
@@ -380,5 +412,5 @@ function MapRoute({ coordinates, color, width = 3, opacity = 0.8 }: MapRouteProp
   return null;
 }
 
-export { Map, MAP_DEFAULTS, MapControls, MapMarker, MapRoute, MarkerContent, MarkerPopup, useMap };
+export { Map, MAP_DEFAULTS, MapControls, watchMapLoad, MapMarker, MapRoute, MarkerContent, MarkerPopup, useMap };
 export type { MapControlsProps, MapMarkerProps, MapProps, MapRouteProps, MapStyleOption, MarkerContentProps, MarkerPopupProps };

@@ -5,7 +5,7 @@ import { parseGenui } from '@kortix/sdk/genui';
 
 import { createTranslator } from 'next-intl';
 
-import { MAP_DEFAULTS } from '@/components/ui/map';
+import { MAP_DEFAULTS, watchMapLoad } from '@/components/ui/map';
 
 import en from '../../../../translations/en.json';
 import type { GenuiNode } from '../sdk';
@@ -147,5 +147,35 @@ describe('genui map', () => {
   test('a pin shows a value only when it is a figure; a category word keeps the plain dot', () => {
     for (const figure of ['★ 4.7', '₹24,000', '1.2M', '$199 a night']) expect(pinValue(figure)).toBe(figure);
     for (const word of ['Luxury', 'Boutique', '', undefined]) expect(pinValue(word)).toBeUndefined();
+  });
+
+  test('a map whose style fails before it loads reports a failure once; a tile error after the style loaded does not', () => {
+    const fake = () => {
+      const handlers: Record<string, Set<() => void>> = {};
+      return {
+        on: (type: string, fn: () => void) => void (handlers[type] ??= new Set()).add(fn),
+        off: (type: string, fn: () => void) => void handlers[type]?.delete(fn),
+        fire: (type: string) => handlers[type]?.forEach((fn) => fn()),
+        count: () => Object.values(handlers).reduce((n, set) => n + set.size, 0),
+      };
+    };
+    const calls: string[] = [];
+    const gates = { load: () => calls.push('load'), styleLoad: () => calls.push('style'), fail: () => calls.push('fail') };
+
+    const broken = fake();
+    watchMapLoad(broken, gates);
+    broken.fire('error');
+    expect(calls).toEqual(['fail']);
+
+    calls.length = 0;
+    const flaky = fake();
+    const stop = watchMapLoad(flaky, gates);
+    flaky.fire('style.load');
+    flaky.fire('error');
+    flaky.fire('load');
+    flaky.fire('error');
+    expect(calls).toEqual(['style', 'load']);
+    stop();
+    expect(flaky.count()).toBe(0);
   });
 });

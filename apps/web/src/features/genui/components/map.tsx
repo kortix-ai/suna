@@ -116,6 +116,8 @@ export function GenuiMapView({
                 route={routeCoordinates(props.route)}
                 zoom={typeof props.zoom === 'number' ? props.zoom : undefined}
                 styles={{ light: styleUrl!, dark: styleUrlDark || styleUrl! }}
+                // A basemap that fails to load shows the places as rows, as with the map switched off.
+                fallback={<PlaceList places={all} />}
               />
             </Suspense>
           </div>
