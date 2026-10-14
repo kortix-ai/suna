@@ -1,5 +1,5 @@
 {
-  "source_hash": "1753896405224b5b5056cbff77579195bb2bef8e9db63275de869a11591315c3",
+  "source_hash": "2544709b8135e893d3523e2ec24e68fe7771a68d8c0b2968f3c25c6e8ad0ff9e",
   "diff_files": [
     ".agents/skills/kortix-brand/references/verbal/claims.md",
     ".agents/skills/kortix-brand/references/verbal/positioning.md",
@@ -209,6 +209,7 @@
     "apps/web/src/features/marketing/landing/content.ts",
     "apps/web/src/features/providers/provider-connect.test.tsx",
     "apps/web/src/features/providers/provider-connect.tsx",
+    "apps/web/src/features/session/session-context-metrics.test.ts",
     "apps/web/src/features/workspace/customize/sections/llm-provider/models-tab.tsx",
     "apps/web/src/features/workspace/customize/sections/llm-provider/utils.ts",
     "apps/web/src/features/workspace/project-sidebar/footer/project-balance-warning.tsx",
@@ -275,13 +276,13 @@
     "tests/src/flows/billing.flow.ts",
     "tests/src/flows/retired.flow.ts"
   ],
-  "diff_hash": "f7b9a2a0ddc034b2f917e0b624561a4da9e4d0e81cf725aab3cc67ce4ccb1430",
-  "head": "a4ae9d4b10daa7e1d8b470feda6986ca6388d61b",
+  "diff_hash": "98a8f2d79819cce1c4d76616415a247e7d0e3d902989a022b2ffbcbc9910026a",
+  "head": "c17178a79fce7755b38378139bba8173258764f0",
   "passed": false,
   "lanes": {
-    "core": "fail",
-    "packages": "fail",
+    "core": "pass",
+    "packages": "pass",
     "db-suites": "fail"
   },
-  "at": "2026-10-14T04:53:51.075Z"
+  "at": "2026-10-14T05:08:27.324Z"
 }
