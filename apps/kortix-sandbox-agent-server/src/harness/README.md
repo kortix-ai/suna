@@ -344,10 +344,18 @@ restore → export is equal. A crash after the import (the pin write fails)
 leaves the seq and id map on disk: the next export carries the log's seqs and
 ids. Each `dropped` kind has a case: a call without a result
 (`tool_result`), a text still stored by reference (`text`), an attachment
-without bytes or with bytes that fail its `sha256` (`attachment`).
+without bytes or with bytes that fail its `sha256` (`attachment`). One
+`opencode import` writes every thread (a holding session, then one transaction
+moves each thread's rows to its own session): for the 7 fixtures and a 4-thread
+log, the session, message and part rows equal those of one import per thread
+except the write times (a message's `time_updated`, a part's times), every other
+table keyed by session holds the same row counts, and a message under another
+thread or a missing thread fails that comparison. A row left on the holding
+session fails the restore before the delete could cascade it away; the store then
+holds no root, so the next boot restores again.
 
 Known limits of the OpenCode restore:
-- `opencode import` runs once per thread (about 1 s each on a laptop): a session with many sub-agents restores in seconds, not milliseconds.
+- One `opencode import` process runs per restore, whatever the thread count; its start dominates the restore time (about 2 s on a 2-vCPU Platinum box). The version comes from the running OpenCode's `/global/health`; without an answer, `opencode --version` runs first (one more process start).
 - An attachment of an OpenCode session has its bytes only in the native store (`ref: blob:<sha256>`, nothing uploads them yet): a fresh box restores it only when `readAttachment` has the bytes. Without them it is left out and counts in `dropped.attachment` when the model would see it next.
 - A layout OpenCode cannot show in its order (an assistant message before the summary, a kept run that is not the contiguous run before the marker) counts in `dropped.layout`.
 - The id map (`ids` in `opencode-session-log.json`) is the only record of a re-keyed id. A lost map renames nothing back: a uuid thread id comes back as `ses_<sha>` (a second thread in the API), and a re-keyed pi part id as `prt_…` (a changed block id). Real Kortix roots (`ses_…`, `ses_pi…`) are never re-keyed; pi part ids are.
