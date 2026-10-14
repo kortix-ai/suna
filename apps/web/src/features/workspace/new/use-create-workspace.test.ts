@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   ApiError,
   PROVISION_IN_FLIGHT_CODE,
+  PROVISION_STREAM_UNTERMINATED_CODE,
   type KortixAccount,
   type KortixProject,
   type ProvisionPhase,
@@ -264,8 +265,35 @@ describe('messageFor', () => {
     expect(messageFor(err)).toBe('Check the workspace name and try again.');
   });
 
-  test('maps 502 to a retry hint, not the raw server text', () => {
-    expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe(
+  // KRTX-1754: the API's own edge middleware (`apps/api/src/http-middleware.ts`)
+  // rewrites 502→503 and PRESERVES the JSON body, and the stream route carries
+  // the reason in-band — so a real provisioning reason reaches the client
+  // intact on both transports. The create-project alert must name it: the
+  // dogfood evidence is a user told to "try again" with no signal of what
+  // failed. The generic line survives only for the reason-less shapes (the
+  // two SDK placeholders for a body that never arrived, and an empty
+  // message) — see the two tests below.
+  test('surfaces the server reason for a 502 with one', () => {
+    expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe('Bad Gateway');
+  });
+
+  test('falls back to the generic retry hint for the SDK stream placeholder (the body never arrived)', () => {
+    // `provisionProjectStream`'s pre-stream branch when the non-2xx response
+    // carries no JSON error — a proxy's HTML error page, not the API's body.
+    expect(messageFor(new ApiError('Provision failed: HTTP 503', { status: 503 }))).toBe(
+      'Could not create the workspace. Try again.',
+    );
+  });
+
+  test('falls back to the generic retry hint for the plain-path bodyless placeholder', () => {
+    // `readErrorBody`'s fallback when the error body is not JSON at all.
+    expect(messageFor(new ApiError('HTTP 503: Service Unavailable', { status: 503 }))).toBe(
+      'Could not create the workspace. Try again.',
+    );
+  });
+
+  test('falls back to the generic retry hint for a 502 with an empty message', () => {
+    expect(messageFor(new ApiError('', { status: 502 }))).toBe(
       'Could not create the workspace. Try again.',
     );
   });
@@ -1461,6 +1489,156 @@ describe('runProvisionAttempt', () => {
     expect(plainAttempts).toBe(2);
     expect(client.waits).toEqual([RETRY_DELAY_MS[0]]);
   });
+
+  /**
+   * KRTX-1754, symptom 2 (the folded KRTX-1827): a stream that closes without
+   * a terminal `done`/`error` frame left the submit path with an UNKNOWN
+   * result — the old gate rethrew the jargon `Provision stream ended without
+   * a result` (or, on a connection nothing reported, left the user on the
+   * handoff with nothing at all). The create is not failed at that point: the
+   * route's handler outlives a lost reader and may still commit or roll back.
+   *
+   * The recovery: replay the SAME idempotency key through `runCreateAttempt`
+   * (the plain `POST /projects/provision`). The server dedupes by key — the
+   * unique index + the 120s in-flight window + the replay make a second
+   * upstream repo impossible — and answers with the true outcome: `201` with
+   * the same project (the first attempt committed), `409 provision_in_flight`
+   * while it is still running, or the first attempt's real failure after its
+   * rollback. So the submit ALWAYS resolves to a real outcome: navigate or a
+   * named failure — never a silent noop, never a false error.
+   *
+   * The trigger is the SDK's typed code (`PROVISION_STREAM_UNTERMINATED_CODE`),
+   * never a message sniff: a bare `Error` with the same sentence stays a real
+   * failure (the MANDATORY pin above is kept for exactly that reason).
+   */
+  test('KRTX-1754: a phase fired, then the stream closed with no terminal event — falls back with the SAME key and resolves to the replayed project', async () => {
+    const seenPhases: (ProvisionPhase | null)[] = [];
+    const client = streamClient({
+      provisionProjectStream: async (_input, onEvent) => {
+        // The real-world shape: `validating` always fires first, then the
+        // socket dies before the terminal frame (a proxy idle timeout, a
+        // dropped connection). The server-side provision keeps running.
+        onEvent({ type: 'phase', phase: 'validating' });
+        throw new ApiError('Provision stream ended without a result', {
+          code: PROVISION_STREAM_UNTERMINATED_CODE,
+        });
+      },
+      // The plain POST with the same key is answered by the server's
+      // replay once the first attempt commits — here, a 201.
+      provisionProject: async (input) => {
+        client.plainCalls.push(input);
+        return fakeProject('created-then-replayed');
+      },
+    });
+
+    const project = await runProvisionAttempt(
+      { name: 'x', idempotency_key: 'key-1' },
+      (phase) => {
+        seenPhases.push(phase);
+      },
+      client,
+    );
+
+    expect(project.project_id).toBe('created-then-replayed');
+    expect(client.plainCalls).toHaveLength(1);
+    expect(client.plainCalls[0]?.idempotency_key).toBe('key-1');
+    // The handoff must not keep showing the dead stream's progress.
+    expect(seenPhases).toEqual(['validating', null]);
+  });
+
+  test('KRTX-1754: the stream closed before ANY event — the unknown result recovers the same way', async () => {
+    const client = streamClient({
+      provisionProjectStream: async () => {
+        throw new ApiError('Provision stream ended without a result', {
+          code: PROVISION_STREAM_UNTERMINATED_CODE,
+        });
+      },
+    });
+
+    const project = await runProvisionAttempt(
+      { name: 'x', idempotency_key: 'key-1' },
+      () => {},
+      client,
+    );
+
+    expect(project.project_id).toBe('created-fallback');
+    expect(client.plainCalls).toHaveLength(1);
+  });
+
+  test('KRTX-1754: the recovery inherits runCreateAttempt\'s in-flight backoff — a still-running first attempt resolves instead of erroring', async () => {
+    let plainAttempts = 0;
+    const client = streamClient({
+      provisionProjectStream: async () => {
+        throw new ApiError('Provision stream ended without a result', {
+          code: PROVISION_STREAM_UNTERMINATED_CODE,
+        });
+      },
+      provisionProject: async () => {
+        plainAttempts += 1;
+        if (plainAttempts <= 2) {
+          // The first attempt is still mid-provision (e.g. a slow seed);
+          // the server 409s the replay until it commits.
+          throw new ApiError('Another provision with this idempotency_key is in flight', {
+            status: 409,
+            code: PROVISION_IN_FLIGHT_CODE,
+          });
+        }
+        return fakeProject('created-after-unterminated-retry');
+      },
+    });
+
+    const project = await runProvisionAttempt(
+      { name: 'x', idempotency_key: 'key-1' },
+      () => {},
+      client,
+    );
+
+    expect(project.project_id).toBe('created-after-unterminated-retry');
+    expect(plainAttempts).toBe(3);
+    expect(client.waits).toEqual(RETRY_DELAY_MS);
+  });
+
+  test('KRTX-1754: the recovery surfaces the first attempt\'s real failure after its rollback — the user sees the reason, not jargon', async () => {
+    const realFailure = new ApiError(
+      'Failed to seed project repo: the default branch was still absent after the seed push',
+      { status: 502, code: 'seed_push_failed' },
+    );
+    const client = streamClient({
+      provisionProjectStream: async () => {
+        throw new ApiError('Provision stream ended without a result', {
+          code: PROVISION_STREAM_UNTERMINATED_CODE,
+        });
+      },
+      provisionProject: async () => {
+        // The first attempt rolled back (its row deleted), so the replay
+        // with the same key re-runs the create and fails the same way.
+        throw realFailure;
+      },
+    });
+
+    await expect(
+      runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, () => {}, client),
+    ).rejects.toBe(realFailure);
+  });
+
+  test('KRTX-1754: a bare Error with the same sentence is still a REAL failure — the typed code is the only trigger', async () => {
+    // Adversarial pair to the recovery above, mirroring the existing
+    // MANDATORY pin: without the code, the old strictness stands. An
+    // untyped failure is not provably an unterminated close, and the
+    // fallback's safety must never rest on message text.
+    const err = new Error('Provision stream ended without a result');
+    const client = streamClient({
+      provisionProjectStream: async (_input, onEvent) => {
+        onEvent({ type: 'phase', phase: 'validating' });
+        throw err;
+      },
+    });
+
+    await expect(
+      runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, () => {}, client),
+    ).rejects.toBe(err);
+    expect(client.plainCalls).toEqual([]);
+  });
 });
 
 /**
@@ -1504,8 +1682,14 @@ describe('an edge-rewritten 502 (503 with an upstream error body)', () => {
     expect(messageFor(err())).not.toContain('Managed git');
   });
 
-  test('gets the retry hint, not GitHub\'s raw text', () => {
-    expect(messageFor(err())).toBe('Could not create the workspace. Try again.');
+  // KRTX-1754: this IS the real failure — a GitHub integration permission
+  // problem the user cannot fix by clicking retry blindly. The body survives
+  // the API's own 502→503 rewrite (`http-middleware.ts`), so the reason the
+  // backend reported is shown instead of a bare "try again".
+  test('names the real failure the backend reported', () => {
+    expect(messageFor(err())).toBe(
+      'GitHub /user/repos failed (403): Resource not accessible by integration',
+    );
   });
 
   test('is retryable, like the 502 it was', () => {

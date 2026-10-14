@@ -131,8 +131,16 @@ describe('/new failure states: 503 gets its own message and no retry', () => {
     expect(hook).not.toContain('is not configured on this server');
   });
 
-  test('messageFor gives 502 the retryable generic message, unchanged', () => {
-    expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe(
+  // KRTX-1754: a 502/503 that carries the API's real reason shows it — the
+  // API's own middleware preserves the body across its 502→503 rewrite, and
+  // the stream route carries the reason in-band. The generic retry line is
+  // for the reason-less shapes only (see the two placeholder tests below).
+  test('messageFor gives a 502 with a server reason the reason, not the generic', () => {
+    expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe('Bad Gateway');
+  });
+
+  test('messageFor keeps the generic retry hint when the 502 body was lost (a proxy replaced it)', () => {
+    expect(messageFor(new ApiError('Provision failed: HTTP 503', { status: 503 }))).toBe(
       'Could not create the workspace. Try again.',
     );
   });
