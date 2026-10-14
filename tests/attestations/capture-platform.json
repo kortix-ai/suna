@@ -1,5 +1,5 @@
 {
-  "source_hash": "e6e2494a25cafea6dae4dd9eb8056792d7b110218ff630171e70eba672109cf7",
+  "source_hash": "09b4133cc94d5b272c4f931f3edc9040c8ee617258cd598d12acaa2f049c4c53",
   "diff_files": [
     ".agents/skills/kortix-capture/SKILL.md",
     ".agents/skills/kortix-capture/references/app-behavior.md",
@@ -156,9 +156,12 @@
     "apps/capture/scripts/ci_fake_issuer.py",
     "apps/capture/scripts/ci_sync_remote_frame.py",
     "apps/capture/scripts/ci_sync_restore_compare.py",
+    "apps/capture/scripts/ci_update_test.py",
+    "apps/capture/scripts/ci_update_tool.mjs",
     "apps/capture/scripts/compare_a11y_artifacts.py",
     "apps/capture/scripts/compare_screenshot_sync.py",
     "apps/capture/scripts/compare_trace_artifacts.py",
+    "apps/capture/scripts/create_update_key.sh",
     "apps/capture/scripts/fixtures/pii_sample_task.swift",
     "apps/capture/scripts/install_privacy_runtime.py",
     "apps/capture/scripts/macos_local_recording_smoke.sh",
@@ -219,6 +222,7 @@
     "apps/capture/src/memory/managed/notify.rs",
     "apps/capture/src/memory/managed/tray.rs",
     "apps/capture/src/memory/managed/unix.rs",
+    "apps/capture/src/memory/managed/update.rs",
     "apps/capture/src/memory/mod.rs",
     "apps/capture/src/memory/onboarding.rs",
     "apps/capture/src/memory/paths.rs",
@@ -427,13 +431,13 @@
     "tests/src/flows/notifications.flow.ts",
     "tests/unit/release-record-workflow.test.ts"
   ],
-  "diff_hash": "e8a981fa244acf73b5e9e14966766f997ef4412bf10406b34ef4e02e983dae2d",
-  "head": "41d8a8cd36e45f12a07d57b2a92f8540b8579e06",
+  "diff_hash": "73fb3ff5239a89188a97331f1c5d8aa31f4416e7302b220b0bf2e36a50faffdb",
+  "head": "31fee157dbabb164991772375ff70034bee600c2",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T06:04:27.395Z"
+  "at": "2026-10-14T06:26:00.984Z"
 }
