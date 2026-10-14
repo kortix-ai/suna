@@ -72,6 +72,8 @@ const { countBillingInvariantViolations, countStaleLivenessWindows, reconcileOrp
 const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 /** 2 vCPU / 4 GB / 20 GB for one hour, at list price. */
 const HOURLY = 0.10944109589041096;
+/** Five minutes of the default machine, as the ledger stores it (10 decimals); the window's cost_usd keeps 6. */
+const FIVE_MINUTES = Math.round((HOURLY / 12) * 1e10) / 1e10;
 const MINUTE = 60_000;
 const USER = '00000000-0000-4000-a000-000000009d01';
 
@@ -313,12 +315,12 @@ withDb('compute metering on PostgreSQL', () => {
 
       const end = iso(start + 300_000);
       expect(await windowsOf(sandboxId)).toEqual([
-        expect.objectContaining({ id, state: 'stopped', endedAt: end, lastBilledAt: end, costUsd: 0.016776 }),
+        expect.objectContaining({ id, state: 'stopped', endedAt: end, lastBilledAt: end, costUsd: Math.round(FIVE_MINUTES * 1e6) / 1e6 }),
       ]);
       expect(await ledgerOf(accountId)).toEqual([
         {
           type: 'usage',
-          amount: -0.016776,
+          amount: -FIVE_MINUTES,
           description: 'Sandbox compute · 2vCPU/4GB/20GB · 300s',
           idempotencyKey: `compute:${id}:${end}`,
           metadata: expect.objectContaining({ ledger_type: 'compute_debit' }),
@@ -339,7 +341,7 @@ withDb('compute metering on PostgreSQL', () => {
       expect(await ledgerOf(accountId)).toEqual([
         {
           type: 'usage',
-          amount: -0.016776,
+          amount: -FIVE_MINUTES,
           description: 'Sandbox compute · sess-ledger-ref · 2vCPU/4GB/20GB · 300s',
           idempotencyKey: `compute:${id}:${end}`,
           metadata: expect.objectContaining({ ledger_type: 'compute_debit' }),

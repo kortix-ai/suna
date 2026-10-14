@@ -317,10 +317,11 @@ type SubscriptionItemLike = Pick<Stripe.SubscriptionItem, 'quantity'> & {
  *   1. a known price (free, credits, a legacy plan price);
  *   2. our own metadata (`plan_key`, `tier_key`, or the oldest key, `tier`),
  *      for prices this table never saw (legacy machine subscriptions);
- *   3. the amount: any price above $0 is the one paid plan, Credits, and an
- *      all-$0 subscription is Free. There is no other plan to buy, so a paying
- *      subscription is never left without one (a 2026-10-15 prod audit found
- *      paying subscriptions with neither a known price nor metadata).
+ *   3. the amount: any price above $0 is the one paid plan, Credits. There is
+ *      no other plan to buy, so a paying subscription is never left without one
+ *      (a 2026-10-15 prod audit found paying subscriptions with neither a known
+ *      price nor metadata). An all-$0 subscription with no metadata answers
+ *      null: the stored plan decides, so a comped account keeps its plan.
  */
 export function planForSubscription(subscription: {
   items: { data: SubscriptionItemLike[] };
@@ -333,9 +334,7 @@ export function planForSubscription(subscription: {
   const meta = subscription.metadata;
   const hint = canonicalTier(meta?.plan_key || meta?.tier_key || meta?.tier);
   if (hint !== 'none') return hint;
-  const items = subscription.items.data.filter((item) => item.price);
-  if (items.length === 0) return null;
-  return items.some((item) => (item.price?.unit_amount ?? 0) > 0) ? 'credits' : 'free';
+  return subscription.items.data.some((item) => (item.price?.unit_amount ?? 0) > 0) ? 'credits' : null;
 }
 
 /**

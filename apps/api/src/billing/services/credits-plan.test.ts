@@ -99,7 +99,8 @@ describe('planForSubscription: the price decides', () => {
   // plan metadata resolved to no plan, so their accounts stayed on Free.
   test('with no known price and no metadata, the amount decides', () => {
     expect(planForSubscription(sub([{ id: 'price_unknown', unit: 2000 }], { trial_start: 'x' }))).toBe('credits');
-    expect(planForSubscription(sub([{ id: 'price_unknown', unit: 0 }]))).toBe('free');
+    // $0 with no metadata: the stored plan decides (a comped account keeps its plan).
+    expect(planForSubscription(sub([{ id: 'price_unknown', unit: 0 }]))).toBeNull();
     expect(planForSubscription({ items: { data: [] } })).toBeNull();
   });
 
