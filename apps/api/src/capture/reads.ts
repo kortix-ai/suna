@@ -8,6 +8,8 @@ import { captureDevices, projectSessions, timelineChunks } from '@kortix/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
+import { config } from '../config';
+import { classifyDevice, summarizeHealth } from './health';
 import { accountPrefix, isEncrypted, liveState, objectKey, parseDisplay, type CaptureDisplay, type Manifest } from './format';
 import { captureStore, captureStoreConfigured } from './store';
 
@@ -77,7 +79,23 @@ export async function sessionVisibility(sessionId: string): Promise<string | nul
 
 // ─── Devices ─────────────────────────────────────────────────────────────────
 
-export function deviceView(device: Device, now = Date.now()) {
+/** How long a computer must be silent before it counts as not recording (also the alert threshold). */
+export const notRecordingAfterMs = () => config.KORTIX_CAPTURE_ALERT_AFTER_MINUTES * 60_000;
+
+export function deviceHealth(device: Device, now: number, latestVersion: string | null) {
+  return classifyDevice(
+    { status: device.status, reportedAt: device.statusReportedAt, appVersion: device.appVersion },
+    { now, latestVersion, notRecordingAfterMs: notRecordingAfterMs() },
+  );
+}
+
+/** The devices answer: each device with its health, and the summary over the devices not revoked. */
+export function devicesView(devices: Device[], latestVersion: string | null, now = Date.now()) {
+  const views = devices.map((d) => deviceView(d, now, latestVersion));
+  return { devices: views, health: summarizeHealth(views.filter((v) => !v.revoked_at).map((v) => v.health), latestVersion) };
+}
+
+export function deviceView(device: Device, now = Date.now(), latestVersion: string | null = null) {
   return {
     device_id: device.deviceId,
     user_id: device.userId,
@@ -91,6 +109,7 @@ export function deviceView(device: Device, now = Date.now()) {
     live: { state: liveState(device.status, now), status: device.status, reported_at: device.statusReportedAt?.toISOString() ?? null },
     last_credentials_at: device.lastCredentialsAt?.toISOString() ?? null,
     revoked_at: device.revokedAt?.toISOString() ?? null,
+    health: deviceHealth(device, now, latestVersion),
     /** The enrollment token the device enrolled with (an IT rollout); null when a person signed it in. */
     enrollment_token_id: device.enrollmentTokenId,
     created_at: device.createdAt.toISOString(),

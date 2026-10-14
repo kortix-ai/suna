@@ -98,6 +98,9 @@ const DEVICE_EVERY_MS: i64 = 60_000;
 const STATUS_EVERY_MS: i64 = 15_000;
 /// After a policy change, status.json goes out this long after the change.
 const POLICY_STATUS_DELAY_MS: i64 = 15_000;
+/// The sync loop ticks every few seconds. A longer gap between two ticks means the
+/// computer slept (or the process was frozen); status.json then restarts `host.awakeSinceMs`.
+const SLEEP_GAP_MS: i64 = 120_000;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SyncCredentials {
@@ -2233,6 +2236,10 @@ pub struct Runtime {
     pub throughput_bps: Option<f64>,
     pub bytes_uploaded: u64,
     pub clock_offset_ms: i64,
+    /// When this computer last woke (or the app started): status.json `host.awakeSinceMs`.
+    pub awake_since_ms: i64,
+    /// End of the last loop iteration, to see a sleep gap.
+    pub last_tick_ms: i64,
 }
 
 /// Queue and progress counters from the database plus the runtime state.
@@ -2510,6 +2517,7 @@ fn pass_with(conn: &Connection, ctx: &Ctx, s: &Settings, rt: &mut Runtime) -> Re
     if now_ms() - rt.status_at >= STATUS_EVERY_MS {
         let mut status = super::cli::device_status(ctx.paths, app_version());
         status["reportedAtMs"] = json!(now_ms());
+        status["host"] = json!({"awakeSinceMs": rt.awake_since_ms});
         put_json(ctx, &format!("{device}/status.json"), &status)?;
         rt.status_at = now_ms();
     }
@@ -2568,6 +2576,7 @@ pub fn run(paths: MemoryPaths, stop: Arc<AtomicBool>) -> Result<()> {
     let mut rt = Runtime::default();
     let mut last_target: Option<(String, String)> = None;
     while !stop.load(Ordering::SeqCst) {
+        note_wake(&mut rt, now_ms());
         let s = Settings::effective(&paths);
         let enabled = s.sync.enabled && !s.airgap;
         let device = device_id(&paths, &s);
@@ -2576,6 +2585,8 @@ pub fn run(paths: MemoryPaths, stop: Arc<AtomicBool>) -> Result<()> {
         if last_target.as_ref() != Some(&here) {
             rt = Runtime {
                 bytes_uploaded: rt.bytes_uploaded,
+                awake_since_ms: rt.awake_since_ms,
+                last_tick_ms: rt.last_tick_ms,
                 ..Runtime::default()
             };
             last_target = Some(here);
@@ -2610,12 +2621,21 @@ pub fn run(paths: MemoryPaths, stop: Arc<AtomicBool>) -> Result<()> {
             &paths,
             &compute_state(&conn, &paths, &s, enabled, &device, &rt),
         );
+        rt.last_tick_ms = now_ms();
         let until = Instant::now() + TICK;
         while Instant::now() < until && !stop.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(200));
         }
     }
     Ok(())
+}
+
+/// Start of an awake spell: the app start, or the first tick after a gap longer than
+/// [`SLEEP_GAP_MS`]. A tick ends before its sleep, so a long upload is not a gap.
+fn note_wake(rt: &mut Runtime, now: i64) {
+    if rt.awake_since_ms == 0 || (rt.last_tick_ms > 0 && now - rt.last_tick_ms > SLEEP_GAP_MS) {
+        rt.awake_since_ms = now;
+    }
 }
 
 #[cfg(test)]

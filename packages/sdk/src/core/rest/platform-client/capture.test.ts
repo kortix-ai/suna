@@ -24,7 +24,9 @@ import {
   revokeCaptureDevice,
   searchCapture,
   setCapturePolicy,
+  type CaptureDevice,
   type CapturePolicy,
+  captureHealthBucket,
 } from './capture';
 import * as Capture from './capture';
 
@@ -282,4 +284,16 @@ test('link a device to a Kortix user, or unlink it; approve a waiting computer w
   const capture = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).capture.account('a1');
   await capture.devices.link('d2', 'u2');
   expect(last()).toMatchObject({ method: 'PUT', url: `${P}/devices/d2/link`, body: { user_id: 'u2' } });
+});
+
+test('fleet health: the devices answer carries the summary, and a device lands in exactly one bucket', async () => {
+  const summary = { recording: 1, idle: 1, attention: 1, not_recording: 1, latest_version: '0.2.0' };
+  nextBody = { devices: [], health: summary };
+  expect((await listCaptureDevices('a1', { scope: 'account' })).health).toEqual(summary);
+  const health = (state: string, idle = false) =>
+    ({ health: { state, idle, reasons: [], since: null, latest_version: null } }) as unknown as CaptureDevice;
+  expect(captureHealthBucket(health('healthy'))).toBe('recording');
+  expect(captureHealthBucket(health('healthy', true))).toBe('idle');
+  expect(captureHealthBucket(health('attention'))).toBe('attention');
+  expect(captureHealthBucket(health('not_recording'))).toBe('not_recording');
 });

@@ -202,6 +202,7 @@ The live status: `recording` (`recording|paused|permission_missing|not_recording
 every connected display, the focused one first), `appVersion`, `actionsRecording`,
 `capture` (`intervalMs`, `maxHeight`: the rate and size in force),
 `policy` (null, or the policy in force: `source`, `updatedAtMs`, `fetchedAtMs`),
+`host` (`awakeSinceMs`: when the computer last woke from sleep, or the app started),
 plus `reportedAtMs`. status.json goes out every 15 s. A reader
 shows a device as offline when `reportedAtMs` is older than 120 s. After the
 policy in force changes, the device writes status.json about 15 s later (once its

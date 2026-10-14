@@ -21,7 +21,7 @@ import { StatusDot as DsStatusDot } from '@/components/ui/status';
 import { relativeTime } from '@/lib/relative-time';
 
 import { clockTime } from '../capture-time';
-import type { DeviceStatusView } from './device-status';
+import type { DeviceStatusView, HealthLine } from './device-status';
 import { LinkDeviceModal } from './rollout';
 
 /** The status dot: green records, orange needs a person, a ring is offline, grey is idle. */
@@ -34,9 +34,19 @@ export function StatusDot({
 }) {
   return (
     <DsStatusDot
-      tone={view?.tone === 'green' ? 'success' : view?.tone === 'orange' ? 'warning' : 'neutral'}
+      tone={
+        view?.tone === 'green'
+          ? 'success'
+          : view?.tone === 'orange'
+            ? 'warning'
+            : view?.tone === 'red'
+              ? 'destructive'
+              : 'neutral'
+      }
       className={cn(
-        view?.key === 'offline' && 'border-muted-foreground border bg-transparent',
+        view?.key === 'offline' &&
+          view.tone === 'none' &&
+          'border-muted-foreground border bg-transparent',
         className,
       )}
     />
@@ -80,6 +90,25 @@ export function StatusLabel({ view, className }: { view: DeviceStatusView; class
       {note ? <span className="text-muted-foreground min-w-0 truncate">· {note}</span> : null}
     </span>
   );
+}
+
+/**
+ * Why the fleet health rules flag a computer, in plain words ("Last frame 12 min
+ * ago", "Update to 0.2.0"). At most two reasons; the most urgent first.
+ */
+export function HealthNote({ lines, className }: { lines: readonly HealthLine[]; className?: string }) {
+  const t = useTranslations('capture.devices');
+  const locale = useLocale();
+  if (lines.length === 0) return null;
+  const text = lines.slice(0, 2).map((line) =>
+    t(`health.${line.code}`, {
+      time: line.timeMs ? relativeTime(line.timeMs, locale) : t('never'),
+      count: line.count ?? 0,
+      version: line.version ?? '',
+      current: line.current ?? '',
+    }),
+  );
+  return <span className={cn('text-muted-foreground block truncate text-xs', className)}>{text.join(' · ')}</span>;
 }
 
 /** "Recording", "Needs permission · Accessibility", "Offline · 3 min ago". */

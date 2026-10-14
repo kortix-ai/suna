@@ -2622,7 +2622,9 @@
       "permission": "Solicitud de permiso",
       "shared": "Compartida contigo",
       "automation_failed": "Alerta de fallo",
-      "automation_recovered": "Alerta de recuperación"
+      "automation_recovered": "Alerta de recuperación",
+      "capture_device_down": "Ordenador de Capture detenido",
+      "capture_device_recovered": "Ordenador de Capture graba de nuevo"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -2631,7 +2633,9 @@
       "permission": "El agente pide permiso para ejecutar una herramienta.",
       "shared": "Alguien comparte una sesión contigo.",
       "automation_failed": "Un trigger o un recordatorio empieza a fallar.",
-      "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar."
+      "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar.",
+      "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
+      "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar."
     },
     "bell": {
       "label": "Notificaciones",
@@ -20776,14 +20780,6 @@
       "viewLabel": "Vista",
       "viewAll": "Todos",
       "viewMine": "Mis dispositivos",
-      "filterLabel": "Filtrar por estado",
-      "filter": {
-        "all": "Todos",
-        "recording": "Grabando",
-        "paused": "En pausa",
-        "permission": "Necesita permiso",
-        "offline": "Sin conexión"
-      },
       "loadFailed": "No se pudieron cargar los dispositivos.",
       "tryAgain": "Reintentar",
       "empty": {
@@ -20822,6 +20818,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Guía de instalación"
+      },
+      "summaryLabel": "Estado de los ordenadores",
+      "summary": {
+        "recording": "{count} grabando",
+        "idle": "{count} inactivos",
+        "attention": "{count, plural, one {# necesita atención} other {# necesitan atención}}",
+        "not_recording": "{count} sin grabar"
+      },
+      "health": {
+        "offline": "Sin informe. Visto por última vez {time}",
+        "stalled": "Grabador bloqueado. Último fotograma {time}",
+        "error": "Grabador detenido. Último fotograma {time}",
+        "never_reported": "Instalado, pero aún no ha informado",
+        "unseen": "Sin verse desde hace más de 7 días",
+        "permission_missing": "Permite la app en los ajustes del sistema",
+        "paused": "Una persona pausó la grabación",
+        "sync_error": "Fallan las subidas",
+        "backlog": "{count, plural, one {# elemento espera} other {# elementos esperan}} para subirse",
+        "behind_version": "Actualiza de {current} a {version}",
+        "asleep": "Suspendido o apagado. Visto por última vez {time}"
       }
     },
     "settings": {

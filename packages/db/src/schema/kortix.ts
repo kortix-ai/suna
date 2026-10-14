@@ -7660,7 +7660,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered')`),
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */

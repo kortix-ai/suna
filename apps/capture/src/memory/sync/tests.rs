@@ -804,3 +804,16 @@ fn device_json_lists_the_displays_of_the_current_layout() {
     );
     drop(conn);
 }
+
+#[test]
+fn awake_since_restarts_after_a_sleep_gap_only() {
+    let mut rt = Runtime::default();
+    note_wake(&mut rt, 1_000);
+    assert_eq!(rt.awake_since_ms, 1_000, "the first tick starts the awake spell");
+    rt.last_tick_ms = 1_000;
+    note_wake(&mut rt, 1_000 + SLEEP_GAP_MS);
+    assert_eq!(rt.awake_since_ms, 1_000, "a gap of exactly the limit is not a sleep");
+    rt.last_tick_ms = 1_000 + SLEEP_GAP_MS;
+    note_wake(&mut rt, 1_000 + 2 * SLEEP_GAP_MS + 1);
+    assert_eq!(rt.awake_since_ms, 1_000 + 2 * SLEEP_GAP_MS + 1, "a longer gap restarts it");
+}

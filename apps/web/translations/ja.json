@@ -2622,7 +2622,9 @@
       "permission": "権限リクエスト",
       "shared": "あなたと共有",
       "automation_failed": "失敗アラート",
-      "automation_recovered": "復旧アラート"
+      "automation_recovered": "復旧アラート",
+      "capture_device_down": "Capture のコンピューターが停止",
+      "capture_device_recovered": "Capture のコンピューターが復旧"
     },
     "kindDescription": {
       "turn_done": "ターンが終了します。",
@@ -2631,7 +2633,9 @@
       "permission": "エージェントがツールを実行する権限を求めます。",
       "shared": "誰かがあなたとセッションを共有します。",
       "automation_failed": "トリガーまたはリマインダーが失敗し始めます。",
-      "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。"
+      "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。",
+      "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
+      "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。"
     },
     "bell": {
       "label": "通知",
@@ -20776,14 +20780,6 @@
       "viewLabel": "表示",
       "viewAll": "全員",
       "viewMine": "自分のデバイス",
-      "filterLabel": "ステータスで絞り込む",
-      "filter": {
-        "all": "すべて",
-        "recording": "録画中",
-        "paused": "一時停止中",
-        "permission": "権限が必要",
-        "offline": "オフライン"
-      },
       "loadFailed": "デバイスを読み込めませんでした。",
       "tryAgain": "再試行",
       "empty": {
@@ -20822,6 +20818,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "インストールガイド"
+      },
+      "summaryLabel": "コンピューターの状態",
+      "summary": {
+        "recording": "記録中 {count}",
+        "idle": "待機中 {count}",
+        "attention": "要確認 {count}",
+        "not_recording": "記録なし {count}"
+      },
+      "health": {
+        "offline": "報告なし。最後に確認: {time}",
+        "stalled": "記録が停止中。最後のフレーム: {time}",
+        "error": "記録が停止しました。最後のフレーム: {time}",
+        "never_reported": "インストール済みですが、まだ報告がありません",
+        "unseen": "7 日以上確認できていません",
+        "permission_missing": "システム設定でアプリを許可してください",
+        "paused": "ユーザーが記録を一時停止しました",
+        "sync_error": "アップロードに失敗しています",
+        "backlog": "アップロード待ち {count} 件",
+        "behind_version": "{current} から {version} に更新してください",
+        "asleep": "スリープ中または電源オフ。最後に確認: {time}"
       }
     },
     "settings": {

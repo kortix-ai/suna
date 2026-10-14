@@ -41,6 +41,7 @@ import {
   chunkOf,
   deviceInAccount,
   deviceView,
+  devicesView,
   frameOf,
   frameVideoOffsetMs,
   listDevices,
@@ -59,7 +60,9 @@ import {
   type SearchKind,
   type Who,
 } from './reads';
+import { runCaptureHealthTick } from './health-alerts';
 import { captureStoreConfigured } from './store';
+import { latestCaptureVersion } from './update-manifest';
 import { enqueueLink, pollDevice } from './workers';
 import { isAccountMember, readWorkspace, setCaptureEnabled } from './workspace';
 
@@ -387,7 +390,7 @@ accountsRouter.openapi(
     const query = c.req.valid('query');
     const access = await captureAccess(c, { userId: query.user_id, accountWide: query.scope === 'account' });
     if (isResponse(access)) return access as never;
-    return c.json({ devices: (await listDevices(access.accountId, whoUserId(access.subject))).map((d) => deviceView(d)) }, 200);
+    return c.json(devicesView(await listDevices(access.accountId, whoUserId(access.subject)), await latestCaptureVersion()), 200);
   },
 );
 
@@ -407,7 +410,7 @@ accountsRouter.openapi(
     if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot revoke a capture device');
     const device = await loadDevice(access, c.req.valid('param').deviceId, { write: true });
     if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
-    return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer)), 200);
+    return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer), Date.now(), await latestCaptureVersion()), 200);
   },
 );
 
@@ -447,7 +450,7 @@ accountsRouter.openapi(
     }
     if (userId) await enqueueLink(access.accountId, device.deviceId, userId);
     annotateAuditEvent({ resourceType: 'capture_device', resourceId: device.deviceId, metadata: { member_user_id: userId, previous_user_id: device.userId } });
-    return c.json(deviceView(outcome.device), 200);
+    return c.json(deviceView(outcome.device, Date.now(), await latestCaptureVersion()), 200);
   },
 );
 
@@ -456,7 +459,7 @@ accountsRouter.openapi(
     method: 'post',
     path: '/{accountId}/capture/devices/{deviceId}/sync',
     tags,
-    summary: 'Read a device’s status, description and index now, queue every new item for indexing, and retract every item the device deleted',
+    summary: 'Read a device’s status, description and index now, queue every new item for indexing, retract every item the device deleted, and raise or clear its not-recording alert',
     ...auth,
     request: { params: params.extend({ deviceId: z.string().uuid() }) },
     responses: { ...ok('The number of items queued and the number retracted'), ...errors(503) },
@@ -468,7 +471,9 @@ accountsRouter.openapi(
     const device = await loadDevice(access, c.req.valid('param').deviceId);
     if (!device || device.revokedAt) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     const { enqueued, forgotten } = await pollDevice(device);
-    return c.json({ device_id: device.deviceId, enqueued, forgotten }, 200);
+    // The status just read may open or close a not-recording alert: raise it now, as the leader's health tick would.
+    const alerts = await runCaptureHealthTick(Date.now(), device.accountId);
+    return c.json({ device_id: device.deviceId, enqueued, forgotten, alerts }, 200);
   },
 );
 

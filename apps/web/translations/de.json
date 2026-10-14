@@ -2622,7 +2622,9 @@
       "permission": "Berechtigungsanfrage",
       "shared": "Mit dir geteilt",
       "automation_failed": "Fehleralarm",
-      "automation_recovered": "Entwarnung"
+      "automation_recovered": "Entwarnung",
+      "capture_device_down": "Capture-Computer gestoppt",
+      "capture_device_recovered": "Capture-Computer nimmt wieder auf"
     },
     "kindDescription": {
       "turn_done": "Ein Durchlauf endet.",
@@ -2631,7 +2633,9 @@
       "permission": "Der Agent bittet um die Erlaubnis, ein Tool auszuführen.",
       "shared": "Jemand teilt eine Sitzung mit dir.",
       "automation_failed": "Ein Trigger oder eine Erinnerung schlägt fehl.",
-      "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder."
+      "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder.",
+      "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
+      "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf."
     },
     "bell": {
       "label": "Benachrichtigungen",
@@ -20776,14 +20780,6 @@
       "viewLabel": "Ansicht",
       "viewAll": "Alle",
       "viewMine": "Meine Geräte",
-      "filterLabel": "Nach Status filtern",
-      "filter": {
-        "all": "Alle",
-        "recording": "Nimmt auf",
-        "paused": "Pausiert",
-        "permission": "Braucht Berechtigung",
-        "offline": "Offline"
-      },
       "loadFailed": "Die Geräte konnten nicht geladen werden.",
       "tryAgain": "Erneut versuchen",
       "empty": {
@@ -20822,6 +20818,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Installationsanleitung"
+      },
+      "summaryLabel": "Zustand der Computer",
+      "summary": {
+        "recording": "{count} nehmen auf",
+        "idle": "{count} im Leerlauf",
+        "attention": "{count, plural, one {# braucht Aufmerksamkeit} other {# brauchen Aufmerksamkeit}}",
+        "not_recording": "{count} nehmen nicht auf"
+      },
+      "health": {
+        "offline": "Keine Meldung. Zuletzt gesehen {time}",
+        "stalled": "Aufnahme hängt. Letztes Bild {time}",
+        "error": "Aufnahme gestoppt. Letztes Bild {time}",
+        "never_reported": "Installiert, hat sich aber noch nicht gemeldet",
+        "unseen": "Seit über 7 Tagen nicht gesehen",
+        "permission_missing": "App in den Systemeinstellungen erlauben",
+        "paused": "Eine Person hat die Aufnahme pausiert",
+        "sync_error": "Uploads schlagen fehl",
+        "backlog": "{count, plural, one {# Element wartet} other {# Elemente warten}} auf den Upload",
+        "behind_version": "Update von {current} auf {version}",
+        "asleep": "Im Ruhezustand oder aus. Zuletzt gesehen {time}"
       }
     },
     "settings": {

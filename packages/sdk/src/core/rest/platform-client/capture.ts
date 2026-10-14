@@ -105,6 +105,54 @@ export interface CaptureFocusSpan {
   end_at: string;
 }
 
+/** Why a computer is not healthy, most urgent first. */
+export type CaptureHealthReason =
+  | 'offline'
+  | 'stalled'
+  | 'error'
+  | 'never_reported'
+  | 'unseen'
+  | 'permission_missing'
+  | 'paused'
+  | 'sync_error'
+  | 'backlog'
+  | 'behind_version';
+
+/**
+ * Fleet health of one computer, from its last status report. `not_recording`:
+ * it should record and does not (silent 30 min or more, or no frame for 5 min
+ * of awake time). `attention`: it records or will, but a person should look.
+ * `idle` is a healthy computer that is locked, inactive or asleep.
+ */
+export interface CaptureDeviceHealth {
+  state: 'healthy' | 'attention' | 'not_recording';
+  idle: boolean;
+  reasons: CaptureHealthReason[];
+  /** When the not-recording spell began; null unless `state` is `not_recording`. */
+  since: string | null;
+  /** The newest published Capture version, only when this computer is behind it. */
+  latest_version: string | null;
+}
+
+/** Computers per bucket; every computer counts once. */
+export interface CaptureHealthSummary {
+  recording: number;
+  idle: number;
+  attention: number;
+  not_recording: number;
+  /** The newest published Capture version; null when unknown. */
+  latest_version: string | null;
+}
+
+export type CaptureHealthBucket = 'recording' | 'idle' | 'attention' | 'not_recording';
+
+/** The summary bucket a computer counts in. */
+export function captureHealthBucket(device: Pick<CaptureDevice, 'health'>): CaptureHealthBucket {
+  const { state, idle } = device.health;
+  if (state === 'healthy') return idle ? 'idle' : 'recording';
+  return state;
+}
+
 export interface CaptureDevice {
   device_id: string;
   /** The member the device records; null: an IT-enrolled computer linked to no one yet (`linkCaptureDevice`). */
@@ -124,6 +172,7 @@ export interface CaptureDevice {
   };
   last_credentials_at: string | null;
   revoked_at: string | null;
+  health: CaptureDeviceHealth;
   /** The enrollment token the device enrolled with (an IT rollout); null when a person signed it in. */
   enrollment_token_id?: string | null;
   created_at: string;
@@ -467,7 +516,7 @@ const windowParams = (query: CaptureWindowQuery = {}) => ({
 /** Your devices with live status; a member's (`userId`) or the account's (`scope: 'account'`) with `capture.read_all`. */
 export async function listCaptureDevices(accountId: string, opts: { userId?: string; scope?: 'mine' | 'account' } = {}) {
   return unwrap(
-    await backendApi.get<{ devices: CaptureDevice[] }>(
+    await backendApi.get<{ devices: CaptureDevice[]; health: CaptureHealthSummary }>(
       `${base(accountId)}/devices${captureQuery({ user_id: opts.userId, scope: opts.scope })}`,
     ),
   );

@@ -54,6 +54,8 @@ const KIND_MARK: Record<InboxNotificationKind, { icon: PhosphorIcon; className: 
   shared: { icon: ShareIcon, className: 'text-muted-foreground' },
   automation_failed: { icon: WarningIcon, className: 'text-kortix-red' },
   automation_recovered: { icon: CheckCircleIcon, className: 'text-kortix-green' },
+  capture_device_down: { icon: WarningIcon, className: 'text-kortix-red' },
+  capture_device_recovered: { icon: CheckCircleIcon, className: 'text-kortix-green' },
 };
 
 export interface NotificationPanelProps {

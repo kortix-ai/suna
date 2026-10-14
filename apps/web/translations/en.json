@@ -2633,7 +2633,9 @@
       "permission": "Permission request",
       "shared": "Shared with you",
       "automation_failed": "Failure alert",
-      "automation_recovered": "Recovery alert"
+      "automation_recovered": "Recovery alert",
+      "capture_device_down": "Capture computer stopped",
+      "capture_device_recovered": "Capture computer recording again"
     },
     "kindDescription": {
       "turn_done": "A turn ends.",
@@ -2642,7 +2644,9 @@
       "permission": "The agent asks for permission to run a tool.",
       "shared": "Someone shares a session with you.",
       "automation_failed": "A trigger or a reminder starts failing.",
-      "automation_recovered": "A failing trigger or reminder works again."
+      "automation_recovered": "A failing trigger or reminder works again.",
+      "capture_device_down": "A Kortix Capture computer is not recording. Sent to people who manage Capture.",
+      "capture_device_recovered": "A Kortix Capture computer that stopped records again."
     },
     "bell": {
       "label": "Notifications",
@@ -20776,14 +20780,6 @@
       "viewLabel": "View",
       "viewAll": "Everyone",
       "viewMine": "My devices",
-      "filterLabel": "Filter by status",
-      "filter": {
-        "all": "All",
-        "recording": "Recording",
-        "paused": "Paused",
-        "permission": "Needs permission",
-        "offline": "Offline"
-      },
       "loadFailed": "Could not load the devices.",
       "tryAgain": "Try again",
       "empty": {
@@ -20822,6 +20818,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Install guide"
+      },
+      "summaryLabel": "Fleet health",
+      "summary": {
+        "recording": "{count} recording",
+        "idle": "{count} idle",
+        "attention": "{count, plural, one {# needs attention} other {# need attention}}",
+        "not_recording": "{count} not recording"
+      },
+      "health": {
+        "offline": "No report. Last seen {time}",
+        "stalled": "Recorder stuck. Last frame {time}",
+        "error": "Recorder stopped. Last frame {time}",
+        "never_reported": "Installed, but has not reported yet",
+        "unseen": "Not seen for over 7 days",
+        "permission_missing": "Allow the app in system settings",
+        "paused": "A person paused recording",
+        "sync_error": "Uploads are failing",
+        "backlog": "{count, plural, one {# item} other {# items}} waiting to upload",
+        "behind_version": "Update from {current} to {version}",
+        "asleep": "Asleep or off. Last seen {time}"
       }
     },
     "settings": {

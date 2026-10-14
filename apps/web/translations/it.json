@@ -2622,7 +2622,9 @@
       "permission": "Richiesta di autorizzazione",
       "shared": "Condivisa con te",
       "automation_failed": "Avviso di errore",
-      "automation_recovered": "Avviso di ripristino"
+      "automation_recovered": "Avviso di ripristino",
+      "capture_device_down": "Computer Capture fermo",
+      "capture_device_recovered": "Computer Capture di nuovo in registrazione"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -2631,7 +2633,9 @@
       "permission": "L'agente chiede l'autorizzazione per eseguire uno strumento.",
       "shared": "Qualcuno condivide una sessione con te.",
       "automation_failed": "Un trigger o un promemoria inizia a fallire.",
-      "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare."
+      "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare.",
+      "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
+      "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo."
     },
     "bell": {
       "label": "Notifiche",
@@ -20776,14 +20780,6 @@
       "viewLabel": "Vista",
       "viewAll": "Tutti",
       "viewMine": "I miei dispositivi",
-      "filterLabel": "Filtra per stato",
-      "filter": {
-        "all": "Tutti",
-        "recording": "In registrazione",
-        "paused": "In pausa",
-        "permission": "Serve un permesso",
-        "offline": "Offline"
-      },
       "loadFailed": "Impossibile caricare i dispositivi.",
       "tryAgain": "Riprova",
       "empty": {
@@ -20822,6 +20818,26 @@
         "macos": "macOS",
         "linux": "Linux",
         "guide": "Guida all’installazione"
+      },
+      "summaryLabel": "Stato dei computer",
+      "summary": {
+        "recording": "{count} in registrazione",
+        "idle": "{count} inattivi",
+        "attention": "{count, plural, one {# richiede attenzione} other {# richiedono attenzione}}",
+        "not_recording": "{count} non registrano"
+      },
+      "health": {
+        "offline": "Nessun report. Visto l’ultima volta {time}",
+        "stalled": "Registratore bloccato. Ultimo fotogramma {time}",
+        "error": "Registratore fermo. Ultimo fotogramma {time}",
+        "never_reported": "Installato, ma non ha ancora inviato report",
+        "unseen": "Non visto da oltre 7 giorni",
+        "permission_missing": "Consenti l’app nelle impostazioni di sistema",
+        "paused": "Una persona ha messo in pausa la registrazione",
+        "sync_error": "I caricamenti falliscono",
+        "backlog": "{count, plural, one {# elemento attende} other {# elementi attendono}} il caricamento",
+        "behind_version": "Aggiorna da {current} a {version}",
+        "asleep": "In sospensione o spento. Visto l’ultima volta {time}"
       }
     },
     "settings": {

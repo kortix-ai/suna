@@ -135,6 +135,7 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
+        accountId: input.accountId,
       });
 
       // The kill switch stops pushes only; email has its own availability check.
