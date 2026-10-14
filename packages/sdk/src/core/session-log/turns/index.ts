@@ -20,6 +20,7 @@
  * - `sessionLogCallStatus`: the per-call status rule (new: a closure-rule block is open on a live turn).
  * - `sessionLogPromptMessage`: the host's synthetic row for a queued inbox prompt.
  * - `sessionLogRetrying`: `hasRetryingAssistantTurn` over a thread (the busy state's input).
+ * - `subAgentCalls`: `getChildSessionToolParts` (a sub-agent row's calls, from its thread).
  * - `sessionLogThreadMetrics`: a thread's cost, message counts and token totals (the context modal).
  * - `isSessionLogRestoreNote`, `sessionLogHarnessSwitches`, `sessionLogRestoreNotice`,
  *   `sessionLogReferencedTexts`, `sessionLogWithFullTexts`, `sessionLogFullTextAction` (P5.6, `./history.ts`): a session's
@@ -39,6 +40,7 @@ export {
   sessionLogShowGroupCall,
   sessionLogTurnSegments,
   splitSessionLogTurnWork,
+  subAgentCalls,
   type SessionLogBurstStep,
   type SessionLogSegment,
   type SessionLogTurnWorkSplit,

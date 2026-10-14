@@ -237,10 +237,10 @@ function PreparingTrigger() {
   );
 }
 
-export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const metadata = partMetadata(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
+export function ApplyPatchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const metadata = partMetadata(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
   const isError = useMemo(() => status === 'completed' && isErrorOutput(output), [status, output]);
   const running = useContext(ToolRunningContext);
   const files = useMemo(() => patchFiles(metadata.files), [metadata.files]);
@@ -253,7 +253,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PATCH_ICON[trigger.icon]}
       trigger={trigger.preparing ? <PreparingTrigger /> : { title: trigger.title, subtitle: trigger.subtitle }}
       defaultOpen={defaultOpen}

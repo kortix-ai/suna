@@ -3,19 +3,22 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// The web app renders sessions from the session log (`kortix.session/2`, P5): a host file
-// reads blocks (`SessionLogMessage`, `ToolCallBlock`, `SessionLogTurn`) through
+// The web and mobile apps render sessions from the session log (`kortix.session/2`, P5): a
+// host file reads blocks (`SessionLogMessage`, `ToolCallBlock`, `SessionLogTurn`) through
 // `useSessionLog` / `useSessionLogThread` and the SDK's block turn layer. A host file that
 // imports a v1 part or turn type, or a v1 helper that takes v1 rows, depends on the shape
-// P8.4 deletes. Session Log Plan P5.7; P5.2c's done-when for `features/session`.
+// P8.4 deletes. Session Log Plan P5.7 (web) and P5.4 (mobile).
 //
-// Scope: every tracked `.ts`/`.tsx` under apps/web/src. Not scanned: tests (they build v1
-// fixtures on purpose), `apps/web/src/ui/` and the shims (a file that only re-exports an SDK
-// module, such as `lib/iam-client.ts`): they are the SDK surface. An import from any of them
-// counts as an import from the SDK.
+// Scope: every tracked `.ts`/`.tsx` under apps/web/src and apps/mobile. Not scanned: tests
+// (they build v1 fixtures on purpose), `apps/web/src/ui/` and the shims (a file that only
+// re-exports an SDK module, such as `lib/iam-client.ts`): they are the SDK surface. An import
+// from any of them counts as an import from the SDK. Each host resolves `@/` to its own root.
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB_SRC = 'apps/web/src';
+const MOBILE = 'apps/mobile';
+/** The host a repo file belongs to: the root `@/` resolves to. */
+const hostRoot = (file: string) => (file.startsWith(`${MOBILE}/`) ? MOBILE : WEB_SRC);
 
 /** v1 part and turn types, and the v1 helpers that take or return v1 rows or parts. */
 const V1_NAMES = new Set([
@@ -36,7 +39,10 @@ const V1_NAMES = new Set([
 ]);
 
 /** Each entry is `<file>: <name>` with the reason it stays. Remove it with the reason. */
-const ALLOWED: Record<string, string> = {};
+const ALLOWED: Record<string, string> = {
+  'apps/mobile/lib/projects/projects-client.ts: *':
+    'a namespace import of the SDK REST client (projects, secrets, connectors, change requests); it reads no transcript',
+};
 
 const SDK_PACKAGE = /^@kortix\/sdk(?:\/|$)/;
 const NAMED = /\b(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
@@ -45,10 +51,10 @@ const STAR_EXPORT = /\bexport\s+(?:type\s+)?\*\s+(?:as\s+\w+\s+)?from\s*['"]([^'
 const INLINE = /\bimport\(\s*['"]([^'"]+)['"]\s*\)\.(\w+)/g;
 const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
 
-/** The repo path a web import specifier names, or null for a package outside the app. */
-function resolveWeb(specifier: string, fromFile: string): string | null {
+/** The repo path a host import specifier names, or null for a package outside the app. */
+function resolveHost(specifier: string, fromFile: string): string | null {
   const base = specifier.startsWith('@/')
-    ? posix.join(WEB_SRC, specifier.slice(2))
+    ? posix.join(hostRoot(fromFile), specifier.slice(2))
     : specifier.startsWith('.')
       ? posix.join(dirname(fromFile), specifier)
       : null;
@@ -81,7 +87,7 @@ function isShim(file: string): boolean {
 /** `@kortix/sdk*`, the `src/ui/` shim (by `@/ui` or a relative path), or a shim of either. */
 function isSdkModule(specifier: string, fromFile: string): boolean {
   if (SDK_PACKAGE.test(specifier)) return true;
-  const file = resolveWeb(specifier, fromFile);
+  const file = resolveHost(specifier, fromFile);
   return !!file && (file.startsWith(`${WEB_SRC}/ui/`) || isShim(file));
 }
 
@@ -109,8 +115,8 @@ function v1Imports(text: string, file: string): string[] {
   return found;
 }
 
-function hostFiles(): string[] {
-  return execFileSync('git', ['ls-files', WEB_SRC], { cwd: REPO_ROOT, encoding: 'utf8' })
+function hostFiles(root: string): string[] {
+  return execFileSync('git', ['ls-files', root], { cwd: REPO_ROOT, encoding: 'utf8' })
     .split('\n')
     .filter((file) => /\.tsx?$/.test(file))
     .filter((file) => !/\.test\.tsx?$|\/__tests__\//.test(file))
@@ -118,7 +124,7 @@ function hostFiles(): string[] {
     .filter((file) => !isShim(file));
 }
 
-describe('web host files import no v1 part or turn type', () => {
+describe('host files import no v1 part or turn type', () => {
   const at = `${WEB_SRC}/features/session/tool/tools/task-tool.tsx`;
 
   it('flags a planted import, an aliased one, a namespace import and an inline type import', () => {
@@ -170,14 +176,23 @@ describe('web host files import no v1 part or turn type', () => {
     expect(missing).toEqual([]);
   });
 
-  it('holds for every host file under apps/web/src', () => {
-    const files = hostFiles();
-    expect(files.length).toBeGreaterThan(500);
+  it.each([
+    [WEB_SRC, 500],
+    [MOBILE, 500],
+  ])('holds for every host file under %s', (root, atLeast) => {
+    const files = hostFiles(root);
+    expect(files.length).toBeGreaterThan(atLeast);
     const violations = files.flatMap((file) =>
       v1Imports(readFileSync(join(REPO_ROOT, file), 'utf8'), file)
         .map((hit) => `${file}: ${hit}`)
         .filter((line) => !(line.replace(/ \(.*\)$/, '') in ALLOWED)),
     );
     expect(violations).toEqual([]);
+  });
+
+  it('resolves a mobile `@/` import against apps/mobile', () => {
+    const at = `${MOBILE}/components/session/SessionTurn.tsx`;
+    expect(v1Imports("import type { Turn } from '@kortix/sdk';", at)).toEqual(['Turn (@kortix/sdk)']);
+    expect(resolveHost('@/lib/session/turn-body', at)).toBe(`${MOBILE}/lib/session/turn-body.ts`);
   });
 });

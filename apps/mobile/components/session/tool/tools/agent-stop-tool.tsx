@@ -15,12 +15,12 @@ import { BasicTool, partInput } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 
-export function AgentStopTool({ part, forceOpen }: ToolProps) {
-  const input = partInput(part);
+export function AgentStopTool({ call, forceOpen }: ToolProps) {
+  const input = partInput(call);
   const model = useMemo(() => agentStopModel(input), [input]);
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={StopCircleIcon}
       trigger={model}
       forceOpen={forceOpen}

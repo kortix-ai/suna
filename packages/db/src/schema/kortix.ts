@@ -665,6 +665,57 @@ export const configReleases = kortixSchema.table(
 );
 
 /**
+ * The published `project` release of one base ref. The API builds it when the
+ * ref moves and writes its descriptor to the config archive store. Session
+ * create reads this row and hands the box signed URLs, so a booting box asks
+ * the API nothing. The row may name a commit behind the ref's tip while the
+ * next publish runs. One row per `(project, ref)`.
+ */
+export const configReleaseHeads = kortixSchema.table(
+  'config_release_heads',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: varchar('ref', { length: 255 }).notNull(),
+    releaseId: varchar('release_id', { length: 64 }).notNull(),
+    sourceCommit: varchar('source_commit', { length: 64 }).notNull(),
+    /** The archive's store key is `configArchiveKey(project_id, config_tree_id)`. */
+    configTreeId: varchar('config_tree_id', { length: 64 }).notNull(),
+    /** The descriptor JSON's store key. */
+    descriptorKey: text('descriptor_key').notNull(),
+    /** The agent roster at `source_commit`. Session create only checks it; it re-points nothing. */
+    roster: jsonb('roster').$type<{ enabled: string[]; defaultAgent: string | null; readable: boolean; governed: boolean }>().notNull(),
+    /** When the publish read the ref's tip. A slower publish of an older tip never overwrites a newer one. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }).notNull(),
+    publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
+);
+
+/**
+ * The last time any API process asked a base ref's upstream for its tip, and
+ * the tip it read. Every running box asks for its desired release every 60 s;
+ * this row makes those asks share one upstream check per `(project, ref)` per
+ * `TIP_CHECK_MS` (config-releases/base-tip.ts) instead of one `git fetch`
+ * each. A move Kortix makes or proxies expires the row. One row per
+ * `(project, ref)`.
+ */
+export const baseTipChecks = kortixSchema.table(
+  'base_tip_checks',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: varchar('ref', { length: 255 }).notNull(),
+    /** Null while the first check runs. */
+    tip: varchar('tip', { length: 64 }),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
+);
+
+/**
  * A daemon reported this release as failed (`failed_release_id`). After
  * failures from 2 distinct sessions the project stops assigning the release.
  * One row per `(project, release, session)`: repeated reports of one failure

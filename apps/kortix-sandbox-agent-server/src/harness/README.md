@@ -715,7 +715,10 @@ only those files is a working config on pi.
   restart.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `initial-turn-claimed`,
-`config-release-fetched`, `config-release-<disk|snapshot|archive>`,
+`config-release-published` (the release the API published and signed at
+session create, `KORTIX_CONFIG_RELEASE`: read from the store, no API call) or
+`config-release-fetched` (the descriptor route answered),
+`config-release-<disk|snapshot|archive|git>`,
 `config-release-proven`, `pi-ready`, `initial-prompt-delivered`,
 `initial-turn-accepted`, `runtime-ready`. No workspace step is a boot mark;
 `/kortix/health` reports the checkout as `workspace_provider`.
@@ -884,7 +887,8 @@ release a boot needs) stay outside `src/harness/`. Each depends only on
 `src/lib/` and knows nothing about any harness or about the other: both read
 the S3 project snapshot through `src/lib/project-snapshot/`, each into its
 own directory, in parallel. The config provider never reads `/workspace`
-(`obtainRelease`: disk, snapshot, archive). The harness composes them. Both
+(`obtainRelease`: disk, snapshot, archive, git; the archive first from the
+published release's signed store URL). The harness composes them. Both
 `open-code/boot.ts` and `pi/boot.ts` call `provideWorkspace(cfg, { onSummary })`
 at the point where the cold boot acquires the workspace. OpenCode still waits
 for the checkout before its proof, because an OpenCode Instance is built per

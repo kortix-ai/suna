@@ -1,35 +1,16 @@
 /**
- * Reads of the session state `@kortix/sdk` keeps: the transcript rows, the
- * runtime's status, and the pending questions and permission requests. The
- * SDK's live stream and transcript sync write that state; the app only reads
- * it, and writes its own optimistic sends.
+ * Reads of the session state `@kortix/sdk` keeps: the runtime's status, the
+ * message ids, and the pending questions and permission requests. The SDK's
+ * live stream and transcript sync write that state; the app only reads it,
+ * and writes its own optimistic sends. A screen reads the transcript itself
+ * from the session log (`useSessionLogThread`, `useRuntimeThread`).
  *
  * One place, so a screen never depends on how the SDK lays the state out
  * (messages and parts are separate slices there; requests are keyed by id).
  */
 import { useMemo } from 'react';
 import { useRuntimePendingStore, useSessionStateStore } from '@kortix/sdk/react';
-import type { MessageWithParts, PermissionRequest, QuestionRequest, SessionStatus } from './types';
-
-type SessionState = ReturnType<typeof useSessionStateStore.getState>;
-
-function rowsOf(state: SessionState, sessionId: string | null | undefined): MessageWithParts[] | undefined {
-  if (!sessionId) return undefined;
-  const messages = state.messages[sessionId];
-  // `buildSessionMessages` is the store's memoized join: the same array until
-  // a message or one of its parts changes.
-  return messages ? state.buildSessionMessages(sessionId, messages, state.parts) : undefined;
-}
-
-/** A session's transcript rows, or `undefined` while none are loaded. Subscribes. */
-export function useSessionRows(sessionId: string | null | undefined): MessageWithParts[] | undefined {
-  return useSessionStateStore((state) => rowsOf(state, sessionId));
-}
-
-/** A session's transcript rows now. Does not subscribe. */
-export function sessionRows(sessionId: string | null | undefined): MessageWithParts[] {
-  return rowsOf(useSessionStateStore.getState(), sessionId) ?? [];
-}
+import type { PermissionRequest, QuestionRequest, SessionStatus } from './types';
 
 /** The ids of every message the store holds for a session (optimistic ones included). */
 export function sessionMessageIds(sessionId: string): string[] {
@@ -74,13 +55,30 @@ export function usePendingPermissions(sessionId: string | null | undefined): Per
 }
 
 /**
+ * A part of a message this device sends, before the runtime echoes it: the
+ * shape the SDK store's `optimisticAdd` writes (a v1 part without its session
+ * and message ids, which `addOptimisticMessage` stamps). A picked file keeps
+ * its device URI.
+ */
+export type OptimisticPart =
+  | { type: 'text'; id: string; text: string }
+  | { type: 'file'; id: string; mime: string; filename: string; url?: string; localUri?: string };
+
+/** A user message this device sends, before the runtime echoes it. */
+export interface OptimisticMessage {
+  info: { id: string; role: 'user'; sessionID: string; time: { created: number } };
+  parts: OptimisticPart[];
+}
+
+/**
  * Show a message the user just sent, before the server echoes it. The SDK
  * replaces it with the echo (same message id, or the same part ids) and drops
  * it when a transcript read proves it was never delivered.
  */
-export function addOptimisticMessage(sessionId: string, message: MessageWithParts): void {
+export function addOptimisticMessage(sessionId: string, message: OptimisticMessage): void {
   const parts = message.parts.map((part) => ({ ...part, sessionID: sessionId, messageID: message.info.id }));
-  useSessionStateStore.getState().optimisticAdd(sessionId, message.info, parts);
+  // The store takes the runtime's message shape; an optimistic message carries the fields above only.
+  useSessionStateStore.getState().optimisticAdd(sessionId, message.info as never, parts as never);
 }
 
 /** The prompt inbox holds this optimistic message: it stays until its echo, across idle reads. */
