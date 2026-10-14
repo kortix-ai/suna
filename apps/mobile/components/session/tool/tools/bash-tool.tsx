@@ -47,6 +47,7 @@ import {
   partInput,
   partMetadata,
   partOutput,
+  partRawOutput,
   partStatus,
   partStreamingInput,
   StructuredOutput,
@@ -269,19 +270,19 @@ export function BashTrigger(props: {
   );
 }
 
-export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const metadata = partMetadata(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const indent = useToolIndent();
   const command = bashCommand(input, metadata, streamingInput);
   const view = useMemo(() => bashOutputView(output), [output]);
   const exitCode = useMemo(
-    () => bashExitCode(part.state as { status: string; output?: string }),
-    [part.state],
+    () => bashExitCode({ status: partStatus(call), output: partRawOutput(call) }),
+    [call],
   );
   const failed = typeof exitCode === 'number' && exitCode !== 0;
   const title = bashRowTitle(input.description, failed);
@@ -289,7 +290,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TerminalIcon}
       trigger={
         <BashTrigger

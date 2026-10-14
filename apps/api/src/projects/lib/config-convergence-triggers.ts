@@ -33,6 +33,7 @@ import { db } from '../../shared/db';
 import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
 import { convergeConfigIfBehind, invalidateDesiredRelease } from './turn-start-convergence';
 import { invalidateProjectMirror } from '../git/mirror';
+import { schedulePublish } from '../../config-releases/publish';
 import { isUuid } from '../../shared/validate';
 
 export const BASE_MOVE_WINDOW_MS = 30_000;
@@ -235,6 +236,8 @@ export function notifyBaseBranchMoved(projectId: string, ref: string, context: s
     // must make the next one fetch. Other api processes drop theirs through the
     // base-move broadcast (`startReplicaServices`).
     invalidateProjectMirror(projectId);
+    // Build the new tip's release now, so the next box finds it ready (config-releases/publish.ts).
+    schedulePublish(projectId, branchName(ref));
     productionTriggers().baseMoved(projectId, ref, context);
   } catch {
     // A trigger must never fail the write that moved the branch.

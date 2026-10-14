@@ -1677,16 +1677,32 @@
                 },
                 "repository_access": {
                   "type": "boolean",
-                  "description": "Allow new sessions to access the project repository. Defaults to true."
+                  "deprecated": true,
+                  "description": "Use workspace.project_repository."
                 },
                 "workspace": {
-                  "type": "string",
-                  "enum": [
-                    "runtime",
-                    "read",
-                    "branch"
-                  ],
-                  "deprecated": true
+                  "description": "What new sessions of this agent get in /workspace.",
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "project_repository": {
+                          "type": "boolean",
+                          "description": "Check out the project repository and allow repository access. Defaults to true."
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "runtime",
+                        "read",
+                        "branch"
+                      ],
+                      "deprecated": true
+                    }
+                  ]
                 },
                 "harnesses": {
                   "type": "object",
@@ -1830,6 +1846,60 @@
                           "runtime",
                           "read"
                         ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "repository_access": {
+                        "const": false
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "workspace"
+                    ],
+                    "properties": {
+                      "workspace": {
+                        "type": "object",
+                        "required": [
+                          "project_repository"
+                        ],
+                        "properties": {
+                          "project_repository": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "repository_access": {
+                        "const": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "workspace"
+                    ],
+                    "properties": {
+                      "workspace": {
+                        "type": "object",
+                        "required": [
+                          "project_repository"
+                        ],
+                        "properties": {
+                          "project_repository": {
+                            "const": false
+                          }
+                        }
                       }
                     }
                   },
@@ -3891,16 +3961,32 @@
                 },
                 "repository_access": {
                   "type": "boolean",
-                  "description": "Allow new sessions to access the project repository. Defaults to true."
+                  "deprecated": true,
+                  "description": "Use workspace.project_repository."
                 },
                 "workspace": {
-                  "type": "string",
-                  "enum": [
-                    "runtime",
-                    "read",
-                    "branch"
-                  ],
-                  "deprecated": true
+                  "description": "What new sessions of this agent get in /workspace.",
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "project_repository": {
+                          "type": "boolean",
+                          "description": "Check out the project repository and allow repository access. Defaults to true."
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "runtime",
+                        "read",
+                        "branch"
+                      ],
+                      "deprecated": true
+                    }
+                  ]
                 },
                 "harnesses": {
                   "type": "object",
@@ -4184,6 +4270,60 @@
                           "runtime",
                           "read"
                         ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "repository_access": {
+                        "const": false
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "workspace"
+                    ],
+                    "properties": {
+                      "workspace": {
+                        "type": "object",
+                        "required": [
+                          "project_repository"
+                        ],
+                        "properties": {
+                          "project_repository": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "repository_access": {
+                        "const": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "workspace"
+                    ],
+                    "properties": {
+                      "workspace": {
+                        "type": "object",
+                        "required": [
+                          "project_repository"
+                        ],
+                        "properties": {
+                          "project_repository": {
+                            "const": false
+                          }
+                        }
                       }
                     }
                   },
