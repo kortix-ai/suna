@@ -1,4 +1,3 @@
-import { sessionAttachmentStore } from '../lib/session-attachments';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
@@ -50,7 +49,9 @@ import {
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { prepareInitialSandboxTurn } from '../session-turn-ledger';
+import { sessionRestoreUntil } from '../session-log-purge';
 import { claimInPlaceRestart } from './runtime-restart-claim';
+import { DELETED_DURING_CREATE_KEY } from './restore-session';
 import { transitionSandbox, transitionSession } from './status-transitions';
 import {
   DELETED_SESSION_CLEARED_KEYS,
@@ -81,7 +82,7 @@ export async function deleteSession(input: {
   userId: string;
   /** Delete only a still-warm, untombstoned session: the tombstone CAS loses to a claim. */
   warmOnly?: boolean;
-}): Promise<{ ok: true } | { error: string; status: number }> {
+}): Promise<{ ok: true; restore_until: string } | { error: string; status: number }> {
   const { projectId, sessionId, accountId, userId, warmOnly } = input;
   const [sandbox] = await db
     .select()
@@ -121,9 +122,9 @@ export async function deleteSession(input: {
 
   if (!deleted) return { error: 'Not found', status: 404 };
 
-  await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
-    console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
-  });
+  // The session's stored files stay: a restore inside the window gets them
+  // back, and the retention purge deletes them 7 days after the window
+  // (session-log-purge.ts). Every read of a deleted session's files is refused.
 
   // Public links end with the session. `resolvePublicShare` already refuses a
   // tombstoned session (410); this makes the owner's share list say so too.
@@ -151,6 +152,10 @@ export async function deleteSession(input: {
         ? {}
         : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
       ...(removable ? { [PROVIDER_REMOVAL_PENDING_KEY]: deletedAt.toISOString() } : {}),
+      // provider.create may still return a box onto this row: a restore waits for it.
+      ...(sandbox.status === 'provisioning' && !sandbox.externalId
+        ? { [DELETED_DURING_CREATE_KEY]: deletedAt.toISOString() }
+        : {}),
     };
     const archived = await transitionSandbox('archive', sandbox.sandboxId, {
       metadata: { strip: DELETED_SESSION_CLEARED_KEYS, merge: archivePatch },
@@ -214,7 +219,7 @@ export async function deleteSession(input: {
     );
   });
 
-  return { ok: true };
+  return { ok: true, restore_until: sessionRestoreUntil(tombstone.deletedAt)!.toISOString() };
 }
 
 /**

@@ -162,6 +162,60 @@ describe('mapApiReviewItem', () => {
     expect(approvalDetailOf(item).actions[0].argsPreview).toEqual([]);
   });
 
+  test('can_resolve reaches the call as canResolve: the viewer may approve or deny it (KRTX-1724)', () => {
+    const call = (fields: Partial<ApiReviewItem>) =>
+      approvalDetailOf(
+        mapApiReviewItem({
+          ...row,
+          kind: 'approval',
+          detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+          ...fields,
+        }),
+      ).actions[0];
+    expect(call({ can_resolve: true, status: 'needs_you' }).canResolve).toBe(true);
+    expect(call({ can_resolve: false, status: 'waiting' }).canResolve).toBe(false);
+  });
+
+  test('resolvers reaches the call: who decides it, for a viewer who may not', () => {
+    const call = (fields: Partial<ApiReviewItem>) =>
+      approvalDetailOf(
+        mapApiReviewItem({
+          ...row,
+          kind: 'approval',
+          detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+          ...fields,
+        }),
+      ).actions[0];
+    expect(call({ can_resolve: false, status: 'waiting', resolvers: 'managers' }).resolvers).toBe(
+      'managers',
+    );
+    expect(
+      call({ can_resolve: false, status: 'waiting', resolvers: 'managers_and_launcher' }).resolvers,
+    ).toBe('managers_and_launcher');
+    // Unknown (a raced call, an older server): no field, the host keeps its plain wording.
+    expect('resolvers' in call({ resolvers: null })).toBe(false);
+    expect('resolvers' in call({})).toBe(false);
+  });
+
+  test('a server older than can_resolve: canResolve follows the argument verdict', () => {
+    // The same API rule decided `args_preview_authorized` before `can_resolve` existed.
+    const call = (authorized?: boolean) =>
+      approvalDetailOf(
+        mapApiReviewItem({
+          ...row,
+          kind: 'approval',
+          detail: {
+            execution_id: 'e',
+            action_path: 'gmail.send_email',
+            ...(authorized === undefined ? {} : { args_preview_authorized: authorized }),
+          },
+        }),
+      ).actions[0];
+    expect(call(false).canResolve).toBe(false);
+    expect(call(true).canResolve).toBe(true);
+    expect(call().canResolve).toBe(true);
+  });
+
   test('an approval summary names the originating session when its label is known', () => {
     const approval: ApiReviewItem = {
       ...row,

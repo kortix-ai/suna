@@ -64,6 +64,8 @@ export interface EnqueueContinueSessionCommandInput {
   noReply?: boolean;
   opencodeEnv?: Record<string, string | null>;
   directFollowUp?: boolean;
+  /** See `QueuedContinueSessionPayload.resumesTurn`. */
+  resumesTurn?: string;
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -89,6 +91,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.noReply ? { noReply: true } : {}),
     ...(input.opencodeEnv ? { opencodeEnv: input.opencodeEnv } : {}),
     ...(input.directFollowUp ? { directFollowUp: true } : {}),
+    ...(input.resumesTurn ? { resumesTurn: input.resumesTurn } : {}),
   };
   return {
     commandType: 'continue_session',

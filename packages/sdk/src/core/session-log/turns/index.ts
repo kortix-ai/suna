@@ -10,11 +10,13 @@
  *   `planAnchorMessageId` (`plan`) and `getChildSessionId` lookups (`threads`).
  * - `sessionLogTurnSegments`: `segmentTurn` + `groupShowSegments`. `splitSessionLogTurnWork`: `splitTurnWork`.
  * - `sessionLogBurstSteps`: `mergeBurstSteps` + `stepLabel` + the host's `burstSteps`.
- * - `sessionLogBurstSummary`: `burstSummary`. `sessionLogBurstRunning`: the host's `burstIsRunning`.
+ * - `sessionLogBurstSummary`: `burstSummary`. `sessionLogBurstWorkLabel`: `burstWorkLabel`. `sessionLogBurstRunning`: the host's `burstIsRunning`.
  * - `sessionLogOpenCall`: the host's `openCall` (the open shape of a closure-rule call).
  * - `sessionLogShowGroupCall`: the host's `mergeShowParts`. `sessionLogAnsweredQuestionCall`: the
  *   host's synthetic answered question part.
  * - `sessionLogActivityText`: `getTurnStatus` (the activity line).
+ * - `classifySessionLogMessage`: `classifyTurn` (one message's `ClassifiedPart`s and error), for a
+ *   host that renders `ClassifiedPart`s from blocks until P8.4.
  * - `sessionLogCallStatus`: the per-call status rule (new: a closure-rule block is open on a live turn).
  * - `sessionLogPromptMessage`: the host's synthetic row for a queued inbox prompt.
  * - `sessionLogRetrying`: `hasRetryingAssistantTurn` over a thread (the busy state's input).
@@ -23,11 +25,13 @@
  * call id, so they serve a `ToolCallBlock` as they are.
  */
 export {
+  classifySessionLogMessage,
   sessionLogActivityText,
   sessionLogAnsweredQuestionCall,
   sessionLogBurstRunning,
   sessionLogBurstSteps,
   sessionLogBurstSummary,
+  sessionLogBurstWorkLabel,
   sessionLogOpenCall,
   sessionLogShowGroupCall,
   sessionLogTurnSegments,

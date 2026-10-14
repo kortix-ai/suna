@@ -148,6 +148,12 @@ const ignoredPathParts = [
   // Legal texts are English only by design: one authoritative version, like
   // the Terms of Service PDF (#8315). Their page chrome still uses i18n keys.
   '/src/app/[locale]/(public)/(seo)/legal/',
+  // Pure fixture data (#9815): the foreign-tool-call samples mirror the codex and
+  // claude-code golden fixtures in @kortix/api-contract, and /debug/session-fixture
+  // (itself exempt above) renders them. The strings are fixture content the
+  // renderers parse, not UI copy; wrapping them in i18n keys would corrupt the
+  // data and the tests that import the array verbatim.
+  '/src/features/session/tool/foreign-tool-calls.ts',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -977,7 +983,7 @@ function scanFile(file) {
           catalogRoot === 'openSource' &&
           localizedRemainingUiText.has(node.text)) ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
-          catalogRoot === 'TOOL_PARTS' &&
+          catalogRoot === 'TOOL_CALLS' &&
           node.text === 'Run the billing suite') ||
         (file === path.join(srcDir, 'features/project-files/components/drive-grid-view.tsx') &&
           catalogRoot === 'ELEVATED_DIR_META') ||
@@ -1013,7 +1019,7 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/marketing/landing/code-panels.tsx') &&
           catalogRoot === 'TOKEN_CLASS') ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
-          catalogRoot === 'TOOL_PARTS' &&
+          catalogRoot === 'TOOL_CALLS' &&
           node.text === 'bun test apps/api/src/billing') ||
         (file === path.join(srcDir, 'features/session/attachment-mime.ts') &&
           catalogRoot === 'MIME_BY_EXTENSION') ||

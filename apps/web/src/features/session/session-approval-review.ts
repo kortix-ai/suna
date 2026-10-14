@@ -15,7 +15,7 @@ import type {
   ApprovalDecisionValue,
   ApprovalRequestData,
 } from '@/components/approvals/approval-request';
-import type { SessionAuditAction } from '@kortix/sdk';
+import type { ProjectSession, SessionAuditAction } from '@kortix/sdk';
 
 /** Fields that answer "what does this touch?" — surfaced first, in this order. */
 const PRIORITY_ARGS = ['to', 'recipient', 'recipients', 'channel', 'url', 'subject'];
@@ -89,9 +89,25 @@ export function approvalRequestFromAction(
     reviewComplete: !pending || summary?.args_preview_complete === true,
     resolution: decision === 'approve' || decision === 'deny' ? decision : null,
     pending,
+    // Absent from an API older than KRTX-1724: keep offering the decision.
+    canResolve: action.can_resolve !== false,
+    resolvers: action.resolvers ?? null,
     status: action.status,
     resolvedAt: action.resolved_at,
   };
+}
+
+/**
+ * Who besides a project manager decides this session's calls today: the
+ * person who started it (KRTX-1724). Null when that is not a person who can
+ * decide — a service account, or a backend wrapper whose `created_by` names
+ * nobody — or when the session row does not name its owner yet.
+ */
+export function approvalLauncherName(
+  session: Pick<ProjectSession, 'owner_name' | 'owner_email' | 'owner_type' | 'origin'> | null | undefined,
+): string | null {
+  if (!session || session.owner_type !== 'user' || session.origin === 'backend') return null;
+  return session.owner_name || session.owner_email || null;
 }
 
 /** A decision this browser just made, kept so the card can confirm it in place. */

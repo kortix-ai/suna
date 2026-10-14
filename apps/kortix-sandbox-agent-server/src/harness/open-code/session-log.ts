@@ -64,7 +64,6 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import {
   fromV1,
-  SESSION_LOG_MINOR,
   type AdapterCapabilities,
   type CapabilityFeatures,
   type ExportCursor,
@@ -77,6 +76,8 @@ import { logger } from '@/lib/log/logger'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges, startSessionLogJournal } from '../shared/session-log-journal'
+import type { BytesReader } from '../shared/session-log-restore'
+import { reconcileSessionLog, isRestoreNote } from '../shared/session-log-boot'
 import { readControlPlaneEnv } from '@/lib/kortix-api/relay-context'
 import { isOffloadPlaceholder, opencodeDbPath } from './attachment-offload'
 import { OpencodeDb, type MessageRow, type StoreSnapshot } from './opencode-db'
@@ -95,11 +96,15 @@ const native: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
   freeform_tool_input: false,
 }
-/** From the prototype adapter's tests (OpenCode 1.18.23); the restore (P6.3) is proved against them in `opencode-session-log-restore.test.ts`. */
+/**
+ * `harness_versions` and `schema_minors` name what the oracle suites (`opencode-session-log-restore.test.ts`,
+ * `opencode-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
+ * fails when the pin (runtime-versions.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
+ */
 export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
   harness: 'opencode',
-  harness_versions: '1.18',
-  schema_minors: [SESSION_LOG_MINOR],
+  harness_versions: '1.18.23',
+  schema_minors: [1],
   dialects: ['openai-chat'],
   native,
   // A tool-result attachment becomes a follow-up user turn; a layout is emulated.
@@ -240,6 +245,7 @@ export function openCodeSessionLog(input: {
       }
       m.seq = state.seqs[m.message_id]!
       m.producer = producer
+      if (m.role === 'user' && isRestoreNote(m)) m.origin = 'notification'
       for (const b of m.blocks) {
         const r = b.type === 'attachment' ? attachments.get(b.id) : undefined
         if (b.type === 'attachment' && r) Object.assign(b, { ref: r.ref, bytes: r.bytes, sha256: r.sha256 })
@@ -352,17 +358,28 @@ export function createOpenCodeSessionLogPort(options: {
       return out.changes
     },
     /** Writes `log` into `opencode.db` and the seq map (`session-log-restore.ts`), then reads that map back. */
-    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult> {
+    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>, readAttachment?: BytesReader): Promise<SessionLogRestoreResult> {
       if (!options.restoreTarget) throw new Error('OpenCode session-log restore needs a target (binary, project directory)')
-      const result = await restoreOpenCodeSessionLog(log, { ...options.restoreTarget, dbPath: options.dbPath, sessionId: options.sessionId, statePath }, seqMax)
+      const target = { ...options.restoreTarget, ...(readAttachment && { readAttachment }), dbPath: options.dbPath, sessionId: options.sessionId, statePath }
+      const result = await restoreOpenCodeSessionLog(log, target, seqMax)
       ;({ threads: seqs, ids } = readSeqState(statePath))
       lastSession = null
       unsaved = false
       return result
     },
-    async fingerprint(): Promise<string> {
-      const store = read()
-      return sha256(JSON.stringify(store ? [store.sessions, store.messages, store.parts, store.todos] : null))
+    /**
+     * Every message id of the store (log ids), plus every id the seq map issued: a message
+     * OpenCode deleted (a revert) whose tombstone the journal may not have sent. Null when the
+     * store or its pinned root is missing (a crash mid-restore), or when the seq map is gone
+     * from a store that holds messages (its next export would issue seqs from 1).
+     */
+    async held() {
+      const rootId = options.rootId()
+      const store = rootId ? read() : null
+      if (!store || !store.sessions.some((s) => s.id === rootId)) return null
+      if (!existsSync(statePath) && store.messages.length > 0) return null
+      const { log } = openCodeSessionLog({ sessionId: options.sessionId, rootId: rootId!, store, seqs: structuredClone(seqs), ids, sidecar })
+      return new Set([...log.threads.flatMap((t) => t.messages.map((m) => m.message_id)), ...Object.values(seqs).flatMap((t) => Object.keys(t.seqs))])
     },
     live(threadId: string, messageId: string) {
       const state = (seqs[threadId] ??= { next: 1, seqs: {} })
@@ -380,17 +397,22 @@ export function createOpenCodeSessionLogPort(options: {
 }
 
 /**
- * Start this boot's journal over OpenCode's store (P2.6), before the first
- * turn so its turn end flushes it. Nothing mints a session generation before
- * P6's restore, so the box writes under generation 0. A box without a
- * control plane journals nothing.
+ * This boot's session log over OpenCode's store (P2.6, P6.4): the boot reconcile
+ * (`shared/session-log-boot.ts`, which restores into `opencode.db` when the store is
+ * missing or behind the log), then the journal at the generation it returns, before the
+ * event loop and the first prompt so the first turn's end flushes it. `target` is the
+ * binary and the directory OpenCode serves: `opencode import` runs there. True when it
+ * restored. Throws when the reconcile fails: no journal starts. A box without a control
+ * plane journals nothing.
  */
-export function startOpenCodeSessionLog(): void {
+export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd'>): Promise<boolean> {
   const sessionId = readControlPlaneEnv().sessionId
-  if (!sessionId) return
+  if (!sessionId) return false
   const dbPath = opencodeDbPath(OPENCODE_HOME)
-  const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId, rootId: readOpenCodeSessionPin })
-  if (startSessionLogJournal(port, { generation: 0 })) {
-    logger.info('[session-log] journal started', { harness: 'opencode', generation: 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
+  const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId, rootId: readOpenCodeSessionPin, restoreTarget: target })
+  const boot = await reconcileSessionLog(port)
+  if (boot && startSessionLogJournal(port, boot)) {
+    logger.info('[session-log] journal started', { harness: 'opencode', generation: boot.generation, restored: boot.cursors.length > 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
   }
+  return (boot?.cursors.length ?? 0) > 0
 }

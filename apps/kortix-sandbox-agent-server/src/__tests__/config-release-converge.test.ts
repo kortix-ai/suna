@@ -295,16 +295,14 @@ afterEach(() => {
 }, 30_000)
 
 describe('convergeConfigRelease — where the release comes from', () => {
-  test('the checkout at the release commit is the release: no download at all', async () => {
+  test('the checkout is never a config source: a checkout at the release commit still downloads it', async () => {
     const release = baseRelease()
     serveRelease(api, release)
     const id = release.descriptor.release_id!
 
     expect((await converge(fakeOpencode())).outcome).toBe('applied')
-    expect(api.archiveRequests).toEqual([])
-    expect(api.storageRequests).toEqual([])
+    expect(api.archiveRequests).toHaveLength(1)
     expect(readFileSync(join(releaseDir(store, id), DIR, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
-    // Copied, never moved or linked: the session's checkout is untouched.
     expect(git(work, 'status', '--porcelain')).toBe('')
   })
 
@@ -360,7 +358,7 @@ describe('convergeConfigRelease — where the release comes from', () => {
     expect(readdirSync(store).filter((name) => name.endsWith('.snapshot') || name.endsWith('.tmp'))).toEqual([])
   })
 
-  test('no archive, no snapshot yet, checkout behind: the running config stays and the box says why', async () => {
+  test('no archive and no snapshot yet: the running config stays and the box says why', async () => {
     const release = baseRelease()
     sessionCommitted()
     api.respond({ status: 200, json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
@@ -371,7 +369,6 @@ describe('convergeConfigRelease — where the release comes from', () => {
     expect(response.outcome).toBe('failed')
     expect(response.reason).toContain('the API has no project snapshot of this commit yet')
     expect(response.reason).toContain('there is no archive')
-    expect(response.reason).toContain(`not the release commit ${release.descriptor.source_commit!.slice(0, 12)}`)
     expect(oc.state.reloads).toBe(0)
     expect(await readQuarantine(store)).toEqual({})
   })

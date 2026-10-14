@@ -32,7 +32,7 @@
   },
   "src/accounts/core/members.ts": {
     "no-console": {
-      "count": 4
+      "count": 2
     },
     "no-restricted-syntax": {
       "count": 4
@@ -2154,7 +2154,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/routes/git-backend.ts": {
@@ -2534,7 +2534,7 @@
   },
   "src/projects/session-lifecycle/actions.ts": {
     "no-console": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/session-lifecycle/actor.ts": {
@@ -2936,7 +2936,7 @@
   },
   "src/scim/users.ts": {
     "no-console": {
-      "count": 3
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 6
@@ -2958,11 +2958,6 @@
     },
     "no-console": {
       "count": 1
-    }
-  },
-  "src/setup-links/approval-app.ts": {
-    "kortix-api/projects-surface": {
-      "count": 2
     }
   },
   "src/setup-links/connector-completion-watch.ts": {

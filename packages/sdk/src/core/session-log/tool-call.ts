@@ -79,7 +79,8 @@ export const asToolPart = (value: ToolPart | ToolCallBlock): ToolPart => (isTool
 /**
  * The harness's display metadata of a tool call: the `state.metadata` of the v1 part it was
  * converted from (bash `command`, read `loaded`, task `sessionId`, edit `filediff`, ...), whole.
- * A native record carries only what its fields map (`exit` from `result.exit_code`). The same
+ * A native record carries its `details` (`result.details`, else its adapter's ext: pi's
+ * `ext.pi.data.details`) and `exit` from `result.exit_code`. The same
  * frozen empty object when there is none. Transitional: it stays until the session-log schema
  * carries display metadata of its own.
  */

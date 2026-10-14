@@ -75,6 +75,7 @@ export type FeatureFlagKey =
   | 'drives'
   | 'ephemeral_sandboxes'
   | 'session_log'
+  | 'session_log_restore'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -118,6 +119,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'drives',
   'ephemeral_sandboxes',
   'session_log',
+  'session_log_restore',
 ] as const;
 
 /**
@@ -147,8 +149,9 @@ export interface FeatureFlagView {
    */
   operator_only?: boolean;
   /**
-   * `organization`: one value for every project of the organization (`volumes`).
-   * Changing it needs `account.write`. Absent on servers older than this field.
+   * Always `project`: every flag is set per project. A server from
+   * 2026-10-12 sent `organization` for `volumes` and `stateless_sessions`.
+   * Absent on servers older than this field.
    */
   scope?: 'project' | 'organization';
 }

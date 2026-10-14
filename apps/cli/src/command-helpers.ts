@@ -241,9 +241,11 @@ export interface AccountContext {
  * even for a grant that lands on ONE project. So `kortix access`, `kortix roles`
  * and `kortix permissions` all need this, not `resolveProjectContext`.
  *
- * Account resolution order: `--account` → the active account → the host's
- * default account from the stored credentials. With `--host`, only that
- * host's stored account is used unless `--account` explicitly overrides it.
+ * Account resolution order: `--account` → the account of the cwd's host-bound
+ * project link (the account the host notice prints as "(linked)") → the active
+ * account → the host's default account from the stored credentials. With
+ * `--host`, only that host's stored account is used unless `--account`
+ * explicitly overrides it.
  */
 export function resolveAccountContext(opts: {
   accountArg?: string;
@@ -263,7 +265,12 @@ export function resolveAccountContext(opts: {
     }
     return null;
   }
-  const accountId = opts.accountArg || (opts.hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
+  const link = opts.hostArg ? null : loadLink();
+  const linkedAccountId = link?.host ? link.account_id : '';
+  const accountId =
+    opts.accountArg ||
+    (opts.hostArg ? auth.account_id : linkedAccountId || activeAccount()?.id || auth.account_id) ||
+    '';
   if (!accountId && !opts.accountOptional) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
@@ -484,7 +491,7 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
 }
 
 /** result = the fetched row, false = 404 (keep looking), ApiError = a real failure. */
-const SESSION_UUID_RE =
+export const SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Expand a short session-id prefix against the project's session list,

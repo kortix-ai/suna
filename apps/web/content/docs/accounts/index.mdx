@@ -76,7 +76,7 @@ Each person holds exactly one account role: `owner`, `admin` or `member`.
 | --- | --- |
 | `owner` | Everything an admin can do, plus: change the plan and payment method (`billing.write`), delete the account (`account.delete`), grant or revoke super-admin, and grant or change the `owner` role. |
 | `admin` | Rename the account and change its security settings, except **Admins can open every session**. Invite, remove and change the role of members. Manage groups, roles, assignments and service-account keys. Create projects. Read the audit log and the plan. |
-| `member` | See the account, its members, its groups and its plan. Create and revoke their own personal access keys. Work only in the projects a grant gives them. |
+| `member` | See the account and its plan, and the members and groups they share access with (see [Who sees the member list](#who-sees-the-member-list)). Create and revoke their own personal access keys. Work only in the projects a grant gives them. |
 
 - **Members cannot create projects** and cannot change billing. Only an owner holds `billing.write` and `account.delete`.
 - **Owners and admins are manager on every project** in the account. This is a rule of the account role, not a grant, and a project grant cannot lower it. To limit an owner or admin on one project, change their account role to `member` first.
@@ -86,6 +86,19 @@ Each person holds exactly one account role: `owner`, `admin` or `member`.
 - **An account role belongs to a person.** Binding `owner`, `admin` or `member` to a group returns `400`. Give a group a project role or a custom role instead.
 
 Opening another person's private session is a separate, owner-controlled setting. See [Who can open a session](/docs/work/sessions#who-can-open-a-session).
+
+### Who sees the member list
+
+Owners and admins see every member and every group. A `member` sees only the people and groups they share access with:
+
+- themselves, and the account's owners and admins;
+- every person and group with a role or a grant on a project they can open;
+- the groups they belong to;
+- the members of every group above.
+
+The same rule applies to **Members**, **Groups**, a project's access list, the Files share dialog, `kortix members` and `kortix groups`. A group outside that set answers `404`. On a visible group, a `member` sees only the projects they can open. Another member's access details (**View access**, `GET .../iam/members/:userId/...`) and the MFA enforcement preview stay with owners and admins.
+
+To show the whole directory to more people, create a custom account role with `member.read` (every member) and `group.read` (every group), and assign it to those people or to a group. See [Custom roles](#custom-roles).
 
 ## Members and invites
 
@@ -100,6 +113,8 @@ What happens next depends on the address:
 
 - **The address has a Kortix login.** Kortix adds the person at once, with the project roles you picked.
 - **The address has no login.** Kortix emails an invite link. The invite is valid for 14 days. The project roles apply when the person accepts.
+
+A self-hosted instance with no email provider confirms sign-ups without an email, so a password login does not prove its address there. Kortix adds such a login at once only when it is already a member of the account. Otherwise it creates an invite, and the login with that address accepts it from the project chooser or the **Switch Project** menu. That login is whoever signed up first with the address. See [Unconfirmed email addresses](/docs/host#unconfirmed-email-addresses).
 
 Project roles in an invite apply to `member` invites only. Kortix ignores them on an `admin` invite, because an admin already reaches every project. To make someone owner, invite them as admin or member, then change their role.
 
@@ -120,7 +135,20 @@ In the mobile app, the project switcher lists pending invites under **Invites**.
 
 - **Pending invites** show on **Members**. Resending one sends the email again and starts a new 14-day window. Cancelling one revokes the link.
 - **Edit access** in a member's row menu changes their account role. To change several members at once, select their rows and select **Change role**.
-- **Remove from account** removes the person's role, project grants and group memberships. It revokes their personal access keys and the tokens of their running sessions at once.
+- **Remove from account** removes the person's role, project grants and group memberships. It revokes their personal access keys and the tokens of their running sessions at once. See [When a person leaves](#when-a-person-leaves).
+
+### When a person leaves
+
+Removal, [Leave](#leave) and SCIM deactivation (`active: false` or `DELETE`, see [SCIM provisioning](/docs/accounts/identity#scim-provisioning)) end the same things in the account, at once:
+
+- the person's roles, project grants and group memberships;
+- their personal access keys and the tokens of their running sessions;
+- their notifications and follows in the account's projects;
+- every computer account in the account that reaches a machine they own. This covers a computer they shared with a project and a computer they paired for themselves. The account becomes `revoked`, with `metadata.revokedReason: owner_left`. The computer stays theirs and keeps working in their other Kortix accounts;
+- every reminder they set in the account's projects. The reminder becomes `paused`. A reminder that a session's agent set keeps firing;
+- their seat on a per-seat plan. Their personal drive folders pass to an owner.
+
+The audit log records one `member.offboarded` event, titled **Offboarded a member**, per departure. Its `metadata` holds `reason` (`removed`, `left` or `deprovisioned`), `computers_revoked` and `reminders_disabled`. A count is `0` when the person had nothing of that kind, and `null` when that step failed.
 
 ### Errors
 
@@ -281,7 +309,7 @@ The API route is `POST /v1/accounts/:accountId/iam/assignments`. The permission 
 
 ### Check why someone has access
 
-- **In the web app:** open the member's menu on **Members** and select **View access**.
+- **In the web app:** open the member's menu on **Members** and select **View access**. Without `member.read`, it opens only on your own row.
 - **Over the API:** `GET /v1/accounts/:accountId/iam/members/:userId/effective?action=project.secret.write&resourceType=project&resourceId=<project_id>` returns `allowed` and a `reason`, such as `project_role_insufficient` or `resource_scope_insufficient`. `POST .../effective:batch` checks up to 64 actions in one call. Asking about yourself answers with your real credential; asking about someone else answers from their roles.
 
 ### Per-feature access settings
@@ -400,6 +428,8 @@ Kortix does not record health probes, CORS preflights, or anonymous visitors to 
 ### Read the log
 
 Open **Account settings** → **Audit log**. Reading needs `audit.read` (owners and admins) and the entitlement.
+
+The **Session** filter searches the selected project's sessions that you can open, by name or session-id prefix, on the server. It lists 20 matches at a time: **Load more** reads the next 20. To filter by any other session, paste its full session id into the search field and pick it. A pasted id works with no project selected, for a session you cannot open, and for a deleted session.
 
 ```bash
 kortix audit ls --since 24h
@@ -585,7 +615,7 @@ Every project permission can go in a custom role.
 
 ### Leave
 
-Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. The last owner cannot leave (`409`): make another member owner first.
+Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. Your computers stop serving the account, and your reminders in its projects pause. See [When a person leaves](#when-a-person-leaves). The last owner cannot leave (`409`): make another member owner first.
 
 ### Delete
 

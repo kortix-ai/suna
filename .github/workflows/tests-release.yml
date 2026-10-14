@@ -559,3 +559,21 @@ jobs:
             exit 1
           fi
           echo "Every deployed staging API shard and browser shard passed."
+
+  # A run that github-actions[bot] started or approved (promote.yml approves the
+  # release pull request's run) gets no workflow_run event, so
+  # rerun-failed-once.yml never fires on its own. Ask for that one rerun
+  # explicitly; the rerun job waits until this run has ended and reruns only a
+  # first attempt. A run a person started or approved gets workflow_run instead.
+  request-rerun:
+    needs: release-gate
+    if: failure() && github.run_attempt <= 2 && github.triggering_actor == 'github-actions[bot]'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the one rerun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run rerun-failed-once.yml --repo "$GITHUB_REPOSITORY" --ref dev -f run_id="$GITHUB_RUN_ID"

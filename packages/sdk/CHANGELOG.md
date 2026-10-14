@@ -5,12 +5,108 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (who may decide an approval)
+- `SessionAuditAction.can_resolve`: true only on an unresolved connector call
+  the viewer may approve or deny, the verdict `resolveApproval` would get
+  (today a project manager, or the session's launcher unless an API token or a
+  service account started the session). False on every other
+  row. Show Approve / Deny only when it is true. Also on the session snapshot's
+  `audit` leg. Optional, absent on an older server. Additive (KRTX-1724).
+- `ApiReviewItem.can_resolve` (connector-call items) and
+  `ReviewApprovalAction.canResolve`, set by `mapApiReviewItem`. A viewer who
+  may not decide the call gets it with status `waiting`, not `needs_you`. On an
+  older server `canResolve` follows `args_preview_authorized`, which the same
+  rule decided. Additive.
+- `reviewVerdictAllowed` refuses approve and reject on a connector call whose
+  `canResolve` is false.
+- `SessionAuditAction.resolvers`, `ApiReviewItem.resolvers` and
+  `ReviewApprovalAction.resolvers` (set by `mapApiReviewItem`): who decides a
+  pending call, for a viewer whose `can_resolve` is false. `managers` for a
+  session started with an API token or a service account (`origin: 'backend'`),
+  else `managers_and_launcher`. Null on a settled audit row; optional, absent
+  on an older server. Additive (KRTX-1724).
+
+### Added (undecryptable stored values)
+- `ProjectSecret.status` and `AccountSecretResource.status`: `'ok'`, or
+  `'undecryptable'` when the server can no longer decrypt the stored value
+  (its encryption key changed, or the row is damaged). The value is lost;
+  re-enter it with `upsertProjectSecret` or `rotateAccountSecretResource`.
+  `ProjectSecret.status` reports the shared value and is absent when none is
+  set. `ProjectSecret.mine.status` reports the caller's own override, which
+  the caller's sessions read while it is active: set it again with
+  `setPersonalProjectSecret`, or remove it with `deletePersonalProjectSecret`.
+  `SecretValueStatus` is the new public type. Optional: absent on older
+  servers. A connector call on such a credential fails with
+  `ConnectorCallError.code === 'credential_undecryptable'`. Any other request
+  that needs such a value answers `409` with
+  `ApiError.code === 'SECRET_UNDECRYPTABLE'` and a message that names it.
+  Additive (KRTX-1719).
+
+### Added (session restore)
+- `restoreProjectSession(projectId, sessionId)` and `session.restore()`
+  (`POST /v1/projects/:p/sessions/:s/restore`) take a deleted session out of
+  the trash. Its messages, stored files and branch come back, and its next
+  start boots a fresh sandbox from the branch. A refusal rejects with an
+  `ApiError`: 409 `session_not_deleted`, 409 `session_sandbox_removal_pending`
+  (retry in a minute), 410 `session_purged`. Additive (KRTX-1734).
+- `deleteProjectSession` resolves to `{ ok, restore_until? }`: the last
+  instant the session can be restored, 30 days after the delete. Absent on an
+  API that predates restore. Additive.
+
+### Added (gateway budget meters per period)
+- `GatewayBudgetRow` has `spent_usd`, `period_start` and `resets_at`: the
+  spend in the budget's own period (day, week or month, UTC), the number the
+  gateway compares with `limit_usd` before it admits a request, and when that
+  period ends. A member budget counts its member's requests only. Use
+  `spent_usd` for a budget meter, not `project_spend.cost`, which is
+  month-to-date. Optional, absent on an older server. Additive (KRTX-1725).
+- `GatewayBudgetRow.subject_email`: the member's email for a member budget,
+  also when the member has no spend this month and so no entry in `members`.
+  `null` for a project budget. Optional, absent on an older server. Additive.
+
+### Added (permissions)
+- `PROJECT_ACTIONS` and `ProjectAction`: every project action the IAM engine
+  answers about, the same strings as the API's catalog
+  (`apps/api/src/iam/actions.ts`; a test fails when they differ). Pass them to
+  `useCan` / `useCans` instead of spelling a leaf by hand (KRTX-1720).
+- `TRIGGER_CONTROL_ACTIONS`, `triggerControlsFrom(cans)` and `TriggerControls`:
+  the trigger controls a viewer gets, from the leaves each trigger route
+  asserts: create, update and delete need `project.write` and their trigger
+  leaf, fire needs `project.trigger.fire`. An unresolved probe gives no
+  control. Web and mobile both read them.
+- `REVIEW_CONTROL_ACTIONS`, `changeRequestControlsFrom(cans)` and
+  `ChangeRequestControls`: open a change request needs `project.write` +
+  `project.gitops.push`, merge needs `project.write` + `project.gitops.merge`,
+  close and reopen need `project.write`.
+- `reviewVerdictAllowed(item, verdict, cans)`: whether to offer a verdict on a
+  review item. Approving a change request merges it (`canMerge`); every other
+  change request and native verdict needs `project.write` +
+  `project.review.act`. A connector call offers approve and reject only, to
+  the viewer the API lets decide it (`previewAuthorized` is not `false`). Web
+  and mobile both read it.
+- `canManageBilling(state)` and `canOfferTopup(state)`: whether the caller may
+  change billing, and whether to offer buying credits or auto top-up (the plan
+  may buy credits AND the caller may change billing). Both return `false` while
+  the account state is unknown. Additive.
+
 ### Added (connector credential re-sync)
 - `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
   connector the server re-reads the tools after the write: `sync` is that run
   (`ConnectorSyncResult`), and a per-slug entry in `sync.errors` means the
   credential is stored but the tools still fail to load. Absent for other
   providers and on older servers. Additive (KRTX-2185).
+
+### Added (session log reads, P5.5)
+- `getSessionLogPage(projectId, sessionId, query?)` and `session.log(query?)`
+  read one page of the stored session log (`GET /v1/projects/:p/sessions/:s/log`):
+  `SessionLogPage` for `{ thread?, before_seq?, limit? }` (`SessionLogPageQuery`),
+  `null` on a 404 (no stored log, or no such thread). `SessionLogPage` and
+  `SessionLogPageQuery` are now public types. Additive.
+- `classifySessionLogMessage(message)`: `classifyTurn` of a session-log message
+  (`ClassifiedPart`s from its blocks, its `TurnError`). Transitional: it goes with
+  `ClassifiedPart`. Additive.
+- `findSessionAttachments` also reads session-log records: attachment blocks, a
+  harness block's v1 file part, text blocks and `show` tool-call blocks. Additive.
 
 ### Added (session readiness)
 - `session.ensureReady({ session })` takes the session's row when the caller
@@ -536,6 +632,16 @@ and `useOpenCodeRuntimeReady`; they compile either way.
 The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
+- A session stream's `question.asked`, `question.replied` and
+  `question.rejected` events refetch `useSessionsNeedingInput` for the
+  stream's project. Before, a question opened or closed showed in the
+  session lists only at the next 30 s poll (KRTX-1739).
+- `useProjectSessions` ends its read past empty pages (`isScanning`) on a
+  failed fetch. Before, it read the failed page again as soon as the fetch
+  ended, for as long as the server failed. It also reads the next page when
+  a page answers before React renders the fetch that asked for it; before,
+  the read stopped there with `isScanning` true and no fetch running
+  (KRTX-1727).
 - `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
   and `throw` of a returned async generator inside its scope. Before, each
   `connector(slug).paginate` page ran outside the scope and used the

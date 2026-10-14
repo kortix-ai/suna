@@ -2,6 +2,7 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { actorOf } from '../../iam/actor';
+import { visibleDirectory } from '../../iam/directory-visibility';
 import { revokeProjectRole } from '../../iam/assignments';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -20,7 +21,9 @@ import { readJsonObject } from '../../shared/http-body';
 
 export function registerProjectAccessRoutes(): void {
   // GET /v1/projects/:projectId/access
-  // Lists every account member and their explicit/effective project access.
+  // Lists the account members the caller may see (every member with
+  // `member.read`, iam/directory-visibility.ts) and their explicit/effective
+  // project access.
 
   projectsApp.openapi(
     createRoute({
@@ -43,7 +46,11 @@ export function registerProjectAccessRoutes(): void {
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
 
-    return c.json(await buildProjectAccessView(loaded));
+    const [view, { userIds }] = await Promise.all([
+      buildProjectAccessView(loaded),
+      visibleDirectory(await actorOf(c, loaded.row.accountId)),
+    ]);
+    return c.json(userIds ? { ...view, members: view.members.filter((m) => userIds.has(m.user_id)) } : view);
   },
   );
 

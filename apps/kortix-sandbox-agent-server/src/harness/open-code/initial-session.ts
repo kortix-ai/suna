@@ -194,7 +194,7 @@ export async function maybeCreateInitialOpencodeSession(
         opencode,
         sessionId,
         workspace,
-        buildInitialPromptBody(prompt, claimedTurn?.messageId),
+        buildInitialPromptBody(prompt, claimedTurn?.messageId, claimedTurn?.context),
       ),
     )
     // F1: written ONLY after delivery actually succeeded (an exception above
@@ -351,7 +351,7 @@ function readSeedBakedSessionId(): string | null {
 
 /** One-shot: a fork has taken its OWN root, so retire the marker — later daemon
  *  restarts then reuse the fork's root via the normal idempotent reuse path. */
-function clearSeedBakedMarker(): void {
+export function clearSeedBakedMarker(): void {
   try {
     const path = openCodeSeedBakedPinPath()
     if (existsSync(path)) unlinkSync(path)

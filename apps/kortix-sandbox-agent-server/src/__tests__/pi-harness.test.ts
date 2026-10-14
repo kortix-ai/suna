@@ -2245,6 +2245,35 @@ describe('config releases on pi', () => {
     expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
   })
 
+  test("pi's own .pi/ and .agents/skills discovery reads the release, never the working tree", async () => {
+    const extension = (marker: string) =>
+      `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
+    write(repo, '.pi/extensions/discovered.ts', extension('RELEASED-DISCOVERY'))
+    write(repo, '.agents/skills/released-agents/SKILL.md', '---\nname: released-agents\ndescription: from the release\n---\nDo it.\n')
+    serveRelease(api, releaseWith('deploy', 'RELEASE-ONE'))
+    const r = await boot({
+      script: [{ text: 'first' }],
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+      prepare: (workspace) => {
+        // The checkout carries its own copies; while a release runs, none is config.
+        mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
+        writeFileSync(join(workspace, '.pi', 'extensions', 'discovered.ts'), extension('WORKSPACE-DISCOVERY'))
+        mkdirSync(join(workspace, '.agents', 'skills', 'workspace-agents'), { recursive: true })
+        writeFileSync(join(workspace, '.agents', 'skills', 'workspace-agents', 'SKILL.md'), '---\nname: workspace-agents\ndescription: w\n---\nx\n')
+      },
+    })
+    const loaded = r.service.runtime()!.extensionStatus().loaded
+    expect(loaded.some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/.pi/extensions/discovered.ts'))).toBe(true)
+    expect(loaded.some((path) => !path.startsWith(join(dir, 'store')) && path.endsWith('/.pi/extensions/discovered.ts'))).toBe(false)
+    const names = (await skillsOf(r)).map(([name]) => name)
+    expect(names).toContain('released-agents')
+    expect(names).not.toContain('workspace-agents')
+    const first = await ask(r, 'first question')
+    expect(first).toContain('RELEASED-DISCOVERY')
+    expect(first).not.toContain('WORKSPACE-DISCOVERY')
+  })
+
   test('a ./ pi package loads from the release, not the working tree; a change to it reaches the session by a restart', async () => {
     const extension = (marker: string) =>
       `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`

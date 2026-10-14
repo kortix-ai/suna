@@ -11,9 +11,10 @@
  * (`../session-log-restore.ts`). The app-wide `compressResponse` (`../../middleware/compress.ts`)
  * gzips its answer for a caller that accepts gzip; it falls back to `node:zlib` on the image's Bun 1.2.
  *
- * The read, `GET /:projectId/sessions/:sessionId/log` (P4.2), is the other way round: a
- * project member's session read, never the sandbox credential. Postgres only
- * (`../session-log-read.ts`).
+ * The read, `GET /:projectId/sessions/:sessionId/log` (P4.2), is a session read: the
+ * transcript route's gate, so a session-bound token (a box's `KORTIX_TOKEN`) reads every
+ * session the v1 transcript route serves it. A read claims nothing; the restore claims.
+ * Postgres only (`../session-log-read.ts`).
  *
  * The journal body is gzipped JSON. It is not declared as a validated request schema: the
  * OpenAPI validator would call `req.json()` on gzip bytes (same reason as
@@ -188,8 +189,9 @@ export function registerSessionLogRoutes(): void {
       description:
         'One page of one thread of the stored session log (`SessionLogPage`), from Postgres only. ' +
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
-        'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission; ' +
-        'the session sandbox credential is refused. 404 when the session has no stored log or no such thread.',
+        'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission, ' +
+        'the same gate as `GET .../transcript`: a session-bound token reads the sessions that route serves it. ' +
+        '404 when the session has no stored log or no such thread.',
       ...auth,
       request: {
         params,
@@ -201,7 +203,6 @@ export function registerSessionLogRoutes(): void {
       },
     }),
     async (c) => {
-      if (isSessionSandboxCredential(c)) return c.json({ error: 'The session sandbox credential cannot read the session log' }, 403);
       const { projectId, sessionId } = c.req.valid('param');
       const query = c.req.valid('query');
       const limit = parseBoundedPositiveInt(query.limit, 40, 1, 500, 'limit');

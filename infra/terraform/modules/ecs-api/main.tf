@@ -636,12 +636,12 @@ resource "aws_ecs_service" "this" {
 
   # The AWS provider refuses to update `capacity_provider_strategy` unless
   # `force_new_deployment` is set ("force_new_deployment should be true when
-  # capacity_provider_strategy is being updated"). Only services that carry an
-  # on-demand base (staging) ever change that strategy, so gate it on that: dev
+  # capacity_provider_strategy is being updated"). A service whose strategy
+  # changes sets `force_new_deployment` (staging left Spot on 2026-10-13); dev
   # and prod keep today's plan byte-for-byte. `task_definition` stays under
   # ignore_changes, so a forced deployment re-rolls the service's CURRENT task
   # definition — the one ecs-deploy.sh registered — never a stale TF revision.
-  force_new_deployment = var.fargate_base_on_demand > 0
+  force_new_deployment = var.force_new_deployment || var.fargate_base_on_demand > 0
 
   # Rolling deploy with circuit breaker → auto-rollback on a bad release.
   deployment_circuit_breaker {

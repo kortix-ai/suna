@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseSession } from '../../src/fixtures/database-project';
 import { seedSessionTranscript } from '../../src/fixtures/session-transcript';
 import { createManifestProject, isDeployedTarget, type ManifestProject } from '../helpers/manifest-project';
-import { runDatabaseSql } from '../helpers/database';
+import { queryDatabaseRows, runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
 import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
@@ -15,6 +15,34 @@ const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
 const authOptions = { supabaseUrl, password: 'E2ePooledSecrets123!' };
 const api = createApiJsonClient(apiBase);
+
+/**
+ * Since #9801 a provider's keys and ChatGPT accounts sit behind its row: the
+ * Models page opens the row in its side sheet, the composer's Models dialog
+ * opens it in place.
+ */
+/**
+ * A ChatGPT login cannot be created without OpenAI's device flow, so tests
+ * insert the row. Since #9821 a value the API cannot decrypt reads as
+ * undecryptable and offers a Reconnect of its own, so the inserted row gets an
+ * envelope the API encrypted for the same account: a throwaway key's, read
+ * and deleted at once.
+ */
+async function accountValueEnvelope(token: string, accountId: string, projectId: string): Promise<string> {
+  const carrier = await api<{ secret_id: string }>(token, 'POST', `/accounts/${accountId}/secret-resources`, {
+    label: 'Value carrier', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY', value: 'fake-carrier-value',
+    consumer: 'llm_gateway', strategy: 'broker', project_id: projectId, access_mode: 'members', user_ids: [],
+  }, 201);
+  const [row] = await queryDatabaseRows<{ value_enc: string }>(
+    'SELECT value_enc FROM kortix.account_secret_resources WHERE secret_id = $1', [carrier.secret_id], databaseUrl);
+  await api(token, 'DELETE', `/accounts/${accountId}/secret-resources/${carrier.secret_id}`);
+  return row!.value_enc;
+}
+
+async function openProvider(page: Page, providerId: string, surface: 'page' | 'dialog' = 'page') {
+  const row = surface === 'page' ? `[data-provider-row="${providerId}"]` : `[data-accordion-row="${providerId}"]`;
+  await page.locator(row).click();
+}
 
 test.describe('30 — pooled provider secrets', () => {
   test('a failed access change retains grants and retries atomically', async ({ page }) => {
@@ -59,6 +87,7 @@ test.describe('30 — pooled provider secrets', () => {
       await expect(page.getByText('Provider secrets could not be loaded.', { exact: true })).toBeVisible();
       rejectResourceRead = false;
       await page.getByRole('button', { name: 'Try again', exact: true }).click();
+      await openProvider(page, 'anthropic');
       await expect(panel.getByText('Shared team key', { exact: true })).toBeVisible();
       await page.unroute(`**/v1/accounts/${accountId}/secret-resources?*`);
       await panel.getByRole('button', { name: 'Actions for Shared team key' }).click();
@@ -127,12 +156,15 @@ test.describe('30 — pooled provider secrets', () => {
       await selectAccountForUi(page, accountId);
       await page.goto(`/projects/${projectId}/customize/models`, { waitUntil: 'domcontentloaded' });
       const panel = page.getByRole('region', { name: 'Anthropic API keys' });
+      await openProvider(page, 'anthropic');
+      await expect(page.getByRole('textbox', { name: 'Anthropic API key' })).toBeVisible();
       await expect(panel).toHaveCount(0);
 
       await api(session.access_token, 'PATCH', `/projects/${projectId}/features`, {
         feature: 'pooled_provider_secrets', enabled: true,
       });
       await page.reload({ waitUntil: 'domcontentloaded' });
+      await openProvider(page, 'anthropic');
       await expect(panel).toBeVisible();
       const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
       if (await welcome.isVisible().catch(() => false)) {
@@ -214,6 +246,7 @@ test.describe('30 — pooled provider secrets', () => {
         } else await route.fulfill({ status: 200, json: { status: 'pending' } });
       });
       await page.goto(`/projects/${projectId}/customize/models`, { waitUntil: 'domcontentloaded' });
+      await openProvider(page, 'openai');
       const chatGptAccounts = page.getByRole('region', { name: 'ChatGPT accounts' });
       // With no account yet, the panel leads with the one action that matters.
       await expect(chatGptAccounts.getByText('No ChatGPT accounts yet', { exact: true })).toBeVisible();
@@ -289,6 +322,7 @@ test.describe('30 — pooled provider secrets', () => {
         expect(await created.json()).toMatchObject({ code: 'KORTIX_URL_UNREACHABLE' });
       }
       await page.goto(`/projects/${projectId}/customize/models`, { waitUntil: 'domcontentloaded' });
+      await openProvider(page, 'anthropic');
       await expect(panel.getByText('Primary test key', { exact: true })).toBeVisible();
       await panel.getByRole('button', { name: 'Actions for Primary test key' }).click();
       await page.getByRole('menuitem', { name: 'Manage access' }).click();
@@ -316,16 +350,16 @@ test.describe('30 — pooled provider secrets', () => {
 
       const existingSession = await createDatabaseSession(env, { projectId, accountId, userId: user.id });
       const runtimeId = `ses_${existingSession.replaceAll('-', '')}`;
-      await runDatabaseSql("UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1", [existingSession, runtimeId], databaseUrl);
-      await runDatabaseSql("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')", [existingSession, accountId, projectId], databaseUrl);
-      await runDatabaseSql('INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)', [existingSession, projectId, accountId, runtimeId], databaseUrl);
       const messageId = 'msg_000000000000000000000001';
       const createdAt = Date.now() - 60_000;
-      await runDatabaseSql('INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-        existingSession, messageId, runtimeId, 'user', new Date(createdAt),
-        JSON.stringify({ id: messageId, sessionID: runtimeId, role: 'user', agent: 'kortix', time: { created: createdAt }, model: { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4.6' } }),
-        JSON.stringify([{ id: 'prt_pool_previous', sessionID: runtimeId, messageID: messageId, type: 'text', text: 'Previous session prompt' }]),
-      ], databaseUrl);
+      await seedSessionTranscript(env, {
+        projectId, accountId, sessionId: existingSession,
+        messages: () => [{
+          info: { id: messageId, sessionID: runtimeId, role: 'user', agent: 'kortix', time: { created: createdAt }, model: { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4.6' } },
+          parts: [{ id: 'prt_pool_previous', sessionID: runtimeId, messageID: messageId, type: 'text', text: 'Previous session prompt' }],
+        }],
+        log: { bearer: session.access_token },
+      });
       await page.route(`**/sessions/${existingSession}/start?*`, async (route) => {
         await route.fulfill({ status: 200, json: {
           stage: 'ready', agent_name: 'kortix', retriable: false, opencode_session_id: runtimeId,
@@ -526,6 +560,7 @@ test.describe('30 — pooled provider secrets', () => {
       }
       await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'user' });
       const memberSession = await signIn(memberEmail, authOptions);
+      const envelope = await accountValueEnvelope(ownerSession.access_token, accountId, projectId);
 
       // The device flow is OpenAI's; the browser contract is what the page sends
       // and shows. The first authorization is refused, the next ones succeed.
@@ -546,8 +581,8 @@ test.describe('30 — pooled provider secrets', () => {
         const label = String(starts.find((start) => typeof start.resource_label === 'string')?.resource_label);
         await runDatabaseSql(`INSERT INTO kortix.account_secret_resources
           (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by)
-          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5)
-          ON CONFLICT DO NOTHING`, [accountSecretId, accountId, projectId, label, member.id], databaseUrl);
+          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', $6, 'llm_gateway', 'broker', $5)
+          ON CONFLICT DO NOTHING`, [accountSecretId, accountId, projectId, label, member.id, envelope], databaseUrl);
         await runDatabaseSql(`INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by)
           VALUES ($1, $2, $3, $3) ON CONFLICT DO NOTHING`, [accountSecretId, accountId, member.id], databaseUrl);
         if (route.request().postDataJSON().flow_id === 'byos-flow-2') holdAccountList();
@@ -598,6 +633,7 @@ test.describe('30 — pooled provider secrets', () => {
           if (request.method() === 'GET' && request.url().endsWith(`/v1/projects/${projectId}/secrets`)) secretReads++;
         });
         await page.getByRole('button', { name: 'Connect model', exact: true }).click();
+        await openProvider(page, 'openai', 'dialog');
         const providerAccounts = page.getByRole('region', { name: 'ChatGPT accounts' });
         await expect(providerAccounts.getByRole('button', { name: 'Connect ChatGPT' })).toBeVisible({ timeout: 60_000 });
         const readsWhenSettled = secretReads;
@@ -702,11 +738,13 @@ test.describe('30 — pooled provider secrets', () => {
         await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/features`, { feature, enabled: true });
       }
       await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'user' });
+      const envelope = await accountValueEnvelope(ownerSession.access_token, accountId, projectId);
       for (const [secretId, label, mark] of [[stale, 'ChatGPT · Work', "now() - interval '2 hours'"], [working, 'ChatGPT · Home', 'null']]) {
         await runDatabaseSql(`INSERT INTO kortix.account_secret_resources
           (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by, needs_reauth_at)
-          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5, ${mark})`,
-        [secretId, accountId, projectId, label, member.id], databaseUrl);
+          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON',
+            $6, 'llm_gateway', 'broker', $5, ${mark})`,
+        [secretId, accountId, projectId, label, member.id, envelope], databaseUrl);
         await runDatabaseSql('INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by) VALUES ($1, $2, $3, $3)',
           [secretId, accountId, member.id], databaseUrl);
       }
@@ -859,8 +897,7 @@ test.describe('30 — pooled provider secrets', () => {
       };
       const responseBody = JSON.stringify({ error: { ...failure, type: failure.code }, ...failure });
       const seedFailedTurn = async (sessionId: string) => {
-        const { root } = await seedSessionTranscript(env, { projectId, accountId, sessionId });
-        await runDatabaseSql("UPDATE kortix.project_sessions SET agent_name = 'kortix' WHERE session_id = $1", [sessionId], databaseUrl);
+        const root = `ses_${sessionId.replaceAll('-', '')}`;
         const failedAt = Date.now() - 30_000;
         const prompt = {
           info: { id: 'msg_000000000000000000000003', sessionID: root, role: 'user', time: { created: failedAt },
@@ -876,12 +913,12 @@ test.describe('30 — pooled provider secrets', () => {
             error: { name: 'APIError', data: { message, statusCode: 400, isRetryable: false, responseBody } } },
           parts: [],
         };
-        for (const saved of [prompt, refused]) {
-          await runDatabaseSql(`INSERT INTO kortix.session_transcript_messages
-            (session_id, message_id, opencode_session_id, role, message_created_at, info, parts)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)`, [sessionId, saved.info.id, root, saved.info.role,
-            new Date(saved.info.time.created), JSON.stringify(saved.info), JSON.stringify(saved.parts)], databaseUrl);
-        }
+        await seedSessionTranscript(env, {
+          projectId, accountId, sessionId,
+          messages: (_root, defaults) => [...defaults, prompt, refused],
+          log: { bearer: ownerSession.access_token },
+        });
+        await runDatabaseSql("UPDATE kortix.project_sessions SET agent_name = 'kortix' WHERE session_id = $1", [sessionId], databaseUrl);
       };
       const ownSessionId = await createDatabaseSession(env, { projectId, accountId, userId: member.id });
       const sharedSessionId = await createDatabaseSession(env, { projectId, accountId, userId: member.id, visibility: 'project' });
@@ -899,8 +936,9 @@ test.describe('30 — pooled provider secrets', () => {
       }
       const failureRow = page.getByRole('alert').filter({ hasText: message });
 
+      // The read comes once the failure row renders, which has 60 s.
       const ownPools = page.waitForResponse((response) => response.request().method() === 'GET' &&
-        response.url().includes(`/sessions/${ownSessionId}/provider-secret-pools`));
+        response.url().includes(`/sessions/${ownSessionId}/provider-secret-pools`), { timeout: 60_000 });
       await page.goto(`/projects/${projectId}/sessions/${ownSessionId}`, { waitUntil: 'domcontentloaded' });
       await expect(failureRow).toBeVisible({ timeout: 60_000 });
       await expect(failureRow.getByText(suggestion, { exact: true })).toBeVisible();
@@ -941,7 +979,7 @@ test.describe('30 — pooled provider secrets', () => {
       // The shared session shows the same failure without the action once its
       // selection is known: it has none, so it runs on the project login.
       const sharedPools = page.waitForResponse((response) => response.request().method() === 'GET' &&
-        response.url().includes(`/sessions/${sharedSessionId}/provider-secret-pools`));
+        response.url().includes(`/sessions/${sharedSessionId}/provider-secret-pools`), { timeout: 60_000 });
       await page.goto(`/projects/${projectId}/sessions/${sharedSessionId}`, { waitUntil: 'domcontentloaded' });
       await expect(failureRow).toBeVisible({ timeout: 60_000 });
       expect((await sharedPools).status()).toBe(200);

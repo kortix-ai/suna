@@ -49,7 +49,7 @@
 import { type Page, expect, test } from '@playwright/test';
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseSession } from '../../src/fixtures/database-project';
-import { seedSessionTranscript } from '../../src/fixtures/session-transcript';
+import { journalSessionLog, seedSessionTranscript } from '../../src/fixtures/session-transcript';
 import { runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
 import { createManifestProject, fundAccount } from '../helpers/manifest-project';
@@ -185,7 +185,11 @@ async function firstShown(page: Page): Promise<Record<string, number>> {
 
 type SavedMessages = Parameters<typeof seedSessionTranscript>[1]['messages'];
 
-async function setup(page: Page, label: string, messages?: SavedMessages) {
+/**
+ * A user, a project and a stopped session with saved history. `store`: the session log (the
+ * project's `session_log` flag on), or the v1 mirror for a contract only the mirror states.
+ */
+async function setup(page: Page, label: string, messages?: SavedMessages, store: 'log' | 'mirror' = 'log') {
   const env = loadEnv();
   const email = `instant-${label}-${Date.now()}@example.test`;
   const user = await createAuthUser(email, authOptions);
@@ -210,7 +214,13 @@ async function setup(page: Page, label: string, messages?: SavedMessages) {
     accountId,
     userId: user.id,
   });
-  await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId, messages });
+  const seeded = await seedSessionTranscript(env, {
+    projectId: project.id,
+    accountId,
+    sessionId,
+    messages,
+    ...(store === 'log' && { log: { bearer: auth.access_token } }),
+  });
   await runDatabaseSql(
     "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
     [sessionId],
@@ -222,7 +232,7 @@ async function setup(page: Page, label: string, messages?: SavedMessages) {
   await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
   await selectAccountForUi(page, accountId);
   await dismissOnboarding(page);
-  return { user, project, sessionId, root: `ses_${sessionId.replaceAll('-', '')}` };
+  return { user, auth, accountId, project, sessionId, root: seeded.root, seeded: seeded.messages };
 }
 
 test('34 — a reload with every read held shows the project, its session list and the conversation', async ({
@@ -580,8 +590,10 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(SUBAGENT_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
 
-    // A finished turn folds its work; the sub-agent row is part of it.
+    // A finished turn folds its work; the sub-agent row is part of it. Since
+    // #9774 each run of work under the fold has its own closed, named line.
     await openWork(page);
+    await page.getByRole('button', { name: 'Asked a helper agent', exact: true }).click();
     await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
     const view = page.getByRole('dialog');
     await expect(view).toBeVisible();
@@ -653,7 +665,9 @@ test('34 — a session proven empty opens on its composer, not the boot screen',
   test.setTimeout(300_000);
   // A head-complete saved copy with no messages: what a complete read of an
   // empty runtime stores.
-  const { project, sessionId } = await setup(page, 'empty', () => []);
+  // The mirror: a head-complete copy with no rows proves the session empty. A session log
+  // with no message is no stored log yet (`readLogTranscriptWindow` answers null).
+  const { project, sessionId } = await setup(page, 'empty', () => [], 'mirror');
   let release = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -686,7 +700,7 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
 }, testInfo) => {
   test.setTimeout(300_000);
   const env = loadEnv();
-  const { user, project, sessionId, root } = await setup(page, 'newer-copy');
+  const { user, auth, accountId, project, sessionId, root, seeded } = await setup(page, 'newer-copy');
   const newerPrompt = 'How many tasks are in progress?';
   const newerReply = 'Three tasks are in progress.';
   let release = () => {};
@@ -739,26 +753,14 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
         parts: [{ id: 'prt_newer_reply', type: 'text', text: newerReply }],
       },
     ];
-    for (const message of turn) {
-      await runDatabaseSql(
-        'INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [
-          sessionId,
-          message.info.id,
-          root,
-          message.info.role,
-          new Date(message.info.time.created),
-          JSON.stringify(message.info),
-          JSON.stringify(message.parts),
-        ],
-        env.databaseUrl ?? undefined,
-      );
-    }
-    await runDatabaseSql(
-      'UPDATE kortix.session_transcript_mirrors SET captured_at = now(), updated_at = now() WHERE session_id = $1',
-      [sessionId],
-      env.databaseUrl ?? undefined,
-    );
+    await journalSessionLog(env, {
+      projectId: project.id,
+      accountId,
+      sessionId,
+      bearer: auth.access_token,
+      root,
+      messages: [...seeded, ...turn],
+    });
 
     holding = true;
     const history = page.waitForResponse(
