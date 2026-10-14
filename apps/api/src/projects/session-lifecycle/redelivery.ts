@@ -280,7 +280,8 @@ export interface InterruptedTurn {
  *  - the transcript holds that turn's user message, and no later delivery of
  *    this prompt landed after it. A later one owns the work: a continuation
  *    already on the box sends no second one (the retry after a lost answer);
- *  - the newest reply to that message has no `time.completed`. A completed
+ *  - the turn's newest reply has no `time.completed` (`turnTail`: an
+ *    automatic compaction mid-turn re-parents the later steps). A completed
  *    reply means the turn finished and only its end frame was lost, and a
  *    second run would repeat its side effects (2026-09-17).
  *
@@ -305,9 +306,31 @@ export async function findInterruptedTurn(
   if (at < 0) return null;
   const later = tip.slice(at + 1);
   if (later.some((message) => message.role === 'user' && deliveredIds.includes(message.id))) return null;
-  const reply = later.filter((message) => message.role === 'assistant' && message.parentID === turn.messageId).at(-1);
+  const reply = turnTail(later).filter((message) => message.role === 'assistant').at(-1);
   if (typeof reply?.completed === 'number') return null;
   return { turnToken: turn.turnToken, endedAt: turn.endedAt, cause: turn.endError?.message ?? null };
+}
+
+/**
+ * The messages a turn wrote after its prompt: everything before the next user
+ * message the turn did not write itself. An automatic compaction writes two
+ * user messages inside a running turn (OpenCode `session/compaction.ts`): its
+ * marker, and after the summary either a synthetic "continue" or a replay of
+ * the prompt. The steps after them are parented on that second message, not
+ * on the prompt.
+ */
+function turnTail(later: readonly PlacementTipMessage[]): PlacementTipMessage[] {
+  const tail: PlacementTipMessage[] = [];
+  let compacting = false;
+  for (const message of later) {
+    if (message.role === 'user') {
+      if (message.autoCompaction) compacting = true;
+      else if (compacting) compacting = false;
+      else break;
+    }
+    tail.push(message);
+  }
+  return tail;
 }
 
 /** What a continuation tells the agent. One text for every continuation path. */

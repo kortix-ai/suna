@@ -405,6 +405,9 @@ describe('applyStoppedState — unattended recovery after runtime_gone', () => {
       actorUserId: null,
       idempotencyKey: 'prompt:sess-2:resume_tok-1',
       resumesTurn: 'tok-1',
+      // A tracked turn: a second stop of the continuation requeues this row.
+      wireMessageId: expect.any(String),
+      remintOnDelivery: true,
     });
     expect((syntheticContinueCalls[0] as { text: string }).text).toContain('Continue from where you left off');
   });

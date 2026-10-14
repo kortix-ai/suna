@@ -38,7 +38,8 @@ export interface LostTurn {
 
 export interface RuntimeRestartRecoveryDeps {
   settleLostTurns: (sandboxId: string) => Promise<LostTurn[]>;
-  /** Make prompts this session parked on a DOWN runtime due now. */
+  /** Make prompts this session parked on a DOWN runtime due now, and release
+   *  the continuations a runtime loss held. */
   reArmBlockedPrompts: (sessionId: string) => Promise<number>;
   /** Drain the queue now rather than waiting out the scheduler's next tick. */
   kickDrain: () => void;

@@ -186,7 +186,9 @@ export async function executeQueuedContinue(
     : await deliverQueuedContinue(row, resume ? { ...payload, parts: undefined } : payload,
       resume ? interruptedTurnContinuationText(resume) : text, placement.wireMessageId,
       placement.placedIntoLiveTurn, placement.underPlaced, tl, noReply);
-  const resumedTurn = resume?.turnToken ?? payload.resumesTurn;
+  // Only a delivery marks the turn resumed. A placement outcome posted nothing:
+  // a staged revert or an answer check closed the row (`skipped`).
+  const resumedTurn = 'outcome' in placement ? undefined : resume?.turnToken ?? payload.resumesTurn;
   if (resumedTurn && outcome === 'succeeded') {
     await markTurnResumed(resumedTurn);
     logger.info('[session-lifecycle] continued a turn a runtime loss interrupted', {

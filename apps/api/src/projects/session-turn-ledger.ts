@@ -510,6 +510,13 @@ export const REAPER_TURN_CAUSES = {
     name: 'SandboxStoppedMidTurnRecovering',
     message: 'The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn.',
   },
+  /** A runtime restart ended the turn and the sandbox kept running (a config
+   *  swap, a wake that found the turn open), after its continuation reached
+   *  the runtime. The settle names no cause for a restart. */
+  runtimeRestartedMidTurnRecovering: {
+    name: 'RuntimeRestartedMidTurnRecovering',
+    message: 'The runtime restarted during this turn. Kortix resumed it.',
+  },
   /** The turn waited on a person past `turnWaitingMaxMs`; the reaper ended it. */
   awaitingInput: {
     name: 'TurnAwaitingInput',
@@ -559,13 +566,16 @@ export async function readNewestPromptTurn(
 
 /**
  * The continuation of a turn a runtime loss cut short reached the runtime:
- * the turn now says Kortix resumed it. Only over the stop's own generic cause
- * or no cause; a named cause stays.
+ * the turn now says Kortix resumed it. Only over the provider stop's generic
+ * cause, or over no cause (a runtime restart, which says so); a named cause
+ * stays.
  */
 export async function markTurnResumed(turnToken: string): Promise<void> {
   await recordTurnLedger(
     sql`UPDATE kortix.session_turns
-           SET end_error = ${JSON.stringify(REAPER_TURN_CAUSES.boxStoppedMidTurnRecovering)}::jsonb,
+           SET end_error = CASE WHEN end_error IS NULL
+                 THEN ${JSON.stringify(REAPER_TURN_CAUSES.runtimeRestartedMidTurnRecovering)}::jsonb
+                 ELSE ${JSON.stringify(REAPER_TURN_CAUSES.boxStoppedMidTurnRecovering)}::jsonb END,
                updated_at = now()
          WHERE turn_token = ${turnToken}
            AND end_reason = 'runtime_gone'

@@ -16,8 +16,14 @@ import { invalidateProviderCache } from '../../sandbox-proxy';
 import { db } from '../../shared/db';
 import { retryOnDeadlock } from '../../shared/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';
-import { REAPER_TURN_CAUSES, settleOpenSandboxTurns } from '../session-turn-ledger';
-import { storedSandboxTurns } from '../session-turn-ledger';
+import {
+  REAPER_TURN_CAUSES,
+  type StoredSandboxTurn,
+  isRequestedStopName,
+  readNewestPromptTurn,
+  settleOpenSandboxTurns,
+  storedSandboxTurns,
+} from '../session-turn-ledger';
 import { INBOX_HOLD_MS } from '../session-lifecycle/inbox-rows';
 import { interruptedTurnContinuationText, requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
@@ -235,19 +241,30 @@ interface ContinuationSession {
  * Unattended: due now, as the automation, like the drain's other system
  * prompts. Attended: an inbox row HELD in the member's queue, authored by the
  * session's creator, so the box the provider just stopped stays stopped until
- * they press Send now or send a message. It must be an inbox row: the drain
- * never claims a held inbox row, and any other held row comes due by itself
- * after `INBOX_HOLD_MS`. `false` when no one can send it.
+ * it wakes, or they press Send now or send a message. It must be an inbox row:
+ * the drain never claims a held inbox row, and any other held row comes due by
+ * itself after `INBOX_HOLD_MS`.
+ *
+ * Both carry a wire id, so the turn the continuation starts is tracked: a
+ * second stop of it requeues this row and the drain continues it again,
+ * within `MAX_PROMPT_REDELIVERIES`.
+ *
+ * `false` when no one can send it, or when a person stopped the turn: the
+ * Stop's stamp is on the ledger row even when the abort never reached the
+ * dead box.
  */
 async function enqueueTurnContinuation(input: {
   sessionId: string;
   turnToken: string;
+  messageId: string;
   stoppedAt: Date;
   session: ContinuationSession;
   unattended: boolean;
 }): Promise<boolean> {
   const { session } = input;
   if (!input.unattended && !session.createdBy) return false;
+  const ledgerTurn = await readNewestPromptTurn(input.sessionId, [input.messageId]);
+  if (isRequestedStopName(ledgerTurn?.endError?.name)) return false;
   const clientMessageId = `resume_${input.turnToken}`;
   await enqueueContinueSessionCommand({
     source: 'system:auto-recovery',
@@ -260,13 +277,13 @@ async function enqueueTurnContinuation(input: {
       cause: REAPER_TURN_CAUSES.boxStoppedMidTurn.message,
     }),
     resumesTurn: input.turnToken,
+    wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id,
+    remintOnDelivery: true,
     ...(input.unattended
       ? { actorUserId: null }
       : {
           actorUserId: session.createdBy,
           clientMessageId,
-          wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id,
-          remintOnDelivery: true,
           bindTurnIdentity: true,
           held: true,
           availableAt: new Date(Date.now() + INBOX_HOLD_MS),
@@ -322,7 +339,8 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // turns, every one needed the user to type "go on".
   const providerOriginated = write.stopReason === 'provider_reconcile';
   const abandonedDeliveries = storedSandboxTurns(before?.metadata).filter(
-    (turn) => !!turn.messageId && (turn.state === 'delivering' || providerOriginated),
+    (turn): turn is StoredSandboxTurn & { messageId: string } =>
+      !!turn.messageId && (turn.state === 'delivering' || providerOriginated),
   );
   // Nobody-is-watching recovery (2026-09-27 census, class B: `runtime_gone`
   // trigger/worker sessions dying silently for up to `INBOX_HOLD_MS` = 24h).
@@ -331,6 +349,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // resume a turn a human or the idle policy chose to end. Bounded and
   // idempotent claim: see `unattended-runtime-recovery.ts`.
   let unattendedRecoveryClaimed = false;
+  let recoveryAttended = false;
   let recoverySessionRow: ContinuationSession | null = null;
   if (providerOriginated && abandonedDeliveries.length > 0) {
     const [sessionRow] = await db
@@ -352,6 +371,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       },
     });
     unattendedRecoveryClaimed = outcome === 'claimed';
+    recoveryAttended = outcome === 'skipped_attended';
     if (sessionRow) {
       recoverySessionRow = {
         accountId: sessionRow.accountId,
@@ -440,7 +460,9 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // scheduler tick, and `continueSession` would wake the runtime the stop just
   // shut down and bill the account for it, up to three times — so by default
   // the prompt is durable and visible in the composer's queue, and the user's
-  // next send, or "send now" on the row, releases it. `unattendedRecoveryClaimed`
+  // next send, or "send now" on the row, releases it. A provider stop's row
+  // (`resumable`) is also released by the box's next wake, which someone's
+  // use of the session caused (`reArmRuntimeBlockedPrompts`). `unattendedRecoveryClaimed`
   // is exactly the case where that default is wrong: nobody is watching the
   // composer, so nothing would ever release it. `requeueAbandonedPrompt` still
   // forces `held: true` when the row is stop-paused regardless of what this
@@ -471,10 +493,15 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       return 'error' as const;
     });
     if (outcome === 'requeued' || !recoverySessionRow) continue;
-    if (!unattendedRecoveryClaimed && outcome !== 'no_prompt') continue;
+    // The shape follows the session, not this observer's claim. An unattended
+    // session whose claim another observer of the same stop won (`bounded`)
+    // writes nothing: its held row could take the turn's key first and wait
+    // for a member nobody is.
+    if (!unattendedRecoveryClaimed && !(recoveryAttended && outcome === 'no_prompt')) continue;
     const enqueued = await enqueueTurnContinuation({
       sessionId: write.sessionId,
       turnToken: turn.token,
+      messageId: turn.messageId,
       stoppedAt: now,
       session: recoverySessionRow,
       unattended: unattendedRecoveryClaimed,

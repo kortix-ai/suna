@@ -33,6 +33,8 @@ let transcript: Array<Record<string, unknown>> = [];
 let posts: Array<{ text: string; wireMessageId?: string }> = [];
 /** Answers for the next POSTs; empty = delivered. */
 let postPlan: Array<'delivered' | 'pending'> = [];
+/** The box holds a staged rewind (`GET /session/:id` answers `revert`). */
+let stagedRevert = false;
 
 mock.module('../projects/opencode-mapping', () => ({
   ...realOpencodeMapping,
@@ -64,6 +66,9 @@ const { holdInboxPrompts, listInboxPrompts, retryInboxPrompt } = await import(
 const { claimDueLifecycleCommands, enqueueContinueSessionCommand, markCommandForwarded } =
   await import('../projects/session-lifecycle/store');
 const { markTurnStopRequested } = await import('../projects/session-turn-ledger');
+const { recoverTurnsAfterRuntimeRestart } = await import(
+  '../projects/session-lifecycle/runtime-restart-recovery'
+);
 
 const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
@@ -87,10 +92,37 @@ async function command(commandId: string): Promise<Row> {
   return (await commands()).find((row) => row.command_id === commandId)!;
 }
 
-async function turnEndError(): Promise<{ name: string | null } | null> {
+async function turnEndError(token = TOKEN): Promise<{ name: string | null; message?: string | null } | null> {
   const [row] = rowsOf(await db.execute(sql`
-    SELECT end_error FROM kortix.session_turns WHERE turn_token = ${TOKEN}`));
+    SELECT end_error FROM kortix.session_turns WHERE turn_token = ${token}`));
   return row?.end_error ?? null;
+}
+
+/** One `activeTurns` entry: the box runs `token` on `messageId`. */
+const openTurn = (token: string, messageId: string, state: 'active' | 'delivering' = 'active') => ({
+  token,
+  state,
+  opencodeSessionId: ROOT,
+  runtimeSessionId: ROOT,
+  messageId,
+  startedAtMs: NOW_MS - 9 * 60_000,
+});
+
+/** The box runs again, with `turns` open: a second observer, or a turn after a wake. */
+async function reopenBox(turns: Record<string, ReturnType<typeof openTurn>>) {
+  await db.execute(sql`
+    UPDATE kortix.session_sandboxes
+       SET status = 'active', metadata = metadata || ${JSON.stringify({ activeTurns: turns })}::jsonb
+     WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+  await db.execute(sql`UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = ${SESSION_ID}`);
+}
+
+/** The box's past unattended recoveries (`autoRecovery.attempts`, epoch ms). */
+async function setRecoveryAttempts(attempts: number[]) {
+  await db.execute(sql`
+    UPDATE kortix.session_sandboxes
+       SET metadata = metadata || ${JSON.stringify({ autoRecovery: { attempts } })}::jsonb
+     WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
 }
 
 /** A session whose box runs one open turn on `messageId`. */
@@ -108,18 +140,7 @@ async function seedSession(input: { origin: 'user' | 'trigger'; messageId: strin
       (sandbox_id, session_id, account_id, project_id, external_id, status, metadata)
     VALUES (${SANDBOX_ID}::uuid, ${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid,
             ${`ext-${SANDBOX_ID}`}, 'active',
-            ${JSON.stringify({
-              activeTurns: {
-                [TOKEN]: {
-                  token: TOKEN,
-                  state: input.turnState ?? 'active',
-                  opencodeSessionId: ROOT,
-                  runtimeSessionId: ROOT,
-                  messageId: input.messageId,
-                  startedAtMs: NOW_MS - 9 * 60_000,
-                },
-              },
-            })}::jsonb)`);
+            ${JSON.stringify({ activeTurns: { [TOKEN]: openTurn(TOKEN, input.messageId, input.turnState) } })}::jsonb)`);
   await db.execute(sql`
     INSERT INTO kortix.session_turns
       (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
@@ -157,6 +178,10 @@ const providerStop = () =>
     externalId: `ext-${SANDBOX_ID}`,
     stopReason: 'provider_reconcile',
   });
+
+/** The runtime is up again: the wake's own recovery step (`resume-stopped-sandbox.ts`). */
+const wake = () =>
+  recoverTurnsAfterRuntimeRestart({ sandboxId: SANDBOX_ID, sessionId: SESSION_ID, externalId: `ext-${SANDBOX_ID}`, hold: false });
 
 /** Claim `commandId` the way the drain does and run it once. */
 async function drainOnce(commandId: string) {
@@ -206,6 +231,9 @@ beforeAll(async () => {
       origin = null;
     }
     if (origin !== BOX_ORIGIN) return ORIGINAL_FETCH(input, init);
+    if (stagedRevert && new URL(url).pathname === `/session/${ROOT}`) {
+      return Response.json({ id: ROOT, revert: { messageID: 'msg_rewound' } });
+    }
     return Response.json(transcript);
   };
 });
@@ -214,6 +242,7 @@ beforeEach(() => {
   transcript = [];
   posts = [];
   postPlan = [];
+  stagedRevert = false;
 });
 
 // No row cleanup: the db-suites lane drops this file's database after the run,
@@ -299,6 +328,8 @@ describe('the drain continues a turn the runtime loss cut short', () => {
     const held = await command(commandId);
     expect(held.result.held).toBe(true);
     expect(held.payload.resumeIfInterrupted).toBe(false);
+    // A wake is not consent to send a prompt someone's stop held.
+    await wake();
     expect(await drainOnce(commandId)).toBe('not_claimed');
 
     interruptedTranscript(prompt);
@@ -320,9 +351,68 @@ describe('the drain continues a turn the runtime loss cut short', () => {
     expect(held.status).toBe('queued');
     expect(held.result.held).toBe(true);
     expect(held.payload.resumeIfInterrupted).toBe(false);
+    await wake();
     expect(await drainOnce(commandId)).toBe('not_claimed');
     // A person stopped it: no synthetic continuation beside the held prompt.
     expect(await commands()).toHaveLength(1);
+  });
+
+  test('the wake releases the held prompt: reopening the session starts the continuation', async () => {
+    const prompt = wire(9 * 60_000);
+    await seedSession({ origin: 'user', messageId: prompt });
+    const commandId = await forwardedPrompt(prompt);
+    await providerStop();
+    expect(await drainOnce(commandId)).toBe('not_claimed');
+
+    interruptedTranscript(prompt);
+    await wake();
+    expect((await command(commandId)).result.held).toBeUndefined();
+    expect(await drainOnce(commandId)).toBe('succeeded');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].text).toContain('Continue from where you left off');
+    expect((await turnEndError())?.name).toBe('SandboxStoppedMidTurnRecovering');
+  });
+
+  test('a turn that compacted before the stop is continued: the reply after the compaction is open', async () => {
+    const prompt = wire(9 * 60_000);
+    const marker = wire(7 * 60_000);
+    const resumed = wire(6 * 60_000);
+    await seedSession({ origin: 'user', messageId: prompt });
+    const commandId = await forwardedPrompt(prompt);
+    await providerStop();
+
+    // OpenCode's automatic compaction: a marker, its summary, a synthetic
+    // "continue", and the later steps parented on that continue.
+    transcript = [
+      { info: { id: prompt, role: 'user', sessionID: ROOT }, parts: [] },
+      { info: { id: wire(8 * 60_000), role: 'assistant', sessionID: ROOT, parentID: prompt, time: { created: 1, completed: 2 } }, parts: [] },
+      { info: { id: marker, role: 'user', sessionID: ROOT }, parts: [{ id: 'prt_compact', type: 'compaction', auto: true }] },
+      { info: { id: wire(390_000), role: 'assistant', sessionID: ROOT, parentID: marker, summary: true, time: { created: 3, completed: 4 } }, parts: [] },
+      { info: { id: resumed, role: 'user', sessionID: ROOT }, parts: [{ id: 'prt_continue', type: 'text', text: 'Continue if you have next steps.', synthetic: true }] },
+      { info: { id: wire(5 * 60_000), role: 'assistant', sessionID: ROOT, parentID: resumed, time: { created: 5 } }, parts: [] },
+    ];
+    await retryInboxPrompt(SESSION_ID, commandId, { userId: AUTHOR });
+    expect(await drainOnce(commandId)).toBe('succeeded');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].text).toContain('Continue from where you left off');
+    expect((await turnEndError())?.name).toBe('SandboxStoppedMidTurnRecovering');
+  });
+
+  test('a turn a runtime restart cut short says the runtime restarted, once its continuation lands', async () => {
+    const prompt = wire(9 * 60_000);
+    await seedSession({ origin: 'user', messageId: prompt });
+    const commandId = await forwardedPrompt(prompt);
+    // A config swap retired the runtime under the turn; the sandbox kept running.
+    await wake();
+    expect(await turnEndError()).toBeNull();
+
+    interruptedTranscript(prompt);
+    expect(await drainOnce(commandId)).toBe('succeeded');
+    expect(posts).toHaveLength(1);
+    expect(await turnEndError()).toEqual({
+      name: 'RuntimeRestartedMidTurnRecovering',
+      message: 'The runtime restarted during this turn. Kortix resumed it.',
+    });
   });
 
   test('a retry after a continuation landed unacknowledged sends no second one', async () => {
@@ -423,5 +513,99 @@ describe('the reaper leaves no interrupted turn without its one continuation', (
     expect(posts).toHaveLength(1);
     expect(posts[0].text).toContain('interrupted');
     expect((await turnEndError())?.name).toBe('SandboxStoppedMidTurnRecovering');
+  });
+
+  test('the wake releases an attended first turn\'s held continuation', async () => {
+    await seedSession({ origin: 'user', messageId: wire(9 * 60_000) });
+    await providerStop();
+    const [row] = await commands();
+    expect(await drainOnce(row.command_id)).toBe('not_claimed');
+
+    await wake();
+    expect(await drainOnce(row.command_id)).toBe('succeeded');
+    expect(posts).toHaveLength(1);
+    expect((await turnEndError())?.name).toBe('SandboxStoppedMidTurnRecovering');
+  });
+
+  test.each(['trigger', 'user'] as const)(
+    'a first turn a person stopped gets no continuation (%s session)',
+    async (origin) => {
+      await seedSession({ origin, messageId: wire(9 * 60_000) });
+      // The box died and the member pressed Stop: the stamp landed on the open
+      // ledger row, and the abort never reached the dead box.
+      await markTurnStopRequested(SESSION_ID, 'UserStop');
+      await providerStop();
+
+      expect((await turnEndError())?.name).toBe('UserStop');
+      expect(await commands()).toEqual([]);
+    },
+  );
+
+  test('an observer whose unattended claim is bounded writes nothing; the claiming one writes the due continuation', async () => {
+    await seedSession({ origin: 'trigger', messageId: wire(9 * 60_000) });
+    const turns = { [TOKEN]: openTurn(TOKEN, 'msg_none') };
+    // Inside the 30 s gap: this observer's claim answers bounded.
+    await setRecoveryAttempts([Date.now() - 5_000]);
+    await providerStop();
+    expect(await commands()).toEqual([]);
+
+    await reopenBox(turns);
+    await setRecoveryAttempts([Date.now() - 120_000]);
+    await providerStop();
+    const rows = await commands();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actor_user_id).toBeNull();
+    expect(rows[0].payload.clientMessageId).toBeUndefined();
+    expect(rows[0].result?.held).toBeUndefined();
+  });
+
+  test('a continuation a staged rewind drops is not marked resumed', async () => {
+    await seedSession({ origin: 'trigger', messageId: wire(9 * 60_000) });
+    await providerStop();
+    const [row] = await commands();
+
+    stagedRevert = true;
+    expect(await drainOnce(row.command_id)).toBe('succeeded');
+    expect(posts).toEqual([]);
+    expect((await command(row.command_id)).result).toEqual({ status: 'skipped', reason: 'staged_revert' });
+    expect((await turnEndError())?.name).toBe('SandboxStoppedMidTurn');
+  });
+
+  test('an unattended continuation is a tracked turn: a second stop continues it again', async () => {
+    await seedSession({ origin: 'trigger', messageId: wire(9 * 60_000) });
+    await providerStop();
+    const [row] = await commands();
+    expect(row.payload.wireMessageId).toEqual(expect.any(String));
+    expect(row.payload.clientMessageId).toBeUndefined();
+    expect(await drainOnce(row.command_id)).toBe('succeeded');
+    expect(posts).toHaveLength(1);
+    const continued = posts[0].wireMessageId!;
+    expect(continued).toEqual(expect.any(String));
+
+    // The continuation's turn runs, and the provider stops the box again.
+    const second = `tok2-${SANDBOX_ID}`;
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+      VALUES (${second}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid,
+              ${ROOT}, ${continued}, 'active')`);
+    await reopenBox({ [second]: openTurn(second, continued) });
+    await setRecoveryAttempts([Date.now() - 120_000]);
+    await providerStop();
+
+    // The continuation row itself comes back, due; no second synthetic row.
+    const rows = await commands();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('queued');
+    expect(rows[0].payload).toMatchObject({ redeliveries: 1, resumeIfInterrupted: true });
+
+    transcript.push({
+      info: { id: mintWireMessageId({ nowMs: Date.now() + 1_000 }).id, role: 'assistant', sessionID: ROOT, parentID: continued, time: { created: 6 } },
+      parts: [],
+    });
+    expect(await drainOnce(row.command_id)).toBe('succeeded');
+    expect(posts).toHaveLength(2);
+    expect(posts[1].text).toContain('Continue from where you left off');
+    expect((await turnEndError(second))?.name).toBe('SandboxStoppedMidTurnRecovering');
   });
 });

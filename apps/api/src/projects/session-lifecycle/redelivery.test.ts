@@ -229,6 +229,45 @@ describe('findInterruptedTurn', () => {
     expect(await findInterruptedTurn('sess-1', [PROMPT, 'msg_cont'], messages, readTurn)).toBeNull();
   });
 
+  describe('a turn that compacted before the stop (OpenCode auto compaction)', () => {
+    const step = { id: 'msg_step1', role: 'assistant', parentID: PROMPT, completed: 1 };
+    const marker: PlacementTipMessage = { id: 'msg_compact', role: 'user', autoCompaction: true };
+    const summary: PlacementTipMessage = { id: 'msg_summary', role: 'assistant', parentID: 'msg_compact', completed: 2 };
+    // The synthetic "continue", or a replay of the prompt: the same position.
+    const resumed: PlacementTipMessage = { id: 'msg_continue', role: 'user' };
+    const stepAfter = (completed: number | null): PlacementTipMessage =>
+      ({ id: 'msg_step2', role: 'assistant', parentID: 'msg_continue', completed });
+
+    test('the step after the compaction is the reply: open is interrupted', async () => {
+      const steps = tip(step, marker, summary, resumed, stepAfter(null));
+      expect(await findInterruptedTurn('sess-1', [PROMPT], steps, ledger())).not.toBeNull();
+    });
+
+    test('a box that died while it summarized is interrupted', async () => {
+      const steps = tip(step, marker, { ...summary, completed: null });
+      expect(await findInterruptedTurn('sess-1', [PROMPT], steps, ledger())).not.toBeNull();
+    });
+
+    test('a completed step after the compaction is no continuation', async () => {
+      const steps = tip(step, marker, summary, resumed, stepAfter(3));
+      expect(await findInterruptedTurn('sess-1', [PROMPT], steps, ledger())).toBeNull();
+    });
+
+    test('a manual compaction is a new turn, so its reply is not this turn\'s', async () => {
+      const manual = { ...marker, autoCompaction: undefined };
+      const steps = tip(step, manual, { ...summary, completed: null });
+      expect(await findInterruptedTurn('sess-1', [PROMPT], steps, ledger())).toBeNull();
+    });
+  });
+
+  test('a later prompt ends the turn: its reply is not this turn\'s', async () => {
+    const later: PlacementTipMessage[] = [
+      { id: 'msg_next', role: 'user' },
+      { id: 'msg_next_reply', role: 'assistant', parentID: 'msg_next', completed: 5 },
+    ];
+    expect(await findInterruptedTurn('sess-1', [PROMPT], tip(openReply, ...later), ledger())).not.toBeNull();
+  });
+
   test('no ledger turn at all is no continuation', async () => {
     expect(await findInterruptedTurn('sess-1', [PROMPT], tip(openReply), async () => null)).toBeNull();
   });
