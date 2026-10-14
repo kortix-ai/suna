@@ -251,14 +251,26 @@ root. No turn runs at either point.
   The manifest is retried the same way, but no claim happens there: after its
   retries a box with a store (`held()` not null) boots on it at its persisted
   generation and logs one warning, and only a box with no store fails the
-  boot. A brand-new session (no store, the manifest lists no live message or
-  answers 404) boots empty, as before.
+  boot. One exception: before its first restore POST the box writes
+  `claiming: true` into `session-log-restore.json`. A restore clears it, and so
+  does a 404 or 503 to the first attempt (nothing was claimed), and a later boot
+  whose manifest shows no claim above this box. A 404 or 503 after a failed
+  attempt settles nothing: that attempt may have claimed, so the boot fails
+  with the mark kept. While the mark stands, a manifest that cannot be read
+  (5xx, network) fails the boot even with a store: a box that claimed and then
+  failed or died may hold a store below the claim. A manifest that answers
+  403, 404 or 503 (the ingest kill switch) boots the store and keeps the mark:
+  the journal route has the same gates, so nothing posts below a claim, and
+  the first boot that reads a manifest restores or clears the mark. A
+  manifest above this box's generation reads as behind even when every message
+  in it is tombstoned. A brand-new session (no store, the manifest lists no
+  live message or answers 404) boots empty, as before.
 - **D3, a partial restore** (the log's `restore_grade` is `partial`, the write
   dropped model-visible content, or a text kept its preview). The agent: a
   user message with one text block (`prt_kortix_restore_g<generation>`, naming
   what is missing) after every seq the API holds, under a wire id
-  (`mintWireMessageIdAbove`, backdated as a client prompt is) above every id of
-  the thread, so hosts that order placed messages by id show it after the
+  (`mintWireMessageId({ after })`, as a client prompt is minted) above every id
+  of the thread, so hosts that order placed messages by id show it after the
   restored history and before the next turn,
   written into the native store with the log (the adapter writes twice), so
   the next request carries it. Its cursor entry is dropped, so the journal
@@ -314,6 +326,10 @@ test, the request pi sends next equals `modelView(log)` plus the prompt, for the
 root and for each sub-agent resumed through `task` with its `task_id`. The
 recorded session round-trips: export → restore → export is equal except pi's
 system prompt messages (`kind: 'context'`), which pi rebuilds at the next prompt.
+The restore names each thread's last context record in the dump (`contextId`):
+the first system prompt pi rebuilds takes that id, so the record is replaced, not
+added. Three restores of one session keep one context record per thread (the
+same ids); before, each restore added one per thread pi prompted.
 
 Proved in `opencode-session-log-restore.test.ts` (the pinned OpenCode binary,
 `opencode serve` in an isolated home against a fake model, dummy key): the 7
@@ -392,9 +408,10 @@ prove the oracle can fail: OpenCode's golden test checks a log with one changed
 answer against the request and expects a difference, and pi's partial-log test
 expects exactly the one difference the restore dropped. A broken mapping fails
 the suites: dropping pi's reasoning fails 1 of 22 pi restore tests, writing
-OpenCode reasoning as text fails 1 of 26 OpenCode restore tests. Not covered:
-no fixture holds an assistant text with `model_text` (no harness exports one),
-so OpenCode's restore passes when it drops that field.
+OpenCode reasoning as text fails 1 of 26 OpenCode restore tests, and writing an
+assistant `text` in place of its `model_text` fails 1 test in each suite. No
+harness exports an assistant `model_text`, so that test sets one on a golden
+reply.
 
 ### The v2 stream (P4.3)
 
