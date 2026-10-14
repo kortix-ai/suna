@@ -1,0 +1,22 @@
+{
+  "source_hash": "4624d604def0978fcd02cdfec069a949991df74712ddbf0ca07fe80f18c68b31",
+  "diff_files": [
+    "apps/web/src/components/markdown/file-links.test.ts",
+    "apps/web/src/components/markdown/file-links.ts",
+    "apps/web/src/components/markdown/markdown-frontmatter.tsx",
+    "apps/web/src/components/markdown/unified-markdown.test.tsx",
+    "apps/web/src/components/markdown/unified-markdown.tsx",
+    "apps/web/src/features/file-viewer/file-content-renderer.tsx",
+    "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
+    "apps/web/src/features/workspace/capabilities/shared/entity/entity-modal.tsx"
+  ],
+  "diff_hash": "c67bf69a7b8b96cf274e4ed37b80c7c7463bd386dd6e87b343092859131723c1",
+  "head": "cd3b1ee41ff89ef519c8666b0d67d8ac703d0b27",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-14T05:01:53.135Z"
+}
