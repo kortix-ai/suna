@@ -32,7 +32,9 @@
  * read (`loadSavedTranscript`). That read runs at mount, keyed by the Kortix
  * session, so it does not wait for the OpenCode root and fits the share window.
  * A snapshot never paints over a store the runtime filled:
- * `shouldHydrateFromMirror` refuses it.
+ * `shouldHydrateFromMirror` refuses it. A host that read the window before the
+ * bind (`readSavedSessionCopy`, a connecting view) leaves it held: the open
+ * then asks for the pointer only, and the read answers from the held window.
  *
  * EVERY LEG IS TRI-STATE. `known: false` projects to `null`, which sends the
  * consumer to its endpoint. It must never project to the NEGATIVE answer — an
@@ -65,6 +67,44 @@ export const OPEN_BUNDLE_SHARE_MS = 5_000;
  *  controller's own first read covers. */
 export const OPEN_BUNDLE_TRANSCRIPT_LIMIT = 40;
 
+/**
+ * How long the saved window a host read before `useSession` bound the session
+ * (`readSavedSessionCopy`: a connecting view) answers that session's open. It
+ * covers one wake: up to 240 s measured, and apps/mobile gives up at 4 min.
+ * After the bind the runtime's own read outranks the window, so an older one
+ * costs only the moment until that read lands.
+ */
+export const SAVED_WINDOW_HOLD_MS = 5 * 60_000;
+
+// ponytail: one slot, the one session a connecting view shows. A map when a
+// host connects several sessions at once.
+let heldWindow: { key: string; envelope: SessionTranscriptSyncEnvelope; atMs: number } | null = null;
+
+/** Keep the saved window a host read before `useSession` binds the session. */
+export function holdSavedWindow(
+  projectId: string,
+  sessionId: string,
+  envelope: SessionTranscriptSyncEnvelope,
+  nowMs: number = Date.now(),
+): void {
+  heldWindow = { key: scopeKey(projectId, sessionId), envelope, atMs: nowMs };
+}
+
+/** The held saved window of this session, or null when none is held or it is
+ *  older than {@link SAVED_WINDOW_HOLD_MS}. */
+export function heldSavedWindow(
+  projectId: string,
+  sessionId: string,
+  nowMs: number = Date.now(),
+): SessionTranscriptSyncEnvelope | null {
+  if (!heldWindow || heldWindow.key !== scopeKey(projectId, sessionId)) return null;
+  if (nowMs - heldWindow.atMs > SAVED_WINDOW_HOLD_MS) {
+    heldWindow = null;
+    return null;
+  }
+  return heldWindow.envelope;
+}
+
 interface BundleEntry {
   /** Resolves to the bundle, or to `null` when the read failed. NEVER rejects:
    *  a consumer awaiting a claim is on its own critical path. */
@@ -82,15 +122,19 @@ function scopeKey(projectId: string, sessionId: string): string {
   return `${projectId}/${sessionId}`;
 }
 
-/** Drop everything. Tests only — a module singleton with no reset is a test
- *  that passes because of the one before it. */
+/** Drop everything: on an identity change (`resetIdentityState`), and in
+ *  tests — a module singleton with no reset is a test that passes because of
+ *  the one before it. */
 export function resetSessionOpenBundles(): void {
   entries.clear();
+  heldWindow = null;
 }
 
 export interface OpenSessionBundleOptions {
   /** Mirrored messages to ask for. `0` requests the POINTER only — what a
-   *  client whose store is already warm wants. */
+   *  client whose store is already warm wants. Default: `0` while a saved
+   *  window of the session is held ({@link holdSavedWindow}), else
+   *  {@link OPEN_BUNDLE_TRANSCRIPT_LIMIT}. */
   transcript?: number;
   /** Injected clock, for tests. */
   now?: () => number;
@@ -120,7 +164,9 @@ export function openSessionBundle(
     startedAtMs: nowMs,
     settledAtMs: null,
     promise: getSessionOpenBundle(projectId, sessionId, {
-      transcript: options.transcript ?? OPEN_BUNDLE_TRANSCRIPT_LIMIT,
+      transcript:
+        options.transcript ??
+        (heldSavedWindow(projectId, sessionId, nowMs) ? 0 : OPEN_BUNDLE_TRANSCRIPT_LIMIT),
     }).catch(() => null),
   };
   entry.promise = entry.promise.then((bundle) => {

@@ -8,6 +8,7 @@ import { configureKortix } from '../core/http/config';
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';
 import { createSavedCopyStore, setSavedCopyStore } from '../core/session-sync/saved-copy-store';
+import { readSavedSessionCopy } from '../core/session-sync/saved-transcript';
 import { useSession } from './opencode';
 
 /**
@@ -300,6 +301,22 @@ describe('one saved-history read per open (KRTX-189)', () => {
     expect(current().savedTranscript).toBe('shown');
     expect(transcriptReads()).toHaveLength(1);
     expect(transcriptReads()[0]).toContain('history=true');
+  });
+
+  test('a copy read before the bind answers the open: the snapshot asks for the pointer only, and no transcript route is read again', async () => {
+    serve({
+      snapshot: async () => Response.json(bundle(ROOT, true, { transcript: { requested: false } })),
+      history: async () => Response.json(envelope(true)),
+    });
+    // A connecting view read the copy while the computer woke.
+    await readSavedSessionCopy({ projectId: PROJECT_ID, sessionId: SESSION_ID, runtimeSessionId: ROOT });
+    expect(transcriptReads()).toHaveLength(1);
+    await mount({ enabled: true, initialPin: ROOT });
+    expect(current().savedTranscript).toBe('shown');
+    expect(current().messages).toHaveLength(1);
+    expect(snapshotReads()).toHaveLength(1);
+    expect(snapshotReads()[0]).toContain('transcript=0');
+    expect(transcriptReads()).toHaveLength(1);
   });
 
   test('an absent history still resolves to none, with one transcript read', async () => {

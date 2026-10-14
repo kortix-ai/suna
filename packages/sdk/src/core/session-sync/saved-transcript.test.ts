@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import {
   SAVED_HISTORY_SNAPSHOT_WAIT_MS,
   type SavedTranscriptInput,
@@ -10,7 +10,13 @@ import {
 } from './saved-transcript';
 import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
 import { configureKortix } from '../http/config';
-import { openSessionBundle, resetSessionOpenBundles } from '../session/open-bundle';
+import {
+  OPEN_BUNDLE_TRANSCRIPT_LIMIT,
+  SAVED_WINDOW_HOLD_MS,
+  claimOpenBundle,
+  openSessionBundle,
+  resetSessionOpenBundles,
+} from '../session/open-bundle';
 
 const base: SavedTranscriptInput = {
   enabled: true,
@@ -312,6 +318,82 @@ describe('readSavedSessionCopy', () => {
   test('is public, so a host reads the saved copy the way useSession does', async () => {
     const sdk = await import('../../index');
     expect(sdk.readSavedSessionCopy).toBe(readSavedSessionCopy);
+  });
+
+  describe("the session's next open reuses the copy (KRTX-189)", () => {
+    // The connecting view reads the window while the computer wakes; the
+    // thread that opens next must not download it again, neither in the
+    // session-open snapshot nor in its own saved-history read.
+    const pointerOnly = {
+      observed_at: '2026-09-26T10:00:01Z',
+      session: { session_id: 's1', runtime_session_id: ROOT, opencode_session_id: ROOT },
+      turn: { known: false, reason: 'test' },
+      queue: { known: false, reason: 'test' },
+      transcript: { known: true, requested: false },
+      config: { known: true },
+      models: { known: false, reason: 'test' },
+    };
+    /** The snapshot answers the pointer only; the saved-history route, `copy(3)`. */
+    const serveOpen = () => serve((url) => (url.includes('/snapshot') ? pointerOnly : copy(3)));
+    /** Starts the session-open snapshot and waits until it answered. */
+    const open = async (sessionId: string) => {
+      openSessionBundle('p1', sessionId);
+      await claimOpenBundle('p1', sessionId);
+    };
+    const snapshots = (urls: string[]) => urls.filter((url) => url.includes('/snapshot'));
+    const windows = (urls: string[]) => urls.filter((url) => url.includes('/transcript?'));
+
+    afterEach(() => setSystemTime());
+
+    test('the snapshot asks for the pointer only, and the saved-history read sends nothing', async () => {
+      const urls = serveOpen();
+      await read();
+      await open('s1');
+      const answer = await loadSavedTranscript('p1', 's1');
+      expect(answer.message_count).toBe(3);
+      expect(snapshots(urls)).toHaveLength(1);
+      expect(snapshots(urls)[0]).toContain('transcript=0');
+      expect(windows(urls)).toHaveLength(1);
+    });
+
+    test('the held copy covers one wake: past the bound, the next open reads the window again', async () => {
+      expect(SAVED_WINDOW_HOLD_MS).toBeGreaterThanOrEqual(4 * 60_000);
+      const urls = serveOpen();
+      const start = Date.now();
+      setSystemTime(new Date(start));
+      await read();
+      setSystemTime(new Date(start + SAVED_WINDOW_HOLD_MS + 1));
+      await open('s1');
+      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      await loadSavedTranscript('p1', 's1');
+      expect(windows(urls)).toHaveLength(2);
+    });
+
+    test('each connecting view reads the current copy: a held one never answers it', async () => {
+      const urls = serveOpen();
+      await read();
+      await read();
+      expect(windows(urls)).toHaveLength(2);
+    });
+
+    test('a failed read holds nothing: the next open asks the snapshot for the window', async () => {
+      globalThis.fetch = mock(async () => {
+        throw new TypeError('Network request failed');
+      }) as unknown as typeof fetch;
+      await read();
+      const urls = serveOpen();
+      await open('s1');
+      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+    });
+
+    test('a copy held for one session answers no other', async () => {
+      const urls = serveOpen();
+      await read();
+      await open('s2');
+      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      await loadSavedTranscript('p1', 's2');
+      expect(windows(urls)).toHaveLength(2);
+    });
   });
 });
 
