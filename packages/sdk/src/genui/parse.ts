@@ -41,14 +41,19 @@ export function createGenuiParser(version: number = GENUI_SCHEMA_VERSION): Genui
   let parser = createStreamingParser(schema(), 'Stack');
   let last: { code: string; streaming: boolean; result: GenuiParseResult } | null = null;
   let previousNodes: ReadonlyMap<string, GenuiNode> = new Map();
+  // The last parsed root. A rejection while streaming (source cap, cycle, a lang-core throw) keeps
+  // it on screen instead of blanking the block; a settled rejection has no root.
+  let lastGood: Pick<GenuiParseResult, 'root' | 'pending'> = { root: null, pending: [] };
+  const rejected = (issue: GenuiIssue, streaming: boolean): GenuiParseResult =>
+    streaming ? { ...lastGood, issues: [issue], streaming } : { root: null, pending: [], issues: [issue], streaming };
 
   const parse = (code: string, streaming: boolean): GenuiParseResult => {
     let raw: ReturnType<typeof parser.set>;
     let sanitized: ReturnType<typeof sanitizeTree>;
     try {
       // Bound lang-core's reference expansion before it runs (expansion.ts).
-      const rejected = expansionIssue(code);
-      if (rejected) return { root: null, pending: [], issues: [rejected], streaming };
+      const issue = expansionIssue(code);
+      if (issue) return rejected(issue, streaming);
       raw = parser.set(code);
       sanitized = sanitizeTree(raw.root, { streaming, unfinished: raw.meta.incomplete ? pendingStatementId(code) : null });
     } catch (error) {
@@ -56,10 +61,11 @@ export function createGenuiParser(version: number = GENUI_SCHEMA_VERSION): Genui
       parser = createStreamingParser(schema(), 'Stack');
       previousNodes = new Map();
       const message = error instanceof Error ? error.message : String(error);
-      return { root: null, pending: [], issues: [{ code: 'parse-failed', message: message.slice(0, 200) }], streaming };
+      return rejected({ code: 'parse-failed', message: message.slice(0, 200) }, streaming);
     }
     const shared = shareNodes(sanitized.root, previousNodes);
     previousNodes = shared.byId;
+    lastGood = { root: shared.root, pending: raw.meta.unresolved };
     const issues = [...raw.meta.errors.map(fromLangCore), ...sanitized.issues];
     const unsupported = raw.queryStatements.length + raw.mutationStatements.length + Object.keys(raw.stateDeclarations).length;
     if (unsupported > 0) {

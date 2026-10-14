@@ -410,6 +410,19 @@ describe('adversarial input', () => {
     expect(performance.now() - started).toBeLessThan(500);
   });
 
+  test('a streaming block that passes the source cap keeps its last good root; settled, it shows the note', () => {
+    const parser = createGenuiParser();
+    const head = 'root = Stack([c])\nc = Callout("info", "hello")\n';
+    const good = parser.update(head, true);
+    const over = `${head}d = Callout("info", "${'x'.repeat(GENUI_MAX_SOURCE_CHARS)}`;
+    const live = parser.update(over, true);
+    expect(live.root).toBe(good.root);
+    expect(live.issues.map((issue) => issue.code)).toEqual(['too-large']);
+    const settled = parser.update(over, false);
+    expect(settled.root).toBeNull();
+    expect(genuiBlockToMarkdown(over)).toBe('*This content could not be displayed.*');
+  });
+
   test('legitimate nesting at the container limit still parses', () => {
     const block =
       'root = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [s])\ny = Tab("Two", [b])\ns = Stack([c])\nc = Table(["a", "b"], [[1, 2], [3, 4]])\nb = Badge("x")';
