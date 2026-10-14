@@ -815,7 +815,7 @@ flow(
     // reasoning that ~90 MB of each is the same embedded Bun runtime. That is
     // true of two binaries compiled by the SAME Bun and false of what we ship:
     // `apps/api/Dockerfile` builds the daemon on `SANDBOX_AGENT_BUN_VERSION`
-    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.2), so they
+    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.4.3), so they
     // embed different runtimes. Measured on a deployed preview: 0 of 111 chunks
     // shared, first MiB already different. Requiring overlap would have pinned a
     // build coincidence rather than a contract — and would go red on a green
