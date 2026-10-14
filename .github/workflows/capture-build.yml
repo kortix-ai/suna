@@ -88,13 +88,7 @@ jobs:
       - name: Engine protocol, library and enrollment tests
         run: |
           cargo test --release --features capture-engine --test capture_engine_protocol
-          # memory::action_exclusions::tests::a_new_exclusion_applies_without_a_new_session
-          # is timing-based and failed once on a loaded Linux runner: rerun the library
-          # tests once and warn, so a real failure still fails the job.
-          cargo test --release --features capture-engine --lib || {
-            echo "::warning::library tests failed once; rerunning to tell a timing flake from a real failure"
-            cargo test --release --features capture-engine --lib
-          }
+          cargo test --release --features capture-engine --lib
           cargo test --release --features capture-engine --test enrollment
           cargo test --release --features capture-engine --test capture_format
       - name: Tray tests (Linux AppIndicator)

@@ -68,13 +68,13 @@
          the owner again before it writes (machine_dir_trusted). -->
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="MachineKortixFolder" Name="Kortix">
-        <Component Id="MachineKortixFolderAcl" Guid="*" Bitness="always64">
+        <Component Id="MachineKortixFolderAcl" Guid="5d1c7e0a-3b52-4c8e-9f41-7a6d2e8b0c13" Bitness="always64">
           <CreateFolder>
             <PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
           </CreateFolder>
         </Component>
         <Directory Id="MachineCaptureFolder" Name="Capture">
-          <Component Id="MachineCaptureFolderAcl" Guid="*" Bitness="always64">
+          <Component Id="MachineCaptureFolderAcl" Guid="e84a19c6-0d73-4f2b-b6a5-1c9f3d57a208" Bitness="always64">
             <CreateFolder>
               <PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
             </CreateFolder>

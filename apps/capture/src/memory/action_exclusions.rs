@@ -69,7 +69,7 @@ fn read_count(paths: &MemoryPaths) -> Count {
         .unwrap_or_default()
 }
 
-type Stamp = (Option<SystemTime>, Option<SystemTime>);
+type Stamp = (Option<(SystemTime, u64)>, Option<(SystemTime, u64)>);
 
 struct Effective {
     checked: Instant,
@@ -92,7 +92,7 @@ pub struct ActionExclusions {
 }
 
 fn stamp(paths: &MemoryPaths) -> Stamp {
-    let m = |p: std::path::PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let m = |p: std::path::PathBuf| std::fs::metadata(p).and_then(|m| Ok((m.modified()?, m.len()))).ok();
     (m(paths.settings()), m(super::policy::path(paths)))
 }
 
