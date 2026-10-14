@@ -9,14 +9,17 @@
  * account. With the fact unset (cloud), nothing changes.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { accountInvitations, accountMemberships, accountSsoProviders, accounts } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { accountInvitations, accountMemberships, accountSsoProviders, accounts, creditAccounts } from '@kortix/db';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { autoClaimPendingInvites } from '../accounts/core/app';
 import { resolveAccountIdentityByEmail } from '../iam/account-identity';
 import { trustedEmailForUser } from '../iam/email-trust';
+import { createScimToken } from '../repositories/scim';
 import { userIdByEmail } from '../scim/app';
+
+const { app } = await import('../index');
 
 const ACCOUNT = crypto.randomUUID();
 // The account's standing owner. Deleting a test's last real Auth user would
@@ -60,8 +63,28 @@ function autoconfirm(on: boolean) {
   (config as { ENABLE_EMAIL_AUTOCONFIRM: boolean }).ENABLE_EMAIL_AUTOCONFIRM = on;
 }
 
+/** SCIM POST /Users, as the account's IdP sends it. */
+async function scimCreateUser(address: string): Promise<Response> {
+  const { secret } = await createScimToken({ accountId: ACCOUNT, name: `autoconfirm-${crypto.randomUUID()}`, createdBy: ANCHOR_OWNER });
+  return app.request(`/scim/v2/accounts/${ACCOUNT}/Users`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/scim+json' },
+    body: JSON.stringify({ schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: address, active: true }),
+  });
+}
+
+async function pendingInvites(address: string): Promise<number> {
+  const rows = await db
+    .select({ inviteId: accountInvitations.inviteId })
+    .from(accountInvitations)
+    .where(and(eq(accountInvitations.accountId, ACCOUNT), eq(accountInvitations.email, address), isNull(accountInvitations.acceptedAt)));
+  return rows.length;
+}
+
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'email-autoconfirm-trust' });
+  // SCIM needs the Enterprise `scim` entitlement.
+  await db.insert(creditAccounts).values({ accountId: ACCOUNT, demoEnterprise: true });
   await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${ANCHOR_OWNER}::uuid, ${email('anchor')})`);
   await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: ANCHOR_OWNER });
   // The account's own IdP, with its domain NOT verified: inside its own account
@@ -148,5 +171,31 @@ describe('email autoconfirm on (a self-host with no email provider)', () => {
     const user = await authUser(address);
 
     expect(await trustedEmailForUser(user, { allowAutoconfirmed: true })).toBe(address);
+  });
+});
+
+describe('SCIM POST /Users over HTTP', () => {
+  test('autoconfirm off: the password identity is bound as a member → 201', async () => {
+    autoconfirm(false);
+    const address = email('scim-off');
+    const user = await authUser(address);
+
+    const res = await scimCreateUser(address);
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { id: string }).id).toBe(user);
+    expect(await isMember(user)).toBe(true);
+    expect(await pendingInvites(address)).toBe(0);
+  });
+
+  test('autoconfirm on: an address held only by a password identity → 201 with a pending invite, no membership', async () => {
+    autoconfirm(true);
+    const address = email('scim-on');
+    const stranger = await authUser(address);
+
+    const res = await scimCreateUser(address);
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { id: string }).id).not.toBe(stranger);
+    expect(await isMember(stranger)).toBe(false);
+    expect(await pendingInvites(address)).toBe(1);
   });
 });
