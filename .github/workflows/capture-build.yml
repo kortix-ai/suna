@@ -1195,7 +1195,13 @@ jobs:
           sleep 8
           # The window the installer opened is the one in front (an accessory app still takes focus).
           killall UserNotificationCenter 2>/dev/null || true; sleep 2
-          osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' > "$EV/frontmost.txt" 2>&1 || true
+          # The front-most normal window (CGWindowList is ordered front to back) belongs to Kortix Capture.
+          osascript -l JavaScript > "$EV/frontmost.txt" 2>&1 <<'JXA' || true
+          ObjC.import('CoreGraphics');
+          var l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)));
+          var w = l.filter(function (x) { return x.kCGWindowLayer == 0 && x.kCGWindowOwnerName != 'Window Server'; });
+          w[0].kCGWindowOwnerName;
+          JXA
           shot onboarding-connect
           { echo "tray lock: $([ -f "$lib/tray.lock" ] && echo yes || echo no)"; echo "notify lines:"; grep -rh "\[notify\]" "$lib/logs" 2>/dev/null | head -5 || true; echo "recorder: $(pgrep -f 'kortix-capture record|Kortix Capture record' | wc -l | tr -d ' ')"; } 2>&1 | tee "$EV/silent-install.txt"
           { echo "legacy plists left: $(ls "$HOME/Library/LaunchAgents" | grep -Ec 'ai\.kortix\.capture\.(tray|service)' || true)"; echo "legacy processes left: $(pgrep -f "$HOME/Applications/Kortix Capture.app" | wc -l | tr -d ' ')"; echo "library kept: $(cat "$HOME/Library/Application Support/ai.kortix.capture/keep.txt" 2>/dev/null || echo MISSING)"; } | tee "$EV/legacy-after.txt"
@@ -1281,15 +1287,18 @@ jobs:
           set ev to system attribute "EV"
           tell application "System Events"
             repeat with p in (every process whose name is "Kortix Capture")
-              try
-                click menu bar item 1 of menu bar 2 of p
-                delay 1
-                set names to name of every menu item of menu 1 of menu bar item 1 of menu bar 2 of p
-                do shell script "screencapture -x " & quoted form of (ev & "/tray-menu.png")
-                click menu bar item 1 of menu bar 2 of p
-                return names
-              end try
+              repeat with idx in {2, 1}
+                try
+                  click menu bar item 1 of menu bar idx of p
+                  delay 1
+                  set names to name of every menu item of menu 1 of menu bar item 1 of menu bar idx of p
+                  do shell script "screencapture -x " & quoted form of (ev & "/tray-menu.png")
+                  click menu bar item 1 of menu bar idx of p
+                  return names
+                end try
+              end repeat
             end repeat
+            return "no status item found"
           end tell
           APPLESCRIPT
           cat "$EV/tray-menu.txt"
