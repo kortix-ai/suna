@@ -31,26 +31,30 @@ import {
   CaretRightIcon as ChevronRight,
   XIcon as X,
 } from '@phosphor-icons/react';
-import {
-  AnimatePresence,
-  m,
-  type TargetAndTransition,
-  type Transition,
-  useReducedMotion,
-} from 'motion/react';
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
-import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
-import type { ToolCallBlock } from '@kortix/sdk';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { PanelWidthButton } from './viewer-actions';
+import { useDetailKeyboard } from './detail-keyboard';
+import {
+  CROSSFADE_TRANSITION,
+  detailCardVariants,
+  SLIDE_TRANSITION,
+  terminalLayerMotion,
+} from './detail-motion';
+import { collapseSnapshots, ToolParts } from './tool-parts';
+
+// The three clusters above this shell's own body live beside it — the motion
+// contracts in `detail-motion.ts`, the keyboard in `detail-keyboard.ts`, the
+// tool payload in `tool-parts.tsx`. The public surface stays HERE, unchanged,
+// so every import path in the app and the tests keeps working.
+export {
+  CROSSFADE_TRANSITION,
+  SLIDE_TRANSITION,
+  detailCardVariants,
+  terminalLayerMotion,
+};
+export { collapseSnapshots, ToolParts };
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
-import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
 export function CloseButton({ onClose }: { onClose: () => void }) {
@@ -274,188 +278,7 @@ function DetailNav({ nav }: { nav: NonNullable<Detail['nav']> }) {
   );
 }
 
-/** True when the keydown originated in something that itself wants
- *  ArrowLeft/ArrowRight — the AppPreview address bar keeps its own arrows. */
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
-}
 
-/** What a Tab press can land on inside the dialog. Standard selector — no
- *  dependency needed for a list this short. */
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-/**
- * Desktop-only keyboard for the open detail — ArrowLeft/Right walks siblings,
- * Escape closes back to home, and Tab wraps inside the dialog while focus is
- * IN the dialog (the inert home blocks the backward walk into the dimmed
- * cards, this blocks the forward one; focus elsewhere — the chat stays live
- * beside the panel — tabs as normal, untouched). One document listener
- * carries all three: a focused-element listener would miss most of the
- * detail's body, since that body can put focus anywhere — a code block, an
- * iframe's surrounding chrome, a button — same reasoning as the reference
- * browser chrome this pages next to. Desktop-only because mobile is a vaul
- * drawer, which already owns Escape/swipe-down itself; a second listener
- * there would double-fire.
- */
-function useDetailKeyboard(
-  detail: Detail | null,
-  isMobile: boolean,
-  onBack: () => void,
-  detailRef: RefObject<HTMLDivElement | null>,
-) {
-  useEffect(() => {
-    if (isMobile || !detail) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      // Tab wraps even from inputs — a text field mid-dialog must not be a
-      // hole in the containment — so it's checked before the typing guard.
-      // Only while focus is inside the dialog, though: the trap is
-      // panel-scoped, and a Tab pressed over in the chat is none of its
-      // business.
-      if (event.key === 'Tab') {
-        const dialog = detailRef.current;
-        const active = document.activeElement as HTMLElement | null;
-        if (!dialog || !active || !dialog.contains(active)) return;
-        // Skip hidden controls (offsetParent === null) — arbitrary tool
-        // content can render collapsed/hidden buttons, and a hidden `last`
-        // would break the wrap.
-        const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-          (el) => el.offsetParent !== null,
-        );
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (!first || !last) {
-          // Nothing tabbable inside: the container itself is the only stop.
-          event.preventDefault();
-        } else if (event.shiftKey && (active === first || active === dialog)) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && active === last) {
-          event.preventDefault();
-          first.focus();
-        }
-        return;
-      }
-      // The AppPreview address bar (and anything else typing-shaped) owns
-      // its own Arrow/Escape handling — e.g. its Escape resets-and-blurs.
-      if (isTypingTarget(event.target)) return;
-      if (event.key === 'Escape') {
-        onBack();
-        return;
-      }
-      const nav = detail.nav;
-      if (!nav) return;
-      if (event.key === 'ArrowLeft' && nav.prev) nav.prev();
-      else if (event.key === 'ArrowRight' && nav.next) nav.next();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [detail, isMobile, onBack, detailRef]);
-}
-
-/**
- * Motion: the detail arrives from the right and the home slides a short way
- * left — a partial parallax, not a full swap, so the home reads as *behind*
- * the detail rather than gone. 260ms on a soft ease-out; the eye should follow
- * the movement without waiting on it.
- */
-const EASE = [0.22, 1, 0.36, 1] as const;
-const DURATION = 0.26;
-export const SLIDE_TRANSITION = { duration: DURATION, ease: EASE } as const;
-
-/**
- * Motion: paging to a sibling deliverable is not a re-arrival — the card
- * already IS there, only what's inside it changed. So the slide never plays
- * again; the header+body+nav just crossfade, fast enough to read as a swap
- * rather than a transition (130ms, ease-out — quicker than the 260ms open/
- * close slide, per the doctrine that exits/swaps stay subtler than entrances).
- */
-export const CROSSFADE_TRANSITION = { duration: 0.13, ease: 'easeOut' } as const;
-
-/**
- * The detail card's enter/exit targets, as dynamic variants over one custom
- * boolean: `swap` — the terminal layer is on the OTHER side of this edge
- * (the card is replacing it, or being replaced by it).
- *
- * A swap is a sibling exchange inside the same visual frame, so it borrows
- * the nav-crossfade language, not the arrival slide. And because both layers
- * are fully opaque cards, only ONE of them may fade or the home bleeds
- * through the midpoint: the terminal — painted above the card by DOM order —
- * owns the whole 130ms fade (see `terminalLayerMotion`), while the card just
- * appears/disappears at full opacity underneath at the right moment: enter
- * lands instantly under the fading-out terminal; exit holds until the
- * fading-in terminal fully covers it, then leaves.
- *
- * `swap` reaches the variants two ways: the element's own `custom` (stamped
- * from `Detail.swapIn`, read at mount for the enter) and `AnimatePresence`'s
- * `custom` (the live `terminalOpen`, which motion swaps in for the exit —
- * the element's last-rendered props predate the state flip that removed it).
- *
- * Exported for tests; pure so the choreography is checkable without a DOM.
- */
-export function detailCardVariants(reduce: boolean) {
-  const slide = reduce ? ({ duration: 0 } as const) : SLIDE_TRANSITION;
-  return {
-    hidden: (swap: boolean): TargetAndTransition =>
-      swap
-        ? {
-            opacity: 0,
-            transition: { duration: 0, delay: reduce ? 0 : CROSSFADE_TRANSITION.duration },
-          }
-        : reduce
-          ? { opacity: 0, transition: { duration: 0 } }
-          : { x: '100%', transition: slide },
-    visible: (swap: boolean): TargetAndTransition => ({
-      x: 0,
-      opacity: 1,
-      transition: swap ? { duration: 0 } : slide,
-    }),
-  };
-}
-
-/**
- * The terminal layer's animate target + transition for its four edges. The
- * layer is keep-alive (never unmounted — it owns a live PTY WebSocket), so
- * instead of `AnimatePresence` it converges on one of two resting states —
- * open `{x: 0, opacity: 1}` / closed `{x: '100%', opacity: 0}` — and the
- * `swap` flag picks which property carries the motion between them:
- *
- * - home ↔ terminal (`swap` false): the same 260ms slide the detail card
- *   plays — going one level deeper is one motion language, whatever the
- *   layer. Opacity snaps while the layer is off-panel (clipped, invisible
- *   anyway): instantly to 1 before a slide-in, to 0 only AFTER a slide-out.
- * - detail ↔ terminal (`swap` true): the 130ms crossfade, which this layer
- *   carries alone (see `detailCardVariants`). x teleports while invisible —
- *   instantly into place before a fade-in, off-panel only after a fade-out.
- *
- * Reduced motion keeps the comprehension fade on swaps but snaps the slides
- * (movement is what reduced motion asks to lose, not state changes).
- *
- * Exported for tests; pure for the same reason as `detailCardVariants`.
- */
-export function terminalLayerMotion(
-  open: boolean,
-  swap: boolean,
-  reduce: boolean,
-): { target: TargetAndTransition; transition: Transition } {
-  const target: TargetAndTransition = open ? { x: 0, opacity: 1 } : { x: '100%', opacity: 0 };
-  if (swap || reduce) {
-    const fade = reduce ? ({ duration: 0 } as const) : CROSSFADE_TRANSITION;
-    return {
-      target,
-      transition: open
-        ? { ...fade, x: { duration: 0 } }
-        : { ...fade, x: { duration: 0, delay: reduce ? 0 : CROSSFADE_TRANSITION.duration } },
-    };
-  }
-  return {
-    target,
-    transition: open
-      ? { ...SLIDE_TRANSITION, opacity: { duration: 0 } }
-      : { ...SLIDE_TRANSITION, opacity: { duration: 0, delay: DURATION } },
-  };
-}
 
 export function DetailLayer({
   detail,
@@ -750,100 +573,3 @@ export function DetailLayer({
   );
 }
 
-/** Tools that re-send their ENTIRE state on every call rather than a delta. */
-function isSnapshotTool(tool: string): boolean {
-  return isPlanWriteTool(tool);
-}
-
-/**
- * `todo_write` doesn't append a task — it re-sends the whole checklist, every
- * time, with the statuses as they now stand. So a step that grouped three of
- * them was rendering the same list three times over (0/4, then 1/4, then 4/4)
- * and reading as three separate to-do lists. They are three photographs of one
- * list, and only the last one is still true.
- *
- * Keep the final snapshot; drop the ones it superseded. Any non-snapshot call in
- * the step is a real distinct event and survives untouched.
- */
-export function collapseSnapshots(calls: ToolCallBlock[]): ToolCallBlock[] {
-  let lastSnapshot = -1;
-  calls.forEach((call, i) => {
-    if (isSnapshotTool(call.name)) lastSnapshot = i;
-  });
-  if (lastSnapshot < 0) return calls;
-  return calls.filter((call, i) => !isSnapshotTool(call.name) || i === lastSnapshot);
-}
-
-/** The real tool views for a set of calls — the escape hatch's payload. */
-export function ToolParts({
-  calls,
-  sessionId,
-  summary,
-}: {
-  calls: ToolCallBlock[];
-  sessionId: string;
-  /**
-   * A plain-language sentence to show above the raw tool views (W3) — e.g.
-   * "Read 3 files". Opt-in: only the Context card's tool-group rows
-   * (`context-card.tsx`) pass one, built by reusing `narrateStep`/
-   * `narrateFailedStep` over the group's own `calls`. `StepDetailBody` leaves
-   * this unset — a Progress step's narration already sits in the detail's
-   * own header, and repeating it here would just say the same line twice.
-   */
-  summary?: string;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const visible = collapseSnapshots(calls);
-  // A step's own icon already went red for this (StepIcon, ContextCard) — but
-  // that glance lives on the panel's home, one screen back. Once the user has
-  // actually opened the failed step, the detail must say so too, not just show
-  // a tool view that looks the same as a success (failed-call aggregation).
-  const failed = visible.some((call) => call.status === 'error');
-
-  // A lone `show` call IS the preview: `ToolPartRenderer` sizes it `h-full`
-  // (`fillsPanel`), and that height only resolves if this column has one too.
-  // Without it the preview's iframe fell back to the browser's 150px default.
-  const fillsPanel =
-    visible.length === 1 && (visible[0].name === 'show' || visible[0].name === 'show-user');
-
-  return (
-    <ToolSurfaceContext.Provider value="panel">
-      <div
-        className={cn(
-          'flex min-w-0 flex-col gap-2',
-          fillsPanel && 'h-full',
-          // Tool views cap their own scroll height for the inline chat, where
-          // they're one item among many. Here the detail IS the tool — a web
-          // search that shows 5 of its 20 results behind an inner scrollbar is
-          // hiding what the user opened it to see. The detail's own container
-          // scrolls instead. Same un-cap the Advanced stepper applies.
-          // Height only, not overflow: overflow-visible kills the x-axis
-          // scrollbar ToolCodeCard needs for long mono lines, clipping
-          // memory/read/edit/write output at the card frame.
-          '[&_[data-scrollable]]:max-h-none',
-        )}
-      >
-        {summary && <p className="text-muted-foreground text-sm text-pretty">{summary}</p>}
-        {failed && (
-          <div className="border-kortix-red/30 bg-kortix-red/5 text-foreground rounded-md border px-3 py-2 text-sm">
-            {tI18nComplete.raw('text4e1c9bd64a7d')}
-          </div>
-        )}
-        {/* One rendered call → open it; several → every row starts closed and
-            the detail reads as a list of what happened, which is the only way
-            a three-call step is skimmable at all. Counted on `visible`, not
-            `calls`: `collapseSnapshots` can fold three `todo_write` calls into
-            the single row that is actually drawn, and that lone row is a
-            single-part detail by every measure the reader has. */}
-        {visible.map((call) => (
-          <ToolPartRenderer
-            key={call.call_id}
-            call={call}
-            sessionId={sessionId}
-            defaultOpen={visible.length === 1}
-          />
-        ))}
-      </div>
-    </ToolSurfaceContext.Provider>
-  );
-}

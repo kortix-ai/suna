@@ -130,6 +130,9 @@ export function useFileContentState({
   // lines to scroll to. `null` is the default; the header toggle sets a choice.
   const [htmlPreviewChoice, setHtmlPreviewChoice] = useState<boolean | null>(null);
   const isHtmlPreview = htmlPreviewChoice ?? !targetLine;
+  // The table has no lines: a jump to a line (a content-search match) opens
+  // CSV and TSV in the code editor instead.
+  const csvAsTable = fileCategory === 'csv' && !targetLine;
   const setIsHtmlPreview = useCallback<Dispatch<SetStateAction<boolean>>>(
     (next) =>
       setHtmlPreviewChoice((choice) => (typeof next === 'function' ? next(choice ?? !targetLine) : next)),
@@ -231,6 +234,17 @@ export function useFileContentState({
     }
   }, [fileName, source, filePath, tHardcodedUi]);
 
+  // Save a raw file through the source's own save/upload — the sqlite bytes
+  // path. `handleSave` persists TEXT (it wraps the string in a Blob); this
+  // passes the renderer's File through untouched.
+  const saveThroughSource = useCallback(
+    (file: File) =>
+      source.save
+        ? source.save(filePath, file)
+        : source.upload(file, filePath.substring(0, filePath.lastIndexOf('/')) || undefined),
+    [source, filePath],
+  );
+
   // Save handler — called by CodeEditor (Cmd+S) and by the header Save button.
   // When called from the header button we pass latestContentRef.current.
   // When called from CodeEditor's Cmd+S, CodeEditor passes its own localContent.
@@ -325,7 +339,8 @@ export function useFileContentState({
   }, [fileContent, isHeicImage]);
 
   // Determine loading state
-  const needsBlob = isBlobCategory(fileCategory) || isHeicImage || (!!source.bytesOnly && readsOwnBytes);
+  const bytesOnly = !!source.bytesOnly;
+  const needsBlob = isBlobCategory(fileCategory) || isHeicImage || (bytesOnly && readsOwnBytes);
   const isContentReady = needsBlob ? !blobLoading && !blobError : !isLoading && !error;
   const contentError = needsBlob
     ? blobError
@@ -409,7 +424,7 @@ export function useFileContentState({
   }, [previewFit, imageProducedNothing]);
 
   return {
-    source, Breadcrumbs, fileContent, isLoading, error,
+    Breadcrumbs, fileContent, isLoading, error,
     contentRevision, fetchRevision, hasUnsavedChanges, setHasUnsavedChanges, isSaving,
     saveFlash, latestContentRef, discardKey, fileName, isHeicImage,
     language, fileCategory, isMarkdownFile, isMermaidFile, hasPreviewToggle,
@@ -419,6 +434,6 @@ export function useFileContentState({
     blobLoading, blobError, heicImageUrl, heicConverting, displayContent,
     handleDownload, handleSave, handleDiscard, handleEditorChange, imageDataUrl,
     needsBlob, isContentReady, contentError, showLoadingState, isSandboxWaking,
-    isNotFound,
+    isNotFound, bytesOnly, csvAsTable, saveThroughSource,
   };
 }
