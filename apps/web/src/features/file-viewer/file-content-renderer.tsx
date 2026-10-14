@@ -559,6 +559,7 @@ export function FileContentRenderer({
                     <div className="mx-auto w-full max-w-2xl">
                       <MarkdownWithFrontmatter
                         content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                        documentPath={filePath}
                       />
                     </div>
                   </div>

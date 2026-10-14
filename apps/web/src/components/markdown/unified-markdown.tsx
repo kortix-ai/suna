@@ -1,5 +1,7 @@
 'use client';
 
+import { toSandboxAbsolutePath } from '@kortix/sdk';
+
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
@@ -20,6 +22,7 @@ import {
   type MarkdownVariant,
 } from '@/components/markdown/markdown-policy';
 import { MarkdownOrderedList } from '@/components/markdown/ordered-list';
+import type { PluggableList } from 'unified';
 import {
   hasLinkReferenceDefinition,
   isInternalUrl,
@@ -419,6 +422,14 @@ export interface UnifiedMarkdownProps {
   trust: MarkdownTrust;
   /** `document` for a markdown file: embedded HTML is not parsed. Defaults to `message`. */
   variant?: MarkdownVariant;
+  /**
+   * `variant="document"` only: the path of the file being rendered. A
+   * document's relative links are relative to its directory, so with a known
+   * location agent documents resolve and open them (see
+   * `remarkWorkspaceFileLinks`); without one they stay blocked. Untrusted
+   * content never gets file links.
+   */
+  documentPath?: string;
   className?: string;
   isStreaming?: boolean;
 }
@@ -437,14 +448,40 @@ const STREAMING_REHYPE_PLUGINS_NO_RAW = [...katexRehypePluginsNoRaw, rehypeStrea
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
-  ({ content, trust, variant = 'message', className, isStreaming = false }) => {
+  ({ content, trust, variant = 'message', className, isStreaming = false, documentPath }) => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     const { proxyUrl } = useSandboxProxy();
     const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
     const policy = markdownPolicy(trust, variant);
+    // A document's file links turn on once its location is known, under the
+    // same trust gate as messages (`markdownPolicy(trust, 'message')`), so
+    // untrusted documents never link files. `workspaceFileLinkPath` resolves
+    // relative links against the document's directory and keeps traversal
+    // inside the sandbox roots.
+    const effectivePolicy = useMemo(() => {
+      if (variant !== 'document' || !documentPath) return policy;
+      if (!markdownPolicy(trust, 'message').fileLinks) return policy;
+      return { ...policy, fileLinks: true };
+    }, [policy, trust, variant, documentPath]);
+    const documentBaseDir = useMemo(() => {
+      if (variant !== 'document' || !documentPath || !effectivePolicy.fileLinks) return undefined;
+      const file = toSandboxAbsolutePath(documentPath);
+      const cut = file.lastIndexOf('/');
+      return cut > 0 ? file.slice(0, cut) : undefined;
+    }, [variant, documentPath, effectivePolicy.fileLinks]);
+    const remarkPlugins = useMemo<PluggableList>(() => {
+      if (documentBaseDir) {
+        return [...REMARK_PLUGINS_WITH_SETUP_LINKS, [remarkWorkspaceFileLinks, { baseDir: documentBaseDir }]];
+      }
+      return effectivePolicy.fileLinks
+        ? REMARK_PLUGINS_WITH_FILE_LINKS
+        : policy.setupLinks
+          ? REMARK_PLUGINS_WITH_SETUP_LINKS
+          : katexRemarkPlugins;
+    }, [documentBaseDir, effectivePolicy, policy.setupLinks]);
     const renderContext = useMemo(
-      () => ({ isStreaming, proxy, policy }),
-      [isStreaming, proxy, policy],
+      () => ({ isStreaming, proxy, policy: effectivePolicy }),
+      [isStreaming, proxy, effectivePolicy],
     );
 
     // Streamdown renders streaming text block by block and settled text as one
@@ -493,13 +530,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             parseIncompleteMarkdown={isStreaming}
             parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
             components={MARKDOWN_COMPONENTS as any}
-            remarkPlugins={
-              policy.fileLinks
-                ? REMARK_PLUGINS_WITH_FILE_LINKS
-                : policy.setupLinks
-                  ? REMARK_PLUGINS_WITH_SETUP_LINKS
-                  : katexRemarkPlugins
-            }
+            remarkPlugins={remarkPlugins}
             // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
             // new array each render made every block re-parse on every token.
             // While streaming, each word also fades in as it mounts. Dropping
