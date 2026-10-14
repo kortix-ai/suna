@@ -1406,6 +1406,22 @@ describe("useSyncStore — a hydrate followed by a replay of the same stream", (
 		expect(text()).toBe(reply);
 	});
 
+	test("a hydrate that ends inside a delta: only the part past the hydrated text appends", () => {
+		liveStart(0);
+		const store = useSyncStore.getState();
+		const wire = (id: string, piece: string) =>
+			event(id, "message.part.delta", { messageID: "msg_a1", partID: "prt_1", field: "text", delta: piece });
+		store.applyEvent(wire("e1:400", "Hello "));
+		// The tail read captured the server text partway through the next delta.
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(), parts: [textPart("prt_1", "msg_a1", "Hello wor")] },
+		]);
+		useSyncStore.getState().applyEvent(wire("e1:401", "world"));
+		useSyncStore.getState().applyEvent(wire("e1:402", "!"));
+		expect(text()).toBe("Hello world!");
+	});
+
 	test("live deltas that repeat the text before them still append", () => {
 		liveStart(0);
 		const store = useSyncStore.getState();

@@ -1293,7 +1293,8 @@ function appendPartDeltas(
 		const messages = s.messages[sessionID] ?? [];
 		let message: Message | undefined;
 		for (let i = messages.length - 1; i >= 0 && !message; i--) if (messages[i]!.id === messageID) message = messages[i];
-		if ((message as { time?: { completed?: number } } | undefined)?.time?.completed) return s;
+		// A stub message (a delta that arrived before message.updated) has no `time` yet.
+		if (message?.role === "assistant" && message.time?.completed) return s;
 		const existing = ((list[result.index] as unknown as Record<string, unknown>)[field] as string | undefined) ?? "";
 		const offsetKey = `${messageID}:${partID}:${field}`;
 		let offset = deltaOffsets.get(sessionID)?.get(offsetKey) ?? existing.length;
@@ -1322,7 +1323,10 @@ function appendPartDeltas(
 				offset += piece.delta.length;
 				continue;
 			}
-			text += piece.delta;
+			// A hydrate ended inside this delta: the part holds its head, so
+			// only the rest is new.
+			const held = offset < text.length && piece.delta.startsWith(text.slice(offset)) ? text.length - offset : 0;
+			text += piece.delta.slice(held);
 			offset = text.length;
 			applied = true;
 		}
@@ -1375,10 +1379,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// the turn ended, must not reopen it: deltas of a completed message
 				// are dropped (`appendPartDeltas`), and a reopened one would take
 				// the replayed deltas a second time.
-				const completed = (list[index] as { time?: { completed?: number } }).time?.completed;
-				const incoming = message as { time?: { created: number; completed?: number } };
-				const kept = completed && incoming.time && !incoming.time.completed
-					? ({ ...message, time: { ...incoming.time, completed } } as Message)
+				const previous = list[index]!;
+				// A stub message (created from an early delta) has no `time` yet.
+				const completed = previous.role === "assistant" ? previous.time?.completed : undefined;
+				const kept: Message = completed && message.role === "assistant" && message.time && !message.time.completed
+					? { ...message, time: { ...message.time, completed } }
 					: message;
 				const next = [...list];
 				next[index] = kept;
