@@ -262,7 +262,7 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     return model.bodies.slice(before)
   }
 
-  test('reasoning (P7.3): a compaction on another model summarizes no reasoning of the first; on the same model it does', async () => {
+  test('reasoning (P7.3): a compaction summarizes no reasoning, on another model or the same one (pi 1.2.0 serializeConversation)', async () => {
     for (const summarizer of ['other-model', MODEL_ID]) {
       const rt = await freshBox(`sess-pi-compact-${summarizer}`).start()
       await turnOn(rt, MODEL_ID, 'first', [{ thinking: 'THOUGHT-A', text: 'answer-a' }])
@@ -274,8 +274,7 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
       const sent = JSON.stringify(model.bodies.slice(before))
       expect(sent).toContain('<conversation>')
       expect(sent).toContain('answer-a')
-      if (summarizer === MODEL_ID) expect(sent).toContain('THOUGHT-A')
-      else expect(sent).not.toContain('THOUGHT-A')
+      expect(sent).not.toContain('THOUGHT-A')
       for (const service of services.splice(0)) await service.lifecycle.stop()
     }
   }, 60_000)

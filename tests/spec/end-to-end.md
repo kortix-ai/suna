@@ -669,6 +669,10 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 
 ### `kortix ship` (alias `deploy`)
 
+`SHIP-DEFAULT` unlinked folder after `projects use <id>` → ship targets the saved host default, reports its ID, and pushes twice; cloning that project reads back the second change. Explicit `--project` wins over the folder link, which wins over the saved host default. Injected session project/auth does not override this selection. Refused first-time creation names `kortix projects link <project_id>`.
+
+The first-ship creation cases below apply only when no explicit project, folder link, or saved host default resolves.
+
 `SHIP-1` first ship, no `origin` → managed: `POST /projects/provision` → set `origin` to the managed GitHub URL, commit, header-injected token push, write `link.json`. Requires `PROJECT_CREATE`.
 `SHIP-2` first ship, existing `origin` → **BYO** (single-writable-origin rule): `POST /projects {repo_url,name}`, **origin never modified**, push with user's own creds. **NB: the API's BYO `POST /projects` only accepts a GitHub repo_url** (`normalizeRepoUrl`→`resolveGitHubImport`); a non-GitHub origin is rejected 400 before `saveLink`, so ship exits non-zero, writes no link.json, and (proven) never clobbers the origin. The real happy path needs a live GitHub repo + App install.
 `SHIP-3` first ship `--origin <git-url>` → BYO explicit; only this case rewrites `origin` (`git remote set-url`) — but `setOrigin` runs _after_ the POST, so a non-GitHub `--origin` 400s first → non-zero exit, no link.json, origin not rewritten (GitHub-only, as SHIP-2).

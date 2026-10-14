@@ -23,6 +23,10 @@ describe('pi transient retry', () => {
     'Error reading response: malformed server-sent event JSON.',
     'deepseek-v4.1-flash is temporarily unavailable.',
     'The operation timed out.',
+    // pi-ai 1.2.0 (1.1.0 for the busy shapes): pi 1.0.3 ended the turn on these.
+    'The upstream provider returned an error',
+    'server_busy',
+    'Our servers are currently busy. Please try again later.',
   ])('transient: %s', (message) => {
     expect(isTransientModelError(failed(message))).toBe(true)
   })
