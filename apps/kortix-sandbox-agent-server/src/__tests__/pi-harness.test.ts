@@ -790,6 +790,34 @@ describe('pi harness', () => {
     }
   })
 
+  test('the kortix-genui skill is listed only while KORTIX_GENUI=1', async () => {
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    for (const name of ['kortix-memory', 'kortix-genui']) {
+      mkdirSync(join(managed, name), { recursive: true })
+      writeFileSync(join(managed, name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`)
+    }
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      for (const [flag, listed] of [['1', true], ['0', false]] as const) {
+        const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_GENUI: flag } })
+        const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+        expect(skills.map((s) => s.name).sort()).toEqual(listed ? ['kortix-genui', 'kortix-memory'] : ['kortix-memory'])
+        const root = r.service.runtime()!.rootId
+        const before = gateway.sent.length
+        expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+        await waitFor(() => !r.service.runtime()!.busy())
+        const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
+        expect(system.includes('kortix-genui')).toBe(listed)
+        expect(system).not.toContain('Generative UI')
+      }
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+      rmSync(managed, { recursive: true, force: true })
+    }
+  })
+
   test('agent shells source the live agent env file through BASH_ENV (W1 B4)', async () => {
     // The egress shim's proxy + CA variables exist only in that file; a
     // non-interactive `bash -c` reads it only through BASH_ENV.

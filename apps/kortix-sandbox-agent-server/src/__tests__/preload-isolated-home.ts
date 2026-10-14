@@ -26,3 +26,8 @@ process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(tmpdir(), 'kortixd-no-baked-cat
 // health would then require a repo on the session branch. Point it at an
 // absent file so the rigs behave as on CI.
 process.env.KORTIX_PT_ENV_PATH = join(tmpdir(), 'kortixd-no-pt-env-absent')
+
+// Converge writes and clears the config-release notice. Test files run in
+// parallel workers (scripts/test.sh), so each worker gets its own notice file
+// instead of racing on /tmp/kortix/config-release.md.
+process.env.KORTIX_CONFIG_RELEASE_NOTICE_PATH = join(process.env.HOME, 'config-release.md')

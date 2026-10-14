@@ -181,6 +181,18 @@ export const THEME = {
     purple: 'hsl(270 51.3% 67.1%)', // --kortix-purple
     red: 'hsl(360 85.3% 62%)', // --kortix-red
   },
+  /**
+   * The data-viz ramp, `--chart-1..5` (index 0 is `--chart-1`). Theme-invariant
+   * like `accent`: global.css declares each step identical in both scopes.
+   * Charts only; `components/genui/components/charts.tsx` picks the order.
+   */
+  chart: [
+    'hsl(47 100% 59.4%)', // --chart-1
+    'hsl(36.4 100% 49.8%)', // --chart-2
+    'hsl(30.1 100% 44.1%)', // --chart-3
+    'hsl(24.7 100% 36.7%)', // --chart-4
+    'hsl(23.8 100% 29.6%)', // --chart-5
+  ],
 } as const;
 
 /**

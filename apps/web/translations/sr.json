@@ -688,6 +688,8 @@
       "themeDescription": "Изаберите изглед Kortix-а на овом уређају.",
       "conversationDensity": "Густина разговора",
       "conversationDensityDescription": "Изаберите колико детаља агент приказује у разговору док ради.",
+      "richAnswers": "Богати одговори",
+      "richAnswersDescription": "Приказује поређења, табеле, графиконе и мапе као визуелне елементе у одговорима. Када је искључено, одговори приказују исти садржај као текст.",
       "wallpaper": "Позадина",
       "wallpaperDescription": "Позадина вашег пројекта.",
       "defaultWallpaper": "Подразумевано",
@@ -1208,6 +1210,10 @@
           "name": "Pi окружење (у сандбоксу)",
           "description": "Покрећите сесије помоћу Pi окружења унутар сандбокса сесије уместо OpenCode-а. Када је искључено, `runtime: pi` у манифесту и даље бира Pi."
         },
+        "genui": {
+          "name": "Генеративни UI",
+          "description": "Агент може да одговара картицама, поређењима, графиконима, мапама и језичцима уместо дугих текстова."
+        },
         "reminders": {
           "name": "Подсетници",
           "description": "Омогућава агентима и особама да закажу провере на сесији, једном или периодично. Свако активирање поново покреће ту сесију. Додаје страницу Подсетници, ознаку подсетника у сесији и `kortix remind`."
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumeni",
-          "description": "Deljeni fajlovi i sesije na volumenima za ovaj projekat."
-        },
-        "stateless_sessions": {
-          "name": "Sesije bez stanja",
-          "description": "Svaki put nov računar; čuvaju se samo fajlovi i razgovor. Potrebno je uključiti volumene."
+          "description": "Deljeni fajlovi za ovaj projekat."
         },
         "drives": {
           "name": "Drive",
           "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Privremeni sandbox-ovi",
-          "description": "Zaustavljena sesija čuva datoteke i razgovor na volumenu i oslobađa svoj računar. Buđenje pokreće novi računar sa najnovijom slikom. Pokrenuti procesi ne preživljavaju zaustavljanje."
         },
         "session_log": {
           "name": "Log sesije v2",
@@ -19701,71 +19699,6 @@
       "title": "Сачувано, али {agent} још не може да га прочита",
       "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",
       "allowlist": "{names} {count, plural, one {је} other {су}} ван тајни ове сесије. Покрени нову сесију да {count, plural, one {би је користио} other {би их користио}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Slika",
-      "modeImageDetail": "Samo slika sesije.",
-      "modeImageRequested": "Zatražena slika: {count}",
-      "modeArtifacts": "Slika + artefakti",
-      "modeArtifactsDetail": "Plus volumen sa artefaktima za pokretanje za najnovije okruženje za izvršavanje.",
-      "modeArtifactsRequested": "Zatraženo slika + artefakti: {count}",
-      "modeVolume": "Volumen",
-      "modeVolumeDetail": "Privremeni računar, stanje sesije na volumenu, plus artefakti.",
-      "modeVolumeRequested": "Zatražen volumen: {count}",
-      "reasonSessionVolume": "Volumen sesije",
-      "reasonArtifactsVolume": "Volumen artefakata",
-      "reasonVolumeMount": "Montiranje volumena",
-      "reasonTimeout": "Isteklo vreme",
-      "reasonBootHealth": "Računar nikada nije postao spreman",
-      "reasonOther": "Ostalo",
-      "fallBackToTheImage": "Vrati se na sliku",
-      "fallBackToImage": "Povratak na sliku",
-      "saved": "Režimi pokretanja su sačuvani",
-      "saveFailed": "Čuvanje režima pokretanja nije uspelo",
-      "title": "Režimi pokretanja",
-      "description": "Kako se pokreću nove sesije projekta sa uključenim volumenima i koje rezervne korake prave. Volumeni i sesije bez stanja su feature flagovi projekta i ne podešavaju se ovde. Promene stižu do svakog API procesa u roku od 30 sekundi.",
-      "discard": "Odbaci",
-      "save": "Sačuvaj",
-      "off": "Isključeno",
-      "bootModeTitle": "Režim pokretanja",
-      "bootModeDescription": "Kako se pokreću nove sesije projekta sa uključenim volumenima. Projekat sa uključenim sesijama bez stanja pokreće se na volumenu.",
-      "defaultModeTitle": "Podrazumevani režim",
-      "killSwitchTitle": "Prekidač za nuždu: pokreni svaku novu sesiju sa slike",
-      "killSwitchDetail": "Odjednom zamenjuje svaki režim; Datoteke i drive-ovi ostaju kakvi jesu. Sesija čije su datoteke već na volumenu zadržava svoj volumen.",
-      "killSwitchLabel": "Prekidač za nuždu",
-      "last24HoursTitle": "Poslednja 24 sata",
-      "last24HoursDescription": "Sesije pokrenute u svakom režimu i rezervne opcije koje su koristile. Broji se kod provajdera volumena.",
-      "columnFallback": "Rezervna opcija",
-      "columnReason": "Razlog",
-      "columnCount": "Broj",
-      "columnLatestError": "Poslednja greška",
-      "noFallbacks": "Nema rezervnih opcija u poslednja 24 sata.",
-      "countsUnavailable": "Brojevi nisu dostupni: {error}",
-      "unknownError": "nepoznata greška",
-      "fallbackTitle": "Rezervna opcija",
-      "fallbackDescription": "Sesija čija pokretanja stalno ne uspevaju spušta se za jedan nivo, jednom po sesiji; ostaje u režimu koji je dostigla. Sesija čije su datoteke već na volumenu nikada ga ne napušta.",
-      "after": "nakon",
-      "failedBoots": "neuspelih pokretanja",
-      "volumeAttemptsLabel": "Pokušaji sa volumenom",
-      "artifactsAttemptsLabel": "Pokušaji sa artefaktima",
-      "lastStepNote": "(uključeno, osim ako podrazumevani režim ne isključi poslednji korak)",
-      "whereModesApplyTitle": "Gde se režimi primenjuju",
-      "whereModesApplyDescription": "Provajderi i prekidači za primenu dolaze iz okruženja servera. Volumen artefakata može da se podesi ovde; ako je prazno, koristi se onaj iz okruženja.",
-      "volumeProviderTitle": "Provajder volumena: {provider}",
-      "volumeProviderConfigured": "Konfigurisan. Sesije na njemu se pokreću u režimu koji izabere njihovo pravilo.",
-      "volumeProviderNotConfigured": "Nije konfigurisan: svaka sesija se pokreće sa slike.",
-      "ready": "Spremno",
-      "otherProvidersTitle": "Ostali provajderi: {providers}",
-      "otherProvidersDriveSync": "Uvek se pokreću sa slike. Drive-ovi do njih stižu preko sinhronizacije drive-a.",
-      "otherProvidersNoDriveSync": "Uvek se pokreću sa slike. Sinhronizacija drive-a je isključena, pa projekti sa drive-om ostaju kod provajdera volumena.",
-      "imageOnly": "Samo slika",
-      "artifactsVolumeTitle": "Volumen artefakata",
-      "artifactsVolumeSet": "Sesije u režimu Slika + artefakti ili Volumen montiraju {source}.",
-      "artifactsVolumeFromEnvironment": "Sesije u režimu Slika + artefakti ili Volumen montiraju {source} (iz okruženja).",
-      "artifactsVolumeNone": "Ništa nije podešeno: režimi sa artefaktima se pokreću kao da postoji samo slika.",
-      "artifactsVolumeLabel": "Volumen artefakata i oznaka",
-      "ephemeralSandboxesOff": "{variable} je isključen u ovoj primeni: sesije bez stanja pokreću se sa Slika + artefakti.",
-      "nothingSaved": "Još ništa nije sačuvano: projekti sa uključenim volumenima pokreću se iz slike."
     }
   },
   "projectOnboarding": {
@@ -20787,5 +20720,23 @@
     "you": "Ти",
     "manageFolderAccess": "Управљај приступом",
     "viewFolderAccess": "Прикажи приступ"
+  },
+  "genui": {
+    "showData": "Прикажи податке",
+    "openImage": "Отвори слику",
+    "viewAllImages": "Прикажи све ({count})",
+    "pieFocus": "{label} је {percent}% укупно",
+    "pieOfTotal": "{value} од {total}",
+    "directions": "Упутства",
+    "call": "Позови",
+    "website": "Веб-сајт",
+    "label": "Ознака",
+    "value": "Вредност",
+    "map": "Мапа",
+    "zoomIn": "Увећај",
+    "zoomOut": "Умањи",
+    "mapTwoFingers": "Користите два прста да померите мапу",
+    "pick": "Избор",
+    "convertFailed": "Није могуће припремити транскрипт. Покушајте поново."
   }
 }
