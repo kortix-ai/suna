@@ -1,0 +1,16 @@
+{
+  "source_hash": "74d6e96a398122b76d00376411d4a7157c7b2a98d9f40fd25cb66fa065a7508b",
+  "diff_files": [
+    "apps/web/src/lib/browser-error-noise.test.mts",
+    "apps/web/src/lib/browser-noise/rules/extensions.ts"
+  ],
+  "diff_hash": "a27417f0f8e1591a523e6b925e748c9c4bad8089243b3f860fa16d4cb23a2497",
+  "head": "2e66ce79bbd11288f8699900f0d304562e17f0c1",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-14T21:43:18.981Z"
+}
