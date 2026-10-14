@@ -69,7 +69,8 @@ async function readBody(c: Context): Promise<Record<string, unknown>> {
 // replica-local: limit × API replicas; stops runaway clients, not a quota.
 const limiter = new TokenBucketRateLimiter('capture');
 const LIMITS: Record<string, RateLimitPolicy> = {
-  captureAuthorizeGlobal: { limit: 100, windowMs: 60_000 },
+  // A flood backstop per replica, not the per-client limit: a company signing in at 9:00 must not trip it.
+  captureAuthorizeGlobal: { limit: 600, windowMs: 60_000 },
   captureAuthorize: { limit: 10, windowMs: 60_000 },
   capturePoll: { limit: 30, windowMs: 60_000 },
   captureCredentials: { limit: 30, windowMs: 60_000 },

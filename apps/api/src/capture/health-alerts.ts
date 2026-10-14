@@ -20,6 +20,7 @@ import { authorize } from '../iam/authorize';
 import { logger } from '../lib/logger';
 import { deliver } from '../notifications/notifier';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { classifyDevice, type DeviceHealth } from './health';
 import { latestCaptureVersion } from './update-manifest';
 
@@ -116,7 +117,7 @@ async function openSpells(accountIds: string[]) {
         gt(notifications.createdAt, sql`now() - ${SPELL_WINDOW}::interval`),
         sql`NOT EXISTS (
           SELECT 1 FROM kortix.notifications u
-          WHERE u.user_id = ${notifications.userId} AND u.dedupe_key = ${UP} || substr(${notifications.dedupeKey}, ${DOWN.length + 1})
+          WHERE u.user_id = ${qualifiedColumn(notifications.userId)} AND u.dedupe_key = ${UP} || substr(${qualifiedColumn(notifications.dedupeKey)}, ${DOWN.length + 1})
         )`,
       ),
     );

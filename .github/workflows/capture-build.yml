@@ -1073,8 +1073,12 @@ jobs:
 
   macos-personal:
     name: macOS pkg, personal install (onboarding, background-always, no Dock)
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
     env:
       EV: ${{ github.workspace }}/evidence
       TAG: ${{ inputs.tag }}
@@ -1446,8 +1450,12 @@ jobs:
 
   windows-personal:
     name: Windows, personal install (onboarding, background-always, no taskbar button)
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+          - runner: windows-latest
     defaults:
       run:
         shell: pwsh
