@@ -2003,6 +2003,8 @@ pub fn sync_sign_out(paths: &MemoryPaths) -> Result<Value> {
     let mut s = Settings::load(paths);
     if s.sync.provider == "kortix" {
         s.sync.enabled = false;
+        // Back to Off: not a "kortix" provider with no sign-in.
+        s.sync.provider = "s3".into();
         s.follow_sync_default(false);
         s.save(paths)?;
     }
@@ -2788,6 +2790,48 @@ mod tests {
             updated_at_ms: now_ms(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn the_tray_the_window_and_status_json_read_one_state() {
+        let dir = std::env::temp_dir().join(format!("kcap-state-{}", uuid::Uuid::new_v4().simple()));
+        let paths = MemoryPaths::at(&dir);
+        paths.ensure().unwrap();
+        let write = |st: &RecorderStatus| std::fs::write(paths.status(), serde_json::to_vec(st).unwrap()).unwrap();
+        let three = || {
+            (
+                recording_state(&paths),                             // the tray and /api/app
+                status_value(&paths)["state"].as_str().unwrap().to_string(), // `status --json`
+                device_status(&paths, "t")["recording"].as_str().unwrap().to_string(), // status.json
+            )
+        };
+        // The recorder records: all three say recording.
+        write(&live_status("recording", None));
+        let r = ("recording".to_string(), "recording".to_string(), "recording".to_string());
+        assert_eq!(three(), r);
+        // It waits for Screen Recording (capture fails): all three say so, together.
+        let mut st = live_status("permission_missing", None);
+        st.permissions = Some(serde_json::json!({"screen": false, "accessibility": true}));
+        write(&st);
+        let p = ("permission_missing".to_string(), "permission_missing".to_string(), "permission_missing".to_string());
+        assert_eq!(three(), p);
+        // A privacy pause of its own is "paused" for all three, never "not recording".
+        write(&live_status("inactive", Some("excluded_app")));
+        let (a, b, c) = three();
+        assert!(a == "paused" && b == "paused" && c == "paused", "{a} {b} {c}");
+        // A stale status (the recorder died) is "not recording" for all three.
+        let mut old = live_status("recording", None);
+        old.updated_at_ms = now_ms() - 60_000;
+        write(&old);
+        assert_eq!(three(), ("not_recording".to_string(), "not_recording".to_string(), "not_recording".to_string()));
+        // A sign-in that went away does not stop the recording (the sync is a separate matter).
+        write(&live_status("recording", None));
+        let mut s = Settings::load(&paths);
+        s.sync.provider = "kortix".into();
+        s.sync.enabled = false;
+        s.save(&paths).unwrap();
+        assert_eq!(three(), r);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

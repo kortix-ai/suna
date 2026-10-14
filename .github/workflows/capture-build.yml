@@ -1181,6 +1181,15 @@ jobs:
           t0=$SECONDS
           until [ -f "$lib/ui.lock" ] || [ $((SECONDS - t0)) -ge 90 ]; do sleep 1; done
           echo "ui.lock after $((SECONDS - t0)) s: $([ -f "$lib/ui.lock" ] && echo yes || echo no)" | tee "$EV/window.txt"
+          sleep 4
+          killall UserNotificationCenter 2>/dev/null || true; sleep 2
+          # The front-most normal window (CGWindowList is ordered front to back) belongs to Kortix Capture.
+          osascript -l JavaScript > "$EV/frontmost.txt" 2>&1 <<'JXA' || true
+          ObjC.import('CoreGraphics');
+          var l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)));
+          var w = l.filter(function (x) { return x.kCGWindowLayer == 0 && x.kCGWindowOwnerName != 'Window Server'; });
+          w[0].kCGWindowOwnerName;
+          JXA
           t0=$SECONDS; state=""
           until [ -n "$state" ] && [ "$state" != "not_recording" ] || [ $((SECONDS - t0)) -ge 90 ]; do
             sleep 3; state="$("$exe" --json status 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
@@ -1201,14 +1210,6 @@ jobs:
           echo "state after install: $state (after $((SECONDS - t0)) s)" | tee "$EV/state-after-install.txt"
           sleep 8
           # The window the installer opened is the one in front (an accessory app still takes focus).
-          killall UserNotificationCenter 2>/dev/null || true; sleep 2
-          # The front-most normal window (CGWindowList is ordered front to back) belongs to Kortix Capture.
-          osascript -l JavaScript > "$EV/frontmost.txt" 2>&1 <<'JXA' || true
-          ObjC.import('CoreGraphics');
-          var l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)));
-          var w = l.filter(function (x) { return x.kCGWindowLayer == 0 && x.kCGWindowOwnerName != 'Window Server'; });
-          w[0].kCGWindowOwnerName;
-          JXA
           shot onboarding-connect
           { echo "tray lock: $([ -f "$lib/tray.lock" ] && echo yes || echo no)"; echo "notify lines:"; grep -rh "\[notify\]" "$lib/logs" 2>/dev/null | head -5 || true; echo "recorder: $(pgrep -f 'kortix-capture record|Kortix Capture record' | wc -l | tr -d ' ')"; } 2>&1 | tee "$EV/silent-install.txt"
           { echo "legacy plists left: $(ls "$HOME/Library/LaunchAgents" | grep -Ec 'ai\.kortix\.capture\.(tray|service)' || true)"; echo "legacy processes left: $(pgrep -f "$HOME/Applications/Kortix Capture.app" | wc -l | tr -d ' ')"; echo "library kept: $(cat "$HOME/Library/Application Support/ai.kortix.capture/keep.txt" 2>/dev/null || echo MISSING)"; } | tee "$EV/legacy-after.txt"
@@ -1311,6 +1312,30 @@ jobs:
           shot launch-timeline
           # A second launch hands over to the running window and exits.
           rc=0; "$EXE" > "$EV/second.log" 2>&1 || rc=$?; echo "second launch exit: $rc" | tee "$EV/second.txt"
+      - name: The status tells the truth after a sign-out and a skip
+        run: |
+          # Sample the three readers of the one state (status --json = status.json's source, /api/app and the tray
+          # use the same function) against what the recorder really does: frames, and its own status file.
+          : > "$EV/state-samples-after-signout.txt"
+          for i in $(seq 1 12); do
+            python3 - "$LIB" "$EXE" >> "$EV/state-samples-after-signout.txt" <<'PY'
+          import json, subprocess, sys, time, os
+          lib, exe = sys.argv[1], sys.argv[2]
+          st = json.loads(subprocess.run([exe, "--json", "status"], capture_output=True, text=True).stdout or "{}")
+          try:
+              rec = json.load(open(os.path.join(lib, "recorder.json")))
+          except Exception:
+              rec = {}
+          age = int(time.time() * 1000) - rec.get("updated_at_ms", 0)
+          print(json.dumps({"t": int(time.time()), "frames": (st.get("counts") or {}).get("frames", 0), "state": st.get("state"),
+                            "rec_state": rec.get("state"), "rec_reason": rec.get("inactive_reason"), "rec_age_ms": age,
+                            "running": st.get("recorder_running"), "inactive_reason": st.get("inactive_reason"),
+                            "missing": st.get("missing_permissions")}))
+          PY
+            sleep 2
+          done
+          cp "$LIB/recorder.json" "$EV/recorder-final2.json" 2>/dev/null || true
+          tail -3 "$EV/state-samples-after-signout.txt"
       - name: The menu-bar menu (best effort, needs GUI scripting)
         run: |
           # The agent's process owns the status item; the window process has none.
@@ -1417,6 +1442,23 @@ jobs:
           assert "Kortix Capture" not in text("dock-persistent-apps.txt"), "the Dock must not keep a Kortix tile"
           front = text("frontmost.txt").strip(); print("frontmost after the install:", front)
           assert front == "Kortix Capture", "the onboarding window opened behind another app: " + front
+          # The status never lies: whenever frames rose between two samples, the state read recording
+          # (status.json, /api/app and the tray read this one state), before and after a sign-out.
+          for f in ("state-samples.txt", "state-samples-after-signout.txt"):
+              rows = [json.loads(l) for l in text(f).splitlines() if l.strip()]
+              assert len(rows) >= 8, (f, len(rows))
+              rose = [(a, b) for a, b in zip(rows, rows[1:]) if b["frames"] > a["frames"]]
+              assert rose, "no frames rose in " + f
+              for a, b in rose:
+                  assert b["state"] == "recording", (f, "frames rose but the state read " + str(b["state"]), b)
+              # "needs permission" only when capture really failed: frames did not rise in that sample.
+              for a, b in zip(rows, rows[1:]):
+                  if b["state"] == "permission_missing":
+                      assert b["frames"] <= a["frames"], (f, b)
+          menu0 = text("tray-menu.txt").strip()
+          if menu0 and "Open Kortix Capture" in menu0:
+              rows = [json.loads(l) for l in text("state-samples-after-signout.txt").splitlines() if l.strip()]
+              assert menu0.startswith("Recording"), "the tray reads " + menu0.split(",")[0] + " while frames rise"
           # Closing the window changes nothing for the recorder; a killed agent comes back within 15 s and records.
           g = text("guest.txt"); print(g)
           m = re.search(r"before: recorder (\d*) agent (\d*) frames (\d+)", g)
