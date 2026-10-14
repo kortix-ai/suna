@@ -25,13 +25,13 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function AgentMessageTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
   const model = useMemo(() => agentMessageModel({ status, input, output }), [status, input, output]);
-  const childSessionId = useMemo(() => getChildSessionId(part), [part]);
+  const childSessionId = useMemo(() => getChildSessionId(call), [call]);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
 
   const openChild = useCallback(() => {
@@ -40,7 +40,7 @@ export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={ChatCircleIcon}
       trigger={{ title: model.title, subtitle: model.subtitle, args: model.args }}
       onSubtitleClick={childSessionId && navigationEnabled ? openChild : undefined}

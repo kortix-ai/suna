@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Part } from '@kortix/sdk';
+import { blocksOf } from '@/lib/testing/session-log';
 import {
   approvalWaitingWhoKey,
   connectorApprovalNeed,
@@ -168,17 +168,15 @@ describe('isConnectorCallTool', () => {
   });
 });
 
-function toolPart(callID: string, tool: string, state: Record<string, unknown>): { part: Part } {
+function toolPart(callID: string, tool: string, state: Record<string, unknown>): unknown {
   return {
-    part: {
-      type: 'tool',
-      id: `prt_${callID}`,
-      callID,
-      tool,
-      sessionID: 's',
-      messageID: 'm',
-      state: { input: {}, ...state },
-    } as unknown as Part,
+    type: 'tool',
+    id: `prt_${callID}`,
+    callID,
+    tool,
+    sessionID: 's',
+    messageID: 'm',
+    state: { input: {}, ...state },
   };
 }
 
@@ -193,22 +191,26 @@ describe('connectorHandoffCallIds', () => {
   const approval = JSON.stringify({ status: 'pending_approval', execution_id: 'exec_1', connector: 'gmail' });
 
   test('collects connect-need and approval-need calls, nothing else', () => {
-    const ids = connectorHandoffCallIds([
-      toolPart('c1', 'kortix-connectors_call', { status: 'completed', output: connect }),
-      toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: approval }),
-      toolPart('c3', 'kortix-connectors_call', { status: 'completed', output: JSON.stringify({ ok: true }) }),
-      toolPart('c4', 'bash', { status: 'completed', output: approval }),
-      { part: { type: 'text', id: 't', text: 'hi' } as unknown as Part },
-    ]);
+    const ids = connectorHandoffCallIds(
+      blocksOf([
+        toolPart('c1', 'kortix-connectors_call', { status: 'completed', output: connect }),
+        toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: approval }),
+        toolPart('c3', 'kortix-connectors_call', { status: 'completed', output: JSON.stringify({ ok: true }) }),
+        toolPart('c4', 'bash', { status: 'completed', output: approval }),
+        { type: 'text', id: 't', text: 'hi' },
+      ]),
+    );
     expect(ids).toEqual(['c1', 'c2']);
   });
 
   test('a running or unparsable call is not a hand-off', () => {
     expect(
-      connectorHandoffCallIds([
-        toolPart('c1', 'kortix-connectors_call', { status: 'running' }),
-        toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: 'not json' }),
-      ]),
+      connectorHandoffCallIds(
+        blocksOf([
+          toolPart('c1', 'kortix-connectors_call', { status: 'running' }),
+          toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: 'not json' }),
+        ]),
+      ),
     ).toEqual([]);
   });
 });

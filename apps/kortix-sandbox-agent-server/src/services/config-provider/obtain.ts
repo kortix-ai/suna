@@ -32,6 +32,8 @@ export interface ObtainReleaseInput {
   snapshot: ConfigReleaseSnapshot | null
   /** Downloads the API-built archive, when the release has one. */
   api: ConfigReleaseApi | null
+  /** The archive from the published release's signed store URL (`published.ts`), tried before the API. */
+  signedArchive?: Promise<Buffer>
   /** The project remote (`KORTIX_REPO_URL`, the Kortix Git proxy): the last source. */
   git: Pick<Config, 'repoUrl' | 'apiUrl' | 'projectId' | 'sandboxToken'> | null
   prepare?: (stagedDir: string) => Promise<void>
@@ -45,7 +47,9 @@ export interface ObtainReleaseInput {
  *
  *   1. disk     — the copy already in the store, intact.
  *   2. snapshot — the project snapshot of the commit, streamed from S3.
- *   3. archive  — the API-built archive, capped at `MAX_CONFIG_ARCHIVE_BYTES`.
+ *   3. archive  — the API-built archive, capped at `MAX_CONFIG_ARCHIVE_BYTES`:
+ *                 first from the published release's signed store URL, then
+ *                 through the API.
  *   4. git      — the commit alone (`--depth 1`) from the project remote: a
  *                 tree over the archive cap whose snapshot is not built yet.
  *
@@ -83,6 +87,19 @@ export async function obtainRelease(input: ObtainReleaseInput): Promise<{ dir: s
       reasons.push(`the project snapshot did not deliver it: ${(err as Error).message}`)
     } finally {
       await rm(stage, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  if (manifest.archive_url && input.signedArchive) {
+    try {
+      const archive = await input.signedArchive
+      if (manifest.archive_bytes && archive.length !== manifest.archive_bytes) {
+        throw new Error(`it is ${archive.length} bytes; the release says ${manifest.archive_bytes}`)
+      }
+      await materializeRelease({ ...shared, archive })
+      return done('archive')
+    } catch (err) {
+      reasons.push(`the published archive did not deliver it: ${(err as Error).message}`)
     }
   }
 

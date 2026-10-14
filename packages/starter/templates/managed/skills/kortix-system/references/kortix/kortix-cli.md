@@ -159,10 +159,10 @@ When it is off, every `kortix apps` command answers `feature_disabled`
 | `kortix apps releases <id-or-slug>` | List releases (`vN`, status, strategy, release command); mark the live one. |
 | `kortix apps rollback <id-or-slug> <id\|vN>` | A NEW release from that release's artifact and config, rolled out like a deploy. Volumes keep their data. |
 | `kortix apps machines [ls] <id-or-slug>` · `machines start\|stop\|restart\|destroy <id-or-slug> <machine>` | List machines (id, process group, state, release, size, volume) or act on one. Destroying a machine keeps its volume; its group runs one machine fewer. |
-| `kortix apps scale count <id-or-slug> <n> [--process <group>]` · `scale show <id-or-slug>` | Machines per process group (0–20). A group with a mount gets one new, empty volume per new machine. |
+| `kortix apps scale count <id-or-slug> <n> [--process <group>]` · `scale show <id-or-slug>` | Machines per process group (0–20). A group with a mount runs one machine; `--new-volumes` gives each new machine its own, empty volume. |
 | `kortix apps exec <id-or-slug> [--machine <id>] [--timeout <s>] -- <command…>` | Project admins: run one command in a running machine (audited); print its output and exit with its code. |
-| `kortix apps volumes [ls] <id-or-slug>` | Volumes: name, process group, size, attached machine, snapshot retention. |
-| `kortix apps volumes create <id-or-slug> <name> --size <gb> [--process <group>]` · `volumes extend <id-or-slug> <volume> --size <gb>` | Create a volume, or grow one (it never shrinks; at most 100 GB). |
+| `kortix apps volumes [ls] <id-or-slug>` | Volumes: name, process group, used, size, attached machine, snapshot retention. |
+| `kortix apps volumes create <id-or-slug> <name> --size <gb> [--process <group>]` · `volumes set <id-or-slug> <volume> --retention <days>` | Create a volume, or keep its daily snapshots 1–60 days. A volume has a fixed size (100 GB on Platinum) and cannot grow. |
 | `kortix apps volumes snapshots\|snapshot <id-or-slug> <volume>` | List snapshots (daily, manual, final) or take one now. |
 | `kortix apps volumes restore <id-or-slug> <volume> <snapshot>` | Project admins: the machine stops, the volume returns to the snapshot (a new version; nothing is lost), the machine starts. |
 | `kortix apps volumes fork <id-or-slug> <volume> <name> [--snapshot <id>]` | An instant, unattached copy in the same App. |

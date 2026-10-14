@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts, Turn } from '@/lib/session/types';
+import { sessionLogTurns } from '@kortix/sdk';
+import { threadOf } from '@/lib/testing/session-log';
 import {
   STICK_RELEASE_DISTANCE,
-  findLastUserMessageId,
   isNearEnd,
   reuseStableTurns,
   shouldFollowNewTurn,
@@ -13,84 +13,47 @@ import {
   shouldUpdateSpacer,
 } from './stable-turns';
 
-function msg(id: string, role: 'user' | 'assistant', text = ''): MessageWithParts {
+function msg(id: string, role: 'user' | 'assistant', text = '', parentID?: string) {
   return {
-    info: { id, role, sessionID: 's1', time: { created: 1 } } as MessageWithParts['info'],
-    parts: text ? [{ type: 'text', id: `${id}-p`, text } as MessageWithParts['parts'][number]] : [],
+    info: { id, role, sessionID: 's1', time: { created: 1 }, ...(parentID ? { parentID } : {}) },
+    parts: text ? [{ type: 'text', id: `${id}-p`, text }] : [],
   };
 }
 
-function turn(user: MessageWithParts, ...assistants: MessageWithParts[]): Turn {
-  return { userMessage: user, assistantMessages: assistants };
-}
+/** The thread's turns as `SessionPage` builds them: `sessionLogTurns`, then `reuseStableTurns`. */
+const turnsOf = (rows: unknown[]) => sessionLogTurns(threadOf(rows));
 
-describe('reuseStableTurns', () => {
+describe('reuseStableTurns over sessionLogTurns', () => {
   test('returns next unchanged when there are no previous turns', () => {
-    const next = [turn(msg('u1', 'user'))];
+    const next = turnsOf([msg('u1', 'user', 'q')]);
     expect(reuseStableTurns([], next)).toBe(next);
   });
 
   test('keeps untouched turns by reference and replaces the changed last turn', () => {
-    const u1 = msg('u1', 'user');
-    const a1 = msg('a1', 'assistant', 'done');
-    const u2 = msg('u2', 'user');
-    const a2 = msg('a2', 'assistant', 'stream');
-    const prev = [turn(u1, a1), turn(u2, a2)];
+    const u1 = msg('u1', 'user', 'q');
+    const a1 = msg('a1', 'assistant', 'done', 'u1');
+    const u2 = msg('u2', 'user', 'q2');
+    const prev = turnsOf([u1, a1, u2, msg('a2', 'assistant', 'stream', 'u2')]);
 
-    // A streamed delta replaces only the last assistant message object.
-    const a2Next = msg('a2', 'assistant', 'streamed');
-    const next = [turn(u1, a1), turn(u2, a2Next)];
-
-    const result = reuseStableTurns(prev, next);
+    // A streamed delta replaces only the last assistant row.
+    const result = reuseStableTurns(prev, turnsOf([u1, a1, u2, msg('a2', 'assistant', 'streamed', 'u2')]));
     expect(result).not.toBe(prev);
     expect(result[0]).toBe(prev[0]);
-    expect(result[1]).toBe(next[1]);
     expect(result[1]).not.toBe(prev[1]);
   });
 
-  test('does not reuse a turn whose assistant message count changed', () => {
-    const u1 = msg('u1', 'user');
-    const a1 = msg('a1', 'assistant', 'x');
-    const prev = [turn(u1, a1)];
-    const next = [turn(u1, a1, msg('a1b', 'assistant', 'y'))];
-    expect(reuseStableTurns(prev, next)[0]).toBe(next[0]);
-  });
-
-  test('does not reuse a turn whose user message object changed', () => {
-    const prev = [turn(msg('u1', 'user', 'a'))];
-    const next = [turn(msg('u1', 'user', 'a'))];
-    expect(reuseStableTurns(prev, next)[0]).toBe(next[0]);
+  test('a new reply on a turn gives that turn a new object', () => {
+    const u1 = msg('u1', 'user', 'q');
+    const a1 = msg('a1', 'assistant', 'x', 'u1');
+    const prev = turnsOf([u1, a1]);
+    expect(reuseStableTurns(prev, turnsOf([u1, a1, msg('a1b', 'assistant', 'y', 'u1')]))[0]).not.toBe(prev[0]);
   });
 
   test('returns the previous array when every turn is reused and the length matches', () => {
-    const u1 = msg('u1', 'user');
-    const a1 = msg('a1', 'assistant', 'x');
-    const prev = [turn(u1, a1)];
-    const next = [turn(u1, a1)];
-    expect(reuseStableTurns(prev, next)).toBe(prev);
-  });
-
-  test('returns a new array when identical turn objects change order', () => {
-    const t1 = turn(msg('u1', 'user'), msg('a1', 'assistant', 'x'));
-    const t2 = turn(msg('u2', 'user'), msg('a2', 'assistant', 'y'));
-    const prev = [t1, t2];
-    const next = [turn(t2.userMessage, ...t2.assistantMessages), turn(t1.userMessage, ...t1.assistantMessages)];
-    const result = reuseStableTurns(prev, next);
-    expect(result).not.toBe(prev);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toBe(t2);
-    expect(result[1]).toBe(t1);
-  });
-
-  test('matches turns by user message id when older history is prepended', () => {
-    const u2 = msg('u2', 'user');
-    const a2 = msg('a2', 'assistant', 'x');
-    const prev = [turn(u2, a2)];
-    const next = [turn(msg('u1', 'user')), turn(u2, a2)];
-    const result = reuseStableTurns(prev, next);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toBe(next[0]);
-    expect(result[1]).toBe(prev[0]);
+    const u1 = msg('u1', 'user', 'q');
+    const a1 = msg('a1', 'assistant', 'x', 'u1');
+    const prev = turnsOf([u1, a1]);
+    expect(reuseStableTurns(prev, turnsOf([u1, a1]))).toBe(prev);
   });
 });
 
@@ -115,18 +78,6 @@ describe('shouldUpdateSpacer', () => {
 
   test('treats a negative cap as zero', () => {
     expect(shouldUpdateSpacer(10, 20, -50)).toBe(false);
-  });
-});
-
-describe('findLastUserMessageId', () => {
-  test('returns the id of the last user message in store order', () => {
-    const messages = [msg('u1', 'user'), msg('a1', 'assistant'), msg('u2', 'user'), msg('a2', 'assistant')];
-    expect(findLastUserMessageId(messages)).toBe('u2');
-  });
-
-  test('returns undefined when no user message exists', () => {
-    expect(findLastUserMessageId([msg('a1', 'assistant')])).toBeUndefined();
-    expect(findLastUserMessageId([])).toBeUndefined();
   });
 });
 
