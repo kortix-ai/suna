@@ -20744,5 +20744,21 @@
     "mapTwoFingers": "Use two fingers to move the map",
     "pick": "Pick",
     "convertFailed": "Could not prepare the transcript. Try again."
+  },
+  "mobileAppPromo": {
+    "pill": "Kortix mobile",
+    "badge": "New",
+    "title": "Kortix, now on your phone",
+    "description": "Your projects, sessions and agents, wherever you are. Start the work at your desk and keep it moving from anywhere.",
+    "feature": {
+      "sessions": "Pick up where you left off",
+      "sessionsDescription": "Every session from the web, ready on your phone.",
+      "notifications": "Know the moment it's done",
+      "notificationsDescription": "A push when a session finishes or needs your answer.",
+      "dictation": "Say it, send it",
+      "dictationDescription": "Dictate a prompt instead of typing it."
+    },
+    "appStore": "App Store",
+    "googlePlay": "Google Play"
   }
 }
