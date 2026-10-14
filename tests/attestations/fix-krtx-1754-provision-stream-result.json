@@ -1,0 +1,22 @@
+{
+  "source_hash": "3c546ca2513a2588c232b47acdae999d7fe1ecd8910aa62906405e0ea9280ac0",
+  "diff_files": [
+    "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
+    "apps/web/src/features/workspace/new/use-create-workspace.test.ts",
+    "apps/web/src/features/workspace/new/use-create-workspace.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/src/core/rest/projects-client/projects.test.ts",
+    "packages/sdk/src/core/rest/projects-client/projects.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json"
+  ],
+  "diff_hash": "ed4f7d1a1ed1c14107976abb7f1deabcb19bae7262665e4f5477bb5a39b3acbe",
+  "head": "e40ed2aff98b514940d150d7fa1a341d082c203f",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-14T01:50:56.717Z"
+}
