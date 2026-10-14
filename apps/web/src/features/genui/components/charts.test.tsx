@@ -174,4 +174,11 @@ describe('ChartView', () => {
       expect(pending).not.toMatch(/\bborder\b/);
     }
   });
+
+  test('a streamed pie with no resolved slices yet shows the pending block in every variant, never throws', () => {
+    for (const variant of ['donut', 'ring', 'treemap', 'focus', 'gauge', 'stack']) {
+      const pie: GenuiNode = { id: 'p', type: 'PieChart', props: { slices: [], variant, source: 'survey' }, partial: false };
+      expect(render(pie)).toBe(renderToStaticMarkup(<>{GenuiPending(pie)}</>));
+    }
+  });
 });

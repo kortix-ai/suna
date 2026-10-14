@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils';
 
 import type { GenuiComponentProps, GenuiNode } from '../sdk';
 import { kids } from './layout';
-import { CHART_FIGURE_HEIGHT } from './pending';
+import { CHART_FIGURE_HEIGHT, GenuiPending } from './pending';
 
 // Recharts 3 draws tick text outside `.recharts-cartesian-axis-tick`, so ChartContainer's tick class
 // misses it and the text keeps Recharts' fixed #666 in both themes.
@@ -310,6 +310,8 @@ export function ChartView({ node, props }: GenuiComponentProps) {
   const t = useTranslations('genui');
   const focus = useFocus();
   const locale = useLocale();
+  // A streamed pie arrives before its slices resolve (the parent line comes first). Hold its space until one lands.
+  if (node.type === 'PieChart' && kids(props.slices).length === 0) return GenuiPending(node);
   const number = new Intl.NumberFormat(locale);
   const compact = new Intl.NumberFormat(locale, { notation: 'compact' });
   const format = (value: unknown) => (typeof value === 'number' ? number.format(value) : value == null ? '—' : String(value));
