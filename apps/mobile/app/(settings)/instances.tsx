@@ -21,10 +21,7 @@ import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import {
-  useInstances,
-  useSandbox,
-} from '@/lib/platform/hooks';
+import { useInstances } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
 import { useThemeColors } from '@/lib/theme-colors';
@@ -68,18 +65,7 @@ export default function InstancesScreen() {
   const isDark = colorScheme === 'dark';
   const { sandboxId, switchSandbox } = useSandboxContext();
 
-  const { data: rawInstances, isLoading, refetch, isRefetching } = useInstances();
-  // Fallback: if `/sandbox/list` returns empty but the user actually has an
-  // active sandbox known via `/sandbox`, surface it so the page never shows
-  // "No Instances" while the app's active sandbox is connected. Mirrors what
-  // useSandbox already does internally for the dashboard.
-  const { data: activeData } = useSandbox();
-  const instances = React.useMemo<SandboxInfo[] | undefined>(() => {
-    if (rawInstances === undefined) return undefined;
-    if (rawInstances.length > 0) return rawInstances;
-    const fallback = activeData?.sandbox;
-    return fallback ? [fallback] : rawInstances;
-  }, [rawInstances, activeData?.sandbox]);
+  const { data: instances, isLoading, refetch, isRefetching } = useInstances();
   const themeColors = useThemeColors();
 
   // Live version from /kortix/health for the active instance. The DB's

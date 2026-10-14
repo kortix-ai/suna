@@ -16,8 +16,9 @@ import {
 } from './store';
 import { admitInboxPrompt, boundaryWaitDecision, hasLaterReleasedSibling, sessionHoldsLiveTurn, type BoundaryTurnIdentity, type BoundaryWait } from './inbox-admission';
 import { abortRuntimeTurn } from './abort-runtime-turn';
-import { markTurnStopRequested } from '../session-turn-ledger';
+import { markTurnResumed, markTurnStopRequested } from '../session-turn-ledger';
 import { openUserAbove } from './forwarded-placement';
+import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationText } from './redelivery';
 import {
   armQuickQueueInterrupt,
   queuedContinueHasStagedRevert,
@@ -177,19 +178,31 @@ export async function executeQueuedContinue(
   }
 
   const placement = await placeQueuedContinue(row, payload, tl);
+  // A turn a runtime loss cut short gets its continuation, never the original
+  // prompt a second time (KRTX-1732). The row keeps its own author and picks.
+  const resume = 'outcome' in placement ? undefined : placement.resume;
   const outcome = 'outcome' in placement
     ? placement.outcome
-    : await deliverQueuedContinue(row, payload, text, placement.wireMessageId,
+    : await deliverQueuedContinue(row, resume ? { ...payload, parts: undefined } : payload,
+      resume ? interruptedTurnContinuationText(resume) : text, placement.wireMessageId,
       placement.placedIntoLiveTurn, placement.underPlaced, tl, noReply);
+  // Only a delivery marks the turn resumed. A placement outcome posted nothing:
+  // a staged revert or an answer check closed the row (`skipped`).
+  const resumedTurn = 'outcome' in placement ? undefined : resume?.turnToken ?? payload.resumesTurn;
+  if (resumedTurn && outcome === 'succeeded') {
+    await markTurnResumed(resumedTurn);
+    logger.info('[session-lifecycle] continued a turn a runtime loss interrupted', {
+      session_id: row.sessionId, command_id: row.commandId, turn_token: resumedTurn,
+    });
+  }
   // If the batch's LAST row then fails for good, the rows already posted
   // noReply stay unanswered until the user retries it or sends again.
   if (noReply && outcome === 'succeeded') await wakeAfterAdmission(row);
   return outcome;
 }
 
-type Placement = { outcome: 'succeeded' | 'queued' | 'failed' } | {
-  wireMessageId: string | undefined; underPlaced: boolean; placedIntoLiveTurn: boolean;
-};
+type WirePlacement = { wireMessageId: string | undefined; underPlaced: boolean; resume?: InterruptedTurn };
+type Placement = { outcome: 'succeeded' | 'queued' | 'failed' } | (WirePlacement & { placedIntoLiveTurn: boolean });
 
 async function settleStagedRevert(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload): Promise<'succeeded' | 'failed'> {
   if (payload.clientMessageId) {
@@ -206,7 +219,7 @@ async function settleStagedRevert(row: SessionLifecycleCommandRow, payload: Queu
 
 async function checkTranscript(row: SessionLifecycleCommandRow,
   transcript: Awaited<ReturnType<typeof readInboxTranscriptState>>, deliveryAttempt: number,
-  redeliveries: number): Promise<'queued' | 'succeeded' | null> {
+  redeliveries: number, deliveredIds: string[]): Promise<'queued' | 'succeeded' | { resume: InterruptedTurn } | null> {
   const alreadyPosted = deliveryAttempt > 0 || redeliveries > 0;
   const answerCheckFailures = Number(
     (row.result as { answer_check_failures?: unknown } | null)?.answer_check_failures ?? 0,
@@ -220,8 +233,21 @@ async function checkTranscript(row: SessionLifecycleCommandRow,
     return 'queued';
   }
   if (transcript.read && transcript.answered) {
+    // An answer the runtime loss cut short is not an answer. A failed ledger
+    // read drops the row as before: a missed continuation, never a second run.
+    const resumable = redeliveries > 0 &&
+      (row.payload as { resumeIfInterrupted?: unknown } | null)?.resumeIfInterrupted === true;
+    const resume = resumable
+      ? await findInterruptedTurn(row.sessionId!, deliveredIds, transcript.tip ?? []).catch((error) => {
+        logger.warn('[session-lifecycle] interrupted-turn check failed; dropping as answered', {
+          session_id: row.sessionId, command_id: row.commandId, error,
+        });
+        return null;
+      })
+      : null;
+    if (resume) return { resume };
     console.warn('[session-lifecycle] dropping delivery — the prompt was already answered', {
-      sessionId: row.sessionId, commandId: row.commandId, redeliveries,
+      sessionId: row.sessionId, commandId: row.commandId, redeliveries, resumable,
     });
     await markCommandSucceeded(row, { status: 'skipped', reason: 'already_answered' }, row.sessionId);
     return 'succeeded';
@@ -276,10 +302,11 @@ async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: Que
 async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
   tl: ProvisionTimeline, stagedRevertPromise: Promise<boolean>, remintKnown: boolean,
   turnLive: boolean, deliveryAttempt: number, redeliveries: number): Promise<
-    { outcome: 'succeeded' | 'queued' | 'failed' } | { wireMessageId: string | undefined; underPlaced: boolean }
+    { outcome: 'succeeded' | 'queued' | 'failed' } | WirePlacement
   > {
   let wireMessageId = payload.wireMessageId;
   let underPlaced = false;
+  let resume: InterruptedTurn | undefined;
   if (payload.wireMessageId && (remintKnown || turnLive)) {
     const deliveredIds = [
       payload.wireMessageId,
@@ -295,8 +322,9 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
     }
     const transcript = await transcriptPromise;
     tl.mark('transcript-read');
-    const checked = await checkTranscript(row, transcript, deliveryAttempt, redeliveries);
-    if (checked) return { outcome: checked };
+    const checked = await checkTranscript(row, transcript, deliveryAttempt, redeliveries, deliveredIds);
+    if (typeof checked === 'string') return { outcome: checked };
+    resume = checked?.resume;
     // A released Stop batch row never stays under: the open user message
     // above it is the sibling posted `noReply` just before it (KRTX-683), and
     // OpenCode orders by id — kept, the batch renders out of order with its
@@ -318,5 +346,5 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
       tl.mark('remint');
     }
   }
-  return { wireMessageId, underPlaced };
+  return { wireMessageId, underPlaced, ...(resume ? { resume } : {}) };
 }

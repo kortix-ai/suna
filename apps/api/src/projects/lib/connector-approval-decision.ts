@@ -11,6 +11,7 @@ import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
+import { type ApprovalTarget, approvalTargetOf } from './approval-authority';
 
 export type ApprovalDecision = 'approve' | 'deny';
 
@@ -52,19 +53,17 @@ export function isPendingApproval(row: PendingApprovalRow): boolean {
   return row.status === 'pending_approval' && !row.approvedBy && !row.resolvedAt;
 }
 
-/** `created_by` + origin of the session a gated call belongs to — the inputs
- *  of the launcher half of the authority rule. */
 export async function approvalTargetSession(
   projectId: string,
-  row: PendingApprovalRow,
-): Promise<{ createdBy: string | null; origin: string | null }> {
-  if (!row.sessionId) return { createdBy: row.actingUserId, origin: 'user' };
+  row: Pick<PendingApprovalRow, 'sessionId' | 'actingUserId'>,
+): Promise<ApprovalTarget> {
+  if (!row.sessionId) return approvalTargetOf(row, undefined);
   const [session] = await db
     .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
     .from(projectSessions)
     .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
     .limit(1);
-  return { createdBy: session?.createdBy ?? null, origin: session?.origin ?? null };
+  return approvalTargetOf(row, session);
 }
 
 /** The prompt that tells the agent what the human decided — and what they said. */

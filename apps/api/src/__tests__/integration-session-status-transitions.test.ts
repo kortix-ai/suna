@@ -84,8 +84,8 @@ const {
 const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
 const { deleteSession } = await import('../projects/session-lifecycle/actions');
 const { restoreSession } = await import('../projects/session-lifecycle/restore-session');
-const { claimRetiredEphemeralRow, isRetiredEphemeralRow } = await import(
-  '../platform/services/ephemeral-sandbox'
+const { claimRetiredSandboxRow, isRetiredSandboxRow } = await import(
+  '../platform/services/retired-sandbox-row'
 );
 const { stopSession } = await import('../projects/session-lifecycle/stop');
 const { beginSandboxTurn } = await import('../projects/sandbox-turn-lifecycle');
@@ -1084,6 +1084,26 @@ describe('delete (deleteSession)', () => {
     }
   });
 
+  // KRTX-2316: a delete that bumped `updated_at` moved every tombstone to the
+  // head of the session list order, above the owner's live sessions.
+  test('keeps the session’s place in the list: `updated_at` is unchanged', async () => {
+    const f = await deleteFixture();
+    await db.execute(sql`
+      update kortix.project_sessions set updated_at = '2026-09-01T12:00:00.123456Z'
+       where session_id = ${f.sessionId}`);
+
+    expect(await runDelete(f)).toMatchObject({ ok: true });
+
+    const [row] = rows(
+      await db.execute(sql`
+        select to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') as updated_at, metadata
+          from kortix.project_sessions where session_id = ${f.sessionId}`),
+    );
+    expect(row!.updated_at).toBe('2026-09-01T12:00:00.123456');
+    expect(typeof (row!.metadata as Row).deletedAt).toBe('string');
+    await waitForRemovalOutcome(f);
+  });
+
   test('keeps the session row restorable for 30 days: it answers restore_until', async () => {
     const f = await deleteFixture();
     const before = Date.now();
@@ -1136,8 +1156,8 @@ describe('restore (restoreSession)', () => {
     expect(sandbox.metadata).not.toHaveProperty('providerRemovalPendingAt');
     // The open path's retired-row branch: claim the row, then provision.
     const row = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, f.sandboxId));
-    expect(isRetiredEphemeralRow(row[0]!)).toBe(true);
-    expect(await claimRetiredEphemeralRow(f.sandboxId)).not.toBeNull();
+    expect(isRetiredSandboxRow(row[0]!)).toBe(true);
+    expect(await claimRetiredSandboxRow(f.sandboxId)).not.toBeNull();
     expect((await read(f)).sandbox).toBeUndefined();
   });
 
@@ -1231,26 +1251,6 @@ describe('restore (restoreSession)', () => {
       providerUnbuildable = false;
       console.warn = warn;
     }
-  });
-
-  test("takes an ephemeral session's state volume off the deletion queue", async () => {
-    onProviderRemove = async () => {};
-    const f = await deletedFixture();
-    // What an ephemeral session records, and what its delete queues.
-    const own = `kss-${f.sessionId}`;
-    await db.execute(sql`
-      update kortix.project_sessions
-         set metadata = metadata || jsonb_build_object('ephemeral_state_volume', ${own}::text)
-       where session_id = ${f.sessionId}`);
-    await db.execute(sql`
-      insert into kortix.platinum_volume_deletions (volume_name, reason) values (${own}, 'session_deleted')
-      on conflict do nothing`);
-
-    expect(await runRestore(f)).toEqual({ ok: true });
-    const queued = rows(
-      await db.execute(sql`select volume_name from kortix.platinum_volume_deletions where volume_name = ${own}`),
-    );
-    expect(queued).toHaveLength(0);
   });
 
   // A delete during provider.create, a provider the deployment does not allow,

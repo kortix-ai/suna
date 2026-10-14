@@ -826,7 +826,7 @@
   },
   "src/config-releases/desired.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     },
     "no-console": {
       "count": 2
@@ -1390,11 +1390,6 @@
   "src/middleware/auth.ts": {
     "no-console": {
       "count": 2
-    }
-  },
-  "src/middleware/compress.ts": {
-    "no-console": {
-      "count": 1
     }
   },
   "src/middleware/impersonation.ts": {
@@ -2958,11 +2953,6 @@
     },
     "no-console": {
       "count": 1
-    }
-  },
-  "src/setup-links/approval-app.ts": {
-    "kortix-api/projects-surface": {
-      "count": 2
     }
   },
   "src/setup-links/connector-completion-watch.ts": {

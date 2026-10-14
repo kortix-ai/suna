@@ -32,13 +32,6 @@ export function useSubAgentThread(childSessionId: string | undefined): SessionLo
   return useSessionLogThread(source, childSessionId ?? null);
 }
 
-/** The sub-agent's tool calls a row lists: every shown call of its replies, in order. */
-export function subAgentCalls(thread: SessionLogThread | null): ToolCallBlock[] {
-  if (!thread) return [];
-  return thread.messages.flatMap((m) =>
-    m.role === 'assistant' ? m.blocks.filter((b): b is ToolCallBlock => b.type === 'tool_call' && shouldShowToolPart(b)) : [],
-  );
-}
 
 /**
  * A sub-agent's steps, listed under the row that dispatched it.
@@ -85,7 +78,7 @@ export function SubAgentActivity({
   calls,
 }: {
   childSessionId?: string;
-  calls: ToolCallBlock[];
+  calls: readonly ToolCallBlock[];
 }) {
   const indent = useToolIndent();
 

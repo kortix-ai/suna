@@ -35,10 +35,7 @@ import { PushNotificationsBridge } from '@/components/notifications/PushNotifica
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
 import { reportAccessRemedy } from '@/lib/auth/sso-required';
 import { authRedirect } from '@/lib/auth/mfa';
-import {
-  GlobalUpgradeSheet,
-  SandboxUpgradeGateListener,
-} from '@/components/billing/GlobalUpgradeSheet';
+import { GlobalUpgradeSheet } from '@/components/billing/GlobalUpgradeSheet';
 import { useFonts } from 'expo-font';
 import { SplashScreen, Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
@@ -600,7 +597,6 @@ export default function RootLayout() {
                               </AuthProtection>
                             </View>
                             <OtaUpdateManager />
-                            <SandboxUpgradeGateListener />
                             <GlobalUpgradeSheet />
                             {/* A "Pasted text" tile's full text: sent messages and composers (`openPastedText`). */}
                             <PastedTextSheet />

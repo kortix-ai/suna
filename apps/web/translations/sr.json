@@ -688,6 +688,8 @@
       "themeDescription": "Изаберите изглед Kortix-а на овом уређају.",
       "conversationDensity": "Густина разговора",
       "conversationDensityDescription": "Изаберите колико детаља агент приказује у разговору док ради.",
+      "richAnswers": "Богати одговори",
+      "richAnswersDescription": "Приказује поређења, табеле, графиконе и мапе као визуелне елементе у одговорима. Када је искључено, одговори приказују исти садржај као текст.",
       "wallpaper": "Позадина",
       "wallpaperDescription": "Позадина вашег пројекта.",
       "defaultWallpaper": "Подразумевано",
@@ -1208,6 +1210,10 @@
           "name": "Pi окружење (у сандбоксу)",
           "description": "Покрећите сесије помоћу Pi окружења унутар сандбокса сесије уместо OpenCode-а. Када је искључено, `runtime: pi` у манифесту и даље бира Pi."
         },
+        "genui": {
+          "name": "Генеративни UI",
+          "description": "Агент може да одговара картицама, поређењима, графиконима, мапама и језичцима уместо дугих текстова."
+        },
         "reminders": {
           "name": "Подсетници",
           "description": "Омогућава агентима и особама да закажу провере на сесији, једном или периодично. Свако активирање поново покреће ту сесију. Додаје страницу Подсетници, ознаку подсетника у сесији и `kortix remind`."
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumeni",
-          "description": "Deljeni fajlovi i sesije na volumenima za ovaj projekat."
-        },
-        "stateless_sessions": {
-          "name": "Sesije bez stanja",
-          "description": "Svaki put nov računar; čuvaju se samo fajlovi i razgovor. Potrebno je uključiti volumene."
+          "description": "Deljeni fajlovi za ovaj projekat."
         },
         "drives": {
           "name": "Drive",
           "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Privremeni sandbox-ovi",
-          "description": "Zaustavljena sesija čuva datoteke i razgovor na volumenu i oslobađa svoj računar. Buđenje pokreće novi računar sa najnovijom slikom. Pokrenuti procesi ne preživljavaju zaustavljanje."
         },
         "session_log": {
           "name": "Log sesije v2",
@@ -1905,6 +1903,26 @@
       "commandsAndActions": "Команде и радње",
       "toUse": "за коришћење",
       "use": "Користи"
+    },
+    "history": {
+      "restoreTitle": "Део ранијег садржаја није могао да се врати",
+      "restoreMissing": "Недостаје: {items}.",
+      "restoreAgent": "Агент зна шта недостаје.",
+      "restoreDismiss": "Затвори обавештење о враћању",
+      "missingAttachment": "{count, plural, one {# прилог} few {# прилога} other {# прилога}}",
+      "missingText": "{count, plural, one {# дугачак текст} few {# дугачка текста} other {# дугачких текстова}}",
+      "missingToolInput": "{count, plural, one {# улаз алата} few {# улаза алата} other {# улаза алата}}",
+      "missingToolResult": "{count, plural, one {# резултат алата} few {# резултата алата} other {# резултата алата}}",
+      "missingCutPoint": "{count, plural, one {# тачка сажимања} few {# тачке сажимања} other {# тачака сажимања}}",
+      "missingOther": "{count, plural, one {# друга ставка} few {# друге ставке} other {# других ставки}}",
+      "restoreNote": "Сесија је враћена из сачуване историје",
+      "harnessSwitch": "Настављено са {harness}",
+      "showOutOfContext": "Прикажи поруке ван контекста",
+      "fullTextPreview": "{count, plural, one {# дугачак текст овде приказује првих 16 kB.} few {# дугачка текста овде приказују првих 16 kB.} other {# дугачких текстова овде приказује првих 16 kB.}}",
+      "fullTextShow": "Прикажи цео текст ({size})",
+      "fullTextDownload": "Преузми цео текст ({size})",
+      "fullTextError": "Цео текст није могао да се учита.",
+      "fullTextRetry": "Покушај поново"
     }
   },
   "agents": {
@@ -5755,7 +5773,6 @@
       "line175JsxTextOpenInTabInstead": "Отвори у картици"
     },
     "componentsDashboardConnectingScreen": {
-      "line156JsxAttrTitleRuntimeDegraded": "Време рада је смањено",
       "line422JsxTextCouldnAposTStart": " Није могуће покренути",
       "line469JsxTextIsStopped": "је заустављен",
       "line472JsxTextOpenANewSessionOrReturnToProjects": "Отворите нову сесију или се вратите на пројекте да бисте наставили.",
@@ -10902,7 +10919,6 @@
       "text26eb1bc45b53": "Подразумевано забрањено",
       "text26ecc76c0ce9": "Обрисати овај токен?",
       "text26ee1166df63": "Измене се примењују на следећи упит.",
-      "text26f0dd993530": "Аутоматски поновни покушај",
       "text27042f4e6eca": "десно",
       "text270ba743dc3c": "Cron распореди и потписани webhook-ови покрећу Kortix сесије без присутних особа. Сваки окидач наводи агента под чијим именом ради, садржи шаблон упита и испоручује резултат кроз захтев за измену који особа одобрава.",
       "text271189ae389a": "Време почетка",
@@ -11429,7 +11445,13 @@
       "text370145ffb7ba": "Имејл је прескочен — копирајте линк позива да бисте га поделили ручно",
       "text37023affd996": "још ставки није приказано",
       "text37056f2381e2": "пропа или отпремите датотеку.",
-      "text37074af6784c": "{value0} члан{value1} губи приступ {value2}.",
+      "text586a24125900": "{count, plural, one {# члан губи} few {# члана губе} other {# чланова губи}} приступ {account}.",
+      "text4e9efdcbbcbe": " (+{count} још — погледајте конзолу)",
+      "text65ef045d1ffa": "Садржај {value0}",
+      "text3028bf7d2dec": "Уклони {value0}",
+      "textd0166fa53db8": "Отпреми {value0}",
+      "text3cc3767e7032": "Отпремљено",
+      "text95e154398a4b": "Замени",
       "text373570b711c7": "Филтере, границе датума, редове које је избацио и разлог. Анализа чија искључења нису документована није анализа, а коментар у упиту је најјефтиније место да их сачувате.",
       "text3738dea54aaa": "Ажурирање опсега није успело",
       "text373a23b43a0b": "преведиX(рачун((var(--tile) + var(--gap)) / 2))",
@@ -11852,7 +11874,6 @@
       "text429bbfa117e2": "Мобилна апликација",
       "text429be41120e9": "Покрените пројекат без напуштања разговора.",
       "text429ffbbaa586": "Једноставно повезивање",
-      "text42b3d52014ba": "Радни простор није доступан",
       "text42b8d7c5357a": "Sandbox није потврдио поновно учитавање",
       "text42bcffb92597": "Прикажи као овај члан",
       "text42bd94c06205": "Статус (тачка, значка, разлика)",
@@ -15253,7 +15274,6 @@
       "texta4a83d949891": "Сажимање сесије није успело",
       "texta4b4b51ec474": "translate(-50%, -100%)",
       "texta4b6a3d9d629": "kortix init претвара сваки директоријум у Kortix. kortix ship га покреће. Од тада је то један репозиторијум у вашем власништву — верзионисан, са доступним diff-овима и који се унапређује једном прегледаном изменом у исто време.",
-      "texta4c128e48978": "Хост је доступан, али основно окружење радног простора не обрађује захтеве. Поново покрените окружење или workload да бисте обновили услуге.",
       "texta4c297b580ad": "- Потражи заостале уплате, ескалирај после 30 дана",
       "texta4c7fa51a957": "Ниједна грана није пронађена",
       "texta4c9215859a8": "Члан пројекта је уклоњен",
@@ -17143,7 +17163,6 @@
       "textd938438f232e": "Webhook аутентификација",
       "textd942e3dc737b": "docs.kortix.com",
       "textd948c285986a": "Slack је искључен",
-      "textd94a83e48b64": "Овај радни простор није доступан. Вратите се на пројекте и отворите или направите другу сесију.",
       "textd952c0d7b0b0": "Убризгава се при позиву",
       "textd95934d15292": "Претражите више од 5.000 API-ја, MCP сервера и OAuth апликација",
       "textd96a37fc02f0": "Замени лозинку",
@@ -17535,7 +17554,6 @@
       "texte478b984a2d9": "Чита тракер онаквим какав јесте — проблеме, стања, везе и коментаре — и уписује сређени резултат тамо где му дозволите. Тракер остаје систем евиденције; агент није други такав систем.",
       "texte47b85588c7c": "Сваки ИдП који користи „{value0}“ ће одмах изгубити приступ. Ово се не може опозвати – мораћете да исковате нови токен да бисте се поново повезали.",
       "texte47c8bae740d": "Копирај кључ",
-      "texte48034ba91dd": "Услуге радног простора нису доступне",
       "texte4855e715f70": "    sandbox: python",
       "texte493d2f8af71": "Напредне опције → Прилагоди име захтева за групу",
       "texte4a075134e2b": "Нема посебних захтева — ова ставка једноставно ради.",
@@ -19677,75 +19695,16 @@
     "approvalPage": {
       "title": "Odobrite {connector} akciju"
     },
+    "approvalWaiting": {
+      "byManager": "Чека се да неко ко управља овим пројектом одобри или одбије позив.",
+      "byName": "Чека се да {name} или неко ко управља овим пројектом одобри или одбије позив.",
+      "byOwner": "Чека се да особа која је покренула ову сесију или неко ко управља овим пројектом одобри или одбије позив.",
+      "copyLink": "Копирај линк за одобрење"
+    },
     "secretIntakeWithheld": {
       "title": "Сачувано, али {agent} још не може да га прочита",
       "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",
       "allowlist": "{names} {count, plural, one {је} other {су}} ван тајни ове сесије. Покрени нову сесију да {count, plural, one {би је користио} other {би их користио}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Slika",
-      "modeImageDetail": "Samo slika sesije.",
-      "modeImageRequested": "Zatražena slika: {count}",
-      "modeArtifacts": "Slika + artefakti",
-      "modeArtifactsDetail": "Plus volumen sa artefaktima za pokretanje za najnovije okruženje za izvršavanje.",
-      "modeArtifactsRequested": "Zatraženo slika + artefakti: {count}",
-      "modeVolume": "Volumen",
-      "modeVolumeDetail": "Privremeni računar, stanje sesije na volumenu, plus artefakti.",
-      "modeVolumeRequested": "Zatražen volumen: {count}",
-      "reasonSessionVolume": "Volumen sesije",
-      "reasonArtifactsVolume": "Volumen artefakata",
-      "reasonVolumeMount": "Montiranje volumena",
-      "reasonTimeout": "Isteklo vreme",
-      "reasonBootHealth": "Računar nikada nije postao spreman",
-      "reasonOther": "Ostalo",
-      "fallBackToTheImage": "Vrati se na sliku",
-      "fallBackToImage": "Povratak na sliku",
-      "saved": "Režimi pokretanja su sačuvani",
-      "saveFailed": "Čuvanje režima pokretanja nije uspelo",
-      "title": "Režimi pokretanja",
-      "description": "Kako se pokreću nove sesije projekta sa uključenim volumenima i koje rezervne korake prave. Volumeni i sesije bez stanja su feature flagovi projekta i ne podešavaju se ovde. Promene stižu do svakog API procesa u roku od 30 sekundi.",
-      "discard": "Odbaci",
-      "save": "Sačuvaj",
-      "off": "Isključeno",
-      "bootModeTitle": "Režim pokretanja",
-      "bootModeDescription": "Kako se pokreću nove sesije projekta sa uključenim volumenima. Projekat sa uključenim sesijama bez stanja pokreće se na volumenu.",
-      "defaultModeTitle": "Podrazumevani režim",
-      "killSwitchTitle": "Prekidač za nuždu: pokreni svaku novu sesiju sa slike",
-      "killSwitchDetail": "Odjednom zamenjuje svaki režim; Datoteke i drive-ovi ostaju kakvi jesu. Sesija čije su datoteke već na volumenu zadržava svoj volumen.",
-      "killSwitchLabel": "Prekidač za nuždu",
-      "last24HoursTitle": "Poslednja 24 sata",
-      "last24HoursDescription": "Sesije pokrenute u svakom režimu i rezervne opcije koje su koristile. Broji se kod provajdera volumena.",
-      "columnFallback": "Rezervna opcija",
-      "columnReason": "Razlog",
-      "columnCount": "Broj",
-      "columnLatestError": "Poslednja greška",
-      "noFallbacks": "Nema rezervnih opcija u poslednja 24 sata.",
-      "countsUnavailable": "Brojevi nisu dostupni: {error}",
-      "unknownError": "nepoznata greška",
-      "fallbackTitle": "Rezervna opcija",
-      "fallbackDescription": "Sesija čija pokretanja stalno ne uspevaju spušta se za jedan nivo, jednom po sesiji; ostaje u režimu koji je dostigla. Sesija čije su datoteke već na volumenu nikada ga ne napušta.",
-      "after": "nakon",
-      "failedBoots": "neuspelih pokretanja",
-      "volumeAttemptsLabel": "Pokušaji sa volumenom",
-      "artifactsAttemptsLabel": "Pokušaji sa artefaktima",
-      "lastStepNote": "(uključeno, osim ako podrazumevani režim ne isključi poslednji korak)",
-      "whereModesApplyTitle": "Gde se režimi primenjuju",
-      "whereModesApplyDescription": "Provajderi i prekidači za primenu dolaze iz okruženja servera. Volumen artefakata može da se podesi ovde; ako je prazno, koristi se onaj iz okruženja.",
-      "volumeProviderTitle": "Provajder volumena: {provider}",
-      "volumeProviderConfigured": "Konfigurisan. Sesije na njemu se pokreću u režimu koji izabere njihovo pravilo.",
-      "volumeProviderNotConfigured": "Nije konfigurisan: svaka sesija se pokreće sa slike.",
-      "ready": "Spremno",
-      "otherProvidersTitle": "Ostali provajderi: {providers}",
-      "otherProvidersDriveSync": "Uvek se pokreću sa slike. Drive-ovi do njih stižu preko sinhronizacije drive-a.",
-      "otherProvidersNoDriveSync": "Uvek se pokreću sa slike. Sinhronizacija drive-a je isključena, pa projekti sa drive-om ostaju kod provajdera volumena.",
-      "imageOnly": "Samo slika",
-      "artifactsVolumeTitle": "Volumen artefakata",
-      "artifactsVolumeSet": "Sesije u režimu Slika + artefakti ili Volumen montiraju {source}.",
-      "artifactsVolumeFromEnvironment": "Sesije u režimu Slika + artefakti ili Volumen montiraju {source} (iz okruženja).",
-      "artifactsVolumeNone": "Ništa nije podešeno: režimi sa artefaktima se pokreću kao da postoji samo slika.",
-      "artifactsVolumeLabel": "Volumen artefakata i oznaka",
-      "ephemeralSandboxesOff": "{variable} je isključen u ovoj primeni: sesije bez stanja pokreću se sa Slika + artefakti.",
-      "nothingSaved": "Još ništa nije sačuvano: projekti sa uključenim volumenima pokreću se iz slike."
     }
   },
   "projectOnboarding": {
@@ -20202,7 +20161,8 @@
     "verified": "Potvrđeno",
     "invalidCode": "Taj kod nije uspeo. Proverite aplikaciju za autentifikaciju i pokušajte ponovo.",
     "noFactorTitle": "Podesite dvofaktorsku autentifikaciju",
-    "noFactorDescription": "Ova radnja zahteva dvofaktorsku autentifikaciju. Dodajte aplikaciju za autentifikaciju u Podešavanja → Bezbednost, pa pokušajte ponovo."
+    "noFactorDescription": "Ova radnja zahteva dvofaktorsku autentifikaciju. Dodajte aplikaciju za autentifikaciju u Podešavanja → Bezbednost, pa pokušajte ponovo.",
+    "setUp": "Podesi autentifikator"
   },
   "connectorPages": {
     "install": "Инсталирај",
@@ -20766,5 +20726,23 @@
     "you": "Ти",
     "manageFolderAccess": "Управљај приступом",
     "viewFolderAccess": "Прикажи приступ"
+  },
+  "genui": {
+    "showData": "Прикажи податке",
+    "openImage": "Отвори слику",
+    "viewAllImages": "Прикажи све ({count})",
+    "pieFocus": "{label} је {percent}% укупно",
+    "pieOfTotal": "{value} од {total}",
+    "directions": "Упутства",
+    "call": "Позови",
+    "website": "Веб-сајт",
+    "label": "Ознака",
+    "value": "Вредност",
+    "map": "Мапа",
+    "zoomIn": "Увећај",
+    "zoomOut": "Умањи",
+    "mapTwoFingers": "Користите два прста да померите мапу",
+    "pick": "Избор",
+    "convertFailed": "Није могуће припремити транскрипт. Покушајте поново."
   }
 }
