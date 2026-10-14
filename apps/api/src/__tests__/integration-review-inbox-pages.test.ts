@@ -19,6 +19,7 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ApprovalCaller } from '../projects/lib/approval-authority';
 import {
+  type InboxCursor,
   REVIEW_PAGE_MAX_LIMIT,
   decodeInboxCursor,
   getInboxItem,
@@ -192,9 +193,10 @@ afterAll(async () => {
 async function walkAll(
   query: Parameters<typeof listInboxItems>[1],
   caller: () => Promise<ApprovalCaller>,
+  start: InboxCursor | null = null,
 ) {
   const items: Awaited<ReturnType<typeof listInboxItems>>['items'] = [];
-  let after = null;
+  let after = start;
   for (let i = 0; i < 200; i += 1) {
     const page = await listInboxItems(PROJECT, { ...query, after }, caller);
     expect(page.items.length).toBeLessThanOrEqual(query.limit ?? 50);
@@ -263,6 +265,19 @@ describe('listInboxItems', () => {
     expect(tied.map((item) => item.review_item_id).sort()).toEqual([...tiedIds].sort());
     expect(tied[0].review_item_id).toBe(tiedIds[1]);
     expect(tied[tied.length - 1].review_item_id).toBe(tiedIds[0]);
+  });
+
+  // `done 1` (a native item) and CR #2 share the instant base + 1 s. With
+  // limit 1 a page ends on the native row, and the CR query must still return
+  // the CR after that cursor: the source tie decides it in SQL.
+  test('a native item and a change request at the same instant page apart in source order', async () => {
+    const [done2] = await db
+      .select({ id: reviewItems.reviewItemId })
+      .from(reviewItems)
+      .where(and(eq(reviewItems.projectId, PROJECT), eq(reviewItems.title, 'done 2')));
+    const start = { rank: 2, at: '2026-07-01T00:00:02.000000Z', source: 0, id: done2.id };
+    const rows = await walkAll({ segment: 'done', limit: 1 }, asLauncher, start);
+    expect(rows.map((item) => item.title)).toEqual(['CR 3', 'done 1', 'CR 2', 'done 0']);
   });
 
   test('kind and session filters apply in SQL', async () => {
