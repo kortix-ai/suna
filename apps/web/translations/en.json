@@ -3231,7 +3231,7 @@
       "contactGeneral": "General",
       "contactSecurity": "Security",
       "faqWhatCreditsQuestion": "What are credits, and what do they cost?",
-      "faqWhatCreditsAnswerBefore": "Credits are Kortix's unit of platform usage, and model calls are the main driver. Kortix adds 20% on model cost, 50% on most tool calls, and charges a flat 10% platform fee instead if you bring your own API key. The full rate card, the two kinds of credit, and how to make a balance last are in",
+      "faqWhatCreditsAnswerBefore": "Credits pay for the agent computer and for Kortix models. 1 credit is $0.01, and the default agent computer uses about 20 credits an hour. Kortix models cost the provider's base price plus a 5.5% platform fee. Your own API key or ChatGPT subscription uses no credits. Plans, top-ups and how to make a balance last are in",
       "faqWhatCreditsLink": "Credits & usage",
       "faqWhatCreditsAnswerAfter": "."
     }

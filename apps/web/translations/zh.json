@@ -3220,7 +3220,7 @@
       "contactGeneral": "一般咨询",
       "contactSecurity": "安全问题",
       "faqWhatCreditsQuestion": "什么是积分，费用是多少？",
-      "faqWhatCreditsAnswerBefore": "积分是 Kortix 衡量平台用量的单位，其中模型调用消耗最多。Kortix 在模型成本上加收 20%，在大多数工具调用上加收 50%；如果你使用自己的 API 密钥，则改为收取 10% 的固定平台费。完整的费率表、两种积分类型，以及如何让余额更耐用，请参阅",
+      "faqWhatCreditsAnswerBefore": "积分用于支付智能体计算机和 Kortix 模型。1 积分为 $0.01，默认智能体计算机每小时约消耗 20 积分。Kortix 模型按提供商基础价格加 5.5% 平台费计费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。套餐、充值以及如何让余额更持久，请见",
       "faqWhatCreditsLink": "积分与用量",
       "faqWhatCreditsAnswerAfter": "。"
     }

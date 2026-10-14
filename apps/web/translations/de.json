@@ -3220,7 +3220,7 @@
       "contactGeneral": "Allgemein",
       "contactSecurity": "Sicherheit",
       "faqWhatCreditsQuestion": "Was sind Credits und was kosten sie?",
-      "faqWhatCreditsAnswerBefore": "Credits sind die Einheit für die Plattformnutzung bei Kortix, und Modellaufrufe verbrauchen am meisten. Kortix schlägt 20 % auf die Modellkosten auf, 50 % auf die meisten Tool-Aufrufe, und berechnet stattdessen eine pauschale Plattformgebühr von 10 %, wenn Sie Ihren eigenen API-Schlüssel verwenden. Die vollständige Preisübersicht, die zwei Arten von Credits und wie ein Guthaben länger reicht, finden Sie unter",
+      "faqWhatCreditsAnswerBefore": "Credits bezahlen den Agent-Computer und Kortix-Modelle. 1 Credit kostet 0,01 $, und der Standard-Agent-Computer verbraucht etwa 20 Credits pro Stunde. Kortix-Modelle kosten den Basispreis des Anbieters plus 5,5 % Plattformgebühr. Dein eigener API-Schlüssel oder dein ChatGPT-Abo verbraucht keine Credits. Tarife, Aufladungen und wie ein Guthaben länger reicht, stehen unter",
       "faqWhatCreditsLink": "Credits & Nutzung",
       "faqWhatCreditsAnswerAfter": "."
     }

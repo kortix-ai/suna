@@ -36,15 +36,16 @@ A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNA
 
 | What | How Kortix meters it |
 | --- | --- |
-| Kortix-managed model calls | Input, output and cache tokens of each request. |
+| Kortix-managed model calls | Input, output and cache tokens of each request, at the provider's base price plus a 5.5% platform fee. |
 | Sandbox compute | The reserved spec (`cpu`, `memory`, `disk`) multiplied by the seconds the sandbox is active. Session sandboxes, App machines and project monitors all count. |
 | Kortix-proxied tools | Each web search, image search or web scraping request that goes through Kortix. |
 
 - Compute meters the spec the sandbox reserves, not what it uses. Set the spec in `kortix.yaml`. See [Sandboxes & previews](/docs/work/runtime#hardware-and-docker).
-- One compute rate applies to every sandbox provider.
+- One compute rate applies to every sandbox provider and to every plan. The default 2 vCPU / 4 GiB / 20 GiB sandbox uses about 20 credits an hour.
 - A stopped or sleeping sandbox accrues nothing. See [Sessions](/docs/work/sessions#when-a-session-sleeps).
 - A running sandbox is billed every 5 minutes and again when it stops.
 - A model request on your own provider key or a ChatGPT subscription has no Kortix charge. Your provider bills you.
+- Model prices in the app are the provider's base prices. The 5.5% fee is added when the request is charged.
 
 ## Credit buckets
 
@@ -53,7 +54,7 @@ The wallet holds two buckets.
 | Bucket | Filled by | Expires |
 | --- | --- | --- |
 | Expiring | The plan grant | Unused credits roll over for one month. The grant after that replaces them. |
-| Non-expiring | Top-ups, auto top-ups, refunds and promotional grants | Never |
+| Non-expiring | Top-ups, auto top-ups, top-up bonuses, refunds and promotional grants | Never |
 
 - Kortix spends the expiring bucket first, then the non-expiring bucket.
 - Work that finished is always recorded. When it costs more than the balance, the non-expiring bucket goes below zero. The balance stays below zero until new credits cover the difference.
@@ -63,6 +64,18 @@ The wallet holds two buckets.
 ## Top-ups and auto top-up
 
 Only paid plans can buy credits. Top-ups never expire and go into the non-expiring bucket.
+
+A top-up or auto top-up of $50 or more adds bonus credits:
+
+| Top-up | Bonus |
+| --- | --- |
+| $50 to $99 | +1% |
+| $100 to $249 | +2% |
+| $250 to $499 | +3% |
+| $500 to $999 | +4% |
+| $1,000 or more | +5% |
+
+The bonus is a separate `topup_bonus` ledger entry. A refund or a lost dispute removes the same share of the bonus.
 
 <Steps>
 <Step title="Add credits">

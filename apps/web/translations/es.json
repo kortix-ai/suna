@@ -3220,7 +3220,7 @@
       "contactGeneral": "General",
       "contactSecurity": "Seguridad",
       "faqWhatCreditsQuestion": "¿Qué son los créditos y cuánto cuestan?",
-      "faqWhatCreditsAnswerBefore": "Los créditos son la unidad de uso de la plataforma en Kortix, y las llamadas a modelos son lo que más consume. Kortix añade un 20 % al coste del modelo, un 50 % a la mayoría de las llamadas a herramientas, y cobra en su lugar una tarifa fija de plataforma del 10 % si usas tu propia clave de API. Encontrarás la tabla de tarifas completa, los dos tipos de crédito y cómo hacer que un saldo dure más en",
+      "faqWhatCreditsAnswerBefore": "Los créditos pagan el ordenador del agente y los modelos de Kortix. 1 crédito cuesta 0,01 $ y el ordenador del agente por defecto usa unos 20 créditos por hora. Los modelos de Kortix cuestan el precio base del proveedor más una tarifa de plataforma del 5,5 %. Tu propia clave API o tu suscripción a ChatGPT no usan créditos. Los planes, las recargas y cómo hacer que el saldo dure están en",
       "faqWhatCreditsLink": "Créditos y uso",
       "faqWhatCreditsAnswerAfter": "."
     }

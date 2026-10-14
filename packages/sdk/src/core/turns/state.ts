@@ -393,7 +393,7 @@ function assistantMessageIds(message: MessageInfoLike): {
  * Returns undefined if no step-finish parts found.
  *
  * The cost is multiplied by COST_MARKUP so the displayed value matches
- * the actual credits deducted (raw provider cost × 1.2).
+ * the actual credits deducted (raw provider cost × 1.055).
  */
 export function getTurnCost(
   parts: ReadonlyArray<PartWithMessage>,
