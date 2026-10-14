@@ -167,9 +167,9 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
 }
 
 /** Build the first-turn request from the session-bound runtime environment. */
-export function buildInitialPromptBody(prompt: string, claimedMessageId?: string): {
+export function buildInitialPromptBody(prompt: string, claimedMessageId?: string, context?: string): {
   messageID?: string
-  parts: Array<{ type: 'text'; text: string }>
+  parts: Array<{ type: 'text'; text: string; synthetic?: boolean }>
   model?: { providerID: string; modelID: string }
   agent?: string
 } {
@@ -179,7 +179,14 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
   const messageID = claimedMessageId
   return {
     ...(messageID ? { messageID } : {}),
-    parts: [{ type: 'text', text: prompt }],
+    parts: [
+      { type: 'text', text: prompt },
+      // Harness context: a synthetic part the transcript never renders (see
+      // the create contract's `initial_context`).
+      // `as const` is load-bearing: contextual typing does not flow through the
+      // conditional spread, and without it `type` widens to `string` (TS2322).
+      ...(context ? [{ type: 'text', text: context, synthetic: true } as const] : []),
+    ],
     ...(model ? { model } : {}),
     ...(agent ? { agent } : {}),
   }

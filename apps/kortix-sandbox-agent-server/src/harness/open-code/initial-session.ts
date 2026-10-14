@@ -194,7 +194,7 @@ export async function maybeCreateInitialOpencodeSession(
         opencode,
         sessionId,
         workspace,
-        buildInitialPromptBody(prompt, claimedTurn?.messageId),
+        buildInitialPromptBody(prompt, claimedTurn?.messageId, claimedTurn?.context),
       ),
     )
     // F1: written ONLY after delivery actually succeeded (an exception above

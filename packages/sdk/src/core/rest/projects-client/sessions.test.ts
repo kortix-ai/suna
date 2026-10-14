@@ -398,6 +398,18 @@ test('createProjectSession does NOT mark the session fresh when an initial_promp
   expect(isSessionFresh('NEW-2')).toBe(false);
 });
 
+test('createProjectSession forwards initial_context beside initial_prompt', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-CTX', name: null } };
+  await createProjectSession('P1', {
+    initial_prompt: 'Reply with the single word pong',
+    initial_context: '--- session contract ---',
+  });
+  expect(last().body).toEqual({
+    initial_prompt: 'Reply with the single word pong',
+    initial_context: '--- session contract ---',
+  });
+});
+
 test('createProjectSession defaults the body to {} when no input is given', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-3' } };
   await createProjectSession('P1');

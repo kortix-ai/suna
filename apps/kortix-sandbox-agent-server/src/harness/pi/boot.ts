@@ -268,7 +268,12 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   const claim = await claimPromise
   if (claim?.prompt) {
     try {
-      const admitted = runtime.admit({ messageID: claim.messageId, text: claim.prompt, files: [] })
+      // ponytail: pi's admission takes plain text only, so the harness context
+      // still rides inside the prompt here; the transcript shows the caller's
+      // words plus the contract tail until pi grows a synthetic-part carrier
+      // (OpenCode already delivers it as a model-only part).
+      const text = claim.context ? `${claim.prompt}\n\n${claim.context}` : claim.prompt
+      const admitted = runtime.admit({ messageID: claim.messageId, text, files: [] })
       bootMark('initial-prompt-delivered')
       // Published AFTER admission, like OpenCode's publish-after-prompt: the
       // control plane must never promote a `delivering` record for a turn the
