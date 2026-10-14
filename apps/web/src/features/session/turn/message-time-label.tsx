@@ -97,7 +97,7 @@ function derive(timestamp: number | null | undefined, now: number | null): Rende
   };
 }
 
-export interface MessageTimeLabelProps {
+interface MessageTimeLabelProps {
   /** Epoch milliseconds. `null` renders nothing at all. */
   timestamp: number | null | undefined;
   className?: string;

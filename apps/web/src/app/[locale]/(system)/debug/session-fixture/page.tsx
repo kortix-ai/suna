@@ -3,11 +3,11 @@
 /**
  * /debug/session-fixture — the COR-91 parity fixture at phone width.
  *
- * Renders `@kortix/shared/session-fixture` through the web transcript parts
- * (`TurnViewport` + `FixtureTurn`, which composes `UserMessage`,
- * `ActivityBurst`, `ToolPartRenderer`, markdown, errors, busy/retry, and
- * compaction exactly as `SessionTurnImpl` orders them) in a 390px column, for
- * side-by-side comparison with the mobile route `kortix://session-fixture`.
+ * Renders `@kortix/shared/session-fixture` through the web transcript's own
+ * turn (`TurnViewport` + `SessionTurn`, over the session-log turns of the
+ * fixture's rows) in a 390px column, for side-by-side comparison with the
+ * mobile route `kortix://session-fixture`. Below it, Codex and Claude Code tool calls
+ * (`FOREIGN_TOOL_CALLS`) render through their block kind's renderer (P5.3).
  *
  * No network: the fixture is seeded into the SDK session store under fixture
  * ids, queries are disabled by default, and no runtime is connected. Tool rows
@@ -25,11 +25,12 @@ import '@/features/session/tool/tools/register';
 
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
-import { compactionTurnInfo } from '@kortix/sdk';
+import { SessionTurn } from '@/features/session/session-chat/transcript';
+import { FOREIGN_TOOL_CALLS } from '@/features/session/tool/foreign-tool-calls';
+import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import { TurnViewport } from '@/features/session/turn/turn-viewport';
 import { SESSION_FIXTURE } from '@kortix/shared/session-fixture';
 
-import { FixtureTurn } from './fixture-turn';
 import {
   type FixtureStatusMode,
   fixturePendingTurnIds,
@@ -42,6 +43,8 @@ const SESSION_ID = SESSION_FIXTURE.sessionId;
 const WORKING_TURN_ID = SESSION_FIXTURE.working.userMessageId;
 const PENDING_TURN_IDS = fixturePendingTurnIds();
 const NOOP = () => {};
+const NOOP_ASYNC = async () => {};
+const NO_OUTCOME = {};
 
 function ControlButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -67,12 +70,7 @@ export default function SessionFixturePage() {
   const turns = useMemo(() => fixtureTurns(), []);
   const sessionStatus = fixtureStatus(mode);
   const sessionWorking = sessionStatus.type === 'busy' || sessionStatus.type === 'retry';
-  const lastCompactionTurnIndex = useMemo(() => {
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (compactionTurnInfo(turns[i]).isCompaction) return i;
-    }
-    return -1;
-  }, [turns]);
+  const lastCompactionTurnIndex = turns.findLastIndex((turn) => turn.compaction !== null);
   const [question] = SESSION_FIXTURE.questions;
 
   return (
@@ -97,11 +95,11 @@ export default function SessionFixturePage() {
             <div role="log" className={SESSION_TRANSCRIPT_CLASS}>
               <div className="flex min-w-0 flex-col">
                 {turns.map((turn, turnIndex) => {
-                  const id = turn.userMessage.info.id;
-                  const compaction = compactionTurnInfo(turn);
+                  const id = turn.id;
+                  const compaction = turn.compaction;
                   const isWorkingTurn = sessionWorking && id === WORKING_TURN_ID;
                   const suppressed =
-                    compaction.isCompaction &&
+                    compaction !== null &&
                     !compaction.hasContent &&
                     !compaction.inFlight &&
                     !isWorkingTurn &&
@@ -111,22 +109,33 @@ export default function SessionFixturePage() {
                       ? ''
                       : sessionWorking &&
                           PENDING_TURN_IDS.has(id) &&
-                          PENDING_TURN_IDS.has(turns[turnIndex - 1].userMessage.info.id)
+                          PENDING_TURN_IDS.has(turns[turnIndex - 1].id)
                         ? 'mt-3'
                         : 'mt-12';
                   return (
                     <TurnViewport key={id} turnId={id} className={gap}>
                       {suppressed ? null : (
-                        <FixtureTurn
+                        <SessionTurn
                           turn={turn}
+                          turnOutcome={NO_OUTCOME}
+                          isLast={turnIndex === turns.length - 1}
+                          ownsPlan={turn.plan}
+                          isFirstTurn={turnIndex === 0}
                           sessionId={SESSION_ID}
                           sessionStatus={sessionStatus}
                           sessionWorking={sessionWorking}
                           isWorkingTurn={id === WORKING_TURN_ID}
-                          queueState={SESSION_FIXTURE.queueStates[id] ?? null}
+                          suppressBusyIndicator={false}
+                          awaitingUser={false}
+                          pending={SESSION_FIXTURE.queueStates[id] === 'queued'}
+                          interruptedBeforeRun={SESSION_FIXTURE.queueStates[id] === 'interrupted'}
+                          isCompaction={compaction !== null}
                           permissions={SESSION_FIXTURE.permissions}
                           questions={SESSION_FIXTURE.questions}
                           agentNames={SESSION_FIXTURE.agentNames}
+                          onPermissionReply={NOOP_ASYNC}
+                          onRewind={NOOP}
+                          rewindDisabled
                         />
                       )}
                     </TurnViewport>
@@ -134,6 +143,12 @@ export default function SessionFixturePage() {
                 })}
               </div>
             </div>
+            <section className="border-border mt-12 flex flex-col gap-2 border-t px-4 pt-3" data-testid="foreign-tools">
+              <p className="text-sm font-medium">Foreign harness tools</p>
+              {FOREIGN_TOOL_CALLS.map((call) => (
+                <ToolPartRenderer key={call.id} call={call} defaultOpen />
+              ))}
+            </section>
           </div>
 
           {showQuestion && question ? (

@@ -82,6 +82,15 @@ describe('toolCallMetadata: the full state.metadata of the v1 part', () => {
     const native: ToolCallBlock = { type: 'tool_call', id: 'b1', call_id: 'c1', name: 'bash', kind: 'shell', input: { command: 'ls' }, status: 'complete', result: { content: [{ type: 'text', text: 'a' }], is_error: false, exit_code: 2 } };
     expect(toolCallMetadata(native)).toEqual({ exit: 2 });
   });
+
+  test('a native record: the details its adapter keeps (pi: ext.pi.data.details; else result.details) are the metadata', () => {
+    const base: ToolCallBlock = { type: 'tool_call', id: 'b2', call_id: 'c2', name: 'task', kind: 'task', input: { prompt: 'p' }, status: 'complete', result: { content: [{ type: 'text', text: 'done' }], is_error: false } };
+    const pi: ToolCallBlock = { ...base, ext: { pi: { version: '1.0.3', native_id: 'r2', data: { details: { sessionId: CHILD } } } } };
+    expect(toolCallMetadata(pi)).toEqual({ sessionId: CHILD });
+    expect(getChildSessionId(pi)).toBe(CHILD);
+    const neutral: ToolCallBlock = { ...base, id: 'b3', result: { ...base.result!, details: { answers: [['A']] } } };
+    expect(toolCallMetadata(neutral)).toEqual({ answers: [['A']] });
+  });
 });
 
 describe('the part helpers read a block the way they read its part', () => {

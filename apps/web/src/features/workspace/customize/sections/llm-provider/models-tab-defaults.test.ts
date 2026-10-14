@@ -120,7 +120,15 @@ describe('ModelsTab offers both default scopes', () => {
     expect(tabSource).toContain('formatPricePerMillion');
     expect(tabSource).toContain('formatTokenCount');
     expect(tabSource).toContain('<ModelCapabilityIcons');
-    expect(tabSource).toContain('per 1M');
+    // "$X / $Y per 1M" — the cheapest route as "from", every route on hover.
+    expect(tabSource).toContain("tList(hasRoutes ? 'fromPrice' : 'price'");
+    expect(tabSource).toContain('<ModelPriceHoverCard');
+    // The hover card keeps every route line, its preferred mark, the cached
+    // price, the estimate disclaimer and both data notes.
+    const card = tabSource.slice(tabSource.indexOf('export function ModelPriceHoverCard'));
+    for (const piece of ['routes.map', 'price.cacheRead', "'pricingPreferred'", "'pricingEstimate'", "'zdrDescription'", "'usProvidersDescription'"]) {
+      expect(card).toContain(piece);
+    }
     expect(tabSource).not.toContain('modelPlainSummary');
   });
 
@@ -152,8 +160,11 @@ describe('ModelsTab offers both default scopes', () => {
  */
 describe('selecting a model does not resize the layout above the list', () => {
   test('"Start over" shares the search row instead of owning one', () => {
-    expect(tabSource).toContain('{(ownsSearch || !enablement.usingDefaults) && (');
-    expect(tabSource).toContain('<div className="mb-3 flex items-center gap-2">');
+    // The row always renders — it also carries the "N of M on" count — so
+    // "Start over" appearing never inserts a row of its own.
+    const row = tabSource.slice(tabSource.indexOf('<div className="mb-4 flex items-center gap-3">'));
+    expect(row.indexOf('!enablement.usingDefaults')).toBeGreaterThan(-1);
+    expect(row.indexOf('!enablement.usingDefaults')).toBeLessThan(row.indexOf("tList('onCount'"));
     expect(tabSource).toContain('Start over');
   });
 
@@ -183,7 +194,7 @@ describe('a no-match search keeps the search input mounted', () => {
   });
 
   test('the no-match message renders below the search row, in the list slot', () => {
-    const searchRow = tabSource.indexOf('{(ownsSearch || !enablement.usingDefaults) && (');
+    const searchRow = tabSource.indexOf('<div className="mb-4 flex items-center gap-3">');
     const noMatch = tabSource.indexOf("tI18nComplete('textb475669b9d30'");
     expect(searchRow).toBeGreaterThan(-1);
     expect(noMatch).toBeGreaterThan(searchRow);

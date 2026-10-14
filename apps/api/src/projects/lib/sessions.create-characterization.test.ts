@@ -102,6 +102,32 @@ test('insert stores the exact create-time metadata fields and override order', a
   });
 });
 
+// KRTX-1547: the CLI spawn prompt is the caller's words, verbatim; the worker
+// contract rides in `initial_context` and reaches the model only.
+test('initial_prompt is stored verbatim and initial_context rides beside it', async () => {
+  const result = await createProjectSession({
+    project, userId: 'synthetic-user', requestingPrincipalType: 'human',
+    body: {
+      initial_prompt: 'Reply with the single word pong',
+      initial_context: '--- session contract ---\nDo not spawn other sessions.',
+    },
+  });
+  expect(result.error).toBeUndefined();
+  expect(inserted?.metadata).toMatchObject({
+    initial_prompt: 'Reply with the single word pong',
+    initial_context: '--- session contract ---\nDo not spawn other sessions.',
+  });
+});
+
+test('an oversized initial_context is refused and inserts nothing', async () => {
+  const result = await createProjectSession({
+    project, userId: 'synthetic-user', requestingPrincipalType: 'human',
+    body: { initial_prompt: 'hi', initial_context: 'x'.repeat(8_193) },
+  });
+  expect(result.error?.status).toBe(400);
+  expect(inserted).toBeUndefined();
+});
+
 // KRTX-1067: the boot model of a session with nothing stored. The gateway
 // serves the platform default to every tier, so a fresh FREE account must boot
 // pinned to it — an unpinned session was the dead composer of the bug report.

@@ -3,7 +3,6 @@
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -64,7 +63,6 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
-  bulkDeleteConfirmLabel,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -73,6 +71,7 @@ import {
   toggleSelection,
 } from './project-sessions-helpers';
 import { SessionDetail } from './session-detail';
+import { SessionsBulkDeleteDialog } from './sessions-bulk-delete-dialog';
 import { SessionRow, type SessionRowActions } from './session-row';
 import { SessionsEmptyState } from './sessions-empty-state';
 import { SessionsSelectionBar } from './sessions-selection-bar';
@@ -807,17 +806,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <ConfirmDialog
+      <SessionsBulkDeleteDialog
+        count={selectedCount}
         open={bulkConfirmOpen}
-        onOpenChange={(open) => !bulkDeleteMutation.isPending && setBulkConfirmOpen(open)}
-        title={tI18nComplete('text7ed6733a3900', {
-          value0: selectedCount,
-          value1: selectedCount === 1 ? 'session' : 'sessions',
-        })}
-        description={tI18nComplete.raw('textac371f652a2d')}
-        confirmLabel={bulkDeleteConfirmLabel(selectedCount, tI18nComplete)}
-        confirmVariant="destructive"
         isPending={bulkDeleteMutation.isPending}
+        onOpenChange={setBulkConfirmOpen}
         onConfirm={() => bulkDeleteMutation.mutate([...visibleSelection])}
       />
 

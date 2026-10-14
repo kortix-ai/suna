@@ -103,7 +103,7 @@ describe('ChannelsSection chrome', () => {
   test('the page heading says what a channel is for while the scope is up', () => {
     expect(pageCode).toContain('description={SCOPE_DESCRIPTION[scope]}');
     expect(pageCode).toContain(
-      "channels: 'Reach your agent from the tools your team already uses.'",
+      "channels: 'Talk to your agents from the apps your team uses.'",
     );
   });
 

@@ -331,15 +331,15 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
   });
 
-  test('a thread without the kortix.transcript.v1 ext (pi): v1, no session log, no schema v2', async () => {
+  test('a native thread (pi: no kortix.transcript.v1 ext): v2, the page goes in the store, the stream switches to schema v2', async () => {
     const state = mount({ loader: async () => page() });
     await flush();
-    expect(state.dialect).toBe('v1');
-    expect(useSyncStore.getState().sessionLogs).toEqual({});
-    expect(joined).toEqual([]);
+    expect(state.dialect).toBe('v2');
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
+    expect(joined.map((j) => j.options.schema)).toEqual(['v2']);
   });
 
-  test('a pi page touches no device copy: no v2 copy is written and the v1 copy stays', async () => {
+  test('a native page replaces the v1 device copy with the v2 copy, and the saved native copy paints first', async () => {
     const data = new Map<string, string>();
     const store = createSavedCopyStore({ storage: { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) }, userId: 'u1' });
     setSavedCopyStore(store);
@@ -347,8 +347,13 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     await store.write(PROJECT, SESSION, v1Copy as never);
     mount({ loader: async () => page() });
     await flush();
-    expect(await savedSessionLogCopies(store)!.read(PROJECT, SESSION)).toBeNull();
-    expect(store.read(PROJECT, SESSION)).not.toBeNull();
+    expect((await savedSessionLogCopies(store)!.read(PROJECT, SESSION))!.messages).toHaveLength(log.threads[0]!.messages.length);
+    expect(store.read(PROJECT, SESSION)).toBeNull();
+    act(() => renderer?.unmount());
+    renderer = null;
+    mount({ loader: () => new Promise(() => {}) });
+    await flush();
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
   });
 
   test('a 404 (a new session whose journal has not posted yet) is retried at the next turn end and on a stream reconnect', async () => {

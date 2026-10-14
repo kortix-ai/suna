@@ -129,17 +129,37 @@ function initialsFor(providerID: string, name?: string) {
   ).toUpperCase();
 }
 
+/** A third-party logo on a white tile with a hairline: black marks stay
+ *  legible in both themes, so the tile never follows the theme. */
+const LOGO_TILE_LIGHT = 'border-border rounded-md border bg-white';
+const LOGO_TILE_LIGHT_TEXT = 'text-black';
+
+/** The Kortix mark has no built-in padding, so it gets its own size per tile
+ *  to match the other logos' optical size (roughly half the tile). */
+const KORTIX_MARK_SIZE = {
+  xs: 'size-3.5',
+  small: 'size-3',
+  medium: 'size-4',
+  default: 'size-4',
+  large: 'size-5',
+} as const;
+
 export function ProviderLogo({
   providerID,
   name,
   className,
   size = 'default',
+  tone = 'theme',
 }: {
   providerID: string;
   name?: string;
   className?: string;
-  size?: 'xs' | 'small' | 'default' | 'large';
+  size?: 'xs' | 'small' | 'medium' | 'default' | 'large';
+  /** `light`: a white tile with a hairline and the black mark in BOTH
+   *  themes. `theme` follows the theme. */
+  tone?: 'theme' | 'light';
 }) {
+  const light = tone === 'light';
   // An unreachable models.dev logo (offline self-host) falls back to initials.
   const [failedSrc, setFailedSrc] = useState<string>();
   const iconSrc = providerIconSrc(providerID);
@@ -148,6 +168,7 @@ export function ProviderLogo({
   const sizeClasses = {
     xs: 'size-4',
     small: 'size-8',
+    medium: 'size-9',
     default: 'size-9',
     large: 'size-11',
   };
@@ -155,6 +176,7 @@ export function ProviderLogo({
   const iconSizes = {
     xs: 16,
     small: 20,
+    medium: 24,
     default: 22,
     large: 24,
   };
@@ -168,7 +190,7 @@ export function ProviderLogo({
         // the other sizes read as an avatar, and at 16px a tile around a 12px
         // mark is all frame and no logo. The initials fallback keeps its tile
         // at every size: two bare letters at 9px read as debris, not a logo.
-        src && size === 'xs' ? 'bg-transparent' : 'bg-muted rounded-md',
+        src && size === 'xs' ? 'bg-transparent' : light ? LOGO_TILE_LIGHT : 'bg-muted rounded-md',
         sizeClasses[size],
         className,
       )}
@@ -183,17 +205,19 @@ export function ProviderLogo({
           unoptimized={src.startsWith('https:')}
           onError={() => setFailedSrc(src)}
           className={cn(
-            'object-contain dark:invert',
+            'object-contain',
+            !light && 'dark:invert',
             // The Kortix mark is drawn edge-to-edge with no built-in padding,
             // so inside a tile it needs its own inset to match the other
             // logos' optical size. At `xs` there is no tile to inset from.
-            src === '/kortix-symbol.svg' && (size === 'xs' ? 'size-3.5' : 'size-3'),
+            src === '/kortix-symbol.svg' && KORTIX_MARK_SIZE[size],
           )}
         />
       ) : (
         <span
           className={cn(
-            'font-semibold tracking-wide text-zinc-600 uppercase dark:text-zinc-300',
+            'font-semibold tracking-wide uppercase',
+            light ? LOGO_TILE_LIGHT_TEXT : 'text-zinc-600 dark:text-zinc-300',
             size === 'xs' ? 'text-[9px]' : 'text-xs',
           )}
         >

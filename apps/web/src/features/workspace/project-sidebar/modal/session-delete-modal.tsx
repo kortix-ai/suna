@@ -1,12 +1,41 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { deleteProjectSession } from '@kortix/sdk';
+import { dismissToast, errorToast, progressToast, successToast } from '@/components/ui/toast';
+import { deleteProjectSession, restoreProjectSession } from '@kortix/sdk';
 import { qk, removeCachedProjectSession } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from '@/i18n/use-translations';
+
+/** Days a deleted session stays restorable (`SESSION_DELETE_ROWS_DAYS` in the API). */
+export const RESTORE_DAYS = 30;
+/** How long the delete toast offers Undo. */
+const UNDO_TOAST_MS = 8000;
+/**
+ * The waits between restore attempts while the API answers 409
+ * `session_sandbox_removal_pending`: the provider usually confirms the old
+ * sandbox removed within seconds of the delete.
+ */
+const RESTORE_RETRY_MS = [2_000, 4_000, 8_000, 16_000];
+
+const removalPending = (err: unknown) =>
+  (err as { code?: unknown } | null)?.code === 'session_sandbox_removal_pending';
+
+/** Restore a deleted session, retrying while its old sandbox is still being removed. */
+async function restoreWhenRemoved(projectId: string, sessionId: string): Promise<void> {
+  for (const wait of RESTORE_RETRY_MS) {
+    try {
+      await restoreProjectSession(projectId, sessionId);
+      return;
+    } catch (err) {
+      if (!removalPending(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+  await restoreProjectSession(projectId, sessionId);
+}
 
 interface SessionDeleteModalProps {
   projectId: string;
@@ -26,8 +55,43 @@ export function SessionDeleteModal({
   onDeleted,
 }: SessionDeleteModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const t = useTranslations('sessionDelete');
+  const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
+  const router = useRouter();
   const openSessionId = useParams<{ sessionId?: string }>()?.sessionId;
+
+  // Runs from the toast, after the dialog closed (and maybe unmounted).
+  const undoDelete = async (id: string, toastId: string) => {
+    dismissToast(toastId);
+    const progressId = progressToast(t('restoring'));
+    try {
+      await restoreWhenRemoved(projectId, id);
+    } catch (err) {
+      errorToast(
+        err instanceof Error && err.message ? err.message : t('restoreFailed'),
+        // Undo is the only restore in the web app: keep a way to try again.
+        removalPending(err)
+          ? {
+              id: toastId,
+              duration: UNDO_TOAST_MS,
+              button: (
+                <Button size="sm" variant="outline" onClick={() => void undoDelete(id, toastId)}>
+                  {tCommon('retry')}
+                </Button>
+              ),
+            }
+          : undefined,
+      );
+      return;
+    } finally {
+      dismissToast(progressId);
+    }
+    successToast(t('restored'));
+    void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+    // Deleting the open session left its page: Undo goes back to it.
+    if (id === openSessionId) router.push(`/projects/${projectId}/sessions/${id}`);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteProjectSession(projectId, id),
@@ -37,11 +101,21 @@ export function SessionDeleteModal({
     // (header, chat, the runtime pin) refetch a session that is being deleted.
     onMutate: (id) =>
       id === openSessionId ? undefined : removeCachedProjectSession(queryClient, projectId, id),
-    onSuccess: () => {
+    onSuccess: (_result, id) => {
+      const toastId = `session-delete-undo-${id}`;
       successToast(
         sessionLabel
           ? tHardcodedUi('i18nComplete.text0690079160b0', { value0: sessionLabel })
           : tHardcodedUi.raw('i18nComplete.text3c0cf36859ac'),
+        {
+          id: toastId,
+          duration: UNDO_TOAST_MS,
+          button: (
+            <Button size="sm" variant="outline" onClick={() => void undoDelete(id, toastId)}>
+              {t('undo')}
+            </Button>
+          ),
+        },
       );
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
       onDeleted?.();
@@ -67,17 +141,11 @@ export function SessionDeleteModal({
         if (!deleteMutation.isPending) onOpenChange(o);
       }}
       title={tHardcodedUi.raw('componentsProjectsProjectSessionList.line189JsxTextDeleteSession')}
-      description={
-        <>
-          {tHardcodedUi.raw(
-            'componentsProjectsProjectSessionList.line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox',
-          )}{' '}
-          <span className="text-foreground font-medium">{sessionLabel}</span>
-          {tHardcodedUi.raw(
-            'componentsProjectsProjectSessionList.line193JsxTextThisActionCannotBeUndone',
-          )}
-        </>
-      }
+      description={t.rich('description', {
+        label: sessionLabel ?? '',
+        days: RESTORE_DAYS,
+        name: (chunks) => <span className="text-foreground font-medium">{chunks}</span>,
+      })}
       confirmLabel={tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}
       confirmVariant="destructive"
       isPending={deleteMutation.isPending}

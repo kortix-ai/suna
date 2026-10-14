@@ -3,7 +3,6 @@
 import { Badge } from '@/components/ui/badge';
 import Hint from '@/components/ui/hint';
 import { useTranslations } from '@/i18n/use-translations';
-import { LockIcon, UsersIcon, UsersThreeIcon } from '@phosphor-icons/react';
 
 import type { AccountVisibility } from './connector-connections';
 
@@ -30,14 +29,7 @@ export function AudienceBadge({
             : tSharing('onlyYouDescription')
       }
     >
-      <Badge variant="outline" size="xs" data-testid="account-visibility">
-        {visibility.kind === 'you' ? (
-          <LockIcon />
-        ) : visibility.kind === 'everyone' ? (
-          <UsersThreeIcon />
-        ) : (
-          <UsersIcon />
-        )}
+      <Badge variant="secondary" size="sm" data-testid="account-visibility">
         {visibility.kind === 'you'
           ? tSharing('onlyYou')
           : visibility.kind === 'everyone'

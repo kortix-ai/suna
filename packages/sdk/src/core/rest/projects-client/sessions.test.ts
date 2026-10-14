@@ -51,6 +51,7 @@ import {
   reloadProjectSessionConfigStream,
   resolvePublicShareUrl,
   restartProjectSession,
+  restoreProjectSession,
   retrySessionPrompt,
   revokeSessionPublicShare,
   sessionModelPin,
@@ -395,6 +396,18 @@ test('createProjectSession does NOT mark the session fresh when an initial_promp
   nextResponse = { status: 200, body: { session_id: 'NEW-2', name: null } };
   await createProjectSession('P1', { initial_prompt: 'hello' });
   expect(isSessionFresh('NEW-2')).toBe(false);
+});
+
+test('createProjectSession forwards initial_context beside initial_prompt', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-CTX', name: null } };
+  await createProjectSession('P1', {
+    initial_prompt: 'Reply with the single word pong',
+    initial_context: '--- session contract ---',
+  });
+  expect(last().body).toEqual({
+    initial_prompt: 'Reply with the single word pong',
+    initial_context: '--- session contract ---',
+  });
 });
 
 test('createProjectSession defaults the body to {} when no input is given', async () => {
@@ -796,6 +809,26 @@ test("deleteProjectSession drops the session's saved copy on this device", async
   } finally {
     setSavedCopyStore(null);
   }
+});
+
+test('deleteProjectSession returns the restore window', async () => {
+  nextResponse = { status: 200, body: { ok: true, restore_until: '2026-11-12T10:00:00.000Z' } };
+  const result = await deleteProjectSession('P1', 'S1');
+  expect(result.restore_until).toBe('2026-11-12T10:00:00.000Z');
+});
+
+test('restoreProjectSession POSTs to /restore', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  expect(await restoreProjectSession('P1', 'S1')).toEqual({ ok: true });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/restore');
+  expect(last().method).toBe('POST');
+});
+
+test('restoreProjectSession rejects a refused restore with the status and code', async () => {
+  nextResponse = { status: 410, body: { error: 'Its messages and files are gone.', code: 'session_purged' } };
+  await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 410, code: 'session_purged' });
+  nextResponse = { status: 409, body: { error: 'This session is not deleted', code: 'session_not_deleted' } };
+  await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 409, code: 'session_not_deleted' });
 });
 
 test('restartProjectSession POSTs to /restart', async () => {
