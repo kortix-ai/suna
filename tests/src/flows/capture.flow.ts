@@ -98,10 +98,20 @@ async function enableCapture(ctx: FlowContext, accountId: string) {
     .has('$.can_manage', true);
 }
 
+/**
+ * A computer's own network address, from its machine key. Each real computer signs in from its own
+ * address; without one, every flow would share the API's single `unknown` rate-limit bucket.
+ */
+const fromComputer = (machineKey: string) => ({
+  headers: {
+    'x-real-ip': `10.${parseInt(machineKey.slice(0, 2), 16)}.${parseInt(machineKey.slice(2, 4), 16)}.${parseInt(machineKey.slice(4, 6), 16)}`,
+  },
+});
+
 /** The whole device sign-in, approved by `who` into `accountId`. */
 async function signInDevice(ctx: FlowContext, who: Principal, accountId: string, machineKey: string) {
   const anon = ctx.client.as(ctx.P.ANON);
-  const started = await anon.post(path(R.authorize), engineAuthorize(machineKey));
+  const started = await anon.post(path(R.authorize), engineAuthorize(machineKey), fromComputer(machineKey));
   started.status(200);
   const grant = started.json<{ device_code: string; user_code: string; interval: number }>();
   (await ctx.client.as(who).post(path(R.approve), { account_id: accountId }, { params: { user_code: grant.user_code } })).status(200);
@@ -131,7 +141,7 @@ flow(
     });
 
     await ctx.step('the device starts a sign-in with the engine’s body → 200 matching issuer-device-authorization: XXXX-0000 user code, approval URL, interval 5, 900 s', async () => {
-      const r = await anon.post(path(R.authorize), engineAuthorize(machineKey));
+      const r = await anon.post(path(R.authorize), engineAuthorize(machineKey), fromComputer(machineKey));
       r.status(200).body().has('$.interval', 5).has('$.expires_in', 900);
       conforms('issuer-device-authorization', r.json());
       grant = r.json();
@@ -218,7 +228,8 @@ flow(
     });
 
     await ctx.step('a denied sign-in → the device reads access_denied', async () => {
-      const r = await anon.post(path(R.authorize), engineAuthorize(syntheticMachineKey(ctx.fixtures.name('cap1-deny'))));
+      const denyKey = syntheticMachineKey(ctx.fixtures.name('cap1-deny'));
+      const r = await anon.post(path(R.authorize), engineAuthorize(denyKey), fromComputer(denyKey));
       const denied = r.json<{ device_code: string; user_code: string }>();
       (await asMember.post(path(R.deny), {}, { params: { user_code: denied.user_code } })).status(200).body().has('$.status', 'denied');
       const refused = await anon.post(path(R.token), { device_code: denied.device_code });
@@ -240,7 +251,7 @@ flow(
       const again = await signInDevice(ctx, member, accountId, machineKey);
       if (again.device_id !== device.device_id) throw new Error('a new sign-in on the same computer made a new device');
       (await ctx.client.as(ctx.P.OWNER).del(path(R.revoke), { params: { accountId, deviceId: again.device_id } })).status(200);
-      const started = (await anon.post(path(R.authorize), engineAuthorize(machineKey))).status(200).json<{ user_code: string }>();
+      const started = (await anon.post(path(R.authorize), engineAuthorize(machineKey), fromComputer(machineKey))).status(200).json<{ user_code: string }>();
       (await asMember.post(path(R.approve), { account_id: accountId }, { params: { user_code: started.user_code } }))
         .status(403)
         .body()
@@ -885,7 +896,7 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: [R.devices, R.sync, R.inbox, R.setEnabled],
+    routes: [R.devices, R.sync, R.inbox, R.setEnabled, R.enrollTokenCreate, R.enroll],
   },
   async (ctx) => {
     const { team, member } = await captureAccount(ctx);
@@ -900,7 +911,17 @@ flow(
     const silentDoc = statusDoc(t0 - 45 * MIN);
     const names = ['recording', 'locked', 'paused', 'stalled', 'silent'] as const;
     const computers = new Map<(typeof names)[number], { device_id: string; prefix: string }>();
-    for (const name of names) computers.set(name, await signInDevice(ctx, ctx.P.OWNER, team.id, syntheticMachineKey(ctx.fixtures.name(`cap8-${name}`))));
+    // An IT fleet: one personal token for the owner enrolls the five computers (enroll is limited per token
+    // and per machine, so the flows that run beside this one cannot rate-limit it the way sign-in can).
+    const fleetToken = (
+      await owner.post(path(R.enrollTokenCreate), { name: 'CAP-8 fleet', user_id: ctx.P.OWNER.userId }, { params })
+    ).status(201).json<{ token: string }>().token;
+    const anon = ctx.client.as(ctx.P.ANON);
+    for (const name of names) {
+      const machineKey = syntheticMachineKey(ctx.fixtures.name(`cap8-${name}`));
+      const enrolled = (await anon.post(path(R.enroll), engineEnroll(fleetToken, machineKey, null))).status(200);
+      computers.set(name, enrolled.json<{ device_id: string; prefix: string }>());
+    }
 
     /** Upload a status.json for one computer and read it now (what the index reader does every poll). */
     const report = async (name: (typeof names)[number], doc: Record<string, unknown>) => {
@@ -955,7 +976,7 @@ flow(
         await report('stalled', stalledDoc);
         await report('silent', silentDoc);
         if ((await stored('capture_device_down', ownerId)) !== 2) throw new Error(`owner down rows ${await stored('capture_device_down', ownerId)}`);
-        if ((await stored('capture_device_down', member.userId)) !== 0) throw new Error('the member got an alert');
+        if ((await stored('capture_device_down', member.userId!)) !== 0) throw new Error('the member got an alert');
         const rows = await db.query<{ dedupe_key: string; body: string; title: string }>(
           `SELECT dedupe_key, body, title FROM kortix.notifications WHERE account_id = $1 AND user_id = $2 AND kind = 'capture_device_down' ORDER BY dedupe_key`,
           [team.id, ownerId],
