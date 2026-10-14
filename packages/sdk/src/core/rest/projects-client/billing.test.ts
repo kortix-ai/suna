@@ -195,12 +195,12 @@ test('setBillingPlan surfaces the 400 for an out-of-range amount', async () => {
 test('tier configurations expose the purchasable range', async () => {
   nextResponse = {
     status: 200,
-    body: { tiers: [], min_monthly_usd: 20, max_monthly_usd: 10000 },
+    body: { tiers: [], min_monthly_usd: 50, max_monthly_usd: 10000 },
   };
   const result = await getBillingTierConfigurations();
   expect(last().url).toContain('/billing/tier-configurations');
   const range: [number, number] = [result.min_monthly_usd, result.max_monthly_usd];
-  expect(range).toEqual([20, 10000]);
+  expect(range).toEqual([50, 10000]);
 });
 
 test('sync and auto-topup setup methods own their REST paths', async () => {

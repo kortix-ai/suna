@@ -2,33 +2,52 @@ export const CREDITS_PER_USD = 100;
 export const DEFAULT_COMPUTE_HOURLY_PRICE_USD = 0.201312;
 
 /**
- * The credits plan: one paid plan, any whole monthly amount from `MIN` to
- * `MAX` dollars. 1 credit = $0.01, flat rate, no volume bonus. These bounds
- * mirror `MIN_MONTHLY_USD` / `MAX_MONTHLY_USD` in apps/api (`GET
- * /v1/billing/tier-configurations` also returns them as `min_monthly_usd` and
- * `max_monthly_usd`); `POST /v1/billing/plan` answers 400 outside them.
+ * The credits plan: one paid plan, sold as a tier ladder of monthly amounts.
+ * 1 credit = $0.01 at every tier, so a bigger tier buys more credits, never a
+ * cheaper credit. The bounds mirror `PLAN_MIN_MONTHLY_USD` /
+ * `PLAN_MAX_MONTHLY_USD` in apps/api (`GET /v1/billing/tier-configurations`
+ * returns the same ladder); `POST /v1/billing/plan` answers 400 outside them.
  */
-export const CREDITS_PLAN_MIN_USD = 20;
+export const CREDITS_PLAN_MIN_USD = 50;
 export const CREDITS_PLAN_MAX_USD = 10_000;
 
 /** The Free plan's monthly grant, in credits. */
 export const FREE_MONTHLY_CREDITS = 200;
 
-/**
- * Named amounts. Labels only: every amount is the same rate, so a preset is a
- * shortcut for a number, never a different product.
- */
-export const CREDITS_PLAN_PRESETS = [
-  { id: 'starter', monthlyUsd: 20 },
-  { id: 'pro', monthlyUsd: 100 },
-  { id: 'scale', monthlyUsd: 500 },
-] as const;
+export type CreditTierGroup = 'small' | 'growing' | 'scale';
 
-export type CreditsPlanPresetId = (typeof CREDITS_PLAN_PRESETS)[number]['id'];
+export interface CreditTier {
+  monthlyUsd: number;
+  group: CreditTierGroup;
+  /** The most common paid amount at or above the minimum. */
+  popular?: boolean;
+}
 
-/** The preset an amount equals, or `null` for a custom amount. */
-export function presetForMonthlyUsd(monthlyUsd: number | null): CreditsPlanPresetId | null {
-  return CREDITS_PLAN_PRESETS.find((preset) => preset.monthlyUsd === monthlyUsd)?.id ?? null;
+/** The tier ladder, smallest first. Mirrors `PLAN_PRESETS` in apps/api. */
+export const CREDIT_TIERS: readonly CreditTier[] = [
+  { monthlyUsd: 50, group: 'small' },
+  { monthlyUsd: 100, group: 'small' },
+  { monthlyUsd: 200, group: 'small', popular: true },
+  { monthlyUsd: 300, group: 'growing' },
+  { monthlyUsd: 500, group: 'growing' },
+  { monthlyUsd: 750, group: 'growing' },
+  { monthlyUsd: 1_000, group: 'growing' },
+  { monthlyUsd: 1_500, group: 'growing' },
+  { monthlyUsd: 2_000, group: 'growing' },
+  { monthlyUsd: 3_000, group: 'scale' },
+  { monthlyUsd: 5_000, group: 'scale' },
+  { monthlyUsd: 7_500, group: 'scale' },
+  { monthlyUsd: 10_000, group: 'scale' },
+];
+
+export const CREDIT_TIER_GROUPS: readonly CreditTierGroup[] = ['small', 'growing', 'scale'];
+
+/** The tier a page opens on: the most popular one. */
+export const DEFAULT_TIER_USD = CREDIT_TIERS.find((tier) => tier.popular)!.monthlyUsd;
+
+/** The ladder tier for an amount, or `undefined` for an amount off the ladder (a legacy plan). */
+export function tierForMonthlyUsd(monthlyUsd: number | null | undefined): CreditTier | undefined {
+  return CREDIT_TIERS.find((tier) => tier.monthlyUsd === monthlyUsd);
 }
 
 /** Whether `monthlyUsd` is an amount the API accepts: a whole dollar in range. */
@@ -46,56 +65,26 @@ export function monthlyCreditsForUsd(monthlyUsd: number): number {
   return Math.round(monthlyUsd * CREDITS_PER_USD);
 }
 
-export function estimateDefaultCompute(credits: number): {
-  creditValueUsd: number;
-  runtimeHours: number;
-} {
-  const normalizedCredits = Math.max(0, credits);
-  const creditValueUsd = normalizedCredits / CREDITS_PER_USD;
-
-  return {
-    creditValueUsd,
-    runtimeHours: creditValueUsd / DEFAULT_COMPUTE_HOURLY_PRICE_USD,
-  };
-}
-
-/** Default-machine hours a monthly amount buys when used only for compute. */
-export function estimatePlanCompute(monthlyUsd: number): {
-  monthlyCredits: number;
-  runtimeHours: number;
-} {
-  const monthlyCredits = monthlyCreditsForUsd(Math.max(0, monthlyUsd));
-  return {
-    monthlyCredits,
-    runtimeHours: estimateDefaultCompute(monthlyCredits).runtimeHours,
-  };
-}
-
 /**
- * Slider position (0..100) for an amount, and back. The range spans 500x, so
- * the scale is logarithmic: a linear rail would put $20..$100 in the first 1%.
- * `amountFromSlider` snaps to $5 below $100, $25 below $1,000 and $100 above,
- * so the rail lands on round numbers; the number field takes any whole dollar.
+ * Credits one agent session costs on Kortix Cloud: the median and the 75th
+ * percentile over every session that spent credits in the 30 days to
+ * 2026-10-14 (32,963 sessions, compute + managed models). Long runs sit near
+ * the 90th percentile, 121 credits.
  */
-export function sliderFromMonthlyUsd(monthlyUsd: number): number {
-  const clamped = Math.min(CREDITS_PLAN_MAX_USD, Math.max(CREDITS_PLAN_MIN_USD, monthlyUsd));
-  return (
-    (100 * Math.log(clamped / CREDITS_PLAN_MIN_USD)) /
-    Math.log(CREDITS_PLAN_MAX_USD / CREDITS_PLAN_MIN_USD)
-  );
+export const SESSION_CREDITS_MEDIAN = 6;
+export const SESSION_CREDITS_P75 = 24;
+export const SESSION_CREDITS_P90 = 121;
+
+/** How many typical agent sessions a monthly credit amount covers: [busy, light]. */
+export function sessionsForCredits(credits: number): [number, number] {
+  const round = (n: number) => (n >= 1000 ? Math.round(n / 100) * 100 : Math.round(n / 10) * 10);
+  return [round(credits / SESSION_CREDITS_P75), round(credits / SESSION_CREDITS_MEDIAN)];
 }
 
-export function amountFromSlider(position: number): number {
-  const raw =
-    CREDITS_PLAN_MIN_USD *
-    Math.pow(
-      CREDITS_PLAN_MAX_USD / CREDITS_PLAN_MIN_USD,
-      Math.min(100, Math.max(0, position)) / 100,
-    );
-  const step = raw < 100 ? 5 : raw < 1000 ? 25 : 100;
-  const snapped = Math.round(raw / step) * step;
-  return Math.min(CREDITS_PLAN_MAX_USD, Math.max(CREDITS_PLAN_MIN_USD, snapped));
-}
+/** Credits the default agent computer uses per running hour. */
+export const DEFAULT_COMPUTE_CREDITS_PER_HOUR = Math.round(
+  DEFAULT_COMPUTE_HOURLY_PRICE_USD * CREDITS_PER_USD,
+);
 
 /** `$100` — whole dollars, no decimals, in the reader's locale. */
 export function formatWholeUsd(amount: number, locale: string): string {

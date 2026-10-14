@@ -40,7 +40,7 @@
  * ACCURACY GATE — every figure and claim below was read out of code on
  * 2026-07-31. Do not soften, inflate, or "restore" any of it.
  * ==========================================================================
- *  - PRICE. Managed cloud is credits: one paid plan, any whole monthly amount,
+ *  - PRICE. Managed cloud is credits: one paid plan sold in tiers from $50 a month,
  *    1 credit = $0.01, unlimited members sharing one pool —
  *    `apps/web/src/features/billing/pricing-plans.ts`, the `credits` entry of
  *    `PRICING_PLANS`. Its `free` entry is $0 with "200 credits / month, no card

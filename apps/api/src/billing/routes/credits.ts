@@ -12,7 +12,7 @@ creditsRouter.openapi(
     method: 'get',
     path: '/tier-configurations',
     tags: ['billing'],
-    summary: 'List the credits plan presets and amount bounds',
+    summary: 'List the credits plan tier ladder and amount bounds',
     ...auth,
     responses: {
       200: json(
@@ -30,7 +30,7 @@ creditsRouter.openapi(
           min_monthly_usd: z.number(),
           max_monthly_usd: z.number(),
         }),
-        'Plan presets: one credits plan, named monthly amounts, any whole amount in bounds',
+        'Tier ladder: monthly amounts of the one credits plan; any whole amount in bounds',
       ),
     },
   }),
@@ -38,8 +38,8 @@ creditsRouter.openapi(
     // Each preset grants its price in credits (1 credit = $0.01): monthly_credits
     // stays in USD, as on every other billing response.
     const tiers = PLAN_PRESETS.map((p) => ({
-      name: p.key,
-      display_name: p.name,
+      name: `credits_${p.monthlyUsd}`,
+      display_name: `${(p.monthlyUsd * 100).toLocaleString('en-US')} credits`,
       monthly_price: p.monthlyUsd,
       yearly_price: 0,
       monthly_credits: p.monthlyUsd,

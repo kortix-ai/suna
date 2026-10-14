@@ -7,22 +7,24 @@
  * The plan is the subject. The Credits pane (`settings/tabs/credits-tab.tsx`)
  * owns the wallet: balance, composition, period spend. This card names the
  * plan, says where it stands (renews, cancels, past due), and, for an account
- * owner, lets them pick a new monthly amount with the same `CreditPlanPicker`
- * the pricing page and the upgrade modal use.
+ * owner, lets them pick a new tier with the same `CreditTierSelect` the pricing
+ * page and the upgrade modal use.
  *
  * There are no seats. Members are unlimited and share one credit pool, so the
- * only number a person can change is the monthly amount.
+ * only thing a person can change is the tier.
  */
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import {
+  DEFAULT_TIER_USD,
   FREE_MONTHLY_CREDITS,
   formatWholeUsd,
   isValidMonthlyUsd,
   monthlyCreditsForUsd,
+  tierForMonthlyUsd,
 } from '@/features/billing/compute-pricing';
-import { CreditPlanPicker } from '@/features/billing/credit-plan-picker';
+import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
@@ -47,7 +49,7 @@ export function describePlanChange(opts: {
   nextUsd: number | null;
   hasSubscription: boolean;
 }): PlanChangeKind {
-  if (!isValidMonthlyUsd(opts.nextUsd)) return 'invalid';
+  if (!isValidMonthlyUsd(opts.nextUsd) || !tierForMonthlyUsd(opts.nextUsd)) return 'invalid';
   if (!opts.hasSubscription) return 'subscribe';
   if (opts.currentUsd === null || opts.nextUsd > opts.currentUsd) return 'raise';
   if (opts.nextUsd < opts.currentUsd) return 'cut';
@@ -101,7 +103,7 @@ export function PlanCard({ state }: { state: AccountState }) {
               {[
                 sublabel,
                 credits !== null
-                  ? tCredits('picker.creditsPerMonth', {
+                  ? tCredits('tiers.creditsPerMonth', {
                       credits: formatCredits(credits, { locale }),
                     })
                   : null,
@@ -145,7 +147,11 @@ export function PlanChanger({ state, className }: { state: AccountState; classNa
   const plan = resolvedPlan(state);
   const currentUsd = plan.monthlyUsd ?? null;
   const hasSubscription = accountHasLiveSubscription(state);
-  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(currentUsd ?? 100);
+  // An off-ladder current amount (a legacy $20 plan) opens on the select's
+  // "choose a tier" state; everyone else opens on their tier or the popular one.
+  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(
+    currentUsd ?? (hasSubscription ? null : DEFAULT_TIER_USD),
+  );
   const { change, isPending } = useChangeCreditPlan();
 
   if (!isBillingEnabled()) return null;
@@ -178,7 +184,12 @@ export function PlanChanger({ state, className }: { state: AccountState; classNa
         <h3 className="text-foreground text-sm font-medium">{t('title')}</h3>
         <p className="text-muted-foreground text-xs">{t('description')}</p>
       </div>
-      <CreditPlanPicker value={monthlyUsd} onChange={setMonthlyUsd} disabled={isPending} />
+      <CreditTierSelect
+        value={monthlyUsd}
+        onChange={setMonthlyUsd}
+        current={currentUsd}
+        disabled={isPending}
+      />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <p className="text-muted-foreground min-w-0 flex-1 text-xs text-balance">{hint}</p>
         <Button

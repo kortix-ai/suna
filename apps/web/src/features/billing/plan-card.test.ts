@@ -140,14 +140,14 @@ describe('describePlanChange', () => {
     expect(describePlanChange({ currentUsd: 100, nextUsd: 500, hasSubscription: true })).toBe(
       'raise',
     );
-    expect(describePlanChange({ currentUsd: 100, nextUsd: 40, hasSubscription: true })).toBe('cut');
+    expect(describePlanChange({ currentUsd: 100, nextUsd: 50, hasSubscription: true })).toBe('cut');
     expect(describePlanChange({ currentUsd: 100, nextUsd: 100, hasSubscription: true })).toBe(
       'unchanged',
     );
   });
 
-  test('an amount the API would reject is invalid, with or without a subscription', () => {
-    for (const nextUsd of [null, 19, 10_001, 25.5]) {
+  test('an amount off the tier ladder is invalid, with or without a subscription', () => {
+    for (const nextUsd of [null, 20, 49, 250, 10_001, 75.5]) {
       expect(describePlanChange({ currentUsd: 100, nextUsd, hasSubscription: true })).toBe(
         'invalid',
       );

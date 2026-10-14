@@ -14,8 +14,8 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatWholeUsd, isValidMonthlyUsd } from '@/features/billing/compute-pricing';
-import { CreditPlanPicker } from '@/features/billing/credit-plan-picker';
+import { DEFAULT_TIER_USD, formatWholeUsd, tierForMonthlyUsd } from '@/features/billing/compute-pricing';
+import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { PlanChanger } from '@/features/billing/plan-card';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import type { PricingPlan } from '@/features/billing/pricing-plans';
@@ -165,8 +165,8 @@ export function UpgradePlansModal({
 
 /**
  * One card of the plan view. Free closes the dialog. Credits carries the
- * shared amount picker and starts the plan change; its own state, so the
- * amount survives re-renders of the modal.
+ * shared tier select and starts the plan change; its own state, so the tier
+ * survives re-renders of the modal.
  */
 function UpgradePlanCard({
   plan,
@@ -183,7 +183,7 @@ function UpgradePlanCard({
   const tCard = useTranslations('billing.credits.planCard');
   const tPlan = useTranslations('billing.plan');
   const locale = useLocale();
-  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(100);
+  const [monthlyUsd, setMonthlyUsd] = useState<number>(DEFAULT_TIER_USD);
   const { change, isPending } = useChangeCreditPlan();
 
   if (plan.id !== 'credits') {
@@ -201,14 +201,14 @@ function UpgradePlanCard({
     );
   }
 
-  const valid = isValidMonthlyUsd(monthlyUsd);
+  const valid = !!tierForMonthlyUsd(monthlyUsd);
   return (
     <PricingPlanCard
       plan={plan}
       compact
       priceSlot={
         <div className="space-y-3">
-          <CreditPlanPicker value={monthlyUsd} onChange={setMonthlyUsd} disabled={isPending} />
+          <CreditTierSelect value={monthlyUsd} onChange={setMonthlyUsd} disabled={isPending} />
           <p className="text-muted-foreground text-xs text-balance">{tCard('rate')}</p>
         </div>
       }

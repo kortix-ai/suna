@@ -40,18 +40,29 @@ export function llmPriceMarkup(): number {
 // $2 (200 credits) a month. See tier-facts.ts for the legacy plan keys.
 
 /** Smallest and largest self-serve monthly amount, in whole dollars. */
-export const PLAN_MIN_MONTHLY_USD = 20;
+export const PLAN_MIN_MONTHLY_USD = 50;
 export const PLAN_MAX_MONTHLY_USD = 10_000;
 
 /**
- * Named presets of the one credits plan (Tasklet-style). Same price per credit
- * at every amount; a name is only a label for a monthly amount. Any other whole
- * amount in range is "Custom".
+ * The tier ladder the product offers: named monthly amounts of the one credits
+ * plan, same rate at every step. `popular` marks the most common paid amount
+ * at or above the minimum. The API accepts any whole amount in range; the
+ * ladder is what the UI sells.
  */
 export const PLAN_PRESETS = [
-  { key: 'starter', name: 'Starter', monthlyUsd: 20 },
-  { key: 'pro', name: 'Pro', monthlyUsd: 100 },
-  { key: 'scale', name: 'Scale', monthlyUsd: 500 },
+  { monthlyUsd: 50 },
+  { monthlyUsd: 100 },
+  { monthlyUsd: 200, popular: true },
+  { monthlyUsd: 300 },
+  { monthlyUsd: 500 },
+  { monthlyUsd: 750 },
+  { monthlyUsd: 1_000 },
+  { monthlyUsd: 1_500 },
+  { monthlyUsd: 2_000 },
+  { monthlyUsd: 3_000 },
+  { monthlyUsd: 5_000 },
+  { monthlyUsd: 7_500 },
+  { monthlyUsd: 10_000 },
 ] as const;
 
 export const MAX_PROJECTS_PER_ACCOUNT = 200;

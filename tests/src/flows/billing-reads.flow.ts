@@ -128,19 +128,18 @@ flow(
       r.status(401);
     });
 
-    await ctx.step("OWNER reads the credits plan presets (Starter $20, Pro $100, Scale $500) and the $20–$10,000 bounds", async () => {
+    await ctx.step("OWNER reads the credits tier ladder ($50 … $10,000, $200 most popular) and the $50–$10,000 bounds", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/tier-configurations");
       r.status(OWNER_READ);
       if (r.statusCode !== 200) return;
       r.body()
-        .has("$.tiers[0].name", "starter")
-        .has("$.tiers[0].monthly_price", 20)
-        .has("$.tiers[1].name", "pro")
-        .has("$.tiers[1].monthly_price", 100)
-        .has("$.tiers[2].name", "scale")
-        .has("$.tiers[2].monthly_price", 500)
-        .has("$.tiers[3]", undefined)
-        .has("$.min_monthly_usd", 20)
+        .has("$.tiers[0].name", "credits_50")
+        .has("$.tiers[0].display_name", "5,000 credits")
+        .has("$.tiers[0].monthly_price", 50)
+        .has("$.tiers[2].monthly_price", 200)
+        .has("$.tiers[12].monthly_price", 10000)
+        .has("$.tiers[13]", undefined)
+        .has("$.min_monthly_usd", 50)
         .has("$.max_monthly_usd", 10000);
     });
     await ctx.step("ANON cannot read tier-configurations → 401 (auth-gated, not public)", async () => {

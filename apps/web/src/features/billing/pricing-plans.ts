@@ -48,9 +48,9 @@ export const PRICING_PLANS: PricingPlan[] = [
   {
     id: 'credits',
     name: 'Credits',
-    price: '$20',
+    price: '$50',
     unit: '/ month and up',
-    note: 'One plan, any size. Pick the credits your team needs.',
+    note: 'From $50 a month. Pick the credits your team needs.',
     highlight: true,
     features: [
       'Everything in Free',

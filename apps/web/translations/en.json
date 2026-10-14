@@ -2103,18 +2103,6 @@
     "title": "Billing & Subscription",
     "subscription": "Subscription",
     "credits": {
-      "picker": {
-        "presetGroup": "Monthly plan amount",
-        "presets": {
-          "starter": "Starter",
-          "pro": "Pro",
-          "scale": "Scale"
-        },
-        "amountLabel": "Monthly amount in dollars",
-        "sliderLabel": "Monthly amount",
-        "creditsPerMonth": "{credits} credits / month",
-        "range": "Choose a whole-dollar amount from {min} to {max}."
-      },
       "change": {
         "updated": "Plan updated",
         "updatedDescription": "{credits} credits / month.",
@@ -2136,15 +2124,33 @@
         "enterpriseNote": "Enterprise plans are managed with your account team."
       },
       "modal": {
-        "title": "Pick your monthly credits",
-        "description": "One plan, any size. Unlimited members share one credit pool, and unused credits roll over one month.",
+        "title": "Pick your credits tier",
+        "description": "One plan in tiers. Unlimited members share one credit pool, and unused credits roll over one month.",
         "askOwnerHint": "Only account owners can change the plan.",
         "askOwnerTitle": "Ask an account owner",
-        "askOwnerBody": "Only account owners can manage billing. Ask an owner to pick a monthly amount for the account."
+        "askOwnerBody": "Only account owners can manage billing. Ask an owner to pick a credits tier for the account."
       },
       "admin": {
         "plan": "Plan",
         "monthlyAmount": "Monthly amount"
+      },
+      "tiers": {
+        "label": "Monthly credits tier",
+        "perMonth": "/ month",
+        "currentSuffix": "(your current plan)",
+        "creditsPerMonth": "{credits} credits / month",
+        "credits": "{credits} credits",
+        "price": "{amount} / mo",
+        "popular": "Most popular",
+        "current": "Current",
+        "choose": "Choose a tier",
+        "chooseHint": "Tiers start at {min} a month.",
+        "sessions": "About {busy} to {light} agent sessions a month.",
+        "groups": {
+          "small": "Small teams",
+          "growing": "Growing teams",
+          "scale": "Scale"
+        }
       }
     },
     "popular": "Popular",
@@ -2309,7 +2315,6 @@
       }
     },
     "pricing": {
-      "headline": "Simple credit pricing. Pay for what your agents use.",
       "plans": {
         "free": {
           "name": "Free",
@@ -2321,7 +2326,7 @@
         },
         "credits": {
           "name": "Credits",
-          "note": "One plan, any size. Pick the credits your team needs.",
+          "note": "From $50 a month. Pick the credits your team needs.",
           "unit": "/ month and up",
           "f1": "Everything in Free",
           "f2": "Unlimited members, one shared credit pool",
@@ -2353,7 +2358,7 @@
         },
         "amounts": {
           "question": "How much do I pay each month?",
-          "answer": "Any whole dollar amount from $20 to $10,000. Starter is $20 for 2,000 credits, Pro is $100 for 10,000, Scale is $500 for 50,000. Every amount has the same rate: 100 credits per dollar, no volume tiers. For more than $10,000 a month, talk to sales."
+          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). $200 a month (20,000 credits) is the most popular. Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
         },
         "members": {
           "question": "Do I pay for members?",
@@ -2368,16 +2373,61 @@
           "answer": "Yes. Top up any amount at any time, or turn on auto top-up so your agents never stop."
         },
         "change": {
-          "question": "Can I change my amount?",
+          "question": "Can I change my tier?",
           "answer": "Any time, from Settings. A raise is charged now, prorated, and adds the prorated credits at once. A cut starts at your next renewal."
         },
         "existing": {
           "question": "What happened to my existing plan?",
-          "answer": "Every existing plan became a credits plan at the same monthly price. Per-seat plans now receive their full bill as credits in one shared pool, and seats are gone."
+          "answer": "Every existing plan became a credits plan at the same monthly price. Per-seat plans now receive their full bill as credits in one shared pool, and seats are gone. A plan below $50 keeps its price; a change moves it onto a tier."
         },
         "enterprise": {
           "question": "What about Enterprise?",
           "answer": "Everything in Credits plus SAML SSO, SCIM directory sync (Okta, Microsoft Entra, JumpCloud), advanced RBAC, audit logs, an SLA and DPA, and Cloud / VPC / on-prem deployment. Talk to us for volume pricing."
+        }
+      },
+      "hero": {
+        "eyebrow": "Pricing",
+        "title": "Start free. Pay only for what your agents use.",
+        "b1": "{credits} free credits every month",
+        "b2": "No credit card",
+        "b3": "Unlimited members, one shared credit pool",
+        "cta": "Get started for free"
+      },
+      "power": {
+        "eyebrow": "Credits power everything",
+        "title": "What a credit buys",
+        "description": "Every agent session spends credits on its computer and its models. Here is what real sessions on Kortix Cloud cost.",
+        "quick": {
+          "title": "Quick tasks",
+          "credits": "Under 10 credits",
+          "example": "Answer a question from your repo, summarize a thread, look up a record."
+        },
+        "task": {
+          "title": "Agent tasks",
+          "credits": "10 to 50 credits",
+          "example": "Fix a bug and run the tests, draft a report, run a scheduled automation."
+        },
+        "long": {
+          "title": "Long runs",
+          "credits": "100+ credits",
+          "example": "Build a feature end to end, research and write a document, ship an internal app."
+        },
+        "source": "Half of all sessions cost under 10 credits and nine in ten cost under 125. Measured over every Kortix Cloud session in the 30 days to October 14, 2026."
+      },
+      "how": {
+        "eyebrow": "How credits work",
+        "title": "One credit is one cent of real usage",
+        "rate": {
+          "title": "1 credit = $0.01",
+          "body": "Credits pay for sandbox compute, billed per second, and managed-model tokens. Every tier buys credits at the same rate."
+        },
+        "keys": {
+          "title": "Your keys cost no credits",
+          "body": "Bring your own model key or connect a ChatGPT subscription, and model usage goes straight to your provider."
+        },
+        "compute": {
+          "title": "Computers bill only while they run",
+          "body": "The default agent computer uses about {creditsPerHour} credits an hour, and nothing once it stops."
         }
       }
     }

@@ -2103,18 +2103,6 @@
     "title": "Fatturazione & Abbonamento",
     "subscription": "Abbonamento",
     "credits": {
-      "picker": {
-        "presetGroup": "Importo mensile del piano",
-        "presets": {
-          "starter": "Starter",
-          "pro": "Pro",
-          "scale": "Scale"
-        },
-        "amountLabel": "Importo mensile in dollari",
-        "sliderLabel": "Importo mensile",
-        "creditsPerMonth": "{credits} crediti / mese",
-        "range": "Scegli un importo in dollari interi da {min} a {max}."
-      },
       "change": {
         "updated": "Piano aggiornato",
         "updatedDescription": "{credits} crediti / mese.",
@@ -2136,15 +2124,33 @@
         "enterpriseNote": "I piani Enterprise sono gestiti con il tuo team di riferimento."
       },
       "modal": {
-        "title": "Scegli i tuoi crediti mensili",
-        "description": "Un solo piano, di qualsiasi dimensione. Membri illimitati condividono un unico pool di crediti e i crediti non usati si trasferiscono al mese successivo.",
+        "title": "Scegli il tuo livello di crediti",
+        "description": "Un solo piano a livelli. Membri illimitati condividono un unico pool di crediti e i crediti non usati si trasferiscono al mese successivo.",
         "askOwnerHint": "Solo i proprietari dell'account possono modificare il piano.",
         "askOwnerTitle": "Chiedi a un proprietario dell'account",
-        "askOwnerBody": "Solo i proprietari dell'account possono gestire la fatturazione. Chiedi a un proprietario di scegliere un importo mensile per l'account."
+        "askOwnerBody": "Solo i proprietari dell'account possono gestire la fatturazione. Chiedi a un proprietario di scegliere un livello di crediti per l'account."
       },
       "admin": {
         "plan": "Piano",
         "monthlyAmount": "Importo mensile"
+      },
+      "tiers": {
+        "label": "Livello mensile di crediti",
+        "perMonth": "/ mese",
+        "currentSuffix": "(il tuo piano attuale)",
+        "creditsPerMonth": "{credits} crediti / mese",
+        "credits": "{credits} crediti",
+        "price": "{amount} / mese",
+        "popular": "Il più popolare",
+        "current": "Attuale",
+        "choose": "Scegli un livello",
+        "chooseHint": "I livelli partono da {min} al mese.",
+        "sessions": "Circa da {busy} a {light} sessioni dell'agente al mese.",
+        "groups": {
+          "small": "Piccoli team",
+          "growing": "Team in crescita",
+          "scale": "Scale"
+        }
       }
     },
     "popular": "Popolare",
@@ -2309,7 +2315,6 @@
       }
     },
     "pricing": {
-      "headline": "Prezzi semplici a crediti. Paghi solo ciò che usano i tuoi agenti.",
       "plans": {
         "free": {
           "name": "Free",
@@ -2321,7 +2326,7 @@
         },
         "credits": {
           "name": "Crediti",
-          "note": "Un solo piano, di qualsiasi dimensione. Scegli i crediti di cui il tuo team ha bisogno.",
+          "note": "Da 50 $ al mese. Scegli i crediti di cui il tuo team ha bisogno.",
           "unit": "/ mese e oltre",
           "f1": "Tutto ciò che è in Free",
           "f2": "Membri illimitati, un unico pool di crediti condiviso",
@@ -2353,7 +2358,7 @@
         },
         "amounts": {
           "question": "Quanto pago ogni mese?",
-          "answer": "Qualsiasi importo in dollari interi da 20 $ a 10.000 $. Starter costa 20 $ per 2.000 crediti, Pro 100 $ per 10.000, Scale 500 $ per 50.000. Ogni importo ha la stessa tariffa: 100 crediti per dollaro, senza scaglioni di volume. Per più di 10.000 $ al mese contatta il reparto vendite."
+          "answer": "Scegli un livello da 50 $ al mese (5.000 crediti) a 10.000 $ al mese (1.000.000 di crediti). 200 $ al mese (20.000 crediti) è il più popolare. Ogni livello offre crediti alla stessa tariffa: 100 crediti per dollaro. Per più di 10.000 $ al mese contatta il reparto vendite."
         },
         "members": {
           "question": "Pago per i membri?",
@@ -2368,16 +2373,61 @@
           "answer": "Sì. Ricarica qualsiasi importo in qualsiasi momento, oppure attiva la ricarica automatica così i tuoi agenti non si fermano mai."
         },
         "change": {
-          "question": "Posso cambiare il mio importo?",
+          "question": "Posso cambiare il mio livello?",
           "answer": "In qualsiasi momento, dalle Impostazioni. Un aumento viene addebitato subito, in proporzione, e aggiunge subito i crediti proporzionali. Una riduzione parte dal prossimo rinnovo."
         },
         "existing": {
           "question": "Cosa è successo al mio piano attuale?",
-          "answer": "Ogni piano esistente è diventato un piano a crediti allo stesso prezzo mensile. I piani per postazione ora ricevono l'intero importo fatturato in crediti in un unico pool condiviso, e le postazioni non esistono più."
+          "answer": "Ogni piano esistente è diventato un piano a crediti allo stesso prezzo mensile. I piani per postazione ora ricevono l'intero importo fatturato in crediti in un unico pool condiviso, e le postazioni non esistono più. Un piano sotto i 50 $ mantiene il suo prezzo; una modifica lo sposta su un livello."
         },
         "enterprise": {
           "question": "E per Enterprise?",
           "answer": "Tutto ciò che è in Crediti più SAML SSO, sincronizzazione directory SCIM (Okta, Microsoft Entra, JumpCloud), RBAC avanzato, log di audit, SLA e DPA, e deployment Cloud / VPC / on-prem. Contattaci per i prezzi a volume."
+        }
+      },
+      "hero": {
+        "eyebrow": "Prezzi",
+        "title": "Inizia gratis. Paghi solo ciò che usano i tuoi agenti.",
+        "b1": "{credits} crediti gratuiti ogni mese",
+        "b2": "Nessuna carta di credito",
+        "b3": "Membri illimitati, un unico pool di crediti",
+        "cta": "Inizia gratis"
+      },
+      "power": {
+        "eyebrow": "I crediti alimentano tutto",
+        "title": "Cosa compra un credito",
+        "description": "Ogni sessione dell'agente spende crediti per il suo computer e i suoi modelli. Ecco quanto costano sessioni reali su Kortix Cloud.",
+        "quick": {
+          "title": "Attività rapide",
+          "credits": "Meno di 10 crediti",
+          "example": "Rispondere a una domanda sul tuo repository, riassumere un thread, cercare un record."
+        },
+        "task": {
+          "title": "Attività dell'agente",
+          "credits": "Da 10 a 50 crediti",
+          "example": "Correggere un bug ed eseguire i test, scrivere una bozza di report, eseguire un'automazione pianificata."
+        },
+        "long": {
+          "title": "Esecuzioni lunghe",
+          "credits": "Più di 100 crediti",
+          "example": "Costruire una funzionalità da zero a fine, fare ricerche e scrivere un documento, rilasciare un'app interna."
+        },
+        "source": "La metà delle sessioni costa meno di 10 crediti e nove su dieci costano meno di 125. Misurato su tutte le sessioni Kortix Cloud nei 30 giorni fino al 14 ottobre 2026."
+      },
+      "how": {
+        "eyebrow": "Come funzionano i crediti",
+        "title": "Un credito è un centesimo di utilizzo reale",
+        "rate": {
+          "title": "1 credito = 0,01 $",
+          "body": "I crediti pagano il calcolo della sandbox, fatturato al secondo, e i token dei modelli gestiti. Ogni livello offre crediti alla stessa tariffa."
+        },
+        "keys": {
+          "title": "Le tue chiavi non costano crediti",
+          "body": "Usa la tua chiave del modello o collega un abbonamento ChatGPT, e l'uso del modello va direttamente al tuo fornitore."
+        },
+        "compute": {
+          "title": "I computer sono fatturati solo mentre sono in esecuzione",
+          "body": "Il computer predefinito dell'agente usa circa {creditsPerHour} crediti all'ora, e nulla una volta fermo."
         }
       }
     }

@@ -2103,18 +2103,6 @@
     "title": "Facturation & Abonnement",
     "subscription": "Abonnement",
     "credits": {
-      "picker": {
-        "presetGroup": "Montant mensuel du forfait",
-        "presets": {
-          "starter": "Starter",
-          "pro": "Pro",
-          "scale": "Scale"
-        },
-        "amountLabel": "Montant mensuel en dollars",
-        "sliderLabel": "Montant mensuel",
-        "creditsPerMonth": "{credits} crédits / mois",
-        "range": "Choisissez un montant en dollars entiers entre {min} et {max}."
-      },
       "change": {
         "updated": "Forfait mis à jour",
         "updatedDescription": "{credits} crédits / mois.",
@@ -2136,15 +2124,33 @@
         "enterpriseNote": "Les forfaits Enterprise sont gérés avec votre équipe dédiée."
       },
       "modal": {
-        "title": "Choisissez vos crédits mensuels",
-        "description": "Un seul forfait, de toute taille. Des membres illimités partagent un seul pool de crédits, et les crédits inutilisés sont reportés d'un mois.",
+        "title": "Choisissez votre palier de crédits",
+        "description": "Un seul forfait, en paliers. Des membres illimités partagent un seul pool de crédits, et les crédits inutilisés sont reportés d'un mois.",
         "askOwnerHint": "Seuls les propriétaires du compte peuvent modifier le forfait.",
         "askOwnerTitle": "Demandez à un propriétaire du compte",
-        "askOwnerBody": "Seuls les propriétaires du compte peuvent gérer la facturation. Demandez à un propriétaire de choisir un montant mensuel pour le compte."
+        "askOwnerBody": "Seuls les propriétaires du compte peuvent gérer la facturation. Demandez à un propriétaire de choisir un palier de crédits pour le compte."
       },
       "admin": {
         "plan": "Forfait",
         "monthlyAmount": "Montant mensuel"
+      },
+      "tiers": {
+        "label": "Palier mensuel de crédits",
+        "perMonth": "/ mois",
+        "currentSuffix": "(votre forfait actuel)",
+        "creditsPerMonth": "{credits} crédits / mois",
+        "credits": "{credits} crédits",
+        "price": "{amount} / mois",
+        "popular": "Le plus populaire",
+        "current": "Actuel",
+        "choose": "Choisissez un palier",
+        "chooseHint": "Les paliers commencent à {min} par mois.",
+        "sessions": "Environ {busy} à {light} sessions d'agent par mois.",
+        "groups": {
+          "small": "Petites équipes",
+          "growing": "Équipes en croissance",
+          "scale": "Scale"
+        }
       }
     },
     "popular": "Populaire",
@@ -2309,7 +2315,6 @@
       }
     },
     "pricing": {
-      "headline": "Une tarification simple en crédits. Payez ce que vos agents utilisent.",
       "plans": {
         "free": {
           "name": "Free",
@@ -2321,7 +2326,7 @@
         },
         "credits": {
           "name": "Crédits",
-          "note": "Un seul forfait, de toute taille. Choisissez les crédits dont votre équipe a besoin.",
+          "note": "À partir de 50 $ par mois. Choisissez les crédits dont votre équipe a besoin.",
           "unit": "/ mois et plus",
           "f1": "Tout ce qui est dans Free",
           "f2": "Membres illimités, un seul pool de crédits partagé",
@@ -2353,7 +2358,7 @@
         },
         "amounts": {
           "question": "Combien dois-je payer chaque mois ?",
-          "answer": "N'importe quel montant en dollars entiers de 20 $ à 10 000 $. Starter coûte 20 $ pour 2 000 crédits, Pro 100 $ pour 10 000, Scale 500 $ pour 50 000. Tous les montants ont le même taux : 100 crédits par dollar, sans paliers de volume. Au-delà de 10 000 $ par mois, contactez les ventes."
+          "answer": "Choisissez un palier de 50 $ par mois (5 000 crédits) à 10 000 $ par mois (1 000 000 de crédits). 200 $ par mois (20 000 crédits) est le plus populaire. Chaque palier donne des crédits au même taux : 100 crédits par dollar. Au-delà de 10 000 $ par mois, contactez les ventes."
         },
         "members": {
           "question": "Dois-je payer pour les membres ?",
@@ -2368,16 +2373,61 @@
           "answer": "Oui. Rechargez n'importe quel montant à tout moment, ou activez la recharge automatique pour que vos agents ne s'arrêtent jamais."
         },
         "change": {
-          "question": "Puis-je changer mon montant ?",
+          "question": "Puis-je changer de palier ?",
           "answer": "À tout moment, dans les Paramètres. Une hausse est facturée immédiatement au prorata et ajoute aussitôt les crédits proratisés. Une baisse prend effet au prochain renouvellement."
         },
         "existing": {
           "question": "Qu'est-il arrivé à mon forfait actuel ?",
-          "answer": "Chaque forfait existant est devenu un forfait de crédits au même prix mensuel. Les forfaits par siège reçoivent désormais l'intégralité de leur facture en crédits dans un pool partagé, et les sièges n'existent plus."
+          "answer": "Chaque forfait existant est devenu un forfait de crédits au même prix mensuel. Les forfaits par siège reçoivent désormais l'intégralité de leur facture en crédits dans un pool partagé, et les sièges n'existent plus. Un forfait inférieur à 50 $ conserve son prix ; un changement le place sur un palier."
         },
         "enterprise": {
           "question": "Et pour Enterprise ?",
           "answer": "Tout ce qui est dans Crédits, plus SAML SSO, synchronisation d'annuaire SCIM (Okta, Microsoft Entra, JumpCloud), RBAC avancé, journaux d'audit, SLA et DPA, et déploiement Cloud / VPC / sur site. Contactez-nous pour une tarification au volume."
+        }
+      },
+      "hero": {
+        "eyebrow": "Tarifs",
+        "title": "Démarrez gratuitement. Ne payez que ce que vos agents utilisent.",
+        "b1": "{credits} crédits gratuits chaque mois",
+        "b2": "Sans carte bancaire",
+        "b3": "Membres illimités, un seul pool de crédits",
+        "cta": "Commencer gratuitement"
+      },
+      "power": {
+        "eyebrow": "Les crédits font tout tourner",
+        "title": "Ce qu'achète un crédit",
+        "description": "Chaque session d'agent dépense des crédits pour son ordinateur et ses modèles. Voici ce que coûtent de vraies sessions sur Kortix Cloud.",
+        "quick": {
+          "title": "Tâches rapides",
+          "credits": "Moins de 10 crédits",
+          "example": "Répondre à une question sur votre dépôt, résumer un fil, retrouver un enregistrement."
+        },
+        "task": {
+          "title": "Tâches d'agent",
+          "credits": "10 à 50 crédits",
+          "example": "Corriger un bogue et lancer les tests, rédiger un rapport, exécuter une automatisation planifiée."
+        },
+        "long": {
+          "title": "Longues exécutions",
+          "credits": "Plus de 100 crédits",
+          "example": "Construire une fonctionnalité de bout en bout, faire des recherches et rédiger un document, livrer une application interne."
+        },
+        "source": "La moitié des sessions coûte moins de 10 crédits et neuf sur dix coûtent moins de 125. Mesuré sur toutes les sessions Kortix Cloud des 30 jours jusqu'au 14 octobre 2026."
+      },
+      "how": {
+        "eyebrow": "Comment fonctionnent les crédits",
+        "title": "Un crédit vaut un centime d'usage réel",
+        "rate": {
+          "title": "1 crédit = 0,01 $",
+          "body": "Les crédits paient le calcul des sandbox, facturé à la seconde, et les tokens des modèles gérés. Chaque palier donne des crédits au même taux."
+        },
+        "keys": {
+          "title": "Vos clés ne coûtent aucun crédit",
+          "body": "Apportez votre propre clé de modèle ou connectez un abonnement ChatGPT, et l'usage du modèle va directement à votre fournisseur."
+        },
+        "compute": {
+          "title": "Les ordinateurs ne sont facturés que pendant qu'ils tournent",
+          "body": "L'ordinateur d'agent par défaut consomme environ {creditsPerHour} crédits par heure, et plus rien une fois arrêté."
         }
       }
     }

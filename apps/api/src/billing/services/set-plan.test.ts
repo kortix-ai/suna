@@ -102,15 +102,15 @@ beforeEach(() => {
 });
 
 describe('parseMonthlyUsd', () => {
-  test('accepts whole dollars from 20 to 10,000', () => {
-    expect(parseMonthlyUsd(20)).toBe(20);
+  test('accepts whole dollars from 50 to 10,000', () => {
+    expect(parseMonthlyUsd(50)).toBe(50);
     expect(parseMonthlyUsd('100')).toBe(100);
     expect(parseMonthlyUsd(10_000)).toBe(10_000);
   });
 
-  for (const bad of [19, 10_001, 25.5, 0, -20, 'abc', null, undefined]) {
+  for (const bad of [20, 49, 10_001, 75.5, 0, -50, 'abc', null, undefined]) {
     test(`rejects ${String(bad)} with 400`, () => {
-      expect(() => parseMonthlyUsd(bad)).toThrow(/whole number from 20 to 10000/);
+      expect(() => parseMonthlyUsd(bad)).toThrow(/whole number from 50 to 10000/);
     });
   }
 });

@@ -2103,18 +2103,6 @@
     "title": "Abrechnung & Abonnement",
     "subscription": "Abonnement",
     "credits": {
-      "picker": {
-        "presetGroup": "Monatlicher Planbetrag",
-        "presets": {
-          "starter": "Starter",
-          "pro": "Pro",
-          "scale": "Scale"
-        },
-        "amountLabel": "Monatlicher Betrag in Dollar",
-        "sliderLabel": "Monatlicher Betrag",
-        "creditsPerMonth": "{credits} Credits / Monat",
-        "range": "Wähle einen ganzen Dollarbetrag von {min} bis {max}."
-      },
       "change": {
         "updated": "Plan aktualisiert",
         "updatedDescription": "{credits} Credits / Monat.",
@@ -2136,15 +2124,33 @@
         "enterpriseNote": "Enterprise-Pläne werden mit deinem Account-Team verwaltet."
       },
       "modal": {
-        "title": "Wähle deine monatlichen Credits",
-        "description": "Ein Plan in jeder Größe. Unbegrenzt viele Mitglieder teilen sich einen Credit-Pool, ungenutzte Credits werden einen Monat übertragen.",
+        "title": "Wähle deine Credit-Stufe",
+        "description": "Ein Plan in Stufen. Unbegrenzt viele Mitglieder teilen sich einen Credit-Pool, ungenutzte Credits werden einen Monat übertragen.",
         "askOwnerHint": "Nur Kontoinhaber können den Plan ändern.",
         "askOwnerTitle": "Frag einen Kontoinhaber",
-        "askOwnerBody": "Nur Kontoinhaber können die Abrechnung verwalten. Bitte einen Inhaber, einen Monatsbetrag für das Konto zu wählen."
+        "askOwnerBody": "Nur Kontoinhaber können die Abrechnung verwalten. Bitte einen Inhaber, eine Credit-Stufe für das Konto zu wählen."
       },
       "admin": {
         "plan": "Plan",
         "monthlyAmount": "Monatlicher Betrag"
+      },
+      "tiers": {
+        "label": "Monatliche Credit-Stufe",
+        "perMonth": "/ Monat",
+        "currentSuffix": "(dein aktueller Plan)",
+        "creditsPerMonth": "{credits} Credits / Monat",
+        "credits": "{credits} Credits",
+        "price": "{amount} / Mo.",
+        "popular": "Am beliebtesten",
+        "current": "Aktuell",
+        "choose": "Wähle eine Stufe",
+        "chooseHint": "Die Stufen beginnen bei {min} pro Monat.",
+        "sessions": "Etwa {busy} bis {light} Agent-Sitzungen pro Monat.",
+        "groups": {
+          "small": "Kleine Teams",
+          "growing": "Wachsende Teams",
+          "scale": "Scale"
+        }
       }
     },
     "popular": "Beliebt",
@@ -2309,7 +2315,6 @@
       }
     },
     "pricing": {
-      "headline": "Einfache Credit-Preise. Zahle für das, was deine Agenten nutzen.",
       "plans": {
         "free": {
           "name": "Free",
@@ -2321,7 +2326,7 @@
         },
         "credits": {
           "name": "Credits",
-          "note": "Ein Plan in jeder Größe. Wähle die Credits, die dein Team braucht.",
+          "note": "Ab 50 $ pro Monat. Wähle die Credits, die dein Team braucht.",
           "unit": "/ Monat und mehr",
           "f1": "Alles aus Free",
           "f2": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
@@ -2353,7 +2358,7 @@
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
-          "answer": "Einen beliebigen ganzen Dollarbetrag von 20 $ bis 10.000 $. Starter kostet 20 $ für 2.000 Credits, Pro 100 $ für 10.000, Scale 500 $ für 50.000. Jeder Betrag hat denselben Satz: 100 Credits pro Dollar, keine Mengenstaffeln. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
+          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 10.000 $ pro Monat (1.000.000 Credits). 200 $ pro Monat (20.000 Credits) ist die beliebteste. Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
         },
         "members": {
           "question": "Zahle ich für Mitglieder?",
@@ -2368,16 +2373,61 @@
           "answer": "Ja. Lade jederzeit einen beliebigen Betrag auf oder aktiviere die automatische Aufladung, damit deine Agenten nie stoppen."
         },
         "change": {
-          "question": "Kann ich meinen Betrag ändern?",
+          "question": "Kann ich meine Stufe ändern?",
           "answer": "Jederzeit in den Einstellungen. Eine Erhöhung wird sofort anteilig berechnet und fügt die anteiligen Credits sofort hinzu. Eine Senkung gilt ab der nächsten Verlängerung."
         },
         "existing": {
           "question": "Was ist mit meinem bestehenden Plan passiert?",
-          "answer": "Jeder bestehende Plan wurde zu einem Credits-Plan mit demselben Monatspreis. Pro-Platz-Pläne erhalten ihre gesamte Rechnung jetzt als Credits in einem gemeinsamen Pool, Plätze gibt es nicht mehr."
+          "answer": "Jeder bestehende Plan wurde zu einem Credits-Plan mit demselben Monatspreis. Pro-Platz-Pläne erhalten ihre gesamte Rechnung jetzt als Credits in einem gemeinsamen Pool, Plätze gibt es nicht mehr. Ein Plan unter 50 $ behält seinen Preis; bei einer Änderung wechselt er auf eine Stufe."
         },
         "enterprise": {
           "question": "Was ist mit Enterprise?",
           "answer": "Alles aus Credits plus SAML-SSO, SCIM-Verzeichnissynchronisierung (Okta, Microsoft Entra, JumpCloud), erweitertes RBAC, Audit-Logs, SLA und DPA sowie Cloud-/VPC-/On-Prem-Deployment. Sprich uns für Mengenpreise an."
+        }
+      },
+      "hero": {
+        "eyebrow": "Preise",
+        "title": "Starte kostenlos. Zahle nur für das, was deine Agenten nutzen.",
+        "b1": "{credits} kostenlose Credits jeden Monat",
+        "b2": "Keine Kreditkarte",
+        "b3": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
+        "cta": "Kostenlos starten"
+      },
+      "power": {
+        "eyebrow": "Credits treiben alles an",
+        "title": "Was ein Credit bringt",
+        "description": "Jede Agent-Sitzung verbraucht Credits für ihren Computer und ihre Modelle. So viel kosten echte Sitzungen auf Kortix Cloud.",
+        "quick": {
+          "title": "Schnelle Aufgaben",
+          "credits": "Unter 10 Credits",
+          "example": "Eine Frage zu deinem Repo beantworten, einen Thread zusammenfassen, einen Datensatz nachschlagen."
+        },
+        "task": {
+          "title": "Agent-Aufgaben",
+          "credits": "10 bis 50 Credits",
+          "example": "Einen Fehler beheben und die Tests ausführen, einen Bericht entwerfen, eine geplante Automatisierung ausführen."
+        },
+        "long": {
+          "title": "Lange Läufe",
+          "credits": "Über 100 Credits",
+          "example": "Ein Feature von Anfang bis Ende bauen, recherchieren und ein Dokument schreiben, eine interne App ausliefern."
+        },
+        "source": "Die Hälfte aller Sitzungen kostet unter 10 Credits, neun von zehn kosten unter 125. Gemessen über alle Kortix-Cloud-Sitzungen in den 30 Tagen bis zum 14. Oktober 2026."
+      },
+      "how": {
+        "eyebrow": "So funktionieren Credits",
+        "title": "Ein Credit ist ein Cent echte Nutzung",
+        "rate": {
+          "title": "1 Credit = 0,01 $",
+          "body": "Credits bezahlen Sandbox-Rechenzeit, sekundengenau abgerechnet, und Tokens verwalteter Modelle. Jede Stufe liefert Credits zum selben Satz."
+        },
+        "keys": {
+          "title": "Deine Schlüssel kosten keine Credits",
+          "body": "Bring deinen eigenen Modellschlüssel mit oder verbinde ein ChatGPT-Abo, und die Modellnutzung geht direkt an deinen Anbieter."
+        },
+        "compute": {
+          "title": "Computer werden nur berechnet, solange sie laufen",
+          "body": "Der Standard-Agent-Computer verbraucht etwa {creditsPerHour} Credits pro Stunde und nichts mehr, sobald er stoppt."
         }
       }
     }

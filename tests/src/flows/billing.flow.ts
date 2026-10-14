@@ -166,10 +166,10 @@ flow(
   async (ctx) => {
     // Subscribe a fresh team account the real way → credits granted.
     const team = await ctx.fixtures.team();
-    await ctx.step('credits plan at $20/month in Stripe test mode → active', async () => {
-      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id, 20);
+    await ctx.step('credits plan at $50/month in Stripe test mode → active', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id, 50);
     });
-    await ctx.step('account-state reports the credits plan at $20/month, no seats', async () => {
+    await ctx.step('account-state reports the credits plan at $50/month, no seats', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/billing/account-state', { query: { account_id: team.id } });
@@ -177,22 +177,22 @@ flow(
         .body()
         .has('$.subscription.tier_key', 'credits')
         .has('$.plan.key', 'credits')
-        .has('$.plan.monthly_usd', 20)
-        .has('$.tier.monthly_credits', 20)
+        .has('$.plan.monthly_usd', 50)
+        .has('$.tier.monthly_credits', 50)
         .has('$.seats', undefined);
     });
-    await ctx.step('raising the plan to $40 charges the test card and reports $40', async () => {
+    await ctx.step('raising the plan to $100 charges the test card and reports $100', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post('/v1/billing/plan', {
         account_id: team.id,
-        monthly_usd: 40,
+        monthly_usd: 100,
         success_url: 'https://example.com/ok',
         cancel_url: 'https://example.com/cancel',
       });
-      r.status(200).body().has('$.status', 'updated').has('$.monthly_usd', 40);
+      r.status(200).body().has('$.status', 'updated').has('$.monthly_usd', 100);
       const state = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/billing/account-state', { query: { account_id: team.id } });
-      state.status(200).body().has('$.plan.monthly_usd', 40);
+      state.status(200).body().has('$.plan.monthly_usd', 100);
     });
   },
 );
@@ -319,7 +319,7 @@ flow(
 
 /**
  * BILL-10 — the plan amount is validated before any Stripe call: whole dollars
- * from 20 to 10,000. No `stripe` requirement — the 400 fires first.
+ * from 50 to 10,000. No `stripe` requirement — the 400 fires first.
  */
 flow(
   'BILL-10',
@@ -330,7 +330,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    for (const monthly_usd of [19, 10_001, 25.5, 'twenty']) {
+    for (const monthly_usd of [20, 49, 10_001, 75.5, 'fifty']) {
       await ctx.step(`monthly_usd ${JSON.stringify(monthly_usd)} → 400`, async () => {
         const r = await owner.post('/v1/billing/plan', {
           account_id: team.id,

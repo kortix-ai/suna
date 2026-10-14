@@ -42,7 +42,7 @@ export async function subscribe(
   env: Env,
   client: Client,
   accountId: string,
-  monthlyUsd = 20,
+  monthlyUsd = 50,
 ): Promise<void> {
   // Bootstrap-time create: retried through a transient edge-laundered 5xx — an
   // abandoned Checkout session is inert. See fixtures/transient.ts.
