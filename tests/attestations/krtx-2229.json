@@ -1,0 +1,16 @@
+{
+  "source_hash": "d5bd2aefea0477b9fb60cce23d00a86d17aa1b27d3d59b461d2b86088c9b2402",
+  "diff_files": [
+    "apps/web/src/features/file-renderers/sqlite-renderer.test.tsx",
+    "apps/web/src/features/file-renderers/sqlite-renderer.tsx"
+  ],
+  "diff_hash": "ddb41bfb98fa8f09ef894dc1e98e1045992dda5dce6b4423f9a9689042e54388",
+  "head": "35d38a10ba20a4624720a31a580d62ea23b81fb2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-14T05:05:46.071Z"
+}
