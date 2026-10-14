@@ -35,7 +35,8 @@ export function useCaptureArea(accountId: string) {
 }
 
 /** The pages of the area, in the header's order. */
-export const CAPTURE_SECTIONS = ['devices'] as const;
+// `settings` (the organization's Kortix Capture settings) shows only to people with capture.manage.
+export const CAPTURE_SECTIONS = ['devices', 'settings'] as const;
 export type CaptureSection = (typeof CAPTURE_SECTIONS)[number];
 
 export function captureHref(accountId: string, section: CaptureSection = 'devices', rest = '') {

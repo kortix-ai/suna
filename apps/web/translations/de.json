@@ -19625,9 +19625,9 @@
       "text8258034e2578": "Hat einen Computer zur Registrierung freigegeben",
       "textd2bea71d87f9": "Hat die Registrierung eines Computers abgelehnt",
       "text282851365ab1": "Hat ein Capture-Gerät einer Person zugeordnet",
-      "textf057c817d7fc": "Konto · Kortix Capture",
-      "text4f5507aeedae": "Capture Aufnahme Bildschirm Geräte Richtlinie Ausschlüsse Aufbewahrung Rollout Registrierung",
-      "text53e7a07c14d4": "Hat ein nicht zugeordnetes Capture-Gerät angesehen"
+      "text53e7a07c14d4": "Hat ein nicht zugeordnetes Capture-Gerät angesehen",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "capture aufnahme bildschirm geräte installieren registrierung"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20826,7 +20826,7 @@
     },
     "settings": {
       "title": "Organisationseinstellungen",
-      "description": "{name}: was jedes Gerät dieser Organisation aufzeichnet, ausschließt und aufbewahrt.",
+      "description": "{name}: was Computer aufnehmen und wie lange Kortix es behält.",
       "layersTitle": "Was aufgezeichnet wird",
       "layer": {
         "screen": "Bildschirm",
@@ -20872,7 +20872,7 @@
       "remoteDaysHint": "Wie lange Kortix Aufnahmen behält. 0 behält sie ohne Limit.",
       "noticeTitle": "Hinweis",
       "noticePlaceholder": "Die Aufnahme ist für diese Organisation an.",
-      "noticeHint": "Geräte zeigen diesen Text im Menü und im Einstellungsfenster der App.",
+      "noticeHint": "Optional. Jede Person sieht ihn einmal und erneut, wenn er sich ändert.",
       "lastChanged": "Zuletzt geändert {time}",
       "defaultPolicy": "Es gelten die Standardeinstellungen.",
       "discard": "Änderungen verwerfen",
@@ -20903,7 +20903,7 @@
       "organizations": "Organisationen",
       "nav": {
         "devices": "Geräte",
-        "settings": "Organisationseinstellungen",
+        "settings": "Einstellungen",
         "timeline": "Zeitleiste"
       },
       "off": {
@@ -20918,10 +20918,9 @@
     },
     "account": {
       "title": "Kortix Capture",
-      "label": "Computer der Mitglieder aufzeichnen",
-      "description": "Mitglieder zeichnen mit der Kortix-Desktop-App Bildschirm, Aktionen und Audio in dieser Organisation auf. Jedes Mitglied sieht seine eigenen Aufnahmen; Owner und Admins sehen alle.",
+      "label": "Kortix Capture ist an",
+      "description": "Computer nehmen in diese Organisation auf. Jede Person sieht ihre eigenen Aufnahmen; Eigentümer und Admins sehen alle.",
       "descriptionReadOnly": "Ein Owner oder Admin dieser Organisation schaltet Kortix Capture ein oder aus.",
-      "open": "Kortix Capture öffnen",
       "failed": "Kortix Capture konnte nicht geändert werden."
     },
     "api": {

@@ -19625,9 +19625,9 @@
       "text8258034e2578": "Одобрио регистрацију рачунара",
       "textd2bea71d87f9": "Одбио регистрацију рачунара",
       "text282851365ab1": "Повезао Capture уређај са особом",
-      "textf057c817d7fc": "Налог · Kortix Capture",
-      "text4f5507aeedae": "capture снимање екран уређаји смерница изузеци чување распоређивање регистрација",
-      "text53e7a07c14d4": "Прегледао неповезан Capture уређај"
+      "text53e7a07c14d4": "Прегледао неповезан Capture уређај",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "capture snimanje ekran uređaji instalacija upis"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20826,7 +20826,7 @@
     },
     "settings": {
       "title": "Podešavanja organizacije",
-      "description": "{name}: šta svaki uređaj ove organizacije snima, izuzima i čuva.",
+      "description": "{name}: šta računari snimaju i koliko dugo Kortix to čuva.",
       "layersTitle": "Шта се снима",
       "layer": {
         "screen": "Екран",
@@ -20872,7 +20872,7 @@
       "remoteDaysHint": "Koliko dugo Kortix čuva snimke. 0 ih čuva bez ograničenja.",
       "noticeTitle": "Обавештење",
       "noticePlaceholder": "Снимање је укључено за ову организацију.",
-      "noticeHint": "Уређаји приказују овај текст у менију и прозору подешавања апликације.",
+      "noticeHint": "Opciono. Svako ga vidi jednom, i ponovo kad se promeni.",
       "lastChanged": "Последња измена {time}",
       "defaultPolicy": "Važe podrazumevana podešavanja.",
       "discard": "Одбаци измене",
@@ -20903,7 +20903,7 @@
       "organizations": "Организације",
       "nav": {
         "devices": "Уређаји",
-        "settings": "Podešavanja organizacije",
+        "settings": "Podešavanja",
         "timeline": "Временска линија"
       },
       "off": {
@@ -20918,10 +20918,9 @@
     },
     "account": {
       "title": "Kortix Capture",
-      "label": "Snimanje računara članova",
-      "description": "Članovi snimaju ekran, radnje i zvuk u ovu organizaciju preko Kortix desktop aplikacije. Svaki član vidi svoje snimke; vlasnici i administratori vide sve.",
+      "label": "Kortix Capture je uključen",
+      "description": "Računari snimaju u ovu organizaciju. Svako vidi svoje snimke; vlasnici i administratori vide sve.",
       "descriptionReadOnly": "Vlasnik ili administrator ove organizacije uključuje ili isključuje Kortix Capture.",
-      "open": "Otvori Kortix Capture",
       "failed": "Promena za Kortix Capture nije uspela."
     },
     "api": {

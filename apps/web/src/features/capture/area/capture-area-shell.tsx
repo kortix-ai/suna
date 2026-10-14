@@ -7,7 +7,6 @@ import {
   CaretDownIcon,
   CheckIcon,
   GearSixIcon,
-  MonitorPlayIcon,
   SignOutIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -168,7 +167,7 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
       </nav>
       {area.enabled ? (
         <nav aria-label={t('wordmark')} className="flex flex-wrap items-center gap-0.5">
-          {CAPTURE_SECTIONS.map((item) => {
+          {CAPTURE_SECTIONS.filter((item) => item !== 'settings' || area.canManage).map((item) => {
             const active = section === item;
             return (
               <Link
@@ -190,28 +189,18 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
       ) : null}
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
         <AccountSwitcher accountId={accountId} />
-        {area.canManage ? (
-          <Hint label={t('nav.settings')}>
-            <Button asChild variant="ghost" size="icon-base" aria-label={t('nav.settings')}>
-              <HubLink to={hubTarget(accountId, { tab: 'capture' })}>
-                <GearSixIcon className="size-4 shrink-0" />
-              </HubLink>
-            </Button>
-          </Hint>
-        ) : null}
-        <ProfileMenu accountId={accountId} canManage={area.canManage} />
+        <ProfileMenu accountId={accountId} />
       </div>
     </header>
   );
 }
 
 /**
- * Who you are, and the way to everything outside Capture: Kortix Capture's
- * organization settings, this organization's settings, your own settings (the
- * accounts list), theme and log out. The settings rows open the account
- * settings over the page you are on; closing them returns here.
+ * Who you are, and the way to everything outside Capture: this organization's
+ * settings, your own settings (the accounts list), theme and log out. Kortix
+ * Capture's own settings are the Settings tab.
  */
-function ProfileMenu({ accountId, canManage }: { accountId: string; canManage: boolean }) {
+function ProfileMenu({ accountId }: { accountId: string }) {
   const t = useTranslations('capture.area');
   const tSidebar = useTranslations('sidebar');
   const { user } = useAuth();
@@ -239,14 +228,6 @@ function ProfileMenu({ accountId, canManage }: { accountId: string; canManage: b
           <DropdownMenuLabel className="text-muted-foreground truncate font-normal">
             {email}
           </DropdownMenuLabel>
-          {canManage ? (
-            <DropdownMenuItem asChild size="sm">
-              <HubLink to={hubTarget(accountId, { tab: 'capture' })}>
-                <MonitorPlayIcon />
-                {t('nav.settings')}
-              </HubLink>
-            </DropdownMenuItem>
-          ) : null}
           <DropdownMenuItem asChild size="sm">
             <HubLink to={hubTarget(accountId)}>
               <BuildingsIcon />

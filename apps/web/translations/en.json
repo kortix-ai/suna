@@ -19636,9 +19636,9 @@
       "text8258034e2578": "Approved a computer to enroll",
       "textd2bea71d87f9": "Denied a computer from enrolling",
       "text282851365ab1": "Linked a capture device to a person",
-      "textf057c817d7fc": "Account · Kortix Capture",
-      "text4f5507aeedae": "capture recording screen devices policy exclusions retention rollout enrollment",
-      "text53e7a07c14d4": "Viewed an unlinked capture device"
+      "text53e7a07c14d4": "Viewed an unlinked capture device",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "capture recording screen devices install enrollment"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20826,7 +20826,7 @@
     },
     "settings": {
       "title": "Organization settings",
-      "description": "{name}: what every device in this organization records, excludes and keeps.",
+      "description": "{name}: what computers record and how long Kortix keeps it.",
       "layersTitle": "What is recorded",
       "layer": {
         "screen": "Screen",
@@ -20872,7 +20872,7 @@
       "remoteDaysHint": "How long Kortix keeps recordings. 0 keeps them without a limit.",
       "noticeTitle": "Notice",
       "noticePlaceholder": "Recording is on for this organization.",
-      "noticeHint": "Devices show this text in the app's menu and settings window.",
+      "noticeHint": "Optional. Each person sees it once, and again when it changes.",
       "lastChanged": "Last changed {time}",
       "defaultPolicy": "The default settings apply.",
       "discard": "Discard changes",
@@ -20903,7 +20903,7 @@
       "organizations": "Organizations",
       "nav": {
         "devices": "Devices",
-        "settings": "Organization settings",
+        "settings": "Settings",
         "timeline": "Timeline"
       },
       "off": {
@@ -20918,10 +20918,9 @@
     },
     "account": {
       "title": "Kortix Capture",
-      "label": "Record members' computers",
-      "description": "Members record their screen, actions and audio into this organization from the Kortix desktop app. Each member sees their own recordings; owners and admins see everyone’s.",
+      "label": "Kortix Capture is on",
+      "description": "Computers record into this organization. Each person sees their own recordings; owners and admins see everyone's.",
       "descriptionReadOnly": "An owner or admin of this organization turns Kortix Capture on or off.",
-      "open": "Open Kortix Capture",
       "failed": "Could not change Kortix Capture."
     },
     "api": {

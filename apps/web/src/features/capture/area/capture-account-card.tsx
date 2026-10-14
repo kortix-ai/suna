@@ -1,9 +1,7 @@
 'use client';
 
 import { useCaptureWorkspace, useSetCaptureEnabled } from '@kortix/sdk/react';
-import Link from 'next/link';
 
-import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { SettingsRow } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,12 +9,10 @@ import { Switch } from '@/components/ui/switch';
 import { errorToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { captureHref } from './use-capture-area';
-
 /**
- * The Kortix Capture switch (`capture.manage`) and the way into the Capture
- * area, at the top of the account settings' Kortix Capture section. Capture is
- * off until an admin turns it on here.
+ * The switch that turns Kortix Capture on or off for the organization
+ * (`capture.manage`), at the top of the Capture area's Settings. Off, the whole
+ * area shows the off state and computers stop recording into the organization.
  */
 export function CaptureAccountCard({ accountId }: { accountId: string }) {
   const t = useTranslations('capture.account');
@@ -33,11 +29,6 @@ export function CaptureAccountCard({ accountId }: { accountId: string }) {
         <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
       ) : (
         <span className="flex shrink-0 items-center gap-3">
-          {enabled ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={captureHref(accountId, 'devices')}>{t('open')}</Link>
-            </Button>
-          ) : null}
           {setEnabled.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
           <Switch
             checked={enabled}

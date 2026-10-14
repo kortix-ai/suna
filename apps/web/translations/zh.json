@@ -19625,9 +19625,9 @@
       "text8258034e2578": "批准了一台电脑的注册",
       "textd2bea71d87f9": "拒绝了一台电脑的注册",
       "text282851365ab1": "将 Capture 设备关联到了某人",
-      "textf057c817d7fc": "账户 · Kortix Capture",
-      "text4f5507aeedae": "capture 录制 屏幕 设备 策略 排除 保留 部署 注册",
-      "text53e7a07c14d4": "查看了未关联的 Capture 设备"
+      "text53e7a07c14d4": "查看了未关联的 Capture 设备",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "捕获 录制 屏幕 设备 安装 注册"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20826,7 +20826,7 @@
     },
     "settings": {
       "title": "组织设置",
-      "description": "{name}：此组织的每台设备录制、排除和保留的内容。",
+      "description": "{name}：电脑录制哪些内容，以及 Kortix 保留多久。",
       "layersTitle": "录制内容",
       "layer": {
         "screen": "屏幕",
@@ -20872,7 +20872,7 @@
       "remoteDaysHint": "Kortix 保留录制的时长。0 表示不限时长。",
       "noticeTitle": "通知",
       "noticePlaceholder": "此组织已开启录制。",
-      "noticeHint": "设备会在应用的菜单和设置窗口中显示此文字。",
+      "noticeHint": "可选。每个人只会看到一次，内容更改后会再次看到。",
       "lastChanged": "最后修改于 {time}",
       "defaultPolicy": "正在使用默认设置。",
       "discard": "放弃更改",
@@ -20903,7 +20903,7 @@
       "organizations": "组织",
       "nav": {
         "devices": "设备",
-        "settings": "组织设置",
+        "settings": "设置",
         "timeline": "时间线"
       },
       "off": {
@@ -20918,10 +20918,9 @@
     },
     "account": {
       "title": "Kortix Capture",
-      "label": "录制成员的电脑",
-      "description": "成员通过 Kortix 桌面应用将屏幕、操作和音频录制到此组织。每位成员可以查看自己的录制；所有者和管理员可以查看所有人的。",
+      "label": "Kortix Capture 已开启",
+      "description": "电脑会录制到此组织。每个人可以看到自己的录制内容；所有者和管理员可以看到所有人的。",
       "descriptionReadOnly": "此组织的所有者或管理员可开启或关闭 Kortix Capture。",
-      "open": "打开 Kortix Capture",
       "failed": "无法更改 Kortix Capture。"
     },
     "api": {

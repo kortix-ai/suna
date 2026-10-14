@@ -19625,9 +19625,9 @@
       "text8258034e2578": "コンピューターの登録を承認しました",
       "textd2bea71d87f9": "コンピューターの登録を拒否しました",
       "text282851365ab1": "Capture デバイスをユーザーに紐付けました",
-      "textf057c817d7fc": "アカウント · Kortix Capture",
-      "text4f5507aeedae": "キャプチャ 記録 画面 デバイス ポリシー 除外 保持 展開 登録",
-      "text53e7a07c14d4": "紐付けのない Capture デバイスを表示しました"
+      "text53e7a07c14d4": "紐付けのない Capture デバイスを表示しました",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "キャプチャ 録画 画面 デバイス インストール 登録"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20826,7 +20826,7 @@
     },
     "settings": {
       "title": "組織の設定",
-      "description": "{name}: この組織の各デバイスが記録・除外・保持する内容。",
+      "description": "{name}: コンピューターが録画する内容と Kortix の保存期間。",
       "layersTitle": "記録する内容",
       "layer": {
         "screen": "画面",
@@ -20872,7 +20872,7 @@
       "remoteDaysHint": "Kortix が記録を保持する期間。0 の場合は無期限に保持します。",
       "noticeTitle": "お知らせ",
       "noticePlaceholder": "この組織の録画はオンです。",
-      "noticeHint": "デバイスは、このテキストをアプリのメニューと設定ウインドウに表示します。",
+      "noticeHint": "任意。各自に一度だけ表示され、内容が変わると再度表示されます。",
       "lastChanged": "最終変更 {time}",
       "defaultPolicy": "デフォルトの設定が適用されています。",
       "discard": "変更を破棄",
@@ -20903,7 +20903,7 @@
       "organizations": "組織",
       "nav": {
         "devices": "デバイス",
-        "settings": "組織の設定",
+        "settings": "設定",
         "timeline": "タイムライン"
       },
       "off": {
@@ -20918,10 +20918,9 @@
     },
     "account": {
       "title": "Kortix Capture",
-      "label": "メンバーのコンピューターを記録",
-      "description": "メンバーは Kortix デスクトップアプリで画面、操作、音声をこの組織に記録します。各メンバーは自分の記録を、オーナーと管理者は全員の記録を閲覧できます。",
+      "label": "Kortix Capture はオン",
+      "description": "コンピューターはこの組織に録画します。各自は自分の録画を、オーナーと管理者は全員の録画を閲覧できます。",
       "descriptionReadOnly": "この組織のオーナーまたは管理者が Kortix Capture をオンまたはオフにします。",
-      "open": "Kortix Capture を開く",
       "failed": "Kortix Capture を変更できませんでした。"
     },
     "api": {

@@ -43,7 +43,7 @@ async function anon<T>(
 }
 
 test.describe("38 — Capture UI", () => {
-  test("Kortix Capture at /capture/[accountId]: off until switched on; devices, the device timeline (run jump, search) and Organization settings", async ({
+  test("Kortix Capture at /capture/[accountId]: off until switched on; devices, the device timeline (run jump, search) and Settings", async ({
     page,
   }) => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
@@ -233,14 +233,18 @@ test.describe("38 — Capture UI", () => {
       ).toHaveCount(0);
       await expect(page).toHaveURL(/at=/);
 
-      // Organization settings (capture.manage): turning audio off on the Recording tab writes the policy and reads back.
-      await page
-        .getByRole("link", { name: "Organization settings", exact: true })
-        .click();
+      // Settings (capture.manage), inside /capture: the organization switch and the policy.
+      // The privacy controls stay hidden until the experimental switch shows them.
+      await page.getByRole("link", { name: "Settings", exact: true }).click();
       await expect(page).toHaveURL(
         new RegExp(`/capture/${accountId}/settings`),
       );
-      await page.getByRole("tab", { name: "Recording", exact: true }).click();
+      await expect(
+        page.getByRole("switch", { name: "Kortix Capture is on" }),
+      ).toBeChecked();
+      await expect(page.getByText("Mask personal data")).toHaveCount(0);
+      await page.getByRole("switch", { name: "Privacy controls" }).click();
+      await expect(page.getByText("Mask personal data")).toBeVisible();
       await page.getByRole("switch", { name: "Audio" }).click();
       const put = page.waitForResponse(
         (r) =>
@@ -249,12 +253,18 @@ test.describe("38 — Capture UI", () => {
       );
       await page.getByRole("button", { name: "Save changes" }).click();
       expect((await put).status()).toBe(200);
-      const policy = await api<{ policy: { layers: { audio: boolean } } }>(
+      const policy = await api<{
+        policy: {
+          layers: { audio: boolean };
+          experimental: { privacy_controls: boolean };
+        };
+      }>(
         session.access_token,
         "GET",
         `/accounts/${accountId}/capture/policy`,
       );
       expect(policy.policy.layers.audio).toBe(false);
+      expect(policy.policy.experimental.privacy_controls).toBe(true);
 
       expect(pageErrors).toEqual([]);
     } finally {

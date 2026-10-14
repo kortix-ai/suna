@@ -27,11 +27,11 @@ it is off:
 - a device cannot sign in or get storage credentials;
 - Kortix indexes nothing new.
 
-In Kortix: open the account's settings, then **Settings**, and turn on
-**Kortix Capture**. The account settings then list a **Kortix Capture**
-section with the organization's rules: what every device records, how long
-Kortix keeps it, an account-wide pause and an optional notice. In Kortix Capture, the gear and your
-profile menu open it.
+Everything about Kortix Capture lives under `/capture` in Kortix. Open
+**Kortix Capture** (command palette, or `/capture`), then **Settings**
+(owners and admins), and turn on **Kortix Capture** for the organization. The
+same page holds the organization's rules: what computers record, how long
+Kortix keeps it, an account-wide pause and an optional notice.
 
 From the API: `PATCH /v1/accounts/<account_id>/capture` with `{"enabled": true}`.
 From TypeScript: `kortix.capture.account(accountId).workspace.setEnabled(true)`.

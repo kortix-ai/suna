@@ -19625,9 +19625,9 @@
       "text8258034e2578": "A approuvé l’inscription d’un ordinateur",
       "textd2bea71d87f9": "A refusé l’inscription d’un ordinateur",
       "text282851365ab1": "A associé un appareil Capture à une personne",
-      "textf057c817d7fc": "Compte · Kortix Capture",
-      "text4f5507aeedae": "capture enregistrement écran appareils politique exclusions conservation déploiement inscription",
-      "text53e7a07c14d4": "A consulté un appareil Capture non associé"
+      "text53e7a07c14d4": "A consulté un appareil Capture non associé",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "capture enregistrement écran appareils installer inscription"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20826,7 +20826,7 @@
     },
     "settings": {
       "title": "Paramètres de l’organisation",
-      "description": "{name} : ce que chaque appareil de cette organisation enregistre, exclut et conserve.",
+      "description": "{name} : ce que les ordinateurs enregistrent et combien de temps Kortix le garde.",
       "layersTitle": "Ce qui est enregistré",
       "layer": {
         "screen": "Écran",
@@ -20872,7 +20872,7 @@
       "remoteDaysHint": "Combien de temps Kortix garde les enregistrements. 0 les garde sans limite.",
       "noticeTitle": "Avis",
       "noticePlaceholder": "L’enregistrement est activé pour cette organisation.",
-      "noticeHint": "Les appareils affichent ce texte dans le menu et la fenêtre de paramètres de l'app.",
+      "noticeHint": "Facultatif. Chacun le voit une fois, puis à chaque modification.",
       "lastChanged": "Dernière modification {time}",
       "defaultPolicy": "Les réglages par défaut s’appliquent.",
       "discard": "Annuler les modifications",
@@ -20903,7 +20903,7 @@
       "organizations": "Organisations",
       "nav": {
         "devices": "Appareils",
-        "settings": "Paramètres de l’organisation",
+        "settings": "Réglages",
         "timeline": "Chronologie"
       },
       "off": {
@@ -20918,10 +20918,9 @@
     },
     "account": {
       "title": "Kortix Capture",
-      "label": "Enregistrer les ordinateurs des membres",
-      "description": "Les membres enregistrent leur écran, leurs actions et leur audio dans cette organisation avec l’app de bureau Kortix. Chaque membre voit ses propres enregistrements ; les propriétaires et admins voient ceux de tout le monde.",
+      "label": "Kortix Capture est activé",
+      "description": "Les ordinateurs enregistrent dans cette organisation. Chacun voit ses enregistrements ; propriétaires et admins voient tout.",
       "descriptionReadOnly": "Un propriétaire ou admin de cette organisation active ou désactive Kortix Capture.",
-      "open": "Ouvrir Kortix Capture",
       "failed": "Impossible de modifier Kortix Capture."
     },
     "api": {

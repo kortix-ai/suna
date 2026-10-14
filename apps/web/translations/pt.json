@@ -19625,9 +19625,9 @@
       "text8258034e2578": "Aprovou o registro de um computador",
       "textd2bea71d87f9": "Recusou o registro de um computador",
       "text282851365ab1": "Vinculou um dispositivo do Capture a uma pessoa",
-      "textf057c817d7fc": "Conta · Kortix Capture",
-      "text4f5507aeedae": "capture gravação tela dispositivos política exclusões retenção implantação registro",
-      "text53e7a07c14d4": "Viu um dispositivo do Capture sem vínculo"
+      "text53e7a07c14d4": "Viu um dispositivo do Capture sem vínculo",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "captura gravação tela dispositivos instalar inscrição"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20826,7 +20826,7 @@
     },
     "settings": {
       "title": "Configurações da organização",
-      "description": "{name}: o que cada dispositivo desta organização grava, exclui e mantém.",
+      "description": "{name}: o que os computadores gravam e por quanto tempo o Kortix guarda.",
       "layersTitle": "O que é gravado",
       "layer": {
         "screen": "Tela",
@@ -20872,7 +20872,7 @@
       "remoteDaysHint": "Por quanto tempo a Kortix mantém as gravações. 0 mantém sem limite.",
       "noticeTitle": "Aviso",
       "noticePlaceholder": "A gravação está ativa nesta organização.",
-      "noticeHint": "Os dispositivos mostram este texto no menu e na janela de configurações do app.",
+      "noticeHint": "Opcional. Cada pessoa o vê uma vez, e de novo quando ele muda.",
       "lastChanged": "Última alteração {time}",
       "defaultPolicy": "As configurações padrão se aplicam.",
       "discard": "Descartar alterações",
@@ -20903,7 +20903,7 @@
       "organizations": "Organizações",
       "nav": {
         "devices": "Dispositivos",
-        "settings": "Configurações da organização",
+        "settings": "Configurações",
         "timeline": "Linha do tempo"
       },
       "off": {
@@ -20918,10 +20918,9 @@
     },
     "account": {
       "title": "Kortix Capture",
-      "label": "Gravar os computadores dos membros",
-      "description": "Os membros gravam tela, ações e áudio nesta organização com o app de desktop da Kortix. Cada membro vê as próprias gravações; proprietários e admins veem as de todos.",
+      "label": "Kortix Capture está ativado",
+      "description": "Os computadores gravam nesta organização. Cada pessoa vê suas gravações; proprietários e admins veem as de todos.",
       "descriptionReadOnly": "Um proprietário ou admin desta organização liga ou desliga o Kortix Capture.",
-      "open": "Abrir Kortix Capture",
       "failed": "Não foi possível alterar o Kortix Capture."
     },
     "api": {

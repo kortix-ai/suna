@@ -13,8 +13,6 @@
  * `:batch` POST per page load, not two.
  */
 
-import { useCaptureWorkspace } from '@kortix/sdk/react';
-
 import { isBillingEnabled } from '@/lib/config';
 import { usePermissions, type CanResult } from '@/lib/use-permission';
 
@@ -39,7 +37,6 @@ export const ACCOUNT_PERMISSION_PROBES = [
   { action: 'role.read' }, // GET .../iam/roles            → Roles
   { action: 'policy.read' }, // GET .../iam/policies       → the members list's custom-role column
   { action: 'audit.read' }, // GET .../audit               → Audit log
-  { action: 'capture.manage' }, // PUT .../capture/policy  → Kortix Capture
   // Writes → controls inside a visible pane.
   { action: 'account.write' },
   { action: 'account.delete' },
@@ -61,7 +58,6 @@ export interface AccountHubAccess {
   canReadRoles: Allowed;
   canReadPolicies: Allowed;
   canReadAudit: Allowed;
-  canManageCapture: Allowed;
   canWriteAccount: Allowed;
   canDeleteAccount: Allowed;
   canInviteMember: Allowed;
@@ -92,7 +88,6 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canReadRoles },
     { allowed: canReadPolicies },
     { allowed: canReadAudit },
-    { allowed: canManageCapture },
     { allowed: canWriteAccount },
     { allowed: canDeleteAccount },
     { allowed: canInviteMember },
@@ -102,9 +97,6 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canManageGroupMembers },
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
-
-  // Kortix Capture's switch. Its settings section shows once it is on.
-  const captureOn = useCaptureWorkspace(accountId).data?.enabled === true;
 
   // Self-host billing-disabled: no Stripe plan controls to show. Session costs
   // remain available because they do not require the internal billing engine.
@@ -152,9 +144,6 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     branding: canWriteAccount === true,
     // Reference copy — no data, no mutations, nothing to gate.
     help: true,
-    // GET/PUT .../capture/policy — `capture.manage` (capture/account-routes.ts),
-    // once Capture is on: the switch is in Settings, and this section configures it.
-    capture: canManageCapture === true && captureOn,
   };
 
   // The first section this caller CAN see, in nav order; `help` closes it out
@@ -168,7 +157,6 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     canReadRoles,
     canReadPolicies,
     canReadAudit,
-    canManageCapture,
     canWriteAccount,
     canDeleteAccount,
     canInviteMember,
