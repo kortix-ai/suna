@@ -69,11 +69,6 @@ mock.module('../billing/wallet', () => ({
   },
 }));
 
-mock.module('../billing/services/machine-bonus', () => ({
-  grantMachineBonusOnce: async () => null,
-  getStripeMachineBonusKey: (subscriptionId: string) => `machine_bonus:${subscriptionId}`,
-}));
-
 mock.module('../billing/services/subscriptions', () => ({
   cancelFreeSubscriptionForUpgrade: async () => null,
 }));

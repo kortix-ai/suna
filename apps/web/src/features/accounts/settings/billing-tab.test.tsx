@@ -76,11 +76,11 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     expect(html).not.toContain('Available balance');
   });
 
-  test('the tier select marks the most popular tier and estimates sessions', () => {
+  test('the tier select marks the most popular tier and estimates agent hours', () => {
     accountStateData = freeState();
     const html = renderPlan();
     expect(html).toContain('Most popular');
-    expect(html).toContain('About 830 to 3,300 agent sessions a month.');
+    expect(html).toContain('≈ 1,000 agent-computer hours a month.');
     expect(html).not.toContain('Starter');
   });
 

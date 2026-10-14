@@ -65,26 +65,48 @@ export function monthlyCreditsForUsd(monthlyUsd: number): number {
   return Math.round(monthlyUsd * CREDITS_PER_USD);
 }
 
-/**
- * Credits one agent session costs on Kortix Cloud: the median and the 75th
- * percentile over every session that spent credits in the 30 days to
- * 2026-10-14 (32,963 sessions, compute + managed models). Long runs sit near
- * the 90th percentile, 121 credits.
- */
-export const SESSION_CREDITS_MEDIAN = 6;
-export const SESSION_CREDITS_P75 = 24;
-export const SESSION_CREDITS_P90 = 121;
-
-/** How many typical agent sessions a monthly credit amount covers: [busy, light]. */
-export function sessionsForCredits(credits: number): [number, number] {
-  const round = (n: number) => (n >= 1000 ? Math.round(n / 100) * 100 : Math.round(n / 10) * 10);
-  return [round(credits / SESSION_CREDITS_P75), round(credits / SESSION_CREDITS_MEDIAN)];
-}
-
 /** Credits the default agent computer uses per running hour. */
 export const DEFAULT_COMPUTE_CREDITS_PER_HOUR = Math.round(
   DEFAULT_COMPUTE_HOURLY_PRICE_USD * CREDITS_PER_USD,
 );
+
+/** The default agent computer, as the plan pages name it. */
+export const DEFAULT_COMPUTE_SPEC = '2 vCPU / 4 GiB / 20 GiB';
+
+/** Minutes of default agent computer one credit buys (60 / credits per hour). */
+export const MINUTES_PER_CREDIT = Math.round(60 / DEFAULT_COMPUTE_CREDITS_PER_HOUR);
+
+/**
+ * Kortix's platform fee on Kortix-model usage, in percent of the provider's
+ * base price. Mirrors `platformFeePercent` from `GET /v1/projects/{id}/models`;
+ * the app reads the served value, this constant is for pages with no API call.
+ */
+export const PLATFORM_FEE_PERCENT = 5.5;
+
+/** Hours of default agent computer a credit amount buys, rounded to 10 from 100 up. */
+export function agentHoursForCredits(credits: number): number {
+  const hours = credits / DEFAULT_COMPUTE_CREDITS_PER_HOUR;
+  return hours >= 100 ? Math.round(hours / 10) * 10 : Math.round(hours);
+}
+
+/**
+ * Top-up bonus ladder: a one-time or auto top-up adds a few percent of extra
+ * credits, flat from $1,000. Mirrors `TOP_UP_BONUS_STEPS` in apps/api
+ * (`billing/services/tiers.ts`), which grants it.
+ */
+export const TOP_UP_BONUS_STEPS = [
+  { minUsd: 1_000, percent: 5 },
+  { minUsd: 500, percent: 4 },
+  { minUsd: 250, percent: 3 },
+  { minUsd: 100, percent: 2 },
+  { minUsd: 50, percent: 1 },
+] as const;
+
+/** Bonus credits a top-up of `amountUsd` adds. 0 below $50. */
+export function topUpBonusCredits(amountUsd: number): number {
+  const step = TOP_UP_BONUS_STEPS.find((s) => amountUsd >= s.minUsd);
+  return step ? Math.round(amountUsd * step.percent) : 0;
+}
 
 /** `$100` — whole dollars, no decimals, in the reader's locale. */
 export function formatWholeUsd(amount: number, locale: string): string {

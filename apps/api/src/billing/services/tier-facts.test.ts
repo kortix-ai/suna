@@ -1,12 +1,10 @@
 /**
- * Billing facts every surface reads: which plan key a stored tier means, who
- * pays for compute, and the self-serve price range.
+ * Billing facts every surface reads: which plan key a stored tier means and
+ * the self-serve price range.
  *
  * Credits-only billing: four plan keys (none/free/credits/enterprise). Every
- * legacy key resolves to `credits` through `canonicalTier`. Every account
- * meters compute except a row whose STORED tier is a legacy flat plan.
- * The candidate SQL that mirrors `accountRowMetersCompute` runs on PostgreSQL
- * in compute-metering.integration.test.ts.
+ * legacy key resolves to `credits` through `canonicalTier`. Every account with
+ * a credit row meters compute (compute-metering.integration.test.ts).
  *
  * Pure functions over the tier tables; no mocks.
  */
@@ -16,7 +14,6 @@ import {
   PLAN_KEYS,
   PLAN_MAX_MONTHLY_USD,
   PLAN_MIN_MONTHLY_USD,
-  accountRowMetersCompute,
   canonicalTier,
   isPaidTier,
 } from './tiers';
@@ -55,27 +52,3 @@ describe('canonicalTier', () => {
   });
 });
 
-describe('compute metering', () => {
-  test('free, none, credits and enterprise accounts meter compute', () => {
-    for (const tier of ['free', 'none', 'credits', 'enterprise', null, undefined]) {
-      expect(accountRowMetersCompute({ tier })).toBe(true);
-    }
-  });
-
-  test('a legacy per-seat row meters compute (seat plan folded into credits)', () => {
-    expect(accountRowMetersCompute({ tier: 'per_seat' })).toBe(true);
-  });
-
-  test('a row whose STORED tier is a legacy flat plan stays unmetered', () => {
-    // Read on the raw tier, before the alias. The tier rewrite to `credits`
-    // ends this exemption.
-    for (const tier of ['tier_2_20', 'tier_6_50', 'tier_25_200', 'tier_200_1000', 'pro']) {
-      expect(accountRowMetersCompute({ tier })).toBe(false);
-    }
-  });
-
-  test('no credit account at all meters nothing', () => {
-    expect(accountRowMetersCompute(null)).toBe(false);
-    expect(accountRowMetersCompute(undefined)).toBe(false);
-  });
-});

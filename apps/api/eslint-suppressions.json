@@ -363,7 +363,7 @@
   },
   "src/billing/services/revenuecat-webhooks.ts": {
     "no-console": {
-      "count": 17
+      "count": 15
     }
   },
   "src/billing/services/stripe-checkout-webhooks.ts": {

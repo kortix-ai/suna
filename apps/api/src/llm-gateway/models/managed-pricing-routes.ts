@@ -3,7 +3,7 @@ import { MANAGED_MODELS } from '@kortix/llm-catalog';
 export interface ManagedPriceRoute {
   route: string;
   role: 'preferred' | 'eligible';
-  /** Customer USD per million tokens, including the configured markup. */
+  /** USD per million tokens × the markup passed in (1 = the provider's base price). */
   input: number;
   cacheRead: number;
   output: number;

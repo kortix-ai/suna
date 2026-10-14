@@ -2071,7 +2071,7 @@
       "minimum": "Le rechargement minimum est de {amount}.",
       "contactSales": "Pour un montant supérieur à {amount}, contactez l'équipe commerciale.",
       "creditHint": "{credits} crédits · ajoutés dès le paiement.",
-      "noExpiry": "Les crédits n'expirent jamais. 1 $ = 100 crédits.",
+      "noExpiry": "Les crédits n'expirent jamais. 1 $ = 100 crédits, plus un bonus dès 50 $.",
       "processing": "Traitement",
       "addAmount": "Ajouter {amount}",
       "addCredits": "Ajouter des crédits",
@@ -2079,7 +2079,11 @@
       "checkoutFailed": "Impossible de créer la session de paiement",
       "amountGroup": "Montant du rechargement",
       "customAmount": "Montant personnalisé en dollars",
-      "custom": "Personnalisé"
+      "custom": "Personnalisé",
+      "creditHintBonus": "{credits} crédits + {bonus} de bonus · ajoutés dès votre paiement.",
+      "autoTopupOff": "Recharge automatique : désactivée",
+      "autoTopupOn": "Recharge automatique : ajoute {amount} quand le solde passe sous {threshold}",
+      "ledgerBonus": "Bonus de recharge"
     },
     "autoTopup": {
       "bufferError": "Le montant du rechargement doit dépasser le seuil d'au moins {buffer} — saisissez {minimum} ou plus.",
@@ -2098,7 +2102,9 @@
       "save": "Enregistrer",
       "paymentNeeded": "Ajoutez un moyen de paiement pour exécuter le rechargement automatique.",
       "turnedOffAfterFailure": "Le rechargement automatique a été désactivé le {date} : le dernier prélèvement a échoué ({reason}). Mettez à jour le moyen de paiement, puis réactivez le rechargement automatique.",
-      "lastChargeFailed": "Le dernier prélèvement du rechargement automatique a échoué le {date} ({reason}). Kortix réessaie ; après 3 prélèvements échoués d’affilée, le rechargement automatique se désactive."
+      "lastChargeFailed": "Le dernier prélèvement du rechargement automatique a échoué le {date} ({reason}). Kortix réessaie ; après 3 prélèvements échoués d’affilée, le rechargement automatique se désactive.",
+      "bonusHint": "Chaque recharge ajoute {credits} crédits + {bonus} de bonus.",
+      "bonusFrom": "Les recharges de {min} ou plus ajoutent des crédits bonus."
     },
     "title": "Facturation & Abonnement",
     "subscription": "Abonnement",
@@ -2145,7 +2151,7 @@
         "current": "Actuel",
         "choose": "Choisissez un palier",
         "chooseHint": "Les paliers commencent à {min} par mois.",
-        "sessions": "Environ {busy} à {light} sessions d'agent par mois.",
+        "hours": "≈ {hours} heures d'ordinateur d'agent par mois.",
         "groups": {
           "small": "Petites équipes",
           "growing": "Équipes en croissance",
@@ -2354,7 +2360,7 @@
         },
         "credit": {
           "question": "Que permet d'acheter un crédit ?",
-          "answer": "1 crédit vaut 0,01 $. Les crédits paient le calcul en sandbox et l'usage des modèles gérés. Le calcul est facturé à la seconde, par ressource : 0,0000168 $/vCPU, 0,0000054 $/GiB de RAM, 0,000000036 $/GiB de stockage. Cela fait environ 0,20 $ par heure pour la machine par défaut de 2 vCPU / 4 GiB / 20 GiB, et rien tant qu'elle est arrêtée. Les modèles gérés facturent les jetons d'entrée, de sortie et en cache au tarif du modèle. Avec votre propre clé ou ChatGPT, vous payez directement le fournisseur du modèle."
+          "answer": "1 crédit vaut 0,01 $. Les crédits paient l'ordinateur d'agent, facturé à la seconde et par ressource : 0,0000168 $/vCPU, 0,0000054 $/Gio de RAM, 0,000000036 $/Gio de stockage. La machine par défaut de {spec} consomme environ {creditsPerHour} crédits par heure, soit environ {minutes} minutes par crédit. Un ordinateur à l'arrêt ne coûte rien. Les crédits paient aussi les modèles Kortix, au prix de base du fournisseur plus {fee} % de frais de plateforme. Votre propre clé d'API ou abonnement ChatGPT ne consomme aucun crédit."
         },
         "amounts": {
           "question": "Combien dois-je payer chaque mois ?",
@@ -2368,9 +2374,13 @@
           "question": "Que deviennent les crédits inutilisés ?",
           "answer": "Les crédits mensuels inutilisés sont reportés d'un mois. Les crédits issus de recharges n'expirent jamais."
         },
+        "models": {
+          "question": "Les modèles consomment-ils des crédits ?",
+          "answer": "Seulement les modèles Kortix. Ils coûtent le prix de base du fournisseur plus {fee} % de frais de plateforme, payés en crédits, et l'application affiche les prix de base. Avec votre propre clé d'API ou un abonnement ChatGPT connecté, l'usage du modèle va à votre fournisseur et ne consomme aucun crédit. Les crédits paient alors uniquement l'ordinateur d'agent."
+        },
         "topup": {
           "question": "Puis-je ajouter des crédits en cours de mois ?",
-          "answer": "Oui. Rechargez n'importe quel montant à tout moment, ou activez la recharge automatique pour que vos agents ne s'arrêtent jamais."
+          "answer": "Oui. Rechargez n'importe quel montant à tout moment, ou activez la recharge automatique pour que vos agents ne s'arrêtent jamais. Les recharges à partir de {smallestBonusUsd} ajoutent des crédits bonus : +{smallestBonus} % à {smallestBonusUsd}, jusqu'à +{largestBonus} % dès {largestBonusUsd}. Les crédits de recharge n'expirent jamais."
         },
         "change": {
           "question": "Puis-je changer de palier ?",
@@ -2393,42 +2403,43 @@
         "b3": "Membres illimités, un seul pool de crédits",
         "cta": "Commencer gratuitement"
       },
-      "power": {
-        "eyebrow": "Les crédits font tout tourner",
-        "title": "Ce qu'achète un crédit",
-        "description": "Chaque session d'agent dépense des crédits pour son ordinateur et ses modèles. Voici ce que coûtent de vraies sessions sur Kortix Cloud.",
-        "quick": {
-          "title": "Tâches rapides",
-          "credits": "Moins de 10 crédits",
-          "example": "Répondre à une question sur votre dépôt, résumer un fil, retrouver un enregistrement."
-        },
-        "task": {
-          "title": "Tâches d'agent",
-          "credits": "10 à 50 crédits",
-          "example": "Corriger un bogue et lancer les tests, rédiger un rapport, exécuter une automatisation planifiée."
-        },
-        "long": {
-          "title": "Longues exécutions",
-          "credits": "Plus de 100 crédits",
-          "example": "Construire une fonctionnalité de bout en bout, faire des recherches et rédiger un document, livrer une application interne."
-        },
-        "source": "La moitié des sessions coûte moins de 10 crédits et neuf sur dix coûtent moins de 125. Mesuré sur toutes les sessions Kortix Cloud des 30 jours jusqu'au 14 octobre 2026."
-      },
-      "how": {
-        "eyebrow": "Comment fonctionnent les crédits",
-        "title": "Un crédit vaut un centime d'usage réel",
+      "hours": {
+        "eyebrow": "Heures d'agent",
+        "title": "1 crédit correspond à environ {minutes} minutes d'ordinateur d'agent",
+        "description": "Les crédits paient l'ordinateur de l'agent : la machine cloud où votre agent exécute du code, navigue et modifie des fichiers. Il est facturé à la seconde tant qu'il tourne et ne coûte rien à l'arrêt.",
         "rate": {
-          "title": "1 crédit = 0,01 $",
-          "body": "Les crédits paient le calcul des sandbox, facturé à la seconde, et les tokens des modèles gérés. Chaque palier donne des crédits au même taux."
+          "value": "1 crédit = 0,01 $",
+          "note": "Chaque palier fournit des crédits à ce tarif."
         },
-        "keys": {
-          "title": "Vos clés ne coûtent aucun crédit",
-          "body": "Apportez votre propre clé de modèle ou connectez un abonnement ChatGPT, et l'usage du modèle va directement à votre fournisseur."
+        "hour": {
+          "value": "{creditsPerHour} crédits = 1 heure",
+          "note": "D'ordinateur d'agent ({spec}). Facturé à la seconde. Rien à l'arrêt."
         },
-        "compute": {
-          "title": "Les ordinateurs ne sont facturés que pendant qu'ils tournent",
-          "body": "L'ordinateur d'agent par défaut consomme environ {creditsPerHour} crédits par heure, et plus rien une fois arrêté."
+        "tier": {
+          "value": "{tierUsd} par mois ≈ {hours} heures",
+          "note": "D'ordinateur d'agent, quand l'usage des modèles passe par vos propres clés."
         }
+      },
+      "models": {
+        "eyebrow": "Les modèles sont à part",
+        "title": "Les modèles sont facturés séparément de l'ordinateur d'agent",
+        "description": "Les crédits paient l'ordinateur de l'agent. Le coût d'un appel de modèle dépend de l'origine du modèle.",
+        "keys": {
+          "tag": "Aucun crédit",
+          "title": "Vos propres clés d'API",
+          "body": "Ajoutez une clé Anthropic, OpenAI ou de tout autre fournisseur. L'usage du modèle va directement à votre fournisseur et ne consomme aucun crédit."
+        },
+        "chatgpt": {
+          "tag": "Aucun crédit",
+          "title": "Votre abonnement ChatGPT",
+          "body": "Connectez votre abonnement ChatGPT. Vos agents l'utilisent pour les appels de modèle et aucun crédit n'est dépensé."
+        },
+        "kortix": {
+          "tag": "Payé en crédits",
+          "title": "Modèles Kortix",
+          "body": "Aucune clé à gérer. Chaque appel coûte le prix de base du fournisseur plus {fee} % de frais de plateforme, payés en crédits. L'application affiche les prix de base."
+        },
+        "summary": "Avec vos propres clés, les crédits paient uniquement l'ordinateur d'agent."
       }
     }
   },
@@ -4303,9 +4314,7 @@
     },
     "appHomePricingPage": {
       "line107JsxTextStartFreeScaleWhenYouAposReReady": "Commencez gratuitement. Passez à l'échelle quand vous êtes prêt.",
-      "line108JsxTextSelfHostTheWholePlatformForFreeMove": "Auto-hébergez toute la plateforme gratuitement. Passez au cloud managé par siège, puis à Enterprise lorsque vous avez besoin d'on-prem et de contrôles avancés.",
       "line118JsxTextMostPopular": "Le plus populaire",
-      "line138JsxTextCloudIsPerSeatUsageBasedComputeYou": "Cloud est facturé par siège, plus le calcul basé sur l'usage. Vous ne payez que ce que vos agents exécutent réellement.",
       "line145JsxTextComparePlans": "Comparer les offres",
       "line153JsxTextOpenSource": "Open source",
       "line183JsxTextPricingQuestions": "Questions sur les tarifs",
@@ -10034,7 +10043,6 @@
       "text0983d3e38ba5": "Solide jugement systémique.",
       "text09851ae4a654": "- Configurer leur espace de travail à partir du modèle",
       "text0989a07682e0": "outil non enregistré — solution de secours MCP",
-      "text098d65d3bf79": "Ultra · $200/mois",
       "text0991397702fa": "Exécuter maintenant",
       "text09993f2060aa": "J’ai ajouté une règle d’accès",
       "text099b6264cb74": "Agents et compétences Kortix",
@@ -15139,7 +15147,6 @@
       "text9d4b2eae7c42": "La valeur par défaut livrée est permissive : une action s’exécute sauf indication contraire. Pour un projet commercial, commencez par définir les actions sortantes sur Ask et les actions destructives sur Block. Nous vous le précisons plutôt que de vous laisser supposer qu’une valeur par défaut plus sûre a été choisie pour vous.",
       "text9d53e28e9e39": "Les accès projet par projet sont répertoriés dans la section Projets de cette page.",
       "text9d54b2fd9149": "Utilisez n’importe quel fournisseur, ou l’abonnement ChatGPT que vous payez déjà. Le modèle est configuré dans votre dépôt, ce n’est pas un fournisseur qui décide pour vous.",
-      "text9d5adef979f7": "Conservé à titre historique",
       "text9d6304b7f8dc": "Gestion des identités → Configuration",
       "text9d74727714db": "Ignorée",
       "text9da0bf42ad07": "Réduire la barre latérale",
@@ -18594,7 +18601,7 @@
       "text57c8f2cd3dd6": "Fixé au démarrage de la session",
       "textce033f75c938": "en attente d’une décision",
       "text5726504025dc": "en attente de {value0} décisions",
-      "texte0a770200f93": "Inclus dans votre forfait",
+      "texte0a770200f93": "Payé en crédits",
       "texta527a1778404": "Abonnement ChatGPT Plus ou Pro",
       "textb1a5c13d215e": "Épinglé à un modèle que ce projet ne déclare plus.",
       "text0703d9121fd7": "Épinglé pour cet agent. Les nouvelles sessions et automatisations l’utilisent.",
@@ -19971,7 +19978,7 @@
     "metaKey": "Clé API",
     "metaSignIn": "Connexion",
     "metaSignInOrKey": "Connexion ou clé API",
-    "metaIncluded": "Inclus dans votre offre",
+    "metaIncluded": "Payé en crédits",
     "apiKey": "Clé API",
     "savedKey": "Clé enregistrée",
     "replace": "Remplacer",
@@ -20049,7 +20056,8 @@
     "fromPrice": "à partir de {input} / {output} pour 1 M",
     "price": "{input} / {output} pour 1 M",
     "hiddenLine": "Absent du sélecteur de modèle · les requêtes directes fonctionnent",
-    "blockedLine": "Les requêtes vers ce modèle sont bloquées"
+    "blockedLine": "Les requêtes vers ce modèle sont bloquées",
+    "platformFee": "Modèles Kortix : prix du fournisseur + {fee} % de frais de plateforme"
   },
   "gatewayCosts": {
     "mostSpend": "Plus grosses dépenses",
@@ -20106,9 +20114,9 @@
     "credentialsHint": "Désactivez l’inférence sans supprimer les identifiants.",
     "providerError": "Impossible de modifier l’accès au fournisseur.",
     "managedTitle": "Modèles gérés par Kortix",
-    "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
+    "managedDescription": "Prix de base du fournisseur plus des frais de plateforme de {fee} %, payés en crédits. Aucune clé API nécessaire.",
     "managedUpgradeHint": "Passez à une offre supérieure pour utiliser les modèles gérés de Kortix, ou connectez votre propre fournisseur.",
-    "pricingEstimate": "Prix client estimé. Le coût dépend de la route utilisée.",
+    "pricingEstimate": "Prix de base du fournisseur, avant les frais de plateforme. Le coût dépend de la route utilisée.",
     "pricingRoute": "{route} : {input} entrée / {cacheRead} cache / {output} sortie par million de tokens",
     "pricingPreferred": "Préférée",
     "textImage": "Texte + image",

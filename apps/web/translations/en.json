@@ -2071,7 +2071,7 @@
       "minimum": "Minimum top-up is {amount}.",
       "contactSales": "For more than {amount}, contact sales.",
       "creditHint": "{credits} credits · added as soon as you pay.",
-      "noExpiry": "Credits never expire. $1 = 100 credits.",
+      "noExpiry": "Credits never expire. $1 = 100 credits, plus a bonus from $50.",
       "processing": "Processing",
       "addAmount": "Add {amount}",
       "addCredits": "Add credits",
@@ -2079,7 +2079,11 @@
       "checkoutFailed": "Failed to create checkout session",
       "amountGroup": "Top-up amount",
       "customAmount": "Custom amount in dollars",
-      "custom": "Custom"
+      "custom": "Custom",
+      "creditHintBonus": "{credits} credits + {bonus} bonus · added as soon as you pay.",
+      "autoTopupOff": "Auto top-up: off",
+      "autoTopupOn": "Auto top-up: adds {amount} when the balance drops below {threshold}",
+      "ledgerBonus": "Top-up bonus"
     },
     "autoTopup": {
       "bufferError": "Reload amount must be at least {buffer} above the threshold — enter {minimum} or more.",
@@ -2098,7 +2102,9 @@
       "save": "Save",
       "paymentNeeded": "Add a payment method for auto top-up to run.",
       "turnedOffAfterFailure": "Auto top-up turned off on {date}: the last charge failed ({reason}). Update the payment method, then turn auto top-up back on.",
-      "lastChargeFailed": "The last auto top-up charge failed on {date} ({reason}). Kortix tries again; after 3 failed charges in a row, auto top-up turns off."
+      "lastChargeFailed": "The last auto top-up charge failed on {date} ({reason}). Kortix tries again; after 3 failed charges in a row, auto top-up turns off.",
+      "bonusHint": "Each top-up adds {credits} credits + {bonus} bonus.",
+      "bonusFrom": "Top-ups of {min} or more add bonus credits."
     },
     "title": "Billing & Subscription",
     "subscription": "Subscription",
@@ -2145,7 +2151,7 @@
         "current": "Current",
         "choose": "Choose a tier",
         "chooseHint": "Tiers start at {min} a month.",
-        "sessions": "About {busy} to {light} agent sessions a month.",
+        "hours": "≈ {hours} agent-computer hours a month.",
         "groups": {
           "small": "Small teams",
           "growing": "Growing teams",
@@ -2354,7 +2360,7 @@
         },
         "credit": {
           "question": "What does a credit buy?",
-          "answer": "1 credit is $0.01. Credits pay for sandbox compute and managed-model usage. Compute is billed per second, per resource: $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage. That is about $0.20 an hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and nothing while it is stopped. Managed models bill input, output, and cached tokens at that model's rate. Bring your own key or connect ChatGPT to pay your model provider directly."
+          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key or ChatGPT subscription uses no credits."
         },
         "amounts": {
           "question": "How much do I pay each month?",
@@ -2368,9 +2374,13 @@
           "question": "What happens to unused credits?",
           "answer": "Unused monthly credits roll over for one month. Credits from top-ups never expire."
         },
+        "models": {
+          "question": "Do models use credits?",
+          "answer": "Only Kortix models do. They cost the provider's base price plus a {fee}% platform fee, paid from credits, and the app shows the base prices. With your own API key or a connected ChatGPT subscription, model usage goes to your provider and uses no credits. Then credits pay only for the agent computer."
+        },
         "topup": {
           "question": "Can I add credits mid-month?",
-          "answer": "Yes. Top up any amount at any time, or turn on auto top-up so your agents never stop."
+          "answer": "Yes. Top up any amount at any time, or turn on auto top-up so your agents never stop. Top-ups of {smallestBonusUsd} or more add bonus credits: +{smallestBonus}% at {smallestBonusUsd}, rising to +{largestBonus}% from {largestBonusUsd}. Top-up credits never expire."
         },
         "change": {
           "question": "Can I change my tier?",
@@ -2393,42 +2403,43 @@
         "b3": "Unlimited members, one shared credit pool",
         "cta": "Get started for free"
       },
-      "power": {
-        "eyebrow": "Credits power everything",
-        "title": "What a credit buys",
-        "description": "Every agent session spends credits on its computer and its models. Here is what real sessions on Kortix Cloud cost.",
-        "quick": {
-          "title": "Quick tasks",
-          "credits": "Under 10 credits",
-          "example": "Answer a question from your repo, summarize a thread, look up a record."
-        },
-        "task": {
-          "title": "Agent tasks",
-          "credits": "10 to 50 credits",
-          "example": "Fix a bug and run the tests, draft a report, run a scheduled automation."
-        },
-        "long": {
-          "title": "Long runs",
-          "credits": "100+ credits",
-          "example": "Build a feature end to end, research and write a document, ship an internal app."
-        },
-        "source": "Half of all sessions cost under 10 credits and nine in ten cost under 125. Measured over every Kortix Cloud session in the 30 days to October 14, 2026."
-      },
-      "how": {
-        "eyebrow": "How credits work",
-        "title": "One credit is one cent of real usage",
+      "hours": {
+        "eyebrow": "Agent hours",
+        "title": "1 credit buys about {minutes} minutes of agent computer",
+        "description": "Credits pay for the agent computer: the cloud machine where your agent runs code, browses and edits files. It bills per second while it runs and costs nothing while it is stopped.",
         "rate": {
-          "title": "1 credit = $0.01",
-          "body": "Credits pay for sandbox compute, billed per second, and managed-model tokens. Every tier buys credits at the same rate."
+          "value": "1 credit = $0.01",
+          "note": "Every tier buys credits at this rate."
         },
-        "keys": {
-          "title": "Your keys cost no credits",
-          "body": "Bring your own model key or connect a ChatGPT subscription, and model usage goes straight to your provider."
+        "hour": {
+          "value": "{creditsPerHour} credits = 1 hour",
+          "note": "Of agent computer ({spec}). Billed per second. Nothing while it is stopped."
         },
-        "compute": {
-          "title": "Computers bill only while they run",
-          "body": "The default agent computer uses about {creditsPerHour} credits an hour, and nothing once it stops."
+        "tier": {
+          "value": "{tierUsd} a month ≈ {hours} hours",
+          "note": "Of agent computer, when model usage runs on your own keys."
         }
+      },
+      "models": {
+        "eyebrow": "Models are separate",
+        "title": "Models are billed separately from the agent computer",
+        "description": "Credits pay for the agent computer. What a model call costs depends on where the model comes from.",
+        "keys": {
+          "tag": "No credits",
+          "title": "Your own API keys",
+          "body": "Add a key from Anthropic, OpenAI or any other provider. Model usage goes straight to your provider and uses no credits."
+        },
+        "chatgpt": {
+          "tag": "No credits",
+          "title": "Your ChatGPT subscription",
+          "body": "Connect your ChatGPT subscription. Your agents use it for model calls and no credits are spent."
+        },
+        "kortix": {
+          "tag": "Paid from credits",
+          "title": "Kortix models",
+          "body": "No key to manage. Each call costs the provider's base price plus a {fee}% platform fee, paid from credits. The app shows base prices."
+        },
+        "summary": "With your own keys, credits pay only for the agent computer."
       }
     }
   },
@@ -4314,9 +4325,7 @@
     },
     "appHomePricingPage": {
       "line107JsxTextStartFreeScaleWhenYouAposReReady": "Start free. Scale when you're ready.",
-      "line108JsxTextSelfHostTheWholePlatformForFreeMove": "Self-host the whole platform for free. Move to managed cloud per seat, and to enterprise when you need on-prem and advanced controls.",
       "line118JsxTextMostPopular": "Most popular",
-      "line138JsxTextCloudIsPerSeatUsageBasedComputeYou": "Cloud is per seat + usage-based compute. You only pay for what your agents actually run.",
       "line145JsxTextComparePlans": "Compare plans",
       "line153JsxTextOpenSource": "Open Source",
       "line183JsxTextPricingQuestions": "Pricing questions",
@@ -10045,7 +10054,6 @@
       "text0983d3e38ba5": "Strong systems-thinking judgement.",
       "text09851ae4a654": "- Stand up their workspace from the template",
       "text0989a07682e0": "unregistered tool — MCP fallback",
-      "text098d65d3bf79": "Ultra · $200/mo",
       "text0991397702fa": "Run now",
       "text09993f2060aa": "I’ve added an access policy",
       "text099b6264cb74": "Kortix Agents & Skills",
@@ -15150,7 +15158,6 @@
       "text9d4b2eae7c42": "The shipped default is permissive — an action runs unless you have said otherwise. For a sales project the first thing to do is set the outbound actions to Ask and the destructive ones to Block. We are telling you this rather than letting you assume the safer default was chosen for you.",
       "text9d53e28e9e39": "Project-by-project access is listed in the Projects section on this page.",
       "text9d54b2fd9149": "Bring any provider, or the ChatGPT subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.",
-      "text9d5adef979f7": "Grandfathered",
       "text9d6304b7f8dc": "Identity Management → Configuration",
       "text9d74727714db": "Dismissed",
       "text9da0bf42ad07": "Collapse Sidebar",
@@ -18605,7 +18612,7 @@
       "text57c8f2cd3dd6": "Fixed at session start",
       "textce033f75c938": "waiting for one decision",
       "text5726504025dc": "waiting for {value0} decisions",
-      "texte0a770200f93": "Included with your plan",
+      "texte0a770200f93": "Paid from credits",
       "texta527a1778404": "ChatGPT Plus or Pro subscription",
       "textb1a5c13d215e": "Pinned to a template this project no longer declares.",
       "text0703d9121fd7": "Pinned for this agent. New sessions and automations use it.",
@@ -19982,7 +19989,7 @@
     "metaKey": "API key",
     "metaSignIn": "Sign in",
     "metaSignInOrKey": "Sign in or API key",
-    "metaIncluded": "Included with your plan",
+    "metaIncluded": "Paid from credits",
     "apiKey": "API key",
     "savedKey": "Saved key",
     "replace": "Replace",
@@ -20060,7 +20067,8 @@
     "fromPrice": "from {input} / {output} per 1M",
     "price": "{input} / {output} per 1M",
     "hiddenLine": "Not in the model picker · direct requests still work",
-    "blockedLine": "Requests to this model are blocked"
+    "blockedLine": "Requests to this model are blocked",
+    "platformFee": "Kortix models: provider price + {fee}% platform fee"
   },
   "gatewayCosts": {
     "mostSpend": "Most spend",
@@ -20117,9 +20125,9 @@
     "credentialsHint": "Disable inference without removing credentials.",
     "providerError": "Could not update provider access.",
     "managedTitle": "Kortix Managed Models",
-    "managedDescription": "Managed models billed with Kortix credits. No API key needed.",
+    "managedDescription": "Provider base price plus a {fee}% platform fee, paid from credits. No API key needed.",
     "managedUpgradeHint": "Upgrade to use Kortix's managed models, or connect your own provider.",
-    "pricingEstimate": "Estimated customer price. The serving route determines the charge.",
+    "pricingEstimate": "Provider base price, before the platform fee. The serving route determines the charge.",
     "pricingRoute": "{route}: {input} input / {cacheRead} cached / {output} output per 1M tokens",
     "pricingPreferred": "Preferred",
     "textImage": "Text + image",

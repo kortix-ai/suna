@@ -17,7 +17,6 @@ const RATE = { cpuPerCoreSecond: 0.0000168, memoryPerGbSecond: 0.0000054, diskPe
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
   KNOWN_PROVIDERS: ['daytona', 'platinum', 'e2b'] as const,
-  KORTIX_MARKUP: 1.2,
   PLATFORM_FEE_MARKUP: 0.1,
   parseAllowedProviders: () => ['daytona'],
   getToolCost: () => 0,

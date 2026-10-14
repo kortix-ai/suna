@@ -422,8 +422,6 @@ const BILLING_GATE_EXPECTED_EVENTS = [
   'Out of credits. Top up or raise your plan to keep your agents running.',
   'Out of credits. Pick a plan or top up to continue.',
   "Your last payment didn't go through and your wallet is empty. Update your payment method or top up to keep running.",
-  // Sent by an API older than the credits-only plan.
-  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
 ];
 
 // The gate messages live in apps/api and this filter matches the rendered
@@ -431,6 +429,7 @@ const BILLING_GATE_EXPECTED_EVENTS = [
 // the API sent a new one, and an expected billing state paged as an error. A
 // stale message must fail the suite, not the on-call rotation.
 const SUPERSEDED_BILLING_GATE_MESSAGES = [
+  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ];
 

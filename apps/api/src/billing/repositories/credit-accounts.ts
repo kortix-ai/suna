@@ -73,16 +73,12 @@ export async function getSubscriptionInfo(accountId: string) {
       trialEndsAt: creditAccounts.trialEndsAt,
       trialStartedAt: creditAccounts.trialStartedAt,
       trialTier: creditAccounts.trialTier,
-      trialSeats: creditAccounts.trialSeats,
+      trialMonthlyUsd: creditAccounts.trialMonthlyUsd,
       managedModelsOverride: creditAccounts.managedModelsOverride,
       commitmentType: creditAccounts.commitmentType,
       commitmentEndDate: creditAccounts.commitmentEndDate,
-      scheduledTierChange: creditAccounts.scheduledTierChange,
-      scheduledTierChangeDate: creditAccounts.scheduledTierChangeDate,
-      scheduledPriceId: creditAccounts.scheduledPriceId,
       billingCycleAnchor: creditAccounts.billingCycleAnchor,
       nextCreditGrant: creditAccounts.nextCreditGrant,
-      lastDailyRefresh: creditAccounts.lastDailyRefresh,
       paymentStatus: creditAccounts.paymentStatus,
       revenuecatCustomerId: creditAccounts.revenuecatCustomerId,
       revenuecatSubscriptionId: creditAccounts.revenuecatSubscriptionId,
@@ -151,10 +147,26 @@ export async function getYearlyAccountsDueForRotation(afterAccountId?: string) {
     .where(
       and(
         afterAccountId ? gt(creditAccounts.accountId, afterAccountId) : undefined,
-        eq(creditAccounts.planType, 'yearly'),
-        ne(creditAccounts.tier, 'free'),
-        eq(creditAccounts.stripeSubscriptionStatus, 'active'),
-        ne(creditAccounts.paymentStatus, 'past_due'),
+        or(
+          // A yearly Stripe plan: paid once a year, credited monthly.
+          and(
+            eq(creditAccounts.planType, 'yearly'),
+            ne(creditAccounts.tier, 'free'),
+            eq(creditAccounts.stripeSubscriptionStatus, 'active'),
+            ne(creditAccounts.paymentStatus, 'past_due'),
+          ),
+          // An Enterprise contract: invoiced outside Stripe, credited monthly
+          // with the amount the admin set. A live Stripe subscription renews
+          // through invoice.paid instead, so it is excluded.
+          and(
+            eq(creditAccounts.tier, 'enterprise'),
+            gt(creditAccounts.planMonthlyUsd, '0'),
+            or(
+              isNull(creditAccounts.stripeSubscriptionStatus),
+              ne(creditAccounts.stripeSubscriptionStatus, 'active'),
+            ),
+          ),
+        ),
         or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
     )

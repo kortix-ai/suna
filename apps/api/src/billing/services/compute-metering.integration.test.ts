@@ -294,12 +294,12 @@ withDb('compute metering on PostgreSQL', () => {
       expect(await windowsOf(sandboxId)).toHaveLength(1);
     });
 
-    test('a legacy paid plan opens no window', async () => {
+    test('a legacy flat plan pays for compute like every other account', async () => {
       const accountId = await account({ tier: 'tier_6_50' });
       const sandboxId = await sandbox(accountId);
 
-      expect(await startComputeSession({ sandboxId, accountId, spec: SPEC })).toBeNull();
-      expect(await windowsOf(sandboxId)).toEqual([]);
+      expect(await startComputeSession({ sandboxId, accountId, spec: SPEC })).not.toBeNull();
+      expect(await windowsOf(sandboxId)).toHaveLength(1);
     });
 
     test('pause stops the window and settles one compute_debit keyed on the window end', async () => {
@@ -541,21 +541,20 @@ withDb('compute metering on PostgreSQL', () => {
   });
 
   describe('the missing-window sweep', () => {
-    test('meters every account that pays for compute and skips legacy paid plans', async () => {
+    test('meters every account with a credit row, legacy plans included', async () => {
       const metered = {
         credits: await sandbox(await account({ tier: 'credits' }), { externalId: 'credits' }),
         legacySeat: await sandbox(await account({ tier: 'per_seat' }), { externalId: 'legacy-per-seat' }),
+        legacyFlat: await sandbox(await account({ tier: 'tier_2_20' }), { externalId: 'legacy-tier-2-20' }),
         free: await sandbox(await account({ tier: 'free' }), { externalId: 'free' }),
         noTier: await sandbox(await account({ tier: null }), { externalId: 'no-tier' }),
       };
-      await sandbox(await account({ tier: 'tier_2_20' }), { externalId: 'legacy-tier-2-20' });
-      await sandbox(await account({ tier: 'pro' }), { externalId: 'legacy-pro' });
       await sandbox(await account(null), { externalId: 'no-credit-row' });
 
       const result = await reconcileMissingComputeSessions();
 
-      expect(result).toEqual({ checked: 4, reconciled: 4, errors: 0 });
-      expect(probed.sort()).toEqual(['credits', 'free', 'legacy-per-seat', 'no-tier']);
+      expect(result).toEqual({ checked: 5, reconciled: 5, errors: 0 });
+      expect(probed.sort()).toEqual(['credits', 'free', 'legacy-per-seat', 'legacy-tier-2-20', 'no-tier']);
       for (const sandboxId of Object.values(metered)) {
         expect(await windowsOf(sandboxId)).toEqual([expect.objectContaining({ state: 'active' })]);
       }
@@ -618,7 +617,7 @@ withDb('compute metering on PostgreSQL', () => {
       await app(accountId, { activeDeployment: false });
       await app(accountId, { desiredState: 'stopped' });
       await app(accountId, { deleted: true });
-      await app(await account({ tier: 'tier_6_50' }));
+      await app(await account(null));
       const metered = await app(accountId);
       await openWindow({
         accountId,

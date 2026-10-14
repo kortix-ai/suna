@@ -13,6 +13,7 @@ type PricingCatalog = {
       headline: string;
       plans: Record<string, Record<string, string>>;
       faq: Record<string, { question: string; answer: string }>;
+      models: Record<string, any>;
     };
     credits: { planCard: { rate: string } };
   };
@@ -83,5 +84,26 @@ describe('pricing copy', () => {
     expect(english.billing.pricing.faq.existing.answer).toContain('same monthly price');
     expect(english.billing.pricing.faq.members.answer).toContain('free and unlimited');
     expect(english.billing.pricing.faq.rollover.answer).toContain('roll over for one month');
+  });
+
+  test('models are separate: three sources, base price plus the fee only for Kortix models', () => {
+    const models = english.billing.pricing.models;
+    expect(Object.keys(models).filter((key) => typeof models[key] === 'object')).toEqual([
+      'keys',
+      'chatgpt',
+      'kortix',
+    ]);
+    expect(models.keys.tag).toBe('No credits');
+    expect(models.chatgpt.tag).toBe('No credits');
+    expect(models.kortix.body).toContain('{fee}% platform fee');
+    expect(models.summary).toContain('only for the agent computer');
+    expect(english.billing.pricing.faq.models.answer).toContain('{fee}% platform fee');
+  });
+
+  test('the top-up FAQ states the bonus ladder from compute-pricing, not literals', () => {
+    const answer = english.billing.pricing.faq.topup.answer;
+    for (const token of ['{smallestBonus}', '{smallestBonusUsd}', '{largestBonus}', '{largestBonusUsd}']) {
+      expect(answer).toContain(token);
+    }
   });
 });

@@ -153,23 +153,6 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
     });
   }
 
-  const { MACHINE_CREDIT_BONUS } = await import('./tiers');
-  if (!isTrial && MACHINE_CREDIT_BONUS > 0) {
-    try {
-      await wallet.grant({
-        accountId,
-        amount: MACHINE_CREDIT_BONUS,
-        kind: 'machine_bonus',
-        description: `Welcome credit bonus: $${MACHINE_CREDIT_BONUS}`,
-        expiring: false,
-        key: { event: `machine_bonus:revenuecat:${accountId}:${productId}` },
-      });
-      console.log(`[RevenueCat] Granted $${MACHINE_CREDIT_BONUS} machine bonus for ${accountId}`);
-    } catch (err) {
-      console.error(`[RevenueCat] Failed to grant machine bonus for ${accountId}:`, err);
-    }
-  }
-
   if (oldStripeSubscriptionId) {
     await cancelFreeSubscriptionForUpgrade(oldStripeSubscriptionId, accountId);
   }

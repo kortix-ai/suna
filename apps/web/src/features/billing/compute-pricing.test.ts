@@ -9,7 +9,10 @@ import {
   DEFAULT_TIER_USD,
   isValidMonthlyUsd,
   monthlyCreditsForUsd,
-  sessionsForCredits,
+  agentHoursForCredits,
+  MINUTES_PER_CREDIT,
+  PLATFORM_FEE_PERCENT,
+  DEFAULT_COMPUTE_SPEC,
   tierForMonthlyUsd,
 } from './compute-pricing';
 
@@ -60,8 +63,19 @@ describe('what credits buy', () => {
     expect(DEFAULT_COMPUTE_CREDITS_PER_HOUR).toBe(20);
   });
 
-  test('sessions estimate: credits / p75 to credits / median, rounded', () => {
-    expect(sessionsForCredits(20_000)).toEqual([830, 3300]);
-    expect(sessionsForCredits(5_000)).toEqual([210, 830]);
+  test('one credit is 3 minutes of agent computer', () => {
+    expect(MINUTES_PER_CREDIT).toBe(3);
+    expect(DEFAULT_COMPUTE_SPEC).toBe('2 vCPU / 4 GiB / 20 GiB');
+  });
+
+  test('hours estimate: credits / credits per hour, rounded to 10 from 100 up', () => {
+    expect(agentHoursForCredits(20_000)).toBe(1000);
+    expect(agentHoursForCredits(5_000)).toBe(250);
+    expect(agentHoursForCredits(1_000)).toBe(50);
+    expect(agentHoursForCredits(2_130)).toBe(110);
+  });
+
+  test('the platform fee on Kortix models is 5.5%', () => {
+    expect(PLATFORM_FEE_PERCENT).toBe(5.5);
   });
 });

@@ -50,9 +50,6 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   'Out of credits. Pick a plan or top up to continue.',
   // `payment_failed` — the last payment failed and the wallet is empty.
   "Your last payment didn't go through and your wallet is empty. Update your payment method or top up to keep running.",
-  // Sent by an API older than the credits-only plan. Drop it once no deployed
-  // API (dev, staging, prod) sends it.
-  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
 ] as const;
 
 // Expected "no compaction model configured" configuration state. The SDK's

@@ -33,6 +33,5 @@ export const ADMIN_ACCOUNTS_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   Starter: 'text262b4ff6afdd',
   Team: 'text5985039f106d',
   Trialing: 'text3792573d9e3c',
-  'Ultra · $200/mo': 'text098d65d3bf79',
   Unpaid: 'text4b80e74f3fa4',
 };

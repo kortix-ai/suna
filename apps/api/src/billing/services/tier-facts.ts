@@ -53,28 +53,3 @@ export function isPaidTier(tierName: string): boolean {
   return tierName !== 'free' && tierName !== 'none';
 }
 
-/**
- * Legacy flat plans sold before compute metering existed. A row whose STORED
- * tier is still one of these does not pay for sandbox compute. The tier
- * rewrite to `credits` (after the customer notice) ends the exemption; there is
- * no other switch.
- */
-export const LEGACY_PAID_TIERS_UNMETERED = [
-  'tier_2_20',
-  'tier_6_50',
-  'tier_25_200',
-  'tier_200_1000',
-  'pro',
-] as const;
-
-/**
- * Does THIS ACCOUNT pay for sandbox compute? Every account with a credit row
- * does, except a stored legacy flat plan. Reads the RAW stored tier on purpose:
- * `canonicalTier` folds those keys into `credits`.
- */
-export function accountRowMetersCompute(
-  account: { tier?: string | null } | null | undefined,
-): boolean {
-  if (!account) return false;
-  return !(LEGACY_PAID_TIERS_UNMETERED as readonly string[]).includes(account.tier ?? '');
-}

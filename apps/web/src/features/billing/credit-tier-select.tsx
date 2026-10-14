@@ -11,11 +11,11 @@ import {
   SelectTrigger,
 } from '@/components/ui/select';
 import {
+  agentHoursForCredits,
   CREDIT_TIER_GROUPS,
   CREDIT_TIERS,
   formatWholeUsd,
   monthlyCreditsForUsd,
-  sessionsForCredits,
   tierForMonthlyUsd,
 } from '@/features/billing/compute-pricing';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -51,7 +51,6 @@ export function CreditTierSelect({
   const locale = useLocale();
   const tier = tierForMonthlyUsd(value);
   const credits = tier ? monthlyCreditsForUsd(tier.monthlyUsd) : null;
-  const [busy, light] = credits ? sessionsForCredits(credits) : [0, 0];
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -120,10 +119,7 @@ export function CreditTierSelect({
 
       <p className="text-muted-foreground text-xs text-balance" aria-live="polite">
         {credits
-          ? t('sessions', {
-              busy: formatCredits(busy, { locale }),
-              light: formatCredits(light, { locale }),
-            })
+          ? t('hours', { hours: formatCredits(agentHoursForCredits(credits), { locale }) })
           : t('chooseHint', { min: formatWholeUsd(CREDIT_TIERS[0].monthlyUsd, locale) })}
       </p>
     </div>

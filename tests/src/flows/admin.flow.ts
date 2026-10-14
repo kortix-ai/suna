@@ -372,6 +372,26 @@ flow(
         );
         r.status(200).body().has("$.ok", true).has("$.tier", currentTier);
       });
+      await ctx.step("admin makes a fresh team a custom Enterprise plan with a $5,000 monthly contract → 200, account-state reads enterprise", async () => {
+        const team = await ctx.fixtures.team({ name: ctx.fixtures.name("adm12-enterprise") });
+        const r = await admin.post(
+          "/v1/admin/api/accounts/:id/tier",
+          { tier: "enterprise", monthly_usd: 5000 },
+          { params: { id: team.id } },
+        );
+        r.status(200).body().has("$.ok", true).has("$.tier", "enterprise");
+        const state = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
+        state.status(200).body().has("$.plan.key", "enterprise").has("$.tier.entitlements.sso", true);
+      });
+      await ctx.step("admin: a negative monthly_usd → 400", async () => {
+        const team = await ctx.fixtures.team({ name: ctx.fixtures.name("adm12-bad-amount") });
+        const r = await admin.post(
+          "/v1/admin/api/accounts/:id/tier",
+          { tier: "enterprise", monthly_usd: -5 },
+          { params: { id: team.id } },
+        );
+        r.status(400);
+      });
     }
   },
 );

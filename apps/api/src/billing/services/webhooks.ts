@@ -11,6 +11,8 @@ import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { getCustomerByStripeId } from '../repositories/customers';
 import { updatePurchaseStatus, getPurchaseByPaymentIntent } from '../repositories/transactions';
 import { billingPeriodForSubscription, canonicalTier, monthlyCreditsForSubscription, planForSubscription, planMonthlyUsd } from './tiers';
+import { grantTopUpBonus } from './top-up-bonus';
+import { enterpriseEntitledFromRow } from './resolve-billing';
 import { grantForPaidProrationInvoice } from './proration-grants';
 import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
@@ -82,6 +84,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     expiring: false,
     key: { event: session.id },
   });
+  await grantTopUpBonus(accountId, amountTotal, `${session.id}:bonus`);
 
   await markCreditPurchase(session, 'completed');
 
@@ -317,7 +320,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     subscription.status === 'incomplete_expired' &&
     account &&
     account.stripeSubscriptionId === subscription.id &&
-    !account.enterpriseEntitled &&
+    !enterpriseEntitledFromRow(account) &&
     account.tier &&
     !['free', 'none'].includes(account.tier);
 

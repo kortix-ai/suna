@@ -8,25 +8,28 @@ import { canonicalTier } from './tier-facts';
 // here so every `from './tiers'` import keeps working — one definition.
 export {
   LEGACY_PAID_PLAN_KEYS,
-  LEGACY_PAID_TIERS_UNMETERED,
   MINIMUM_CREDIT_FOR_RUN,
   PLAN_KEYS,
-  accountRowMetersCompute,
   canonicalTier,
   isPaidTier,
   type PlanKey,
 } from './tier-facts';
 
-/** One-time credit grant per machine provisioned ($5 = 500 display credits). */
-export const MACHINE_CREDIT_BONUS = 5;
+/**
+ * The platform fee on Kortix-managed model usage, as a percent of the
+ * provider's base price. Customers see base prices; the fee is stated once.
+ * 5.5% matches what the upstream router charges on credit purchases, so
+ * managed models run at break-even until routes move to direct providers.
+ * BYOK and ChatGPT-subscription usage carry no fee and cost no credits.
+ */
+export const LLM_PLATFORM_FEE_PERCENT = 5.5;
 
 /**
- * Margin multiplier applied to the live models.dev cost on every LLM gateway
- * call. 1.2 = 20% profit (default). Override per-environment with
- * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
- * periods. Clamped to >= 1 so we never undercut the provider.
+ * Multiplier applied to the provider cost on every managed LLM gateway call:
+ * base × (1 + fee). Override per environment with KORTIX_LLM_MARKUP (1.0 =
+ * at cost). Clamped to >= 1 so we never undercut the provider.
  */
-const DEFAULT_LLM_PRICE_MARKUP = 1.2;
+const DEFAULT_LLM_PRICE_MARKUP = 1 + LLM_PLATFORM_FEE_PERCENT / 100;
 
 export function llmPriceMarkup(): number {
   const raw = Number.parseFloat(process.env.KORTIX_LLM_MARKUP ?? '');
@@ -64,6 +67,26 @@ export const PLAN_PRESETS = [
   { monthlyUsd: 7_500 },
   { monthlyUsd: 10_000 },
 ] as const;
+
+/**
+ * Top-up bonus: a one-time or auto top-up adds a few percent of extra credits,
+ * a little more at each step, flat from $1,000. Bonus credits never expire,
+ * like the top-up itself, and a refund or dispute takes them back with it.
+ * Monthly plan tiers carry no bonus: 1 credit = $0.01 there, at every tier.
+ */
+export const TOP_UP_BONUS_STEPS = [
+  { minUsd: 1_000, percent: 5 },
+  { minUsd: 500, percent: 4 },
+  { minUsd: 250, percent: 3 },
+  { minUsd: 100, percent: 2 },
+  { minUsd: 50, percent: 1 },
+] as const;
+
+/** Bonus credits (USD) a top-up of `amountUsd` adds. 0 below $50. */
+export function topUpBonusUsd(amountUsd: number): number {
+  const step = TOP_UP_BONUS_STEPS.find((s) => amountUsd >= s.minUsd);
+  return step ? Math.round(amountUsd * step.percent) / 100 : 0;
+}
 
 export const MAX_PROJECTS_PER_ACCOUNT = 200;
 

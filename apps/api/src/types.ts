@@ -241,20 +241,6 @@ export interface AccountStateResponse {
     last_failure_reason: string | null;
     last_failure_at: string | null;
   };
-  instances: Array<{
-    sandbox_id: string;
-    external_id: string | null;
-    name: string;
-    provider: string;
-    status: string;
-    server_type: string | null;
-    location: string | null;
-    error_message?: string | null;
-    is_included: boolean;
-    stripe_subscription_item_id: string | null;
-    created_at: string;
-  }>;
-  can_add_instances: boolean;
   /**
    * Spend breakdown by category for the current billing period. Sourced from
    * credit_ledger aggregation, not from a partitioned wallet.

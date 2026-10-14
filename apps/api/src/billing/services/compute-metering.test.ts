@@ -13,7 +13,6 @@ let billingEnabled = true;
 mock.module('../../config', () => ({
   SANDBOX_VERSION: '0.0.0-test',
   KNOWN_PROVIDERS: [],
-  KORTIX_MARKUP: 1,
   PLATFORM_FEE_MARKUP: 1,
   getToolCost: () => 0,
   parseAllowedProviders: () => [],

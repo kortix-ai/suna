@@ -117,6 +117,20 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  * The last step is what lets one capability be switched off independently of
  * the all-or-nothing enterprise flag.
  */
+/**
+ * Whether the row carries a contracted Enterprise entitlement: the JSONB
+ * override when present and unexpired, else the legacy column. Every check of
+ * "is this an Enterprise contract" goes through here, so the two stores cannot
+ * disagree.
+ */
+export function enterpriseEntitledFromRow(
+  row: { enterpriseEntitled?: boolean | null; entitlementOverrides?: unknown } | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!row) return false;
+  return readOverride(row.entitlementOverrides, 'enterpriseEntitled', nowMs) ?? row.enterpriseEntitled === true;
+}
+
 export function resolveBillingFromRow(
   row: BillingRow | null | undefined,
   nowMs: number = Date.now(),
@@ -151,8 +165,7 @@ export function resolveBillingFromRow(
   // the column. Per KEY, not per row — an account can carry an expiring
   // `managedModelsOverride` in the JSONB and a permanent `enterprise_entitled`
   // in its column at the same time, and each resolves from its own source.
-  const enterpriseEntitled =
-    readOverride(ov, 'enterpriseEntitled', nowMs) ?? row.enterpriseEntitled === true;
+  const enterpriseEntitled = enterpriseEntitledFromRow(row, nowMs);
   const demoEnterprise = readOverride(ov, 'demoEnterprise', nowMs) ?? row.demoEnterprise === true;
   const managedModelsOverride =
     readOverride(ov, 'managedModelsOverride', nowMs) ??

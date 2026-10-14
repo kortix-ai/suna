@@ -1,13 +1,11 @@
-import { sandboxes } from '@kortix/db';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
-import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
-import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
 import { resolveAccountBilling } from './billing-cache';
+import { enterpriseEntitledFromRow } from './resolve-billing';
 import {
   billingSnapshotFromAccount,
   billingStateAllowsRun,
@@ -17,21 +15,11 @@ import {
 import { getCreditSummary } from './credits';
 import { initializeFreeTierAccount } from './free-tier';
 import { PLAN_CATALOG, PLAN_FAMILY_LABELS } from './plan-catalog';
-import { canonicalTier, getTier, getTierEntitlements, isPaidTier, planMonthlyUsd } from './tiers';
+import { canonicalTier, getTier, getTierEntitlements, planMonthlyUsd } from './tiers';
 import { getAccountEntitlements } from './entitlements';
 import { currentPeriodStart, getUsageBreakdownThisPeriod } from './usage-breakdown';
 
 type CreditAccountRow = Awaited<ReturnType<typeof getCreditAccount>>;
-
-type InstanceSummary = AccountStateResponse['instances'][number] & {
-  stripe_subscription_id: string | null;
-  cancel_at_period_end: boolean;
-  cancel_at: string | null;
-};
-
-function metadataString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null;
-}
 
 export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
   // Single source of truth for the credit_accounts row for this request.
@@ -67,53 +55,10 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // Started here, awaited with the reads below: none of them needs it.
   const resolvedPending = resolveAccountBilling(accountId, { row: sub });
 
-  const fetchInstances = async (): Promise<InstanceSummary[]> => {
-    try {
-      const sandboxRows = await db
-        .select()
-        .from(sandboxes)
-        .where(
-          and(
-            eq(sandboxes.accountId, accountId),
-            inArray(sandboxes.status, ['active', 'provisioning', 'stopped', 'error']),
-          ),
-        );
-
-      return sandboxRows.map((row) => {
-        const metadata = row.metadata as Record<string, unknown> | null;
-        const billingRow = row as typeof row & {
-          stripeSubscriptionId?: string | null;
-          cancelAtPeriodEnd?: boolean | null;
-          cancelAt?: string | null;
-        };
-        return {
-          sandbox_id: row.sandboxId,
-          external_id: row.externalId || null,
-          name: row.name,
-          provider: row.provider,
-          status: row.status,
-          server_type: metadataString(metadata?.serverType),
-          location: metadataString(metadata?.location),
-          error_message: metadataString(metadata?.errorMessage),
-          is_included: row.isIncluded ?? false,
-          stripe_subscription_id:
-            billingRow.stripeSubscriptionId || (metadata?.stripe_subscription_id as string) || null,
-          stripe_subscription_item_id: row.stripeSubscriptionItemId ?? null,
-          cancel_at_period_end: billingRow.cancelAtPeriodEnd || !!metadata?.cancel_at_period_end,
-          cancel_at: billingRow.cancelAt || (metadata?.cancel_at as string) || null,
-          created_at: row.createdAt.toISOString(),
-        };
-      });
-    } catch {
-      // DB may not be available in local mode
-      return [];
-    }
-  };
-
   // All of these are independent of one another (each keyed only on accountId
   // and/or the `account` row already fetched above) — run them concurrently
   // instead of ~8 sequential round-trips.
-  const [resolved, [credits, isAdmin, entitlements, autoTopup, instances, usageThisPeriod]] =
+  const [resolved, [credits, isAdmin, entitlements, autoTopup, usageThisPeriod]] =
     await Promise.all([resolvedPending, Promise.all([
       getCreditSummary(account),
       isPlatformAdmin(accountId),
@@ -123,7 +68,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       // applies the demo override.
       getAccountEntitlements(accountId, account),
       getAutoTopupSettings(accountId, account),
-      fetchInstances(),
       sub
         ? getUsageBreakdownThisPeriod(accountId, currentPeriodStart(sub.billingCycleAnchor ?? null)).catch(() => null)
         : Promise.resolve(null),
@@ -232,11 +176,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     // self-serve demo or a self-host license. When true, the frontend hides
     // the self-serve "Enterprise features — Demo" toggle (a real contract
     // supersedes the demo) and the admin console shows the contract state.
-    enterprise_entitled: !!sub?.enterpriseEntitled,
+    enterprise_entitled: enterpriseEntitledFromRow(sub),
     models: [],
     auto_topup: autoTopup,
-    instances,
-    can_add_instances: isAdmin || isPaidTier(tierName),
     usage_this_period: usageThisPeriod,
   };
 
@@ -318,8 +260,6 @@ export function buildLocalAccountState(): AccountStateResponse {
       last_failure_reason: null,
       last_failure_at: null,
     },
-    instances: [],
-    can_add_instances: false,
     usage_this_period: null,
   };
 }

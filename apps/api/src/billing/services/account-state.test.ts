@@ -138,7 +138,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(maxInFlight).toBeGreaterThan(1);
   });
 
-  test('response shape is unchanged — credits, subscription, tier, auto_topup, instances, limits all present', async () => {
+  test('response shape — credits, subscription, tier, auto_topup present; no legacy machine fields', async () => {
     getCreditAccountCalls = 0;
     account = creditAccount();
 
@@ -175,7 +175,8 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       last_failure_reason: null,
       last_failure_at: null,
     });
-    expect(state.instances).toEqual([]);
+    expect('instances' in state).toBe(false);
+    expect('can_add_instances' in state).toBe(false);
     expect('limits' in state).toBe(false);
     // Credits-only: no seats, no billing model, no claim flags.
     for (const removed of ['billing_model', 'seats', 'member_count', 'can_claim_per_seat', 'can_claim_computer']) {

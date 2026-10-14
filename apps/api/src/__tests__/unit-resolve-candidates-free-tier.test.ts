@@ -20,7 +20,6 @@ let managedProviderEnabled = true;
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
-  KORTIX_MARKUP: 1.2,
   PLATFORM_FEE_MARKUP: 0.1,
   config: new Proxy(
     {},

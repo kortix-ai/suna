@@ -771,7 +771,7 @@ adminApp.openapi(
       body: {
         content: {
           'application/json': {
-            schema: z.object({ tier: z.string() }),
+            schema: z.object({ tier: z.string(), monthly_usd: z.number().min(0).optional() }),
           },
         },
       },
@@ -793,18 +793,15 @@ adminApp.openapi(
     const { isValidTier } = await import('../billing/services/tiers');
     if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
 
-    // Enterprise is an ENTITLEMENT, not a tier. A `tier='enterprise'` write is
-    // clobbered by the next Stripe subscription sync (webhooks.ts writes the
-    // price-resolved tier back), which silently reverts the account. The flag
-    // survives sync — refuse the wrong primitive here.
-    if (tier === 'enterprise') {
-      return c.json(
-        {
-          error:
-            "enterprise is not assignable as a tier — use POST /admin/api/accounts/{id}/enterprise-entitlement instead (the flag survives Stripe subscription sync; a tier write does not)",
-        },
-        400,
-      );
+    // `tier='enterprise'` is the custom plan: SSO, SCIM, RBAC, audit, uncapped
+    // projects and Apps. Stripe sync never overwrites it (accountIsAdminPinned).
+    // `monthly_usd` is the contract's monthly credit amount: credited every
+    // month by the rotation sweep for an Enterprise contract, shown as the plan
+    // amount for a credits plan. Omit it to leave the amount unchanged.
+    const monthlyRaw = body.monthly_usd;
+    const monthlyUsd = monthlyRaw === undefined || monthlyRaw === null ? undefined : Number(monthlyRaw);
+    if (monthlyUsd !== undefined && (!Number.isFinite(monthlyUsd) || monthlyUsd < 0 || monthlyUsd > 1_000_000)) {
+      return c.json({ error: 'monthly_usd must be a number from 0 to 1,000,000' }, 400);
     }
 
     const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
@@ -816,7 +813,13 @@ adminApp.openapi(
     // and invalidates the one billing cache the value feeds.
     await applyAdminOverride(
       accountId,
-      { tier },
+      {
+        tier,
+        ...(monthlyUsd !== undefined ? { planMonthlyUsd: String(monthlyUsd) } : {}),
+        // An Enterprise contract with an amount starts crediting on the next
+        // rotation pass.
+        ...(tier === 'enterprise' && monthlyUsd ? { nextCreditGrant: new Date().toISOString() } : {}),
+      },
       { userId: actorUserId ?? null, action: 'admin.account.tier.set' },
     );
 

@@ -21,6 +21,7 @@ import { autoTopupFailure, failureDisablesAutoTopup, HARD_DECLINE_CODES } from '
 import { resolveAccountBilling } from './billing-cache';
 import { isDeadSubscriptionStatus } from './billing-state';
 import { wallet } from '../wallet';
+import { grantTopUpBonus } from './top-up-bonus';
 import { isPaidTier } from './tiers';
 import { BillingError } from '../../errors';
 import {
@@ -348,6 +349,7 @@ async function grantAutoTopup(accountId: string, paymentIntentId: string, amount
     expiring: false,
     key: { event: paymentIntentId },
   });
+  await grantTopUpBonus(accountId, amount, `${paymentIntentId}:bonus`);
   await updateCreditAccount(accountId, {
     autoTopupLastCharged: new Date().toISOString(),
     autoTopupConsecutiveFailures: 0,

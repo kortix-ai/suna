@@ -75,14 +75,6 @@ export function BillingTab({
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
     refetchOnMount: true,
-    refetchInterval: (query) => {
-      const data = query.state.data as AccountState | undefined;
-      const hasProvisioning = data?.instances?.some(
-        (i: { status: string }) => i.status === 'provisioning',
-      );
-      return hasProvisioning ? 5000 : false;
-    },
-    refetchIntervalInBackground: false,
   });
 
   const createPortalSessionMutation = useCreatePortalSession();

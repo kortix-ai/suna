@@ -2071,7 +2071,7 @@
       "minimum": "最低充值金额为 {amount}。",
       "contactSales": "如需充值超过 {amount}，请联系销售团队。",
       "creditHint": "{credits} 个积分 · 付款后立即到账。",
-      "noExpiry": "积分永不过期。1 美元 = 100 个积分。",
+      "noExpiry": "积分永不过期。1 美元 = 100 个积分，50 美元起另有赠送。",
       "processing": "处理中",
       "addAmount": "添加 {amount}",
       "addCredits": "添加积分",
@@ -2079,7 +2079,11 @@
       "checkoutFailed": "无法创建结账会话",
       "amountGroup": "充值金额",
       "customAmount": "自定义美元金额",
-      "custom": "自定义"
+      "custom": "自定义",
+      "creditHintBonus": "{credits} 个积分 + {bonus} 赠送 · 付款后立即到账。",
+      "autoTopupOff": "自动充值：关闭",
+      "autoTopupOn": "自动充值：余额低于 {threshold} 时充入 {amount}",
+      "ledgerBonus": "充值赠送"
     },
     "autoTopup": {
       "bufferError": "充值金额必须至少比阈值高 {buffer} — 请输入 {minimum} 或更多。",
@@ -2098,7 +2102,9 @@
       "save": "保存",
       "paymentNeeded": "请添加付款方式，以便执行自动充值。",
       "turnedOffAfterFailure": "自动充值已于 {date} 关闭：上一次扣款失败（{reason}）。请更新付款方式，然后重新开启自动充值。",
-      "lastChargeFailed": "上一次自动充值扣款于 {date} 失败（{reason}）。Kortix 会重试；连续 3 次扣款失败后，自动充值将关闭。"
+      "lastChargeFailed": "上一次自动充值扣款于 {date} 失败（{reason}）。Kortix 会重试；连续 3 次扣款失败后，自动充值将关闭。",
+      "bonusHint": "每次充值增加 {credits} 积分 + {bonus} 奖励。",
+      "bonusFrom": "充值 {min} 及以上可获得奖励积分。"
     },
     "title": "计费与订阅",
     "subscription": "订阅",
@@ -2145,7 +2151,7 @@
         "current": "当前",
         "choose": "选择档位",
         "chooseHint": "档位起价为每月 {min}。",
-        "sessions": "每月约 {busy} 到 {light} 次智能体会话。",
+        "hours": "每月约 {hours} 小时的智能体计算机。",
         "groups": {
           "small": "小型团队",
           "growing": "成长型团队",
@@ -2354,7 +2360,7 @@
         },
         "credit": {
           "question": "一个积分能买到什么？",
-          "answer": "1 个积分等于 0.01 美元。积分用于支付沙盒算力和托管模型用量。算力按秒、按资源计费：每 vCPU 0.0000168 美元，每 GiB 内存 0.0000054 美元，每 GiB 存储 0.000000036 美元。默认的 2 vCPU / 4 GiB / 20 GiB 机器约为每小时 0.20 美元，停止时不收费。托管模型按该模型的费率对输入、输出和缓存的 token 计费。自带密钥或连接 ChatGPT 则直接向模型提供商付费。"
+          "answer": "1 个积分等于 0.01 美元。积分用于支付智能体计算机，按秒、按资源计费：每 vCPU 0.0000168 美元，每 GiB 内存 0.0000054 美元，每 GiB 存储 0.000000036 美元。默认的 {spec} 机器每小时约消耗 {creditsPerHour} 个积分，因此 1 个积分约等于 {minutes} 分钟。停止的计算机不收费。积分也用于支付 Kortix 模型，价格为提供商基础价格加 {fee}% 平台费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。"
         },
         "amounts": {
           "question": "我每月需要支付多少？",
@@ -2368,9 +2374,13 @@
           "question": "未用完的积分会怎样？",
           "answer": "未用完的每月积分可顺延一个月。通过充值获得的积分永不过期。"
         },
+        "models": {
+          "question": "模型会消耗积分吗？",
+          "answer": "只有 Kortix 模型会。其费用为提供商基础价格加 {fee}% 平台费，用积分支付，应用中显示基础价格。使用你自己的 API 密钥或已连接的 ChatGPT 订阅时，模型用量记到你的提供商，不消耗积分。这时积分只用于支付智能体计算机。"
+        },
         "topup": {
           "question": "月中可以追加积分吗？",
-          "answer": "可以。随时充值任意金额，或开启自动充值，让智能体永不中断。"
+          "answer": "可以。随时充值任意金额，或开启自动充值，让智能体永不中断。充值 {smallestBonusUsd} 及以上可获赠额外积分：{smallestBonusUsd} 赠 {smallestBonus}%，{largestBonusUsd} 起最高赠 {largestBonus}%。充值的积分永不过期。"
         },
         "change": {
           "question": "可以更改档位吗？",
@@ -2393,42 +2403,43 @@
         "b3": "不限数量的成员，共用一个积分池",
         "cta": "免费开始"
       },
-      "power": {
-        "eyebrow": "积分驱动一切",
-        "title": "一个积分能做什么",
-        "description": "每次智能体会话都会为它的电脑和模型消耗积分。以下是 Kortix Cloud 上真实会话的消耗。",
-        "quick": {
-          "title": "快速任务",
-          "credits": "少于 10 个积分",
-          "example": "回答关于代码仓库的问题、总结一个讨论串、查询一条记录。"
-        },
-        "task": {
-          "title": "智能体任务",
-          "credits": "10 到 50 个积分",
-          "example": "修复一个错误并运行测试、起草一份报告、运行一项定时自动化。"
-        },
-        "long": {
-          "title": "长时间运行",
-          "credits": "100 个以上积分",
-          "example": "从头到尾构建一项功能、调研并撰写文档、发布一个内部应用。"
-        },
-        "source": "一半的会话消耗不到 10 个积分，十分之九的会话消耗不到 125 个。统计范围为截至 2026 年 10 月 14 日的 30 天内所有 Kortix Cloud 会话。"
-      },
-      "how": {
-        "eyebrow": "积分如何运作",
-        "title": "一个积分相当于一美分的实际用量",
+      "hours": {
+        "eyebrow": "智能体时长",
+        "title": "1 个积分约等于 {minutes} 分钟的智能体计算机",
+        "description": "积分用于支付智能体计算机：智能体在云端这台机器上运行代码、浏览网页并编辑文件。运行时按秒计费，停止后不收费。",
         "rate": {
-          "title": "1 个积分 = 0.01 美元",
-          "body": "积分用于支付按秒计费的沙盒算力和托管模型的 token。所有档位的积分费率相同。"
+          "value": "1 个积分 = 0.01 美元",
+          "note": "每个档位都按此价格提供积分。"
         },
-        "keys": {
-          "title": "使用你自己的密钥不消耗积分",
-          "body": "自带模型密钥或连接 ChatGPT 订阅后，模型用量将直接由你的服务商计费。"
+        "hour": {
+          "value": "{creditsPerHour} 个积分 = 1 小时",
+          "note": "智能体计算机（{spec}）。按秒计费，停止后不收费。"
         },
-        "compute": {
-          "title": "电脑只在运行时计费",
-          "body": "默认的智能体电脑每小时约消耗 {creditsPerHour} 个积分，停止后不再消耗。"
+        "tier": {
+          "value": "每月 {tierUsd} ≈ {hours} 小时",
+          "note": "智能体计算机的时长，前提是模型使用走你自己的密钥。"
         }
+      },
+      "models": {
+        "eyebrow": "模型单独计费",
+        "title": "模型与智能体计算机分开计费",
+        "description": "积分用于支付智能体计算机。模型调用的费用取决于模型的来源。",
+        "keys": {
+          "tag": "不用积分",
+          "title": "你自己的 API 密钥",
+          "body": "添加 Anthropic、OpenAI 或任何其他提供商的密钥。模型用量直接记到你的提供商，不消耗积分。"
+        },
+        "chatgpt": {
+          "tag": "不用积分",
+          "title": "你的 ChatGPT 订阅",
+          "body": "连接你的 ChatGPT 订阅。智能体用它进行模型调用，不消耗积分。"
+        },
+        "kortix": {
+          "tag": "用积分支付",
+          "title": "Kortix 模型",
+          "body": "无需管理密钥。每次调用的费用为提供商基础价格加 {fee}% 平台费，用积分支付。应用中显示的是基础价格。"
+        },
+        "summary": "使用你自己的密钥时，积分只用于支付智能体计算机。"
       }
     }
   },
@@ -4303,9 +4314,7 @@
     },
     "appHomePricingPage": {
       "line107JsxTextStartFreeScaleWhenYouAposReReady": "免费开始。准备好后再扩展。",
-      "line108JsxTextSelfHostTheWholePlatformForFreeMove": "免费自托管整个平台。按席位迁移到托管云；当您需要本地部署和高级控制时，再升级到 Enterprise。",
       "line118JsxTextMostPopular": "最受欢迎",
-      "line138JsxTextCloudIsPerSeatUsageBasedComputeYou": "Cloud 按席位加基于用量的计算资源收费。您只需为智能体实际运行的内容付费。",
       "line145JsxTextComparePlans": "比较方案",
       "line153JsxTextOpenSource": "开源",
       "line183JsxTextPricingQuestions": "定价问题",
@@ -10034,7 +10043,6 @@
       "text0983d3e38ba5": "强大的系统思维与判断力。",
       "text09851ae4a654": "- 根据模板搭建其工作区",
       "text0989a07682e0": "未注册工具 — MCP 回退",
-      "text098d65d3bf79": "Ultra · $200/月",
       "text0991397702fa": "立即运行",
       "text09993f2060aa": "我已添加访问策略",
       "text099b6264cb74": "Kortix 代理与技能",
@@ -15139,7 +15147,6 @@
       "text9d4b2eae7c42": "产品默认设置是宽松的——除非你另行指定，否则操作会执行。对于销售项目，第一步应将外发操作设为“询问”，将破坏性操作设为“阻止”。我们明确告诉你这一点，而不是让你误以为系统已经替你选择了更安全的默认设置。",
       "text9d53e28e9e39": "按项目划分的访问权限列在此页面的“项目”部分。",
       "text9d54b2fd9149": "接入任意 provider，或使用你已经付费的 ChatGPT 订阅。模型是仓库中的配置，而不是由供应商替你决定。",
-      "text9d5adef979f7": "祖传套餐",
       "text9d6304b7f8dc": "身份管理 → 配置",
       "text9d74727714db": "已撤销",
       "text9da0bf42ad07": "收起侧边栏",
@@ -18594,7 +18601,7 @@
       "text57c8f2cd3dd6": "在会话开始时固定",
       "textce033f75c938": "等待 1 个决定",
       "text5726504025dc": "等待 {value0} 个决定",
-      "texte0a770200f93": "已包含在你的方案中",
+      "texte0a770200f93": "从额度中支付",
       "texta527a1778404": "ChatGPT Plus 或 Pro 订阅",
       "textb1a5c13d215e": "已固定到此项目不再声明的模板。",
       "text0703d9121fd7": "已为此智能体固定。新会话和自动化将使用它。",
@@ -19971,7 +19978,7 @@
     "metaKey": "API 密钥",
     "metaSignIn": "登录",
     "metaSignInOrKey": "登录或 API 密钥",
-    "metaIncluded": "包含在你的套餐中",
+    "metaIncluded": "从额度中支付",
     "apiKey": "API 密钥",
     "savedKey": "已保存的密钥",
     "replace": "替换",
@@ -20049,7 +20056,8 @@
     "fromPrice": "每 100 万 {input} / {output} 起",
     "price": "每 100 万 {input} / {output}",
     "hiddenLine": "不在模型选择器中 · 直接请求仍可使用",
-    "blockedLine": "对此模型的请求已被阻止"
+    "blockedLine": "对此模型的请求已被阻止",
+    "platformFee": "Kortix 模型：提供商价格 + {fee}% 平台费"
   },
   "gatewayCosts": {
     "mostSpend": "支出最多",
@@ -20106,9 +20114,9 @@
     "credentialsHint": "禁用推理但保留凭据。",
     "providerError": "无法更新提供商访问权限。",
     "managedTitle": "Kortix 托管模型",
-    "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
+    "managedDescription": "提供商基础价格加 {fee}% 平台费，从额度中支付。无需 API 密钥。",
     "managedUpgradeHint": "升级以使用 Kortix 托管模型，或连接你自己的提供商。",
-    "pricingEstimate": "客户预估价格。实际费用取决于使用的路由。",
+    "pricingEstimate": "提供商基础价格，未含平台费。实际费用取决于使用的路由。",
     "pricingRoute": "{route}：每百万 token 输入 {input} / 缓存 {cacheRead} / 输出 {output}",
     "pricingPreferred": "首选",
     "textImage": "文本 + 图像",

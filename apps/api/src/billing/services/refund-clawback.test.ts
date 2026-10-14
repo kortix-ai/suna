@@ -29,11 +29,11 @@ beforeEach(() => {
 describe('Stripe refund and dispute clawback', () => {
   test('a $500 credit pack refunded in full takes -$500 from the wallet, keyed on the cumulative refund', async () => {
     sessions = [creditPackSession];
-    await handleChargeRefunded({ id: 'ch_1', payment_intent: 'pi_1', amount_refunded: 50_000 } as never);
+    await handleChargeRefunded({ id: 'ch_1', payment_intent: 'pi_1', amount: 50_000, amount_refunded: 50_000 } as never);
     expect(fake.calls.grant).toHaveLength(1);
     expect(fake.calls.grant[0]).toMatchObject({
       accountId: 'acct-synthetic',
-      amount: -500,
+      amount: -520, // $500 + its 4% top-up bonus
       kind: 'admin_debit',
       expiring: false,
       key: { event: 'refund:ch_1:50000' },
@@ -43,15 +43,16 @@ describe('Stripe refund and dispute clawback', () => {
   test('a second partial refund takes only the increment (previous_attributes), under its own key', async () => {
     sessions = [creditPackSession];
     await handleChargeRefunded(
-      { id: 'ch_1', payment_intent: 'pi_1', amount_refunded: 30_000 } as never,
+      { id: 'ch_1', payment_intent: 'pi_1', amount: 50_000, amount_refunded: 30_000 } as never,
       { amount_refunded: 12_500 },
     );
-    expect(fake.calls.grant[0]).toMatchObject({ amount: -175, key: { event: 'refund:ch_1:30000' } });
+    // $175 of a $500 pack: $175 + 175/500 of its $20 bonus.
+    expect(fake.calls.grant[0]).toMatchObject({ amount: -182, key: { event: 'refund:ch_1:30000' } });
   });
 
   test('an auto-topup charge resolves through the PaymentIntent metadata', async () => {
     paymentIntent = { metadata: { type: 'auto_topup', account_id: 'acct-topup' } };
-    await handleChargeRefunded({ id: 'ch_2', payment_intent: 'pi_2', amount_refunded: 2_500 } as never);
+    await handleChargeRefunded({ id: 'ch_2', payment_intent: 'pi_2', amount: 2_500, amount_refunded: 2_500 } as never);
     expect(fake.calls.grant[0]).toMatchObject({ accountId: 'acct-topup', amount: -25 });
   });
 
@@ -70,10 +71,10 @@ describe('Stripe refund and dispute clawback', () => {
   test('a dispute takes the disputed amount; a won dispute gives it back', async () => {
     sessions = [creditPackSession];
     await handleDisputeCreated({ id: 'dp_1', payment_intent: 'pi_1', amount: 10_000 } as never);
-    expect(fake.calls.grant[0]).toMatchObject({ amount: -100, key: { event: 'dispute:dp_1' } });
+    expect(fake.calls.grant[0]).toMatchObject({ amount: -102, key: { event: 'dispute:dp_1' } }); // $100 + 2% bonus
 
     await handleDisputeClosed({ id: 'dp_1', payment_intent: 'pi_1', amount: 10_000, status: 'won' } as never);
-    expect(fake.calls.grant[1]).toMatchObject({ amount: 100, key: { event: 'dispute-won:dp_1' } });
+    expect(fake.calls.grant[1]).toMatchObject({ amount: 102, key: { event: 'dispute-won:dp_1' } });
 
     await handleDisputeClosed({ id: 'dp_2', payment_intent: 'pi_1', amount: 10_000, status: 'lost' } as never);
     expect(fake.calls.grant).toHaveLength(2);

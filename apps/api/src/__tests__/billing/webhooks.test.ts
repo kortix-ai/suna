@@ -131,7 +131,7 @@ describe('checkout.session.completed', () => {
     expect(upsertCustomerCalls.length).toBe(1);
   });
 
-  test('payment mode: grants non-expiring credits for purchase', async () => {
+  test('payment mode: grants non-expiring credits for purchase, plus the top-up bonus', async () => {
     const session = createMockStripeCheckoutSession({
       mode: 'payment',
       amount_total: 5000,
@@ -152,10 +152,12 @@ describe('checkout.session.completed', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(walletGrants.length).toBe(1);
+    expect(walletGrants.length).toBe(2);
     expect(walletGrants[0].amount).toBe(50);
     expect(walletGrants[0].expiring).toBe(false);
     expect(walletGrants[0].key).toEqual({ event: session.id });
+    // $50 is the first bonus step: +1%, its own ledger row, keyed on the session.
+    expect(walletGrants[1]).toMatchObject({ amount: 0.5, kind: 'topup_bonus', expiring: false, key: { event: `${session.id}:bonus` } });
     // The purchase row is found through its PaymentIntent and marked settled.
     expect(purchaseUpdates).toEqual([['purchase_123', 'completed', expect.anything()]]);
   });
@@ -555,15 +557,13 @@ describe('RevenueCat', () => {
     expect(upsertCreditAccountCalls.length).toBe(1);
     expect(upsertCreditAccountCalls[0].data.tier).toBe('credits');
     expect(upsertCreditAccountCalls[0].data.planMonthlyUsd).toBe('20');
-    // The mobile Pro product maps to the $20 credits plan, plus the $5 machine bonus
-    expect(walletGrants.length).toBe(2);
+    // The mobile Pro product maps to the $20 credits plan; no other grant.
+    expect(walletGrants.length).toBe(1);
     expect(walletGrants[0].amount).toBe(20);
-    expect(walletGrants[1].amount).toBe(5);
-    expect(walletGrants[1].kind).toBe('machine_bonus');
     expect(result.event_type).toBe('INITIAL_PURCHASE');
   });
 
-  test('INITIAL_PURCHASE: legacy tier grants credits + machine bonus', async () => {
+  test('INITIAL_PURCHASE: the legacy Plus product grants its $20 of credits', async () => {
     const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
       product_id: 'kortix_plus_monthly',
     });
@@ -573,10 +573,8 @@ describe('RevenueCat', () => {
     expect(upsertCreditAccountCalls.length).toBe(1);
     expect(upsertCreditAccountCalls[0].data.tier).toBe('credits');
     expect(upsertCreditAccountCalls[0].data.planMonthlyUsd).toBe('20');
-    // tier_grant ($20) + machine_bonus ($5)
-    expect(walletGrants.length).toBe(2);
+    expect(walletGrants.length).toBe(1);
     expect(walletGrants[0].amount).toBe(20); // Plus product = $20 monthly credits
-    expect(walletGrants[1].amount).toBe(5);  // $5 machine bonus
     expect(result.event_type).toBe('INITIAL_PURCHASE');
   });
 
@@ -595,7 +593,7 @@ describe('RevenueCat', () => {
     expect((first as any).skipped).toBeUndefined();
     expect((second as any).deduped).toBe(true);
     expect(upsertCreditAccountCalls.length).toBe(1);
-    expect(walletGrants.length).toBe(2);
+    expect(walletGrants.length).toBe(1);
   });
 
   test('RENEWAL: resets expiring credits', async () => {

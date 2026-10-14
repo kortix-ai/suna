@@ -38,7 +38,10 @@ export async function processYearlyCreditRotation(): Promise<{
   async function rotateBatch(accounts: Awaited<ReturnType<typeof getYearlyAccountsDueForRotation>>) {
     for (const account of accounts) {
       try {
-        const credits = canonicalTier(account.tier) === 'credits'
+        // A paid plan and an Enterprise contract both carry their monthly
+        // amount on the row; anything else grants its fixed allowance.
+        const plan = canonicalTier(account.tier);
+        const credits = plan === 'credits' || plan === 'enterprise'
           ? planMonthlyUsd(account)
           : getTier(account.tier ?? 'free').monthlyCredits;
         const now = new Date();
@@ -50,7 +53,9 @@ export async function processYearlyCreditRotation(): Promise<{
           await wallet.reset({
             accountId: account.accountId,
             amount: credits,
-            description: `Yearly plan monthly credit rotation: ${credits} credits`,
+            description: plan === 'enterprise'
+              ? `Enterprise contract monthly credits: ${Math.round(credits * 100)} credits`
+              : `Yearly plan monthly credits: ${Math.round(credits * 100)} credits`,
             key: { event: idempotencyKey },
           });
         }
