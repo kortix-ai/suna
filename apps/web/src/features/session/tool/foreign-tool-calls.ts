@@ -3,6 +3,8 @@
  * Claude Code names and input shapes, as their session-log adapters write them (the
  * `codex` and `claude-code` golden fixtures in `@kortix/api-contract`). Each call renders
  * through the renderer of its block `kind` (`ToolRegistry.get`), not the generic fallback.
+ * Two native listings close the list (an OpenCode `list` tree, a pi `ls`): their real output
+ * shapes, which the list renderer parses into file rows.
  * Pure data: the tool tests and `/debug/session-fixture` render it.
  */
 import type { ToolCallBlock } from '@kortix/sdk';
@@ -61,4 +63,8 @@ export const FOREIGN_TOOL_CALLS: ToolCallBlock[] = [
   call('cc-question', 'AskUserQuestion', 'question', {
     questions: [{ question: 'Which notation should the card use?', header: 'Notation', multiSelect: false, options: [{ label: 'Compact', description: '$1.2K' }, { label: 'Full', description: '$1,234.00' }] }],
   }, 'User has answered your questions: "Which notation should the card use?"="Compact".'),
+  // Native listings: OpenCode `list` prints the directory, then entries indented two spaces per
+  // level; pi `ls` prints entries relative to `path`, `/` after a directory, then a notice.
+  call('opencode-list', 'list', 'list', { path: '/workspace/src' }, '/workspace/src/\n  components/\n    Button.tsx\n  index.ts\n'),
+  call('pi-ls', 'ls', 'list', { path: '/workspace/src' }, 'components/\nindex.ts\nutil.ts\n\n[3 entries limit reached. Use limit=6 for more]'),
 ];

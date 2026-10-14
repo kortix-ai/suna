@@ -38,7 +38,7 @@ export function RawPatchDiffView({ patch }: { patch: string; filename: string })
 export function patchFilesFromText(text: string): PatchFileLite[] {
   const files: Array<PatchFileLite & { before: string; after: string }> = [];
   let file: (typeof files)[number] | undefined;
-  for (const line of text.split('\n')) {
+  for (const line of text.split(/\r?\n/)) {
     const header = /^\*\*\* (Add|Update|Delete) File: (.+)$/.exec(line);
     const move = /^\*\*\* Move to: (.+)$/.exec(line);
     if (header) {

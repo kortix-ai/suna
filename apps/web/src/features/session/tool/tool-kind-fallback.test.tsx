@@ -1,6 +1,7 @@
 import '@/features/session/tool/tools/register';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { FOREIGN_TOOL_CALLS } from '@/features/session/tool/foreign-tool-calls';
+import { parseListing } from '@/features/session/tool/shared/file-list';
 import { patchFilesFromText } from '@/features/session/tool/shared/patch-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
@@ -75,11 +76,13 @@ describe('a session with foreign tool names renders no generic fallback', () => 
     'codex-spawn': ['List the files in the workspace'],
     'codex-question': ['Which files should the patch touch?'],
     'cc-ls': ['index.ts', 'util.ts'],
-    'cc-edit': ['util.ts', '>+1<', '>−1<'],
+    'cc-edit': ['util.ts', '+1', '−1'],
     'cc-multiedit': ['index.ts'],
     'cc-grep': ['pattern=TODO', 'include=*.ts', 'index.ts'],
     'cc-agent': ['List files'],
     'cc-question': ['Which notation should the card use?'],
+    'opencode-list': ['Button.tsx', 'index.ts', '2 files'],
+    'pi-ls': ['index.ts', 'util.ts', '2 files'],
   };
 
   test('the fixture covers every call', () => {
@@ -89,8 +92,9 @@ describe('a session with foreign tool names renders no generic fallback', () => 
   for (const call of FOREIGN_TOOL_CALLS) {
     test(`${call.name} (${call.kind}) renders with a registered renderer`, () => {
       expect(ToolRegistry.get(call.name, call.kind)).toBeDefined();
-      const html = render(call);
-      for (const text of SHOWS[call.id]!) expect(html).toContain(text.replace(/&/g, '&amp;'));
+      // Text content: a highlighted command is split across spans.
+      const text = render(call).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
+      for (const shown of SHOWS[call.id]!) expect(text).toContain(shown);
     });
   }
 });
@@ -139,5 +143,66 @@ describe('patchFilesFromText', () => {
       { relativePath: 'c.md', type: 'add', before: '', after: '# C\n', additions: 1, deletions: 0 },
       { relativePath: 'd.txt', type: 'delete', before: undefined, after: undefined, additions: 0, deletions: 0 },
     ]);
+  });
+
+  test('reads a CRLF patch', () => {
+    const text = '*** Begin Patch\r\n*** Update File: a.txt\r\n@@\r\n-old\r\n+new\r\n*** End Patch\r\n';
+    expect(patchFilesFromText(text)).toEqual([
+      { relativePath: 'a.txt', type: 'update', before: 'old\n', after: 'new\n', additions: 1, deletions: 1 },
+    ]);
+  });
+});
+
+const completed = (id: string, name: string, kind: string, input: unknown, output: string): ToolCallBlock => ({
+  type: 'tool_call', id, call_id: id, name, kind, input, status: 'complete',
+  result: { content: [{ type: 'text', text: output }], is_error: false },
+});
+
+describe('a kind renderer that cannot read the call shows what the call has', () => {
+  test('a foreign glob (pi `find`, relative paths) shows its output, not "no matches"', () => {
+    const html = render(completed('find', 'find', 'glob', { pattern: '*.ts' }, 'src/a.ts\nsrc/b.ts'));
+    expect(html).not.toContain('no matches');
+    expect(html).toContain('src/a.ts');
+  });
+
+  test('an OpenCode glob with no match still reads "no matches"', () => {
+    expect(render(completed('glob', 'glob', 'glob', { pattern: '*.ts' }, 'No files found'))).toContain('no matches');
+  });
+
+  // A shell call with no command (Claude Code `BashOutput`, Codex `write_stdin`) renders the
+  // generic row: name, input and output.
+  test('Claude Code BashOutput shows its name, input and output', () => {
+    const html = render(completed('bash-output', 'BashOutput', 'shell', { bash_id: 'shell-1' }, 'build finished'));
+    expect(html).toContain('BashOutput');
+    expect(html).toContain('bash_id=shell-1');
+    expect(html).toContain('build finished');
+  });
+
+  test('Codex write_stdin shows its name, input and output', () => {
+    const html = render(completed('stdin', 'write_stdin', 'shell', { session_id: 3, chars: 'y' }, 'Process exited with code 0'));
+    expect(html).toContain('Write Stdin');
+    expect(html).toContain('session_id=3');
+    expect(html).toContain('Process exited with code 0');
+  });
+});
+
+describe('parseListing', () => {
+  test('an OpenCode list tree → the files under the listed directory', () => {
+    expect(parseListing('/w/src/\n  components/\n    Button.tsx\n  index.ts\n', '/w/src')).toEqual(['/w/src/components/Button.tsx', '/w/src/index.ts']);
+  });
+
+  test('a pi ls listing → the files under `path`, without the notice', () => {
+    expect(parseListing('components/\nindex.ts\n\n[1 entries limit reached]', '/w/src')).toEqual(['/w/src/index.ts']);
+  });
+
+  test('an empty listing → [], text that is not a listing → null', () => {
+    expect(parseListing('(empty directory)', '/w/src')).toEqual([]);
+    expect(parseListing('/w/src/\n', '/w/src')).toEqual([]);
+    expect(parseListing('components/\n', '/w/src')).toBeNull();
+    expect(parseListing('index.ts', undefined)).toBeNull();
+  });
+
+  test('an empty OpenCode listing still reads "Directory is empty"', () => {
+    expect(render(completed('empty', 'list', 'list', { path: '/w/src' }, '/w/src/\n'))).toContain('Directory is empty');
   });
 });

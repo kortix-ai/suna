@@ -1,5 +1,5 @@
 'use client';
-import { InlineFileList, parseFilePaths } from '@/features/session/tool/shared/file-list';
+import { InlineFileList, parseFilePaths, parseListing } from '@/features/session/tool/shared/file-list';
 import { filePhase, fileVerb } from '@/features/session/tool/shared/file-verb';
 import {
   BasicTool,
@@ -34,15 +34,20 @@ export function ListTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
   const directory = getDirectory(input.path as string) || (input.path as string) || undefined;
 
-  const filePaths = useMemo(() => parseFilePaths(output), [output]);
+  // A native listing (OpenCode `list` tree, pi `ls`) parses as one; another harness's output
+  // (a Claude Code `LS` tree) is read only as absolute paths, else shown as plain text.
+  const native = toolKind(call.name) === 'list';
+  const listedPath = input.path as string | undefined;
+  const filePaths = useMemo(
+    () => (native ? parseListing(output, listedPath) : parseFilePaths(output)),
+    [native, output, listedPath],
+  );
   const hasResults = filePaths && filePaths.length > 0;
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it. It sat
   // in the body, so every re-render re-parsed a listing that had not changed.
   const errored = useMemo(() => isErrorOutput(output), [output]);
-  // Another harness's listing (a Claude Code `LS` tree) is not the format the parser
-  // reads: it falls through to the plain output instead of reading as an empty folder.
-  const isNoResults =
-    !hasResults && status === 'completed' && !!output && !errored && toolKind(call.name) === 'list';
+  // Empty only when the listing parsed and named no entry; unparsed output shows as plain text.
+  const isNoResults = filePaths?.length === 0 && status === 'completed' && !errored;
 
   const handleFileClick = useCallback(
     (fp: string) => openFileWithList(fp, filePaths ?? NO_PATHS),
