@@ -14,6 +14,7 @@ import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
 import {
   CR_REVIEW_STATUS,
+  adapterSourceForId,
   changeRequestToReviewItem,
   connectorCallToReviewItem,
 } from './review-adapters';
@@ -477,6 +478,40 @@ export async function listInboxItems(
     },
     { ...query, connectorCallVerdict: await connectorCallVerdicts(calls, resolveCaller) },
   );
+}
+
+/**
+ * One inbox item by its id, in the shape and with the verdict the list gives
+ * it: a native id, `cr:<cr_id>` or `call:<execution_id>`. The list is
+ * bounded, so a link to an item (a change request's `?id=cr:…`) must not
+ * depend on that item being on a loaded page. A connector call is in the
+ * inbox only while it is pending; null for anything else, and for an id that
+ * is not a uuid.
+ */
+export async function getInboxItem(
+  projectId: string,
+  id: string,
+  resolveCaller: () => Promise<ApprovalCaller>,
+): Promise<InboxItem | null> {
+  const source = adapterSourceForId(id);
+  const rawId = source ? id.slice(id.indexOf(':') + 1) : id;
+  if (!UUID_RE.test(rawId)) return null;
+  if (source === 'cr') {
+    const [row] = await db
+      .select()
+      .from(changeRequests)
+      .where(and(eq(changeRequests.crId, rawId), eq(changeRequests.projectId, projectId)))
+      .limit(1);
+    return row ? changeRequestToReviewItem(row) : null;
+  }
+  if (source === 'call') {
+    const call = (await pendingConnectorCalls(projectId)).find((row) => row.executionId === rawId);
+    if (!call) return null;
+    const verdict = await connectorCallVerdicts([call], resolveCaller);
+    return connectorCallToReviewItem(call, verdict(call));
+  }
+  const row = await getReviewItemById(rawId, projectId);
+  return row ? serializeReviewItem(row) : null;
 }
 
 /**

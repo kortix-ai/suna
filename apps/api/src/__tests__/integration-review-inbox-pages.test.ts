@@ -16,11 +16,12 @@ import {
   projects,
   reviewItems,
 } from '@kortix/db';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ApprovalCaller } from '../projects/lib/approval-authority';
 import {
   REVIEW_PAGE_MAX_LIMIT,
   decodeInboxCursor,
+  getInboxItem,
   listInboxItems,
   reviewSummary,
 } from '../projects/review-items';
@@ -276,6 +277,33 @@ describe('listInboxItems', () => {
     const waiting = await walkAll({ segment: 'waiting' }, asLauncher);
     expect(waiting).toHaveLength(1);
     expect(waiting[0]).toMatchObject({ kind: 'approval', can_resolve: false, resolvers: 'managers' });
+  });
+
+  test('getInboxItem reads any item by id, off every page, with the list verdict', async () => {
+    const [closed] = await db
+      .select({ crId: changeRequests.crId })
+      .from(changeRequests)
+      .where(and(eq(changeRequests.projectId, PROJECT), eq(changeRequests.number, 3)));
+    const [backendCall] = await db
+      .select({ executionId: connectorCalls.executionId })
+      .from(connectorCalls)
+      .where(sql`${connectorCalls.sessionId}::text = ${BACKEND_SESSION}`);
+    expect(await getInboxItem(PROJECT, `cr:${closed.crId}`, asLauncher)).toMatchObject({
+      kind: 'change',
+      status: 'rejected',
+    });
+    expect(await getInboxItem(PROJECT, `call:${backendCall.executionId}`, asLauncher)).toMatchObject({
+      status: 'waiting',
+      can_resolve: false,
+    });
+    expect(await getInboxItem(PROJECT, `call:${backendCall.executionId}`, asManager)).toMatchObject({
+      status: 'needs_you',
+      can_resolve: true,
+    });
+    expect(await getInboxItem(PROJECT, tiedIds[0], asLauncher)).toMatchObject({ kind: 'batch' });
+    for (const id of ['cr:not-a-uuid', 'call:', 'garbage', `cr:${crypto.randomUUID()}`]) {
+      expect(await getInboxItem(PROJECT, id, asLauncher)).toBeNull();
+    }
   });
 
   test('the pending native items are the ones the summary counts', async () => {

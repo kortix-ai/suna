@@ -26,6 +26,7 @@ import {
   applyVerdict,
   bulkApplyVerdict,
   decodeInboxCursor,
+  getInboxItem,
   getReviewItemById,
   insertReviewItem,
   isReviewVerdict,
@@ -180,9 +181,13 @@ export function registerReviewItemsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_REVIEW_READ,
       );
 
-      const item = await getReviewItemById(c.req.param('reviewItemId'), projectId);
+      // A native id, `cr:<cr_id>` or a pending `call:<execution_id>`, in the
+      // list's shape: a link to an item does not depend on its page.
+      const item = await getInboxItem(projectId, c.req.param('reviewItemId'), () =>
+        approvalCallerOf(c, loaded, projectId),
+      );
       if (!item) return c.json({ error: 'Review item not found' }, 404);
-      return c.json({ review_item: serializeReviewItem(item) });
+      return c.json({ review_item: item });
     },
   );
 
