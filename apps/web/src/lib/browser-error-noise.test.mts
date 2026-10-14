@@ -6363,7 +6363,7 @@ test('suppresses the iOS-WebView in-document stack overflow via the Sentry befor
   );
 });
 
-test('keeps reporting an asset frame or an in-document frame from a different page path', () => {
+test('keeps reporting an asset frame; an earlier route of the same tab is still in-document', () => {
   // A loaded `.js` asset on the `app:///` origin is a real script, not inline
   // code executed in the document.
   assert.equal(
@@ -6375,15 +6375,17 @@ test('keeps reporting an asset frame or an in-document frame from a different pa
     }),
     false,
   );
-  // An in-document frame whose path is NOT the page path is another document
-  // context (embed, iframe), not this page's injected script.
+  // A same-origin in-document frame on a different route is an earlier route
+  // of the same single-page-app tab: the injected script keeps the URL of the
+  // document the tab first loaded (Better Stack, 2026-10-14). Another origin
+  // keeps reporting; see the SPA tests at the end of this file.
   assert.equal(
     isIosWebViewInjectedStackOverflowNoise({
       message: 'Maximum call stack size exceeded.',
       frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
       requestUrl: 'https://kortix.com/projects/other-project/sessions/other-session',
     }),
-    false,
+    true,
   );
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
@@ -6397,7 +6399,7 @@ test('keeps reporting an asset frame or an in-document frame from a different pa
         ],
       },
     }),
-    false,
+    true,
   );
 });
 
@@ -12422,4 +12424,84 @@ test('unknown input-stream failures remain reportable, including frameless globa
     assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{ ...event.exception.values[0], value }] } }), false);
   }
   assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: 'Error in input stream' }), false);
+});
+
+// Better Stack (Kortix Frontend prod, application 2346967), 2026-10-14: 14
+// `RangeError: Maximum call stack size exceeded.` groups (~167 events) from one
+// iOS 27 Google Search App in-app browser. The injected script's frames carry
+// the URL of the document the tab first loaded (`/projects/<id>`, an earlier
+// session), while `request.url` is the session the user navigated to
+// client-side. Same origin, earlier route of the same single-page app.
+const SPA_PROJECT = 'app:///projects/00000000-0000-0000-0000-000000000001';
+const SPA_EARLIER_SESSION = `${SPA_PROJECT}/sessions/00000000-0000-0000-0000-000000000002`;
+const SPA_CURRENT_URL = 'https://kortix.com/projects/00000000-0000-0000-0000-000000000001/sessions/ses_current';
+const SPA_OVERFLOW_FRAMES = [
+  { function: '?', filename: SPA_EARLIER_SESSION, lineno: 192, colno: 41, in_app: true },
+  { function: '?', filename: SPA_EARLIER_SESSION, lineno: 200, colno: 201, in_app: true },
+  ...Array.from({ length: 48 }, (_, i) => ({
+    function: i % 2 ? 'Jk' : 'Hk', filename: SPA_PROJECT, lineno: 228, colno: i % 2 ? 409 : 63, in_app: true,
+  })),
+];
+
+function overflowEvent(frames: Array<Record<string, unknown>>, url = SPA_CURRENT_URL) {
+  return {
+    request: { url },
+    exception: { values: [{
+      type: 'RangeError',
+      value: 'Maximum call stack size exceeded.',
+      mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+      stacktrace: { frames },
+    }] },
+  };
+}
+
+test('suppresses the iOS in-document stack overflow when the frames carry an earlier route of the same tab', () => {
+  assert.equal(shouldIgnoreSentryBrowserNoise(overflowEvent(SPA_OVERFLOW_FRAMES)), true);
+  assert.equal(shouldIgnoreSentryBrowserNoise(overflowEvent([
+    { function: 'Jk', filename: 'app:///new', lineno: 228, colno: 409 }, ...SPA_OVERFLOW_FRAMES,
+  ])), true);
+});
+
+test('keeps reporting the stack overflow when a frame is a bundle, first-party source, or another origin', () => {
+  for (const filename of [
+    'app:///_next/static/immutable/chunks/0abc.js',
+    'apps/web/src/features/session/transcript.tsx',
+    'https://embed.example.com/widget',
+  ]) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise(overflowEvent([{ function: 'f', filename }, ...SPA_OVERFLOW_FRAMES])),
+      false,
+      filename,
+    );
+  }
+});
+
+// Brave on iOS, release ed03160b76: its wallet shim writes
+// `window.ethereum.selectedAddress` before `window.ethereum` exists. One frame,
+// `global code`, at the page document URL.
+const ETHEREUM_WRITE = "undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')";
+
+function walletEvent(value: string, filename: string) {
+  return {
+    request: { url: SPA_CURRENT_URL },
+    exception: { values: [{
+      type: 'TypeError',
+      value,
+      mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+      stacktrace: { frames: [{ function: 'global code', filename, lineno: 1, colno: 16 }] },
+    }] },
+  };
+}
+
+test('suppresses an injected wallet shim writing to an absent window.ethereum', () => {
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletEvent(ETHEREUM_WRITE, `${SPA_PROJECT}/sessions/ses_current`)), true);
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletEvent(`TypeError: ${ETHEREUM_WRITE}`, 'app:///new')), true);
+});
+
+test('keeps reporting the wallet wording from our bundles and other undefined-object errors', () => {
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletEvent(ETHEREUM_WRITE, 'app:///_next/static/immutable/chunks/0abc.js')), false);
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletEvent(ETHEREUM_WRITE, 'apps/web/src/lib/wallet.ts')), false);
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletEvent(
+    "undefined is not an object (evaluating 'window.kortix.session = undefined')", `${SPA_PROJECT}/sessions/ses_current`,
+  )), false);
 });
