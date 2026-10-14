@@ -10,6 +10,7 @@ import {
   SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES,
   isSessionLogRestoreNote,
   sessionLogFullTextAction,
+  sessionLogFullTextPlan,
   sessionLogHarnessSwitches,
   sessionLogReferencedTexts,
   sessionLogRestoreNotice,
@@ -207,5 +208,30 @@ describe('sessionLogFullTextAction', () => {
     expect(sessionLogFullTextAction([ref(1024 * 1024)])).toBe('inline');
     expect(sessionLogFullTextAction([ref(1024 * 1024 + 1)])).toBe('download');
     expect(sessionLogFullTextAction([ref(600_000), ref(600_000)])).toBe('download');
+  });
+});
+
+describe('sessionLogFullTextPlan', () => {
+  const ref = (name: string, bytes: number) => ({ ref: name, bytes });
+  test('up to 1 MB in all: every text inline, none downloaded', () => {
+    const refs = [ref('a', 300_000), ref('b', 1024 * 1024 - 300_000)];
+    expect(sessionLogFullTextPlan(refs)).toEqual({ inline: refs, download: [] });
+  });
+
+  test('above 1 MB in all: only the large texts download; the small ones still show inline', () => {
+    const big = ref('big', 5_000_000);
+    const small = ref('small', 20_000);
+    expect(sessionLogFullTextPlan([big, small])).toEqual({ inline: [small], download: [big] });
+  });
+
+  test('the smallest texts fill the inline budget first, in record order', () => {
+    const [a, b, c] = [ref('a', 600_000), ref('b', 300_000), ref('c', 600_000)];
+    expect(sessionLogFullTextPlan([a, b, c])).toEqual({ inline: [a, b], download: [c] });
+  });
+
+  test('the plan agrees with the action: a download exactly when the action says so', () => {
+    for (const refs of [[ref('a', 1)], [ref('a', 1024 * 1024 + 1)], [ref('a', 600_000), ref('b', 600_000)]]) {
+      expect(sessionLogFullTextPlan(refs).download.length > 0).toBe(sessionLogFullTextAction(refs) === 'download');
+    }
   });
 });

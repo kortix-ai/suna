@@ -2299,6 +2299,7 @@
     "sessionLogBurstWorkLabel",
     "sessionLogCallStatus",
     "sessionLogFullTextAction",
+    "sessionLogFullTextPlan",
     "sessionLogHarnessSwitches",
     "sessionLogOfV1Rows",
     "sessionLogOpenCall",
@@ -3484,6 +3485,7 @@
     "SessionRewindState",
     "ascendingId",
     "hasOnlyCacheSourcedMessages",
+    "hasRuntimeConfirmedMessage",
     "sameSessionStatus",
     "useSyncStore"
   ],
@@ -5940,6 +5942,7 @@
     "SessionRewindState",
     "ascendingId",
     "hasOnlyCacheSourcedMessages",
+    "hasRuntimeConfirmedMessage",
     "sameSessionStatus",
     "useSyncStore"
   ],

@@ -826,7 +826,7 @@
   },
   "src/config-releases/desired.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     },
     "no-console": {
       "count": 2

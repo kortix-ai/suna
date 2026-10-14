@@ -29,6 +29,24 @@ Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
 sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
 
+## Log out of a custom host
+
+`kortix logout --host <name>` clears the token and keeps the registered API URL.
+The signed-out `whoami --host <name>` recovery command includes that URL explicitly.
+
+Older installed CLIs (including v0.13.56) remove the host entry on logout.
+Until you install a release with the host-retention fix, restore the registration
+before signing in:
+
+```sh
+kortix hosts add custom --api http://localhost:8008
+kortix hosts login custom
+```
+
+Replace `custom` and the URL with your host name and original API origin. Do not
+run `hosts login custom` on an older CLI after logout without restoring the URL:
+it otherwise uses the default cloud origin.
+
 ## Use Kortix from an MCP client
 
 Claude, ChatGPT, Cursor, VS Code and Codex reach the same projects and sessions

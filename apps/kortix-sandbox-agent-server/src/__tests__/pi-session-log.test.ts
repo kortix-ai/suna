@@ -22,7 +22,7 @@ import {
   type SessionLogJournalRequest,
   type SessionLogMessage,
 } from '@kortix/api-contract/session-log'
-import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, type PiSessionSnapshot } from '@/harness/pi/session-log'
+import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, PI_VERSION, type PiSessionSnapshot } from '@/harness/pi/session-log'
 import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-restore'
 import { mintRootId } from '@/harness/pi/message-id'
 import { SessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
@@ -133,7 +133,7 @@ describe('pi session-log export', () => {
     expect(log.threads.map((t) => [t.thread_id, t.messages.length])).toEqual([[ROOT, 12], [CHILD, 3]])
     expect(log).toMatchObject({ restore_grade: 'native', harness: { current: 'pi' }, session_id: 'session-pi-log' })
     expect(AdapterCapabilitiesSchema.parse(PI_CAPABILITIES)).toBeTruthy()
-    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: '1.0.3', adapter_version: '1.1.0' })
+    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: PI_VERSION, adapter_version: '1.1.0' })
   })
 
   test('block ids are the pi part ids; a block with no part gets a position id', () => {

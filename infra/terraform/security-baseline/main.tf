@@ -481,10 +481,15 @@ resource "aws_kms_key" "backup_euw2" {
         Sid       = "EnableAccountAdministration"
         Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }
+        # DeleteAlias and CancelKeyDeletion: without them no principal can
+        # retire the alias or undo a scheduled deletion (Apply Global run
+        # 38603594941 failed on DeleteAlias for the us-west-2 copy).
         Action = [
+          "kms:CancelKeyDeletion",
           "kms:CreateAlias",
           "kms:CreateGrant",
           "kms:Decrypt",
+          "kms:DeleteAlias",
           "kms:DescribeKey",
           "kms:DisableKey",
           "kms:DisableKeyRotation",
