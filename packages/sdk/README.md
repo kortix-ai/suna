@@ -508,7 +508,8 @@ Missing or rejected history falls back to the existing runtime path.
 An open reads the saved window once: the session-open snapshot carries it (the read waits up
 to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A host that shows
 the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
-plus the empty-conversation proof.
+plus the empty-conversation proof. The SDK holds that copy for the open that follows (up to 5 min):
+the snapshot then asks for no window, and the saved-history read answers from the held copy.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
