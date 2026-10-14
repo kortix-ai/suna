@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { SessionCreateInputSchema } from '@kortix/api-contract';
+import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
@@ -919,6 +919,7 @@ function resolveSessionIdentity(params: {
 }): SessionCreateStep<{
   sessionId: string;
   initialPrompt: string | null;
+  initialContext: string | null;
   initialTurn: ReturnType<typeof prepareInitialSandboxTurn> | null;
   pendingPromptConversion: PendingPromptConversion | null;
 }> {
@@ -931,6 +932,18 @@ function resolveSessionIdentity(params: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  // Harness context riding beside the prompt (see `initial_context` in the
+  // create contract). Bounded here because the create route validates the
+  // body ad hoc, not through the contract schema.
+  const initialContext = normalizeString(body.initial_context ?? body.initialContext);
+  if (initialContext && initialContext.length > SESSION_INITIAL_CONTEXT_MAX_CHARS) {
+    return {
+      error: {
+        status: 400,
+        body: { error: `initial_context must be at most ${SESSION_INITIAL_CONTEXT_MAX_CHARS} characters` },
+      },
+    };
+  }
   const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
   const pendingPrompt =
     body.pending_prompt &&
@@ -960,7 +973,7 @@ function resolveSessionIdentity(params: {
       },
     };
   }
-  return { sessionId, initialPrompt, initialTurn, pendingPromptConversion };
+  return { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion };
 }
 
 /** The initiator and the metadata the session row is created with. */
@@ -976,6 +989,7 @@ function buildSessionCreateMetadata(params: {
   validatedConnectorBindings: { bindings: ValidatedSessionConnectorBindings };
   secretsAllowlist: string[] | null;
   initialPrompt: string | null;
+  initialContext: string | null;
   pendingPromptConversion: PendingPromptConversion | null;
   opencodeModel: string | null;
   opencodeModelSource: ModelSource | null;
@@ -996,6 +1010,7 @@ function buildSessionCreateMetadata(params: {
     validatedConnectorBindings,
     secretsAllowlist,
     initialPrompt,
+    initialContext,
     pendingPromptConversion,
     opencodeModel,
     opencodeModelSource,
@@ -1069,6 +1084,8 @@ function buildSessionCreateMetadata(params: {
     ...requestMetadata,
     ...(sessionName ? { custom_name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    // Harness context beside the prompt; server-read by the initial-turn claim.
+    ...(initialContext ? { initial_context: initialContext } : {}),
     // Picks only — the prompt itself is a durable inbox row (see below), and a
     // pre-deploy web bundle replays `pending_prompt.text` client-side, so
     // storing the text would double-send it.
@@ -1704,7 +1721,7 @@ export async function createProjectSession(input: {
 
   const identity = resolveSessionIdentity({ input, projectId, accountId });
   if (identity.error) return { error: identity.error };
-  const { sessionId, initialPrompt, initialTurn, pendingPromptConversion } = identity;
+  const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
   const { initiator, metadata } = buildSessionCreateMetadata({
     input,
     projectId,
@@ -1717,6 +1734,7 @@ export async function createProjectSession(input: {
     validatedConnectorBindings,
     secretsAllowlist,
     initialPrompt,
+    initialContext,
     pendingPromptConversion,
     opencodeModel,
     opencodeModelSource,

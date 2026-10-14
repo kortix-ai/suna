@@ -290,6 +290,33 @@ describe('sessions new CLI flow', () => {
     expect(sessionCreateBody).not.toHaveProperty('agent_name');
   });
 
+  test('--prompt from inside a sandbox stores the prompt verbatim and the contract as initial_context', async () => {
+    // The ambient session token is what makes a spawn "from inside a sandbox".
+    process.env.KORTIX_TOKEN = 'test-token';
+    try {
+      const code = await runSessions(['new', '--prompt', 'Reply with the single word pong']);
+
+      expect(code).toBe(0);
+      expect(sessionCreateBody).not.toBeNull();
+      // The stored user message is the caller's words, verbatim.
+      expect(sessionCreateBody!.initial_prompt).toBe('Reply with the single word pong');
+      // The worker contract rides beside it, for the model, not the transcript.
+      expect(sessionCreateBody!.initial_context).toMatch(/Do not spawn other sessions/);
+      expect(sessionCreateBody!.title_source).toBe('Reply with the single word pong');
+    } finally {
+      delete process.env.KORTIX_TOKEN;
+    }
+  });
+
+  test('--prompt from a human host stores the prompt verbatim with no contract', async () => {
+    const code = await runSessions(['new', '--prompt', 'Reply with the single word pong']);
+
+    expect(code).toBe(0);
+    expect(sessionCreateBody).not.toBeNull();
+    expect(sessionCreateBody!.initial_prompt).toBe('Reply with the single word pong');
+    expect(sessionCreateBody).not.toHaveProperty('initial_context');
+  });
+
   test('creates a session with explicit connector scope', async () => {
     const code = await runSessions(['new', '--no-connectors']);
 

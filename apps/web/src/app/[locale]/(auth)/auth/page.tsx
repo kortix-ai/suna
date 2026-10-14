@@ -748,6 +748,7 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
+          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <Button
             type="button"
@@ -808,6 +809,7 @@ function AuthCardForm({
     return (
       <EmailLinkStep
         sentEmail={sentEmail}
+        errorMessage={errorMessage}
         info={info}
         resendIn={resendIn}
         pending={pending}
@@ -840,6 +842,7 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
+          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
             <div className="space-y-3">

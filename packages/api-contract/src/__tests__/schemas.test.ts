@@ -775,6 +775,28 @@ describe('envelopes', () => {
   });
 });
 
+describe('SessionCreateInputSchema initial_context', () => {
+  test('accepts a bounded context beside the prompt and drops it when absent', () => {
+    const parsed = SessionCreateInputSchema.parse({
+      initial_prompt: 'Reply with the single word pong',
+      initial_context: '--- session contract ---\nDo not spawn other sessions.',
+    });
+    expect(parsed.initial_context).toMatch(/Do not spawn other sessions/);
+    expect(SessionCreateInputSchema.parse({ initial_prompt: 'hi' }).initial_context).toBeUndefined();
+    expect(SessionCreateInputSchema.parse({}).initial_context).toBeUndefined();
+  });
+
+  test('rejects an empty or oversized context', () => {
+    expect(SessionCreateInputSchema.safeParse({ initial_context: '' }).success).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_193) }).success,
+    ).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_192) }).success,
+    ).toBe(true);
+  });
+});
+
 describe('SessionCreateInputSchema runtime_context', () => {
   test('accepts a bounded scalar map and the complete public create shape', () => {
     const parsed = SessionCreateInputSchema.parse({

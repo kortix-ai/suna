@@ -52,6 +52,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
           ok: true,
           initial_turn: {
             prompt: 'private prompt',
+            context: '--- session contract ---',
             turn_token: 'turn-token',
             message_id: 'msg_initial',
           },
@@ -66,6 +67,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
 
       expect(await claimInitialTurn()).toEqual({
         prompt: 'private prompt',
+        context: '--- session contract ---',
         turnToken: 'turn-token',
         messageId: 'msg_initial',
       });
