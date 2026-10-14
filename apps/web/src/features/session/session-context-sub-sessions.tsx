@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { useSessionLogThread, type SessionMessagesSource } from '@kortix/sdk/react';
+import { useSessionLogThread, useSessionSync, type SessionMessagesSource } from '@kortix/sdk/react';
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { allDescendantIds, childMapByParent, formatCost, sessionLogThreadMetrics, type ModelPricingLookup, type Session, type SessionLogThread, type SessionLogThreadMetrics } from '@kortix/sdk';
 
@@ -93,6 +93,16 @@ function WithOneThread({
   );
 }
 
+/**
+ * Loads a sub-agent's thread into the store while its row is shown, as the sub-agent's own
+ * view does (`useSessionSync` with `savedChild`): its saved window, then the runtime's. A row
+ * behind a closed caret loads nothing until it opens.
+ */
+function LoadSubAgentThread({ id, scope }: { id: string; scope: string | undefined }) {
+  useSessionSync(id, { kortixSessionScope: scope, savedChild: true, subscribeMessages: false });
+  return null;
+}
+
 /** One sub-agent's row: its thread's metrics, and its own children under it. */
 function SubSessionTreeNode({
   id,
@@ -101,6 +111,7 @@ function SubSessionTreeNode({
   allSessions,
   metrics,
   messagesSuffix,
+  scope,
 }: {
   id: string;
   depth?: number;
@@ -108,6 +119,8 @@ function SubSessionTreeNode({
   allSessions: Session[];
   metrics: MetricsById;
   messagesSuffix: string;
+  /** The session the sub-agents run under (`projectId/sessionId`): its saved history holds theirs. */
+  scope: string | undefined;
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
   const own = metrics[id] ?? NO_METRICS;
@@ -117,6 +130,7 @@ function SubSessionTreeNode({
 
   return (
     <div className={cn('flex flex-col', depth > 0 && 'border-border/30 ml-4 border-l pl-3')}>
+      <LoadSubAgentThread id={id} scope={scope} />
       <button
         onClick={() => hasChildren && setExpanded(!expanded)}
         className={cn(
@@ -151,6 +165,7 @@ function SubSessionTreeNode({
               allSessions={allSessions}
               metrics={metrics}
               messagesSuffix={messagesSuffix}
+              scope={scope}
             />
           ))}
         </div>
@@ -181,6 +196,7 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
   // The root's own metrics, plus every descendant's (the whole tree, whatever
   // is expanded): the combined totals read the same records the rows do.
   const root = useSessionLogThread(source);
+  const scope = source.projectId && source.sessionId ? `${source.projectId}/${source.sessionId}` : undefined;
   const rootMetrics = useMemo(() => threadMetrics(root, pricingLookup), [root, pricingLookup]);
 
   if (!session || !allSessions || descendantIds.length === 0) return null;
@@ -211,6 +227,7 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
                     allSessions={allSessions}
                     metrics={metrics}
                     messagesSuffix={t.raw('treeMessages')}
+                    scope={scope}
                   />
                 ))}
               </div>

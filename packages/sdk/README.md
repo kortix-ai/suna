@@ -806,7 +806,9 @@ transcript renders a thread from. It replaces the v1 turn helpers over
 - Texts stored by reference: `sessionLogReferencedTexts(messages)` lists every
   text the API kept as a 16 kB preview (`{ ref, bytes }`); read one with
   `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`. `sessionLogFullTextAction(refs)` says
-  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`.
+  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`;
+  `sessionLogFullTextPlan(refs)` says which texts: the smallest fill the 1 MiB inline budget,
+  only the rest download.
 - `useSessionLogRecord(session)` (`@kortix/sdk/react`) is the v2 session record without threads
   (`restore_grade`, `grade_counts`, `harness`, `ext`); it keeps its identity through message puts.
 

@@ -84,3 +84,55 @@ describe('SubSessionSection totals', () => {
     await act(async () => { renderer!.unmount(); });
   });
 });
+
+describe('SubSessionSection loads a sub-agent thread when its row is shown', () => {
+  const ROOT = 'ses_lazy_root', CHILD = 'ses_lazy_child', GRAND = 'ses_lazy_grand', GREAT = 'ses_lazy_great';
+  const sessions = [
+    { id: ROOT, title: 'Root' },
+    { id: CHILD, parentID: ROOT, title: 'Child agent' },
+    { id: GRAND, parentID: CHILD, title: 'Grandchild agent' },
+    { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
+  ] as unknown as Session[];
+
+  test('a shown row reads its saved window; a row behind a closed caret reads nothing until it opens', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const { configureKortix } = await import('@kortix/sdk');
+    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+    const requests: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: unknown) => {
+      requests.push(String(url));
+      return Response.json({ available: false, reason: 'test', messages: [] });
+    }) as unknown as typeof fetch;
+    const children = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`child=${id}`)));
+    let renderer: ReturnType<typeof create>;
+    try {
+      await act(async () => {
+        renderer = create(
+          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+            <SubSessionSection
+              source={{ projectId: 'p_lazy', sessionId: 's_lazy', runtimeSessionId: ROOT }}
+              session={sessions[0]}
+              allSessions={sessions}
+              pricingLookup={() => null}
+              fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+            />
+          </NextIntlClientProvider>,
+        );
+      });
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+      // The child row and the grandchild row are drawn; the great-grandchild is behind a closed caret.
+      expect(children()).toEqual([CHILD, GRAND]);
+
+      type Node = { children: Array<Node | string> };
+      const textOf = (n: Node | string): string => (typeof n === 'string' ? n : n.children.map(textOf).join(''));
+      const caret = renderer!.root.findAll((n) => n.type === 'button' && textOf(n as unknown as Node).includes('Grandchild agent'))[0]!;
+      await act(async () => { caret.props.onClick(); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+      expect(children()).toEqual([CHILD, GRAND, GREAT]);
+    } finally {
+      await act(async () => { renderer!.unmount(); });
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
