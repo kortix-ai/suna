@@ -635,6 +635,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|sessions|:sessionId|log|journal",
   "GET|v1|projects|:projectId|sessions|:sessionId|log|manifest",
   "POST|v1|projects|:projectId|sessions|:sessionId|log|restore",
+  "POST|v1|projects|:projectId|sessions|:sessionId|log|switch-preflight",
   "GET|v1|projects|:projectId|sessions|:sessionId|message-authors",
   "PUT|v1|projects|:projectId|sessions|:sessionId|model",
   "GET|v1|projects|:projectId|sessions|:sessionId|model-usage",

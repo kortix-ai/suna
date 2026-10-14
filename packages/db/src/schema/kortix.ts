@@ -694,6 +694,28 @@ export const configReleaseHeads = kortixSchema.table(
 );
 
 /**
+ * The last time any API process asked a base ref's upstream for its tip, and
+ * the tip it read. Every running box asks for its desired release every 60 s;
+ * this row makes those asks share one upstream check per `(project, ref)` per
+ * `TIP_CHECK_MS` (config-releases/base-tip.ts) instead of one `git fetch`
+ * each. A move Kortix makes or proxies expires the row. One row per
+ * `(project, ref)`.
+ */
+export const baseTipChecks = kortixSchema.table(
+  'base_tip_checks',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: varchar('ref', { length: 255 }).notNull(),
+    /** Null while the first check runs. */
+    tip: varchar('tip', { length: 64 }),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
+);
+
+/**
  * A daemon reported this release as failed (`failed_release_id`). After
  * failures from 2 distinct sessions the project stops assigning the release.
  * One row per `(project, release, session)`: repeated reports of one failure
