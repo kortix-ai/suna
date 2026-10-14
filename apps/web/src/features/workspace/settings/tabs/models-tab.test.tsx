@@ -107,7 +107,7 @@ describe('Models page chrome', () => {
   test('the page is the shared capability shell, not its own header strip', () => {
     expect(gatewaySource.indexOf('<CapabilityPageShell')).toBeGreaterThan(-1);
     expect(MODELS_PAGE_TITLE).toBe('Models');
-    expect(MODELS_PAGE_DESCRIPTION).toBe('Which providers and models this project can use.');
+    expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this project can use.');
     expect(gatewaySource).toContain('title={MODELS_PAGE_TITLE}');
     expect(gatewaySource).toContain('description={MODELS_PAGE_DESCRIPTION}');
     // Every piece of the old bespoke layout, gone for good.
@@ -133,22 +133,17 @@ describe('Models page chrome', () => {
     expect(gatewaySource).not.toContain('<TabsList size=');
   });
 
-  test('the project-default picker is the shell’s action slot, not a second strip', () => {
-    const actionStart = gatewaySource.indexOf('action={');
+  test('the project-default picker sits on the tab row, opposite the tabs', () => {
     const filtersStart = gatewaySource.indexOf('filters={');
-    expect(actionStart).toBeGreaterThan(-1);
-    expect(filtersStart).toBeGreaterThan(actionStart);
-    // The picker sits in `action` — not in the tab row, where a bordered
-    // dropdown reads as a second tab strip. It is a component now
-    // (`ProjectDefaultPicker`) because the quick dialog renders the same one;
-    // `<ModelSelector` itself lives inside it, higher up the file, so this
-    // asserts the SLOT's contents, not a raw file offset.
-    expect(gatewaySource.slice(actionStart, filtersStart)).toContain('<ProjectDefaultPicker');
+    expect(filtersStart).toBeGreaterThan(-1);
     const filtersSlot = gatewaySource.slice(filtersStart, gatewaySource.indexOf('<LlmSections'));
     expect(filtersSlot).toContain('<LlmTabStrip');
-    expect(filtersSlot).not.toContain('ProjectDefaultPicker');
-    expect(filtersSlot).not.toContain('ModelSelector');
+    expect(filtersSlot).toContain('<ProjectDefaultPicker');
+    expect(filtersSlot.indexOf('<LlmTabStrip')).toBeLessThan(filtersSlot.indexOf('<ProjectDefaultPicker'));
+    // A secondary button, with no "Project default" label beside it.
+    expect(gatewaySource).toContain('triggerVariant="secondary"');
   });
+
 
   /**
    * The one page-level control is one component, mounted twice: here in the
@@ -181,8 +176,8 @@ describe('Models page chrome', () => {
     expect(sections).toContain("tab === 'models'");
     expect(sections).not.toMatch(/className="[^"]*\bpx-\d/);
     expect(sections).not.toMatch(/className="[^"]*\bp-[1-9]/);
-    // `ProviderConnect` is the one section with padding of its own to cancel.
-    expect(sections).toContain('className="gap-4 p-0"');
+    // The provider list opens providers into the host's sheet.
+    expect(sections).toContain('onSelect={onSelectProvider}');
   });
 
   /**
@@ -273,12 +268,15 @@ describe('Models page — the seven tabs', () => {
     expect(gatewaySource).not.toContain('ProjectProviderModal');
   });
 
-  test('Gateway is the key you hand out AND how to call it, in that order', () => {
+  test('Gateway is how to call it, then the keys you hand out', () => {
     expect(gatewaySource).toContain('<GatewayAccessTab');
+    const quickstart = gatewayAccessSource.indexOf('<GatewayQuickstartCode');
     const keys = gatewayAccessSource.indexOf('<GatewayKeys');
-    const reference = gatewayAccessSource.indexOf('<GatewayApiReference');
-    expect(keys).toBeGreaterThan(-1);
-    expect(reference).toBeGreaterThan(keys);
+    expect(quickstart).toBeGreaterThan(-1);
+    expect(keys).toBeGreaterThan(quickstart);
+    // The full-reference disclosure is gone from the tab; the key-created
+    // dialog still carries the first request.
+    expect(gatewayAccessSource).not.toContain('<GatewayApiReference');
     // The three-in-one tab is gone, file and all.
     expect(existsSync(join(import.meta.dir, deletedKeysTabPath))).toBe(false);
     expect(gatewayAccessSource).not.toContain('ProviderConnect');
