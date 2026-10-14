@@ -5,7 +5,7 @@ import { loadEnv } from '../../src/core/env';
 import { createDatabaseSession } from '../../src/fixtures/database-project';
 import { seedSessionTranscript } from '../../src/fixtures/session-transcript';
 import { createManifestProject, isDeployedTarget, type ManifestProject } from '../helpers/manifest-project';
-import { runDatabaseSql } from '../helpers/database';
+import { localAccountSecretEnvelope, runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
 import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
@@ -546,8 +546,9 @@ test.describe('30 — pooled provider secrets', () => {
         const label = String(starts.find((start) => typeof start.resource_label === 'string')?.resource_label);
         await runDatabaseSql(`INSERT INTO kortix.account_secret_resources
           (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by)
-          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5)
-          ON CONFLICT DO NOTHING`, [accountSecretId, accountId, projectId, label, member.id], databaseUrl);
+          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', $6, 'llm_gateway', 'broker', $5)
+          ON CONFLICT DO NOTHING`, [accountSecretId, accountId, projectId, label, member.id,
+          localAccountSecretEnvelope(accountId, '{"tokens":{"synthetic":true}}')], databaseUrl);
         await runDatabaseSql(`INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by)
           VALUES ($1, $2, $3, $3) ON CONFLICT DO NOTHING`, [accountSecretId, accountId, member.id], databaseUrl);
         if (route.request().postDataJSON().flow_id === 'byos-flow-2') holdAccountList();
@@ -705,8 +706,8 @@ test.describe('30 — pooled provider secrets', () => {
       for (const [secretId, label, mark] of [[stale, 'ChatGPT · Work', "now() - interval '2 hours'"], [working, 'ChatGPT · Home', 'null']]) {
         await runDatabaseSql(`INSERT INTO kortix.account_secret_resources
           (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by, needs_reauth_at)
-          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5, ${mark})`,
-        [secretId, accountId, projectId, label, member.id], databaseUrl);
+          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', $6, 'llm_gateway', 'broker', $5, ${mark})`,
+        [secretId, accountId, projectId, label, member.id, localAccountSecretEnvelope(accountId, '{"tokens":{"synthetic":true}}')], databaseUrl);
         await runDatabaseSql('INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by) VALUES ($1, $2, $3, $3)',
           [secretId, accountId, member.id], databaseUrl);
       }

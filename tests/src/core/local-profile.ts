@@ -11,6 +11,8 @@ export const EXTERNAL_CAPABILITIES = new Set<Capability>([
   "projectSnapshots",
 ]);
 export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = "local-flow-runner-internal-service-key";
+/** The local stack's synthetic API_KEY_SECRET: the key every stored envelope uses there. */
+export const LOCAL_FLOW_API_KEY_SECRET = "local-flow-runner-api-key-secret";
 
 export interface LocalWorktreeConfig {
   ports: {
