@@ -65,6 +65,14 @@ interface UseSessionSyncOptions {
    * session then decides.
    */
   streamConnected?: boolean;
+  /**
+   * The saved copy the host already read: `useSession` passes its one
+   * saved-history read's answer, `null` while that read runs or when it found
+   * none. This hook then reads no transcript itself. Omit it and the hook
+   * reads the copy once (the session-open snapshot's window, else
+   * `GET …/transcript?shape=sync&history=true`; a `savedChild` reads its own
+   * window).
+   */
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.

@@ -16,7 +16,7 @@
  * screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
  *
  * With a SAVED COPY (`messages`: the copy this device kept, then the server's;
- * `lib/session/saved-copy.ts`) the view is the thread itself: its turns,
+ * `hooks/useSavedCopy.ts`) the view is the thread itself: its turns,
  * read-only, and a status card above the composer saying what the computer
  * is doing. The loader is gone — the conversation is the content. A failure takes
  * the composer's slot here too, so the thread stays readable, the rule the web
