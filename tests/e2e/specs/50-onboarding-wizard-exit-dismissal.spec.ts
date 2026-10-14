@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
-import { queryDatabaseRows, runDatabaseSql } from "../helpers/database";
+import { queryDatabaseRows, runDatabaseSql, seedDatabaseProject } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
   createAuthUser,
@@ -37,15 +37,23 @@ async function freshUserWithProject(): Promise<Provisioned> {
   const user = await createAuthUser(email, authOptions);
   try {
     const session = await signIn(email, authOptions);
-    const created = await api<{ project_id: string }>(
+    const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
       session.access_token,
-      "POST",
-      "/projects/provision",
-      { name: `Wizard exit ${randomUUID().slice(0, 8)}` },
-      [200, 201],
+      "GET",
+      "/accounts",
     );
-    expect(created.project_id).toBeTruthy();
-    return { projectId: created.project_id, session, userId: user.id, email };
+    const account = accounts.find((row) => row.personal_account) ?? accounts[0];
+    expect(account).toBeDefined();
+    // This journey tests dismissal, not external managed Git provisioning.
+    const projectId = await seedDatabaseProject({
+      accountId: account.account_id,
+      userId: user.id,
+      name: `Wizard exit ${randomUUID().slice(0, 8)}`,
+    });
+    await api(session.access_token, "PATCH", `/projects/${projectId}/onboarding`, {
+      completed: false,
+    });
+    return { projectId, session, userId: user.id, email };
   } catch (error) {
     await cleanup({ userId: user.id, email });
     throw error;
