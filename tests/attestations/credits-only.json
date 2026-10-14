@@ -1,5 +1,5 @@
 {
-  "source_hash": "2544709b8135e893d3523e2ec24e68fe7771a68d8c0b2968f3c25c6e8ad0ff9e",
+  "source_hash": "a1be0226c3494e9a52258cbbc797f8f415231cc231e8cf4055a2a99d474e9dcb",
   "diff_files": [
     ".agents/skills/kortix-brand/references/verbal/claims.md",
     ".agents/skills/kortix-brand/references/verbal/positioning.md",
@@ -276,13 +276,13 @@
     "tests/src/flows/billing.flow.ts",
     "tests/src/flows/retired.flow.ts"
   ],
-  "diff_hash": "98a8f2d79819cce1c4d76616415a247e7d0e3d902989a022b2ffbcbc9910026a",
-  "head": "c17178a79fce7755b38378139bba8173258764f0",
-  "passed": false,
+  "diff_hash": "1416a00278c4047f1a69d5f83096a145a461e6edad9fb7a698932ea5968a641b",
+  "head": "aeb3aa9939519d8a53330b3e0efe0a0ad0d97d6a",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-14T05:08:27.324Z"
+  "at": "2026-10-14T05:38:20.975Z"
 }
