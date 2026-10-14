@@ -23,7 +23,6 @@ import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
-import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 type Thread = SessionLog['threads'][number];
 
