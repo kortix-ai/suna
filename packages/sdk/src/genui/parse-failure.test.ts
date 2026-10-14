@@ -36,7 +36,7 @@ test('a lang-core throw becomes a parse-failed issue, and the next call parses a
   expect(next.issues).toEqual([]);
 });
 
-test('genuiBlockToMarkdown never throws', () => {
+test('genuiBlockToMarkdown never throws: a failed parse yields the one-line note', () => {
   throwNext = true;
-  expect(genuiBlockToMarkdown('root = Stack([b])\nb = Badge("x")')).toBe('');
+  expect(genuiBlockToMarkdown('root = Stack([b])\nb = Badge("x")')).toBe('*This content could not be displayed.*');
 });

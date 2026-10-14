@@ -9,6 +9,9 @@ export const GENUI_UNSUPPORTED_NOTE = 'This content needs a newer version of Kor
 /** Shown under a block whose stream ended inside a statement. */
 export const GENUI_CUT_OFF_NOTE = 'Response was cut off.';
 
+/** Shown in place of a settled block with nothing valid to render. */
+const UNAVAILABLE_NOTE = 'This content could not be displayed.';
+
 /** Deterministic markdown for one node and its children. Unknown types and unfinished (partial) nodes yield ''. */
 export function genuiNodeToMarkdown(node: GenuiNode): string {
   const spec = GENUI_SPECS[node.type];
@@ -22,13 +25,15 @@ export function genuiA11yText(node: GenuiNode): string | null {
 
 /**
  * Markdown for a parse result: the finished nodes, then the cut-off note when a settled block lost
- * its last statement. Never throws: a failure yields ''.
+ * its last statement. A settled block with no root and no cut-off yields a one-line note, never ''.
+ * Never throws: a failure yields ''.
  */
 export function genuiResultToMarkdown(result: GenuiParseResult): string {
   try {
     const body = result.root ? genuiNodeToMarkdown(result.root) : '';
-    const cutOff = !result.streaming && result.issues.some((issue) => issue.code === 'cut-off');
-    return cutOff ? [body, `*${GENUI_CUT_OFF_NOTE}*`].filter(Boolean).join('\n\n') : body;
+    if (result.streaming) return body;
+    if (result.issues.some((issue) => issue.code === 'cut-off')) return [body, `*${GENUI_CUT_OFF_NOTE}*`].filter(Boolean).join('\n\n');
+    return result.root ? body : `*${UNAVAILABLE_NOTE}*`;
   } catch {
     return '';
   }

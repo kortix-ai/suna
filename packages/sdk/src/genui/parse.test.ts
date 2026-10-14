@@ -66,14 +66,40 @@ describe('parse + validate', () => {
     expect(issues.map((i) => i.code)).toContain('wrong-child');
   });
 
+  test('a block in a slot that does not accept it rises to the nearest ancestor that does', () => {
+    // Tabs is not an inner block, so AccordionItem rejects it. It must not take its subtree with it.
+    const { root, issues } = parseGenui(
+      'root = Stack([acc])\nacc = Accordion([item])\nitem = AccordionItem("Day 1", [tabs])\ntabs = Tabs([t1, t2])\nt1 = Tab("A", [c1])\nt2 = Tab("B", [c2])\nc1 = Callout("info", "first")\nc2 = Callout("info", "second")',
+    );
+    expect(root?.type).toBe('Stack');
+    const tabs = (root?.props.children as { type: string; props: { tabs: { props: { label: string } }[] } }[])[0]!;
+    expect(tabs.type).toBe('Tabs');
+    expect(tabs.props.tabs.map((tab) => tab.props.label)).toEqual(['A', 'B']);
+    expect(issues.map((i) => i.code)).toContain('wrong-child');
+    expect(issues.map((i) => i.code)).not.toContain('no-root');
+  });
+
+  test('a non-block in a slot that does not accept it gives up its children', () => {
+    const { root, issues } = parseGenui('root = Stack([t])\nt = Tab("A", [b])\nb = Badge("kept")');
+    expect((root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Badge']);
+    expect(issues.map((i) => i.code)).toContain('wrong-child');
+  });
+
   test('limits nesting depth to 4 containers', () => {
     const deep = 'root = Stack([a])\na = Stack([b])\nb = Stack([c])\nc = Stack([d])\nd = Stack([e])\ne = Badge("x")';
     const { issues } = parseGenui(deep);
     expect(issues.map((i) => i.code)).toContain('depth');
   });
 
-  test('a block with no root reports no-root', () => {
-    expect(parseGenui('a = Badge("x")').issues.map((i) => i.code)).toContain('no-root');
+  test('a block with no valid root reports no-root', () => {
+    expect(parseGenui('a = Series("x", [1])').issues.map((i) => i.code)).toContain('no-root');
+  });
+
+  test('a block entry that is not a Stack is wrapped in one', () => {
+    const { root, issues } = parseGenui('a = Badge("x")');
+    expect(root?.type).toBe('Stack');
+    expect((root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Badge']);
+    expect(issues.map((i) => i.code)).toEqual(['wrong-child']);
   });
 
   test('after the stream ends, an unfinished statement is dropped as cut-off; siblings stay', () => {

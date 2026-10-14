@@ -47,8 +47,18 @@ describe('markdown fallback', () => {
     expect(md).toBe(['Intro.', table('1'), table('2'), table('3'), 'After.'].join('\n\n'));
   });
 
-  test('a broken block yields no raw source', () => {
-    expect(genuiToMarkdown('Hi\n\n```openui\nthis is not openui at all\n```')).toBe('Hi');
+  test('a broken block yields no raw source, only a one-line note', () => {
+    expect(genuiToMarkdown('Hi\n\n```openui\nthis is not openui at all\n```')).toBe('Hi\n\n*This content could not be displayed.*');
+  });
+
+  test('a settled block with no valid root says so; a streaming one stays empty', () => {
+    const text = '```openui\nroot = Stack([ci])\nci = CompareItem("x", ["a"])\n```';
+    expect(genuiToMarkdown(text)).toBe('*This content could not be displayed.*');
+    expect(genuiToMarkdown('```openui\nroot = Stack([ci])\nci = CompareItem("x", ["a"])', { streaming: true })).toBe('');
+  });
+
+  test('a block cut off before any statement finished shows only the cut-off note', () => {
+    expect(genuiToMarkdown('```openui\nroot = Stack([b])\nb = Callout("info", "unfin')).toBe('*Response was cut off.*');
   });
 
   test('a block cut off mid-statement keeps its valid parts and says so', () => {
@@ -158,13 +168,13 @@ describe('hostile input', () => {
 
   test('20,000 nested brackets never throw', () => {
     const block = `root = ${'Stack(['.repeat(20_000)}Badge("x")${'])'.repeat(20_000)}`;
-    expect(genuiToMarkdown(`hi\n\n\`\`\`openui\n${block}\n\`\`\``)).toBe('hi');
+    expect(genuiToMarkdown(`hi\n\n\`\`\`openui\n${block}\n\`\`\``)).toBe('hi\n\n*This content could not be displayed.*');
   });
 
   test('a 1 MB block is dropped quickly', () => {
     const started = performance.now();
     const md = genuiToMarkdown(`hi\n\n\`\`\`openui\nroot = Stack([c])\nc = Callout("info", "${'a'.repeat(1_000_000)}")\n\`\`\``);
-    expect(md).toBe('hi');
+    expect(md).toBe('hi\n\n*This content could not be displayed.*');
     expect(performance.now() - started).toBeLessThan(500);
   });
 

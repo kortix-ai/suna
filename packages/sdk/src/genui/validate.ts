@@ -66,7 +66,8 @@ export function sanitizeTree(
     }
     if (!accepts.includes(typeName)) {
       issues.push({ code: 'wrong-child', component: typeName, statementId, message: `${typeName} is not allowed here` });
-      return [];
+      // Visit it as if the slot took it, then fit it: a block rises, any other node gives up its children.
+      return visit(value, path, depth, [typeName], parentPartial).flatMap((node) => fit(node, accepts));
     }
     const nextDepth = spec.container ? depth + 1 : depth;
     if (nextDepth > GENUI_MAX_DEPTH) {

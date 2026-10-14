@@ -89,12 +89,12 @@ describe('GenuiBlock', () => {
     expect(events.map((e) => e.outcome)).toEqual(['render_error']);
   });
 
-  test('broken source renders nothing raw and reports parse_error', () => {
+  test('broken source renders a one-line note, never raw source, and reports parse_error', () => {
     const events: GenuiBlockEvent[] = [];
     const renderer = mount(
       <GenuiBlock code="not openui" streaming={false} components={COMPONENTS} renderMarkdown={renderMarkdown} onSettled={(e) => events.push(e)} />,
     );
-    expect(renderer.toJSON()).toBeNull();
+    expect(renderer.root.findByProps({ 'data-type': 'markdown' }).children.join('')).toBe('*This content could not be displayed.*');
     expect(events[0]?.outcome).toBe('parse_error');
   });
 
@@ -248,7 +248,7 @@ describe('GenuiBlock', () => {
       const renderer = mount(
         <GenuiBlock code={code} streaming={false} enabled={enabled} components={COMPONENTS} renderMarkdown={renderMarkdown} />,
       );
-      expect(renderer.toJSON()).toBeNull();
+      expect(renderer.root.findByProps({ 'data-type': 'markdown' }).children.join('')).toBe('*This content could not be displayed.*');
     }
   });
 });
