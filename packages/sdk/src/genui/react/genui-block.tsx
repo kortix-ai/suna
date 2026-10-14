@@ -89,7 +89,7 @@ const GenuiNodeView = memo(function NodeView({ node }: { node: GenuiNode }) {
 });
 
 class BlockBoundary extends Component<
-  { fallback: ReactNode; onError: () => void; children: ReactNode },
+  { fallback: ReactNode; onError: () => void; streaming: boolean; children: ReactNode },
   { failed: boolean }
 > {
   override state = { failed: false };
@@ -98,6 +98,11 @@ class BlockBoundary extends Component<
   }
   override componentDidCatch() {
     this.props.onError();
+  }
+  // A throw while streaming gets one fresh try when the stream settles. Only a failed block
+  // re-renders its children; a healthy one keeps its host state (an active tab, a map).
+  override componentDidUpdate(previous: { streaming: boolean }) {
+    if (previous.streaming && !this.props.streaming && this.state.failed) this.setState({ failed: false });
   }
   override render() {
     return this.state.failed ? this.props.fallback : this.props.children;
@@ -189,9 +194,7 @@ export function GenuiBlock({
 
   return (
     <BlockBoundary
-      // A throw while streaming gets one fresh try when the stream settles.
-      // Settling remounts the node views once: host state such as an active tab resets.
-      key={streaming ? 'live' : 'settled'}
+      streaming={streaming}
       fallback={<BlockFallback result={result} renderMarkdown={renderMarkdown} />}
       onError={() => (renderError.current = !streaming)}
     >

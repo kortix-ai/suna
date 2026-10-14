@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { useEffect } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { GenuiBlock, type GenuiBlockEvent, type GenuiComponentMap, type GenuiComponentProps } from './genui-block';
@@ -190,6 +191,21 @@ describe('GenuiBlock', () => {
       'B=2',
       'C=3',
     ]);
+  });
+
+  test('settling does not remount host components', () => {
+    let mounts = 0;
+    const MountCounter = ({ props }: GenuiComponentProps) => {
+      useEffect(() => {
+        mounts += 1;
+      }, []);
+      return <span data-type="Stat">{`${props.label}=${props.value}`}</span>;
+    };
+    const props = { version: 1, components: { Stack, Stat: MountCounter } as GenuiComponentMap, renderMarkdown };
+    const renderer = mount(<GenuiBlock {...props} code={CODE} streaming />);
+    expect(mounts).toBe(3);
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE} streaming={false} />));
+    expect(mounts).toBe(3);
   });
 
   test('a disabled block reports no components and no first paint', () => {
