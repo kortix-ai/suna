@@ -33,7 +33,7 @@
  *   A model-invisible block stays in the v1 transcript only.
  * - Assistant content is what the model saw: `model_text ?? text`, no
  *   synthetic text, reasoning as `thinking` (pi-ai replays it to the model that
- *   wrote it and lowers it to text for any other), signatures from `ext.pi`.
+ *   wrote it; `reasoning.ts` drops it from a request to any other), signatures from `ext.pi`.
  *   A call input that is not an object is `{ input }` (a string) or `{}`
  *   (`dropped.tool_input`).
  * - A tool result is a `toolResult` entry (`ext.pi.native_id` keeps pi's entry

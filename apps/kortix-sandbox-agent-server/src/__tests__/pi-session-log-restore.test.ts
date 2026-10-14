@@ -198,7 +198,8 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     expect(JSON.stringify(sent[log.threads[0]!.thread_id])).toContain('[interrupted]')
   }, 60_000)
 
-  test('reasoning: another model\'s is lowered to assistant text; the same model\'s stays reasoning', async () => {
+  test('reasoning (C3, P7.3): another model\'s never reaches the request as text', async () => {
+    expect(PI_CAPABILITIES.native.reasoning_replay).toBe('same_model')
     for (const same of [false, true]) {
       const log = load('golden')
       const root = log.threads[0]!
@@ -208,12 +209,49 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
       await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async (ref) => blobs.get(ref) ?? null })
       const rt = await box.start()
       const [body] = await turn(rt, 'x', [{ text: 'OK' }])
-      const reply = (body!.messages as Array<{ role: string; content: unknown }>).find((m) => m.role === 'assistant' && JSON.stringify(m.content).includes('Done.'))
-      // pi-ai joins the lowered thinking and the text with no separator.
-      expect(reply?.content).toBe(same ? 'Done.' : 'The file exists now.Done.')
+      const reply = (body!.messages as Array<{ role: string; content: unknown; reasoning_content?: string }>).find((m) => m.role === 'assistant' && JSON.stringify(m.content).includes('Done.'))
+      expect(reply?.content).toBe('Done.')
+      // The fixture's thinking has no signature: pi-ai sends no reasoning field for it, on the same model either.
+      expect(JSON.stringify(body)).not.toContain('The file exists now.')
       expect(oracle(log, root.thread_id, rt, 'x', body!).diffs).toEqual([])
       for (const service of services.splice(0)) await service.lifecycle.stop()
     }
+  }, 60_000)
+
+  test('reasoning (P7.3): a live model switch drops the first model\'s reasoning; back on the first model it returns as reasoning', async () => {
+    const OTHER = 'other-model'
+    const rt = await freshBox('sess-pi-model-switch').start()
+    await turn(rt, 'first', [{ thinking: 'THOUGHT-A', text: 'answer-a' }])
+    const on = async (modelID: string, text: string) => {
+      model.script([{ text: `on ${modelID}` }])
+      const before = model.bodies.length
+      expect(await rt.admit({ text, files: [], model: { providerID: 'kortix', modelID } }).done).toBe('completed')
+      const body = model.bodies[before]!
+      const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+      const root = log.threads.find((t) => t.parent_thread_id === null)!
+      // The view of the log before this prompt: drop the turn it just added.
+      const prior = structuredClone(log)
+      const thread = prior.threads.find((t) => t.thread_id === root.thread_id)!
+      const turns = thread.messages.filter((m) => m.kind === 'turn').sort((a, b) => a.seq - b.seq)
+      const cut = new Set(turns.slice(-2).map((m) => m.message_id))
+      thread.messages = thread.messages.filter((m) => !cut.has(m.message_id))
+      return { body, check: oracle(prior, root.thread_id, rt, text, body) }
+    }
+    const other = await on(OTHER, 'second')
+    expect(rt.selectedModel()!.modelID).toBe(OTHER)
+    expect(JSON.stringify(other.body)).not.toContain('THOUGHT-A')
+    expect(other.check.diffs).toEqual([])
+    const back = await on(MODEL_ID, 'third')
+    const replay = (back.body.messages as Array<{ role: string; content: unknown; reasoning_content?: string }>).find((m) => m.role === 'assistant' && m.content === 'answer-a')
+    expect(replay?.reasoning_content).toBe('THOUGHT-A')
+    expect(back.check.diffs).toEqual([])
+    // The restore keeps the same model's reasoning and its signature: a fresh box replays it as reasoning.
+    const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+    const box = freshBox(log.session_id)
+    expect((await restorePiSessionLog(log, { stateDir: box.stateDir, sessionId: log.session_id, cwd: box.workspace, readAttachment: async () => null })).dropped).toEqual({})
+    const [restored] = await turn(await box.start(), 'fourth', [{ text: 'OK' }])
+    const again = (restored!.messages as Array<{ role: string; content: unknown; reasoning_content?: string }>).find((m) => m.role === 'assistant' && m.content === 'answer-a')
+    expect(again?.reasoning_content).toBe('THOUGHT-A')
   }, 60_000)
 })
 

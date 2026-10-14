@@ -156,7 +156,7 @@ const native: CapabilityFeatures = {
   compaction: ['summary_first_tail'],
   subagents: 'sync', // the Kortix `task` tool runs a child agent in process
   todos: false,
-  reasoning_replay: 'lowers_to_text', // pi-ai replays another model's thinking as text
+  reasoning_replay: 'same_model', // reasoning.ts drops another model's thinking; pi-ai would replay it as text
   freeform_tool_input: false,
 }
 /**
