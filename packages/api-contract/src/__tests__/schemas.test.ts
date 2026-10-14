@@ -144,13 +144,12 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       secrets_egress: false,
       pooled_provider_secrets: false,
       pi_harness: false,
+      genui: false,
       us_region: false,
       event_triggers: false,
       notification_center: false,
       volumes: false,
-      stateless_sessions: false,
       drives: false,
-      ephemeral_sandboxes: false,
       session_log: false,
       session_log_restore: false,
     },
@@ -771,13 +770,12 @@ describe('envelopes', () => {
       'secrets_egress',
       'pooled_provider_secrets',
       'pi_harness',
+      'genui',
       'us_region',
       'event_triggers',
       'notification_center',
       'volumes',
-      'stateless_sessions',
       'drives',
-      'ephemeral_sandboxes',
       'session_log',
       'session_log_restore',
     ]);
@@ -792,6 +790,10 @@ describe('envelopes', () => {
     const parsed = SharingIntentSchema.parse({ mode: 'members', memberIds: ['u1'] });
     expect(parsed).toEqual({ mode: 'members', memberIds: ['u1'] });
   });
+});
+
+test('SessionCreateInputSchema still accepts the withdrawn persistent_machine field (inert)', () => {
+  expect(SessionCreateInputSchema.strict().parse({ persistent_machine: true })).toMatchObject({ persistent_machine: true });
 });
 
 describe('SessionCreateInputSchema initial_context', () => {

@@ -644,6 +644,7 @@ One table per domain. The route column shows the method and route template. `any
 | `review.item.list` | Listed review items | `GET /v1/projects/:projectId/review/items` |
 | `review.item.read` | Viewed review item | `GET /v1/projects/:projectId/review/items/:reviewItemId` |
 | `review.item.resolve` | Resolved review item | `POST /v1/projects/:projectId/review/items/:reviewItemId/act` |
+| `review.summary.read` | Viewed review counts | `GET /v1/projects/:projectId/review/summary` |
 
 ### `router.`
 
@@ -814,7 +815,7 @@ One table per domain. The route column shows the method and route template. `any
 | `session.question.answer` | Answered session question | `POST /v1/projects/:projectId/sessions/:sessionId/question` |
 | `session.question.create` | Submitted session question | `POST /v1/projects/:projectId/turn-question` |
 | `session.question.read` | Viewed open session question | `GET /v1/projects/:projectId/sessions/:sessionId/question` |
-| `session.read` | Viewed session | `GET /v1/projects/:projectId/sessions/:sessionId` |
+| `session.read` | Viewed session | `GET /v1/projects/:projectId/sessions/:sessionId` (also `GET /v1/sessions/:sessionId`) |
 | `session.reminder.create` | Created session reminder | `POST /v1/projects/:projectId/sessions/:sessionId/reminders` |
 | `session.reminder.delete` | Deleted session reminder | `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
 | `session.reminder.list` | Listed session reminders | `GET /v1/projects/:projectId/sessions/:sessionId/reminders` |

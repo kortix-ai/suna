@@ -62,13 +62,12 @@ export const FeatureFlagMapSchema = z.object({
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
+  genui: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
   volumes: z.boolean(),
-  stateless_sessions: z.boolean(),
   drives: z.boolean(),
-  ephemeral_sandboxes: z.boolean(),
   session_log: z.boolean(),
   session_log_restore: z.boolean(),
 });
@@ -1011,10 +1010,10 @@ export const SessionCreateInputSchema = z
       .optional(),
     provider: SandboxProviderSchema.optional(),
     /**
-     * Run the session on a persistent machine: its whole root disk persists
-     * across stops (installed packages, config, files). Platinum only. A stop
-     * keeps the disk and ends running processes; the machine stays on the
-     * image it was created from until it is reset.
+     * @deprecated INERT. Accepted and ignored: persistent machines left the
+     * product. The key stays because this object is `.strict()` and
+     * `@kortix/sdk` is published: dropping it would turn an old client's
+     * create into a 400.
      */
     persistent_machine: z.boolean().optional(),
     branch_already_created: z.boolean().optional(),
@@ -1918,8 +1917,13 @@ export const ChangeRequestSchema = z.object({
 });
 export type ChangeRequest = z.infer<typeof ChangeRequestSchema>;
 
-/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. */
-export const ChangeRequestListSchema = z.object({ change_requests: z.array(ChangeRequestSchema) });
+/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. One
+ *  page, newest first; `next_cursor` is the next page's `cursor`, null on the
+ *  last page. */
+export const ChangeRequestListSchema = z.object({
+  change_requests: z.array(ChangeRequestSchema),
+  next_cursor: z.string().nullable(),
+});
 export type ChangeRequestList = z.infer<typeof ChangeRequestListSchema>;
 
 // ─── Accounts ───────────────────────────────────────────────────────────────

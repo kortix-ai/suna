@@ -92,6 +92,16 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
     )
     expect(JSON.parse(content!).instructions).toEqual(['/workspace/AGENTS.md', file])
   })
+
+  // The genui flag is applied by withholding the skill files (managed-skills-genui-flag.test.ts): a
+  // project's `"*": "allow"` merges after this config and outranks any skill rule written here.
+  test('either flag value: no kortix-genui permission rule, and no instruction file carries the catalog', async () => {
+    for (const flag of ['0', '1']) {
+      const out = JSON.parse((await buildOpencodeConfigContent({ ...ENV, KORTIX_GENUI: flag }))!)
+      expect(out.permission.skill).toEqual({ 'customize-opencode': 'deny' })
+      expect(JSON.stringify(out.instructions ?? [])).not.toContain('genui')
+    }
+  })
 })
 
 describe('buildOpencodeConfigContent — base composition', () => {

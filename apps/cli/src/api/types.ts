@@ -354,6 +354,9 @@ export interface ChangeRequest {
 
 export interface ChangeRequestsListResponse {
   change_requests: ChangeRequest[];
+  /** The next page's `cursor`; null on the last page. Absent on an API
+   *  older than KRTX-2316, which returned the whole list. */
+  next_cursor?: string | null;
 }
 
 export interface ChangeRequestDetailResponse {

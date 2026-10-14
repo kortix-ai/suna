@@ -688,6 +688,8 @@
       "themeDescription": "Scegli l'aspetto di Kortix su questo dispositivo.",
       "conversationDensity": "Densità della conversazione",
       "conversationDensityDescription": "Scegli quanti dettagli mostra l'agente nella conversazione mentre lavora.",
+      "richAnswers": "Risposte arricchite",
+      "richAnswersDescription": "Mostra confronti, tabelle, grafici e mappe come elementi visivi nelle risposte. Se l'opzione è disattivata, lo stesso contenuto appare come testo.",
       "wallpaper": "Sfondo",
       "wallpaperDescription": "Lo sfondo dietro l'progetto.",
       "defaultWallpaper": "Predefinito",
@@ -1208,6 +1210,10 @@
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
         },
+        "genui": {
+          "name": "UI generativa",
+          "description": "L'agente può rispondere con schede, confronti, grafici, mappe e tab invece di testi lunghi."
+        },
         "reminders": {
           "name": "Promemoria",
           "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge la pagina Promemoria, l’indicatore dei promemoria della sessione e `kortix remind`."
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "Volumi",
-          "description": "File condivisi e sessioni su volumi per questo progetto."
-        },
-        "stateless_sessions": {
-          "name": "Sessioni senza stato",
-          "description": "Un computer nuovo a ogni risveglio; restano solo file e chat. Richiede i volumi attivi."
+          "description": "File condivisi per questo progetto."
         },
         "drives": {
           "name": "Drive",
           "description": "Cartelle condivise sincronizzate con le sessioni: il tuo drive, uno per agente e i drive aziendali che un amministratore collega al progetto. Le nuove sessioni li vedono in /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Sandbox effimere",
-          "description": "Una sessione arrestata conserva file e conversazione su un volume e rilascia la sua macchina. Riattivarla avvia una nuova macchina con l’immagine più recente. I processi in esecuzione non sopravvivono a un arresto."
         },
         "session_log": {
           "name": "Log di sessione v2",
@@ -19843,71 +19841,6 @@
       "title": "Salvato, ma {agent} non può ancora leggerlo",
       "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
       "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Immagine",
-      "modeImageDetail": "Solo l’immagine della sessione.",
-      "modeImageRequested": "Immagine richiesta: {count}",
-      "modeArtifacts": "Immagine + artefatti",
-      "modeArtifactsDetail": "In più il volume degli artefatti di avvio per il runtime più recente.",
-      "modeArtifactsRequested": "Immagine + artefatti richiesti: {count}",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Macchina effimera, stato della sessione su un volume, più gli artefatti.",
-      "modeVolumeRequested": "Volume richiesto: {count}",
-      "reasonSessionVolume": "Volume di sessione",
-      "reasonArtifactsVolume": "Volume degli artefatti",
-      "reasonVolumeMount": "Montaggio del volume",
-      "reasonTimeout": "Tempo scaduto",
-      "reasonBootHealth": "La macchina non è mai stata pronta",
-      "reasonOther": "Altro",
-      "fallBackToTheImage": "Ripiegare sull’immagine",
-      "fallBackToImage": "Ripiego sull’immagine",
-      "saved": "Modalità di avvio salvate",
-      "saveFailed": "Impossibile salvare le modalità di avvio",
-      "title": "Modalità di avvio",
-      "description": "Come si avviano le nuove sessioni di un progetto con i volumi attivi e quali ripieghi prendono. I volumi e le sessioni senza stato sono feature flag del progetto, non si impostano qui. Le modifiche raggiungono ogni processo API entro 30 secondi.",
-      "discard": "Annulla modifiche",
-      "save": "Salva",
-      "off": "Disattivo",
-      "bootModeTitle": "Modalità di avvio",
-      "bootModeDescription": "Come si avviano le nuove sessioni di un progetto con i volumi attivi. Un progetto con le sessioni senza stato attive si avvia su un volume.",
-      "defaultModeTitle": "Modalità predefinita",
-      "killSwitchTitle": "Interruttore di emergenza: avvia ogni nuova sessione dall’immagine",
-      "killSwitchDetail": "Sostituisce tutte le modalità in una volta; File e drive restano come sono. Una sessione i cui file sono già su un volume mantiene il suo volume.",
-      "killSwitchLabel": "Interruttore di emergenza",
-      "last24HoursTitle": "Ultime 24 ore",
-      "last24HoursDescription": "Sessioni avviate in ciascuna modalità e i ripieghi che hanno preso. Conteggiate sul fornitore dei volumi.",
-      "columnFallback": "Ripiego",
-      "columnReason": "Motivo",
-      "columnCount": "Conteggio",
-      "columnLatestError": "Ultimo errore",
-      "noFallbacks": "Nessun ripiego nelle ultime 24 ore.",
-      "countsUnavailable": "Conteggi non disponibili: {error}",
-      "unknownError": "errore sconosciuto",
-      "fallbackTitle": "Ripiego",
-      "fallbackDescription": "Una sessione i cui avvii continuano a fallire scende di un livello, una volta per sessione; resta sulla modalità raggiunta. Una sessione i cui file sono già su un volume non lo lascia mai.",
-      "after": "dopo",
-      "failedBoots": "avvii non riusciti",
-      "volumeAttemptsLabel": "Tentativi con volume",
-      "artifactsAttemptsLabel": "Tentativi con artefatti",
-      "lastStepNote": "(attivo a meno che la modalità predefinita non disattivi l’ultimo passo)",
-      "whereModesApplyTitle": "Dove si applicano le modalità",
-      "whereModesApplyDescription": "I fornitori e gli interruttori di deployment provengono dall’ambiente del server. Il volume degli artefatti si può impostare qui; se vuoto, si usa quello dell’ambiente.",
-      "volumeProviderTitle": "Fornitore dei volumi: {provider}",
-      "volumeProviderConfigured": "Configurato. Le sessioni su di esso si avviano nella modalità scelta dalla loro regola.",
-      "volumeProviderNotConfigured": "Non configurato: ogni sessione si avvia dall’immagine.",
-      "ready": "Pronto",
-      "otherProvidersTitle": "Altri fornitori: {providers}",
-      "otherProvidersDriveSync": "Si avviano sempre dall’immagine. I drive li raggiungono tramite la sincronizzazione dei drive.",
-      "otherProvidersNoDriveSync": "Si avviano sempre dall’immagine. La sincronizzazione dei drive è disattivata, quindi i progetti con drive restano sul fornitore dei volumi.",
-      "imageOnly": "Solo immagine",
-      "artifactsVolumeTitle": "Volume degli artefatti",
-      "artifactsVolumeSet": "Le sessioni in Immagine + artefatti o Volume montano {source}.",
-      "artifactsVolumeFromEnvironment": "Le sessioni in Immagine + artefatti o Volume montano {source} (dall’ambiente).",
-      "artifactsVolumeNone": "Nessuno impostato: le modalità con artefatti si avviano come se ci fosse solo l’immagine.",
-      "artifactsVolumeLabel": "Volume degli artefatti e tag",
-      "ephemeralSandboxesOff": "{variable} è disattivato in questo deployment: le sessioni senza stato si avviano con Immagine + artefatti.",
-      "nothingSaved": "Ancora nulla di salvato: i progetti con i volumi attivi si avviano dall’immagine."
     }
   },
   "projectOnboarding": {
@@ -20930,5 +20863,23 @@
     "you": "Tu",
     "manageFolderAccess": "Gestisci accesso",
     "viewFolderAccess": "Vedi accesso"
+  },
+  "genui": {
+    "showData": "Mostra dati",
+    "openImage": "Apri immagine",
+    "viewAllImages": "Vedi tutte ({count})",
+    "pieFocus": "{label} è il {percent}% del totale",
+    "pieOfTotal": "{value} su {total}",
+    "directions": "Indicazioni",
+    "call": "Chiama",
+    "website": "Sito web",
+    "label": "Etichetta",
+    "value": "Valore",
+    "map": "Mappa",
+    "zoomIn": "Aumenta zoom",
+    "zoomOut": "Riduci zoom",
+    "mapTwoFingers": "Usa due dita per spostare la mappa",
+    "pick": "Scelta",
+    "convertFailed": "Impossibile preparare la trascrizione. Riprova."
   }
 }

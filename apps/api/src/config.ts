@@ -288,6 +288,9 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
+  // Generative UI kill switch. On by default; false => no session is taught the genui catalog,
+  // whatever the project flag says. Blocks already in transcripts still render.
+  GENUI_ENABLED: optBoolTrue,
   // Operator switch for the session-log journal ingest (`POST …/sessions/:s/log/journal`).
   // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
   // retries with backoff, so turning it back on loses nothing the boxes still hold.
@@ -566,20 +569,11 @@ const envSchema = z.object({
   // mounts, with the folders synced in by the box's daemon.
   KORTIX_DRIVES_SESSION_MOUNT: optStr,
   KORTIX_DRIVES_SYNC: optStr,
-  // `off` keeps every new session box on stop/resume (an operator override
-  // under the Volumes switch).
-  KORTIX_EPHEMERAL_SANDBOXES: optStr,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
-  // Boot artifacts: `<volume>@<tag>`, a Platinum volume holding one release's
-  // prebuilt runtime (daemon, CLI, OpenCode, managed skills), published by
-  // scripts/boot-artifacts/publish.ts. Every Platinum session mounts that tag
-  // read-only at /opt/kortix-artifacts and boots from it instead of
-  // downloading. Unset = off.
-  KORTIX_BOOT_ARTIFACTS: optStr,
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -1236,6 +1230,7 @@ export const config = {
   KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
+  GENUI_ENABLED: env.GENUI_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
@@ -1365,10 +1360,8 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_BOOT_ARTIFACTS: env.KORTIX_BOOT_ARTIFACTS,
   KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
   KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
-  KORTIX_EPHEMERAL_SANDBOXES: env.KORTIX_EPHEMERAL_SANDBOXES,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,

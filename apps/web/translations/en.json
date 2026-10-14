@@ -510,6 +510,8 @@
       "themeDescription": "Choose how Kortix looks on this device.",
       "conversationDensity": "Conversation density",
       "conversationDensityDescription": "How much detail the agent shows in the conversation while it works.",
+      "richAnswers": "Rich answers",
+      "richAnswersDescription": "Show comparisons, tables, charts, and maps as visuals in answers. When off, the same content appears as text.",
       "wallpaper": "Wallpaper",
       "wallpaperDescription": "The background behind your project.",
       "defaultWallpaper": "Default",
@@ -1030,6 +1032,10 @@
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
         },
+        "genui": {
+          "name": "Generative UI",
+          "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
+        },
         "reminders": {
           "name": "Reminders",
           "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
@@ -1048,19 +1054,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Shared Files and volume-backed sessions for this project."
-        },
-        "stateless_sessions": {
-          "name": "Stateless sessions",
-          "description": "Fresh computer on every wake; only files and chat are kept. Needs Volumes on."
+          "description": "Shared Files for this project."
         },
         "drives": {
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Ephemeral sandboxes",
-          "description": "A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop."
         },
         "session_log": {
           "name": "Session log v2",
@@ -19854,71 +19852,6 @@
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Image",
-      "modeImageDetail": "The session image alone.",
-      "modeImageRequested": "{count} asked for image",
-      "modeArtifacts": "Image + artifacts",
-      "modeArtifactsDetail": "Plus the boot-artifacts volume for the latest runtime.",
-      "modeArtifactsRequested": "{count} asked for image + artifacts",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Ephemeral box, session state on a volume, plus artifacts.",
-      "modeVolumeRequested": "{count} asked for volume",
-      "reasonSessionVolume": "Session volume",
-      "reasonArtifactsVolume": "Artifacts volume",
-      "reasonVolumeMount": "Volume mount",
-      "reasonTimeout": "Timed out",
-      "reasonBootHealth": "Box never became ready",
-      "reasonOther": "Other",
-      "fallBackToTheImage": "Fall back to the image",
-      "fallBackToImage": "Fall back to image",
-      "saved": "Boot modes saved",
-      "saveFailed": "Could not save boot modes",
-      "title": "Boot modes",
-      "description": "How new sessions of a project with Volumes on boot, and the fallbacks they take. Volumes and Stateless sessions are project feature flags, not set here. Changes reach every API process within 30 seconds.",
-      "discard": "Discard",
-      "save": "Save",
-      "off": "Off",
-      "bootModeTitle": "Boot mode",
-      "bootModeDescription": "How new sessions of a project with Volumes on boot. A project with Stateless sessions on boots on a volume.",
-      "defaultModeTitle": "Default mode",
-      "killSwitchTitle": "Kill switch: boot every new session from the image",
-      "killSwitchDetail": "Overrides every mode at once; Files and drives stay as they are. A session whose files already live on a volume keeps its volume.",
-      "killSwitchLabel": "Kill switch",
-      "last24HoursTitle": "Last 24 hours",
-      "last24HoursDescription": "Sessions that booted in each mode, and the fallbacks they took. Counted on the volume provider.",
-      "columnFallback": "Fallback",
-      "columnReason": "Reason",
-      "columnCount": "Count",
-      "columnLatestError": "Latest error",
-      "noFallbacks": "No fallbacks in the last 24 hours.",
-      "countsUnavailable": "Counts unavailable: {error}",
-      "unknownError": "unknown error",
-      "fallbackTitle": "Fallback",
-      "fallbackDescription": "A session whose boots keep failing steps down, once per session; it stays on the mode it reached. A session whose files already live on a volume never leaves it.",
-      "after": "after",
-      "failedBoots": "failed boots",
-      "volumeAttemptsLabel": "Volume attempts",
-      "artifactsAttemptsLabel": "Artifacts attempts",
-      "lastStepNote": "(on unless the default mode turns the last step off)",
-      "whereModesApplyTitle": "Where modes apply",
-      "whereModesApplyDescription": "Providers and deployment switches come from the server's environment. The artifacts volume can be set here; empty uses the environment's.",
-      "volumeProviderTitle": "Volume provider: {provider}",
-      "volumeProviderConfigured": "Configured. Sessions on it boot in the mode their rule picks.",
-      "volumeProviderNotConfigured": "Not configured: every session boots from the image.",
-      "ready": "Ready",
-      "otherProvidersTitle": "Other providers: {providers}",
-      "otherProvidersDriveSync": "Always boot from the image. Drives reach them through drive sync.",
-      "otherProvidersNoDriveSync": "Always boot from the image. Drive sync is off, so drive projects stay on the volume provider.",
-      "imageOnly": "Image only",
-      "artifactsVolumeTitle": "Artifacts volume",
-      "artifactsVolumeSet": "Sessions in Image + artifacts or Volume mount {source}.",
-      "artifactsVolumeFromEnvironment": "Sessions in Image + artifacts or Volume mount {source} (from the environment).",
-      "artifactsVolumeNone": "None set: artifacts modes boot as if the image were alone.",
-      "artifactsVolumeLabel": "Artifacts volume and tag",
-      "ephemeralSandboxesOff": "{variable} is off in this deployment: Stateless sessions boot Image + artifacts.",
-      "nothingSaved": "Nothing saved yet: projects with Volumes on boot from the image."
     }
   },
   "projectOnboarding": {
@@ -20930,5 +20863,23 @@
     "you": "You",
     "manageFolderAccess": "Manage access",
     "viewFolderAccess": "See access"
+  },
+  "genui": {
+    "showData": "Show data",
+    "openImage": "Open image",
+    "viewAllImages": "View all {count}",
+    "pieFocus": "{label} is {percent}% of the total",
+    "pieOfTotal": "{value} of {total}",
+    "directions": "Directions",
+    "call": "Call",
+    "website": "Website",
+    "label": "Label",
+    "value": "Value",
+    "map": "Map",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "mapTwoFingers": "Use two fingers to move the map",
+    "pick": "Pick",
+    "convertFailed": "Could not prepare the transcript. Try again."
   }
 }

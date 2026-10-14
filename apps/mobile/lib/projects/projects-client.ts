@@ -56,6 +56,7 @@ export type { ConnectorSharing as SessionSharing } from '@kortix/sdk';
 export {
   listProjectSessions,
   listProjectSessionsPage,
+  getProjectSession,
   createProjectSession,
   restartProjectSession,
   updateProjectSession,

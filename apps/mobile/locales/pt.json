@@ -1147,6 +1147,7 @@
     "title": "Conta",
     "preferences": "Preferências",
     "sounds": "Sons",
+    "richAnswers": "Respostas enriquecidas",
     "workspace": "Espaço de trabalho",
     "accounts": "Contas",
     "help": "Ajuda",
@@ -1180,6 +1181,17 @@
     "showMoreSubsessions_other": "Mostrar mais {{count}}",
     "showMoreSubsessionsLabel_one": "Mostrar mais {{count}} subsessão de {{title}}",
     "showMoreSubsessionsLabel_other": "Mostrar mais {{count}} subsessões de {{title}}"
+  },
+  "genui": {
+    "chartTapHint": "Toque para ver um valor",
+    "map": "Mapa",
+    "mapUnavailable": "Mapa indisponível",
+    "openImage": "Abrir imagem",
+    "openMap": "Abrir mapa",
+    "pick": "Recomendado",
+    "pieFocus": "{{label}} é {{percent}}% do total",
+    "pieOfTotal": "{{value}} de {{total}}",
+    "showData": "Mostrar dados"
   },
   "updateRequired": {
     "title": "Atualização necessária",

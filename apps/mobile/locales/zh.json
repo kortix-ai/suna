@@ -1147,6 +1147,7 @@
     "title": "账户",
     "preferences": "偏好设置",
     "sounds": "声音",
+    "richAnswers": "丰富回答",
     "workspace": "工作区",
     "accounts": "账户",
     "help": "帮助",
@@ -1180,6 +1181,17 @@
     "showMoreSubsessions_other": "再显示 {{count}} 个",
     "showMoreSubsessionsLabel_one": "再显示 {{title}} 的 {{count}} 个子会话",
     "showMoreSubsessionsLabel_other": "再显示 {{title}} 的 {{count}} 个子会话"
+  },
+  "genui": {
+    "chartTapHint": "点按查看数值",
+    "map": "地图",
+    "mapUnavailable": "地图不可用",
+    "openImage": "打开图片",
+    "openMap": "打开地图",
+    "pick": "推荐",
+    "pieFocus": "{{label}} 占总数的 {{percent}}%",
+    "pieOfTotal": "{{total}} 中的 {{value}}",
+    "showData": "显示数据"
   },
   "updateRequired": {
     "title": "需要更新",

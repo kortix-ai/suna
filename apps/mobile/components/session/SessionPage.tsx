@@ -274,6 +274,8 @@ function useShallowStableArray<T>(next: T[]): T[] {
 // of the list (VirtualizedList keeps its initial region), so that count stays
 // low; opening a thread jumps to the end instead of rendering every turn.
 const INITIAL_TURNS_TO_RENDER = 4;
+/** One page of a session's change requests: the server's ceiling. */
+const SESSION_CHANGES_LIMIT = 200;
 
 /** The transcript re-renders at most once per this interval while a reply streams. */
 const TRANSCRIPT_RENDER_INTERVAL_MS = 64;
@@ -1038,9 +1040,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, [turns]);
 
   // The change requests this session opened, each at the end of the turn that
-  // opened it (web `anchorOutcomes`; KRTX-1678). Reads the Review list
-  // `ProjectScreen` already polls, so it adds no request of its own.
-  const { data: reviewItems } = useReviewItems(projectId ?? null, { poll: false });
+  // opened it (web `anchorOutcomes`; KRTX-1678). The server filters the Review
+  // list to this session's changes (KRTX-2316); the 8 s poll shows a change
+  // the agent opens mid-session.
+  const { data: reviewItems } = useReviewItems(projectId ?? null, {
+    query: { sessionId: projectSessionId, kind: 'change', limit: SESSION_CHANGES_LIMIT },
+    enabled: Boolean(projectSessionId),
+  });
   const sessionChanges = useMemo(
     () => sessionChangeRequests(reviewItems, projectSessionId),
     [reviewItems, projectSessionId],

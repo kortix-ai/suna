@@ -2,8 +2,7 @@
  * Files (`/v1/drives`). Maps to spec §10b (DRIVE-1, DRIVE-2). A team account
  * with OWNER as owner and a plain member who works in the project. Files is
  * not a toggle of its own: it follows the project's `volumes` flag, which the
- * project admin turns on with `PATCH /projects/:id/features`. The boot-mode
- * policy holds no per-organization switch. Writes need drive storage; on a
+ * project admin turns on with `PATCH /projects/:id/features`. Writes need drive storage; on a
  * target without it every write answers 503 `drive_storage_unavailable`,
  * which DRIVE-1 asserts instead of the file lifecycle.
  */

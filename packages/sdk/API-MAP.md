@@ -167,7 +167,8 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | commits / commit / diff | `GET /v1/projects/:id/commits[/:sha][/diff]` |
 | branches | `GET /v1/projects/:id/branches` |
 | file history / version-diff | `GET /v1/projects/:id/files/history`, `/version-diff` |
-| change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]` |
+| change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]`. The list is one page (default 50, at most 500): `listChangeRequests(id, status, { limit, cursor })` → `next_cursor` |
+| review inbox | `GET /v1/projects/:id/review/items` (one page, default 50, at most 200: `listReviewItems(id, { segment, kind, sessionId, limit, cursor })`, `useReviewItemPages`), `GET .../review/summary` (needs-you counts: `getReviewSummary`, `useReviewSummary`, `project(id).review.summary()`) ✅ |
 | merge / merge-preview / close / reopen | `POST .../change-requests/:cr/{merge,close,reopen}`, `GET .../merge-preview` |
 | **request-changes** (Review Center feedback) | `POST .../change-requests/:cr/request-changes` → client fn already existed (`requestChangesOnChangeRequest`), now also on the facade: `project(id).changeRequests.requestChanges(crId, feedback)` ✅ |
 | project files (git-backed) | `GET /v1/projects/:id/files`, `POST /files/{content,search}`, `GET /files/archive` |

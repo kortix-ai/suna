@@ -11,32 +11,13 @@ import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useLanguage } from '@/contexts';
-import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useAccountState } from '@/lib/billing/hooks';
 import { canManageBilling } from '@/lib/billing/plan-action';
 import { haptics } from '@/lib/haptics';
-import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import { getUpgradeSheetIncludedItems } from '@/lib/billing/upgrade-sheet-included';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
-
-/** Opens the upgrade sheet when the root sandbox bootstrap is blocked by billing. */
-export function SandboxUpgradeGateListener() {
-  const { error } = useSandboxContext();
-  const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
-  const handledError = useRef<Error | null>(null);
-
-  useEffect(() => {
-    const gate = getUpgradeGate(error);
-    if (!gate || error === handledError.current) return;
-
-    handledError.current = error as Error;
-    openUpgradeSheet(gate);
-  }, [error, openUpgradeSheet]);
-
-  return null;
-}
 
 /**
  * Global native counterpart to the web upgrade modal: the Credits offer when a
