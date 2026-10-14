@@ -173,14 +173,22 @@ fn http() -> reqwest::blocking::Client {
 }
 
 /// An issuer error with an ErrorClass: 401/403 auth, other 4xx config, 5xx/429 transient.
+/// The issuer's refusal of this device token (`POST /v1/capture/credentials`, 401). Only this
+/// answer signs a device out: a 401/403 without it comes from something in between (a proxy,
+/// a firewall, a load balancer) or names a state that passes, and sync retries.
+pub const DEVICE_REFUSED: &str = "capture_device_unauthorized";
+
 fn issuer_error(status: u16, body: &str, op: &str) -> anyhow::Error {
-    let class = match status {
-        401 | 403 => ErrorClass::Auth,
-        408 | 429 | 500..=599 => ErrorClass::Transient,
+    let code = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v["code"].as_str().map(str::to_string));
+    let class = match (status, code.as_deref()) {
+        (401, Some(DEVICE_REFUSED)) => ErrorClass::Auth,
+        (401 | 403 | 408 | 429 | 500..=599, _) => ErrorClass::Transient,
         _ => ErrorClass::Config,
     };
     let msg: String = body.chars().take(300).collect();
-    TargetError::new(class, status, "Issuer", msg, op)
+    TargetError::new(class, status, code.unwrap_or_else(|| "Issuer".into()), msg, op)
 }
 
 /// POST JSON. A non-2xx answer is an error, except an OAuth error body
@@ -650,6 +658,17 @@ fn us_east_1() -> String {
 
 /// The credentials of this process, by issuer and device.
 static CACHE: Mutex<Option<(String, IssuedCredentials)>> = Mutex::new(None);
+/// When this process last asked the issuer about a refused registration (epoch ms).
+static RECHECKED_AT: Mutex<i64> = Mutex::new(0);
+/// A refused device asks again this often: an admin who restores it, or a person added back
+/// to the account, reconnects it without a new sign-in.
+const RECHECK_REFUSED_MS: i64 = 15 * 60_000;
+
+/// Tests: ask about a refused registration on the next call.
+#[doc(hidden)]
+pub fn recheck_refused_now() {
+    *RECHECKED_AT.lock().unwrap() = 0;
+}
 
 /// Drop cached credentials (after the store refused them, or on sign-out).
 pub fn forget_credentials() {
@@ -663,13 +682,19 @@ pub fn credentials(paths: &MemoryPaths) -> Result<IssuedCredentials> {
         config_error("not signed in: choose \"Sign in with Kortix\" in the tray or Settings")
     })?;
     if r.rejected_at_ms.is_some() {
-        return Err(TargetError::new(
-            ErrorClass::Auth,
-            401,
-            "SignInRequired",
-            "the issuer refused this device; sign in again",
-            "credentials",
-        ));
+        // Refused: ask again every 15 min (and once per process start, after an update or a
+        // reboot) with the token this computer still holds, instead of giving up for good.
+        let mut at = RECHECKED_AT.lock().unwrap();
+        if now_ms() - *at < RECHECK_REFUSED_MS {
+            return Err(TargetError::new(
+                ErrorClass::Auth,
+                401,
+                "SignInRequired",
+                "the issuer refused this device; sign in again",
+                "credentials",
+            ));
+        }
+        *at = now_ms();
     }
     let who = format!("{}|{}", r.issuer, r.device_id);
     if let Some((k, c)) = CACHE.lock().unwrap().as_ref() {
@@ -690,10 +715,18 @@ pub fn credentials(paths: &MemoryPaths) -> Result<IssuedCredentials> {
     let (status, v) = match res {
         Ok(x) => x,
         Err(e) => {
-            if super::classify(&e) == ErrorClass::Auth {
-                let mut rejected = r.clone();
-                rejected.rejected_at_ms = Some(now_ms());
-                save_registration(paths, &rejected)?;
+            // The organization switched Capture off: a computer it manages stops recording
+            // (refused here); the machine service enrolls it again once Capture is back on.
+            // A personal one keeps its sign-in and retries.
+            let org_off = r.managed && format!("{e:#}").contains("capture_disabled");
+            if super::classify(&e) == ErrorClass::Auth || org_off {
+                if r.rejected_at_ms.is_none() {
+                    let mut rejected = r.clone();
+                    rejected.rejected_at_ms = Some(now_ms());
+                    save_registration(paths, &rejected)?;
+                    *RECHECKED_AT.lock().unwrap() = now_ms();
+                    tracing::warn!("sync: the issuer refused this device; it asks again every 15 min");
+                }
                 forget_credentials();
                 return Err(e.context("the issuer refused this device; sign in again"));
             }
@@ -708,6 +741,12 @@ pub fn credentials(paths: &MemoryPaths) -> Result<IssuedCredentials> {
             "credentials name device {:?}, this device signed in as {:?}",
             c.device_id, r.device_id
         )));
+    }
+    if r.rejected_at_ms.is_some() {
+        let mut back = r.clone();
+        back.rejected_at_ms = None;
+        save_registration(paths, &back)?;
+        tracing::info!("sync: the issuer accepts this device again; sync resumes");
     }
     *CACHE.lock().unwrap() = Some((who, c.clone()));
     Ok(c)
@@ -808,8 +847,17 @@ mod tests {
     #[test]
     fn issuer_errors_have_classes() {
         let c = |s| super::super::classify(&issuer_error(s, "", "x"));
-        assert_eq!(c(401), ErrorClass::Auth);
-        assert_eq!(c(403), ErrorClass::Auth);
+        // Only the issuer's own refusal signs a device out.
+        let refused = r#"{"error":"Invalid or revoked device token; sign in again","code":"capture_device_unauthorized"}"#;
+        assert_eq!(super::super::classify(&issuer_error(401, refused, "x")), ErrorClass::Auth);
+        // A proxy's or firewall's 401/403, or the organization switching Capture off, passes.
+        assert_eq!(c(401), ErrorClass::Transient);
+        assert_eq!(c(403), ErrorClass::Transient);
+        let disabled = r#"{"error":"Kortix Capture is off for this organization","code":"capture_disabled"}"#;
+        let e = issuer_error(403, disabled, "credentials");
+        assert_eq!(super::super::classify(&e), ErrorClass::Transient);
+        assert!(format!("{e:#}").contains("capture_disabled"), "{e:#}");
+        assert_eq!(super::super::classify(&issuer_error(403, refused, "x")), ErrorClass::Transient);
         assert_eq!(c(503), ErrorClass::Transient);
         assert_eq!(c(429), ErrorClass::Transient);
         assert_eq!(c(400), ErrorClass::Config);

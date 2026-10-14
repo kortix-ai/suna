@@ -2109,7 +2109,7 @@ fn start_issuer(state: Shared) -> String {
         {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "invalid_token"})),
+                Json(json!({"error": "Invalid or revoked device token; sign in again", "code": "capture_device_unauthorized"})),
             );
         }
         let device_id = st.device_info.as_ref().unwrap()["device_id"]
@@ -2278,7 +2278,20 @@ fn issuer_device_grant_credentials_refresh_and_revocation() {
         "no request after a refusal"
     );
 
-    // Signing in again resumes sync.
+    // The admin restores the device: the next recheck (every 15 min) reconnects it with the
+    // token it still holds, no new sign-in.
+    state.lock().unwrap().revoked = false;
+    issuer::recheck_refused_now();
+    a.chunk(t0 + 50_000, 1, "after restore", 1_000);
+    sync::pass(&a.conn, &a.paths, &s, &device, &stop, &mut rt).unwrap();
+    assert!(issuer::registration(&a.paths).unwrap().rejected_at_ms.is_none(), "restored without a sign-in");
+    assert!(!sync::compute_state(&a.conn, &a.paths, &s, true, &device, &rt).sign_in_required);
+
+    // A refusal again; signing in again also resumes sync.
+    state.lock().unwrap().revoked = true;
+    issuer::forget_credentials();
+    assert_eq!(sync::classify(&sync::pass(&a.conn, &a.paths, &s, &device, &stop, &mut rt).unwrap_err()), ErrorClass::Auth);
+    state.lock().unwrap().revoked = false;
     state.lock().unwrap().approved = true;
     cli::sync_setup_kortix(&a.paths, None, None, &mut |_| {}, &stop).unwrap();
     assert!(issuer::registration(&a.paths)

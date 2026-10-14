@@ -50,6 +50,8 @@ const PAUSE_TOMORROW: &str = "kortix.pause.tomorrow";
 const PAUSE_FOREVER: &str = "kortix.pause.forever";
 /// How often the tray looks for a notice it has not shown yet.
 const NOTICE_POLL: Duration = Duration::from_secs(5);
+/// How long sync stays broken before the tray notifies.
+const SYNC_ALERT_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// The icon for a state: the PNG decoded to the RGBA a tray icon takes.
 fn icon(recording: bool) -> Result<Icon> {
@@ -73,6 +75,8 @@ struct View {
     status: String,
     /// The sync line: "Synced 2 min ago", "Off. Recordings stay on this computer."
     sync: String,
+    /// Sync is on and broken: disconnected, refused, or nothing reached the bucket for 30 min.
+    sync_broken: bool,
     tooltip: String,
     managed: bool,
     /// Screen Recording is missing: the status line asks for it when clicked.
@@ -103,11 +107,14 @@ fn view(paths: &MemoryPaths) -> View {
     if wayland() && state != "paused" {
         status = "Not recording: a Wayland session (Kortix Capture records X11 sessions)".into();
     }
+    let sync = crate::memory::cli::sync_view(paths);
     View {
         recording: state == "recording",
+        sync_broken: sync.tone == "error",
         paused: paused_until.is_some() || !Settings::load(paths).recording_enabled,
-        sync: crate::memory::cli::sync_view(paths).line,
-        tooltip: if managed || signed_in {
+        tooltip: if sync.tone == "error" {
+            format!("Kortix Capture — {}", sync.line)
+        } else if managed || signed_in {
             text.tip
         } else {
             format!("Kortix Capture — {}", status.to_lowercase_first_char())
@@ -115,6 +122,7 @@ fn view(paths: &MemoryPaths) -> View {
         needs_permission: state == "permission_missing",
         status,
         managed,
+        sync: sync.line,
     }
 }
 
@@ -237,6 +245,9 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
     let mut status_item: Option<(MenuItem, MenuItem)> = None;
     let mut shown = view(&paths);
     let mut next_refresh = Instant::now() + NOTICE_POLL;
+    // Sync broken since (this process saw it), and whether the person was told.
+    let mut broken_since: Option<Instant> = None;
+    let mut told = false;
 
     event_loop.run(move |event, _target, control_flow| {
         // The event loop owns the lock for the life of the process.
@@ -275,6 +286,20 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
                 if let Some((title, body, hash)) = pending_notice(&paths) {
                     mark_notice_shown(&paths, &hash);
                     notify::show(&title, &body);
+                }
+                // Sync broken for 5 min (not a wake-up blip): say so once, and once when it is back.
+                if v.sync_broken {
+                    let since = *broken_since.get_or_insert_with(Instant::now);
+                    if !told && since.elapsed() >= SYNC_ALERT_AFTER {
+                        notify::show("Kortix Capture is not syncing", &v.sync);
+                        told = true;
+                    }
+                } else {
+                    if told {
+                        notify::show("Kortix Capture is syncing again", &v.sync);
+                    }
+                    broken_since = None;
+                    told = false;
                 }
                 if let Some(t) = &tray {
                     if v.recording != shown.recording {

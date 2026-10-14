@@ -321,12 +321,24 @@ jobs:
           }
           $s = [int]((Get-Date) - $t0).TotalSeconds
           @{ killed = $before.Count; back_after_s = $s; back = [bool]$back } | ConvertTo-Json | Tee-Object "$env:EV\kill.json"
+          # The device before the upgrade: an upgrade must never sign the computer out.
+          $k = "${env:ProgramFiles}\Kortix\Capture\kortix-capture.exe"
+          function DeviceOf { try { $kk = (& $k --json sync status | ConvertFrom-Json).kortix; if ($kk.signed_in -and -not $kk.sign_in_required) { $kk.device_id } else { "none" } } catch { "none" } }
+          $devBefore = DeviceOf
+          $n0 = @(Get-Content "$env:EV\issuer.jsonl").Count
           # Upgrade in place with no properties: the configuration stays, the service comes back.
           $p = Start-Process msiexec.exe -ArgumentList "/i", "`"$env:RUNNER_TEMP\msi\KortixCapture-next.msi`"", "/qn", "/l*v", "`"$env:EV\msi-upgrade.log`"" -Wait -PassThru
           $key = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Kortix\Capture" -ErrorAction SilentlyContinue
           $t0 = Get-Date
           while (-not (& $mine | Where-Object { $_.CommandLine -match "service run --managed" }) -and ((Get-Date) - $t0).TotalSeconds -lt 120) { Start-Sleep 3 }
+          # Still connected: the new version fetches credentials with the token it kept (3 min at most).
+          function CredsAfter { @(Get-Content "$env:EV\issuer.jsonl" | Select-Object -Skip $n0 | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.path -like "*/credentials" -and $_.status -eq 200 }).Count }
+          $t0 = Get-Date
+          while ((CredsAfter) -lt 1 -and ((Get-Date) - $t0).TotalSeconds -lt 180) { Start-Sleep 5 }
           @{
+            device_before = $devBefore
+            device_after = DeviceOf
+            credentials_after = CredsAfter
             exit = $p.ExitCode
             url_kept = ($key.Url -eq $env:KORTIX_URL_FOR_MSI)
             token_kept = ($key.EnrollmentToken -eq $env:TOKEN_FOR_MSI)
@@ -411,6 +423,8 @@ jobs:
           assert up["exit"] == 0 and up["url_kept"] and up["token_kept"] and up["service"] == "Running" and up["recorder_back"], up
           assert up["version"] == os.environ["NEXT_VERSION"], up
           assert up["token_in_log"] is False, "the upgrade logged the enrollment token"
+          assert up["device_before"] != "none" and up["device_after"] == up["device_before"], ("the upgrade changed or lost the device", up)
+          assert up["credentials_after"] >= 1, ("no credentials fetched after the upgrade", up)
           assert text("stop.txt").strip() == "after service stop: 0", text("stop.txt")
           un = load("uninstall.json"); print("uninstall", un)
           assert un["exit"] == 0 and un["service_gone"] and un["files_gone"] and un["policy_values_gone"], un
@@ -741,15 +755,24 @@ jobs:
             ls -ln "$cfg"
             sudo env TOKEN="$TOKEN" python3 -c "import json,os;d=json.load(open('$cfg'));print('configure wrote url', d['url'], 'token ok', d['enrollment_token']==os.environ['TOKEN'])"
           } 2>&1 | tee -a "$EV/configure.txt"
+          # The device before the reinstall (an update installs the same way).
+          dev_of() { $k --json sync status 2>/dev/null | python3 -c 'import json,sys; k=json.load(sys.stdin)["kortix"]; print(k["device_id"] if k["signed_in"] and not k["sign_in_required"] else "none")' 2>/dev/null || echo none; }
+          dev_before="$(dev_of)"; n0=$(wc -l < "$EV/issuer.jsonl")
           # Reinstall over the installed pkg: the configuration stays and the services come back.
           sudo installer -pkg "$RUNNER_TEMP/pkg/KortixCapture-$TAG-universal.pkg" -target / 2>&1 | tail -3 | tee "$EV/reinstall.txt"
           # The daemon starts the agent again after the reinstall: wait for it (up to 2 min).
           t0=$SECONDS; until pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' > /dev/null || [ $((SECONDS - t0)) -ge 120 ]; do sleep 3; done
           sleep 5
+          # Still connected: the new process fetches credentials with the token it kept (3 min at most).
+          creds_after() { tail -n +$((n0 + 1)) "$EV/issuer.jsonl" | python3 -c 'import json,sys; print(sum(1 for l in sys.stdin if l.strip() and json.loads(l).get("path","").endswith("/credentials") and json.loads(l).get("status")==200))'; }
+          t0=$SECONDS; until [ "$(creds_after)" -ge 1 ] || [ $((SECONDS - t0)) -ge 180 ]; do sleep 5; done
           {
             echo "config kept: $(sudo test -f '/Library/Application Support/Kortix/Capture/config.json' && echo yes || echo no)"
             echo "daemon: $(sudo launchctl print system/ai.kortix.capture.machine 2>&1 | grep -c 'state = running')"
             echo "agent: $(pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' | wc -l | tr -d ' ')"
+            echo "device before: $dev_before"
+            echo "device after: $(dev_of)"
+            echo "credentials after reinstall: $(creds_after)"
           } | tee -a "$EV/reinstall.txt"
           launchctl print "gui/$(id -u)/ai.kortix.capture.agent" > "$EV/agent_after_reinstall.txt" 2>&1 || true
       - name: Uninstall
@@ -829,6 +852,10 @@ jobs:
           assert "configure exit: 0" in conf and re.search(r"-rw-------\s+1\s+0\s+0", conf) and "configure wrote url http://127.0.0.1:8787 token ok True" in conf, conf
           re_ = text("reinstall.txt"); print(re_)
           assert "config kept: yes" in re_ and "daemon: 1" in re_ and re.search(r"agent: [1-9]", re_), re_
+          # An update must never sign a computer out: same device, signed in, credentials fetched again.
+          before = re.search(r"device before: (\S+)", re_).group(1); after = re.search(r"device after: (\S+)", re_).group(1)
+          assert before != "none" and after == before, ("the reinstall changed or lost the device", before, after)
+          assert int(re.search(r"credentials after reinstall: (\d+)", re_).group(1)) >= 1, ("no credentials fetched after the reinstall", re_)
           un = text("uninstalled.txt"); print(un)
           for line in ("daemon loaded: no", "agent loaded: no", "app: gone", "plists: 0", "symlink: gone", "support dir: gone", "receipt: 0", "processes: 0"):
               assert line in un, (line, un)

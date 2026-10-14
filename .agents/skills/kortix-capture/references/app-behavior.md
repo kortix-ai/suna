@@ -456,9 +456,30 @@ another.
 3. Each pass gets S3 credentials from `POST <issuer>/v1/capture/credentials`,
    keeps them in memory, and fetches new ones 5 minutes before they expire or
    after the store refuses them. Everything else is the same S3 sync.
-4. A 401/403 from the issuer marks the device refused: sync stops without more
-   requests, `sync status` says `sign_in_required`, and the tray and settings
-   window ask to sign in again. Recordings stay on the computer meanwhile.
+4. Only the issuer's own refusal (401 with `code: capture_device_unauthorized`)
+   marks the device refused. Any other 401/403 (a proxy, a firewall, a load
+   balancer) and `capture_disabled` (the organization switched Capture off) are
+   transient: sync keeps the sign-in and retries with backoff (up to 10 min).
+   `capture_disabled` shows as "Paused. Kortix Capture is turned off for your
+   organization." On a managed computer `capture_disabled` counts as a refusal:
+   it stops recording, and the machine service enrolls it again (hourly) once
+   the organization turns Capture back on.
+5. A refused device is not given up: it asks the issuer again every 15 min and
+   at every process start (an update, a reboot) with the token it still holds.
+   When the issuer accepts it (an admin restored it, the person was added back),
+   sync resumes with no new sign-in. Meanwhile `sync status` says
+   `sign_in_required`, and the line reads "Disconnected from Kortix. Sign in
+   again to resume." ("… Reconnecting." on a managed computer, which the machine
+   service enrolls again). Recordings stay on the computer.
+6. When nothing reached the bucket (no upload, no minute status report) for
+   30 min while sync is on, the line says "Last synced 2 h ago." and why. The
+   tray notifies once when sync stays broken for 5 min ("Kortix Capture is not
+   syncing") and once when it is back ("Kortix Capture is syncing again"); its
+   tooltip carries the line meanwhile.
+7. An update or reinstall keeps the device: the registration lives in the
+   library and the token in the OS store (or the 0600 file), which installers
+   never touch. CI asserts the same device id stays signed in and fetches
+   credentials again after the macOS reinstall and the Windows MSI upgrade.
 
 - `sync.encrypt` is refused with Kortix: Kortix reads the bucket to index it.
 - `kortix-capture sync sign-out` (settings: Sign out) forgets the token and the
@@ -530,7 +551,7 @@ admin links it to a Kortix user; the tray then shows the account name only.
 | network error, 429, 5xx | records nothing | 1 min |
 
 A managed library records only while its enrollment stands: a revoked device
-(401 from the issuer) stops recording, and the machine service enrolls again
+(401 `capture_device_unauthorized` from the issuer) stops recording, and the machine service enrolls again
 (an admin revoke then shows as `approval_required` in Kortix). The person
 cannot opt out on that computer: `kortix-capture start` reports `managed`,
 `stop`, `logout` and `sync sign-out` refuse, killed processes come back within

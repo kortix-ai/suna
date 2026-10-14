@@ -120,6 +120,9 @@ pub fn sync_view(i: &ViewInput) -> SyncView {
     }
 }
 
+/// No upload and no status report for this long while sync is on: the line says so.
+const STALE_MS: i64 = 30 * 60_000;
+
 fn status_line(i: &ViewInput, dest: Destination) -> (String, &'static str) {
     if dest == Destination::Off {
         return ("Off. Recordings stay on this computer.".into(), "off");
@@ -128,14 +131,35 @@ fn status_line(i: &ViewInput, dest: Destination) -> (String, &'static str) {
         return ("Paused. Network access is turned off.".into(), "paused");
     }
     if dest == Destination::Kortix && (i.sign_in_required || !i.kortix_signed_in) {
-        return ("Sign in again to resume.".into(), "error");
+        return if i.managed {
+            // The machine service enrolls it again with the organization's token.
+            ("Disconnected from Kortix. Reconnecting.".into(), "error")
+        } else {
+            ("Disconnected from Kortix. Sign in again to resume.".into(), "error")
+        };
     }
     let Some(st) = i.state else {
         return ("Waiting for the recorder to start.".into(), "busy");
     };
+    // The last time this computer reached the bucket: an upload or the minute status report.
+    let contact = st.last_upload_ms.max(st.status_reported_ms);
+    let stale = contact.filter(|t| i.now_ms - t > STALE_MS);
     if st.state == "error" {
         let msg = st.last_error.as_deref().unwrap_or("");
-        return (humanize_text(msg, st.last_error_class.as_deref()), "error");
+        if msg.contains("capture_disabled") {
+            return (
+                "Paused. Kortix Capture is turned off for your organization.".into(),
+                "paused",
+            );
+        }
+        let m = humanize_text(msg, st.last_error_class.as_deref());
+        return match stale {
+            Some(t) => (format!("Last synced {}. {m}", ago(i.now_ms - t)), "error"),
+            None => (m, "error"),
+        };
+    }
+    if let Some(t) = stale {
+        return (format!("Last synced {}. Retrying.", ago(i.now_ms - t)), "error");
     }
     if st.pending > 0 || st.audio_pending > 0 || st.actions_pending > 0 {
         let n = st.pending + st.audio_pending + st.actions_pending;
@@ -319,7 +343,39 @@ mod tests {
         let mut i = input(&s, None);
         i.sign_in_required = true;
         let v = sync_view(&i);
-        assert_eq!((v.line.as_str(), v.tone), ("Sign in again to resume.", "error"));
+        assert_eq!((v.line.as_str(), v.tone), ("Disconnected from Kortix. Sign in again to resume.", "error"));
+        i.managed = true;
+        assert_eq!(sync_view(&i).line, "Disconnected from Kortix. Reconnecting.");
+        i.managed = false;
+    }
+
+    #[test]
+    fn a_stall_and_an_organization_switch_say_so() {
+        let s = on("kortix");
+        let mut st = SyncState::default();
+        st.enabled = true;
+        st.state = "ok".into();
+        st.pending = 2;
+        // Nothing reached the bucket for 2 h: not "Uploading", but how long and that it retries.
+        st.last_upload_ms = Some(10_000_000 - 2 * 3_600_000);
+        st.status_reported_ms = Some(10_000_000 - 2 * 3_600_000 + 60_000);
+        let v = sync_view(&input(&s, Some(&st)));
+        assert_eq!((v.line.as_str(), v.tone), ("Last synced 2 h ago. Retrying.", "error"));
+        st.state = "error".into();
+        st.last_error = Some("credentials: http://x: error sending request".into());
+        st.last_error_class = Some("transient".into());
+        let v = sync_view(&input(&s, Some(&st)));
+        assert_eq!(v.line, "Last synced 2 h ago. Could not reach the server.");
+        // A recent status report is contact: a quiet computer with nothing to upload is fine.
+        st.state = "ok".into();
+        st.pending = 0;
+        st.status_reported_ms = Some(10_000_000 - 60_000);
+        assert_eq!(sync_view(&input(&s, Some(&st))).tone, "ok");
+        // The organization switched Capture off: paused, not broken.
+        st.state = "error".into();
+        st.last_error = Some(r#"credentials: HTTP 403 capture_disabled {"code":"capture_disabled"}"#.into());
+        let v = sync_view(&input(&s, Some(&st)));
+        assert_eq!((v.line.as_str(), v.tone), ("Paused. Kortix Capture is turned off for your organization.", "paused"));
     }
 
     #[test]
