@@ -72,19 +72,93 @@ URLs the app polls:
 The signature is Ed25519 over the exact bytes of `capture-update.json`, base64,
 in `capture-update.json.sig`. `collect` signs when `CAPTURE_UPDATE_SIGNING_KEY`
 (a PKCS#8 PEM private key) is in `kortix-ci-env`. Without it the manifest is
-published unsigned and the job logs a warning. The app has no self-updater yet
-(retired in the old repository); a new installer upgrades in place today.
+published unsigned, the job warns, and no installed app updates from it.
+`scripts/ci_update_tool.mjs` builds and signs the manifest (CI and the updater test
+use the same code). Optional manifest fields: `paused` (bool) and `previous`
+(`{version, assets}` of the release before; `collect` adds it on `stable`, from the
+newest earlier release whose signature verifies).
 
-Create the key once (human step):
+## Updater
+
+The machine service (`apps/capture/src/memory/managed/update.rs`) updates the
+app. One page for how it works, what IT controls and how to stop a bad release.
+
+Rules, in order:
+
+1. Policy: IT turns updates off (`auto_update`) or pins the channel (`update_channel`).
+2. No release version baked in (a local build), or no public key compiled in:
+   no update; `update.json` says which.
+3. Check at start (60 s to 5 min after, random) and every 6 h, jittered 10 %. A failed
+   check retries after 30 min, doubling, up to 6 h.
+4. GET the manifest and `.sig` over https (redirects stay on https; manifest at most
+   1 MiB). The signature must verify against a compiled-in key.
+5. The manifest `channel` must be the channel asked for. `paused: true` stops. The
+   version must be semver-newer than the installed one (`X.Y.Z-dev.N` is older than
+   `X.Y.Z`): never a downgrade. A version marked bad is skipped.
+6. Download this OS's installer to the root-only `updates/staging/`. Size and SHA-256
+   must match the manifest. Platform signature: `pkgutil --check-signature` (macOS),
+   `Get-AuthenticodeSignature` (Windows). Unsigned is allowed while releases are
+   unsigned (the log says so); a signature that is present and wrong is refused.
+7. A detached supervisor (`machine update-apply`: systemd transient unit, launchd
+   `submit` job, detached process) installs it silently: `msiexec /i … /qn /norestart`
+   (the MSI keeps IT's URL and token), `installer -pkg … -target /`, `apt-get install`
+   (`dpkg -i` without apt). The installer restarts the service.
+8. The new service must prove health: for every signed-in person the recorder runs
+   and, while it says "recording", saves a frame newer than the install; two good
+   probes in a row, within 15 min. Then the installer is kept in `updates/kept/`.
+9. Not healthy, or the installer failed: the installer of the previous version goes
+   back (the one it kept, else `previous` from the manifest). A release that ran and
+   failed is marked bad (`update.json` `bad`) and never retried. An installer that
+   could not run is retried at the next check.
+
+Files in `updates/` (macOS, Linux: `<machine dir>/updates`; Windows:
+`%ProgramData%\Kortix\CaptureUpdate`, outside the MSI's folder): `update.json`
+(state, readable by everyone, no secrets), `update.log`, `job.json`, `result.json`,
+`verified.json`, `staging/`, `kept/`.
+
+The device reports `update` in `status.json`: `{status, installed, channel, latest,
+lastCheckMs, lastResult, badVersions}`. `status` is `current`, `behind`, `updating`,
+`failed` or `disabled`. Kortix shows "behind" and "update failed" from it.
+
+IT controls:
+
+| Setting | Windows (policy key, string) | macOS (`config.json`, or profile key) | Linux (`/etc/kortix/capture.json`) |
+|---|---|---|---|
+| Updates off | `AutoUpdate` = `0` | `auto_update`: `false` (`AutoUpdate`) | `auto_update`: `false` |
+| Channel | `UpdateChannel` = `stable`/`dev` | `update_channel` (`UpdateChannel`) | `update_channel` |
+
+Stop a bad release: publish a new `capture-update.json` for the same version with
+`"paused": true`, signed (re-run `collect` logic: `ci_update_tool.mjs manifest … --paused`
+then `sign`), and replace the two assets on the release. Devices that have not
+installed it stop; devices that have keep it (publish a fixed higher version).
+After a rollback on a device, `kortix-capture machine update-reset` (root) clears the
+bad list so the next check tries the newest release again.
+
+Key (human step, once):
 
 ```bash
-openssl genpkey -algorithm ed25519 -out capture-update.pem
-openssl pkey -in capture-update.pem -pubout -outform DER | tail -c 32 | base64   # public key to bake into the app
+apps/capture/scripts/create_update_key.sh
 ```
 
-Store the PEM in AWS Secrets Manager `kortix-ci-env` as `CAPTURE_UPDATE_SIGNING_KEY`
-(the only reader is `.github/actions/aws-env`). Bake the public key into the
-updater build. Never commit either.
+It stores the private key in `kortix-ci-env` as `CAPTURE_UPDATE_SIGNING_KEY` and writes
+the public key to `apps/capture/update-public-key.txt`. Commit that file: every build
+compiles it in (`KORTIX_CAPTURE_UPDATE_PUBLIC_KEY`). Only builds made after that commit
+can verify; devices installed before it never update, so install a build that has it first.
+
+Rotation: `create_update_key.sh --rotate` stores the new key as
+`CAPTURE_UPDATE_SIGNING_KEY_NEXT` and makes the public key file `old,new`. Releases keep
+signing with the old key. When every device runs a build that trusts both, run
+`create_update_key.sh --promote`: releases sign with the new key and the file keeps only it.
+
+CI (`capture-build.yml`, per OS, `scripts/ci_update_test.py`): builds test versions N
+and N+1 (`X.Y.Z-dev.7000001`/`2`) with a throwaway key pair, a local manifest server
+and a 15 s check interval (compile-time `KORTIX_CAPTURE_UPDATE_TEST_*`, never set for
+a release; each release build is checked not to contain the test URL). It installs N and
+asserts: up to date; tampered signature, older version, corrupted download and a paused
+release install nothing; an N+1 that never reports healthy is rolled back to N, marked
+bad and not retried; after `update-reset` N+1 installs, the service restarts, recording
+continues, `status.json` in the bucket reports N+1; a manifest naming N does not
+downgrade N+1.
 
 ## Signing
 
@@ -105,7 +179,8 @@ updater build. Never commit either.
    (`APPLE_CERTIFICATE`) to sign the `.pkg` itself.
 2. Add a Windows code-signing certificate and a signing step to `windows-msi`
    to remove the SmartScreen warning.
-3. Create `CAPTURE_UPDATE_SIGNING_KEY` (above).
+3. Create the update signing key: `apps/capture/scripts/create_update_key.sh`, then commit
+   `apps/capture/update-public-key.txt` (section "Updater").
 4. Remove the old `CAPTURE_RELEASES_TOKEN` secret from `kortix-ci-env`; nothing reads it.
 
 ## When a verification fails

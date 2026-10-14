@@ -21,6 +21,8 @@ required-features = ["capture-engine"]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 base64 = "0.22"
+# Verifies the signature on capture-update.json (src/memory/managed/update.rs).
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 chrono = { version = "0.4", features = ["serde"] }
 directories = "5.0"
 mime_guess = "2.0"

@@ -27,7 +27,9 @@
            InstallerVersion="500"
            Compressed="yes">
     <SummaryInformation Description="Kortix Capture" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Kortix Capture is already installed." />
+    <!-- AllowDowngrades: a dev build only differs from the next one in the part an MSI drops
+         (X.Y.Z-dev.N), and the updater's rollback installs the previous version over a newer one. -->
+    <MajorUpgrade AllowDowngrades="yes" />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="KortixCaptureIcon" SourceFile="$(IconFile)" />

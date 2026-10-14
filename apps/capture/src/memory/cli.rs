@@ -181,6 +181,14 @@ pub enum MachineCommand {
         #[arg(long)]
         url: Option<String>,
     },
+    /// The update supervisor the machine service starts (installs, proves, rolls back).
+    #[command(hide = true)]
+    UpdateApply {
+        #[arg(long)]
+        job: std::path::PathBuf,
+    },
+    /// As root: forget the versions marked bad, so the service tries the newest release again.
+    UpdateReset,
 }
 
 #[derive(Args, Debug)]
@@ -849,6 +857,8 @@ fn machine_cmd(c: MachineCommand, json_out: bool) -> Result<()> {
             };
             super::managed::machine_configure(url.as_deref(), &token)
         }
+        MachineCommand::UpdateApply { job } => super::managed::update::apply(&job),
+        MachineCommand::UpdateReset => super::managed::update::reset(),
         MachineCommand::Status => {
             let v = super::managed::machine_status();
             print(&v, json_out, |v| {
@@ -1317,6 +1327,8 @@ pub fn device_status(paths: &MemoryPaths, app_version: &str) -> Value {
         super::actions::read_heartbeat(paths).is_some_and(|h| h.recording),
     );
     // Which policy the device obeys, so an operator sees a change land.
+    // Installed version and last update result, from the machine service's update.json.
+    v["update"] = super::managed::update::report();
     v["policy"] = super::policy::read(paths)
         .map(|c| json!({"source": c.source, "updatedAtMs": c.policy.updated_at_ms, "fetchedAtMs": c.fetched_at_ms}))
         .unwrap_or(Value::Null);

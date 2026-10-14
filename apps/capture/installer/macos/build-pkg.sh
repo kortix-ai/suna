@@ -127,8 +127,11 @@ fi
 echo "PKG_STEP pkgbuild"
 pkgbuild --analyze --root "$work/root" "$work/components.plist" >/dev/null
 # The app must stay in /Applications: no relocation to another copy on disk.
+# The installer must replace the app whatever version is there: a dev build differs from the
+# next one only below the bundle version, and the updater's rollback installs an older one.
 for i in $(seq 0 9); do
   /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$work/components.plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Set :$i:BundleIsVersionChecked false" "$work/components.plist" >/dev/null 2>&1 || true
 done
 mkdir -p "$(dirname "$out")"
 unsigned="$work/KortixCapture-unsigned.pkg"

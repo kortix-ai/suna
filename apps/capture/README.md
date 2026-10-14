@@ -57,6 +57,27 @@ builds, signs and installs every installer (Windows .msi, macOS .pkg, Linux
 release and `capture.yml` (dispatch) publishes the `capture-dev-latest`
 prerelease. The runbook is `.agents/skills/kortix-capture/references/release-runbook.md`.
 
+## Updates
+
+The machine service updates the app by itself, in the background, from each
+Kortix release. It checks at start and every 6 hours (jittered), on the channel
+the build came from: `stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`. It installs
+only a newer version whose manifest carries a valid Ed25519 signature, and the
+installer's size and SHA-256 match the manifest. A new version that does not
+report healthy (recorder running, new frame) is rolled back and never tried
+again. `kortix-capture --json machine status` shows `version` and `update`; the
+same `update` object goes into the device's `status.json`.
+
+IT controls (the same places as the enrollment settings):
+
+| Setting | Windows (policy key, string value) | macOS (`config.json` or profile) | Linux (`/etc/kortix/capture.json`) |
+|---|---|---|---|
+| Updates off | `AutoUpdate` = `0` | `auto_update`: `false` / `AutoUpdate` | `auto_update`: `false` |
+| Pin the channel | `UpdateChannel` = `stable` or `dev` | `update_channel` / `UpdateChannel` | `update_channel` |
+
+The rules, the files and the release steps are in
+`.agents/skills/kortix-capture/references/release-runbook.md` (section "Updater").
+
 ## Build
 
 ```bash
