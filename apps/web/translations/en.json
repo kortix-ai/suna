@@ -19673,6 +19673,10 @@
     "approvalPage": {
       "title": "Approve this {connector} action"
     },
+    "approvalWaiting": {
+      "byName": "Waiting for {name} or anyone who manages this project to approve or deny it.",
+      "byOwner": "Waiting for the person who started this session or anyone who manages this project to approve or deny it."
+    },
     "secretIntakeWithheld": {
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",

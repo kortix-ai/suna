@@ -7,6 +7,7 @@ import {
   approvalArgsSummary,
   approvalNoticeHeadline,
   approvalNoticeRows,
+  approvalLauncherName,
   approvalRequestFromAction,
 } from './session-approval-review';
 
@@ -92,6 +93,7 @@ describe('approvalRequestFromAction', () => {
       reviewComplete: true,
       resolution: null,
       pending: true,
+      canResolve: true,
       status: 'pending_approval',
       resolvedAt: null,
     });
@@ -138,6 +140,31 @@ describe('approvalRequestFromAction', () => {
     expect(request.pending).toBe(false);
     expect(request.resolution).toBe('deny');
     expect(request.reviewComplete).toBe(true);
+  });
+});
+
+describe('can_resolve (KRTX-1724)', () => {
+  test('the request carries the viewer verdict; an older API (absent) keeps the decision', () => {
+    expect(approvalRequestFromAction(action({ can_resolve: false })).canResolve).toBe(false);
+    expect(approvalRequestFromAction(action({ can_resolve: true })).canResolve).toBe(true);
+    expect(approvalRequestFromAction(action()).canResolve).toBe(true);
+  });
+
+  test('the launcher a waiting viewer is told about is a person who started the session', () => {
+    const session = {
+      owner_name: 'Ada',
+      owner_email: 'ada@example.test',
+      owner_type: 'user' as const,
+      origin: 'user' as const,
+    };
+    expect(approvalLauncherName(session)).toBe('Ada');
+    expect(approvalLauncherName({ ...session, owner_name: null })).toBe('ada@example.test');
+    // A service account or a backend wrapper cannot decide: no name.
+    expect(approvalLauncherName({ ...session, owner_type: 'service_account' })).toBeNull();
+    expect(approvalLauncherName({ ...session, origin: 'backend' })).toBeNull();
+    // A row read before the owner was resolved names nobody.
+    expect(approvalLauncherName({ ...session, owner_type: 'unknown' })).toBeNull();
+    expect(approvalLauncherName(undefined)).toBeNull();
   });
 });
 

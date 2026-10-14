@@ -31,6 +31,11 @@ import { useTranslations } from '@/i18n/use-translations';
  * Liveness is unchanged: rows come from the shared `useSessionAudit` query,
  * which polls every 5s here. A decision taken anywhere else — the link, the
  * Audit panel, another tab — drops the row on the next poll.
+ *
+ * Every viewer of the session sees the card, but only a viewer the API lets
+ * decide gets Deny / Approve (`can_resolve`, KRTX-1724). Anyone else reads
+ * the call and who decides it — a project manager or the person who started
+ * the session — instead of a decision that answers 403.
  */
 
 import {
@@ -40,11 +45,13 @@ import {
   ApprovalParameters,
   approvalReviewable,
   ApprovalUnreviewableNotice,
+  ApprovalWaitingNotice,
 } from '@/components/approvals/approval-request';
 import Hint from '@/components/ui/hint';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   approvalArgsSummary,
+  approvalLauncherName,
   approvalNoticeHeadline,
   type ApprovalNoticeRow,
   approvalNoticeRows,
@@ -67,6 +74,7 @@ import {
 } from '@phosphor-icons/react';
 import { slackChannelNames } from '@/features/session/turn/channel-message';
 import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
+import { useProjectSession } from '@kortix/sdk/react';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -87,6 +95,8 @@ export function SessionApprovalPrompt({
   }>();
   const { data } = useSessionAudit(projectId, projectSessionId);
   const resolve = useResolveApproval(projectId, projectSessionId);
+  // The session row the page already holds names who else may decide.
+  const { data: session } = useProjectSession(projectId, projectSessionId);
 
   const [current, setCurrent] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, ApprovalDecisionValue>>({});
@@ -162,6 +172,7 @@ export function SessionApprovalPrompt({
       onSelect={setCurrent}
       onDecide={decide}
       channelNames={channelNames}
+      launcherName={approvalLauncherName(session)}
     />
   );
 }
@@ -176,6 +187,9 @@ interface SessionApprovalNoticeProps {
   onDecide: (executionId: string, decision: ApprovalDecisionValue, note?: string) => void;
   /** Bound Slack conversation ids → names, for the summary and the parameters. */
   channelNames?: ReadonlyMap<string, string>;
+  /** Who besides a project manager decides, for a viewer who may not
+   *  (`can_resolve: false`). Null: the plain wording. */
+  launcherName?: string | null;
 }
 
 const ICON_BUTTON_CLASS =
@@ -196,6 +210,7 @@ export function SessionApprovalNotice({
   onSelect,
   onDecide,
   channelNames,
+  launcherName = null,
 }: SessionApprovalNoticeProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tCommon = useTranslations('common');
@@ -203,7 +218,11 @@ export function SessionApprovalNotice({
   if (rows.length === 0) return null;
 
   const pending = rows.filter((row) => row.decision === null);
-  const headline = approvalNoticeHeadline(pending.length, tI18nComplete);
+  // "Needs your approval" is false for a viewer who may decide none of them.
+  const headline =
+    pending.length > 0 && pending.every((row) => row.action.can_resolve === false)
+    ? { title: tI18nComplete.raw('textdb0e960b68b5'), hint: null }
+    : approvalNoticeHeadline(pending.length, tI18nComplete);
 
   // Only lingering confirmations left: one quiet line per decided call.
   if (pending.length === 0) {
@@ -365,13 +384,19 @@ export function SessionApprovalNotice({
               reviewComplete={request.reviewComplete !== false}
               channelNames={channelNames}
             />
-            {!reviewable ? <ApprovalUnreviewableNotice dense /> : null}
-            <ApprovalDecisionActions
-              dense
-              onDecision={(next, note) => onDecide(executionId, next, note)}
-              busyDecision={busy[executionId] ?? null}
-              approvable={reviewable}
-            />
+            {action.can_resolve === false ? (
+              <ApprovalWaitingNotice dense resolverName={launcherName} />
+            ) : (
+              <>
+                {!reviewable ? <ApprovalUnreviewableNotice dense /> : null}
+                <ApprovalDecisionActions
+                  dense
+                  onDecision={(next, note) => onDecide(executionId, next, note)}
+                  busyDecision={busy[executionId] ?? null}
+                  approvable={reviewable}
+                />
+              </>
+            )}
           </div>
         </div>
       </div>

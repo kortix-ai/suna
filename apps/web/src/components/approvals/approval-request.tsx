@@ -6,7 +6,7 @@ import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix'
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
+import { CheckCircleIcon, ClockIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
@@ -30,6 +30,10 @@ export interface ApprovalRequestData {
    *  read-only members). Changes only the wording — the call is unreviewable
    *  either way, but "nothing was recorded" would be a lie here. */
   previewAuthorized?: boolean;
+  /** False when the VIEWER may not approve or deny the call (`can_resolve`,
+   *  KRTX-1724): the card then says who decides instead of offering a
+   *  decision the API answers with 403. */
+  canResolve?: boolean;
   /** The agent's own description of the call's effect (`--reason`). Shown as
    *  unverified: the parameters stay the evidence. */
   approvalContext?: string | null;
@@ -82,6 +86,9 @@ interface ApprovalRequestProps {
   /** The host renders Approve / Deny itself (the Review Center puts them in
    *  the page header). The card then shows only the call. */
   hideDecision?: boolean;
+  /** Who besides a project manager may decide, for a viewer who may not
+   *  (`request.canResolve === false`). Null: the plain wording. */
+  resolverName?: string | null;
   className?: string;
 }
 
@@ -341,6 +348,31 @@ export function ApprovalUnreviewableNotice({
 }
 
 /**
+ * Shown in place of the decision to a viewer who may not decide the call:
+ * today a project manager or the person who started the session decides
+ * (KRTX-1724). `resolverName` names that person when it is known.
+ */
+export function ApprovalWaitingNotice({
+  resolverName,
+  dense = false,
+  className,
+}: DenseProp & { resolverName?: string | null; className?: string }) {
+  const t = useTranslations('hardcodedUi.approvalWaiting');
+  return (
+    <p
+      className={cn(
+        'text-muted-foreground flex items-start gap-1.5 text-xs text-pretty',
+        dense ? '' : 'border-border border-t px-4 py-3',
+        className,
+      )}
+    >
+      <ClockIcon className="mt-px size-3.5 shrink-0" />
+      {resolverName ? t('byName', { name: resolverName }) : t('byOwner')}
+    </p>
+  );
+}
+
+/**
  * The only two decisions on offer, everywhere. Deliberately no "allow for
  * session" / "always allow": a decision applies to exactly the call that asked
  * for it — a one-click waiver would pre-authorise later calls with entirely
@@ -427,12 +459,14 @@ export function ApprovalRequest({
   outcome = null,
   error = null,
   hideDecision = false,
+  resolverName = null,
   className,
 }: ApprovalRequestProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reviewComplete = request.reviewComplete !== false;
   const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
-  const actionable = request.pending && onDecision;
+  const waiting = request.pending && outcome === null && request.canResolve === false;
+  const actionable = request.pending && !waiting && onDecision;
   const resolved = !request.pending || outcome !== null;
   const resolutionLabel = resolvedLabel(request, outcome);
   const resolutionTone = resolvedTone(resolutionLabel);
@@ -509,6 +543,8 @@ export function ApprovalRequest({
           approvable={reviewable}
         />
       ) : null}
+
+      {waiting ? <ApprovalWaitingNotice resolverName={resolverName} /> : null}
     </section>
   );
 }

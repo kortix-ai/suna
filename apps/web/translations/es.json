@@ -19662,6 +19662,10 @@
     "approvalPage": {
       "title": "Aprobar una acción de {connector}"
     },
+    "approvalWaiting": {
+      "byName": "Esperando a que {name} o alguien que gestione este proyecto apruebe o rechace la llamada.",
+      "byOwner": "Esperando a que la persona que inició esta sesión o alguien que gestione este proyecto apruebe o rechace la llamada."
+    },
     "secretIntakeWithheld": {
       "title": "Guardado, pero {agent} aún no puede leerlo",
       "grant": "{names} no {count, plural, one {está} other {están}} entre los secretos del agente {agent}. Abre Personalizar → Agentes → {agent} → Secretos y {count, plural, one {actívalo} other {actívalos}}.",

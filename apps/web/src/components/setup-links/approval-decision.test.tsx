@@ -235,6 +235,14 @@ describe('ApprovalDecisionPanel', () => {
     expect(html).not.toContain('Message to the agent');
   });
 
+  test('no decision handler on a pending call: it says who decides (KRTX-1724)', () => {
+    const html = panel({ onDecision: undefined });
+    expect(html).toContain('Waiting for the person who started this session or anyone who manages this project to approve or deny it.');
+    expect(html).not.toContain('An agent needs your approval');
+    // A decided call needs no waiting line.
+    expect(panel({ onDecision: undefined, outcome: 'approve' })).not.toContain('Waiting for');
+  });
+
   test('a session to return to is one row, and only when it can be opened', () => {
     expect(panel({ onOpenSession: () => undefined })).toContain('Open session');
     expect(panel({})).not.toContain('Open session');

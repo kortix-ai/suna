@@ -62,6 +62,44 @@ describe('SessionApprovalNotice', () => {
     expect(html).not.toContain('1 / 1');
   });
 
+  test('a viewer who may not decide: who decides replaces Deny / Approve, the link stays (KRTX-1724)', () => {
+    const html = render(
+      <SessionApprovalNotice
+        rows={approvalNoticeRows([{ ...pendingAction, can_resolve: false }], {})}
+        current={null}
+        busy={{}}
+        onSelect={() => undefined}
+        onDecide={() => undefined}
+        launcherName="Ada"
+      />,
+    );
+
+    expect(html).toContain('Needs approval');
+    expect(html).not.toContain('The agent needs your approval');
+    expect(html).toContain('Waiting for Ada or anyone who manages this project to approve or deny it.');
+    expect(html).not.toContain('Approve this call');
+    expect(html).not.toContain('>Deny<');
+    // The call and its arguments still read, and the approval link stays.
+    expect(html).toContain('sam@example.test');
+    expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');
+  });
+
+  test('can_resolve true keeps the decision', () => {
+    const html = render(
+      <SessionApprovalNotice
+        rows={approvalNoticeRows([{ ...pendingAction, can_resolve: true }], {})}
+        current={null}
+        busy={{}}
+        onSelect={() => undefined}
+        onDecide={() => undefined}
+        launcherName="Ada"
+      />,
+    );
+    expect(html).toContain('The agent needs your approval');
+    expect(html).toContain('Approve this call');
+    expect(html).not.toContain('Waiting for');
+  });
+
   test('several pending: pages one call at a time, `current` picks which', () => {
     const second: SessionAuditAction = {
       ...pendingAction,

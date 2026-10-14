@@ -260,6 +260,21 @@ describe('the review page of one item', () => {
     expect(buttons()).not.toContain('Deny');
   });
 
+  // KRTX-1724: the API says per call who may decide (`can_resolve`), and a
+  // viewer it refuses finds the call under Waiting, still pending.
+  test('a waiting call says who decides, and offers no decision', () => {
+    search = 'id=call:exec-1';
+    const waiting = { ...call(false), status: 'waiting' } as ReviewItem;
+    (waiting.detail as { actions: Array<{ canResolve?: boolean }> }).actions[0].canResolve = false;
+    mount([waiting], MANAGER);
+    expect(buttons()).not.toContain('Approve this call');
+    expect(buttons()).not.toContain('Deny');
+    expect(text()).toContain(
+      'Waiting for the person who started this session or anyone who manages this project to approve or deny it.',
+    );
+    expect(text()).not.toContain('Approved');
+  });
+
   // Resolving the conflicts stands in for Ship it, the same rule as mobile.
   test('a conflicted change offers the conflict fix only to a viewer who may merge', () => {
     search = `id=${CONFLICTED.id}`;

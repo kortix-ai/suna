@@ -19662,6 +19662,10 @@
     "approvalPage": {
       "title": "Odobrite {connector} akciju"
     },
+    "approvalWaiting": {
+      "byName": "Чека се да {name} или неко ко управља овим пројектом одобри или одбије позив.",
+      "byOwner": "Чека се да особа која је покренула ову сесију или неко ко управља овим пројектом одобри или одбије позив."
+    },
     "secretIntakeWithheld": {
       "title": "Сачувано, али {agent} још не може да га прочита",
       "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",

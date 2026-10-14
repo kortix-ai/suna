@@ -18,7 +18,8 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
   const executionId = connectorCallId(item.id);
   const call = item.kind === 'approval' ? item.detail.actions?.[0] : undefined;
   if (!executionId || !call) return null;
-  const pending = item.status === 'needs_you';
+  // `waiting`: still pending, on someone else's decision (KRTX-1724).
+  const pending = item.status === 'needs_you' || item.status === 'waiting';
   return {
     kind: 'approval',
     project_id: '',
