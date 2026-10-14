@@ -20907,7 +20907,15 @@
       "experimentalHint": "Isprobaj funkcije koje se još mogu menjati.",
       "privacyControls": "Kontrole privatnosti",
       "privacyControlsHint": "Prikazuje maskiranje ličnih podataka i aplikacije i sajtove koje nijedan računar ne snima. Isključivanje ih sakriva; podešeno i dalje važi.",
-      "maskingTitle": "Maskiranje"
+      "maskingTitle": "Maskiranje",
+      "framesTitle": "Snimci ekrana",
+      "interval": "Jedan snimak svakih",
+      "intervalHint": "Kraći razmaci čuvaju više detalja i troše više procesora i prostora.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Rezolucija",
+      "resolutionHint": "Veći ekrani se smanjuju na ovu visinu. 4K čuva fine detalje, na primer CAD crteže.",
+      "framesHint": "Bez vrednosti, svaki računar koristi svoju (jedan snimak na svake 2 s u 1440p). Sa vrednošću, svi računari je koriste i niko ne može da je promeni. Klikovi, kucanje i skrolovanje snimaju se sa sopstvenim snimcima ekrana pri bilo kom intervalu.",
+      "computerDecides": "Svaki računar odlučuje"
     },
     "area": {
       "wordmark": "Kortix Capture",

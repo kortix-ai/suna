@@ -20907,7 +20907,15 @@
       "experimentalHint": "今後変わる可能性のある機能を試せます。",
       "privacyControls": "プライバシー設定",
       "privacyControlsHint": "個人データのマスキングと、どのコンピューターも録画しないアプリとウェブサイトを表示します。オフにすると非表示になりますが、設定は引き続き適用されます。",
-      "maskingTitle": "マスキング"
+      "maskingTitle": "マスキング",
+      "framesTitle": "画面フレーム",
+      "interval": "フレーム間隔",
+      "intervalHint": "間隔を短くすると詳細が増え、CPUとストレージの使用量も増えます。",
+      "intervalOption": "{seconds, number} 秒",
+      "resolution": "解像度",
+      "resolutionHint": "大きな画面はこの高さに縮小されます。4KはCAD図面などの細部を保ちます。",
+      "framesHint": "未設定の場合、各コンピューターが独自の設定を使います（1440p で 2 秒ごとに 1 枚）。設定すると、すべてのコンピューターがその値を使い、ユーザーは変更できません。クリック、入力、スクロールは間隔に関係なく専用のスクリーンショット付きで記録されます。",
+      "computerDecides": "各コンピューターに任せる"
     },
     "area": {
       "wordmark": "Kortix Capture",

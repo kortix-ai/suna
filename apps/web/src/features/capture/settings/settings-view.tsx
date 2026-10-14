@@ -1,8 +1,11 @@
 'use client';
 
 import {
+  CAPTURE_FRAME_INTERVALS_MS,
   CAPTURE_LAYERS,
+  CAPTURE_MAX_HEIGHTS,
   CAPTURE_RETENTION_LIMITS,
+  type CaptureMaxHeight,
   type CapturePolicy,
   type CapturePolicyRecord,
 } from '@kortix/sdk';
@@ -14,6 +17,7 @@ import { Field, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -75,6 +79,51 @@ function Group({
       </div>
       <div className="bg-popover divide-border divide-y rounded-md border">{children}</div>
     </section>
+  );
+}
+
+/** A choice from a short list, or none (each computer decides), right-aligned like a switch. */
+function SelectRow<T extends number>({
+  title,
+  description,
+  value,
+  noneLabel,
+  options,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  value: T | null;
+  noneLabel: string;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T | null) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <p id={id} className="text-foreground text-sm font-medium">
+          {title}
+        </p>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
+      </div>
+      <Select
+        value={value === null ? 'none' : String(value)}
+        onValueChange={(next) => onChange(next === 'none' ? null : (Number(next) as T))}
+      >
+        <SelectTrigger size="sm" aria-labelledby={id} className="w-56 shrink-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">{noneLabel}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={String(option.value)}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -181,9 +230,9 @@ function PolicyForm({
     setDraft((current) => ({ ...current, [key]: { ...(current[key] as object), ...value } }));
   const whole = (value: string, max: number) =>
     Math.min(max, Math.max(0, Math.round(Number(value) || 0)));
-  // Frame rate and size are the computer's own choice: the policy never sets them.
+  // Frame rate and size: null leaves each computer its own; a value applies to every computer.
   const submit = () =>
-    save.mutate({ ...draft, recording: { ...draft.recording, interval_ms: null, max_height: null } }, {
+    save.mutate(draft, {
       onSuccess: () => successToast(t('saved')),
       onError: (error) => errorToast(error instanceof Error ? error.message : t('saveFailed')),
     });
@@ -200,6 +249,31 @@ function PolicyForm({
             onChange={(on) => patch('layers', { [layer]: on })}
           />
         ))}
+      </Group>
+
+      <Group title={t('framesTitle')} description={t('framesHint')}>
+        <SelectRow
+          title={t('interval')}
+          description={t('intervalHint')}
+          value={draft.recording.interval_ms ?? null}
+          noneLabel={t('computerDecides')}
+          options={CAPTURE_FRAME_INTERVALS_MS.map((ms) => ({
+            value: ms,
+            label: t('intervalOption', { seconds: ms / 1000 }),
+          }))}
+          onChange={(interval_ms) => patch('recording', { interval_ms })}
+        />
+        <SelectRow<CaptureMaxHeight>
+          title={t('resolution')}
+          description={t('resolutionHint')}
+          value={draft.recording.max_height ?? null}
+          noneLabel={t('computerDecides')}
+          options={CAPTURE_MAX_HEIGHTS.map((height) => ({
+            value: height,
+            label: height === 2160 ? '4K' : `${height}p`,
+          }))}
+          onChange={(max_height) => patch('recording', { max_height })}
+        />
       </Group>
 
       <Group title={t('retentionTitle')}>

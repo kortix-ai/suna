@@ -20907,7 +20907,15 @@
       "experimentalHint": "Funktionen ausprobieren, die sich noch ändern können.",
       "privacyControls": "Datenschutz-Steuerung",
       "privacyControlsHint": "Zeigt das Maskieren personenbezogener Daten und die Apps und Websites, die kein Computer aufnimmt. Ausschalten blendet sie aus; Eingestelltes gilt weiter.",
-      "maskingTitle": "Maskieren"
+      "maskingTitle": "Maskieren",
+      "framesTitle": "Bildschirmbilder",
+      "interval": "Ein Bild alle",
+      "intervalHint": "Kürzere Abstände halten mehr Details fest und brauchen mehr CPU und Speicher.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Auflösung",
+      "resolutionHint": "Größere Bildschirme werden auf diese Höhe verkleinert. 4K erhält feine Details, etwa in CAD-Zeichnungen.",
+      "framesHint": "Ohne Vorgabe nutzt jeder Computer seine eigene Einstellung (alle 2 s ein Bild in 1440p). Mit Vorgabe gilt sie für jeden Computer und lässt sich dort nicht ändern. Klicks, Tippen und Scrollen werden bei jedem Abstand mit eigenen Screenshots aufgezeichnet.",
+      "computerDecides": "Jeder Computer entscheidet"
     },
     "area": {
       "wordmark": "Kortix Capture",

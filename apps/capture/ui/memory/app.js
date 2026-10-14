@@ -1923,6 +1923,8 @@ function renderSettings() {
   const audioBlocked = syncData?.layers?.audio?.blocked_by;
   const scroll = $('.panel-body', settingsEl)?.scrollTop || 0;
   const by = esc(orgName());
+  // Frame interval and size the organization's policy sets: shown, locked (only while synced to it).
+  const orgRec = (syncData?.view?.destination === 'kortix' ? syncData?.status?.policy?.policy?.recording : null) || {};
   settingsEl.innerHTML = `
     <div class="panel-head"><button class="icon-btn" id="set-back" title="Back (Esc)">${icon('back')}</button><strong>Settings</strong></div>
     <div class="panel-body"><div class="settings">
@@ -1954,8 +1956,12 @@ function renderSettings() {
       <details class="adv"${draft.adv ? ' open' : ''}><summary>Advanced</summary>
         <div id="sec-sync-dest"><div id="sync-adv"></div></div>
         ${pc.local ? row('Privacy controls<small>Off hides these controls. What is set keeps applying.</small>', '', sw('experimental.privacy_controls', !!s.experimental?.privacy_controls, ' aria-label="Privacy controls"')) : ''}
-        ${row('Capture interval', '', `<span>${num('interval_ms', s.interval_ms, { min: 0.5, step: 0.5, type: 'float', scale: 1000 })} s</span>`)}
-        ${row('Screenshot size', 'Screenshots are scaled down to fit, never up.',
+        ${orgRec.interval_ms != null
+          ? row('Capture interval', `Set by ${by}.`, `<span>${orgRec.interval_ms / 1000} s</span>`)
+          : row('Capture interval', '', `<span>${num('interval_ms', s.interval_ms, { min: 0.5, step: 0.5, type: 'float', scale: 1000 })} s</span>`)}
+        ${orgRec.max_height != null
+          ? row('Screenshot size', `Set by ${by}.`, `<span>${orgRec.max_height === 2160 ? '4K' : orgRec.max_height + 'p'}</span>`)
+          : row('Screenshot size', 'Screenshots are scaled down to fit, never up.',
           `<select id="resolution">${settingsData.resolution_presets.map((p) => `<option value="${p.name}"${res === p.name ? ' selected' : ''}>${p.name} (${p.max_width} × ${p.max_height})</option>`).join('')}${res === 'custom' ? `<option value="custom" selected>Custom (${s.max_width} × ${s.max_height})</option>` : ''}</select>`)}
         ${row('Text recognition', 'Fast uses less power and misses more small text.', `<select data-path="ocr_level" data-type="str">${[['accurate', 'Accurate'], ['fast', 'Fast']].map(([k, n]) => `<option value="${k}"${s.ocr_level === k ? ' selected' : ''}>${n}</option>`).join('')}</select>`)}
       </details>

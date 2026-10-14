@@ -20907,7 +20907,15 @@
       "experimentalHint": "Try features that may still change.",
       "privacyControls": "Privacy controls",
       "privacyControlsHint": "Show personal-data masking and the apps and websites no computer records. Turning this off hides them; what is set keeps applying.",
-      "maskingTitle": "Masking"
+      "maskingTitle": "Masking",
+      "framesTitle": "Screen frames",
+      "interval": "One frame every",
+      "intervalHint": "Shorter intervals keep more detail and use more CPU and storage.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Resolution",
+      "resolutionHint": "Larger screens are scaled down to this height. 4K keeps fine detail, such as CAD drawings.",
+      "framesHint": "Unset, each computer uses its own (one frame every 2 s at 1440p). Set, every computer uses it and people cannot change it. Clicks, typing and scrolling are recorded with their own screenshots at any interval.",
+      "computerDecides": "Each computer decides"
     },
     "area": {
       "wordmark": "Kortix Capture",

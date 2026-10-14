@@ -123,6 +123,11 @@ One policy applies to every device of the account:
 
 - layers: screen, actions, audio (audio is off until someone turns it on);
 - an account-wide pause;
+- **Screen frames**: one frame every 0.5 to 10 s, and the resolution (720p to
+  4K). Left on **Each computer decides**, a computer uses its own (one frame
+  every 2 s, 1440p). Set, every computer uses it and shows it locked. Clicks,
+  typing and scrolling are recorded with their own screenshots at any interval;
+  pick 1 s when screens change fast without input, such as live dashboards;
 - how long Kortix keeps recordings (`remote_days`);
 - an optional notice: each person sees it once, and again when its text changes;
 - **Experimental → Privacy controls** (off by default) shows two more:
@@ -132,8 +137,8 @@ One policy applies to every device of the account:
   add their own in Kortix Capture but cannot remove these. Turning the switch
   off hides the controls; what is set keeps applying.
 
-Each computer chooses its own frame rate, resolution and how long it keeps
-recordings after uploading them.
+Each computer chooses how long it keeps recordings after uploading them
+(7 days by default).
 
 Kortix publishes the policy to `orgs/<account_id>/policy.json` in the capture
 store, where every device reads it within a minute. A device cannot write a

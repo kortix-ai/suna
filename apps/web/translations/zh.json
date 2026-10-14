@@ -20907,7 +20907,15 @@
       "experimentalHint": "试用仍可能变化的功能。",
       "privacyControls": "隐私控制",
       "privacyControlsHint": "显示个人数据遮盖，以及所有电脑都不录制的应用和网站。关闭后会隐藏这些控制，已有设置继续生效。",
-      "maskingTitle": "遮盖"
+      "maskingTitle": "遮盖",
+      "framesTitle": "屏幕帧",
+      "interval": "帧间隔",
+      "intervalHint": "间隔越短，细节越多，占用的 CPU 和存储也越多。",
+      "intervalOption": "{seconds, number} 秒",
+      "resolution": "分辨率",
+      "resolutionHint": "更大的屏幕会缩小到此高度。4K 可保留 CAD 图纸等细节。",
+      "framesHint": "未设置时，每台电脑使用自己的设置（1440p，每 2 秒一帧）。设置后，所有电脑都使用该值，用户无法更改。无论间隔多长，点击、输入和滚动都会连同各自的截图一起记录。",
+      "computerDecides": "由每台电脑决定"
     },
     "area": {
       "wordmark": "Kortix Capture",

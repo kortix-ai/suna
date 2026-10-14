@@ -260,6 +260,27 @@ fn run_once_tasks(conn: &Connection, paths: &MemoryPaths) -> Result<()> {
         }
         Ok(())
     })?;
+    // "Keep recordings on this computer" became 7 days (it was "until space runs low"
+    // while sync was off). A library still on that old default moves once; a value the
+    // person chose (another mode, size or day count) is left alone.
+    store::run_once(conn, "settings-keep-7-days", |_| {
+        if paths.settings().exists() {
+            let mut s = Settings::load(paths);
+            let st = &s.storage;
+            if st.management_mode == "storage_cap"
+                && st.cap_action == "delete"
+                && st.limit_gb == 50.0
+                && st.retention_days == 90
+                && st.retention_action == "downscale"
+            {
+                s.storage.management_mode = "retention".into();
+                s.storage.retention_days = 7;
+                s.storage.retention_action = "delete".into();
+                s.save(paths)?;
+            }
+        }
+        Ok(())
+    })?;
     // Input idleness used to stop screen capture 5 s after the last key or click
     // (the old default), so reading or watching recorded nothing. It no longer
     // stops capture; turn the stored switch off so the settings say so.
@@ -2771,6 +2792,27 @@ mod tests {
         s.save(&paths).unwrap();
         run_once_tasks(&conn, &paths).unwrap();
         assert_eq!(Settings::load(&paths).storage.archived_scale, 0.5);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_old_until_space_runs_low_default_moves_to_seven_days_once() {
+        let dir = std::env::temp_dir().join(format!("kmem-keep7-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let paths = MemoryPaths::at(&dir);
+        paths.ensure().unwrap();
+        let conn = store::open(&paths).unwrap();
+        let mut s = Settings::default();
+        (s.storage.management_mode, s.storage.cap_action) = ("storage_cap".into(), "delete".into());
+        (s.storage.retention_days, s.storage.retention_action) = (90, "downscale".into());
+        s.save(&paths).unwrap();
+        run_once_tasks(&conn, &paths).unwrap();
+        let st = Settings::load(&paths).storage;
+        assert_eq!((st.management_mode.as_str(), st.retention_days, st.retention_action.as_str()), ("retention", 7, "delete"));
+        // The person picks "until space runs low" later: the task is spent and leaves it.
+        s.save(&paths).unwrap();
+        run_once_tasks(&conn, &paths).unwrap();
+        assert_eq!(Settings::load(&paths).storage.management_mode, "storage_cap");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

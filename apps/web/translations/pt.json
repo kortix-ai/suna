@@ -20907,7 +20907,15 @@
       "experimentalHint": "Experimente recursos que ainda podem mudar.",
       "privacyControls": "Controles de privacidade",
       "privacyControlsHint": "Mostra o mascaramento de dados pessoais e os apps e sites que nenhum computador grava. Desativar oculta os controles; o que está configurado continua valendo.",
-      "maskingTitle": "Mascaramento"
+      "maskingTitle": "Mascaramento",
+      "framesTitle": "Quadros da tela",
+      "interval": "Um quadro a cada",
+      "intervalHint": "Intervalos menores guardam mais detalhes e usam mais CPU e armazenamento.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Resolução",
+      "resolutionHint": "Telas maiores são reduzidas a esta altura. 4K mantém detalhes finos, como desenhos CAD.",
+      "framesHint": "Sem valor, cada computador usa o seu (uma imagem a cada 2 s em 1440p). Com valor, todos os computadores o usam e ninguém pode alterá-lo. Cliques, digitação e rolagem são gravados com capturas próprias em qualquer intervalo.",
+      "computerDecides": "Cada computador decide"
     },
     "area": {
       "wordmark": "Kortix Capture",

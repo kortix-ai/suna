@@ -20907,7 +20907,15 @@
       "experimentalHint": "Prueba funciones que aún pueden cambiar.",
       "privacyControls": "Controles de privacidad",
       "privacyControlsHint": "Muestra el enmascarado de datos personales y las apps y sitios que ningún equipo graba. Al desactivarlo se ocultan; lo configurado sigue aplicándose.",
-      "maskingTitle": "Enmascarado"
+      "maskingTitle": "Enmascarado",
+      "framesTitle": "Fotogramas de pantalla",
+      "interval": "Un fotograma cada",
+      "intervalHint": "Los intervalos más cortos conservan más detalle y usan más CPU y almacenamiento.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Resolución",
+      "resolutionHint": "Las pantallas más grandes se reducen a esta altura. 4K conserva los detalles finos, como los planos CAD.",
+      "framesHint": "Sin valor, cada ordenador usa el suyo (una imagen cada 2 s a 1440p). Con valor, todos los ordenadores lo usan y nadie puede cambiarlo. Los clics, la escritura y el desplazamiento se graban con sus propias capturas con cualquier intervalo.",
+      "computerDecides": "Cada ordenador decide"
     },
     "area": {
       "wordmark": "Kortix Capture",

@@ -246,6 +246,11 @@ test.describe("38 — Capture UI", () => {
       await page.getByRole("switch", { name: "Privacy controls" }).click();
       await expect(page.getByText("Mask personal data")).toBeVisible();
       await page.getByRole("switch", { name: "Audio" }).click();
+      // Frame interval: unset (each computer decides) until the organization picks one.
+      const interval = page.getByRole("combobox", { name: "One frame every" });
+      await expect(interval).toHaveText("Each computer decides");
+      await interval.click();
+      await page.getByRole("option", { name: "1 s", exact: true }).click();
       const put = page.waitForResponse(
         (r) =>
           r.url().endsWith(`/v1/accounts/${accountId}/capture/policy`) &&
@@ -257,6 +262,7 @@ test.describe("38 — Capture UI", () => {
         policy: {
           layers: { audio: boolean };
           experimental: { privacy_controls: boolean };
+          recording: { interval_ms: number | null; max_height: number | null };
         };
       }>(
         session.access_token,
@@ -265,6 +271,8 @@ test.describe("38 — Capture UI", () => {
       );
       expect(policy.policy.layers.audio).toBe(false);
       expect(policy.policy.experimental.privacy_controls).toBe(true);
+      expect(policy.policy.recording.interval_ms).toBe(1000);
+      expect(policy.policy.recording.max_height).toBeNull();
 
       expect(pageErrors).toEqual([]);
     } finally {

@@ -20907,7 +20907,15 @@
       "experimentalHint": "Essayez des fonctions qui peuvent encore changer.",
       "privacyControls": "Contrôles de confidentialité",
       "privacyControlsHint": "Affiche le masquage des données personnelles et les apps et sites qu’aucun ordinateur n’enregistre. Désactiver les masque ; les réglages restent appliqués.",
-      "maskingTitle": "Masquage"
+      "maskingTitle": "Masquage",
+      "framesTitle": "Images d'écran",
+      "interval": "Une image toutes les",
+      "intervalHint": "Des intervalles plus courts gardent plus de détails et utilisent plus de CPU et de stockage.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Résolution",
+      "resolutionHint": "Les écrans plus grands sont réduits à cette hauteur. La 4K garde les détails fins, comme les dessins CAO.",
+      "framesHint": "Sans valeur, chaque ordinateur utilise la sienne (une image toutes les 2 s en 1440p). Avec une valeur, tous les ordinateurs l'utilisent et personne ne peut la modifier. Les clics, la saisie et le défilement sont enregistrés avec leurs propres captures, quel que soit l'intervalle.",
+      "computerDecides": "Chaque ordinateur décide"
     },
     "area": {
       "wordmark": "Kortix Capture",
