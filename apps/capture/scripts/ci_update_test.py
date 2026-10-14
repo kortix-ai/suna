@@ -371,7 +371,7 @@ def main():
     say(f"kept installers: {root_ls(UPD / 'kept')}")
     assert root_ls(UPD / "kept") == [f"{n1_s}.{EXT}"], root_ls(UPD / "kept")
     # The device reports the new version in status.json.
-    s = wait_for("status.json in the bucket says N+1", lambda: (lambda b: b if b.get("appVersion") == n1 else None)(bucket_status()), 300, 10)
+    s = wait_for("status.json in the bucket says N+1", lambda: (lambda b: b if b.get("appVersion") == n1 and ((b.get("update") or {}).get("lastResult") or {}).get("outcome") == "updated" else None)(bucket_status()), 300, 10)
     assert (s.get("update") or {}).get("installed") == n1_s, s.get("update")
     assert (s["update"].get("lastResult") or {}).get("outcome") == "updated", s["update"]
     say(f"status.json update: {json.dumps(s['update'])}")
