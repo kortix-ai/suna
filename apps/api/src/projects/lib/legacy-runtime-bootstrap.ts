@@ -695,6 +695,7 @@ function recentCurrentCheck(
 }
 
 const SELF_UPDATE_MAX_TICKS = 360;
+const FRESH_BOX_S = 600;
 const SELF_CONVERGING_REASONS: ReadonlySet<StaleReason> = new Set(['agent_swap_pending', 'running_assets_stale']);
 
 /**
@@ -715,10 +716,17 @@ export function updatesItself(health: unknown, classification: RuntimeClassifica
   const truth = isRecord(health) ? health.runtime_truth : null;
   if (!isRecord(truth) || !isRecord(truth.components)) return false;
   // Positive evidence only: the box's own daemon entry reads current, or has
-  // been converging for under ~6 h (`attempts` grows by 1 per 60 s tick).
-  // `unknown` (no pass yet, or self-update off) and `blocked` still repair.
+  // been converging for under ~6 h (`attempts` grows by 1 per 60 s tick). A
+  // fresh box reads `unknown` until the tick after its first asset pass; its
+  // staged agent (`runtime.components.agent`) is the evidence there, within
+  // the first 10 min. Self-update off reports agent `skipped` and repairs.
   const daemon = truth.components.daemon;
-  return isRecord(daemon) && (daemon.state === 'current' || (daemon.state === 'converging' && Number(daemon.attempts) < SELF_UPDATE_MAX_TICKS));
+  if (!isRecord(daemon)) return false;
+  if (daemon.state === 'current') return true;
+  if (daemon.state === 'converging') return Number(daemon.attempts) < SELF_UPDATE_MAX_TICKS;
+  if (daemon.state !== 'unknown' || !isRecord(health) || !isRecord(health.runtime)) return false;
+  const agent = isRecord(health.runtime.components) ? health.runtime.components.agent : null;
+  return agent === 'staged' && !(typeof health.uptime_s === 'number' && health.uptime_s >= FRESH_BOX_S);
 }
 
 /**

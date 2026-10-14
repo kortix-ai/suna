@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { LegacyBootstrapDeps, LegacyBootstrapResult } from './legacy-runtime-bootstrap';
-import { classifyDaemonHealth } from './legacy-runtime-bootstrap';
+import { classifyDaemonHealth, updatesItself } from './legacy-runtime-bootstrap';
 import {
   MAX_IN_FLIGHT,
   expectedRunningAssetsFrom,
@@ -371,6 +371,39 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(outcome.action).toBe('repairing');
     expect(scheduled).toBe(1);
   });
+  // A fresh fallback boot is opened before its first tick records the staged
+  // agent: runtime_truth still reads `unknown`, the asset pass says `staged`.
+  test('a fresh box: truth unknown, agent staged, swap pending: proceed', async () => {
+    const fresh = {
+      ...SELF_UPDATING_HEALTH,
+      uptime_s: 30,
+      runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } },
+    };
+    const { outcome, scheduled } = await openOn('sb-fresh-staged', fresh);
+    expect(outcome.action).toBe('proceed');
+    expect(scheduled).toBe(0);
+  });
+  test('the same box past 10 min of uptime: repair', async () => {
+    const old = {
+      ...SELF_UPDATING_HEALTH,
+      uptime_s: 601,
+      runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } },
+    };
+    const { outcome, scheduled } = await openOn('sb-old-unknown', old);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('agent self-update off: truth unknown, agent skipped: never skipped as self-updating', async () => {
+    const off = {
+      ...SELF_UPDATING_HEALTH,
+      uptime_s: 30,
+      runtime: { ...SELF_UPDATING_HEALTH.runtime, components: { ...SELF_UPDATING_HEALTH.runtime.components, agent: 'skipped' }, agentSwapPending: false, running: { ...CURRENT_HEALTH.runtime.running, agent_sha256: 'old' } },
+      runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } },
+    };
+    const expected = { cli_sha256: 'x', managed_skills_hash: 'y', agent_sha256: 'new' };
+    expect(updatesItself(off, classifyDaemonHealth(off, expected))).toBe(false);
+  });
+
   test('converging for 360 ticks (~6 h) is not self-update any more: repair', async () => {
     const stuck = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 360, cause: null } } } };
     const { outcome, scheduled } = await openOn('sb-converging-stuck', stuck);
