@@ -365,7 +365,7 @@ The suites run in the `packages` lane (`tests/bin/package-quality.ts` runs
 prove the oracle can fail: OpenCode's golden test checks a log with one changed
 answer against the request and expects a difference, and pi's partial-log test
 expects exactly the one difference the restore dropped. A broken mapping fails
-the suites: dropping pi's reasoning fails 2 of 19 pi restore tests, writing
+the suites: dropping pi's reasoning fails 1 of 22 pi restore tests, writing
 OpenCode reasoning as text fails 1 of 26 OpenCode restore tests. Not covered:
 no fixture holds an assistant text with `model_text` (no harness exports one),
 so OpenCode's restore passes when it drops that field.
@@ -786,6 +786,22 @@ message flagged `summary` with the summary text or an error,
 transcript keeps every message. A project's `settings.json` in the pi config
 dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
+
+Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
+block that another model wrote as visible assistant text, and pi's summarizers
+(compaction, branch summary) flatten every thinking block into the prompt
+text. `pi/reasoning.ts` removes the thinking of another model on both paths,
+with pi-ai's own test (provider, api, model id): `withoutForeignReasoning`
+wraps the stream function of the root and every child agent, and the hidden
+`kortix-reasoning` extension filters the summarizer input in
+`session_before_compact` and `session_before_tree`. A model switch (a prompt's
+`model`, `POST /kortix/env`) and a restored log written by another model or
+harness both go through it. The same model's thinking goes back unchanged, and
+the store and the session log keep every block.
+`PI_CAPABILITIES.native.reasoning_replay` is `same_model`. modelView compares
+provider and model only, so the restore gives a `kortix` message without `api`
+(a v1 or OpenCode-converted log) the gateway dialect `openai-completions`;
+pi-ai then sees the same model and keeps its reasoning.
 
 `GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
 dir, and the templates of pi packages) as slash commands.
