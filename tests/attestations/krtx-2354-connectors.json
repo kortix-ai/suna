@@ -1,0 +1,36 @@
+{
+  "source_hash": "efead87c92587a518388c91ae430c59adcd6dbc0f60b35ab9bb5b06e294d2c8d",
+  "diff_files": [
+    "apps/api/src/projects/lib/compile-agent-config.test.ts",
+    "apps/api/src/projects/lib/compile-agent-config.ts",
+    "apps/cli/src/__tests__/tools-command.blackbox.test.ts",
+    "apps/cli/src/commands/tools.ts",
+    "apps/cli/src/kortix-tools.generated.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/connector-tools.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/kortix-tools.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-tool-bridge.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-config-release.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/tool-host.test.ts",
+    "apps/kortix-sandbox-agent-server/src/services/tools/host.ts",
+    "apps/kortix-sandbox-agent-server/src/services/tools/kortix/kortix-connectors_call.ts",
+    "apps/kortix-sandbox-agent-server/src/services/tools/kortix/kortix-connectors_describe.ts",
+    "apps/web/public/schema/kortix.schema.json",
+    "apps/web/public/schema/kortix.v2.schema.json",
+    "apps/web/public/schema/kortix.v3.schema.json",
+    "packages/manifest-schema/src/__tests__/json-schema.conformance.test.ts",
+    "packages/manifest-schema/src/__tests__/validator.v2.test.ts",
+    "packages/manifest-schema/src/constants.ts",
+    "packages/manifest-schema/src/index.v2.ts",
+    "packages/manifest-schema/src/json-schema.ts"
+  ],
+  "diff_hash": "2b31f4c456ba219f74d3b07d41dd5662e40b0d93144e5d8efb06ec890f992c17",
+  "head": "7ef7ed0f6dc1a6bc9889324cd3ae1bc613626c6b",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-14T20:25:53.617Z"
+}

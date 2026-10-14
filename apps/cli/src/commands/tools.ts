@@ -32,8 +32,8 @@ import { C, help, pad, status } from '../style.ts';
 const HELP = help`Usage: kortix tools <subcommand> [options]
 
 The tools this project's sessions get, from ./kortix.yaml \`tools:\` and its
-imports. Kortix maintains five tools: ${KORTIX_TOOL_NAMES.join(', ')}.
-With no \`tools:\` key, every session gets all five. With a \`tools:\` key,
+imports. Kortix maintains these tools: ${KORTIX_TOOL_NAMES.join(', ')}.
+With no \`tools:\` key, every session gets all maintained tools. With a \`tools:\` key,
 sessions get only the Kortix tools it lists (\`<name>: kortix:<name>\`), plus
 the project's own tools (\`<name>: <path to a .ts or .js module>\`).
 

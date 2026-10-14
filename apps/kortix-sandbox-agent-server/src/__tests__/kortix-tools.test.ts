@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, sy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
+import connectorCall from '@/services/tools/kortix/kortix-connectors_call'
+import connectorDescribe from '@/services/tools/kortix/kortix-connectors_describe'
 import imageSearch from '@/services/tools/kortix/image_search'
 import memoryTool from '@/services/tools/kortix/memory'
 import scrapeWebpage from '@/services/tools/kortix/scrape_webpage'
@@ -314,7 +316,7 @@ describe('show', () => {
 
 describe('each Kortix tool is one self-contained module (what `kortix tools eject` copies)', () => {
   const kortixDir = join(import.meta.dir, '../services/tools/kortix')
-  const modules = { web_search: webSearch, image_search: imageSearch, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
+  const modules = { 'kortix-connectors_call': connectorCall, 'kortix-connectors_describe': connectorDescribe, web_search: webSearch, image_search: imageSearch, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
 
   test('one file per Kortix tool, named after the tool', () => {
     expect(readdirSync(kortixDir).sort()).toEqual(Object.keys(KORTIX_TOOLS).map((name) => `${name}.ts`).sort())

@@ -1045,7 +1045,7 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
   }
   for (const [name, file] of Object.entries(value ?? {})) {
     const where = `${path}.${name}`;
-    if (!TOOL_NAME_RE.test(name)) {
+    if (!TOOL_NAME_RE.test(name) && !isKortixTool(name)) {
       issues.push({ path: where, message: 'a tool name is snake_case: a lower-case letter, then letters, digits or `_` (64 characters at most).', severity: 'error' });
     } else if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
       issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });

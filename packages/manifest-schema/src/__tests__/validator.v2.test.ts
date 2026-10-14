@@ -1389,11 +1389,24 @@ describe('v2 project tools', () => {
     ]);
     const others =
       'must be a repo-relative path to a .ts or .js module (e.g. `tools/web_serch.ts`). `kortix:<name>` names a Kortix tool under its own name: ' +
-      '`web_search: kortix:web_search`, `image_search: kortix:image_search`, `scrape_webpage: kortix:scrape_webpage`, `memory: kortix:memory`, `show: kortix:show`.';
+      '`web_search: kortix:web_search`, `image_search: kortix:image_search`, `scrape_webpage: kortix:scrape_webpage`, `memory: kortix:memory`, `show: kortix:show`, `kortix-connectors_call: kortix:kortix-connectors_call`, `kortix-connectors_describe: kortix:kortix-connectors_describe`.';
     expect(message('  web_serch: kortix:web_serch')).toEqual([['tools.web_serch', others]]);
     expect(message('  web_serch: kortix:web_search')).toEqual([['tools.web_serch', others]]);
     expect(message('  memory: "kortix:"')).toEqual([['tools.memory', 'must be `kortix:memory` (the Kortix tool) or a repo-relative path to a .ts or .js module (e.g. `tools/memory.ts`) that replaces it.']]);
     expect(message('  show: KORTIX:show').map(([path]) => path)).toEqual(['tools.show']);
+  });
+
+  test('hosted legacy connector tools validate and obey explicit selection', () => {
+    const names = ['kortix-connectors_call', 'kortix-connectors_describe'];
+    for (const name of names) {
+      expect(summarize(base + `tools:\n  ${name}: kortix:${name}\n`).errorPaths).toEqual([]);
+      expect(selectedKortixTools(undefined)).toContain(name);
+      expect(selectedKortixTools({ [name]: `kortix:${name}` })).toEqual([name]);
+    }
+    expect(selectedKortixTools({ show: 'kortix:show' })).toEqual(['show']);
+    for (const name of ['custom-tool', 'kortix-connectors_other', 'kortix-connectors_call_extra']) {
+      expect(summarize(base + `tools:\n  ${name}: tools/custom.ts\n`).errorPaths).toEqual([`tools.${name}`]);
+    }
   });
 
   test('selection: no tools key loads every Kortix tool; a tools key loads only the ones it lists', () => {
@@ -1407,7 +1420,7 @@ describe('v2 project tools', () => {
 
   test('a tools key that lists no Kortix tool is a warning, not an error', () => {
     const warning =
-      'Sessions of this project get no Kortix tool (web_search, image_search, scrape_webpage, memory, show). Add `<name>: kortix:<name>` to keep one.';
+      'Sessions of this project get no Kortix tool (web_search, image_search, scrape_webpage, memory, show, kortix-connectors_call, kortix-connectors_describe). Add `<name>: kortix:<name>` to keep one.';
     for (const tools of ['tools:\n  lookup_order: tools/lookup_order.ts\n', 'tools: {}\n', 'tools:\n  # web_search: kortix:web_search\n']) {
       const result = summarize(base + tools);
       expect({ tools, valid: result.valid, issues: result.issues }).toEqual({ tools, valid: true, issues: [{ path: 'tools', message: warning, severity: 'warning' }] });

@@ -690,8 +690,8 @@ function projectToolsSchema(): JsonSchemaFragment {
     description:
       'Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. ' +
       'Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. ' +
-      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.',
-    propertyNames: { pattern: TOOL_NAME_RE.source },
+      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all Kortix tools.',
+    propertyNames: { anyOf: [{ pattern: TOOL_NAME_RE.source }, { enum: [...KORTIX_TOOL_NAMES] }] },
     properties: Object.fromEntries(
       KORTIX_TOOL_NAMES.map((name) => [
         name,

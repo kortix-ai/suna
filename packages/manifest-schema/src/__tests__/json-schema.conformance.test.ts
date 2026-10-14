@@ -50,6 +50,13 @@ interface Fixture {
 }
 
 const FIXTURES: Fixture[] = [
+  ...['kortix-connectors_call', 'kortix-connectors_describe', 'custom-tool', 'kortix-connectors_other', 'kortix-connectors_call_extra'].map((name): Fixture => ({
+    name: `v2: exact hosted legacy tool name: ${name}`,
+    format: 'yaml',
+    valid: name === 'kortix-connectors_call' || name === 'kortix-connectors_describe',
+    input: `kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  ${name}: tools/custom.ts\n`,
+  })),
+
   // ─── v1 ──────────────────────────────────────────────────────────────
   {
     name: 'v1: comprehensive manifest (project/env/opencode/sandbox/triggers/connectors/agents/channels)',
