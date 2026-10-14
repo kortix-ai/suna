@@ -86,7 +86,7 @@ const cases = [
   ['contract to an adapter', 'src/harness/contract/control.ts', "import '../open-code/boot';", false],
   ['shared to an adapter, type-only', 'src/harness/shared/on-boot.ts', "import type { PiConfig } from '../pi/config';", false],
   ['shared to the resolver', 'src/harness/shared/agent-env-file.ts', "import '../harness';", true],
-  ['shared to the message-id codec', 'src/harness/shared/session-log-boot.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", true],
+  ['shared to the message-id codec', 'src/harness/shared/session-log-boot.ts', "import { mintWireMessageId } from '@kortix/sdk/wire-message-id';", true],
   ['open-code to the message-id codec', 'src/harness/open-code/session-log.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", false],
   ['route to the message-id codec', 'src/routes/kortix/health.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", false],
 

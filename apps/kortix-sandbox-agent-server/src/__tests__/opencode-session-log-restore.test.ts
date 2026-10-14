@@ -34,12 +34,13 @@ import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLog
 import { Database } from 'bun:sqlite'
 import { fakeSessionLogApi } from './helpers/fake-session-log-api'
 import { createOpenCodeSessionLogPort, OPENCODE_CAPABILITIES, openCodeSessionLog } from '@/harness/open-code/session-log'
+import { restoreOpenCodeSessionLog, type OpenCodeRestoreTarget } from '@/harness/open-code/session-log-restore'
 import { requirePiConfig } from '@/harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
 import { piSessionLog } from '@/harness/pi/session-log'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
 import { startFakeModel, type ChatBody, type Step } from './helpers/fake-model'
-import { openCodeBin, openCodeBox, PROVIDER, type OpenCodeServer } from './helpers/opencode-box'
+import { OPENCODE_VERSION, openCodeBin, openCodeBox, PROVIDER, type OpenCodeServer } from './helpers/opencode-box'
 
 const FIXTURES = join(import.meta.dir, '../../../../packages/api-contract/src/__tests__/fixtures/session-log')
 const NAMES = ['golden', 'golden21', 'pi', 'opencode', 'opencode-v2', 'claude-code', 'codex'] as const
@@ -174,6 +175,17 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     const changed = structuredClone(log)
     ;(changed.threads[0]!.messages.find((m) => m.message_id === 'msg_g10')!.blocks[0] as { text: string }).text = 'Something else.'
     expect(oracle(changed, root, prompts('golden')[root]!, sent[root]!).pass).toBe(false)
+  }, 90_000)
+
+  test('an assistant text with model_text: the model gets model_text, never the display text (P6.5 review)', async () => {
+    const log = load('golden')
+    const block = log.threads[0]!.messages.find((m) => m.message_id === 'msg_g10')!.blocks[0] as { text: string; model_text?: string }
+    block.model_text = 'MODEL-TEXT-G10: exit status 1.'
+    const { out, sent } = await restoreAndCheck(log, prompts('golden'))
+    const body = JSON.stringify(sent[log.threads[0]!.thread_id])
+    expect(body).toContain('MODEL-TEXT-G10: exit status 1.')
+    expect(body).not.toContain(block.text)
+    for (const [thread, check] of Object.entries(out)) expect(check.diffs, thread).toEqual([])
   }, 90_000)
 
   test("reasoning: another model's is lowered to assistant text; the same model's is not", async () => {
@@ -357,6 +369,43 @@ describe('an OpenCode session recorded here, restored into a fresh box', () => {
   }, 120_000)
 })
 
+describe('tool-call input key order (P6 follow-up)', () => {
+  /** What a jsonb column does to an object: keys sorted by length, then bytes. */
+  const jsonbSorted = (v: Record<string, unknown>) => Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.length - b.length || (a < b ? -1 : 1)))
+  const ARGS = { description: 'print ok', command: 'printf ok' }
+  const callBytes = (body: ChatBody) =>
+    (body.messages as Array<{ tool_calls?: Array<{ function: { arguments: string } }> }>).flatMap((m) => (m.tool_calls ?? []).map((c) => c.function.arguments))
+
+  test('the next request after a restore carries the call input bytes of the original request; a jsonb-sorted input does not', async () => {
+    const sessionId = 'sess-oc-restore-key-order'
+    const recorded = box(sessionId)
+    const live = await recorded.serve()
+    const { id: rootId } = (await post(live, '/session', {})) as { id: string }
+    // The first prompt also asks for a title (a request without tools); the call goes in the second.
+    await prompt(live, rootId, 'hello', [{ text: 'hi' }, { text: 'Title' }])
+    await prompt(live, rootId, 'run it', [{ tool: 'bash', args: ARGS }, { text: 'ran' }])
+    const [originalBody] = await prompt(live, rootId, 'Anything else?', [{ text: 'OK' }])
+    await live.stop()
+    const original = callBytes(originalBody!)
+    expect(original).toEqual([JSON.stringify(ARGS)])
+
+    const { log } = openCodeSessionLog({ sessionId, rootId, store: new OpencodeDb(recorded.dbPath).storeSnapshot()!, seqs: {} })
+    const nextRequest = async (restoredLog: SessionLog) => {
+      const b = box(sessionId)
+      await b.port.restore(restoredLog)
+      const [body] = await prompt(await b.serve(), b.native(rootId), 'Anything else?', [{ text: 'OK' }])
+      return callBytes(body!)
+    }
+    expect(await nextRequest(log)).toEqual(original)
+    // The control: the input as a jsonb column returns it changes the bytes (the prompt-cache miss P6.6 measured).
+    const sorted = structuredClone(log)
+    for (const t of sorted.threads) for (const m of t.messages) for (const b of m.blocks) if (b.type === 'tool_call') b.input = jsonbSorted(b.input as Record<string, unknown>)
+    const missed = await nextRequest(sorted)
+    expect(missed).toHaveLength(1)
+    expect(missed).not.toEqual(original)
+  }, 60_000)
+})
+
 describe('a second restore and the seq floor', () => {
   test('restore, a turn journaled under the restored root, restore again: one root, the oracle passes', async () => {
     const log = load('opencode')
@@ -518,6 +567,127 @@ describe('a pi session restored into OpenCode (a harness switch)', () => {
     expect(after.messages.length).toBeGreaterThan(0)
     for (const m of after.messages) expect(log.threads.map((t) => t.thread_id)).toContain(m.message.thread_id)
     expect(after.tombstones).toEqual([])
+  }, 120_000)
+})
+
+describe('one import for every thread: the store equals one import per thread', () => {
+  /** The restore's write before the single import: one `opencode import` per session file. */
+  const importEach = async (target: OpenCodeRestoreTarget, files: Array<Record<string, any>>, dir: string) => {
+    for (const [i, f] of files.entries()) {
+      const path = join(dir, `each-${i}.json`)
+      writeFileSync(path, JSON.stringify(f))
+      const proc = Bun.spawn([target.bin, '--pure', 'import', path], { cwd: target.cwd, env: { ...target.env, OPENCODE_DB: target.dbPath }, stdout: 'pipe', stderr: 'pipe' })
+      expect(await new Response(proc.stdout).text()).toContain(`Imported session: ${f.info.id}`)
+    }
+  }
+  /** Every session, message and part row; write-time columns (`time_updated`, a part's `time_created`) left out, JSON parsed. */
+  const rows = (dbPath: string) => {
+    const db = new Database(dbPath, { readonly: true })
+    try {
+      const read = (sql: string, drop: string[]) =>
+        (db.query(sql).all() as Array<Record<string, unknown>>).map((r) =>
+          Object.fromEntries(Object.entries(r).filter(([k]) => !drop.includes(k)).map(([k, v]) => [k, typeof v === 'string' && /^[[{]/.test(v) ? JSON.parse(v) : v])),
+        )
+      return {
+        sessions: read('SELECT * FROM session ORDER BY id', []),
+        messages: read('SELECT * FROM message ORDER BY session_id, time_created, id', ['time_updated']),
+        parts: read('SELECT * FROM part ORDER BY session_id, message_id, id', ['time_updated', 'time_created']),
+        // Every other table keyed by session: its row count per session.
+        keyed: Object.fromEntries(
+          (db.query("SELECT m.name FROM sqlite_master m WHERE m.type = 'table' AND m.name NOT IN ('session', 'message', 'part') AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'session_id')").all() as Array<{ name: string }>)
+            .map(({ name }) => [name, db.query(`SELECT session_id, count(*) AS n FROM "${name}" GROUP BY session_id ORDER BY session_id`).all()]),
+        ),
+      }
+    } finally {
+      db.close()
+    }
+  }
+  /** pi's log plus two clones of its sub-agent, each spawned by a clone of the spawning reply at the root's end: 4 threads. */
+  const fourThreads = () => {
+    const log = load('pi')
+    const [root, child] = log.threads as [SessionLog['threads'][number], SessionLog['threads'][number]]
+    const spawn = root.messages.find((m) => m.message_id === child.spawned_by!.message_id)!
+    const ids = [child.thread_id, spawn.message_id, child.spawned_by!.call_id, ...child.messages.flatMap((m) => [m.message_id, ...m.blocks.flatMap((b) => ('call_id' in b && b.call_id ? [b.call_id] : []))])]
+    const renamed = <T,>(v: T, k: number): T => {
+      let json = JSON.stringify(v)
+      for (const id of ids) json = json.replaceAll(`"${id}"`, `"${id}x${k}"`)
+      return JSON.parse(json) as T
+    }
+    const top = Math.max(...root.messages.map((m) => m.seq))
+    for (const k of [1, 2]) {
+      root.messages.push({ ...renamed(spawn, k), seq: top + k })
+      log.threads.push(renamed(child, k))
+    }
+    return log
+  }
+  async function compare(log: SessionLog, url?: string) {
+    const b = box(log.session_id)
+    const target = { bin, cwd: b.workspace, env: b.env, dbPath: b.dbPath, sessionId: log.session_id, statePath: b.statePath, readAttachment: async (ref: string) => blobs.get(ref) ?? null }
+    if (url === 'serve') url = (await b.serve()).url
+    const one = await restoreOpenCodeSessionLog(log, { ...target, url })
+    const single = rows(b.dbPath)
+    const other = await restoreOpenCodeSessionLog(log, target, {}, importEach)
+    return { b, single, each: rows(b.dbPath), one, other }
+  }
+
+  for (const name of NAMES) {
+    test(`${name}: the same session, message and part rows, and the same cursors`, async () => {
+      const { single, each, one, other } = await compare(load(name))
+      expect(single.sessions).toHaveLength(load(name).threads.length)
+      expect(single).toEqual(each)
+      // A native hash digests the part rows' write times: the cursors match up to the hash values.
+      const shape = (r: typeof one) => ({ dropped: r.dropped, cursors: r.cursors.map((c) => ({ ...c, native_hashes: Object.keys(c.native_hashes) })) })
+      expect(shape(one)).toEqual(shape(other))
+    }, 60_000)
+  }
+
+  test('4 threads (three sub-agents) restored while OpenCode serves, its version from its health: equal rows; a moved or dropped thread fails the comparison', async () => {
+    const log = fourThreads()
+    const { b, single, each, one } = await compare(log, 'serve')
+    expect(single.sessions).toHaveLength(4)
+    expect(single.sessions.filter((s) => s.parent_id === null)).toHaveLength(1)
+    expect(new Set(single.sessions.map((s) => s.version))).toEqual(new Set([OPENCODE_VERSION]))
+    expect(single).toEqual(each)
+    expect(one.cursors.map((c) => c.thread_id)).toEqual(log.threads.map((t) => t.thread_id))
+    for (const t of log.threads) expect(single.messages.filter((m) => m.session_id === b.native(t.thread_id)).length, t.thread_id).toBeGreaterThan(0)
+    // Negative controls: one message under another thread, or a thread gone, is a different store.
+    const db = new Database(b.dbPath)
+    const [root, , second] = log.threads.map((t) => b.native(t.thread_id))
+    const moved = db.query('SELECT id FROM message WHERE session_id = ? LIMIT 1').get(second!) as { id: string }
+    db.run('UPDATE message SET session_id = ? WHERE id = ?', [root!, moved.id])
+    expect(rows(b.dbPath)).not.toEqual(each)
+    db.run('UPDATE message SET session_id = ? WHERE id = ?', [second!, moved.id])
+    expect(rows(b.dbPath)).toEqual(each)
+    db.run('PRAGMA foreign_keys = ON')
+    db.run('DELETE FROM session WHERE id = ?', [second!])
+    db.close()
+    expect(rows(b.dbPath)).not.toEqual(each)
+  }, 90_000)
+
+  test('a row left on the holding session fails the restore before the delete could cascade it; the store keeps no root', async () => {
+    const log = load('opencode')
+    const b = box(log.session_id)
+    const target = { bin, cwd: b.workspace, env: b.env, dbPath: b.dbPath, sessionId: log.session_id, statePath: b.statePath }
+    await restoreOpenCodeSessionLog(log, target)
+    // The holding session's id (see importSessions); a trigger gives it a todo, a row the move does not know.
+    const hold = `ses_${createHash('sha256').update(`hold\0${b.native(log.threads[0]!.thread_id)}`).digest('hex').slice(0, 26)}`
+    const db = new Database(b.dbPath)
+    db.run(`CREATE TRIGGER leftover AFTER INSERT ON session WHEN NEW.id = '${hold}' BEGIN INSERT INTO todo (session_id, content, status, priority, position, time_created, time_updated) VALUES (NEW.id, 'x', 'pending', 'low', 0, 0, 0); END`)
+    db.close()
+    await expect(restoreOpenCodeSessionLog(log, target)).rejects.toThrow('the restore left 1 row(s) of todo on the holding session')
+    const after = rows(b.dbPath)
+    expect(after.sessions.map((s) => s.id)).toEqual([hold])
+    expect(new Set(after.messages.map((m) => m.session_id))).toEqual(new Set([hold]))
+    expect(after.keyed.todo).toEqual([{ session_id: hold, n: 1 }])
+  }, 60_000)
+
+  test('4 threads: the next request of every thread equals modelView', async () => {
+    const log = fourThreads()
+    const base = prompts('pi')
+    const texts = Object.fromEntries(log.threads.map((t, i) => [t.thread_id, base[t.thread_id] ?? `continue thread ${i}`]))
+    const { out } = await restoreAndCheck(log, texts)
+    expect(Object.keys(out).sort()).toEqual(log.threads.map((t) => t.thread_id).sort())
+    for (const [thread, check] of Object.entries(out)) expect(check.diffs, thread).toEqual([])
   }, 120_000)
 })
 
