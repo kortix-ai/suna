@@ -13,6 +13,22 @@ const EXTENSION_PROTOCOL_PREFIXES = [
   'safari-extension://',
   'safari-web-extension://',
   'extension://',
+  // Safari (WebKit) masks the script URLs of browser extensions in `Error.stack`
+  // as `webkit-masked-url://hidden/` (WebKit Bug 246010, a WebKit engineer:
+  // "if this is from a Safari Extension, Error.stack will mask the URLs"), so
+  // no extension frame ever carries a resolvable URL on Safari. A frame with
+  // this synthetic scheme is extension code — never a first-party origin: the
+  // masking exists precisely to hide extension URLs from the page, and
+  // first-party same-origin scripts are never masked. Better Stack pattern
+  // `dec0801de…` (KRTX-1828): `Error: No Listener: tabs:outgoing.message.ready`,
+  // 2 occurrences / 0 users, thrown inside an extension's injected script
+  // (`g`, masked frame) and captured by Sentry's `onunhandledrejection`; the
+  // same masked call site carried the Eagle helper's
+  // `eagle.i18n.words["dragSaver.drag"]` error — one scheme, many extension
+  // messages. The existing `extension-frame` (Sentry) and
+  // `extension-rejected-value` (runtime) rules then drop the class, exactly
+  // like the unmasked extension schemes above.
+  'webkit-masked-url://',
 ] as const;
 
 const INJECTED_APP_SOURCE_PATTERNS = [
