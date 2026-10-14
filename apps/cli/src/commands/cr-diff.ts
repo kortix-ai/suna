@@ -70,9 +70,38 @@ export function displayBranch(name: string): string {
 }
 
 /**
+ * Every change request of the project with `status`, newest number first.
+ * The API returns one page and a `next_cursor` (KRTX-2316): follow it, 500 a
+ * page after the first. The first request sends no `limit`, so an older API,
+ * which returned the whole list and capped `limit` at 500, still answers in
+ * full. `done` ends the walk early once a page holds what the caller needs.
+ */
+export async function listAllChangeRequests(
+  ctx: { client: ApiClient; projectId: string },
+  status: string,
+  done?: (page: ChangeRequest[]) => boolean,
+): Promise<ChangeRequest[]> {
+  const all: ChangeRequest[] = [];
+  let cursor: string | null | undefined;
+  do {
+    const query = new URLSearchParams({ status });
+    if (cursor) {
+      query.set('limit', '500');
+      query.set('cursor', cursor);
+    }
+    const page = await ctx.client.get<ChangeRequestsListResponse>(
+      `/projects/${ctx.projectId}/change-requests?${query}`,
+    );
+    all.push(...page.change_requests);
+    if (done?.(page.change_requests)) break;
+    cursor = page.next_cursor;
+  } while (cursor);
+  return all;
+}
+
+/**
  * Resolve a user-supplied CR reference (`3` or a uuid) to the live CR row.
- * Always lists once so we can match a numeric reference; cheap enough for
- * v1, and it gives us a single error path.
+ * A number walks the list, newest first, until the page that holds it.
  */
 export async function resolveCr(
   ctx: { client: ApiClient; projectId: string },
@@ -99,10 +128,10 @@ export async function resolveCr(
     return null;
   }
   try {
-    const list = await ctx.client.get<ChangeRequestsListResponse>(
-      `/projects/${ctx.projectId}/change-requests?status=all`,
+    const list = await listAllChangeRequests(ctx, 'all', (page) =>
+      page.some((c) => c.number <= n),
     );
-    const match = list.change_requests.find((c) => c.number === n);
+    const match = list.find((c) => c.number === n);
     if (!match) {
       process.stderr.write(`${status.err(`No CR #${n} on this project.`)}\n`);
       return null;

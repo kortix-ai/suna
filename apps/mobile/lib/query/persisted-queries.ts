@@ -11,7 +11,11 @@
  *   ['accounts']                              the account list
  *   ['projects', accountId]                   one account's projects
  *   ['project', projectId]                    the project row (name, account)
- *   ['project-sessions', projectId, 'paged']  the drawer's and the Sessions page's list
+ *   ['project-sessions', projectId, 'paged']  the unfiltered paged list
+ *   ['project-sessions', projectId, 'paged', filter]
+ *                                             the drawer's sections and the
+ *                                             Sessions page's scopes; never
+ *                                             a filter with a search (`q`)
  *
  * Not kept: transcripts, secrets, files, the flat first page
  * (`['project-sessions', projectId]`, a lookup copy of page one), and the
@@ -63,16 +67,22 @@ function isId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
+/**
+ * A paged session list: unfiltered, or filtered without a search. A search is
+ * never kept: its text is the user's, and its answer is momentary. The rule of
+ * the SDK's `isPersistableQueryKey` for its `list-paged` keys, mirrored: that
+ * predicate reads only the SDK's `['kx', …]` key shape.
+ */
 function isPagedSessionsKey(queryKey: readonly unknown[]): boolean {
-  return (
-    queryKey.length === 3 &&
-    queryKey[0] === 'project-sessions' &&
-    isId(queryKey[1]) &&
-    queryKey[2] === 'paged'
-  );
+  if (queryKey[0] !== 'project-sessions' || !isId(queryKey[1]) || queryKey[2] !== 'paged') {
+    return false;
+  }
+  if (queryKey.length === 3) return true;
+  const filter = queryKey[3] as { q?: unknown } | null;
+  return queryKey.length === 4 && typeof filter === 'object' && filter !== null && !filter.q;
 }
 
-/** The `shouldPersist` predicate: true only for the four keys above. */
+/** The `shouldPersist` predicate: true only for the keys above. */
 export function isPersistedQueryKey(queryKey: readonly unknown[]): boolean {
   const [family, id] = queryKey;
   switch (family) {

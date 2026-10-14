@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import { parentSessionOf, subAgentRelation, subAgentsOf } from './sub-agents';
+import { subAgentRelation, subAgentsOf } from './sub-agents';
 
 function session(id: string, overrides: Partial<ProjectSession> & { parent?: string } = {}): ProjectSession {
   const { parent, ...rest } = overrides;
@@ -19,33 +19,6 @@ function session(id: string, overrides: Partial<ProjectSession> & { parent?: str
     ...rest,
   } as unknown as ProjectSession;
 }
-
-describe('parentSessionOf', () => {
-  test('null when the session was not spawned by another session', () => {
-    expect(parentSessionOf(session('root'), [])).toBeNull();
-  });
-
-  test('null when the session is missing', () => {
-    expect(parentSessionOf(null, [session('root')])).toBeNull();
-    expect(parentSessionOf(undefined, [session('root')])).toBeNull();
-  });
-
-  test('null when the parent is not in the project session list (deleted, not loaded)', () => {
-    const child = session('child', { parent: 'missing' });
-    expect(parentSessionOf(child, [child])).toBeNull();
-  });
-
-  test('null when the session names itself as its parent (sessionParentId rejects it)', () => {
-    const self = session('self', { parent: 'self' });
-    expect(parentSessionOf(self, [self])).toBeNull();
-  });
-
-  test('resolves metadata.spawned_by_session against the project session rows', () => {
-    const root = session('root');
-    const child = session('child', { parent: 'root' });
-    expect(parentSessionOf(child, [root, child])?.session_id).toBe('root');
-  });
-});
 
 describe('subAgentsOf', () => {
   test('empty when no session was spawned by this one', () => {
@@ -69,41 +42,54 @@ describe('subAgentsOf', () => {
 });
 
 describe('subAgentRelation', () => {
+  // KRTX-2316: the parent comes from its by-id read, never from a scan of the
+  // first list page, so a parent older than that page still links.
   test('null for a session with no parent and no sub-agents', () => {
     const solo = session('solo');
-    expect(subAgentRelation(solo, [solo])).toBeNull();
-    expect(subAgentRelation(null, [solo])).toBeNull();
+    expect(subAgentRelation(solo, null, [solo])).toBeNull();
+    expect(subAgentRelation(null, null, [solo])).toBeNull();
   });
 
-  test('"child" carries the parent row and its display title', () => {
+  test('"child" carries the parent row and its display title, whatever page holds it', () => {
     const root = session('root', { custom_name: 'Research plan' });
     const child = session('child', { parent: 'root' });
-    expect(subAgentRelation(child, [root, child])).toEqual({
+    expect(subAgentRelation(child, root, [child])).toEqual({
       type: 'child',
       parent: root,
       parentTitle: 'Research plan',
     });
   });
 
+  test('a row that is not the session`s parent is not its parent', () => {
+    const other = session('other');
+    const child = session('child', { parent: 'root' });
+    expect(subAgentRelation(child, other, [child])).toBeNull();
+  });
+
+  test('a session that names itself has no parent (sessionParentId rejects it)', () => {
+    const self = session('self', { parent: 'self' });
+    expect(subAgentRelation(self, self, [self])).toBeNull();
+  });
+
   test('"parent" when the session spawned sub-agents and has no parent of its own', () => {
     const root = session('root');
     const a = session('a', { parent: 'root' });
     const b = session('b', { parent: 'root' });
-    expect(subAgentRelation(root, [root, a, b])).toEqual({ type: 'parent', count: 2 });
+    expect(subAgentRelation(root, null, [root, a, b])).toEqual({ type: 'parent', count: 2 });
   });
 
   test('a resolvable parent wins over the session also having sub-agents', () => {
     const root = session('root');
     const mid = session('mid', { parent: 'root' });
     const leaf = session('leaf', { parent: 'mid' });
-    expect(subAgentRelation(mid, [root, mid, leaf])?.type).toBe('child');
+    expect(subAgentRelation(mid, root, [root, mid, leaf])?.type).toBe('child');
   });
 
   test('an unresolved parent falls through to the sub-agent count', () => {
     const orphan = session('orphan', { parent: 'missing' });
     const kid = session('kid', { parent: 'orphan' });
-    expect(subAgentRelation(orphan, [orphan])).toBeNull();
-    expect(subAgentRelation(orphan, [orphan, kid])).toEqual({ type: 'parent', count: 1 });
+    expect(subAgentRelation(orphan, null, [orphan])).toBeNull();
+    expect(subAgentRelation(orphan, null, [orphan, kid])).toEqual({ type: 'parent', count: 1 });
   });
 
   test('the same relation the session list nests by: a runtime sub-session is not a sub-agent', () => {
@@ -115,6 +101,6 @@ describe('subAgentRelation', () => {
         { id: 'oc-2', parent_id: 'oc-1' },
       ],
     } as never);
-    expect(subAgentRelation(root, [root])).toBeNull();
+    expect(subAgentRelation(root, null, [root])).toBeNull();
   });
 });

@@ -510,6 +510,8 @@
       "themeDescription": "Choose how Kortix looks on this device.",
       "conversationDensity": "Conversation density",
       "conversationDensityDescription": "How much detail the agent shows in the conversation while it works.",
+      "richAnswers": "Rich answers",
+      "richAnswersDescription": "Show comparisons, tables, charts, and maps as visuals in answers. When off, the same content appears as text.",
       "wallpaper": "Wallpaper",
       "wallpaperDescription": "The background behind your project.",
       "defaultWallpaper": "Default",
@@ -1030,6 +1032,10 @@
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
         },
+        "genui": {
+          "name": "Generative UI",
+          "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
+        },
         "reminders": {
           "name": "Reminders",
           "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
@@ -1048,19 +1054,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Shared Files and volume-backed sessions for this project."
-        },
-        "stateless_sessions": {
-          "name": "Stateless sessions",
-          "description": "Fresh computer on every wake; only files and chat are kept. Needs Volumes on."
+          "description": "Shared Files for this project."
         },
         "drives": {
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
-        },
-        "ephemeral_sandboxes": {
-          "name": "Ephemeral sandboxes",
-          "description": "A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop."
         },
         "session_log": {
           "name": "Session log v2",
@@ -1905,6 +1903,26 @@
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
       "use": "Use"
+    },
+    "history": {
+      "restoreTitle": "Some earlier content could not be restored",
+      "restoreMissing": "Missing: {items}.",
+      "restoreAgent": "The agent was told what is missing.",
+      "restoreDismiss": "Dismiss restore notice",
+      "missingAttachment": "{count, plural, one {# attachment} other {# attachments}}",
+      "missingText": "{count, plural, one {# long text} other {# long texts}}",
+      "missingToolInput": "{count, plural, one {# tool input} other {# tool inputs}}",
+      "missingToolResult": "{count, plural, one {# tool result} other {# tool results}}",
+      "missingCutPoint": "{count, plural, one {# compaction point} other {# compaction points}}",
+      "missingOther": "{count, plural, one {# other item} other {# other items}}",
+      "restoreNote": "Session restored from saved history",
+      "harnessSwitch": "Continued with {harness}",
+      "showOutOfContext": "Show messages outside context",
+      "fullTextPreview": "{count, plural, one {A long text here shows its first 16 kB.} other {# long texts here show their first 16 kB.}}",
+      "fullTextShow": "Show full text ({size})",
+      "fullTextDownload": "Download full text ({size})",
+      "fullTextError": "Could not load the full text.",
+      "fullTextRetry": "Try again"
     }
   },
   "agents": {
@@ -5766,7 +5784,6 @@
       "line175JsxTextOpenInTabInstead": "Open in tab instead"
     },
     "componentsDashboardConnectingScreen": {
-      "line156JsxAttrTitleRuntimeDegraded": "Runtime degraded",
       "line422JsxTextCouldnAposTStart": "Couldn't start",
       "line469JsxTextIsStopped": "is stopped",
       "line472JsxTextOpenANewSessionOrReturnToProjects": "Open a new session or return to projects to continue.",
@@ -10913,7 +10930,6 @@
       "text26eb1bc45b53": "Deny by default",
       "text26ecc76c0ce9": "Delete this token?",
       "text26ee1166df63": "Changes apply to the next prompt.",
-      "text26f0dd993530": "Retrying automatically",
       "text27042f4e6eca": "right",
       "text270ba743dc3c": "Cron schedules and signed webhooks start Kortix sessions with nobody present. Each trigger names the agent it runs as, carries a prompt template, and lands its work through a change request a person approves.",
       "text271189ae389a": "Start Time",
@@ -11440,7 +11456,13 @@
       "text370145ffb7ba": "Email skipped — copy the invite link to share manually",
       "text37023affd996": "more not shown",
       "text37056f2381e2": "prop or upload a file.",
-      "text37074af6784c": "{value0} member{value1} lose access to {value2}.",
+      "text586a24125900": "{count, plural, one {# member loses} other {# members lose}} access to {account}.",
+      "text4e9efdcbbcbe": " (+{count} more — see console)",
+      "text65ef045d1ffa": "Contents {value0}",
+      "text3028bf7d2dec": "Remove {value0}",
+      "textd0166fa53db8": "Upload {value0}",
+      "text3cc3767e7032": "Uploaded",
+      "text95e154398a4b": "Replace",
       "text373570b711c7": "The filters, the date boundaries, the rows it dropped and why. An analysis whose exclusions are undocumented is not an analysis, and a comment in the query is the cheapest possible place to keep them.",
       "text3738dea54aaa": "Failed to update scope",
       "text373a23b43a0b": "translateX(calc((var(--tile) + var(--gap)) / 2))",
@@ -11863,7 +11885,6 @@
       "text429bbfa117e2": "Mobile app",
       "text429be41120e9": "Run the project without leaving the conversation.",
       "text429ffbbaa586": "Easy connect",
-      "text42b3d52014ba": "Workspace offline",
       "text42b8d7c5357a": "The sandbox did not confirm the reload",
       "text42bcffb92597": "View as this member",
       "text42bd94c06205": "Status (Dot, Badge, Diff)",
@@ -15264,7 +15285,6 @@
       "texta4a83d949891": "Failed to compact session",
       "texta4b4b51ec474": "translate(-50%, -100%)",
       "texta4b6a3d9d629": "kortix init makes any directory a Kortix. kortix ship brings it live. From then on it is one repo you own — versioned, diffable, and improving itself one reviewed change at a time.",
-      "texta4c128e48978": "The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.",
       "texta4c297b580ad": "- Chase overdue, escalate past 30 days",
       "texta4c7fa51a957": "No branches found",
       "texta4c9215859a8": "Removed project member",
@@ -17154,7 +17174,6 @@
       "textd938438f232e": "Webhook auth",
       "textd942e3dc737b": "docs.kortix.com",
       "textd948c285986a": "Slack disconnected",
-      "textd94a83e48b64": "This workspace is unreachable. Return to projects and open or create another session.",
       "textd952c0d7b0b0": "Injected at call time",
       "textd95934d15292": "Search 5,000+ APIs, MCP servers, and OAuth apps",
       "textd96a37fc02f0": "Replace password",
@@ -17546,7 +17565,6 @@
       "texte478b984a2d9": "Read the tracker as it really is — issues, states, links, comments — and write back the groomed result where you allow it to. The tracker stays the system of record; the agent is not a second one.",
       "texte47b85588c7c": "Any IdP using \"{value0}\" will lose access immediately. This cannot be undone — you'll need to mint a new token to reconnect.",
       "texte47c8bae740d": "Copy key",
-      "texte48034ba91dd": "Workspace services unavailable",
       "texte4855e715f70": "    sandbox: python",
       "texte493d2f8af71": "Advanced options → Customize the name of the group claim",
       "texte4a075134e2b": "No special requirements — this item just works.",
@@ -19688,75 +19706,16 @@
     "approvalPage": {
       "title": "Approve this {connector} action"
     },
+    "approvalWaiting": {
+      "byManager": "Waiting for anyone who manages this project to approve or deny it.",
+      "byName": "Waiting for {name} or anyone who manages this project to approve or deny it.",
+      "byOwner": "Waiting for the person who started this session or anyone who manages this project to approve or deny it.",
+      "copyLink": "Copy approval link"
+    },
     "secretIntakeWithheld": {
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "Image",
-      "modeImageDetail": "The session image alone.",
-      "modeImageRequested": "{count} asked for image",
-      "modeArtifacts": "Image + artifacts",
-      "modeArtifactsDetail": "Plus the boot-artifacts volume for the latest runtime.",
-      "modeArtifactsRequested": "{count} asked for image + artifacts",
-      "modeVolume": "Volume",
-      "modeVolumeDetail": "Ephemeral box, session state on a volume, plus artifacts.",
-      "modeVolumeRequested": "{count} asked for volume",
-      "reasonSessionVolume": "Session volume",
-      "reasonArtifactsVolume": "Artifacts volume",
-      "reasonVolumeMount": "Volume mount",
-      "reasonTimeout": "Timed out",
-      "reasonBootHealth": "Box never became ready",
-      "reasonOther": "Other",
-      "fallBackToTheImage": "Fall back to the image",
-      "fallBackToImage": "Fall back to image",
-      "saved": "Boot modes saved",
-      "saveFailed": "Could not save boot modes",
-      "title": "Boot modes",
-      "description": "How new sessions of a project with Volumes on boot, and the fallbacks they take. Volumes and Stateless sessions are project feature flags, not set here. Changes reach every API process within 30 seconds.",
-      "discard": "Discard",
-      "save": "Save",
-      "off": "Off",
-      "bootModeTitle": "Boot mode",
-      "bootModeDescription": "How new sessions of a project with Volumes on boot. A project with Stateless sessions on boots on a volume.",
-      "defaultModeTitle": "Default mode",
-      "killSwitchTitle": "Kill switch: boot every new session from the image",
-      "killSwitchDetail": "Overrides every mode at once; Files and drives stay as they are. A session whose files already live on a volume keeps its volume.",
-      "killSwitchLabel": "Kill switch",
-      "last24HoursTitle": "Last 24 hours",
-      "last24HoursDescription": "Sessions that booted in each mode, and the fallbacks they took. Counted on the volume provider.",
-      "columnFallback": "Fallback",
-      "columnReason": "Reason",
-      "columnCount": "Count",
-      "columnLatestError": "Latest error",
-      "noFallbacks": "No fallbacks in the last 24 hours.",
-      "countsUnavailable": "Counts unavailable: {error}",
-      "unknownError": "unknown error",
-      "fallbackTitle": "Fallback",
-      "fallbackDescription": "A session whose boots keep failing steps down, once per session; it stays on the mode it reached. A session whose files already live on a volume never leaves it.",
-      "after": "after",
-      "failedBoots": "failed boots",
-      "volumeAttemptsLabel": "Volume attempts",
-      "artifactsAttemptsLabel": "Artifacts attempts",
-      "lastStepNote": "(on unless the default mode turns the last step off)",
-      "whereModesApplyTitle": "Where modes apply",
-      "whereModesApplyDescription": "Providers and deployment switches come from the server's environment. The artifacts volume can be set here; empty uses the environment's.",
-      "volumeProviderTitle": "Volume provider: {provider}",
-      "volumeProviderConfigured": "Configured. Sessions on it boot in the mode their rule picks.",
-      "volumeProviderNotConfigured": "Not configured: every session boots from the image.",
-      "ready": "Ready",
-      "otherProvidersTitle": "Other providers: {providers}",
-      "otherProvidersDriveSync": "Always boot from the image. Drives reach them through drive sync.",
-      "otherProvidersNoDriveSync": "Always boot from the image. Drive sync is off, so drive projects stay on the volume provider.",
-      "imageOnly": "Image only",
-      "artifactsVolumeTitle": "Artifacts volume",
-      "artifactsVolumeSet": "Sessions in Image + artifacts or Volume mount {source}.",
-      "artifactsVolumeFromEnvironment": "Sessions in Image + artifacts or Volume mount {source} (from the environment).",
-      "artifactsVolumeNone": "None set: artifacts modes boot as if the image were alone.",
-      "artifactsVolumeLabel": "Artifacts volume and tag",
-      "ephemeralSandboxesOff": "{variable} is off in this deployment: Stateless sessions boot Image + artifacts.",
-      "nothingSaved": "Nothing saved yet: projects with Volumes on boot from the image."
     }
   },
   "projectOnboarding": {
@@ -20202,7 +20161,8 @@
     "verified": "Verified",
     "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
     "noFactorTitle": "Set up two-factor authentication",
-    "noFactorDescription": "This action needs two-factor authentication. Add an authenticator app in Settings → Security, then try again."
+    "noFactorDescription": "This action needs two-factor authentication. Add an authenticator app in Settings → Security, then try again.",
+    "setUp": "Set up authenticator"
   },
   "connectorPages": {
     "install": "Install",
@@ -20766,5 +20726,23 @@
     "you": "You",
     "manageFolderAccess": "Manage access",
     "viewFolderAccess": "See access"
+  },
+  "genui": {
+    "showData": "Show data",
+    "openImage": "Open image",
+    "viewAllImages": "View all {count}",
+    "pieFocus": "{label} is {percent}% of the total",
+    "pieOfTotal": "{value} of {total}",
+    "directions": "Directions",
+    "call": "Call",
+    "website": "Website",
+    "label": "Label",
+    "value": "Value",
+    "map": "Map",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "mapTwoFingers": "Use two fingers to move the map",
+    "pick": "Pick",
+    "convertFailed": "Could not prepare the transcript. Try again."
   }
 }

@@ -68,11 +68,23 @@ export function useSessionLog(session: SessionMessagesSource): (SessionLog & { s
 }
 
 /**
+ * The session record of a session's v2 log, without its threads: `restore_grade`,
+ * `grade_counts`, `harness`, `ext` and the other session fields, as the API's page and the
+ * stream's `log.state` frames built them (a field not sent yet is absent). Null while the session
+ * reads v1. The record keeps its identity through message puts and block deltas, so a consumer
+ * re-renders only when a page or a session patch changes it: read session fields here, not
+ * through {@link useSessionLog}, which changes with every message.
+ */
+export function useSessionLogRecord(session: Pick<SessionMessagesSource, 'sessionId'>): Partial<Omit<SessionLog, 'threads'>> | null {
+  return useSyncStore((state) => state.sessionLogs[session.sessionId]?.session ?? null);
+}
+
+/**
  * One thread of {@link useSessionLog}, with its messages: the root thread when `threadId` is
  * omitted, a sub-agent's thread by its id. On v1 a thread id is a runtime session id, and the
  * thread is the `fromV1` view of that runtime session's rows. On v2 the v1 store rows the log
- * does not hold yet (an optimistic send) follow the thread's messages as `fromV1` messages,
- * until the log's put of the same id replaces them. `null` when the thread is unknown (v2), or
+ * does not hold yet join the thread's messages as `fromV1` messages, placed by time (an older
+ * page before them, an optimistic send after them), until the log's put of the same id replaces them. `null` when the thread is unknown (v2), or
  * the store holds no row of that runtime session (v1). `options.throttleMs` paces the thread on
  * both paths as {@link useSessionMessages} paces the v1 rows: a transcript reads a streaming turn
  * at most once per window (leading and trailing edge; the last change always lands).

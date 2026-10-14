@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useGenuiCopyMessages } from '@/features/genui/to-markdown';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -107,11 +108,14 @@ export function ExportTranscriptModal({
   onOpenChange,
 }: ExportTranscriptModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tGenui = useTranslations('genui');
   const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
   const [copied, setCopied] = useState(false);
 
   const { data: session } = useRuntimeSession(sessionId);
-  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope });
+  // `mirror: null`: this dialog is mounted with every session header, and the
+  // page's `useSession` already reads the saved copy once per open.
+  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope, mirror: null });
   const [messages, setMessages] = useState(visibleMessages);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const visibleMessagesRef = useRef(visibleMessages);
@@ -141,18 +145,23 @@ export function ExportTranscriptModal({
     };
   }, [open, sessionId, tHardcodedUi]);
 
+  // Generative UI blocks become markdown before copy or download, one message at a time. While the
+  // converter loads, `transcript` is '' and both actions stay disabled.
+  // The converter (a lazy chunk) failed to load: nothing was copied yet, so say what failed.
+  const onConvertError = useCallback(() => errorToast(tGenui('convertFailed')), [tGenui]);
+  const exportMessages = useGenuiCopyMessages(messages, onConvertError);
   const transcript = useMemo(() => {
-    if (!session || messages.length === 0) return '';
+    if (!session || !exportMessages || exportMessages.length === 0) return '';
     return formatTranscript(
       {
         id: session.id,
         title: session.title || session.slug || 'Untitled',
         time: session.time,
       },
-      messages,
+      exportMessages,
       options,
     );
-  }, [session, messages, options]);
+  }, [session, exportMessages, options]);
 
   const filename = useMemo(() => {
     if (!session) return 'session.md';

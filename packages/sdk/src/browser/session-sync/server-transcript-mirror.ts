@@ -36,12 +36,8 @@ import {
 	type SessionTranscriptSyncEnvelope,
 	getSessionTranscriptSync,
 } from "../../core/rest/projects-client/sessions";
-import {
-	claimOpenBundle,
-	takeOpenBundleTranscript,
-	takeOpenBundleTranscriptAbsence,
-} from "../../core/session/open-bundle";
 import type { SavedCopyStore } from "../../core/session-sync/saved-copy-store";
+import { loadSavedTranscript } from "../../core/session-sync/saved-transcript";
 
 /** How many mirrored messages a first paint asks for. Matches the sync
  *  controller's own initial tail, so the mirror and the read that replaces it
@@ -123,54 +119,33 @@ export function parseKortixSessionScope(
 }
 
 /**
- * Fetch the mirror. Never throws and never surfaces an error toast: a session
- * that has never been captured is an ordinary answer, not a failure, and this
- * read is an accelerator whose absence costs only the old blank wake.
+ * Fetch the saved copy for a host that passed `useSessionSync` no `mirror`.
+ * Never throws and never surfaces an error toast: a session that has never
+ * been captured is an ordinary answer, not a failure, and this read is an
+ * accelerator whose absence costs only the old blank wake.
+ *
+ * The conversation's window is THE saved-history read
+ * (`loadSavedTranscript`): the session-open snapshot's window when one is in
+ * flight or just answered, else the route. `useSession` passes its answer in,
+ * so for a session it owns this never runs. A sub-agent's window is read here,
+ * by `child`: the snapshot carries only the conversation's.
  */
 export async function loadSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
-	limit?: number;
 	signal?: AbortSignal;
 	/** A sub-agent's OpenCode session inside the scope: its own saved window. */
 	child?: string;
 }): Promise<SessionTranscriptSyncEnvelope | null> {
 	const scope = parseKortixSessionScope(input.kortixSessionScope);
 	if (!scope) return null;
-	// A sub-agent's window is never the open bundle's: that one is the
-	// conversation, and it is claimed once, by the conversation.
-	if (input.child) {
-		try {
-			return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
-				limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
-				signal: input.signal,
-				child: input.child,
-			});
-		} catch {
-			return null;
-		}
-	}
-	// The SESSION-OPEN BUNDLE fetches this mirror in the same round trip that
-	// answers the turn and the queue. This hydrate runs at MOUNT, while that
-	// read is still in flight, so it waits for the read it is riding rather
-	// than starting a second one — the wait costs nothing (the bundle is
-	// already on the wire) and saves a full transcript request per open.
-	//
-	// The stash is ONE-SHOT: this is the only reader allowed to paint a
-	// snapshot, and a second paint over a store the runtime has already filled
-	// is how a transcript grows ghosts.
-	const claimed = claimOpenBundle(scope.projectId, scope.sessionId);
-	if (claimed) await claimed;
-	const stashed = takeOpenBundleTranscript(scope.projectId, scope.sessionId);
-	if (stashed) return stashed;
-	// The bundle already answered that there is no saved copy. The transcript
-	// route would answer the same, one round trip later — and a host waiting
-	// on this answer shows placeholder rows until it lands.
-	if (takeOpenBundleTranscriptAbsence(scope.projectId, scope.sessionId)) return null;
 	try {
-		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
-			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
-			signal: input.signal,
-		});
+		return input.child
+			? await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+					limit: MIRROR_HYDRATE_LIMIT,
+					signal: input.signal,
+					child: input.child,
+				})
+			: await loadSavedTranscript(scope.projectId, scope.sessionId, { signal: input.signal });
 	} catch {
 		return null;
 	}
@@ -180,9 +155,9 @@ export async function loadSessionTranscriptMirror(input: {
  * The mirror window OLDER than `before`.
  *
  * Deliberately NOT `loadSessionTranscriptMirror` with an extra argument: that
- * function rides the session-open bundle's one-shot stash, which holds the
- * FIRST window and must never be handed back for a second request. This is
- * always a fresh read.
+ * function can answer from the session-open snapshot, which holds the FIRST
+ * window and must never be handed back for an older one. This is always a
+ * fresh read.
  *
  * `history: true` is not sent. It only adds the server's current-root check,
  * and `shouldHydrateFromMirror` already applies that guard client-side — the

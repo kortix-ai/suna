@@ -430,8 +430,8 @@ export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
 // `KORTIX_CLI_VERSION` share 100 of 102 chunks (98.0%), and the CLI and the
 // daemon share 89 of 102 (87.3%) — but ONLY when both were compiled by the
 // same Bun. The shipped API image uses two (`SANDBOX_AGENT_BUN_VERSION=1.3.11`
-// for the daemon, `BUN_VERSION=1.2` for the CLI), and measured against a
-// deployed preview those two share 0 of 111 chunks. Same-artifact reuse, which
+// for the daemon, `BUN_VERSION` (1.4.3) for the CLI). With the CLI on 1.2,
+// measured against a deployed preview, those two shared 0 of 111 chunks. Same-artifact reuse, which
 // is what a CLI update actually is, is unaffected.
 //
 // FIXED-SIZE, and content-defined chunking is NOT the next increment. The

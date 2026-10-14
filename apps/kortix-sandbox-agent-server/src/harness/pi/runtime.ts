@@ -27,6 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
+import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
 import { loadTools } from '@/services/tools/host'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
@@ -39,12 +40,14 @@ import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
+import { withoutForeignReasoning } from './reasoning'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
 import type { PiSessionSnapshot } from './session-log'
+import { flushSessionLogJournal } from '../shared/session-log-journal'
 
 export type { CompiledAgent }
 
@@ -504,7 +507,7 @@ export class PiRuntime {
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
         streamFn: withAgentSampling(
-          (model, context, options) => this.models!.models.streamSimple(model, context, options),
+          withoutForeignReasoning((model, context, options) => this.models!.models.streamSimple(model, context, options)),
           () => this.sampling(this.compiledAgent(), this.selected!),
         ),
         convertToLlm,
@@ -528,6 +531,12 @@ export class PiRuntime {
       // none, and the workspace is never a config source while a release is in play.
       const packageRoot = this.projectRoot()
       if (packageRoot === null) project.entries = project.entries.filter((entry) => host.parseNpmSource(typeof entry === 'string' ? entry : entry.source))
+      let local: InlineExtension[] = []
+      if (packageRoot && this.releases?.projectRoot()) {
+        const loaded = await import('./extensions/prebuilt').then(({ loadLocalExtensions }) => loadLocalExtensions(packageRoot, project.entries))
+        project.entries = loaded.rest
+        local = loaded.extensions
+      }
       this.pi = await host.createPiSession({
         projectConfigDir: await this.projectConfigDir(),
         agent,
@@ -541,7 +550,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...project.extensions],
+        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -1084,6 +1093,9 @@ export class PiRuntime {
     this.publishSessionUpdated()
     this.publish({ type: 'session.compacted', properties: { sessionID } })
     this.persist()
+    // P2.12: a compaction between turns (`compact()`) has no turn end to flush the
+    // session log, so the stored summary goes now. One inside a turn waits for its end.
+    if (event.result && !this.active) void flushSessionLogJournal()
   }
 
   /** The session row changed (`time.compacting`). */
@@ -1260,7 +1272,7 @@ export class PiRuntime {
     })
     const agent = new core.Agent({
       streamFn: withAgentSampling(
-        (m, context, options) => this.models!.models.streamSimple(m, context, options),
+        withoutForeignReasoning((m, context, options) => this.models!.models.streamSimple(m, context, options)),
         () => this.sampling(this.compiled?.agent?.[input.agent], selected),
       ),
       toolExecution: 'sequential',
@@ -1545,7 +1557,8 @@ export class PiRuntime {
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
       const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
-      return skills
+      // The kortix-genui system skill exists only while the project's `genui` flag is on.
+      return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)
     } catch (err) {
       logger.warn('[pi] skill load failed', { err: (err as Error).message })
       return []

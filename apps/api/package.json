@@ -39,6 +39,7 @@
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
     "@logtail/node": "^0.5.8",
+    "@openuidev/lang-core": "0.3.1",
     "@scalar/hono-api-reference": "^0.10.20",
     "@sentry/bun": "^10.47.0",
     "@supabase/supabase-js": "^2.95.3",
@@ -56,7 +57,7 @@
     "stripe": "^14.0.0",
     "tar": "7.5.21",
     "yaml": "^2.8.2",
-    "zod": "^3.23.0"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@aws-crypto/sha256-js": "5.2.0",

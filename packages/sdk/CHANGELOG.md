@@ -5,6 +5,125 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session-log follow-ups)
+- `sessionLogFullTextPlan(refs)`: which texts stored by reference a host shows
+  inline and which it downloads. The smallest fill the 1 MiB inline budget;
+  only the rest download. Before, a host could only download every text of a
+  turn over 1 MiB in all.
+- `hasRuntimeConfirmedMessage(sessionID, messageID)`
+  (`@kortix/sdk/internal/sync-store`): the store holds the message from a
+  runtime read or a live event, not only from a saved copy.
+
+### Fixed (session-log follow-ups)
+- `useSessionSync` stops offering the saved copy's older pages once the
+  runtime holds the saved window's oldest message and has no older page of
+  its own: `hasOlder` is `false` when the whole history is loaded. Before,
+  the "earlier messages" control stayed after the runtime had answered
+  everything (web and mobile). A box that lost its state still pages its
+  saved history.
+- `toToolView` reads Claude Code edits: `old_string` / `new_string`, the
+  `edits[]` of a `MultiEdit` (blocks joined in order), and a `NotebookEdit`'s
+  `notebook_path` and `new_source`. `toolKind` maps `MultiEdit` and
+  `NotebookEdit` to `edit`; `inputPath` reads `notebook_path`. The
+  `file-edit` view model reads the same blocks.
+
+### Added (block readers a host draws a tool call with)
+- `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),
+  `toolCallRawOutput(call)` (a completed call's text, one string per call
+  object) and `toolCallError(call)` (a failed call's error: the semantic
+  error, else the result text, as `toV1` gives `state.error`, so a native
+  failed call never shows an empty error body).
+- `subAgentCalls(thread)`: the shown tool calls of a sub-agent thread's
+  replies, in order, one array per thread object.
+
+### Changed (session log)
+- `useSession({ chatEngine: false })` negotiates the session log (v2) as
+  `useSession` with its chat engine does: with the runtime's
+  `session.log.v2` and the project flag `session_log`, it reads the first
+  log page and switches the session stream to `schema=v2`, so
+  `useSessionLogThread` serves v2 records to a host that reads its own
+  transcript (apps/mobile).
+- `useSessionLogThread` on v2 places the v1 store rows the log lacks by time,
+  as `useSessionMessages` does: an older page (`loadOlder`) goes before the
+  log's messages, an optimistic send after them. Before, every such row was
+  appended, so older turns rendered after the newest one.
+
+### Changed (one saved-history read per session open)
+- `useSession` reads a session's saved copy once per open. The session-open
+  snapshot carries the first window; the read waits up to 2 s for a snapshot
+  in flight, then asks `GET …/transcript?shape=sync&history=true`. Before,
+  every open with a snapshot in flight downloaded the window twice, and the
+  sync layer could read it a third time (KRTX-189).
+- `useSessionSync` with no `mirror` runs the same read. `useSession` passes
+  its answer as `mirror`: the copy, or `null` while the read runs and when
+  the server holds none. A host that mounts a second `useSessionSync` for the
+  root conversation beside `useSession` passes `mirror: null`. Beside
+  `useSession({ chatEngine: false })`, which makes no saved-history read, and
+  on a `savedChild` hook, the host omits `mirror`: that hook makes the read.
+- A host that passes no `mirror` now gets the server's "no saved copy" answer
+  from the snapshot too, so the device copy is dropped for the next open, as
+  the route answer already did.
+
+### Added (saved copy before `useSession` binds)
+- `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` and
+  `SavedSessionCopy` (`{ envelope, empty }`): the same saved-history read,
+  plus the empty-conversation proof (`isEmptyConversation` over the turn
+  record, read only when the copy proves the root empty). Never throws. For a
+  connecting screen that shows the conversation while the computer wakes;
+  apps/mobile uses it. Additive (KRTX-189).
+- The open that follows `readSavedSessionCopy` downloads the window no second
+  time. The SDK holds the copy for up to 5 min (one wake). The session-open
+  snapshot then asks for the pointer only (`?transcript=0`), and the
+  saved-history read answers from the held copy. Before, the connecting view
+  and the thread after it each downloaded the window.
+  `resetIdentityState` forgets the held copy and the session-open snapshots
+  (KRTX-189).
+
+### Added (bounded review reads)
+- `getReviewSummary(projectId)` and `project(id).review.summary()`
+  (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you
+  counts of the review inbox, `{ needs_you_total, needs_you_by_session }`.
+  Read it for a badge or a per-session indicator instead of the list. A
+  connector call the caller may not resolve counts nowhere. Additive
+  (KRTX-2316).
+- `listReviewItems` takes `sessionId`, `limit` and `cursor`
+  (`ReviewItemsQuery`) and resolves to `ReviewItemsPage`, which adds
+  `next_cursor` (null on the last page). The server now returns one page:
+  50 items by default, at most 200, with Needs you first, then Waiting, then
+  Done, newest first within each. A caller that read the whole inbox from one
+  response pages with `cursor` or passes `segment`. Additive types.
+- `listChangeRequests` takes `cursor` and its response adds `next_cursor`.
+  The server now returns one page: 50 change requests by default, at most
+  500 (a larger `limit` answers 400, it no longer clamps). Additive types.
+  `project(id).changeRequests.list(status?, options?)` passes both through,
+  so the facade can page as well. Additive (a widened parameter list).
+- React (`@kortix/sdk/react`): `useReviewSummary(projectId)` (polls every
+  60 s), `useReviewItemPages(projectId, query)` (an infinite query; read the
+  rows with `reviewItemsOf(query.data)`), `nextReviewItemsCursor`, and the
+  keys `qk.project.reviewSummary`, `qk.project.reviewItemsScope` and
+  `qk.project.reviewItemPages`. Additive.
+
+### Added (who may decide an approval)
+- `SessionAuditAction.can_resolve`: true only on an unresolved connector call
+  the viewer may approve or deny, the verdict `resolveApproval` would get
+  (today a project manager, or the session's launcher unless an API token or a
+  service account started the session). False on every other
+  row. Show Approve / Deny only when it is true. Also on the session snapshot's
+  `audit` leg. Optional, absent on an older server. Additive (KRTX-1724).
+- `ApiReviewItem.can_resolve` (connector-call items) and
+  `ReviewApprovalAction.canResolve`, set by `mapApiReviewItem`. A viewer who
+  may not decide the call gets it with status `waiting`, not `needs_you`. On an
+  older server `canResolve` follows `args_preview_authorized`, which the same
+  rule decided. Additive.
+- `reviewVerdictAllowed` refuses approve and reject on a connector call whose
+  `canResolve` is false.
+- `SessionAuditAction.resolvers`, `ApiReviewItem.resolvers` and
+  `ReviewApprovalAction.resolvers` (set by `mapApiReviewItem`): who decides a
+  pending call, for a viewer whose `can_resolve` is false. `managers` for a
+  session started with an API token or a service account (`origin: 'backend'`),
+  else `managers_and_launcher`. Null on a settled audit row; optional, absent
+  on an older server. Additive (KRTX-1724).
+
 ### Added (undecryptable stored values)
 - `ProjectSecret.status` and `AccountSecretResource.status`: `'ok'`, or
   `'undecryptable'` when the server can no longer decrypt the stored value

@@ -688,6 +688,8 @@
       "themeDescription": "选择 Kortix 在此设备上的外观。",
       "conversationDensity": "对话密度",
       "conversationDensityDescription": "选择智能体工作时在对话中显示多少细节。",
+      "richAnswers": "丰富回答",
+      "richAnswersDescription": "在回答中以可视化方式显示对比、表格、图表和地图。关闭后，回答以文本显示相同内容。",
       "wallpaper": "壁纸",
       "wallpaperDescription": "项目背后的背景。",
       "defaultWallpaper": "默认",
@@ -1208,6 +1210,10 @@
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
         },
+        "genui": {
+          "name": "生成式 UI",
+          "description": "智能体可以用卡片、对比、图表、地图和标签页来回答，而不是输出长篇文字。"
+        },
         "reminders": {
           "name": "提醒",
           "description": "让代理和用户在会话上安排一次性或重复的检查。每次触发都会重新提示该会话。新增提醒页面、会话提醒标记和 `kortix remind`。"
@@ -1226,19 +1232,11 @@
         },
         "volumes": {
           "name": "卷",
-          "description": "为此项目提供共享文件和基于卷的会话。"
-        },
-        "stateless_sessions": {
-          "name": "无状态会话",
-          "description": "每次唤醒都是全新的计算机，只保留文件和聊天。需要先开启卷。"
+          "description": "为此项目提供共享文件。"
         },
         "drives": {
           "name": "云盘",
           "description": "与会话保持同步的共享文件夹：你自己的云盘、每个智能体一个云盘，以及管理员关联到项目的公司云盘。新会话可在 /drives 下看到它们。"
-        },
-        "ephemeral_sandboxes": {
-          "name": "临时沙盒",
-          "description": "停止的会话会把文件和对话保存在卷上，并释放其计算机。唤醒时会用最新镜像启动一台新计算机。正在运行的进程不会在停止后保留。"
         },
         "session_log": {
           "name": "会话日志 v2",
@@ -1905,6 +1903,26 @@
       "commandsAndActions": "命令和操作",
       "toUse": "以使用",
       "use": "使用"
+    },
+    "history": {
+      "restoreTitle": "部分较早的内容无法恢复",
+      "restoreMissing": "缺少：{items}。",
+      "restoreAgent": "智能体已获知缺少的内容。",
+      "restoreDismiss": "关闭恢复通知",
+      "missingAttachment": "{count, plural, other {# 个附件}}",
+      "missingText": "{count, plural, other {# 段长文本}}",
+      "missingToolInput": "{count, plural, other {# 个工具输入}}",
+      "missingToolResult": "{count, plural, other {# 个工具结果}}",
+      "missingCutPoint": "{count, plural, other {# 个压缩点}}",
+      "missingOther": "{count, plural, other {# 个其他项目}}",
+      "restoreNote": "会话已从保存的历史中恢复",
+      "harnessSwitch": "改用 {harness} 继续",
+      "showOutOfContext": "显示上下文之外的消息",
+      "fullTextPreview": "{count, plural, other {此处 # 段长文本只显示前 16 kB。}}",
+      "fullTextShow": "显示全文（{size}）",
+      "fullTextDownload": "下载全文（{size}）",
+      "fullTextError": "无法加载全文。",
+      "fullTextRetry": "重试"
     }
   },
   "agents": {
@@ -5755,7 +5773,6 @@
       "line175JsxTextOpenInTabInstead": "改为在标签页中打开"
     },
     "componentsDashboardConnectingScreen": {
-      "line156JsxAttrTitleRuntimeDegraded": "运行时降级",
       "line422JsxTextCouldnAposTStart": "无法启动",
       "line469JsxTextIsStopped": "已停止",
       "line472JsxTextOpenANewSessionOrReturnToProjects": "打开新会话或返回项目以继续。",
@@ -10902,7 +10919,6 @@
       "text26eb1bc45b53": "默认拒绝",
       "text26ecc76c0ce9": "删除此令牌？",
       "text26ee1166df63": "更改将在下次提示时生效。",
-      "text26f0dd993530": "正在自动重试",
       "text27042f4e6eca": "右",
       "text270ba743dc3c": "Cron 计划和签名 Webhook 可在无人值守时启动 Kortix 会话。每个触发器都会指定运行它的代理、携带提示模板，并通过人员批准的变更请求提交工作。",
       "text271189ae389a": "开始时间",
@@ -11429,7 +11445,13 @@
       "text370145ffb7ba": "已跳过邮件 — 请复制邀请链接手动分享",
       "text37023affd996": "还有更多未显示",
       "text37056f2381e2": "prop，或上传文件。",
-      "text37074af6784c": "{value0} 成员{value1} 失去对{value2} 的访问权限。",
+      "text586a24125900": "{count, plural, other {# 名成员}}将失去对 {account} 的访问权限。",
+      "text4e9efdcbbcbe": "（另有 {count} 个 — 请查看控制台）",
+      "text65ef045d1ffa": "内容 {value0}",
+      "text3028bf7d2dec": "移除{value0}",
+      "textd0166fa53db8": "上传{value0}",
+      "text3cc3767e7032": "已上传",
+      "text95e154398a4b": "替换",
       "text373570b711c7": "包括筛选条件、日期边界、删除的行及原因。未记录排除项的分析不算分析，而查询中的注释是保存它们最廉价的地方。",
       "text3738dea54aaa": "更新范围失败",
       "text373a23b43a0b": "平移X(计算((var(--tile) + var(--gap)) / 2))",
@@ -11852,7 +11874,6 @@
       "text429bbfa117e2": "移动应用",
       "text429be41120e9": "无需离开对话即可运行项目。",
       "text429ffbbaa586": "轻松连接",
-      "text42b3d52014ba": "工作区离线",
       "text42b8d7c5357a": "沙盒未确认重新加载",
       "text42bcffb92597": "以此成员身份查看",
       "text42bd94c06205": "状态（圆点、徽章、差异）",
@@ -15253,7 +15274,6 @@
       "texta4a83d949891": "压缩会话失败",
       "texta4b4b51ec474": "translate(-50%, -100%)",
       "texta4b6a3d9d629": "kortix init 可将任意目录变成 Kortix。kortix ship 让它上线。从此以后，它就是一个由你拥有的仓库——可版本化、可查看差异，并通过一次次经过审查的变更持续自我改进。",
-      "texta4c128e48978": "主机可访问，但核心工作区运行时无法处理请求。重启运行时或工作负载以恢复服务。",
       "texta4c297b580ad": "- 跟进逾期款项，超过 30 天则升级处理",
       "texta4c7fa51a957": "未找到分支",
       "texta4c9215859a8": "已移除项目成员",
@@ -17143,7 +17163,6 @@
       "textd938438f232e": "Webhook 身份验证",
       "textd942e3dc737b": "docs.kortix.com",
       "textd948c285986a": "Slack 已断开连接",
-      "textd94a83e48b64": "无法访问此工作区。返回项目并打开或创建另一个会话。",
       "textd952c0d7b0b0": "调用时注入",
       "textd95934d15292": "搜索 5,000+ 个 API、MCP 服务器和 OAuth 应用",
       "textd96a37fc02f0": "替换密码",
@@ -17535,7 +17554,6 @@
       "texte478b984a2d9": "按真实状态读取跟踪器——问题、状态、链接、评论——并在允许的范围内将整理后的结果写回。跟踪器仍是事实来源；代理不会成为第二个事实来源。",
       "texte47b85588c7c": "任何使用“{value0}”的 IdP 将立即失去访问权限。此操作无法撤消 - 您需要创建一个新令牌才能重新连接。",
       "texte47c8bae740d": "复制密钥",
-      "texte48034ba91dd": "工作区服务不可用",
       "texte4855e715f70": "    sandbox: python",
       "texte493d2f8af71": "高级选项 → 自定义 group claim 的名称",
       "texte4a075134e2b": "无需特殊要求 — 此项目开箱即用。",
@@ -19677,75 +19695,16 @@
     "approvalPage": {
       "title": "批准 {connector} 操作"
     },
+    "approvalWaiting": {
+      "byManager": "等待管理此项目的人批准或拒绝此次调用。",
+      "byName": "等待 {name} 或管理此项目的人批准或拒绝此次调用。",
+      "byOwner": "等待启动此会话的人或管理此项目的人批准或拒绝此次调用。",
+      "copyLink": "复制审批链接"
+    },
     "secretIntakeWithheld": {
       "title": "已保存，但 {agent} 暂时无法读取",
       "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
       "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
-    },
-    "appAdminVolumesPage": {
-      "modeImage": "镜像",
-      "modeImageDetail": "仅使用会话镜像。",
-      "modeImageRequested": "请求镜像：{count}",
-      "modeArtifacts": "镜像 + 制品",
-      "modeArtifactsDetail": "另加最新运行时的启动制品卷。",
-      "modeArtifactsRequested": "请求镜像 + 制品：{count}",
-      "modeVolume": "卷",
-      "modeVolumeDetail": "临时计算机，会话状态保存在卷上，另加制品。",
-      "modeVolumeRequested": "请求卷：{count}",
-      "reasonSessionVolume": "会话卷",
-      "reasonArtifactsVolume": "制品卷",
-      "reasonVolumeMount": "卷挂载",
-      "reasonTimeout": "超时",
-      "reasonBootHealth": "计算机始终未就绪",
-      "reasonOther": "其他",
-      "fallBackToTheImage": "回退到镜像",
-      "fallBackToImage": "回退到镜像",
-      "saved": "启动模式已保存",
-      "saveFailed": "无法保存启动模式",
-      "title": "启动模式",
-      "description": "开启卷的项目中新会话如何启动，以及会采取哪些回退步骤。卷和无状态会话是项目的功能开关，不在此处设置。更改会在 30 秒内同步到所有 API 进程。",
-      "discard": "放弃",
-      "save": "保存",
-      "off": "关闭",
-      "bootModeTitle": "启动模式",
-      "bootModeDescription": "开启卷的项目中新会话的启动方式。开启无状态会话的项目会在卷上启动。",
-      "defaultModeTitle": "默认模式",
-      "killSwitchTitle": "紧急开关：所有新会话均从镜像启动",
-      "killSwitchDetail": "一次性覆盖所有模式；文件和云盘保持不变。若会话的文件已在卷上，该会话保留其卷。",
-      "killSwitchLabel": "紧急开关",
-      "last24HoursTitle": "过去 24 小时",
-      "last24HoursDescription": "以各模式启动的会话及其发生的回退。在卷提供方上统计。",
-      "columnFallback": "回退",
-      "columnReason": "原因",
-      "columnCount": "次数",
-      "columnLatestError": "最近错误",
-      "noFallbacks": "过去 24 小时内没有回退。",
-      "countsUnavailable": "无法获取统计：{error}",
-      "unknownError": "未知错误",
-      "fallbackTitle": "回退",
-      "fallbackDescription": "启动持续失败的会话会降一级，每个会话仅一次；之后停留在已达到的模式。文件已在卷上的会话绝不会离开该卷。",
-      "after": "连续",
-      "failedBoots": "次启动失败后",
-      "volumeAttemptsLabel": "卷尝试次数",
-      "artifactsAttemptsLabel": "制品尝试次数",
-      "lastStepNote": "（默认开启，除非默认模式关闭最后一步）",
-      "whereModesApplyTitle": "模式适用范围",
-      "whereModesApplyDescription": "提供方和部署开关来自服务器环境。可在此设置制品卷；留空则使用环境中的值。",
-      "volumeProviderTitle": "卷提供方：{provider}",
-      "volumeProviderConfigured": "已配置。其上的会话按规则选择的模式启动。",
-      "volumeProviderNotConfigured": "未配置：所有会话均从镜像启动。",
-      "ready": "就绪",
-      "otherProvidersTitle": "其他提供方：{providers}",
-      "otherProvidersDriveSync": "始终从镜像启动。云盘通过云盘同步到达这些提供方。",
-      "otherProvidersNoDriveSync": "始终从镜像启动。云盘同步已关闭，因此使用云盘的项目留在卷提供方上。",
-      "imageOnly": "仅镜像",
-      "artifactsVolumeTitle": "制品卷",
-      "artifactsVolumeSet": "镜像 + 制品或卷模式下的会话会挂载 {source}。",
-      "artifactsVolumeFromEnvironment": "镜像 + 制品或卷模式下的会话会挂载 {source}（来自环境）。",
-      "artifactsVolumeNone": "未设置：制品模式按仅有镜像的方式启动。",
-      "artifactsVolumeLabel": "制品卷和标签",
-      "ephemeralSandboxesOff": "此部署中 {variable} 已关闭：无状态会话会以镜像 + 制品启动。",
-      "nothingSaved": "尚未保存任何设置：开启卷的项目会从镜像启动。"
     }
   },
   "projectOnboarding": {
@@ -20202,7 +20161,8 @@
     "verified": "已验证",
     "invalidCode": "该验证码无效。请检查身份验证器应用后重试。",
     "noFactorTitle": "设置双重身份验证",
-    "noFactorDescription": "此操作需要双重身份验证。请在“设置 → 安全”中添加身份验证器应用，然后重试。"
+    "noFactorDescription": "此操作需要双重身份验证。请在“设置 → 安全”中添加身份验证器应用，然后重试。",
+    "setUp": "设置身份验证器"
   },
   "connectorPages": {
     "install": "安装",
@@ -20766,5 +20726,23 @@
     "you": "你",
     "manageFolderAccess": "管理访问权限",
     "viewFolderAccess": "查看访问权限"
+  },
+  "genui": {
+    "showData": "显示数据",
+    "openImage": "打开图片",
+    "viewAllImages": "查看全部 {count} 张",
+    "pieFocus": "{label} 占总数的 {percent}%",
+    "pieOfTotal": "{total} 中的 {value}",
+    "directions": "路线",
+    "call": "致电",
+    "website": "网站",
+    "label": "标签",
+    "value": "数值",
+    "map": "地图",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "mapTwoFingers": "使用双指移动地图",
+    "pick": "推荐",
+    "convertFailed": "无法准备对话记录。请重试。"
   }
 }

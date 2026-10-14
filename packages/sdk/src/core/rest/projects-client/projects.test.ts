@@ -965,7 +965,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'apps',
     'connectors_api_discover',
     'drives',
-    'ephemeral_sandboxes',
     'llm_gateway',
     'marketplace',
     'meta_agent',
@@ -974,6 +973,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'secrets_egress',
     'pooled_provider_secrets',
     'pi_harness',
+    'genui',
     'us_region',
     'event_triggers',
     'warm_sessions',
@@ -981,7 +981,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'session_log',
     'session_log_restore',
     'volumes',
-    'stateless_sessions',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);

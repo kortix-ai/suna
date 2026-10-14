@@ -12,7 +12,6 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   SubAgentActivity,
   SubAgentStatusBanner,
-  subAgentCalls,
   useSubAgentThread,
 } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -22,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { getChildSessionId, getToolInfo } from '@/ui';
 import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
+import { subAgentCalls } from '@kortix/sdk';
 
 /**
  * The way into the sub-agent's own session, pinned to the right edge of the row.

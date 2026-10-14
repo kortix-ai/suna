@@ -790,6 +790,34 @@ describe('pi harness', () => {
     }
   })
 
+  test('the kortix-genui skill is listed only while KORTIX_GENUI=1', async () => {
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    for (const name of ['kortix-memory', 'kortix-genui']) {
+      mkdirSync(join(managed, name), { recursive: true })
+      writeFileSync(join(managed, name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`)
+    }
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      for (const [flag, listed] of [['1', true], ['0', false]] as const) {
+        const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_GENUI: flag } })
+        const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+        expect(skills.map((s) => s.name).sort()).toEqual(listed ? ['kortix-genui', 'kortix-memory'] : ['kortix-memory'])
+        const root = r.service.runtime()!.rootId
+        const before = gateway.sent.length
+        expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+        await waitFor(() => !r.service.runtime()!.busy())
+        const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
+        expect(system.includes('kortix-genui')).toBe(listed)
+        expect(system).not.toContain('Generative UI')
+      }
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+      rmSync(managed, { recursive: true, force: true })
+    }
+  })
+
   test('agent shells source the live agent env file through BASH_ENV (W1 B4)', async () => {
     // The egress shim's proxy + CA variables exist only in that file; a
     // non-interactive `bash -c` reads it only through BASH_ENV.
@@ -2279,6 +2307,44 @@ describe('config releases on pi', () => {
     const second = await ask(r, 'second question')
     expect(second).toContain('PACKAGE-V2')
     expect(second).not.toContain('PACKAGE-V1')
+  })
+
+  test('a ./ pi package in a release loads by native import: host modules resolve, a restart on the same release does not re-run it', async () => {
+    const evals = '__kortixTestNativeEvals'
+    const warn = spyOn(logger, 'warn')
+    // A helper beside the entry, and a value import of a module pi hands every extension: the release dir has no node_modules.
+    write(repo, 'extensions/lib.ts', `import { Type } from 'typebox'\nexport const marker = (v: string): string => (Type.String() ? v : '')\n`)
+    write(
+      repo,
+      'extensions/native.ts',
+      `import { marker } from './lib.ts'\n(globalThis as any).${evals} = ((globalThis as any).${evals} ?? 0) + 1\n` +
+        `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n' + marker('NATIVE-V1') }))\n`,
+    )
+    write(repo, 'extensions/broken.ts', `throw new Error('broken at import')\n`)
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'native'), null, { projectId: 'proj-pi-test', governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'P' } } }) }))
+    const r = await boot({
+      script: [{ text: 'first' }, { text: 'second' }],
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/native.ts', './extensions/broken.ts']) },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+    })
+    const runtime = r.service.runtime()!
+    try {
+      // Only the file whose import throws goes to pi's loader, which reports it; the session runs.
+      expect(warn.mock.calls.filter(([message]) => message === '[pi] project extension loads through pi').map(([, fields]) => fields)).toEqual([
+        { source: './extensions/broken.ts', reason: 'broken at import' },
+      ])
+      expect(runtime.extensionStatus().failed).toEqual([{ name: expect.stringMatching(/\/extensions\/broken\.ts$/), error: expect.stringContaining('broken at import') }])
+      expect(runtime.extensionStatus().loaded.some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/extensions/native.ts'))).toBe(true)
+      expect(await ask(r, 'first question')).toContain('NATIVE-V1')
+      expect((globalThis as Record<string, unknown>)[evals]).toBe(1)
+      // The release dir is content-addressed, so the module Bun cached for its path is still this file.
+      await runtime.restart()
+      expect((globalThis as Record<string, unknown>)[evals]).toBe(1)
+      expect(await ask(r, 'second question')).toContain('NATIVE-V1')
+    } finally {
+      warn.mockRestore()
+      delete (globalThis as Record<string, unknown>)[evals]
+    }
   })
 
   test('config releases off: pi reads the working tree, and the box still advertises the capability', async () => {

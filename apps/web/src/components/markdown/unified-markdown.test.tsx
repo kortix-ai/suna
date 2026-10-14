@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { UnifiedMarkdown } from './unified-markdown';
+import { MarkdownImage, UnifiedMarkdown } from './unified-markdown';
 import { prepareMarkdownSource } from './unified-markdown-utils';
 
 function withIntl(node: ReactNode) {
@@ -324,6 +324,23 @@ describe('prepareMarkdownSource — a setup link while it streams', () => {
   test('settled text is never held, even when it ends inside a link', () => {
     const source = prepareMarkdownSource(streamedPrefix('/connect/ksl_AAA'), false);
     expect(source).not.toContain(PENDING_HREF);
+  });
+});
+
+describe('prepareMarkdownSource — currency dollars', () => {
+  const FENCE = '```openui\nroot = Table(["Plan","Price"], [["Basic","$10"]])\n```';
+
+  test('prose currency is escaped so it is not read as inline math', () => {
+    expect(prepareMarkdownSource('Basic costs $10.', false)).toBe('Basic costs \\$10.');
+  });
+
+  test('a generative UI fence keeps its dollars as written, settled and while it streams', () => {
+    expect(prepareMarkdownSource(`Plans:\n\n${FENCE}`, false)).toContain('"$10"');
+    expect(prepareMarkdownSource(`Plans:\n\n${FENCE.slice(0, -4)}`, true)).toContain('"$10"');
+  });
+
+  test('inline code keeps its dollars as written', () => {
+    expect(prepareMarkdownSource('Run `echo $1` now.', false)).toBe('Run `echo $1` now.');
   });
 });
 
@@ -682,5 +699,23 @@ describe('UnifiedMarkdown — a link to a workspace file', () => {
     );
 
     expect(html).not.toContain('<button');
+  });
+});
+
+describe('MarkdownImage — a remote image in untrusted content', () => {
+  const SRC = 'https://img.example.test/a.png';
+  test('the default placeholder is a labelled button with the host text', () => {
+    const html = renderToStaticMarkup(withIntl(<MarkdownImage src={SRC} flush />));
+    expect(html).toMatch(/<button[^>]*>[\s\S]*<span class="truncate">/);
+  });
+
+  test('compact: an icon-only button that fills its thumbnail and keeps its name in aria-label and title', () => {
+    const html = renderToStaticMarkup(withIntl(<MarkdownImage src={SRC} flush compact />));
+    const button = html.match(/<button[^>]*>/)![0];
+    expect(button).toContain('size-full');
+    expect(button).toMatch(/aria-label="[^"]+"/);
+    expect(button).toMatch(/title="[^"]+"/);
+    expect(html).not.toContain('class="truncate"');
+    expect(html).not.toContain('<img');
   });
 });
