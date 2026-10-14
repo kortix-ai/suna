@@ -52,7 +52,10 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  */
 const NO_REFRESH = { status: 'skipped' as const };
 
-const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'`;
+// Not tombstoned too: a `genui` flag change deletes warm sessions with the
+// marker kept (retireWarmProjectSessions), and neither adoption CAS may revive one.
+const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'
+  AND coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
 // Platinum's default/home compute placement; unrelated to Kortix deployment geography.
 const PLATINUM_HOME_REGION = 'eu-west';
 const WARM_PROVISIONING_STATUSES = ['queued', 'branching', 'provisioning'] as const;
