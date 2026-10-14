@@ -63,7 +63,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/stores/upgrade-sheet-store': { useUpgradeSheetStore: (selector: any) => selector(upgradeStore) },
   '@/lib/projects/hooks': { useProject: () => ({ data: project }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
   '@tanstack/react-query': { useQueryClient: () => queryClient },
-  '@/lib/review/use-review': { useReviewItems: () => ({ data: reviewData }) },
+  '@/lib/review/use-review': { useReviewNeedsYou: () => ({ total: reviewData.length, items: reviewData }) },
   '@/lib/session/needs-you': { needsYouBySession: (items: any[], summary?: any) => new Map([...items.map((item): [string, any] => [item.session_id, item]), ...Object.entries(summary?.sessions ?? {})]) },
   '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
     sessionStartKey: (projectId: string, sessionId: string) => ['start', projectId, sessionId],

@@ -92,13 +92,9 @@ import {
   useProjectSessions,
 } from '@/lib/projects/hooks';
 import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
-import { useReviewItems } from '@/lib/review/use-review';
+import { useReviewNeedsYou } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import {
-  countReviewItemsBySegment,
-  runtimeSessionsOf,
-  sessionParentId,
-} from '@kortix/sdk';
+import { runtimeSessionsOf, sessionParentId } from '@kortix/sdk';
 import { KortixProjectProvider, useNotificationInbox, useSessionsNeedingInput } from '@kortix/sdk/react';
 import { NOTIFICATION_INBOX_LIMIT } from '@/lib/notifications/inbox';
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
@@ -259,19 +255,18 @@ export function ProjectScreen() {
   // Review items that wait for the user. The project sheet that used to show
   // this as its Review row's badge is deleted (COR-123/COR-160 Task 3); the
   // drawer's Review row carries the same count now (Task 4). Open change
-  // requests are among them (the API adapts them into the list).
-  const reviewItems = useReviewItems(projectId ?? null, { poll: isFocused });
-  const reviewNeedsYouCount = useMemo(
-    () => countReviewItemsBySegment(reviewItems.data ?? []).needs_you,
-    [reviewItems.data]
-  );
+  // requests are among them (the API adapts them into the list). The root
+  // polls the counts only (`GET /review/summary`); the items behind them load
+  // only when the counts change (KRTX-2316).
+  const reviewNeedsYou = useReviewNeedsYou(projectId ?? null, { poll: isFocused });
+  const reviewNeedsYouCount = reviewNeedsYou.total;
   // The same items per originating session, plus the sessions whose agent
   // waits on a question (GET needs-input, polled every 30 s while this screen
   // is focused; KRTX-1739): the drawer's Needs you group.
   const needsInput = useSessionsNeedingInput(projectId ?? '', { enabled: isFocused });
   const needsYouSessions = useMemo(
-    () => needsYouBySession(reviewItems.data ?? [], needsInput.data),
-    [reviewItems.data, needsInput.data]
+    () => needsYouBySession(reviewNeedsYou.items, needsInput.data),
+    [reviewNeedsYou.items, needsInput.data]
   );
 
   // The caller's notifications across every project (KRTX-1742): the drawer's

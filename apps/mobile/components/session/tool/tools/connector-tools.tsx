@@ -277,6 +277,9 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
 }
 ToolRegistry.register('kortix-connectors_describe', ConnectorDescribeTool);
 
+/** The review read the approval prompt polls: every pending approval, one page. */
+const PENDING_APPROVALS = { kind: 'approval', limit: 200 } as const;
+
 /**
  * ConnectorApprovalPrompt — a pending `kortix-connectors_call` approve/deny,
  * inline under its tool row (COR-158, connector remainder). The call is a
@@ -316,9 +319,11 @@ function ConnectorApprovalPrompt({
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
   const [localDecision, setLocalDecision] = useState<'approve' | 'deny' | null>(null);
-  // Poll the review list only while the answer can still change.
+  // Poll the review list only while the answer can still change. The pending
+  // approvals only: the inbox is paged, and a pending call is never history
+  // (KRTX-2316).
   const [polling, setPolling] = useState(true);
-  const review = useReviewItems(projectId, { poll: polling });
+  const review = useReviewItems(projectId, { poll: polling, query: PENDING_APPROVALS });
   // The call's own verdict rides on its single action (`canResolve`), and so
   // does who decides it (`resolvers`).
   const reviewItems = useMemo(
