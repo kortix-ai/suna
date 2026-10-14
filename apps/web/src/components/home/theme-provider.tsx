@@ -1,33 +1,32 @@
 'use client';
 
 import {
-  applyInterfaceThemes,
-  isThemedSurface,
   normalizeDarkTheme,
   normalizeLightTheme,
+  syncInterfaceThemes,
 } from '@/lib/interface-themes';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
+import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
 /**
  * Mirrors the stored light and dark palettes onto `<html>` as
- * `data-light-theme` / `data-dark-theme` while a themed route is showing.
- * `INTERFACE_THEME_INIT_SCRIPT` sets them before first paint and
- * `ThemedSurface` on navigation; this keeps them current when the person picks
- * another theme.
+ * `data-light-theme` / `data-dark-theme` while a themed route (/new,
+ * /projects/**, /settings) is showing, and clears them on every other page.
+ * `INTERFACE_THEME_INIT_SCRIPT` covers the first paint of a page load; this
+ * covers client-side navigation and a new pick. A layout effect, so the
+ * change lands in the same frame as the route that caused it.
  */
 function ThemeChoiceSync() {
   const light = useUserPreferencesStore((s) => normalizeLightTheme(s.preferences.lightTheme));
   const dark = useUserPreferencesStore((s) => normalizeDarkTheme(s.preferences.darkTheme));
 
-  React.useEffect(() => {
-    const root = document.documentElement;
-    // Only /new, /projects and /settings are themed; every other page keeps
-    // the brand palette.
-    if (!isThemedSurface(root)) return;
-    applyInterfaceThemes(root, { light, dark });
-  }, [light, dark]);
+  const pathname = usePathname();
+
+  React.useLayoutEffect(() => {
+    syncInterfaceThemes(document.documentElement, pathname, { light, dark });
+  }, [pathname, light, dark]);
 
   return null;
 }

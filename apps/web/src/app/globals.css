@@ -598,8 +598,8 @@
  *
  * <html> carries `data-light-theme` / `data-dark-theme` (lib/interface-themes.ts),
  * only on the themed product routes — /new, /projects/**, /settings — where
- * INTERFACE_THEME_INIT_SCRIPT sets them before paint and ThemedSurface keeps
- * them in sync (see "Themed surface" in that file). Every other page (auth,
+ * INTERFACE_THEME_INIT_SCRIPT sets them before paint and ThemeChoiceSync keeps
+ * them in sync on navigation (see "Themed routes" in that file). Every other page (auth,
  * marketing, pricing, SEO, checkout, invites, system pages) has no attribute,
  * matches none of these blocks, and keeps the generated kortix-brand palette
  * above. `next-themes` still owns the `.dark` class everywhere.

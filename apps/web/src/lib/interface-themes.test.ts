@@ -15,10 +15,12 @@ import {
   applyInterfaceThemes,
   clearInterfaceThemes,
   interfaceThemeFor,
+  isThemedPath,
   isThemedSurface,
   normalizeDarkTheme,
   normalizeLightTheme,
   resolveInterfaceTheme,
+  syncInterfaceThemes,
   type TerminalTheme,
   type ThemeChoice,
 } from './interface-themes';
@@ -169,7 +171,11 @@ describe('interface theme model', () => {
 });
 
 /** Runs the inline `<head>` script against a fake document and storage. */
-function runInitScript(stored: string | null, throwOnRead = false): Record<string, string> {
+function runInitScript(
+  stored: string | null,
+  throwOnRead = false,
+  pathname = '/projects',
+): Record<string, string> {
   const attributes: Record<string, string> = {};
   const document = {
     documentElement: {
@@ -184,7 +190,11 @@ function runInitScript(stored: string | null, throwOnRead = false): Record<strin
       return stored;
     },
   };
-  new Function('document', 'localStorage', INTERFACE_THEME_INIT_SCRIPT)(document, localStorage);
+  new Function('document', 'localStorage', 'location', INTERFACE_THEME_INIT_SCRIPT)(
+    document,
+    localStorage,
+    { pathname },
+  );
   return attributes;
 }
 
@@ -216,6 +226,25 @@ describe('INTERFACE_THEME_INIT_SCRIPT', () => {
     expect(runInitScript(blob({ lightTheme: 'light-blue', darkTheme: 'graphite' }))).toEqual(
       defaults,
     );
+  });
+
+  test('themes only /new, /projects/** and /settings, before first paint', () => {
+    const stored = blob({ lightTheme: 'light', darkTheme: 'dracula-default' });
+    const themed = { 'data-light-theme': 'light', 'data-dark-theme': 'dracula-default' };
+    for (const path of ['/new', '/projects', '/projects/p1/sessions/s1', '/settings/appearance']) {
+      expect(runInitScript(stored, false, path)).toEqual(themed);
+    }
+    for (const path of [
+      '/',
+      '/auth',
+      '/pricing',
+      '/checkout',
+      '/invites/x',
+      '/newsroom',
+      '/projectsx',
+    ]) {
+      expect(runInitScript(stored, false, path)).toEqual({});
+    }
   });
 
   test('blocked storage or bad JSON never throws', () => {
@@ -284,17 +313,39 @@ describe('themed surface', () => {
     );
   });
 
-  const read = (path: string) =>
-    readFileSync(join(import.meta.dir, '../app/[locale]', path), 'utf8');
-
-  test('only /new, /projects and /settings opt in', () => {
-    for (const route of ['(app)/new', '(app)/projects', '(app)/settings']) {
-      const layout = read(`${route}/layout.tsx`);
-      expect(layout).toContain('INTERFACE_THEME_INIT_SCRIPT');
-      expect(layout).toContain('<ThemedSurface />');
+  test('the decision is the URL: themed routes in, everything else out', () => {
+    for (const path of ['/new', '/projects', '/projects/p1', '/settings', '/de/projects/p1']) {
+      expect(isThemedPath(path)).toBe(true);
     }
-    for (const layout of ['layout.tsx', '(app)/layout.tsx', '(public)/(marketing)/layout.tsx']) {
-      expect(read(layout)).not.toContain('INTERFACE_THEME_INIT_SCRIPT');
+    for (const path of ['/', '/auth', '/pricing', '/checkout', '/connections', '/invites/x']) {
+      expect(isThemedPath(path)).toBe(false);
+    }
+    expect(isThemedPath('/newsroom')).toBe(false);
+    expect(isThemedPath(null)).toBe(false);
+  });
+
+  test('syncing themes a themed route and clears any other page', () => {
+    const { attrs, element } = fakeRoot({ class: 'dark' });
+    const choice = { light: 'iceberg-light', dark: 'dracula-default' };
+    syncInterfaceThemes(element, '/projects/p1', choice);
+    expect(Object.fromEntries(attrs)).toEqual({
+      class: 'dark',
+      'data-light-theme': 'iceberg-light',
+      'data-dark-theme': 'dracula-default',
+    });
+    syncInterfaceThemes(element, '/auth', choice);
+    expect(Object.fromEntries(attrs)).toEqual({ class: 'dark' });
+  });
+
+  // The (app) auth / MFA gate paints before any route layout mounts, so the
+  // theme is decided at the root — never by a script or effect inside a route.
+  test('the root layout carries the init script; no route layout does', () => {
+    const app = join(import.meta.dir, '../app/[locale]');
+    expect(readFileSync(join(app, 'layout.tsx'), 'utf8')).toContain('INTERFACE_THEME_INIT_SCRIPT');
+    const glob = new Bun.Glob('**/layout.tsx');
+    for (const file of glob.scanSync(app)) {
+      if (file === 'layout.tsx') continue;
+      expect(readFileSync(join(app, file), 'utf8')).not.toContain('INTERFACE_THEME_INIT_SCRIPT');
     }
   });
 });

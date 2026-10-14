@@ -9,7 +9,12 @@ import {
   zoomOut,
   zoomReset,
 } from '@/lib/desktop';
-import { normalizeDarkTheme, normalizeLightTheme } from '@/lib/interface-themes';
+import {
+  DEFAULT_THEME_CHOICE,
+  isThemedPath,
+  normalizeDarkTheme,
+  normalizeLightTheme,
+} from '@/lib/interface-themes';
 import { projectIdFromPathname } from '@/stores/project-switch-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -30,10 +35,17 @@ export function DesktopChrome() {
   const pathname = usePathname();
   const router = useRouter();
 
+  // The window's launch background follows the page the person is on: their
+  // palette on a themed route, the default palette (the brand look) elsewhere,
+  // so the auth screen never opens on a Dracula background.
+  const themed = isThemedPath(pathname);
   useEffect(() => {
     if (!isDesktop() || !theme) return;
-    void setDesktopNativeTheme(theme, { light: lightTheme, dark: darkTheme });
-  }, [theme, lightTheme, darkTheme]);
+    void setDesktopNativeTheme(
+      theme,
+      themed ? { light: lightTheme, dark: darkTheme } : DEFAULT_THEME_CHOICE,
+    );
+  }, [theme, lightTheme, darkTheme, themed]);
 
   useEffect(() => {
     if (!isDesktop()) return;

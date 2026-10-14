@@ -12,6 +12,8 @@
  * resolves to Pure light and Pure dark.
  */
 
+import { locales } from '@/i18n/config';
+
 import terminalThemes from './kortix-themes.generated.json';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -136,14 +138,25 @@ export function applyInterfaceThemes(element: Element, choice: ThemeChoice): voi
 export const USER_PREFERENCES_STORAGE_KEY = 'kortix-user-preferences';
 
 /**
- * Themed surface. Interface themes are a product setting: only /new,
- * /projects/** and /settings render them. Those layouts inline
- * INTERFACE_THEME_INIT_SCRIPT (first paint) and mount ThemedSurface
- * (client-side navigation). Every other page — auth, marketing, pricing, SEO,
- * checkout, invites, system pages — leaves `<html>` without the palette
- * attributes, so no palette block in globals.css matches and the generated
- * kortix-brand palette applies. `.dark` still follows the person everywhere.
+ * Themed routes. Interface themes are a product setting: only /new,
+ * /projects/** and /settings render them. Every other page — auth, marketing,
+ * pricing, SEO, checkout, connections, invites, system pages — leaves `<html>`
+ * without the palette attributes, so no palette block in globals.css matches
+ * and the generated kortix-brand palette applies. `.dark` still follows the
+ * person everywhere.
+ *
+ * The decision is made from the URL at the root, never by a component inside
+ * the route: `(app)` renders its auth / MFA gate (the Kortix mark) before any
+ * route layout mounts, and that first paint must already be themed.
+ * Public URLs carry no locale prefix; the optional one is accepted anyway.
  */
+const THEMED_ROUTE_SOURCE = `^/(?:(?:${locales.join('|')})/)?(?:new|projects|settings)(?:/|$)`;
+const THEMED_ROUTE = new RegExp(THEMED_ROUTE_SOURCE);
+
+export function isThemedPath(pathname: string | null | undefined): boolean {
+  return typeof pathname === 'string' && THEMED_ROUTE.test(pathname);
+}
+
 export function isThemedSurface(element: Element): boolean {
   return element.hasAttribute('data-light-theme');
 }
@@ -154,14 +167,25 @@ export function clearInterfaceThemes(element: Element): void {
   element.removeAttribute('data-dark-theme');
 }
 
+/** Themes `<html>` on a themed route and clears it everywhere else. */
+export function syncInterfaceThemes(
+  element: Element,
+  pathname: string | null | undefined,
+  choice: ThemeChoice,
+): void {
+  if (isThemedPath(pathname)) applyInterfaceThemes(element, choice);
+  else clearInterfaceThemes(element);
+}
+
 /**
- * Inlined by the themed layouts so a stored palette never flashes the default
- * one. Reads the zustand-persisted preferences blob directly; any failure (no
- * storage, bad JSON, unknown id) leaves the defaults. Keep it dependency-free:
- * it is inlined as a string.
+ * Inlined in the root layout's `<head>` so a themed route's first paint —
+ * including the auth gate's loading mark — already shows the stored palette.
+ * Does nothing off the themed routes. Reads the zustand-persisted preferences
+ * blob directly; any failure (no storage, bad JSON, unknown id) leaves the
+ * defaults. Keep it dependency-free: it is inlined as a string.
  */
-export const INTERFACE_THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement,L=${JSON.stringify(
-  LIGHT_THEME_IDS,
-)},D=${JSON.stringify(
+export const INTERFACE_THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;if(!new RegExp(${JSON.stringify(
+  THEMED_ROUTE_SOURCE,
+)}).test(location.pathname))return;var L=${JSON.stringify(LIGHT_THEME_IDS)},D=${JSON.stringify(
   DARK_THEME_IDS,
-)},r=null,p=null,s={};try{r=localStorage.getItem('${USER_PREFERENCES_STORAGE_KEY}');p=r?JSON.parse(r):null;s=(p&&p.state&&p.state.preferences)||{};}catch(e){}d.setAttribute('data-light-theme',L.indexOf(s.lightTheme)>=0?s.lightTheme:'${DEFAULT_LIGHT_THEME}');d.setAttribute('data-dark-theme',D.indexOf(s.darkTheme)>=0?s.darkTheme:'${DEFAULT_DARK_THEME}');}catch(e){}})();`;
+)},s={};try{var r=localStorage.getItem('${USER_PREFERENCES_STORAGE_KEY}'),p=r?JSON.parse(r):null;s=(p&&p.state&&p.state.preferences)||{};}catch(e){}d.setAttribute('data-light-theme',L.indexOf(s.lightTheme)>=0?s.lightTheme:'${DEFAULT_LIGHT_THEME}');d.setAttribute('data-dark-theme',D.indexOf(s.darkTheme)>=0?s.darkTheme:'${DEFAULT_DARK_THEME}');}catch(e){}})();`;
