@@ -5,6 +5,28 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (one saved-history read per session open)
+- `useSession` reads a session's saved copy once per open. The session-open
+  snapshot carries the first window; the read waits up to 2 s for a snapshot
+  in flight, then asks `GET …/transcript?shape=sync&history=true`. Before,
+  every open with a snapshot in flight downloaded the window twice, and the
+  sync layer could read it a third time (KRTX-189).
+- `useSessionSync` with no `mirror` runs the same read. `useSession` passes
+  its answer as `mirror`: the copy, or `null` while the read runs and when
+  the server holds none. A host that mounts its own `useSessionSync` beside
+  `useSession` passes `mirror: null`.
+- A host that passes no `mirror` now gets the server's "no saved copy" answer
+  from the snapshot too, so the device copy is dropped for the next open, as
+  the route answer already did.
+
+### Added (saved copy before `useSession` binds)
+- `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` and
+  `SavedSessionCopy` (`{ envelope, empty }`): the same saved-history read,
+  plus the empty-conversation proof (`isEmptyConversation` over the turn
+  record, read only when the copy proves the root empty). Never throws. For a
+  connecting screen that shows the conversation while the computer wakes;
+  apps/mobile uses it. Additive (KRTX-189).
+
 ### Added (bounded review reads)
 - `getReviewSummary(projectId)` and `project(id).review.summary()`
   (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you

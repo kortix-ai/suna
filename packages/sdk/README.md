@@ -505,6 +505,10 @@ server-validated runtime session id and lets the live read reconcile the saved m
 A live read that returns no messages keeps the saved messages on screen: it means the computer
 lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
+An open reads the saved window once: the session-open snapshot carries it (the read waits up
+to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A host that shows
+the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
+plus the empty-conversation proof.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in

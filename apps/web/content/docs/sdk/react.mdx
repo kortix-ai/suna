@@ -86,6 +86,10 @@ The sandbox is ready when `/start` answers `stage: 'ready'`. The hook runs no se
 
 Saved history is the transcript copy the API writes at each turn end. The first window holds the newest 40 messages, at most 1,000,000 characters. `loadOlder()` reads older windows, also while the sandbox is off. Live messages then reconcile into it by message id.
 
+An open reads the first window once. The session-open snapshot (`GET …/snapshot`) carries it, and `useSession` waits up to 2 s for a snapshot in flight. A slower or failed snapshot leaves the read to `GET …/transcript?shape=sync&history=true`. `useSession` passes that answer to its `useSessionSync` as `mirror`. If you call `useSessionSync` yourself next to `useSession`, pass `mirror: null` so it does not read the window a second time.
+
+To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It makes the same read and returns `{ envelope, empty }`. Pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws.
+
 To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the child's saved window from the parent session. The device keeps no copy of it.
 
 ### Returns
