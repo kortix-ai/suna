@@ -570,13 +570,18 @@ describe('the boot reconcile on OpenCode (P6.4)', () => {
       expect(await flushSessionLogJournal()).toBe(true)
       // The journal at the claimed generation sends nothing back: every restored record is skipped by hash.
       expect(api.journal.flatMap((x) => x.puts)).toEqual([])
+      // P7.1: the log's harness (`fixture`) stays in the history; OpenCode serves the session from the first root seq after the restore.
+      expect(api.journal.find((x) => x.session?.harness)?.session?.harness).toEqual({
+        current: 'opencode',
+        history: [...log.harness.history, { harness: 'opencode', version: expect.any(String), from_seq: Math.max(...log.threads[0]!.messages.map((m) => m.seq)) + 1, at: boot.harness!.at }],
+      })
       const server = await b.serve()
       const [body] = await prompt(server, rootId, 'Anything else?', [{ text: 'UNSENT-ANSWER' }])
       expect(oracle(log, rootId, 'Anything else?', body!).diffs).toEqual([])
       expect(JSON.stringify(body)).toContain(FIXTURE_PNG.toString('base64'))
       // The turn is in the store, not in the API (no flush ran): the store is ahead, never behind.
       resetSessionLogJournalForTests()
-      expect(await reconcileSessionLog(b.port, { retryMs: 1 })).toEqual({ generation: 1, cursors: [] })
+      expect(await reconcileSessionLog(b.port, { retryMs: 1 })).toEqual({ generation: 1, cursors: [], harness: boot.harness })
       expect(restores(api)).toBe(1)
       expect((await b.port.held())!.size).toBeGreaterThan(ids(log).length)
     } finally {
