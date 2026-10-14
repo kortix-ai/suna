@@ -790,6 +790,10 @@ describe('envelopes', () => {
   });
 });
 
+test('SessionCreateInputSchema still accepts the withdrawn persistent_machine field (inert)', () => {
+  expect(SessionCreateInputSchema.strict().parse({ persistent_machine: true })).toMatchObject({ persistent_machine: true });
+});
+
 describe('SessionCreateInputSchema initial_context', () => {
   test('accepts a bounded context beside the prompt and drops it when absent', () => {
     const parsed = SessionCreateInputSchema.parse({
