@@ -1137,6 +1137,9 @@ jobs:
           printf '#!/bin/bash\nwhile true; do clear; echo KORTIX CAPTURE APP VERIFY; date +%%T; sleep 1; done\n' > "$RUNNER_TEMP/clock.command"
           chmod +x "$RUNNER_TEMP/clock.command"
           open "$RUNNER_TEMP/clock.command" || true
+          # The clock sits in the bottom-right corner: it must not cover the app's window in the screenshots.
+          sleep 4
+          osascript -e 'tell application "Terminal" to set bounds of front window to {620, 590, 1020, 690}' >/dev/null 2>&1 || true
       - name: Plant a legacy install (old tray and service agents, a copy in ~/Applications)
         run: |
           uid="$(id -u)"
@@ -1190,6 +1193,9 @@ jobs:
           done
           echo "state after install: $state (after $((SECONDS - t0)) s)" | tee "$EV/state-after-install.txt"
           sleep 8
+          # The window the installer opened is the one in front (an accessory app still takes focus).
+          killall UserNotificationCenter 2>/dev/null || true; sleep 2
+          osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' > "$EV/frontmost.txt" 2>&1 || true
           shot onboarding-connect
           { echo "tray lock: $([ -f "$lib/tray.lock" ] && echo yes || echo no)"; echo "notify lines:"; grep -rh "\[notify\]" "$lib/logs" 2>/dev/null | head -5 || true; echo "recorder: $(pgrep -f 'kortix-capture record|Kortix Capture record' | wc -l | tr -d ' ')"; } 2>&1 | tee "$EV/silent-install.txt"
           { echo "legacy plists left: $(ls "$HOME/Library/LaunchAgents" | grep -Ec 'ai\.kortix\.capture\.(tray|service)' || true)"; echo "legacy processes left: $(pgrep -f "$HOME/Applications/Kortix Capture.app" | wc -l | tr -d ' ')"; echo "library kept: $(cat "$HOME/Library/Application Support/ai.kortix.capture/keep.txt" 2>/dev/null || echo MISSING)"; } | tee "$EV/legacy-after.txt"
@@ -1361,6 +1367,9 @@ jobs:
           if "Finder" in fg:
               assert "Kortix" not in fg, "a Kortix process is a foreground (Dock) app: " + fg
           assert "Kortix Capture" not in text("dock-persistent-apps.txt"), "the Dock must not keep a Kortix tile"
+          front = text("frontmost.txt").strip(); print("frontmost after the install:", front)
+          if front and "error" not in front.lower():
+              assert front == "Kortix Capture", "the onboarding window opened behind another app: " + front
           # Closing the window changes nothing for the recorder; a killed agent comes back within 15 s and records.
           g = text("guest.txt"); print(g)
           m = re.search(r"before: recorder (\d*) agent (\d*) frames (\d+)", g)

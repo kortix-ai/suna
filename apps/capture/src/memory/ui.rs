@@ -200,7 +200,7 @@ mod window {
     use super::*;
     use std::sync::Arc;
     use tao::dpi::LogicalSize;
-    use tao::event::{Event, WindowEvent};
+    use tao::event::{Event, StartCause, WindowEvent};
     use tao::event_loop::{ControlFlow, EventLoopBuilder};
     use tao::window::WindowBuilder;
     use wry::http::{header, Response};
@@ -348,6 +348,11 @@ mod window {
                     *control_flow = ControlFlow::Exit;
                 }
                 // Opening the app while this window is its registered instance.
+                // An accessory app launched by another process starts behind the others, and a
+                // focus request before the loop runs is ignored: ask again once it runs.
+                Event::NewEvents(StartCause::Init) => {
+                    window.set_focus();
+                }
                 Event::Reopen { .. } => {
                     window.set_minimized(false);
                     window.set_focus();
