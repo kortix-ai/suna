@@ -25,7 +25,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Window } from 'happy-dom';
 import React, { act } from 'react';
-import { type Root, createRoot } from 'react-dom/client';
+import { type Container, type Root, createRoot } from 'react-dom/client';
 
 import { qk } from '@kortix/sdk/react';
 
@@ -121,11 +121,6 @@ const snapshots = (templates: SandboxTemplate[]) => ({
   builds: [],
 });
 
-const click = (el: Element) =>
-  el.dispatchEvent(
-    new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
-  );
-
 /** React Query v5 batches cache-observer notifies on a `setTimeout(0)` — a
  *  plain `await` inside `act` would leave the re-render outside act and un-
  *  flushed. One macrotask inside act covers it. */
@@ -149,10 +144,12 @@ async function mountTab(templates: SandboxTemplate[]) {
   client.setQueryData(qk.project.snapshots(PROJECT), snapshots(templates));
   qc = client;
 
-  const el = win.document.createElement('div');
-  win.document.body.appendChild(el);
+  // The happy-dom node crosses into react-dom and the lib.dom-typed helpers:
+  // cast at the boundary like `audit-session-picker.test.tsx`.
+  const el = win.document.createElement('div') as unknown as HTMLElement;
+  win.document.body.appendChild(el as never);
   container = el;
-  const mounted = createRoot(el);
+  const mounted = createRoot(el as unknown as Container);
   root = mounted;
   await act(async () => {
     mounted.render(
@@ -198,7 +195,7 @@ describe('SandboxTab new-template entry points', () => {
     // empty-state action (header first in DOM order, empty state last).
     expect(newButtons(el)).toHaveLength(2);
     await act(async () => {
-      click(need(newButtons(el).at(-1), 'the empty-state New template button'));
+      need(newButtons(el).at(-1), 'the empty-state New template button').click();
       await settle();
     });
 
@@ -210,22 +207,24 @@ describe('SandboxTab new-template entry points', () => {
 
     // Edit the template, then close — the container keeps `editingTemplate`.
     await act(async () => {
-      click(
-        need(el.querySelector('button[aria-label="Edit template"]'), 'the Edit template button'),
-      );
+      need(
+        el.querySelector<HTMLButtonElement>('button[aria-label="Edit template"]'),
+        'the Edit template button',
+      ).click();
     });
     expect(formState(el)).toEqual({ open: 'true', mode: 'edit', templateId: 'tpl_1' });
     await act(async () => {
-      click(
-        need(el.querySelector('[data-testid="template-form"] button'), 'the form close button'),
-      );
+      need(
+        el.querySelector<HTMLButtonElement>('[data-testid="template-form"] button'),
+        'the form close button',
+      ).click();
     });
     expect(formState(el).open).toBe('false');
 
     // The header action resets the stale template — pinned so the empty-state
     // fix cannot regress this path (they must stay identical).
     await act(async () => {
-      click(need(newButtons(el)[0], 'the header New template button'));
+      need(newButtons(el)[0], 'the header New template button').click();
     });
     expect(formState(el)).toEqual({ open: 'true', mode: 'create', templateId: '' });
   });
@@ -235,15 +234,17 @@ describe('SandboxTab new-template entry points', () => {
 
     // Edit the template, then close — the container keeps `editingTemplate`.
     await act(async () => {
-      click(
-        need(el.querySelector('button[aria-label="Edit template"]'), 'the Edit template button'),
-      );
+      need(
+        el.querySelector<HTMLButtonElement>('button[aria-label="Edit template"]'),
+        'the Edit template button',
+      ).click();
     });
     expect(formState(el)).toEqual({ open: 'true', mode: 'edit', templateId: 'tpl_1' });
     await act(async () => {
-      click(
-        need(el.querySelector('[data-testid="template-form"] button'), 'the form close button'),
-      );
+      need(
+        el.querySelector<HTMLButtonElement>('[data-testid="template-form"] button'),
+        'the form close button',
+      ).click();
     });
     expect(formState(el).open).toBe('false');
 
@@ -259,7 +260,7 @@ describe('SandboxTab new-template entry points', () => {
     // mode prefilled with the deleted template — its submit would PATCH a
     // dead `template_id`. Create mode is the only correct outcome here.
     await act(async () => {
-      click(need(newButtons(el).at(-1), 'the empty-state New template button'));
+      need(newButtons(el).at(-1), 'the empty-state New template button').click();
       await settle();
     });
     expect(formState(el)).toEqual({ open: 'true', mode: 'create', templateId: '' });
