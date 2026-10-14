@@ -701,6 +701,7 @@ jobs:
             echo "daemon: $(sudo launchctl print system/ai.kortix.capture.machine 2>&1 | grep -c 'state = running')"
             echo "agent: $(pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' | wc -l | tr -d ' ')"
           } | tee -a "$EV/reinstall.txt"
+          launchctl print "gui/$(id -u)/ai.kortix.capture.agent" > "$EV/agent_after_reinstall.txt" 2>&1 || true
       - name: Uninstall
         run: |
           sudo "/Applications/Kortix Capture.app/Contents/Resources/uninstall.sh" 2>&1 | tee "$EV/uninstall.txt"
