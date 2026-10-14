@@ -222,6 +222,19 @@ describe('review sheet verdicts', () => {
     expect(texts).toContain('approvals.waitingWho');
   });
 
+  test('a call in a session started with an API token names managers only', () => {
+    const waiting = {
+      ...APPROVAL,
+      status: 'waiting',
+      detail: { actions: [{ id: 'exec-1', canResolve: false, resolvers: 'managers' }] },
+    };
+    renderAs(waiting, MEMBER);
+    expect(footer()).toEqual([]);
+    const texts = tree.root.findAllByType('Text').map((t: any) => String(t.props.children));
+    expect(texts).toContain('approvals.waitingManagers');
+    expect(texts).not.toContain('approvals.waitingWho');
+  });
+
   test('an older API (needs_you, canResolve false) waits too; a resolver sees no waiting line', () => {
     const older = { ...APPROVAL, detail: { actions: [{ id: 'exec-1', canResolve: false }] } };
     renderAs(older, MANAGER);

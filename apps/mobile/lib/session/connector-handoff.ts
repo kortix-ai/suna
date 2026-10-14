@@ -168,8 +168,10 @@ export function connectorHandoffCallIds(parts: ReadonlyArray<{ part: Part }>): s
 
 /**
  * What the in-chat approval prompt shows:
- * - `unknown`  — the review list has not loaded yet: render nothing, so a
- *   resolved call never flashes Approve / Deny;
+ * - `unknown`  — the review list cannot vouch for the call yet: not loaded,
+ *   failed, or fetched before the call settled. Render nothing: a resolved
+ *   call never flashes Approve / Deny, and a viewer the API would refuse
+ *   never gets them (KRTX-1724);
  * - `pending`  — Approve / Deny;
  * - `waiting`  — still pending, but this viewer may not decide it: only a
  *   project manager or the person who started the session may (KRTX-1724).
@@ -191,12 +193,11 @@ export interface ConnectorApprovalStateInput {
   /** The project's review list (`reviewKeys.list`, the query `ReviewPage`
    *  reads). The API adapts only still-pending connector calls into it, as
    *  `call:<execution_id>`. `undefined` until it loads. `canResolve` is the
-   *  call's own verdict (`ReviewApprovalAction.canResolve`), when known. */
+   *  call's own verdict (`ReviewApprovalAction.canResolve`), when known.
+   *  A failed request holds no list, so no verdict: `unknown`. */
   reviewItems: ReadonlyArray<{ id: string; status: string; canResolve?: boolean }> | undefined;
   /** When that list was fetched (react-query `dataUpdatedAt`), epoch ms. */
   reviewFetchedAtMs: number;
-  /** The review list request failed and holds no data. */
-  reviewFailed: boolean;
   /** When the tool call settled, epoch ms. A list fetched before it cannot
    *  carry the call yet, so its absence proves nothing. */
   callSettledAtMs: number | null;
@@ -216,7 +217,7 @@ export function approvalWaitsOnOthers(item: { status: string; canResolve?: boole
 
 export function connectorApprovalState(input: ConnectorApprovalStateInput): ConnectorApprovalState {
   if (input.localDecision) return input.localDecision === 'approve' ? 'approved' : 'denied';
-  if (!input.reviewItems) return input.reviewFailed ? 'pending' : 'unknown';
+  if (!input.reviewItems) return 'unknown';
 
   const item = input.reviewItems.find((row) => row.id === `call:${input.executionId}`);
   if (item) {
@@ -227,8 +228,24 @@ export function connectorApprovalState(input: ConnectorApprovalStateInput): Conn
     return 'resolved';
   }
   // Absent from a list fetched before the call settled: too early to say.
-  if (input.callSettledAtMs !== null && input.reviewFetchedAtMs <= input.callSettledAtMs) return 'pending';
+  if (listPredatesCall(input.reviewFetchedAtMs, input.callSettledAtMs)) return 'unknown';
   return 'resolved';
+}
+
+/** A list fetched at or before the call settled cannot carry it yet. */
+export function listPredatesCall(reviewFetchedAtMs: number, callSettledAtMs: number | null): boolean {
+  return callSettledAtMs !== null && reviewFetchedAtMs <= callSettledAtMs;
+}
+
+/**
+ * The line that says who decides a call this viewer may not decide. A session
+ * started with an API token or a service account is decided by managers only
+ * (`resolvers: 'managers'`, KRTX-1724).
+ */
+export function approvalWaitingWhoKey(
+  resolvers: 'managers' | 'managers_and_launcher' | undefined,
+): 'approvals.waitingManagers' | 'approvals.waitingWho' {
+  return resolvers === 'managers' ? 'approvals.waitingManagers' : 'approvals.waitingWho';
 }
 
 /**

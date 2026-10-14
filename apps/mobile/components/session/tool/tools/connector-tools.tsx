@@ -29,9 +29,11 @@ import {
 import { invalidateReviewItems, useReviewItems } from '@/lib/review/use-review';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
+  approvalWaitingWhoKey,
   connectorApprovalNeed,
   connectorApprovalState,
   connectorConnectNeed,
+  listPredatesCall,
   type ConnectorApprovalNeed,
 } from '@/lib/session/connector-handoff';
 import {
@@ -317,22 +319,27 @@ function ConnectorApprovalPrompt({
   // Poll the review list only while the answer can still change.
   const [polling, setPolling] = useState(true);
   const review = useReviewItems(projectId, { poll: polling });
-  // The call's own verdict rides on its single action (`canResolve`).
+  // The call's own verdict rides on its single action (`canResolve`), and so
+  // does who decides it (`resolvers`).
   const reviewItems = useMemo(
     () =>
-      review.data?.map((item) => ({
-        id: item.id,
-        status: item.status,
-        canResolve: item.kind === 'approval' ? item.detail.actions[0]?.canResolve : undefined,
-      })),
+      review.data?.map((item) => {
+        const call = item.kind === 'approval' ? item.detail.actions[0] : undefined;
+        return {
+          id: item.id,
+          status: item.status,
+          canResolve: call?.canResolve,
+          resolvers: call?.resolvers,
+        };
+      }),
     [review.data],
   );
+  const resolvers = reviewItems?.find((item) => item.id === `call:${need.executionId}`)?.resolvers;
 
   const state = connectorApprovalState({
     executionId: need.executionId,
     reviewItems,
     reviewFetchedAtMs: review.dataUpdatedAt,
-    reviewFailed: review.isError && !review.data,
     callSettledAtMs,
     localDecision,
   });
@@ -341,6 +348,13 @@ function ConnectorApprovalPrompt({
   useEffect(() => {
     setPolling(live);
   }, [live]);
+  // A list fetched before this call settled cannot carry its verdict: ask now
+  // instead of waiting out the 8 s poll (the card shows nothing meanwhile).
+  const stale = review.dataUpdatedAt > 0 && listPredatesCall(review.dataUpdatedAt, callSettledAtMs);
+  const { refetch } = review;
+  useEffect(() => {
+    if (stale) void refetch();
+  }, [stale, refetch]);
 
   const decide = async (decision: 'approve' | 'deny') => {
     if (!projectId || busy) return;
@@ -394,7 +408,7 @@ function ConnectorApprovalPrompt({
         </View>
         {details}
         <Text variant="muted" style={TURN_TYPE.xs}>
-          {t('approvals.waitingWho')}
+          {t(approvalWaitingWhoKey(resolvers))}
         </Text>
       </View>
     );

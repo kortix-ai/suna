@@ -100,7 +100,7 @@ import { planReviewVerdict, reviewVerdictsFor } from '@/lib/review/review-verdic
 import { useReviewVerdict } from '@/lib/review/use-review';
 import { openLink } from '@/lib/utils/open-link';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
-import { approvalWaitsOnOthers } from '@/lib/session/connector-handoff';
+import { approvalWaitingWhoKey, approvalWaitsOnOthers } from '@/lib/session/connector-handoff';
 
 interface ReviewDetailSheetProps {
   projectId: string;
@@ -231,10 +231,14 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
 
     const actionable = item?.status === 'needs_you';
     // A connector call this viewer may not decide: the sheet says who does.
+    const waitingCall =
+      item?.kind === 'approval' && reviewItemTarget(item.id).type === 'connector_call'
+        ? item.detail.actions[0]
+        : undefined;
     const waitsOnOthers =
-      item?.kind === 'approval' &&
-      reviewItemTarget(item.id).type === 'connector_call' &&
-      approvalWaitsOnOthers({ status: item.status, canResolve: item.detail.actions[0]?.canResolve });
+      !!item &&
+      !!waitingCall &&
+      approvalWaitsOnOthers({ status: item.status, canResolve: waitingCall.canResolve });
     // A change's diff (its Files, +/− and each file's lines) and, while it is
     // open, its merge preview (conflicts) — both one request each, cached.
     const crId = item?.kind === 'change' ? (item.detail.crId ?? null) : null;
@@ -370,7 +374,7 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
                 </Text>
                 {waitsOnOthers ? (
                   <Text variant="muted" className="px-2">
-                    {t('approvals.waitingWho')}
+                    {t(approvalWaitingWhoKey(waitingCall?.resolvers))}
                   </Text>
                 ) : null}
 

@@ -1235,6 +1235,7 @@
     "backToProjects": "Retour aux projets"
   },
   "approvals": {
+    "waitingManagers": "Une personne qui gère ce projet peut approuver ou refuser l'appel.",
     "waitingTitle": "En attente d'approbation",
     "waitingWho": "La personne qui a démarré cette session ou une personne qui gère ce projet peut approuver ou refuser l'appel."
   }

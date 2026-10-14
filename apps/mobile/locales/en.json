@@ -1237,6 +1237,7 @@
     "backToProjects": "Back to projects"
   },
   "approvals": {
+    "waitingManagers": "Anyone who manages this project can approve or deny it.",
     "waitingTitle": "Waiting on approval",
     "waitingWho": "The person who started this session or anyone who manages this project can approve or deny it."
   }
