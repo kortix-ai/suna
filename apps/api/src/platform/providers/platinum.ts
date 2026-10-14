@@ -590,17 +590,32 @@ export class PlatinumProvider implements SandboxProvider {
           `Sandbox image snapshot ${template} is building in ${regional.region}: Platinum is copying the template there (state=replicating)`,
         );
       }
-      if (regional) {
+      if (regional && opts.location) {
         // No copy is running, so waiting cannot help. `us_region` chooses
         // compute placement only: boot this session in the home region now.
         // The next regional create after Platinum's cooldown retries the copy.
         // A speculative (warm) box must match its project's region, so it
         // fails fast instead (warm-sessions.ts warmSessionPlacement).
-        const line =
-          `[platinum] template ${template} is not usable in ${regional.region} (state=${regional.state}: ${regional.reason})`;
-        if (opts.locationRequired) throw new Error(`${line}; this box must run there, so it does not start`);
-        logger.warn(`${line}; sandbox ${opts.sandboxId ?? opts.name} boots in the home region instead`);
-        return this.provisionFromTemplate(template, { ...opts, location: undefined });
+        // The recursion sends no region, so it cannot come back here.
+        // ponytail: an ambiguous home create that fails, followed by a later
+        // regional create that succeeds, leaves the home box orphaned for the
+        // orphan reaper: the two creates use different Idempotency-Keys.
+        const fallback = { requested: regional.region, state: regional.state, at: new Date().toISOString() };
+        if (opts.locationRequired) {
+          throw new Error(
+            `[platinum] template ${template} is not usable in ${regional.region} (state=${regional.state}: ${regional.reason}); this box must run there, so it does not start`,
+          );
+        }
+        // Stable message: alert on it. The fields say which region and why.
+        logger.warn('[platinum] region fallback: the template is not usable in the requested region; the box boots in the home region', {
+          ...fallback,
+          reason: regional.reason,
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+        });
+        const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
+        // Durable record on the session box row: a US-flag project on home compute.
+        return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
       }
       if (!dedup || !isNameTakenConflict(err)) throw err;
       // See isNameTakenConflict + the module doc: the name is exclusively

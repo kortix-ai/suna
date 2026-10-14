@@ -155,6 +155,7 @@ describe('us_region: region on the Platinum create', () => {
 
     expect(result.metadata?.platinumRegion).toBe('us-east');
     expect(result.metadata?.platinumApiUrl).toBe('https://us-east.api.platinum.dev');
+    expect(result.metadata && 'regionFallback' in result.metadata).toBe(false);
   });
 
   test('a home-region answer adds nothing that was not there before', async () => {
@@ -163,6 +164,7 @@ describe('us_region: region on the Platinum create', () => {
 
     expect(result.metadata && 'platinumRegion' in result.metadata).toBe(false);
     expect(result.metadata && 'platinumApiUrl' in result.metadata).toBe(false);
+    expect(result.metadata && 'regionFallback' in result.metadata).toBe(false);
   });
 });
 
@@ -207,7 +209,7 @@ describe('us_region: a template not yet copied to the region', () => {
       const warn = spyOn(logger, 'warn').mockImplementation(() => {});
       const p = new PlatinumProvider();
       const result = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east' });
-      const lines = warn.mock.calls.map((call) => String(call[0]));
+      const calls = warn.mock.calls.map((call) => [String(call[0]), call[1] as Record<string, unknown>] as const);
       warn.mockRestore();
 
       const [regional, home] = createCalls();
@@ -220,13 +222,16 @@ describe('us_region: a template not yet copied to the region', () => {
       expect(home.headers['Idempotency-Key']).toBe(sha(`${SANDBOX_ID}|tpl_default|a1`));
       expect(result.externalId).toBe('sbx_home');
       expect(result.metadata?.platinumRegion).toBe('eu-west');
-      // One plain line names the region, the state and Platinum's reason.
-      expect(lines).toHaveLength(1);
-      const [line] = lines;
-      expect(line).toContain('us-east');
-      expect(line).toContain(`state=${state}`);
-      expect(line).toContain('home region');
-      if (state === 'failed') expect(line).toContain('chunk copy timed out');
+      // The row records the fallback: a US-flag project on home compute.
+      const fallback = result.metadata?.regionFallback as Record<string, unknown>;
+      expect(fallback).toMatchObject({ requested: 'us-east', state });
+      expect(Number.isNaN(Date.parse(String(fallback.at)))).toBe(false);
+      // One warning with a stable, alertable message; the fields say why.
+      expect(calls).toHaveLength(1);
+      const [message, fields] = calls[0];
+      expect(message).toBe('[platinum] region fallback: the template is not usable in the requested region; the box boots in the home region');
+      expect(fields).toMatchObject({ requested: 'us-east', state, template: 'tpl_default', sandboxId: SANDBOX_ID });
+      if (state === 'failed') expect(String(fields.reason)).toContain('chunk copy timed out');
     });
   }
 
@@ -239,6 +244,16 @@ describe('us_region: a template not yet copied to the region', () => {
 
     expect((err as Error).name).not.toBe('SnapshotStillBuildingError');
     expect((err as Error).message).toContain('state=failed');
+    expect(createCalls()).toHaveLength(1);
+  });
+
+  test('a refusal on a create that asked for no region is rethrown, never retried', async () => {
+    const refused = notResident('failed');
+    createSequence = [{ error: refused }, { result: { id: 'sbx_never', state: 'running' } }];
+    const p = new PlatinumProvider();
+    const err = await p.create({ ...baseOpts, createAttempt: 1 }).catch((e) => e);
+
+    expect(err).toBe(refused);
     expect(createCalls()).toHaveLength(1);
   });
 
