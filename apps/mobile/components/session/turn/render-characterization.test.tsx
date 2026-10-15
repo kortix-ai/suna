@@ -143,6 +143,9 @@ mock.module('@/components/session/turn/activity-burst', () => ({
 }));
 mock.module('@/components/session/turn/user-message', () => ({ UserMessage: passthrough('rn-user-message') }));
 mock.module('@/components/session/SessionChangeRequests', () => ({ SessionChangeRequests: passthrough('rn-change-requests') }));
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string, values?: { name?: string }) => `${key}:${values?.name ?? ''}` }),
+}));
 
 let CompactionMarker: typeof import('./compaction-divider').CompactionMarker;
 let TurnActions: typeof import('./turn-actions').TurnActions;
@@ -527,5 +530,35 @@ describe('SessionTurn work fold: live stream as today, settled work behind one r
 
     await act(async () => row()[0].props.onPress());
     expect(column()).toEqual(['rn-pressable', 'Found it.']);
+  });
+});
+
+describe('SessionTurn stopped by: one quiet line once the turn has ended', () => {
+  const rows = (completed?: number) => [
+    { info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } }, parts: [] },
+    {
+      info: { id: 'a-1', role: 'assistant', parentID: 'user-1', sessionID: 's-1', time: { created: 2_000, completed } },
+      parts: [{ id: 'part-1', type: 'text', text: 'Partial answer', sessionID: 's-1', messageID: 'a-1' }],
+    },
+  ];
+  const stoppedLines = () =>
+    tree!.root.findAll((node) => node.props.children === 'sessions.stoppedBy:Ada').filter((node) => typeof node.type !== 'string');
+
+  test('an ended turn another member stopped reads "Stopped by {name}"', async () => {
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnOf(rows(3_000))} stoppedBy="Ada" />);
+    });
+    expect(stoppedLines()).toHaveLength(1);
+  });
+
+  test('no stopper, or a turn still working: no line', async () => {
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnOf(rows(3_000))} stoppedBy={null} />);
+    });
+    expect(stoppedLines()).toHaveLength(0);
+    await act(async () => {
+      tree?.update(<SessionTurn turn={turnOf(rows(), true)} sessionStatus={{ type: 'busy' } as never} stoppedBy="Ada" />);
+    });
+    expect(stoppedLines()).toHaveLength(0);
   });
 });

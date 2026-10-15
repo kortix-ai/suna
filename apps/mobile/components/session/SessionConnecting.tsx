@@ -63,6 +63,7 @@ import { openPastedText } from '@/stores/pasted-text-store';
 import { webSpace } from '@/lib/session/user-message';
 import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson } from '@/lib/session/participants';
+import { turnStoppedBy } from '@/lib/session/turn-stop';
 
 export interface SessionConnectError {
   title: string;
@@ -322,6 +323,7 @@ function SavedThread({
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
   // The floating composer area's height: the newest turn rests above it.
   const [bottomHeight, setBottomHeight] = React.useState(0);
   // Laid out exactly as `SessionPage`'s list: no list-level side padding (each
@@ -344,12 +346,8 @@ function SavedThread({
                 sessionId={sessionId}
                 onFileMention={openFilePreview}
                 rewindDisabled
-                sender={messageAvatarPerson(
-                  messageAuthors,
-                  participants,
-                  participants?.participants.find((person) => person.is_viewer)?.user_id,
-                  turn.id,
-                )}
+                sender={messageAvatarPerson(messageAuthors, participants, viewerId, turn.id)}
+                stoppedBy={turnStoppedBy(messageAuthors, viewerId, turn.id)}
               />
             </View>
           );

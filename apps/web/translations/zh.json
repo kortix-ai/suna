@@ -1194,10 +1194,6 @@
           "name": "元智能体",
           "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
         },
-        "apps": {
-          "name": "应用",
-          "description": "将静态网站、JavaScript 包、Dockerfile 和 OCI 镜像部署到稳定的无服务器网址，并运行后端：在始终运行的机器上提供数据库、服务器函数、实时查询、文件存储、定时任务和搜索。"
-        },
         "monitors": {
           "name": "监控器",
           "description": "运行持久监控器来观察日志、信息源或 API，并根据事件启动智能体会话。"
@@ -2090,6 +2086,7 @@
     "expandQuotes": "展开引用",
     "collapseQuotes": "收起引用",
     "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
+    "stoppedBy": "由 {name} 停止",
     "queued": "排队中",
     "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}",
     "queuedCount": "{count} 条排队中",

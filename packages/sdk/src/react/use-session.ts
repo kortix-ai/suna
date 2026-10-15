@@ -100,7 +100,7 @@ import { useSessionLogSync } from './use-session-log';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
-import { useSessionTurnOutcome, useSessionWorking } from './use-session-working';
+import { useSessionCanStop, useSessionTurnOutcome, useSessionWorking } from './use-session-working';
 import { cancelSessionTurn } from './session-stop';
 import { useVisibleAgents } from './use-visible-agents';
 import { createKortix } from '../core/client/kortix';
@@ -1549,6 +1549,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled,
     runtimeSessionId: ocSessionId,
   });
+  const canStop = useSessionCanStop(projectId, sessionId);
   // A turn keeps the computer on and moves presence's cap (2 h after the
   // latest turn), so the window from before it is wrong after it (KRTX-1729):
   // a turn that starts clears it, and a turn that ends reads it again.
@@ -2108,6 +2109,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      *  and for which turn. The one answer; `isBusy` is its boolean face. */
     working,
     isBusy: working.state === 'working',
+    /**
+     * May this viewer stop the running turn? In a shared session only the
+     * member who started it, the session owner or a project manager may. False
+     * only when the server's latest `/turn` answer says so (`can_stop`); a host
+     * then shows no Stop and a send queues. True when nothing runs, and when
+     * the server did not say. A stop the server refuses still ends as a
+     * `failed` settlement (403 `not_turn_prompter`).
+     */
+    canStop,
     /**
      * Until when this person's presence keeps the session's computer on
      * (KRTX-1729): `until` is the computer's stop time after the latest

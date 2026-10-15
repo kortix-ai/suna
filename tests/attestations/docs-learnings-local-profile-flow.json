@@ -1,0 +1,16 @@
+{
+  "source_hash": "afeb4cb534294815aa7e9a0391f66fb76450842442089c4e3685593eda694bbf",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-15T141450Z-guard-a-flow-step-that-needs-an-unreachable-provider-on-the.md"
+  ],
+  "diff_hash": "62233645bcd84275bc1dd331fee68f3b74425db951665d4f9344dfedee7e4e92",
+  "head": "c57ccd0bf131d84ca2377aa2bc72130dd9555855",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T14:15:49.769Z"
+}

@@ -51,6 +51,7 @@ mock.module('@/lib/projects/hooks', () => ({
   useSessionMessageAuthors: () => ({ data: undefined }),
 }));
 mock.module('@/lib/session/participants', () => ({ messageAvatarPerson: () => null }));
+mock.module('@/lib/session/turn-stop', () => ({ turnStoppedBy: () => null }));
 mock.module('@/lib/session/auto-scroll', () => ({ turnTopGap: () => 0 }));
 mock.module('@/lib/utils/theme', () => ({ THEME: { light: {}, dark: {}, accent: {} } }));
 mock.module('@/lib/session/attachment-tile', () => ({ isPreviewableImage: () => false }));

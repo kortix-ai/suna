@@ -2419,7 +2419,8 @@ export const sessionTurns = kortixSchema.table(
     endReason: text('end_reason'),
     // Why a `failed` turn ended, as the daemon reported it: `{ name, message }`.
     // Null for every other ending and for a failure nobody named.
-    endError: jsonb('end_error').$type<{ name: string | null; message: string | null }>(),
+    // `by`: the person who asked for a requested stop (`UserStop`), when known.
+    endError: jsonb('end_error').$type<{ name: string | null; message: string | null; by?: string }>(),
     startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
