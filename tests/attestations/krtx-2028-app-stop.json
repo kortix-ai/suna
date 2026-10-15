@@ -1,5 +1,5 @@
 {
-  "source_hash": "97b40896a01de5ce9fb4efac93ae0f108c82eb60ae09b00aefd0f0ea0f1f928a",
+  "source_hash": "02eaa940236146520d12afd6852fb17b5eeb25628511c57aa918cf96e9177399",
   "diff_files": [
     "apps/api/src/__tests__/unit-daytona-state-change.test.ts",
     "apps/api/src/http-errors.ts",
@@ -10,13 +10,13 @@
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json"
   ],
-  "diff_hash": "1b533941150e7280338b388c7ca97c8335e95f4fc5d4afcac8bcc72c4a87d07c",
-  "head": "f2235da830a46dfa63557ca8d05052582a4ae1f1",
+  "diff_hash": "965087dda64edaf5580d47d2b2d80a433b53730c332122d837e25b6ed37f7fbc",
+  "head": "eaf35af7a907ac01077851a94c8d225208d9c847",
   "passed": false,
   "lanes": {
-    "core": "pass",
+    "core": "fail",
     "packages": "fail",
-    "db-suites": "pass"
+    "db-suites": "fail"
   },
-  "at": "2026-10-15T01:33:19.918Z"
+  "at": "2026-10-15T11:39:01.162Z"
 }
