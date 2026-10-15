@@ -490,31 +490,6 @@ harnessFlow(
       },
     );
 
-    let detailSnapshotBeforeStop: any = null;
-    await ctx.step(
-      "session A's detail read exposes the server-owned title/tree mirror before stopping (baseline)",
-      async () => {
-        detailSnapshotBeforeStop = await waitFor(
-          async () => {
-            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
-              params: { projectId: project.id, sessionId: sessionA.id },
-            });
-            r.status(200);
-            return r.json<any>();
-          },
-          {
-            until: (row) => {
-              const title = typeof row?.name === 'string' ? row.name.trim() : '';
-              return Boolean(title) && !/^new (session|agent)\b/i.test(title);
-            },
-            timeoutMs: 180_000,
-            intervalMs: 3_000,
-            description: `session A's mirrored title settles`,
-          },
-        );
-      },
-    );
-
     await ctx.step("session A's completed turn has a durable transcript before stopping", async () => {
       await waitFor(
         async () => {
@@ -537,6 +512,37 @@ harnessFlow(
         },
       );
     });
+
+    // After the durable transcript, and the same title on two polls in a row:
+    // a title generated after the first non-default one replaced it between
+    // this baseline and the post-stop read (release gate v0.13.58, attempt 3).
+    let detailSnapshotBeforeStop: any = null;
+    await ctx.step(
+      "session A's detail read exposes the server-owned title/tree mirror before stopping (baseline)",
+      async () => {
+        let previousTitle = '';
+        detailSnapshotBeforeStop = await waitFor(
+          async () => {
+            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+              params: { projectId: project.id, sessionId: sessionA.id },
+            });
+            r.status(200);
+            return r.json<any>();
+          },
+          {
+            until: (row) => {
+              const title = typeof row?.name === 'string' ? row.name.trim() : '';
+              const settled = Boolean(title) && !/^new (session|agent)\b/i.test(title) && title === previousTitle;
+              previousTitle = title;
+              return settled;
+            },
+            timeoutMs: 180_000,
+            intervalMs: 3_000,
+            description: `session A's mirrored title settles`,
+          },
+        );
+      },
+    );
 
     await ctx.step("stop session A's sandbox → 200 stopped (or stopping, then stopped)", async () => {
       await stopSessionAndWait(ctx, project.id, sessionA.id);

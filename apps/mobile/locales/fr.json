@@ -1198,7 +1198,9 @@
     "undo": "Annuler",
     "pinnedSection": "Épinglées",
     "archivedView": "Archivées",
-    "archivedEmpty": "Les sessions que vous archivez apparaîtront ici."
+    "archivedEmpty": "Les sessions que vous archivez apparaîtront ici.",
+    "stoppedBy": "Arrêté par {{name}}",
+    "stopNotAllowed": "Seul le membre qui a lancé cette exécution, le propriétaire de la session ou un gestionnaire du projet peut l'arrêter."
   },
   "genui": {
     "chartTapHint": "Touchez pour lire une valeur",

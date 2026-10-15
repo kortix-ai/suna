@@ -1206,10 +1206,6 @@
           "name": "メタエージェント",
           "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
         },
-        "apps": {
-          "name": "アプリ",
-          "description": "静的サイト、JavaScript バンドル、Dockerfile、OCI イメージを安定したサーバーレス URL にデプロイし、バックエンドを実行します。データベース、サーバー関数、リアルタイムクエリ、ファイルストレージ、スケジュール実行、検索を常時稼働のマシンで動かします。"
-        },
         "monitors": {
           "name": "モニター",
           "description": "ログ、フィード、API を監視し、イベントからエージェントセッションを開始する常駐ウォッチャーを実行します。"
@@ -2102,6 +2098,7 @@
     "expandQuotes": "引用を展開",
     "collapseQuotes": "引用を折りたたむ",
     "stopUnconfirmed": "停止を確認できませんでした。エージェントがまだ実行中の可能性があります。もう一度停止してください。",
+    "stoppedBy": "{name}が停止",
     "queued": "待機中",
     "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
     "queuedCount": "{count} 件キュー中",

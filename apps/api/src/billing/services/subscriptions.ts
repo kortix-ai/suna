@@ -1,3 +1,4 @@
+import { createHostedCheckout } from './hosted-checkout';
 import { getStripe } from '../../shared/stripe';
 import {
   getCreditAccount,
@@ -131,7 +132,7 @@ export async function setPlan(params: {
       plan_key: 'credits',
       ...(live && account?.tier === 'free' ? { previous_subscription_id: live.id } : {}),
     };
-    const session = await stripe.checkout.sessions.create({
+    const session = await createHostedCheckout(stripe, {
       customer: customerId,
       mode: 'subscription',
       line_items: [{ price: priceId, quantity }],

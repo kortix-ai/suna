@@ -1206,10 +1206,6 @@
           "name": "Meta-agente",
           "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
         },
-        "apps": {
-          "name": "App",
-          "description": "Distribuisci siti statici, pacchetti JavaScript, Dockerfile e immagini OCI su URL stabili ed esegui backend: un database, funzioni server, query in tempo reale, archiviazione file, pianificazione e ricerca su una macchina sempre attiva."
-        },
         "monitors": {
           "name": "Monitor",
           "description": "Esegui controlli permanenti su registri, feed o API che avviano sessioni agente in risposta agli eventi."
@@ -2102,6 +2098,7 @@
     "expandQuotes": "Espandi citazioni",
     "collapseQuotes": "Comprimi citazioni",
     "stopUnconfirmed": "Impossibile confermare l’arresto. L’agente potrebbe essere ancora in esecuzione. Riprova.",
+    "stoppedBy": "Interrotto da {name}",
     "queued": "In coda",
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
