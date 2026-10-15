@@ -4,6 +4,16 @@
 
 Create custom commands for repetitive tasks.
 
+> **In a Kortix project (`kortix_version: 3`):** do not write
+> `.opencode/commands/*.md` or a `command` key. Register each command under
+> `commands` in `kortix.yaml` (`description`, and exactly one of `prompt` or
+> `prompt_file`), then enable it per agent with `agents.<name>.commands`. A
+> command has no `agent`, `model` or `subtask` key: it runs on the agent that
+> enables it. `$ARGUMENTS` takes all arguments; `$1`, `$2`, … take one word
+> each, and the last takes the rest. Running a command on an agent that does
+> not enable it answers `403` with `command_not_enabled`. See
+> `../kortix/kortix-yaml.md`.
+
 Custom commands let you specify a prompt you want to run when that command is executed in the TUI.
 
 ```

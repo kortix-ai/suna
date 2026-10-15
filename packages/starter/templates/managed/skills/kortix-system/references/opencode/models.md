@@ -4,6 +4,12 @@
 
 Configuring an LLM provider and model.
 
+> **In a Kortix project (`kortix_version: 3`):** set an agent's model with
+> `agents.<name>.model` in `kortix.yaml`, or pin one with
+> `kortix agents model <agent> <model-id>`. OpenCode's `provider` config is not
+> read, so a v3 project has no custom provider. Only a legacy
+> `kortix_version` 1 or 2 project reads `opencode.jsonc`.
+
 OpenCode uses the [AI SDK](https://ai-sdk.dev/) and [Models.dev](https://models.dev) to support **75+ LLM providers** and it supports running local models.
 
 ---
