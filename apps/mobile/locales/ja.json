@@ -1204,6 +1204,7 @@
   },
   "genui": {
     "chartTapHint": "タップして値を表示",
+    "checklistReady": "{{done}}/{{total}} 完了",
     "map": "地図",
     "mapUnavailable": "地図を表示できません",
     "openImage": "画像を開く",

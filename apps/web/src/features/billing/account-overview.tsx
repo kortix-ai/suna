@@ -248,9 +248,11 @@ export function describePlanStatus(
   const sub = state.subscription;
   const text = { ...DEFAULT_PLAN_STATUS_COPY, ...copy };
 
-  // A trial and an Enterprise contract are not Stripe subscriptions: say what
-  // they are and until when, before the subscription lines below.
-  const trial = state.trial;
+  // A Credits trial and an Enterprise contract are not Stripe subscriptions:
+  // say what they are and until when, before the subscription lines below. An
+  // Enterprise trial lends features, not the plan: the plan card keeps what the
+  // account pays for, and the trial shows where Enterprise does.
+  const trial = state.trial?.plan === 'credits' ? state.trial : null;
   if (trial) {
     const ends = formatIsoDate(trial.ends_at, text.locale);
     return {

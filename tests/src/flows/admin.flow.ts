@@ -639,9 +639,11 @@ flow(
 );
 
 // ADM-16 — an Enterprise trial is visible to the account: account-state
-// carries the plan, the end date and the days left, so the billing page can
-// say "Enterprise trial · N days left" and offer the upgrade. A revoke ends it
-// at once, with no SSO grace (a revoke is deliberate).
+// carries the trial, the end date and the days left, so the billing page can
+// say "Enterprise trial · N days left". The trial lends the Enterprise
+// features only: `plan` stays the plan the account pays for (Free here), so it
+// can still pick one, and the gates (`tier.*`) enforce Enterprise. A revoke
+// ends it at once, with no SSO grace (a revoke is deliberate).
 flow(
   "ADM-16",
   {
@@ -658,7 +660,7 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
       r.status(200).body().has("$.trial", null).has("$.plan.family", "free");
     });
-    await ctx.step("admin grants a 30-day Enterprise trial → account-state shows it with 30 days left", async () => {
+    await ctx.step("admin grants a 30-day Enterprise trial → account-state shows it with 30 days left, plan still Free, gates Enterprise", async () => {
       const g = await admin.post(
         "/v1/admin/api/accounts/:id/trial",
         { tier_key: "enterprise", duration_days: 30, credit_grant: 0 },
@@ -668,7 +670,8 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
       r.status(200)
         .body()
-        .has("$.plan.family", "enterprise")
+        .has("$.plan.family", "free")
+        .has("$.tier.name", "enterprise")
         .has("$.trial.plan", "enterprise")
         .has("$.trial.days_left", 30)
         .exists("$.trial.ends_at")

@@ -662,6 +662,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/sessions/:sessionId/log': { action: 'session.log.read', title: 'Viewed session log' },
   'POST /v1/projects/:projectId/sessions/:sessionId/log/journal': { action: 'session.log.journal', title: 'Journaled session log records' },
   'GET /v1/projects/:projectId/sessions/:sessionId/log/manifest': { action: 'session.log.manifest.read', title: 'Read session log manifest' },
+  'GET /v1/projects/:projectId/sessions/:sessionId/log/blobs/:sha256': { action: 'session.log.blob.read', title: 'Looked up a session log attachment' },
+  'PUT /v1/projects/:projectId/sessions/:sessionId/log/blobs/:sha256': { action: 'session.log.blob.write', title: 'Stored a session log attachment' },
   'POST /v1/projects/:projectId/sessions/:sessionId/log/restore': { action: 'session.log.restore', title: 'Restored session log into a new sandbox' },
   'POST /v1/projects/:projectId/sessions/:sessionId/log/switch-preflight': { action: 'session.log.switch_preflight', title: 'Checked session harness switch losses' },
   'GET /v1/projects/:projectId/sessions/:sessionId/events': { action: 'session.event.stream', title: 'Streamed session events' },

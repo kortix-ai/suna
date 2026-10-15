@@ -25,21 +25,30 @@ function render(patch: Partial<AccountState>): string {
 const trial = { plan: 'enterprise' as const, started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 };
 
 // "if ON A TRIAL CLEARLY STATE THAT THE ACCOUNT IS ON A TRIAL & GIVE EM OPTION
-// TO UPGRADE AT ANY TIME" (2026-10-15).
+// TO UPGRADE AT ANY TIME" (2026-10-15), then "ignore the UPGRADE NOW on
+// ENTERPRISE" (same day): Enterprise is sold by sales, a Credits trial upgrades.
 describe('the plan access notice', () => {
-  test('an Enterprise trial says so, with the days left, the end date and an Upgrade', () => {
+  test('an Enterprise trial says so, with the days left, the end date and Talk to sales, no Upgrade', () => {
     const markup = render({ trial });
     expect(markup).toContain('Enterprise trial · 9 days left');
     expect(markup).toContain('November 14, 2026');
-    expect(markup).toContain('Upgrade');
+    expect(markup).toContain('To keep Enterprise, talk to sales.');
     expect(markup).toContain('Talk to sales');
+    expect(markup).not.toContain('>Upgrade<');
   });
 
-  test('a member sees the trial and who can upgrade, not an Upgrade button', () => {
+  test('a member on an Enterprise trial is not told to ask for an upgrade', () => {
     const markup = render({ trial, can_manage_billing: false });
     expect(markup).toContain('Enterprise trial · 9 days left');
-    expect(markup).toContain('Ask an account owner or admin to upgrade.');
-    expect(markup).not.toContain('>Upgrade<');
+    expect(markup).not.toContain('Ask an account owner or admin to upgrade.');
+  });
+
+  test('a Credits trial offers Upgrade to a billing manager, and who to ask to a member', () => {
+    const credits = { ...trial, plan: 'credits' as const };
+    expect(render({ trial: credits })).toContain('>Upgrade<');
+    const member = render({ trial: credits, can_manage_billing: false });
+    expect(member).toContain('Ask an account owner or admin to upgrade.');
+    expect(member).not.toContain('>Upgrade<');
   });
 
   test('an open card offer shows its terms and Accept for a billing manager', () => {

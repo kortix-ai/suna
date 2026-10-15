@@ -448,8 +448,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'BEHAVIORAL only. Session provisioning sets KORTIX_SESSION_LOG_RESTORE=1 in the box env ' +
       '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
       'from the session log at boot when the store is missing or behind the log ' +
-      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. Not default-on ' +
-      'before the journal uploads pi images and OpenCode attachment bytes.',
+      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
+      'attachment bytes (P2.13), so a restore keeps images and files. Not default-on before the restore ' +
+      'memory is capped (harness/README.md).',
   },
 ];
 

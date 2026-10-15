@@ -2200,7 +2200,8 @@
         "updateAction": "Промени на {amount} / месец",
         "chooseAction": "Ажурирај план",
         "ownerOnly": "Само власници и администратори налога могу да промене план.",
-        "enterpriseNote": "Enterprise планови се воде са вашим тимом за налог."
+        "enterpriseNote": "Enterprise планови се воде са вашим тимом за налог.",
+        "keepEnterprise": "Да бисте остали на Enterprise плану после пробног периода, разговарајте са продајом."
       },
       "modal": {
         "title": "Изаберите свој ниво кредита",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "Колико плаћам месечно?",
-          "answer": "Изаберите ниво од 50 $ месечно (5.000 кредита) до 10.000 $ месечно (1.000.000 кредита). 200 $ месечно (20.000 кредита) је најпопуларније. Сваки ниво даје кредите по истој стопи: 100 кредита по долару. За више од 10.000 $ месечно обратите се продаји."
+          "answer": "Изаберите ниво од 50 $ месечно (5.000 кредита) до 10.000 $ месечно (1.000.000 кредита). Сваки ниво даје кредите по истој стопи: 100 кредита по долару. За више од 10.000 $ месечно обратите се продаји."
         },
         "members": {
           "question": "Да ли плаћам чланове?",
@@ -2535,7 +2536,7 @@
       "credits": "Кредити",
       "trialTitle": "{plan} пробни период · {days, plural, =0 {завршава се данас} one {остао је # дан} few {остала су # дана} other {остало је # дана}}",
       "trialBody": "Овај налог је на {plan} пробном периоду до {date}. Након тога се враћа на план који плаћа. Пређите на виши план у било ком тренутку да га задржите.",
-      "trialBodyEnterprise": "Овај налог је на Enterprise пробном периоду до {date}: SSO, SCIM, напредне улоге и евиденције ревизије су укључени. Након тога се враћа на план који плаћа, а SSO и SCIM остају укључени још 14 дана. Пређите на виши план у било ком тренутку.",
+      "trialBodyEnterprise": "Овај налог је на Enterprise пробном периоду до {date}: SSO, SCIM, напредне улоге и евиденције ревизије су укључени. Након тога се враћа на план који плаћа, а SSO и SCIM остају укључени још 14 дана. Да бисте задржали Enterprise, разговарајте са продајом.",
       "upgrade": "Пређи на виши план",
       "talkToSales": "Разговарајте са продајом",
       "askManager": "Замолите власника или администратора налога да пређе на виши план.",
@@ -10067,7 +10068,7 @@
       "text0679d5053dda": "{value0} није пријавио ниједан алат. Када се синхронизује, сваки добија своје подразумевано · Блокирај · Питај · Дозволи контролу овде.",
       "text067ed033e4a6": "Шест образаца који нарушавају систем, са решењем поред сваког.",
       "text0686a22fbf7d": "Друга сесија — исти пројекат, исти тим или други корисник",
-      "text0690079160b0": "„{value0}“ је обрисан",
+      "text0690079160b0": "{value0} је обрисан",
       "text0690d70b6301": "Easy connect покрива више од 3.000 апликација преко њихових OAuth екрана и прави је пут за SaaS изворе око ивица data stack-а. За сам warehouse директни типови конектора обично су искренији одговор — већини warehouse-а приступа се преко driver-а или API-ја, а не преко OAuth каталошке ставке.",
       "text06993786f49e": "GitHub веза је прекинута",
       "text06a6228ef85f": "када повежете репозиторијум — свака је заштићена на исти начин; ниједна се не може изабрати или променити овде.",
@@ -18847,6 +18848,20 @@
       "text843ed3b90b42": "Zapakujte ovu datoteku zajedno sa color.png 192×192 i providnom outline.png 32×32.",
       "text5c71673648a2": "U Teams-u idite na Apps → Manage your apps → Upload an app i otpremite zip.",
       "text91b9932411cc": "Dodajte aplikaciju u ćaskanje ili kanal, pa je pomenite da biste pokrenuli sesiju.",
+      "textfd326bb01b61": "Nalepite tri vrednosti iz bota koji ste upravo kreirali.",
+      "text39864856b1bc": "Na Azure portalu",
+      "text14bb4b708203": "U Microsoft Teams",
+      "textbda0f959cde0": "Držite vrednost tajne pri ruci. Nalepićete je u sledećem koraku.",
+      "text9bd6f94da702": "Manifest Teams aplikacije za ovog bota",
+      "text7fd0fd8f2405": "Koristite sopstveni Azure bot, pa ga pomenite u bilo kom Teams četu ili kanalu.",
+      "text776fd1de4147": "Zamolite administratora radnog prostora da poveže Microsoft Teams.",
+      "text89e9e20668f3": "Dovedite svog agenta u Slack",
+      "textc1bd5ca19f5f": "Dovedite svog agenta u Teams",
+      "texta15b754f2e91": "Pomenite ga u bilo kom četu ili kanalu i on obavlja posao tamo, bez kontrolne table i bez promene konteksta.",
+      "text675d4a4174ba": "sažmi ovu temu",
+      "textbd52d3eb5ed1": "Do sada tri odluke, jedno otvoreno pitanje za Lea.",
+      "text5df6373cf99f": "šta je ostalo do petka?",
+      "textf4d1a9671f2f": "Radim na tome. Čitam listu za lansiranje i tri otvorena tiketa.",
       "textd208e2f1260f": "Otvori Teams centar za administraciju",
       "text98722a5463cb": "Povezivanje sa Teams-om nije uspelo",
       "text53e5f96332d9": "Dodelite saglasnost administratora da Kortix bot može da radi u vašem zakupcu.",
@@ -19521,12 +19536,6 @@
       "servedModelInPlaceOf": "Уместо",
       "servedModelBadge": "Ради на моделу {model}",
       "servedModelBarDescription": "{requested} није одговорио на последњи захтев",
-      "computerAwakeStays": "Изоловано окружење остаје укључено док сте овде · до {duration}",
-      "computerAwakeStops": "Изоловано окружење се гаси за {duration}. Пошаљите поруку да остане укључено.",
-      "computerAwakeStopsSoon": "Изоловано окружење се ускоро гаси. Пошаљите поруку да остане укључено.",
-      "computerAwakeHoursMinutes": "{hours} ч {minutes} мин",
-      "computerAwakeHours": "{hours} ч",
-      "computerAwakeMinutes": "{minutes} мин",
       "text414cc580557b": "Упит сесије у реду измењен",
       "text52867b778586": "Један kortix.yaml.",
       "textd0dfd435b2f4": "Ваша AI радна снага, као код.",
@@ -21111,6 +21120,7 @@
     "zoomOut": "Умањи",
     "mapTwoFingers": "Користите два прста да померите мапу",
     "pick": "Избор",
+    "checklistReady": "{done}/{total} спремно",
     "convertFailed": "Није могуће припремити транскрипт. Покушајте поново."
   },
   "mobileAppPromo": {

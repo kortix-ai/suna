@@ -16,9 +16,11 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * a reader without it sees only Start session.
  */
 
+import { AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -33,8 +35,24 @@ import { useMemo, useState } from 'react';
 
 import { grantsForAgent } from './agent-people-section';
 
+type Grant = ReturnType<typeof grantsForAgent>[number];
+
+/** A member's face, or the group / whole-project glyph, as a `rounded-sm` tile, never a circle. */
+function GrantAvatar({ grant, size }: { grant: Grant; size: 'sm' | 'md' }) {
+  if (grant.principal_type === 'group' || grant.principal_type === 'project') {
+    return (
+      <EntityAvatar
+        icon={grant.principal_type === 'group' ? UsersIcon : UsersThreeIcon}
+        size={size}
+        className="ring-background ring-2"
+      />
+    );
+  }
+  return <UserAvatar email={grant.principal_label} size={size} />;
+}
+
 /** How many avatars the stack shows before it folds the rest into "+N". */
-const STACK_LIMIT = 4;
+const STACK_LIMIT = 3;
 
 export function AgentShareControl({
   projectId,
@@ -51,6 +69,8 @@ export function AgentShareControl({
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
   const [open, setOpen] = useState(false);
+  const [stackOpen, setStackOpen] = useState(false);
+  const tParticipants = useI18nTranslations('sessionParticipants');
 
   const grantsQuery = useQuery({
     queryKey: qk.project.resourceGrants(projectId),
@@ -82,40 +102,64 @@ export function AgentShareControl({
   return (
     <div className="flex items-center gap-2">
       {assigned.length > 0 ? (
-        <Hint label={label}>
-          <Link
-            href={peopleHref}
-            prefetch
-            aria-label={label}
-            className={cn(
-              'flex items-center rounded-full pl-1',
-              'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
-            )}
+        <HoverCard open={stackOpen} onOpenChange={setStackOpen} openDelay={300} closeDelay={100}>
+          <HoverCardTrigger asChild>
+            <Link
+              href={peopleHref}
+              prefetch
+              aria-label={label}
+              className={cn(
+                'hover:bg-secondary flex h-7 items-center rounded-md p-0.5',
+                'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
+              )}
+            >
+              {/* The session header's stack (`SessionParticipantStack`): the
+                  same group, overlap, count tile and hover card. */}
+              <AvatarGroup className="-space-x-1.5">
+                {shown.map((g) => (
+                  <GrantAvatar key={g.grant_id} grant={g} size="sm" />
+                ))}
+                {rest > 0 ? (
+                  // `min-w-6 w-auto`: the tile grows with the count (+97), never under 24px.
+                  <AvatarGroupCount className="h-6 w-auto min-w-6 px-1.5 text-xs tabular-nums">
+                    +{rest}
+                  </AvatarGroupCount>
+                ) : null}
+              </AvatarGroup>
+            </Link>
+          </HoverCardTrigger>
+          <HoverCardContent
+            side="bottom"
+            align="end"
+            sideOffset={6}
+            animated={false}
+            className="w-72 overflow-hidden p-0"
+            onEscapeKeyDown={() => setStackOpen(false)}
           >
-            {/* Overlapping stack: each bubble sits 6px into the one before,
-                with a ring in the page background so the overlap reads as
-                depth rather than a smear. */}
-            {shown.map((g) => (
-              <span
-                key={g.grant_id}
-                className="ring-background -ml-1.5 inline-flex rounded-full ring-2 first:ml-0"
-              >
-                {g.principal_type === 'group' ? (
-                  <EntityAvatar icon={UsersIcon} size="sm" className="rounded-full" />
-                ) : g.principal_type === 'project' ? (
-                  <EntityAvatar icon={UsersThreeIcon} size="sm" className="rounded-full" />
-                ) : (
-                  <UserAvatar email={g.principal_label} size="sm" />
-                )}
-              </span>
-            ))}
-            {rest > 0 ? (
-              <span className="bg-muted text-muted-foreground ring-background -ml-1.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-medium tabular-nums ring-2">
-                +{rest}
-              </span>
-            ) : null}
-          </Link>
-        </Hint>
+            <div className="text-muted-foreground flex items-center justify-between px-3.5 pt-2.5 pb-1 text-xs">
+              <span>{tParticipants('title')}</span>
+              <span className="tabular-nums">{assigned.length}</span>
+            </div>
+            <FadedScrollArea
+              fadeColor="from-popover"
+              fadeSize="6"
+              className="max-h-64 overscroll-contain"
+            >
+              <ul className="p-1 pt-0">
+                {assigned.map((g) => (
+                  <li key={g.grant_id}>
+                    <div className="text-foreground flex min-h-9 items-center gap-2.5 px-2 py-1 text-sm">
+                      <GrantAvatar grant={g} size="md" />
+                      <span className="min-w-0 flex-1 truncate leading-tight">
+                        {g.principal_label}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </FadedScrollArea>
+          </HoverCardContent>
+        </HoverCard>
       ) : null}
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
         <ShareNetworkIcon className="size-3.5 shrink-0" />
