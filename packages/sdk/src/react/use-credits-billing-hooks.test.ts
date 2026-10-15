@@ -95,9 +95,10 @@ test('the admin contract hooks hit the contract routes with the snake_case body'
   expect(requests[0]).toMatchObject({ method: 'GET', path: '/admin/api/accounts/acc-1/enterprise-contracts' });
 
   const create = useAdminCreateEnterpriseContract() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
+  // A license carries no credits: a stale creditsUsd is not sent.
   await create.mutationFn({ accountId: 'acc-1', licenseUsd: 25000, creditsUsd: 15000, termMonths: 12, collection: 'manual', note: 'x' });
   expect(requests[1]).toMatchObject({ method: 'POST', path: '/admin/api/accounts/acc-1/enterprise-contract' });
-  expect(requests[1].body).toEqual({ license_usd: 25000, credits_usd: 15000, term_months: 12, collection: 'manual', note: 'x' });
+  expect(requests[1].body).toEqual({ license_usd: 25000, term_months: 12, collection: 'manual', note: 'x' });
 
   const end = useAdminEndEnterpriseContract() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
   await end.mutationFn({ accountId: 'acc-1' });

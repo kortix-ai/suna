@@ -942,15 +942,13 @@ flow("ADM-20", { domain: "admin", routes: ["GET /v1/admin/api/projects"] }, asyn
   }
 });
 
-// ADM-19 — the trial-expiry sweep cron. Same `requireInternalCronAuth` gate as
-// BILL-13/BILL-16 (Bearer or X-Kortix-Internal-Key must timing-safe-equal
-// INTERNAL_SERVICE_KEY). Unlike the credit rotations the sweep grants nothing —
-// it only flips trials whose window ALREADY passed to 'expired' — so the real
-// call is safe to make when the internal key is available. `serial+global`
-// because it writes across every account on the deployment. The {expired:n}
-// assertion assumes the target runs billing internals (same assumption BILL-13
-// already makes); a KORTIX_BILLING_INTERNAL_ENABLED=false deployment answers
-// 200 {skipped:true} instead.
+// ADM-19 — the access sweep cron (the path keeps its old trial-expiry name: the
+// scheduler calls it). Same `requireInternalCronAuth` gate as BILL-13/BILL-16
+// (Bearer or X-Kortix-Internal-Key must timing-safe-equal INTERNAL_SERVICE_KEY).
+// It grants nothing: it ends manual licenses whose term is over and sends the
+// due license warnings, so the real call is safe when the internal key is
+// available. `serial+global` because it reads across every account. A
+// KORTIX_BILLING_INTERNAL_ENABLED=false deployment answers 200 {skipped:true}.
 flow(
   "ADM-19",
   { domain: "admin", serial: true, global: true, routes: ["POST /v1/billing/cron/trial-expiry"] },
@@ -966,11 +964,11 @@ flow(
       r.status(401);
     });
     if (ctx.env.capabilities.internalCron) {
-      await ctx.step("internal cron key → 200 {expired:n}", async () => {
+      await ctx.step("internal cron key → 200 {contracts_ended:n, warnings_sent:n}", async () => {
         const r = await ctx.client
           .withBearer(ctx.env.internalServiceKey!, "INTERNAL_CRON")
           .post("/v1/billing/cron/trial-expiry", {});
-        r.status(200).body().exists("$.expired");
+        r.status(200).body().exists("$.contracts_ended").exists("$.warnings_sent");
       });
     }
   },
