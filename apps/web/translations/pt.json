@@ -1836,7 +1836,9 @@
     },
     "lost": {
       "title": "O computador desta sessão foi perdido",
-      "message": "O sandbox na nuvem desapareceu do lado do provedor, então esta sessão não pode ser reiniciada nem recuperada. Isso é uma falha nossa, não algo que você fez — o problema foi relatado automaticamente. Tudo o que foi confirmado e enviado a partir desta sessão está seguro no repositório do seu projeto."
+      "message": "O sandbox na nuvem desapareceu do lado do provedor, então esta sessão não pode ser reiniciada nem recuperada. Isso é uma falha nossa, não algo que você fez — o problema foi relatado automaticamente. Tudo o que foi confirmado e enviado a partir desta sessão está seguro no repositório do seu projeto.",
+      "continueMessage": "O sandbox na nuvem desapareceu do lado do provedor. Isso é uma falha nossa e já foi reportado. Continue a sessão em um novo computador: ele parte da branch da sessão e traz esta conversa de volta. O trabalho que não teve commit e push continua perdido.",
+      "continue": "Continuar sessão"
     },
     "restart": {
       "label": "Reiniciar sessão",

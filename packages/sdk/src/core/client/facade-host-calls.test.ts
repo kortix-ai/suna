@@ -84,6 +84,11 @@ test('session(pid, sid).setPinned and setArchived write the caller`s own list st
   ]);
 });
 
+test('session(pid, sid).recover continues a lost session on a new computer', async () => {
+  await kortix.session('P1', 'S1').recover();
+  expect(calls).toEqual([{ method: 'POST', url: 'http://test.local/projects/P1/sessions/S1/recover', body: {} }]);
+});
+
 test('the root builds a sandbox proxy URL from an external id (mobile: no SandboxInfo in hand)', async () => {
   const root = await import('../../index');
   expect(root.getSandboxUrlForExternalId('ext-1', 6080)).toBe('http://test.local/p/ext-1/6080');

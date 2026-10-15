@@ -1,6 +1,6 @@
 
 import { projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 
 
@@ -227,13 +227,21 @@ async function resolveSessionHarness(
   // different shapes (or not at all on the reload paths), and the flag must
   // apply on every provisioning path, not only create.
   const [projectRow] = await db
-    .select({ metadata: projects.metadata })
+    .select({ metadata: projects.metadata, sessionMetadata: projectSessions.metadata })
     .from(projects)
+    .leftJoin(
+      projectSessions,
+      and(eq(projectSessions.projectId, projects.projectId), eq(projectSessions.sessionId, input.sessionId)),
+    )
     .where(eq(projects.projectId, input.projectId))
     .limit(1);
   // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
   const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
-  const sessionLogRestore = resolveFeatureFlag(projectRow?.metadata, 'session_log_restore');
+  // A lost session continued on a new computer restores from its log whatever
+  // the project flag says (KRTX-2419, `recover-lost-session.ts`).
+  const sessionLogRestore =
+    resolveFeatureFlag(projectRow?.metadata, 'session_log_restore') ||
+    typeof (projectRow?.sessionMetadata as Record<string, unknown> | null)?.lostRecoveredAt === 'string';
   if (input.platformMetaAgent) {
     // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
     // whenever the LLM gateway is on — pi has no other model path, so a

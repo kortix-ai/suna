@@ -1836,7 +1836,9 @@
     },
     "lost": {
       "title": "Se perdió el ordenador de esta sesión",
-      "message": "Su sandbox en la nube desapareció del lado del proveedor, por lo que esta sesión no se puede reiniciar ni recuperar. Es un error nuestro, no algo que hayas hecho tú; se ha notificado automáticamente. Todo lo que se confirmó y envió desde esta sesión está a salvo en el repositorio de tu proyecto."
+      "message": "Su sandbox en la nube desapareció del lado del proveedor, por lo que esta sesión no se puede reiniciar ni recuperar. Es un error nuestro, no algo que hayas hecho tú; se ha notificado automáticamente. Todo lo que se confirmó y envió desde esta sesión está a salvo en el repositorio de tu proyecto.",
+      "continueMessage": "Su sandbox en la nube desapareció del lado del proveedor. Es un error nuestro y ya se ha notificado. Continúa la sesión en un ordenador nuevo: parte de la rama de la sesión y recupera esta conversación. Lo que no se confirmó y envió sigue perdido.",
+      "continue": "Continuar sesión"
     },
     "restart": {
       "label": "Reiniciar sesión",

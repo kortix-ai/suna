@@ -349,6 +349,25 @@ function startServer(): string {
           { status: 409 },
         );
       }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION}/recover`) {
+        return Response.json({ ok: true });
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_B}/recover`) {
+        return Response.json(
+          { error: "This session's computer is not lost. Open the session to resume it.", code: 'session_not_lost' },
+          { status: 409 },
+        );
+      }
+      // The provider lost this session's box: /start answers the lost verdict.
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_B}/start`) {
+        return Response.json({
+          stage: 'failed',
+          agent_name: 'kortix',
+          retriable: false,
+          reason: 'runtime_identity_unavailable',
+          opencode_session_id: 'ses_oc',
+        });
+      }
       if (method === 'DELETE' && path === `${project}/sessions/${SESSION_B}`) {
         return Response.json({ error: 'Only the session owner can delete this' }, { status: 403 });
       }
@@ -1220,6 +1239,57 @@ describe('kortix sessions rm (multiple ids)', () => {
     const restore = await runCli(printed!.split(/\s+/).slice(1), config);
     expect(restore.code).toBe(0);
     expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/restore`)).toHaveLength(1);
+  });
+});
+
+describe('kortix sessions recover', () => {
+  test('POSTs the recover once and says what the next start does', async () => {
+    const r = await runCli(['sessions', 'recover', SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/recover`)).toEqual([
+      { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/recover`, body: {} },
+    ]);
+    expect(r.stdout).toContain('new computer');
+    expect(r.stdout).toContain(`kortix sessions start ${SESSION.slice(0, 8)}`);
+  });
+
+  test('--json prints the API answer', async () => {
+    const r = await runCli(['sessions', 'recover', SESSION, '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ ok: true, session_id: SESSION });
+  });
+
+  test('a short id resolves to the full id', async () => {
+    const r = await runCli(['sessions', 'recover', SESSION.slice(0, 8), ...P], config);
+    expect(r.code).toBe(0);
+    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/recover`)).toHaveLength(1);
+  });
+
+  test('a refused recover exits 1 with the API reason', async () => {
+    const r = await runCli(['sessions', 'recover', SESSION_B, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('is not lost');
+  });
+
+  test('no id exits 2 without a request', async () => {
+    const r = await runCli(['sessions', 'recover', ...P], config);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('Pass a session id');
+    expect(seen.filter((c) => c.path.endsWith('/recover'))).toEqual([]);
+  });
+
+  test('--help says what comes back and what stays lost', async () => {
+    const r = await runCli(['sessions', 'recover', '--help'], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('saved conversation');
+    expect(r.stdout).toContain('not committed and pushed');
+  });
+
+  test('start on a lost session exits 1 and names the recover command', async () => {
+    const r = await runCli(['sessions', 'start', SESSION_B, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('runtime_identity_unavailable');
+    expect(r.stderr).toContain(`kortix sessions recover ${SESSION_B.slice(0, 8)}`);
   });
 });
 
