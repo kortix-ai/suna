@@ -749,10 +749,14 @@ flow(
     const bothMember = await team.addMember("member");
     const neither = await team.addMember("member");
     const noRole = await team.addMember("member");
-    await team.grantProjectRole(project.id, qrOnly.userId!, "member");
-    await team.grantProjectRole(project.id, absOnly.userId!, "member");
-    await team.grantProjectRole(project.id, bothMember.userId!, "member");
-    await team.grantProjectRole(project.id, neither.userId!, "member");
+    const userId = (member: Principal) => {
+      if (!member.userId) throw new Error("group fixture member has no user id");
+      return member.userId;
+    };
+    await team.grantProjectRole(project.id, userId(qrOnly), "member");
+    await team.grantProjectRole(project.id, userId(absOnly), "member");
+    await team.grantProjectRole(project.id, userId(bothMember), "member");
+    await team.grantProjectRole(project.id, userId(neither), "member");
 
     const asQrOnly = ctx.client.as(qrOnly);
     const asAbsOnly = ctx.client.as(absOnly);
@@ -768,7 +772,7 @@ flow(
       (
         await owner.post(
           "/v1/accounts/:accountId/iam/groups/:groupId/members",
-          { userIds: members.map((m) => m.userId!) },
+          { userIds: members.map(userId) },
           { params: { ...accountParams, groupId } },
         )
       ).status(200);
@@ -789,7 +793,7 @@ flow(
         params: { ...params, appId },
       });
       const listed = await client.get("/v1/projects/:projectId/apps", { params });
-      const ids = (listed.status(200).json<any>().apps as Array<{ app_id: string }>).map((a) => a.app_id);
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
       const session = await client.post(
         "/v1/projects/:projectId/apps/:appId/access-session",
         {},
@@ -813,7 +817,7 @@ flow(
           { params },
         );
         created.status(201);
-        appId = created.json<any>().app_id;
+        appId = created.json<{ app_id: string }>().app_id;
         const restricted = await owner.patch(
           "/v1/projects/:projectId/apps/:appId/access",
           { mode: "restricted", group_ids: [qr, abs] },
@@ -851,7 +855,7 @@ flow(
       });
       read.status(404);
       const listed = await ctx.client.as(neither).get("/v1/projects/:projectId/apps", { params });
-      const ids = (listed.status(200).json<any>().apps as Array<{ app_id: string }>).map((a) => a.app_id);
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
       if (ids.includes(appId)) throw new Error("a member of neither allowed group sees the App");
       (
         await ctx.client.as(neither).post(
