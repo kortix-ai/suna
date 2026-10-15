@@ -459,13 +459,16 @@ export function validateRequiredConnectorFields(
 
 const PI_PACKAGE_FILTERS = ['extensions', 'skills', 'prompts', 'themes'] as const;
 const PI_PACKAGES_MAX = 20;
+/** `harnesses.pi.codemode`: pi's codemode tool. `on` (the default) keeps the other tools declared; `only` gives the model codemode alone. */
+export const PI_CODEMODE_VALUES = ['off', 'on', 'only'] as const;
+export type PiCodemodeV2 = (typeof PI_CODEMODE_VALUES)[number];
 
 /** One `harnesses.pi.packages` entry: pi's own settings `packages` shape. */
 export type PiPackageEntryV2 = string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] };
 
 export interface HarnessesV2 {
   /** `exclude` exists only on an agent: global packages that agent does not load. */
-  pi?: { packages?: PiPackageEntryV2[]; exclude?: string[] };
+  pi?: { packages?: PiPackageEntryV2[]; exclude?: string[]; codemode?: PiCodemodeV2 };
   opencode?: { plugins?: string[]; exclude?: string[] };
 }
 
@@ -484,6 +487,8 @@ function validatePiPackageSource(source: unknown, where: string, issues: Manifes
  * format, installed before the session starts, never at boot. At the top level
  * they apply to every agent; on an agent (`agents.<name>.harnesses`) they add to
  * that agent only, and its `exclude` drops global packages for that agent.
+ * `codemode` (`off`, `on`, `only`) sets pi's codemode tool; an agent's value
+ * replaces the top-level one.
  */
 export function validateHarnessesV2(node: unknown, path: string, issues: ManifestIssue[], scope: 'project' | 'agent' = 'project'): void {
   if (node === undefined || node === null) return;
@@ -522,11 +527,14 @@ export function validateHarnessesV2(node: unknown, path: string, issues: Manifes
       }
       continue;
     }
-    const keys = scope === 'agent' ? ['packages', 'exclude'] : ['packages'];
+    const keys = scope === 'agent' ? ['packages', 'exclude', 'codemode'] : ['packages', 'codemode'];
     for (const key of Object.keys(settings)) {
       if (!keys.includes(key)) {
-        issues.push({ path: `${where}.${key}`, message: `unknown key; ${scope === 'agent' ? 'an agent\'s harnesses.pi takes `packages` and `exclude`' : 'harnesses.pi takes only `packages` (`exclude` belongs on an agent)'}.`, severity: 'error' });
+        issues.push({ path: `${where}.${key}`, message: `unknown key; ${scope === 'agent' ? 'an agent\'s harnesses.pi takes `packages`, `exclude` and `codemode`' : 'harnesses.pi takes `packages` and `codemode` (`exclude` belongs on an agent)'}.`, severity: 'error' });
       }
+    }
+    if (settings.codemode !== undefined && !(PI_CODEMODE_VALUES as readonly unknown[]).includes(settings.codemode)) {
+      issues.push({ path: `${where}.codemode`, message: `must be ${PI_CODEMODE_VALUES.join(', ')} (got ${JSON.stringify(settings.codemode)}).`, severity: 'error' });
     }
     validatePiExclude(settings.exclude, `${where}.exclude`, issues);
     const packages = settings.packages;

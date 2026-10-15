@@ -57,7 +57,7 @@ Every action runs as the linked account of the person who takes it, with that ac
 | Action | Who may do it |
 | --- | --- |
 | Mention the bot, or message it in a DM | A linked project member (`project.session.start`), within the join policy |
-| Stop a run | The sender of the message being answered, or anyone approved into the session. Both need `project.session.stop`. |
+| Stop a run | The sender of the message being answered, the session owner, or a project manager. Each needs `project.session.stop`. |
 | Change a channel's project, agent, model or join policy | A project manager (`project.connector.write`). In a DM or Teams personal chat, any project member. |
 | Move a bound channel to another project | A project manager in both projects |
 | Act on a review card | A project manager (`project.review.act`) |
@@ -111,7 +111,7 @@ Every card also has **View in Kortix**. The request-changes button is **Ask for 
 
 **Connector approval cards.** A [connector call that needs approval](/docs/connect/connectors#policies-and-approvals) posts a card with the action, the parameters the connector will receive, and the agent's description of the effect, marked as not verified. Select **Approve** or **Deny**. In Slack, **Reply…** sends a message to the agent with your decision.
 
-**Stop.** While the agent works, its live message has a **Stop** button. In Teams, `/stop` does the same after the card scrolls away. Stop ends the run at the runtime, not only on the message. Anyone else gets a private refusal.
+**Stop.** While the agent works, its live message has a **Stop** button. In Teams, `/stop` does the same after the card scrolls away. Stop ends the run at the runtime, not only on the message. The same rule holds in the web and mobile apps. Anyone else gets a private refusal, and everyone else in the session sees who stopped the run.
 
 ## What the agent can read and post
 

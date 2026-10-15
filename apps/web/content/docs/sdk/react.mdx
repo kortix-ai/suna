@@ -115,6 +115,7 @@ To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId,
 | `status` | `SessionStatus` | The runtime status of the session. |
 | `working` | `WorkingProjection` | `{ state: 'idle' \| 'working', pendingDelivery?, source, turnId, since }`. The one working answer. |
 | `isBusy` | `boolean` | `working.state === 'working'`. |
+| `canStop` | `boolean` | Whether this viewer may stop the running turn. `false` only when the server's `/turn` answer says `can_stop: false`: in a shared session only the member who started the turn, the session owner or a project manager may stop it. Show no Stop then. |
 | `presenceAwake` | `{ until: Date, capAt: Date } \| null` | With `browserPresence`: `until` is when the sandbox stops after the latest presence renewal, and `capAt` is the time presence cannot keep it awake past. Read again every 5 minutes while the person is present, when a turn ends, when the control plane closes a turn, and when the sandbox becomes ready. `null` while the person is absent, for a person who may not start the session, once the session start reports the sandbox not ready, and from the start of a turn until the next renewal answers. |
 | `isSending` | `boolean` | A `send` request is in flight. |
 | `sendError` | `KortixSendError \| null` | The last `send` failure. A new `send` clears it. |

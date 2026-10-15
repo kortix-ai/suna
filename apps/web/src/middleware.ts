@@ -618,7 +618,8 @@ export async function middleware(request: NextRequest) {
   // (see lib/supabase/middleware-identity.ts) instead of round-tripping
   // GoTrue, so a client-side navigation no longer pays an edge -> Supabase hop
   // before its RSC payload can start. getUser() still runs for what cannot be
-  // settled locally.
+  // settled locally, and once per session per 30 s to confirm it was not
+  // signed out (KRTX-2387).
   //
   // IMPORTANT: Skip the lookup entirely for auth routes — the auth page
   // handles its own session client-side. Resolving here can trigger a
@@ -660,13 +661,15 @@ export async function middleware(request: NextRequest) {
   // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
   // erroring on every request and dead-ends the user on /auth. Drop the Supabase
   // auth cookies (they can be chunked: name, name.0, name.1, …) so the next load
-  // starts clean instead of looping on the bad token.
+  // starts clean instead of looping on the bad token. A signed-out session
+  // (`session_not_found`) can never come back either.
   if (authError) {
     const message = authError.message || '';
     const code = (authError as { code?: string }).code;
     if (
       code === 'refresh_token_already_used' ||
       code === 'refresh_token_not_found' ||
+      code === 'session_not_found' ||
       /refresh token/i.test(message) ||
       /invalid.*(jwt|token)/i.test(message)
     ) {

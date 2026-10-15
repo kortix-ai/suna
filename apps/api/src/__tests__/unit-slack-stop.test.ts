@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { projects } from '@kortix/db';
 
 import { SLACK_STOP_ACTION } from '../channels/slack/stop-action';
+import { config } from '../config';
 import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Slack had no Stop at all. A turn that wedges holds its OpenCode assistant
@@ -13,17 +15,22 @@ const SESSION_ID = 'sess-live';
 const TEAM = 'T1';
 const THREAD = '10.10';
 
+// The project's account, which the owner and manager check needs, and the
+// presser's row on the thread. An approved participant row must never read
+// as a grant to stop: joining lets a person prompt, not end another's run.
+let projectRow: { accountId: string } | undefined;
 let participantRow: { status: string } | undefined;
-let participantThrows = false;
+let dbThrows = false;
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
-            if (participantThrows) throw new Error('pool exhausted');
-            return participantRow ? [participantRow] : [];
+            if (dbThrows) throw new Error('pool exhausted');
+            const row = table === projects ? projectRow : participantRow;
+            return row ? [row] : [];
           },
         }),
       }),
@@ -34,15 +41,32 @@ mock.module('../shared/db', () => ({
 // Whether the presser may still stop runs in the project (a linked account
 // with project.session.stop), and what was asked.
 let stopActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
+let actorThrows = false;
 const actorChecks: Array<{ user: string; projectId: string; action: string }> = [];
 mock.module('../channels/core/identity', () =>
   chatIdentityStub({
     resolveProjectChatActor: async (user: { platformUserId: string }, projectId: string, action: string) => {
       actorChecks.push({ user: user.platformUserId, projectId, action });
+      if (actorThrows) throw new Error('pool exhausted');
       return stopActor;
     },
   }),
 );
+
+// The API's stop rule: owner or manager standing, and the running turn's
+// prompter. Default: neither, so only the sender may stop.
+let standing = false;
+const standingChecks: Array<Record<string, string>> = [];
+let runningTurn: { messageId: string | null } | null = { messageId: 'msg-1' };
+let prompter: string | null = null;
+mock.module('../projects/surface', () => ({
+  sessionLifecycleStandingFor: async (input: Record<string, string>) => {
+    standingChecks.push(input);
+    return standing;
+  },
+  readRunningTurn: async () => runningTurn,
+  turnPrompterOf: async (_sessionId: string, messageId: string | null) => (messageId ? prompter : null),
+}));
 
 let turn: Record<string, unknown> | null = null;
 let claim = true;
@@ -65,9 +89,9 @@ mock.module('../channels/slack/turn', () => ({
 
 let abortResult: boolean | Error = true;
 const aborted: string[] = [];
-const abortOpts: Array<{ requestedStop?: boolean } | undefined> = [];
+const abortOpts: Array<{ requestedStop?: boolean; stoppedBy?: string | null } | undefined> = [];
 mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
-  abortRuntimeTurn: async (id: string, opts?: { requestedStop?: boolean }) => {
+  abortRuntimeTurn: async (id: string, opts?: { requestedStop?: boolean; stoppedBy?: string | null }) => {
     aborted.push(id);
     abortOpts.push(opts);
     if (abortResult instanceof Error) throw abortResult;
@@ -87,12 +111,19 @@ const liveTurn = (user: string) => ({
 });
 
 const load = async () => await import('../channels/slack/stop');
+const requireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
 
 beforeEach(() => {
+  projectRow = { accountId: 'acct-1' };
   participantRow = undefined;
-  participantThrows = false;
+  dbThrows = false;
   stopActor = { userId: 'user-1' };
+  actorThrows = false;
   actorChecks.length = 0;
+  standing = false;
+  standingChecks.length = 0;
+  runningTurn = { messageId: 'msg-1' };
+  prompter = null;
   turn = liveTurn('U_OWNER');
   claim = true;
   abortResult = true;
@@ -100,9 +131,11 @@ beforeEach(() => {
   finalized.length = 0;
   deleted.length = 0;
   aborted.length = 0;
+  abortOpts.length = 0;
 });
 
 afterEach(() => {
+  config.SLACK_REQUIRE_USER_IDENTITY = requireIdentity;
   mock.restore();
 });
 
@@ -115,16 +148,80 @@ describe('stopSlackTurn', () => {
     expect(outcome).toEqual({ stopped: true, stoppedRuntime: true });
     expect(aborted).toEqual([SESSION_ID]);
     // A person asked for this stop: the turn must not read as a failure.
-    expect(abortOpts.at(-1)).toEqual({ requestedStop: true });
+    // ...and it names the Kortix user who asked, for the turn's record.
+    expect(abortOpts.at(-1)).toEqual({ requestedStop: true, stoppedBy: 'user-1' });
     expect(finalized).toEqual([{ title: 'Stopped', answer: 'Stopped by <@U_OWNER>.', unfinished: true }]);
     expect(deleted).toEqual([SESSION_ID]);
   });
 
-  test('an approved participant may stop a turn they did not start', async () => {
+  test('someone else in the thread may not stop a run they did not start', async () => {
+    // Being approved on the thread lets a person prompt the session. It does
+    // not let them end another person's run: that is the prompter's, the
+    // session owner's or a project manager's call, as on every other surface.
     participantRow = { status: 'approved' };
     const { stopSlackTurn } = await load();
 
-    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OTHER' })).stopped).toBe(true);
+    expect(await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OTHER' })).toEqual({
+      stopped: false,
+      notice: 'Only the person who started this run, the session owner or a project manager can stop it.',
+    });
+    expect(standingChecks).toEqual([
+      { userId: 'user-1', accountId: 'acct-1', projectId: 'proj-1', sessionId: SESSION_ID },
+    ]);
+    expect(claims).toEqual([]);
+    expect(aborted).toEqual([]);
+    expect(finalized).toEqual([]);
+  });
+
+  test('the session owner or a project manager may stop a run they did not start', async () => {
+    standing = true;
+    stopActor = { userId: 'user-manager' };
+    const { stopSlackTurn } = await load();
+
+    expect(await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_MANAGER', byName: '<@U_MANAGER>' })).toEqual({
+      stopped: true,
+      stoppedRuntime: true,
+    });
+    expect(abortOpts.at(-1)).toEqual({ requestedStop: true, stoppedBy: 'user-manager' });
+    expect(finalized).toEqual([{ title: 'Stopped', answer: 'Stopped by <@U_MANAGER>.', unfinished: true }]);
+  });
+
+  test('the linked user who prompted the running turn from another surface may stop it', async () => {
+    // A member prompted this channel-bound session from the web: the card was
+    // drawn for the thread's message, but the run is theirs.
+    stopActor = { userId: 'user-web' };
+    prompter = 'user-web';
+    const { stopSlackTurn } = await load();
+
+    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_WEB' })).stopped).toBe(true);
+    expect(abortOpts.at(-1)).toEqual({ requestedStop: true, stoppedBy: 'user-web' });
+  });
+
+  test('another linked member is not the prompter', async () => {
+    participantRow = { status: 'approved' };
+    stopActor = { userId: 'user-other' };
+    prompter = 'user-web';
+    const { stopSlackTurn } = await load();
+
+    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OTHER' })).stopped).toBe(false);
+    expect(aborted).toEqual([]);
+  });
+
+  test('an owner or manager without a live link, or without project.session.stop, is refused', async () => {
+    standing = true;
+    for (const reason of ['not_member', 'unlinked'] as const) {
+      stopActor = { reason };
+      const { stopSlackTurn } = await load();
+      expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_MANAGER' })).stopped).toBe(false);
+    }
+    // A project that no longer exists has no owner or manager to ask about.
+    stopActor = { userId: 'user-manager' };
+    projectRow = undefined;
+    const { stopSlackTurn } = await load();
+    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_MANAGER' })).stopped).toBe(false);
+    // Standing is never asked for a person the link does not name.
+    expect(standingChecks).toEqual([]);
+    expect(aborted).toEqual([]);
   });
 
   test('the sender must still be allowed to stop runs in the project', async () => {
@@ -141,8 +238,21 @@ describe('stopSlackTurn', () => {
     expect(finalized).toEqual([]);
   });
 
-  test('a bystander is refused, and nothing is claimed, aborted or closed', async () => {
-    participantRow = { status: 'pending' };
+  test('without required identities the sender stops unlinked, and nobody else does', async () => {
+    // The thread runs as the installer then, so the sender needs no link and
+    // the stop names no Kortix user.
+    config.SLACK_REQUIRE_USER_IDENTITY = false;
+    stopActor = { reason: 'unlinked' };
+    const { stopSlackTurn } = await load();
+
+    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OTHER' })).stopped).toBe(false);
+    expect(aborted).toEqual([]);
+    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OWNER' })).stopped).toBe(true);
+    expect(abortOpts.at(-1)).toEqual({ requestedStop: true, stoppedBy: null });
+  });
+
+  test('an unlinked bystander is refused, and nothing is claimed, aborted or closed', async () => {
+    stopActor = { reason: 'unlinked' };
     const { stopSlackTurn } = await load();
 
     expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_BYSTANDER' })).stopped).toBe(false);
@@ -152,16 +262,23 @@ describe('stopSlackTurn', () => {
   });
 
   test('an unresolvable lookup refuses rather than assumes', async () => {
-    participantThrows = true;
+    actorThrows = true;
     const { stopSlackTurn } = await load();
+    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OWNER' })).stopped).toBe(false);
 
-    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_UNKNOWN' })).stopped).toBe(false);
+    // A manager's standing needs the project's account: that lookup fails too.
+    actorThrows = false;
+    dbThrows = true;
+    standing = true;
+    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_MANAGER' })).stopped).toBe(false);
+    expect(aborted).toEqual([]);
   });
 
   test('an anonymous presser is refused before any lookup', async () => {
     const { stopSlackTurn } = await load();
 
     expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: '' })).stopped).toBe(false);
+    expect(actorChecks).toEqual([]);
   });
 
   test('the finalize is claimed BEFORE the runtime is touched', async () => {
@@ -226,15 +343,6 @@ describe('stopSlackTurn', () => {
 
     expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OWNER' })).stopped).toBe(true);
     expect(finalized).toHaveLength(1);
-  });
-
-  test('a thread whose turn has no thread id refuses a non-sender', async () => {
-    turn = { ...liveTurn('U_OWNER'), triggerTs: '', originatingEvent: { user: 'U_OWNER' } };
-    const { stopSlackTurn } = await load();
-
-    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OTHER' })).stopped).toBe(false);
-    // The sender themselves is still allowed — that check never needs a thread.
-    expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OWNER' })).stopped).toBe(true);
   });
 
   test('the action id is the one the live plan draws and interactivity routes', () => {

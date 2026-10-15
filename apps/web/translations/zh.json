@@ -1194,10 +1194,6 @@
           "name": "元智能体",
           "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
         },
-        "apps": {
-          "name": "应用",
-          "description": "将静态网站、JavaScript 包、Dockerfile 和 OCI 镜像部署到稳定的无服务器网址，并运行后端：在始终运行的机器上提供数据库、服务器函数、实时查询、文件存储、定时任务和搜索。"
-        },
         "monitors": {
           "name": "监控器",
           "description": "运行持久监控器来观察日志、信息源或 API，并根据事件启动智能体会话。"
@@ -2090,6 +2086,7 @@
     "expandQuotes": "展开引用",
     "collapseQuotes": "收起引用",
     "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
+    "stoppedBy": "由 {name} 停止",
     "queued": "排队中",
     "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}",
     "queuedCount": "{count} 条排队中",
@@ -2223,7 +2220,6 @@
         "creditsPerMonth": "每月 {credits} 个积分",
         "credits": "{credits} 个积分",
         "price": "{amount} / 月",
-        "popular": "最受欢迎",
         "current": "当前",
         "choose": "选择档位",
         "chooseHint": "档位起价为每月 {min}。",
@@ -2856,7 +2852,14 @@
     "failedToCopyFileContent": "复制文件内容失败",
     "noContentAvailable": "无可用内容",
     "noContentDescription": "此工具执行未产生任何输入或输出内容可显示。",
-    "tool": "工具"
+    "tool": "工具",
+    "codemode": {
+      "ranScript": "已运行脚本",
+      "runningScript": "正在运行脚本",
+      "scriptFailed": "脚本运行失败",
+      "calls": "{count, plural, other {# 次工具调用}}",
+      "noOutput": "无输出"
+    }
   },
   "agentRunLimit": {
     "gotIt": "知道了",
@@ -11184,6 +11187,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "未知错误",
       "text27d628c8b427": "{label} 已完成。",
+      "textc0589750863c": "{count} 个任务已完成",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "返回应用（Applications → 您的应用），并确认已选中“Sign On”标签页。",
@@ -19713,6 +19717,31 @@
       "text7aaebc8b5794": "{value0}/{value1} 个快照",
       "text6d82b9d57b0c": "你的服务器环境（公开值，不是密钥）",
       "text0d04bfeb7d64": "应用",
+      "text5e1c0a7b2f4d": "复制为提示词",
+      "textb1a7e40c2d01": "当前上线",
+      "textb1a7e40c2d02": "正在服务流量",
+      "textb1a7e40c2d03": "部署于 {value0}",
+      "textb1a7e40c2d04": "发布方式",
+      "textb1a7e40c2d05": "镜像",
+      "textb1a7e40c2d06": "{value0} 运行中",
+      "textb1a7e40c2d07": "已构建且健康",
+      "textb1a7e40c2d08": "{value0} 次构建失败",
+      "textb1a7e40c2d09": "查看日志",
+      "textb1a7e40c2d0a": "隐藏日志",
+      "textb1a7e40c2d0b": "部署",
+      "textb1a7e40c2d0c": "已被 v{value0} 替换 · {value1}",
+      "textb1a7e40c2d0d": "显示构建输出",
+      "textb1a7e40c2d0e": "隐藏构建输出",
+      "textb1a7e40c2d0f": "蓝绿",
+      "textb1a7e40c2d10": "滚动",
+      "textb1a7e40c2d11": "立即",
+      "textb1a7e40c2d12": "金丝雀",
+      "textb1a7e40c2d17": "启动中…",
+      "textb1a7e40c2d18": "停止中…",
+      "textb1a7e40c2d19": "进程组",
+      "textb1a7e40c2d1b": "已运行 {value0}",
+      "textb1a7e40c2d1c": "CPU",
+      "textb1a7e40c2d1d": "磁盘",
       "text840993da3129": "应用事件已创建",
       "textbd3baa5c3d2c": "选择事件发生所在的应用。可以在此处连接，也可以在创建触发器之后连接。",
       "text89acd37e88bf": "选择由什么来启动代理。",

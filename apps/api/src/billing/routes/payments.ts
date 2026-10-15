@@ -1,3 +1,4 @@
+import { createHostedCheckout } from '../services/hosted-checkout';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import { getStripe } from '../../shared/stripe';
@@ -91,7 +92,7 @@ paymentsRouter.openapi(
           quantity: 1,
         }];
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await createHostedCheckout(stripe, {
       customer: customerId,
       mode: 'payment',
       line_items: lineItems,

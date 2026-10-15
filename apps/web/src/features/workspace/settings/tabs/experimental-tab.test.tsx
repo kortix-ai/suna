@@ -15,9 +15,9 @@ const betaFeature: FeatureFlagView = {
 };
 
 const experimentalFeature: FeatureFlagView = {
-  key: 'apps',
-  name: 'Apps',
-  description: 'Early-access app discovery.',
+  key: 'monitors',
+  name: 'Monitors',
+  description: 'Run watchers that observe and fire trigger events.',
   stability: 'experimental',
   available: true,
   enabled: false,
@@ -71,8 +71,8 @@ describe('ExperimentalTabView', () => {
     );
     expect(out).toContain('Meta Agent');
     expect(out).toContain('Coordinate agent sessions.');
-    expect(out).toContain('Apps');
-    expect(out).toContain('Early-access app discovery.');
+    expect(out).toContain('Monitors');
+    expect(out).toContain('Run watchers that observe and fire trigger events.');
     // Experimental / Beta / Stable labels were removed (Marko, 2026-09-03).
     expect(out).not.toContain('>Beta<');
     expect(out).not.toContain('>Experimental<');
@@ -83,7 +83,7 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out.indexOf('Meta Agent')).toBeLessThan(out.indexOf('Apps'));
+    expect(out.indexOf('Meta Agent')).toBeLessThan(out.indexOf('Monitors'));
   });
 
   test('a feature switch reflects its enabled state via aria-checked', () => {
@@ -107,9 +107,9 @@ describe('ExperimentalTabView', () => {
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
     expect(out).toContain('id="feature-flag-meta_agent"');
-    expect(out).toContain('id="feature-flag-apps"');
+    expect(out).toContain('id="feature-flag-monitors"');
     expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-meta_agent"/);
-    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-apps"/);
+    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-monitors"/);
     // Every switch in the pane is named — none may ship unlabelled.
     expect(out.match(/role="switch"/g)?.length).toBe(2);
     expect(out.match(/aria-labelledby="feature-flag-/g)?.length).toBe(2);
@@ -130,7 +130,7 @@ describe('ExperimentalTabView', () => {
   });
 
   test('an operator_only flag shows "Managed by Kortix" and a disabled, checked switch even for a manager', () => {
-    const managed: FeatureFlagView = { ...experimentalFeature, key: 'apps', name: 'Apps', enabled: true, overridden: true, operator_only: true };
+    const managed: FeatureFlagView = { ...experimentalFeature, key: 'session_log', name: 'Session log', enabled: true, overridden: true, operator_only: true };
     const out = renderToStaticMarkup(<ExperimentalTabView features={[managed]} canManage />);
     expect(out).toContain('Managed by Kortix');
     expect(out).not.toContain('Overridden for this project');
@@ -267,11 +267,11 @@ describe('filterFeatures', () => {
   });
 
   test('matches the display name', () => {
-    expect(filterFeatures(all, 'apps').map((f) => f.key)).toEqual(['apps']);
+    expect(filterFeatures(all, 'monitors').map((f) => f.key)).toEqual(['monitors']);
   });
 
   test('matches the raw key — the term docs and support threads actually use', () => {
-    expect(filterFeatures(all, 'apps').map((f) => f.key)).toEqual(['apps']);
+    expect(filterFeatures(all, 'monitors').map((f) => f.key)).toEqual(['monitors']);
   });
 
   test('matches the description', () => {
@@ -279,7 +279,7 @@ describe('filterFeatures', () => {
   });
 
   test('is case-insensitive and ignores surrounding whitespace', () => {
-    expect(filterFeatures(all, '  APPS  ').map((f) => f.key)).toEqual(['apps']);
+    expect(filterFeatures(all, '  MONITORS  ').map((f) => f.key)).toEqual(['monitors']);
   });
 
   test('no match returns empty rather than falling back to everything', () => {

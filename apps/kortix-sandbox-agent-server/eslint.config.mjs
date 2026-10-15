@@ -73,7 +73,8 @@ const SERVICE_EXTERNALS = {
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
   'open-code': ['bun:sqlite'],
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...SDK_WIRE_MESSAGE_ID],
+  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist path: a setter pi does not export (pi/codemode.ts).
+  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
 }
 
 const lib = at('src/lib/**')
@@ -168,6 +169,13 @@ const independentModules = createIndependentModules({
       [at('src/app/**'), at('src/routes/**'), ...harnessCore, ...services, SHARED, at('package.json')],
       [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
       'app/ composes routes, the harness contract, services and the shared layer. Never an adapter.',
+    ),
+    layer(
+      'codemode-worker',
+      at('src/extensions/codemode/worker.ts'),
+      [],
+      pkg('@earendil-works/pi-codemode'),
+      'The codemode worker entrypoint (scripts/build.sh) imports pi-codemode only.',
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).

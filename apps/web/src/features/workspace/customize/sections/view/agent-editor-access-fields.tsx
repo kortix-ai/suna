@@ -99,7 +99,7 @@ export function GrantHeaderTrailing({
 }: {
   value: AgentGrantSetV2 | undefined;
   tab?: 'skills' | 'connectors' | 'secrets';
-  /** A page `tab` cannot name — Apps is a flag-gated Customize tab, reached
+  /** A page `tab` cannot name — Apps is a Customize tab, reached
    *  through `capabilityTabHref(projectId, 'apps')`. */
   href?: (projectId: string) => string;
   label: string;

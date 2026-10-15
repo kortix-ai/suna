@@ -1194,10 +1194,6 @@
           "name": "メタエージェント",
           "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
         },
-        "apps": {
-          "name": "アプリ",
-          "description": "静的サイト、JavaScript バンドル、Dockerfile、OCI イメージを安定したサーバーレス URL にデプロイし、バックエンドを実行します。データベース、サーバー関数、リアルタイムクエリ、ファイルストレージ、スケジュール実行、検索を常時稼働のマシンで動かします。"
-        },
         "monitors": {
           "name": "モニター",
           "description": "ログ、フィード、API を監視し、イベントからエージェントセッションを開始する常駐ウォッチャーを実行します。"
@@ -2090,6 +2086,7 @@
     "expandQuotes": "引用を展開",
     "collapseQuotes": "引用を折りたたむ",
     "stopUnconfirmed": "停止を確認できませんでした。エージェントがまだ実行中の可能性があります。もう一度停止してください。",
+    "stoppedBy": "{name}が停止",
     "queued": "待機中",
     "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
     "queuedCount": "{count} 件キュー中",
@@ -2223,7 +2220,6 @@
         "creditsPerMonth": "月 {credits} クレジット",
         "credits": "{credits} クレジット",
         "price": "{amount} / 月",
-        "popular": "いちばん人気",
         "current": "現在",
         "choose": "ティアを選択",
         "chooseHint": "ティアは月 {min} からです。",
@@ -2856,7 +2852,14 @@
     "failedToCopyFileContent": "ファイル内容のコピーに失敗しました",
     "noContentAvailable": "コンテンツがありません",
     "noContentDescription": "このツール実行では、表示する入力または出力コンテンツが生成されませんでした。",
-    "tool": "ツール"
+    "tool": "ツール",
+    "codemode": {
+      "ranScript": "スクリプトを実行しました",
+      "runningScript": "スクリプトを実行中",
+      "scriptFailed": "スクリプトが失敗しました",
+      "calls": "{count, plural, other {# 件のツール呼び出し}}",
+      "noOutput": "出力なし"
+    }
   },
   "agentRunLimit": {
     "gotIt": "了解",
@@ -11184,6 +11187,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "不明なエラー",
       "text27d628c8b427": "{label}が完了しました。",
+      "textc0589750863c": "{count} 件のタスクが完了しました",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "アプリケーション（Applications → 対象アプリ）に戻り、「Sign On」タブが選択されていることを確認します。",
@@ -19713,6 +19717,31 @@
       "text7aaebc8b5794": "スナップショット {value0}/{value1}",
       "text6d82b9d57b0c": "サーバーの環境変数（公開値であり、シークレットではありません）",
       "text0d04bfeb7d64": "アプリ",
+      "text5e1c0a7b2f4d": "プロンプトとしてコピー",
+      "textb1a7e40c2d01": "公開中",
+      "textb1a7e40c2d02": "トラフィック処理中",
+      "textb1a7e40c2d03": "デプロイ {value0}",
+      "textb1a7e40c2d04": "ロールアウト",
+      "textb1a7e40c2d05": "イメージ",
+      "textb1a7e40c2d06": "{value0} 実行中",
+      "textb1a7e40c2d07": "ビルド済み・正常",
+      "textb1a7e40c2d08": "{value0} 件の失敗したビルド",
+      "textb1a7e40c2d09": "ログを表示",
+      "textb1a7e40c2d0a": "ログを隠す",
+      "textb1a7e40c2d0b": "デプロイ",
+      "textb1a7e40c2d0c": "v{value0} に置き換え · {value1}",
+      "textb1a7e40c2d0d": "ビルド出力を表示",
+      "textb1a7e40c2d0e": "ビルド出力を隠す",
+      "textb1a7e40c2d0f": "ブルーグリーン",
+      "textb1a7e40c2d10": "ローリング",
+      "textb1a7e40c2d11": "即時",
+      "textb1a7e40c2d12": "カナリア",
+      "textb1a7e40c2d17": "起動中…",
+      "textb1a7e40c2d18": "停止中…",
+      "textb1a7e40c2d19": "プロセスグループ",
+      "textb1a7e40c2d1b": "稼働 {value0}",
+      "textb1a7e40c2d1c": "CPU",
+      "textb1a7e40c2d1d": "ディスク",
       "text840993da3129": "アプリイベントを作成しました",
       "textbd3baa5c3d2c": "イベントが発生するアプリを選んでください。ここで接続することも、トリガーの作成後に接続することもできます。",
       "text89acd37e88bf": "エージェントを起動するきっかけを選んでください。",

@@ -129,6 +129,7 @@ interface ComposerProps {
    * Stop and Send, and `onSubmit` decides what a send means (the thread queues it).
    */
   busy?: boolean;
+  /** Omit while the viewer may not stop the running turn: the row then shows no Stop, and Send queues. */
   onStop?: () => void;
   autoFocus?: boolean;
   /** `nativeID` of the text field. The thread's `KeyboardGestureArea` names it. */
@@ -346,7 +347,7 @@ export function Composer({
                   <Icon as={Microphone} size={18} />
                 </ControlButton>
               ) : null}
-              {busy ? (
+              {busy && onStop ? (
                 <ControlButton
                   variant="secondary"
                   onPress={onStop}
@@ -354,7 +355,8 @@ export function Composer({
                   <StopIcon size={12} className="text-foreground" />
                 </ControlButton>
               ) : null}
-              {busy && !canSend ? null : (
+              {/* Stop takes Send's place until there is something to send. With no Stop, Send stays. */}
+              {busy && onStop && !canSend ? null : (
                 <ControlButton
                   variant={canSend ? 'default' : 'secondary'}
                   onPress={onSubmit}

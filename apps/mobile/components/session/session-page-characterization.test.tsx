@@ -88,6 +88,7 @@ const scrollToEndCalls: any[][] = [];
 const previewCalls: { path: string; line?: number }[] = [];
 let previewHostMounts = 0;
 const toastCalls: { kind: string; message: string }[] = [];
+const i18nValue = { t: (key: string) => key };
 const fetchCalls: { url: string; method: string; body: any }[] = [];
 const scrollToCalls: { offset: number; animated: boolean }[] = [];
 const buttons: any[] = []; // every mounted design-system Button's props
@@ -429,6 +430,9 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/kortix/toast-provider': {
     useToast: () => toastApi,
   },
+  '@/contexts/AuthContext': { useAuthContext: () => ({ user: { id: 'me' } }) },
+  // One `t`, as react-i18next keeps it per language: handlers keep their identity.
+  'react-i18next': { useTranslation: () => i18nValue },
   '@/components/markdown/inline-code': {
     MarkdownActionsProvider: (props: any) => {
       markdownActionsValue = props.value;
@@ -548,6 +552,7 @@ const KEEP_REAL = new Set([
   '@kortix/shared',
   '@/stores/pasted-text-store',
   '@/lib/session/participants',
+  '@/lib/session/turn-stop',
   '@/lib/session/types',
   '@/lib/session/session-store',
   '@/lib/session/runtime-capabilities',
@@ -1202,6 +1207,48 @@ describe('SessionPage send, retry and stop', () => {
     expect(statusOf()).toEqual({ type: 'idle' });
     expect(toastsOf('error')).toHaveLength(2);
   });
+
+  test('a member who may not stop the running turn gets no Stop; a question dismissal does not stop it', async () => {
+    seedTurns(['one']);
+    runtimeValue = { ...runtimeValue, isBusy: true, canStop: false };
+    useRuntimePendingStore.getState().addQuestion({
+      id: 'question-member', sessionID: SID,
+      questions: [{ header: 'Continue', question: 'Continue?', options: [] }],
+    });
+    await renderPage();
+    expect(questionProps).toBeTruthy();
+    await act(async () => {
+      await questionProps!.onReject('question-member');
+      await sleep(15);
+    });
+    expect(seen('cancel')).toHaveLength(0);
+    expect(composerProps.isBusy).toBe(true);
+    expect(composerProps.onStop).toBeUndefined();
+
+    // The server lets them stop (or says nothing): Stop is back.
+    runtimeValue = { ...runtimeValue, canStop: true };
+    await renderPage();
+    expect(typeof composerProps.onStop).toBe('function');
+  });
+
+  test("a stop the server refuses (403 not_turn_prompter) toasts the server's message", async () => {
+    seedTurns(['one']);
+    const refusal = 'Only the member who started this run, the session owner or a project manager can stop it.';
+    runtimeValue = {
+      ...runtimeValue,
+      cancel: async () => ({ status: 'failed', error: Object.assign(new Error(refusal), { status: 403 }) }),
+    };
+    await renderPage();
+    await act(async () => {
+      setStatus({ type: 'busy' });
+    });
+    await act(async () => {
+      composerProps.onStop();
+      await sleep(15);
+    });
+    expect(statusOf()).toEqual({ type: 'busy' });
+    expect(toastsOf('error')).toEqual([{ kind: 'error', message: refusal }]);
+  });
 });
 
 // ── Composer option assembly ────────────────────────────────────────────────
@@ -1359,6 +1406,17 @@ describe('SessionPage shared-session sender', () => {
     messageAuthors = { authors: { [userMessageId()]: { kind: 'session', session_id: 'ses_lead', name: 'Lead' } }, initial_author: null };
     await renderPage();
     expect(turnProps.at(-1).sender).toBeNull();
+  });
+
+  test('a turn another member stopped passes their name; the signed-in user\'s own stop passes none', async () => {
+    seedTurns(['one']);
+    sessionParticipants = shared;
+    messageAuthors = { authors: { [userMessageId()]: author(ME) }, initial_author: null, stops: { [userMessageId()]: author(MEMBER) } };
+    await renderPage();
+    expect(turnProps.at(-1).stoppedBy).toBe('Marko');
+    messageAuthors = { authors: { [userMessageId()]: author(ME) }, initial_author: null, stops: { [userMessageId()]: author(ME) } };
+    await renderPage();
+    expect(turnProps.at(-1).stoppedBy).toBeNull();
   });
 });
 

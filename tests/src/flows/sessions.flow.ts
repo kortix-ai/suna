@@ -1213,6 +1213,11 @@ flow(
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId/message-authors',
+      'GET /v1/projects/:projectId/sessions/:sessionId/model-usage',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/config',
       'POST /v1/projects/:projectId/sessions/:sessionId/attachments',
       'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId',
     ],
@@ -1305,6 +1310,21 @@ flow(
       (await owner.get(download, { params: { ...params, attachmentId } })).status(404);
     });
 
+    await ctx.step('its content reads → 404 for the owner and a member, as the read of it (KRTX-2275); a prompt → 409 Session is deleted', async () => {
+      for (const who of [owner, ctx.client.as(member)]) {
+        (await who.get(`${sessionRoute}/transcript`, { params, query: { shape: 'sync', history: 'true' } })).status(404);
+        (await who.get(`${sessionRoute}/message-authors`, { params })).status(404);
+        (await who.get(`${sessionRoute}/model-usage`, { params })).status(404);
+        (await who.get(`${sessionRoute}/prompts`, { params })).status(404);
+        (await who.get(`${sessionRoute}/config`, { params })).status(404);
+      }
+      (await owner.post(
+        `${sessionRoute}/prompts`,
+        { client_message_id: `sess-51-${crypto.randomUUID()}`, parts: [{ type: 'text', text: 'into a deleted session' }] },
+        { params },
+      )).status(409).body().has('$.error', 'Session is deleted');
+    });
+
     await ctx.step('a project member who did not start the session cannot restore it → 403, it stays deleted', async () => {
       (await ctx.client.as(member).post(restoreRoute, {}, { params }))
         .status(403)
@@ -1313,7 +1333,11 @@ flow(
       if (await listed()) throw new Error('a refused restore listed the session');
     });
 
-    await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
+    // The local provider is unreachable, so the seeded box's removal stays
+    // unconfirmed until the flow records it. A deployed provider answers for
+    // the seeded box during the delete (or the restore), so its first restore is 200.
+    const local = ctx.env.target === 'local';
+    if (local) await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
       (await owner.post(restoreRoute, {}, { params }))
         .status(409)
         .body()
@@ -1325,17 +1349,19 @@ flow(
     });
 
     await ctx.step('the provider confirms the removal; restore → 200, the session is listed and readable again', async () => {
-      const db = await openFlowDb(ctx.env);
-      try {
-        await db.query(
-          `UPDATE kortix.session_sandboxes
-              SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
-                             || jsonb_build_object('providerRemovedAt', now()::text)
-            WHERE session_id = $1 AND status = 'archived'`,
-          [sessionId],
-        );
-      } finally {
-        await db.end();
+      if (local) {
+        const db = await openFlowDb(ctx.env);
+        try {
+          await db.query(
+            `UPDATE kortix.session_sandboxes
+                SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
+                               || jsonb_build_object('providerRemovedAt', now()::text)
+              WHERE session_id = $1 AND status = 'archived'`,
+            [sessionId],
+          );
+        } finally {
+          await db.end();
+        }
       }
       (await owner.post(restoreRoute, {}, { params })).status(200).body().has('$.ok', true);
       if (!(await listed())) throw new Error('the restored session is not listed');

@@ -26,6 +26,8 @@ import {
 } from './projects';
 
 test('ExperimentalFeatureKey includes the project-scoped Apps gate', () => {
+  // Apps graduated (2026-10-14): on for every project, no longer served. The
+  // key stays in the union (deprecated) so older code keeps compiling.
   const feature: ExperimentalFeatureKey = 'apps';
   expect(feature).toBe('apps');
 });
@@ -962,7 +964,6 @@ describe('provisionProjectStream', () => {
 test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
     'agentmail_email',
-    'apps',
     'connectors_api_discover',
     'drives',
     'llm_gateway',
@@ -990,7 +991,7 @@ test('FEATURE_FLAG_KEYS members are assignable to FeatureFlagKey', () => {
   // A compile-time assertion with a runtime witness: if the runtime list and
   // the hand-written union drift, this stops typechecking.
   const keys: readonly FeatureFlagKey[] = FEATURE_FLAG_KEYS;
-  const one: FeatureFlagKey = 'apps';
+  const one: FeatureFlagKey = 'monitors';
   expect(keys).toContain(one);
 });
 
@@ -1030,6 +1031,14 @@ test('teams graduated: Microsoft Teams needs no flag, the key still typechecks',
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 
+test('apps graduated: Apps is on for every project, the key still typechecks', () => {
+  // Apps went generally available (2026-10-14): every project can create and
+  // deploy Apps. The API no longer serves, resolves, or accepts `apps`; a
+  // stored `experimental.apps` override is inert.
+  const graduated: FeatureFlagKey = 'apps';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
 test('pi_worker withdrawn: sessions run pi only in the sandbox, the key still typechecks', () => {
   // The worker/environment split left the product. The API no longer lists,
   // resolves, or accepts `pi_worker`; `pi_harness` is the pi path.
@@ -1043,24 +1052,24 @@ test('FeatureFlagView stability accepts stable, beta, and experimental', () => {
 });
 
 test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () => {
-  const key: ExperimentalFeatureKey = 'apps';
+  const key: ExperimentalFeatureKey = 'monitors';
   const legacy: ExperimentalFeatureView = {
     key,
-    name: 'Apps',
+    name: 'Monitors',
     description: 'x',
-    stability: 'stable',
+    stability: 'experimental',
     available: true,
     enabled: false,
     overridden: false,
   };
   const canonical: FeatureFlagView = legacy;
-  expect(canonical.key).toBe('apps');
+  expect(canonical.key).toBe('monitors');
 });
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
   const managed: FeatureFlagView = {
-    key: 'apps',
-    name: 'Apps',
+    key: 'session_log',
+    name: 'Session log',
     description: 'x',
     stability: 'experimental',
     available: true,
@@ -1094,15 +1103,15 @@ async function captureFeatureCall(
 }
 
 test('updateFeatureFlag PATCHes the canonical /features route', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'apps', true));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'monitors', true));
 
   expect(sent.method).toBe('PATCH');
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/features');
-  expect(sent.parsed).toEqual({ feature: 'apps', enabled: true });
+  expect(sent.parsed).toEqual({ feature: 'monitors', enabled: true });
 });
 
 test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent key', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'apps', null));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'monitors', null));
 
   // Both halves matter: `parsed.enabled === null` alone passes when the key was
   // dropped; `'enabled' in parsed` alone passes when the value was rewritten.
@@ -1114,10 +1123,10 @@ test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent
 test('updateExperimentalFeature keeps its legacy /experimental wire path', async () => {
   // Older deployed APIs only serve `/experimental`. Repointing this alias at
   // the canonical route would break every consumer pinned to an old server.
-  const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'apps', false));
+  const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'monitors', false));
 
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/experimental');
-  expect(sent.parsed).toEqual({ feature: 'apps', enabled: false });
+  expect(sent.parsed).toEqual({ feature: 'monitors', enabled: false });
 });
 
 /**

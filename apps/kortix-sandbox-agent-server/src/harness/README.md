@@ -385,7 +385,10 @@ by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
 reads them and fails when a pin leaves them:
 
 - pi: the four `@earendil-works/pi-*` deps in `package.json` (the daemon bundles
-  them) and `PI_HARNESS_VERSION` (`pi/version.ts`).
+  them) and `PI_HARNESS_VERSION` (`pi/version.ts`). `@earendil-works/pi-codemode` and
+  `quickjs-wasi` are pinned beside them at the versions pi-coding-agent depends on (codemode's
+  worker and wasm, above): move them with the bump, and check that pi still resolves the
+  worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
   installs it; `opencode-db.test.ts` also gates its minor line).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
@@ -776,8 +779,8 @@ unmodified: Kortix writes no per-extension code. Kortix keeps the model (the
 gateway provider is registered with pi's `ModelRuntime` only to pass its auth
 check), the tools, the wire, and the permission policy, which runs BEFORE any
 extension `tool_call` handler. pi's auto-retry is off: the product owns it
-(`pi/transient-retry.ts`). pi's built-in `mcp`, `codemode` and `tool-search`
-extensions are not loaded: a host passes them in, and Kortix passes none.
+(`pi/transient-retry.ts`). Of pi's built-in extensions Kortix loads only
+`codemode` (below); `mcp` and `tool-search` are not loaded.
 
 Three sources, in pi's own scopes:
 
@@ -797,7 +800,42 @@ pi's jiti loader. In the compiled daemon, pi supplies `typebox` and the
 TypeScript package importing both in 24 ms, and its tool ran.
 
 In-process extensions are `InlineExtension`s (`{ name, factory }`): `subagents`,
-and the hidden `kortix-turn`, which adds a prompt's `system` field for that turn.
+the hidden `kortix-turn`, which adds a prompt's `system` field for that turn,
+the hidden `kortix-nested-calls` gate and `codemode`.
+
+### codemode
+
+pi-coding-agent's `createCodemodeExtension()` (`pi/codemode.ts`): one tool, `codemode`, whose
+input is a JavaScript script that calls the other tools as `await tools.<name>(args)` in a
+QuickJS VM (no Node, file system, network or timers; 256 MB). Only the script's output
+returns to the model. kortix.yaml `harnesses.pi.codemode` (`KORTIX_PI_CODEMODE`, sent by
+the API at session start; an agent's value replaces the top-level one) picks `on` (the
+default: the other tools stay declared), `only` (requests declare codemode alone) or `off`
+(the extension is not loaded). `models` stays off: it would call providers past the LLM gateway.
+
+- **Policy.** A script's calls are nested calls (`ctx.executeTool`, id `<call>/<n>`, events with
+  `parentToolCallId`). pi runs them through the extension `tool_call` handlers only, never
+  `agent.beforeToolCall`, where the policy sits (`toolGate`). `nestedCallGate`, first in the
+  extension list (pi stops at the first block), applies the root rule to every call with a
+  parent: `deny` blocks, `ask` attaches to the codemode part. `task` and `question` are refused
+  from a script (a subagent thread links to its root `task` call; a question needs its own part).
+  A tool the agent's tool access turns off is not callable from a script either (pi offers
+  scripts only active tools). A subagent gets only the workspace tools, so no codemode.
+- **Transcript.** A nested call is not a part. The codemode part's `metadata.calls` is pi's
+  live record (`id`, `name`, `args` as JSON text, `running`/`ok`/`error`/`cancelled`,
+  `durationMs`, `error`). The v2 live put fires when a call in it changes status.
+- **Session log.** The call is `kind: 'code'`. `result.details` is `{ calls, complete }` from
+  pi's bounded `nestedCalls` (256 calls, 8 kB of input each, 32 kB in all, 500-character
+  errors, no outputs): display data, never `tool_call` blocks, because the model never saw them.
+  `store()` values fold into the root thread's `ext.pi.data.codemode_store`; the restore writes
+  both back (`nestedCalls`, one `codemode-store` entry).
+- **Build.** The compiled daemon embeds `quickjs-wasi/quickjs.wasm` (`setEmbeddedQuickJSWasmPath`,
+  reached by a relative path into pi's `dist/config.js` because pi does not export it) and builds
+  `src/extensions/codemode/worker.ts` as a second entrypoint with `--root=.`: in a binary pi starts
+  the worker as `./src/extensions/codemode/worker.ts`, resolved against the build root. Both fail
+  only on the first script, never at boot: `pi-harness.test.ts` "pi codemode" runs scripts from
+  source, and a compiled check is a real session (`RUN-20`). At most 2 script workers run per
+  process.
 Child sessions have no `AgentSession`; the runtime routes their tool, context and
 provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
