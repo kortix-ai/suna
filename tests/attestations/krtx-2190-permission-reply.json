@@ -1,0 +1,18 @@
+{
+  "source_hash": "d7b9c9745637a8847b799bf21db5e6ddc52c65ff80415675fbd3650faf149f03",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-15T021541Z-guard-the-shared-permission-reply-verb-one-reply-in-flight-p.md",
+    "packages/sdk/src/react/use-opencode-sessions/permissions.ts",
+    "packages/sdk/src/react/use-session.test.ts"
+  ],
+  "diff_hash": "fa0d82174b38e1d44a88c03267375c0f1c5d1e70708d4de1a4434bf5d170d3ae",
+  "head": "1efe292a14c4d2ec98be839d5c20cff780007ed2",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T04:17:04.434Z"
+}
