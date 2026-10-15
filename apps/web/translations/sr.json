@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "{credits} кредита / месец",
         "credits": "{credits} кредита",
         "price": "{amount} / мес.",
-        "popular": "Најпопуларније",
         "current": "Тренутни",
         "choose": "Изаберите ниво",
         "chooseHint": "Нивои почињу од {min} месечно.",

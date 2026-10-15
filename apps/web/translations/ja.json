@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "月 {credits} クレジット",
         "credits": "{credits} クレジット",
         "price": "{amount} / 月",
-        "popular": "いちばん人気",
         "current": "現在",
         "choose": "ティアを選択",
         "chooseHint": "ティアは月 {min} からです。",

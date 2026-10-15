@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "每月 {credits} 个积分",
         "credits": "{credits} 个积分",
         "price": "{amount} / 月",
-        "popular": "最受欢迎",
         "current": "当前",
         "choose": "选择档位",
         "chooseHint": "档位起价为每月 {min}。",

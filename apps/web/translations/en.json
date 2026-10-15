@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "{credits} credits / month",
         "credits": "{credits} credits",
         "price": "{amount} / mo",
-        "popular": "Most popular",
         "current": "Current",
         "choose": "Choose a tier",
         "chooseHint": "Tiers start at {min} a month.",
