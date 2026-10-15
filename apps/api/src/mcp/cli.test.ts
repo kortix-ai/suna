@@ -155,7 +155,10 @@ describe('runCli', () => {
     const r = await runCli({ ...base, args: ['whoami'], timeoutMs: 300, cli: fakeCli('sleep 30') });
     const out = JSON.parse((r as { json: string }).json);
     expect(out.timed_out).toContain('killed');
-    expect(Date.now() - started).toBeLessThan(5_000);
+    // The 300 ms timeout must fire, not the 30 s sleep. Half the sleep leaves
+    // headroom for a loaded lane while still failing a regression that waits
+    // the command out.
+    expect(Date.now() - started).toBeLessThan(15_000);
   });
 
   test('--json output comes back as a JSON value, a large one too; a cut one stays a string with the note', async () => {

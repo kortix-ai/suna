@@ -175,15 +175,18 @@ function FrontmatterValueBody({ value }: { value: FrontmatterValue }) {
 export function MarkdownWithFrontmatter({
   content,
   className,
+  documentPath,
 }: {
   content: string;
   className?: string;
+  /** The file being rendered, so its relative links resolve against its directory. */
+  documentPath?: string;
 }) {
   const { frontmatter, body } = parseFrontmatter(content);
   return (
     <div className={className}>
       {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-      <UnifiedMarkdown content={body} trust="agent" variant="document" />
+      <UnifiedMarkdown content={body} trust="agent" variant="document" documentPath={documentPath} />
     </div>
   );
 }

@@ -1093,7 +1093,7 @@ function ReadOnlyAgentPage({
         </div>
       ) : isMarkdownPath(sourcePath) ? (
         <div className="p-4">
-          <MarkdownWithFrontmatter content={fileQuery.data?.content ?? ''} />
+          <MarkdownWithFrontmatter content={fileQuery.data?.content ?? ''} documentPath={sourcePath} />
         </div>
       ) : (
         <pre

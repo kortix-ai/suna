@@ -169,6 +169,47 @@ export async function signIn(
 }
 
 /**
+ * The project page opens the mobile-app introduction once per browser
+ * (`apps/web/src/features/workspace/project-layout/home/mobile-app-promo.tsx`).
+ * It is a modal: on a journey's first project page it covers the page, hides
+ * it from role queries and blocks its clicks.
+ *
+ * A journey's browser is new, and the app wipes every persisted store on the
+ * first sign-in it sees (`shouldResetClientState`: no identity marker reads as
+ * another user), so a "closed" flag alone is wiped too. This writes what a
+ * returning user's browser holds: the identity marker for the user being
+ * installed and the closed flag. Then no reset runs and the flag holds.
+ *
+ * A journey that signs out and back in gets the reset again. For that case the
+ * promo is closed with Escape whenever it stands in front of an action or an
+ * assertion (`page.addLocatorHandler`). Its App Store link identifies it in
+ * every language.
+ */
+const promoHandled = new WeakSet<Page>();
+
+export async function closeMobileAppPromo(page: Page, userId: string): Promise<void> {
+  await page.evaluate((id) => {
+    try {
+      localStorage.setItem("kortix-last-user-id", id);
+      localStorage.setItem(
+        "kortix.mobileAppPromo",
+        JSON.stringify({ state: { closed: true }, version: 1 }),
+      );
+    } catch {
+      // No storage, no persisted promo state either.
+    }
+  }, userId);
+  if (promoHandled.has(page)) return;
+  promoHandled.add(page);
+  await page.addLocatorHandler(
+    page.getByRole("dialog").filter({ has: page.locator('a[href^="https://apps.apple.com/"]') }),
+    async () => {
+      await page.keyboard.press("Escape");
+    },
+  );
+}
+
+/**
  * Install an already-minted Supabase password-grant session into the browser.
  *
  * Use this when the test target is an authenticated product flow rather than
@@ -189,6 +230,7 @@ export async function installBrowserSessionDirect(
     ? new URL("/favicon.png", returnUrl).href
     : "/favicon.png";
   await page.goto(faviconUrl, { waitUntil: "domcontentloaded" });
+  await closeMobileAppPromo(page, session.user.id);
 
   const origin = new URL(page.url()).origin;
   const encoded = `base64-${Buffer.from(JSON.stringify(session), "utf8").toString("base64url")}`;
