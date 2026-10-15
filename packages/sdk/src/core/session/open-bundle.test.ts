@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../http/config';
-import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
+import type { SessionOpenBundleConfig, SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
+
+test('existing typed config consumers may omit the additive effort field', () => {
+  const config: SessionOpenBundleConfig = {
+    known: true,
+    base_ref: null,
+    agent_name: null,
+    llm_gateway_enabled: true,
+  };
+  expect(config.default_reasoning_effort).toBeUndefined();
+});
 import {
   OPEN_BUNDLE_SHARE_MS,
   OPEN_BUNDLE_TRANSCRIPT_LIMIT,

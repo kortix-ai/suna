@@ -165,7 +165,7 @@ beforeEach(() => {
 describe('continueSession — project default reasoning effort', () => {
   test('no project default: the prompt carries no variant (today\u2019s behavior)', async () => {
     awakeSession({ metadata: { opencode_model: 'kortix/gpt-5.6-sol' } });
-    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe(
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
     expect(lastVariant()).toBeUndefined();
@@ -175,7 +175,7 @@ describe('continueSession — project default reasoning effort', () => {
     // `deepseek-v4.1-flash` — the platform's managed default — publishes the
     // effort enum including `max`.
     awakeSession({ projectDefaultEffort: 'max', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
-    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe(
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
     expect(lastVariant()).toBe('max');
@@ -186,9 +186,10 @@ describe('continueSession — project default reasoning effort', () => {
     expect(
       await continueSession({
         sessionId: SESSION_ID,
+        source: 'ui',
         text: 'hello',
         overrides: { variant: 'low' },
-      } as never),
+      }),
     ).toBe('delivered');
     expect(lastVariant()).toBe('low');
   });
@@ -197,7 +198,7 @@ describe('continueSession — project default reasoning effort', () => {
     // `deepseek-v4.1-flash` publishes none/low/high/max — `medium` is not on
     // its ladder and must not ride the prompt.
     awakeSession({ projectDefaultEffort: 'medium', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
-    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe(
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
     expect(lastVariant()).toBeUndefined();
@@ -205,7 +206,7 @@ describe('continueSession — project default reasoning effort', () => {
 
   test('a stored value no catalog model publishes changes nothing', async () => {
     awakeSession({ projectDefaultEffort: 'ultra', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
-    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe(
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
     expect(lastVariant()).toBeUndefined();
@@ -213,7 +214,7 @@ describe('continueSession — project default reasoning effort', () => {
 
   test('no known model: nothing is injected (the runtime\u2019s own default applies)', async () => {
     awakeSession({ projectDefaultEffort: 'high', metadata: {} });
-    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe(
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
     expect(lastVariant()).toBeUndefined();
@@ -225,14 +226,15 @@ describe('continueSession — project default reasoning effort', () => {
     expect(
       await continueSession({
         sessionId: SESSION_ID,
+        source: 'ui',
         text: 'hello',
         overrides: { model: { providerID: 'anthropic', modelID: 'claude-sonnet-5-5' } },
-      } as never),
+      }),
     ).toBe('delivered');
     expect(lastVariant()).toBe('medium');
     // Without the override the clamp reads the session's own model and drops it.
     forwardedBodies = [];
-    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe(
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
     expect(lastVariant()).toBeUndefined();

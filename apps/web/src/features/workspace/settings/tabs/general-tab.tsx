@@ -171,6 +171,7 @@ import { SettingsTabHeader } from '../settings-tab-header';
  *  separate permissions — see `ProjectSettingsGeneralProps.canDelete`. */
 const GENERAL_TAB_ACTIONS = [
   PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
   PROJECT_ACTIONS.PROJECT_DELETE,
 ] as const;
 
@@ -440,9 +441,11 @@ export async function runProjectArchive(
 function GeneralWorkspaceCard({
   project,
   canManage,
+  canManageEffort,
 }: {
   project: KortixProject;
   canManage: boolean;
+  canManageEffort: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
@@ -591,7 +594,7 @@ function GeneralWorkspaceCard({
           onValueChange={(v) =>
             effortMutation.mutate(v === DEFAULT_EFFORT_AUTOMATIC ? null : v)
           }
-          disabled={!canManage || effortMutation.isPending}
+          disabled={!canManageEffort || effortMutation.isPending}
         >
           <SelectTrigger aria-label={t('defaultEffort')} className="h-8 w-40 shrink-0">
             <SelectValue placeholder={t('defaultEffortAutomatic')} />
@@ -636,6 +639,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   const caps = useProjectCans(projectId, GENERAL_TAB_ACTIONS);
   const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
   const canEdit = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
+  const canEditEffort = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed === true;
 
   const archiveMutation = useMutation({
     mutationFn: () =>
@@ -693,7 +697,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       errorMessage={(projectQuery.error as Error)?.message ?? ''}
       onRetry={() => projectQuery.refetch()}
       generalFieldsSlot={
-        project ? <GeneralWorkspaceCard project={project} canManage={canEdit} /> : undefined
+        project ? <GeneralWorkspaceCard project={project} canManage={canEdit} canManageEffort={canEditEffort} /> : undefined
       }
       // No `gitRepoSlot`: Git repo is its own Settings section since
       // 2026-09-03 (`project-settings-sections.ts`).

@@ -1138,7 +1138,7 @@ export interface SessionOpenBundleConfig {
   /** The project's default reasoning effort (a models.dev effort label), or
    *  null for automatic — what delivery injects as the prompt's `variant`
    *  when the session pick names none. */
-  default_reasoning_effort: string | null;
+  default_reasoning_effort?: string | null;
 }
 
 /** = `GET /projects/:id/model-defaults`. `known: false` with

@@ -20,6 +20,7 @@ const realToast = await import('@/components/ui/toast');
 let calls: { url: string; method: string; body: unknown; status: number }[] = [];
 let toastCalls: { kind: 'success' | 'error'; message: string }[] = [];
 let canManage = true;
+let canWriteProject = true;
 let failWrite = false;
 let releaseWrite: (() => void) | undefined;
 
@@ -39,7 +40,8 @@ mock.module('@/features/providers/auth-provider', () => ({
 }));
 mock.module('@/lib/use-project-can', () => ({
   useProjectCans: () => ({
-    [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: canManage },
+    [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: canWriteProject },
+    [PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]: { allowed: canManage },
     [PROJECT_ACTIONS.PROJECT_DELETE]: { allowed: true },
   }),
 }));
@@ -90,6 +92,7 @@ beforeEach(() => {
   calls = [];
   toastCalls = [];
   canManage = true;
+  canWriteProject = true;
   failWrite = false;
   releaseWrite = undefined;
   configureKortix({
@@ -171,6 +174,15 @@ describe('GeneralTab default reasoning effort', () => {
     expect(calls).toEqual([]);
   });
 
+  test('a settings writer without project.write can change effort', async () => {
+    canWriteProject = false;
+    const { renderer } = await mount();
+    expect(picker(renderer).props.disabled).toBe(false);
+    await choose(renderer, 'high');
+    expect(calls).toHaveLength(1);
+    await finishWrite();
+  });
+
   test('a selection sends the exact SDK PUT, disables while pending, and repaints from summary cache', async () => {
     const { renderer, client } = await mount();
     await choose(renderer, 'high');
@@ -209,7 +221,7 @@ describe('GeneralTab default reasoning effort', () => {
     expect(toastCalls).toEqual([{ kind: 'error', message: 'effort write failed' }]);
   });
 
-  test('a user without project.write cannot use the effort control', async () => {
+  test('a user without project.settings.write cannot use the effort control', async () => {
     canManage = false;
     const { renderer } = await mount('medium');
     expect(picker(renderer).props.disabled).toBe(true);
