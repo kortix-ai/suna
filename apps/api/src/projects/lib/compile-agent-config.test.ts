@@ -1256,3 +1256,18 @@ describe('v3: the session resolvers read every prompt file at the session ref', 
     await expect(resolveCompiledAgentConfigForSession(PROJECT, 'main')).rejects.toThrow('not registered under `commands`');
   });
 });
+
+describe('allowlist rules put * first: OpenCode applies the last matching rule', () => {
+  // `{ worker: allow, '*': deny }` resolves every name to deny on OpenCode, which then drops the tool.
+  test('v3 subagents and skills allowlists start with *', () => {
+    const set = compileAgentConfig({ kortix_version: 3, default_agent: 'lead', skills: { probe: 'skills/probe' }, agents: { lead: { mode: 'primary', prompt: 'x', skills: ['probe'], subagents: ['worker'] }, worker: { mode: 'subagent', prompt: 'y' } } })!;
+    const permission = set.agent.lead!.permission as Record<string, Record<string, string>>;
+    expect(Object.entries(permission.task!)).toEqual([['*', 'deny'], ['worker', 'allow']]);
+    expect(Object.entries(permission.skill!)).toEqual([['*', 'deny'], ['probe', 'allow']]);
+  });
+
+  test('v2 skills allowlist starts with *', () => {
+    const set = compileAgentConfig({ kortix_version: 2, default_agent: 'a', agents: { a: { skills: ['probe'] } } })!;
+    expect(Object.entries((set.agent.a!.permission as Record<string, Record<string, string>>).skill!)).toEqual([['*', 'deny'], ['probe', 'allow']]);
+  });
+});

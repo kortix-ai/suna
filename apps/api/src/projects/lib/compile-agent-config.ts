@@ -456,9 +456,9 @@ const OTHER_PERMISSION_KEYS: readonly string[] = [
 function skillsGrantToPermissionRule(skills: GrantSetV2): PermissionRuleV2 {
   if (skills === 'all') return 'allow';
   if (skills === 'none' || skills.length === 0) return 'deny';
-  const rule: Record<string, PermissionActionV2> = {};
+  // `*` first: OpenCode applies the LAST matching rule, so a trailing `*` would deny every name.
+  const rule: Record<string, PermissionActionV2> = { '*': 'deny' };
   for (const name of skills) rule[name] = 'allow';
-  rule['*'] = 'deny';
   return rule;
 }
 
@@ -524,10 +524,11 @@ function grantedNames(value: unknown, universe: string[]): string[] {
   return grant === 'all' ? universe : grant === 'none' ? [] : grant;
 }
 
-/** An allowlist rule: each name `allow`, everything else `deny`. No names: `deny`. */
+/** An allowlist rule: everything `deny`, then each name `allow`. No names: `deny`. */
 function allowlistRule(names: string[]): PermissionRuleV2 {
   if (names.length === 0) return 'deny';
-  return { ...Object.fromEntries(names.map((name) => [name, 'allow' as const])), '*': 'deny' };
+  // `*` first: OpenCode applies the LAST matching rule, so a trailing `*` would deny every name.
+  return { '*': 'deny', ...Object.fromEntries(names.map((name) => [name, 'allow' as const])) };
 }
 
 /** The text of a repo file the caller read, or a compile error naming the key. */
