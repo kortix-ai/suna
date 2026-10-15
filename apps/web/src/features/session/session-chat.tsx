@@ -269,7 +269,7 @@ import { useReadinessSettling } from './use-readiness-settling';
 import { useComputerAwakeLine } from './composer/computer-awake-bar';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import { downloadBlob } from '@/lib/utils/download';
-import { RestoreNotice, hasOutOfContext, harnessName, type FullTextState } from './session-history';
+import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
 
 import {
   TranscriptTurnRow,

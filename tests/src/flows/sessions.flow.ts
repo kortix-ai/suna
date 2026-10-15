@@ -1313,7 +1313,11 @@ flow(
       if (await listed()) throw new Error('a refused restore listed the session');
     });
 
-    await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
+    // The local provider is unreachable, so the seeded box's removal stays
+    // unconfirmed until the flow records it. A deployed provider answers for
+    // the seeded box during the delete (or the restore), so its first restore is 200.
+    const local = ctx.env.target === 'local';
+    if (local) await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
       (await owner.post(restoreRoute, {}, { params }))
         .status(409)
         .body()
@@ -1325,17 +1329,19 @@ flow(
     });
 
     await ctx.step('the provider confirms the removal; restore → 200, the session is listed and readable again', async () => {
-      const db = await openFlowDb(ctx.env);
-      try {
-        await db.query(
-          `UPDATE kortix.session_sandboxes
-              SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
-                             || jsonb_build_object('providerRemovedAt', now()::text)
-            WHERE session_id = $1 AND status = 'archived'`,
-          [sessionId],
-        );
-      } finally {
-        await db.end();
+      if (local) {
+        const db = await openFlowDb(ctx.env);
+        try {
+          await db.query(
+            `UPDATE kortix.session_sandboxes
+                SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
+                               || jsonb_build_object('providerRemovedAt', now()::text)
+              WHERE session_id = $1 AND status = 'archived'`,
+            [sessionId],
+          );
+        } finally {
+          await db.end();
+        }
       }
       (await owner.post(restoreRoute, {}, { params })).status(200).body().has('$.ok', true);
       if (!(await listed())) throw new Error('the restored session is not listed');
@@ -1650,6 +1656,168 @@ flow(
     } finally {
       await db.end();
     }
+  },
+);
+
+/**
+ * SESS-55 — a lost session continues on a new computer from its saved
+ * conversation (KRTX-2419). The provider removed the box and no in-place
+ * recovery answered, so the sandbox row is `stopped` with
+ * `runtimeIdentityState: 'unavailable'`. `POST …/recover` retires the row (the
+ * next `/start` boots a fresh box from the branch) and marks the session so
+ * that box restores the conversation from the session log. Local profile:
+ * database sessions; the provider confirmation is a row stamp, as in SESS-51.
+ */
+flow(
+  'SESS-55',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/sessions/:sessionId/recover',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/accounts/tokens',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const ownerToken = (await owner.post('/v1/accounts/tokens', { name: 'SESS-55 journal' })).status(201).json<{ secret_key: string }>().secret_key;
+    /** A session whose computer the provider lost. `transcript`: none, the v1 mirror, or the session log. */
+    const lostSession = async (transcript: 'none' | 'mirror' | 'log', confirmed = true) => {
+      const id = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        userId: ctx.P.OWNER.userId!,
+        visibility: 'project',
+      });
+      ctx.track('session', id, { projectId: project.id });
+      const db = await openFlowDb(ctx.env);
+      try {
+        if (transcript === 'none') {
+          await db.query(
+            "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
+            [id, team.id, project.id],
+          );
+        } else {
+          await seedSessionTranscript(ctx.env, {
+            projectId: project.id,
+            accountId: team.id,
+            sessionId: id,
+            ...(transcript === 'log' ? { log: { bearer: ownerToken } } : {}),
+          });
+        }
+        await db.query(
+          `UPDATE kortix.session_sandboxes SET status = 'stopped', metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+             'runtimeIdentityState', 'unavailable', 'runtimeUnavailableReason', 'runtime_removed', 'preservedExternalId', external_id)
+             || CASE WHEN $2 THEN jsonb_build_object('providerRemovedAt', now()::text) ELSE '{}'::jsonb END
+           WHERE session_id = $1`,
+          [id, confirmed],
+        );
+      } finally {
+        await db.end();
+      }
+      return id;
+    };
+    const rows = async (id: string) => {
+      const db = await openFlowDb(ctx.env);
+      try {
+        const sandbox = (await db.query<{ status: string; external_id: string | null; metadata: Record<string, unknown> }>(
+          'SELECT status::text AS status, external_id, metadata FROM kortix.session_sandboxes WHERE session_id = $1',
+          [id],
+        )).rows[0];
+        const session = (await db.query<{ recovered: string | null }>(
+          "SELECT metadata->>'lostRecoveredAt' AS recovered FROM kortix.project_sessions WHERE session_id = $1",
+          [id],
+        )).rows[0];
+        const logMessages = Number((await db.query<{ n: string }>(
+          'SELECT count(*) AS n FROM kortix.session_log_messages WHERE session_id = $1 AND deleted_at IS NULL',
+          [id],
+        )).rows[0]?.n ?? 0);
+        return { sandbox, recovered: session?.recovered ?? null, logMessages };
+      } finally {
+        await db.end();
+      }
+    };
+    const recover = (id: string, who = owner) =>
+      who.post('/v1/projects/:projectId/sessions/:sessionId/recover', {}, { params: { projectId: project.id, sessionId: id } });
+    const transcriptMessages = async (id: string) =>
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+        params: { projectId: project.id, sessionId: id },
+        query: { shape: 'sync', history: 'true' },
+      }))
+        .status(200)
+        .json<{ messages?: unknown[] }>().messages?.length ?? 0;
+
+    const fromLog = await lostSession('log');
+    await ctx.step('a lost session with a session log → 200; the row is retired and the session restores from its log', async () => {
+      const before = await rows(fromLog);
+      if (before.logMessages !== 2) throw new Error(`seeded log holds ${before.logMessages} messages`);
+      (await recover(fromLog)).status(200).body().has('$.ok', true);
+      const after = await rows(fromLog);
+      if (after.sandbox?.status !== 'stopped' || after.sandbox.external_id !== null) {
+        throw new Error(`the row is not retired: ${JSON.stringify(after.sandbox)}`);
+      }
+      if (after.sandbox.metadata.ephemeralRetiredExternalId !== fromLog) throw new Error('the retired row does not name the lost box');
+      if ('runtimeIdentityState' in after.sandbox.metadata) throw new Error('the row still reads lost');
+      if (!after.recovered) throw new Error('the session has no lostRecoveredAt');
+      if (after.logMessages !== 2) throw new Error('the recover changed the log');
+    });
+
+    await ctx.step('a second recover → 409 session_not_lost', async () => {
+      (await recover(fromLog)).status(409).body().has('$.code', 'session_not_lost');
+    });
+
+    await ctx.step('a lost session with only the v1 mirror → 200; the mirror becomes its session log and still reads', async () => {
+      const fromMirror = await lostSession('mirror');
+      if ((await rows(fromMirror)).logMessages !== 0) throw new Error('the mirror session already has a log');
+      (await recover(fromMirror)).status(200);
+      const after = await rows(fromMirror);
+      if (after.logMessages !== 2 || after.sandbox?.external_id !== null || !after.recovered) {
+        throw new Error(`mirror recover: ${JSON.stringify({ logMessages: after.logMessages, sandbox: after.sandbox, recovered: after.recovered })}`);
+      }
+      if ((await transcriptMessages(fromMirror)) !== 2) throw new Error('the transcript lost messages');
+    });
+
+    await ctx.step('a lost session with no saved conversation → 409 session_transcript_missing, nothing changes', async () => {
+      const bare = await lostSession('none');
+      (await recover(bare)).status(409).body().has('$.code', 'session_transcript_missing');
+      const after = await rows(bare);
+      if (after.sandbox?.external_id !== bare || after.sandbox.metadata.runtimeIdentityState !== 'unavailable' || after.recovered) {
+        throw new Error(`the refused recover changed the session: ${JSON.stringify(after)}`);
+      }
+    });
+
+    await ctx.step('a lost box the provider has not confirmed removed → 409 session_sandbox_removal_pending, nothing changes', async () => {
+      const pending = await lostSession('mirror', false);
+      (await recover(pending)).status(409).body().has('$.code', 'session_sandbox_removal_pending');
+      const after = await rows(pending);
+      if (after.sandbox?.external_id !== pending || after.sandbox.metadata.runtimeIdentityState !== 'unavailable' || after.recovered) {
+        throw new Error(`the pending recover changed the session: ${JSON.stringify(after)}`);
+      }
+      if ((await transcriptMessages(pending)) !== 2) throw new Error('the transcript lost messages');
+    });
+
+    await ctx.step('a session that is only stopped → 409 session_not_lost; a member who did not start it → 403', async () => {
+      const stopped = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project' });
+      ctx.track('session', stopped, { projectId: project.id });
+      await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: team.id, sessionId: stopped });
+      (await recover(stopped)).status(409).body().has('$.code', 'session_not_lost');
+      const lost = await lostSession('log');
+      (await recover(lost, ctx.client.as(member))).status(403);
+      if ((await rows(lost)).sandbox?.external_id !== lost) throw new Error('the refused member recover changed the row');
+    });
+
+    await ctx.step('no token → 401; a deleted session → 404', async () => {
+      const lost = await lostSession('log');
+      (await recover(lost, ctx.client.as(ctx.P.ANON))).status(401);
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId: project.id, sessionId: lost } })).status(200);
+      (await recover(lost)).status(404);
+    });
   },
 );
 

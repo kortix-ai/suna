@@ -1695,6 +1695,27 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
 }
 
 /**
+ * Continue a lost session on a new computer (KRTX-2419). A session is lost when
+ * the provider removed its sandbox (`/start` answers `failed` with reason
+ * `runtime_identity_unavailable`). Its next start boots a fresh sandbox from the
+ * session branch, which restores the saved conversation. A refusal rejects with
+ * an `ApiError` and changes nothing: 409 `session_not_lost`, 409
+ * `session_transcript_missing` (no saved conversation to continue from), 409
+ * `session_sandbox_removal_pending` (retry in a minute), 503
+ * `session_log_restore_off`.
+ */
+export async function recoverProjectSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ ok: true }>(
+      `/projects/${projectId}/sessions/${sessionId}/recover`,
+      {},
+      // The caller shows the refusal in place (the lost-session banner).
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
  * Restore a deleted session before its `restore_until`. Its messages, stored
  * files and branch come back; its next start boots a fresh sandbox from the
  * branch. A refusal rejects with an `ApiError`: 409 `session_not_deleted`

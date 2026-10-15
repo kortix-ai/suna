@@ -1194,10 +1194,6 @@
           "name": "Méta-agent",
           "description": "Ajoutez un coordinateur qui gère les sessions spécialisées et les travaux en plusieurs étapes du projet."
         },
-        "apps": {
-          "name": "Applications",
-          "description": "Déployez des sites statiques, paquets JavaScript, Dockerfiles et images OCI vers des URL stables, et exécutez des backends : une base de données, des fonctions serveur, des requêtes en temps réel, du stockage de fichiers, de la planification et de la recherche sur une machine toujours active."
-        },
         "monitors": {
           "name": "Moniteurs",
           "description": "Exécutez des observateurs persistants de journaux, flux ou API qui démarrent des sessions d’agent lors d’événements."
@@ -1840,7 +1836,9 @@
     },
     "lost": {
       "title": "L’ordinateur de cette session a été perdu",
-      "message": "Son environnement cloud a disparu du côté du fournisseur. Cette session ne peut donc pas être redémarrée ou récupérée. Il s’agit d’un problème de notre côté, pas d’une erreur de votre part — il a été signalé automatiquement. Tout ce qui a été validé et poussé depuis cette session est conservé dans le dépôt de votre projet."
+      "message": "Son environnement cloud a disparu du côté du fournisseur. Cette session ne peut donc pas être redémarrée ou récupérée. Il s’agit d’un problème de notre côté, pas d’une erreur de votre part — il a été signalé automatiquement. Tout ce qui a été validé et poussé depuis cette session est conservé dans le dépôt de votre projet.",
+      "continueMessage": "Son environnement cloud a disparu du côté du fournisseur. Il s’agit d’un problème de notre côté, et il a été signalé. Continuez la session sur un nouvel ordinateur : il part de la branche de la session et rétablit cette conversation. Le travail qui n’a pas été commité et poussé reste perdu.",
+      "continue": "Continuer la session"
     },
     "restart": {
       "label": "Redémarrer la session",

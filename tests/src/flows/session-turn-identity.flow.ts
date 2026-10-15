@@ -236,7 +236,7 @@ flow(
 );
 
 /**
- * SESS-55. In a shared session any member who could send could also stop
+ * SESS-56. In a shared session any member who could send could also stop
  * another member's run, and the run then read "stopped" to its prompter with
  * no name. Only the member who prompted the running turn, the session owner or
  * a project manager may stop it; everyone else is told why and nothing is
@@ -244,7 +244,7 @@ flow(
  * Local: the running turn is seeded in the database, so no sandbox is needed.
  */
 flow(
-  'SESS-55',
+  'SESS-56',
   {
     domain: 'sessions',
     requires: ['database'],

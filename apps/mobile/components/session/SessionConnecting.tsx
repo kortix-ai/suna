@@ -70,6 +70,8 @@ export interface SessionConnectError {
   message: string;
   /** Raw runtime failure detail (e.g. the git clone error). Shown verbatim. */
   detail?: string;
+  /** The provider removed the box: the primary action is Continue (`recover`), not Restart. */
+  lost?: boolean;
 }
 
 /** The first prompt has no session mentions yet. */
@@ -378,7 +380,8 @@ function openFilePreview(path: string) {
 
 /**
  * The failure: the composer card's surface, the words on top, and Back to
- * project · Restart side by side, 50/50, the primary on the right. Centred in
+ * project · Restart (Continue for a lost computer) side by side, 50/50, the
+ * primary on the right. Centred in
  * the page when there is no conversation; in the composer's slot under a
  * saved copy.
  */
@@ -423,7 +426,11 @@ function ConnectErrorState({
             ) : (
               <Icon as={RotateCcw} size={15} />
             )}
-            <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
+            <Text>
+              {error.lost
+                ? restarting ? 'Continuing…' : 'Continue session'
+                : restarting ? 'Restarting…' : 'Restart session'}
+            </Text>
           </Button>
         ) : null}
       </View>

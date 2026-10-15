@@ -3,7 +3,7 @@
  *
  * Usage, ALWAYS after membership authz (so non-members learn nothing):
  *
- *   const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
+ *   const gate = requireFeatureFlag(c, loaded.row.metadata, 'monitors');
  *   if (gate) return gate;
  *
  * Every gated route rejects identically: 403 with the machine-readable

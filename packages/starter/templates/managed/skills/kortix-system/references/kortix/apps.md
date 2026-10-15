@@ -9,11 +9,8 @@ every release. The `kortix-apps` system skill covers releases, machines,
 volumes, services, templates (`convex`), sign-in tokens and bindings
 (`references/apps-model.md` there).
 
-Apps is off by default and enabled per project by Kortix (it is not listed in
-Project Settings → Feature flags; the user contacts Kortix). The API returns `403`, the
-public URL does not resolve, and App operations remain unavailable while the
-feature is disabled. The CLI and web inventory stay visible and label Apps as
-experimental.
+Apps are generally available in every project. Use Apps directly; no feature
+flag or enablement request is required.
 
 ## Select a workload
 
