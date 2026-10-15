@@ -20024,7 +20024,9 @@
       "text5f2d23caa972": "Extend trial",
       "texta88fdf3e2772": "Granting the plan already on trial moves its end date (Extend).",
       "textfdd57ee91bdc": "One credit grant at the start, expiring with the trial. Leave the amount empty for the default: ${amount} for Enterprise, $0 for Credits.",
-      "text05700b032dac": "A dated grant of a plan. When it ends the account returns to <tier>{plan}</tier>."
+      "text05700b032dac": "A dated grant of a plan. When it ends the account returns to <tier>{plan}</tier>.",
+      "textdffd02b805cb": "Commands are still loading",
+      "textd943cb31f962": "Nothing was sent. Your message and files stay in the composer — submit again in a moment."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

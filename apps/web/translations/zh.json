@@ -20013,7 +20013,9 @@
       "text5f2d23caa972": "延长试用",
       "texta88fdf3e2772": "授予已在试用中的套餐会推迟其结束日期（延长）。",
       "textfdd57ee91bdc": "开始时一次性授予的积分，随试用结束而过期。金额留空则使用默认值：Enterprise 为 ${amount}，积分版为 $0。",
-      "text05700b032dac": "按日期授予的套餐。结束后，账户将恢复为 <tier>{plan}</tier>。"
+      "text05700b032dac": "按日期授予的套餐。结束后，账户将恢复为 <tier>{plan}</tier>。",
+      "textdffd02b805cb": "命令仍在加载中",
+      "textd943cb31f962": "尚未发送任何内容。你的消息和文件会保留在输入框中 —— 请稍后重新发送。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

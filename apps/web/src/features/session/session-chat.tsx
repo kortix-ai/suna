@@ -4644,6 +4644,7 @@ export function SessionChat({
                 onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
+                commandsResolved={commands !== undefined}
                 slashFiles={chatSlashFiles}
                 onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                 onCommand={handleCommand}

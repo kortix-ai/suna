@@ -20013,7 +20013,9 @@
       "text5f2d23caa972": "Testphase verlängern",
       "texta88fdf3e2772": "Wird der Plan gewährt, der bereits als Testphase läuft, verschiebt sich sein Enddatum (Verlängern).",
       "textfdd57ee91bdc": "Eine Credit-Gutschrift zu Beginn, die mit der Testphase abläuft. Lass den Betrag leer für den Standardwert: ${amount} für Enterprise, $0 für Credits.",
-      "text05700b032dac": "Eine befristete Gewährung eines Plans. Nach Ablauf kehrt das Konto zu <tier>{plan}</tier> zurück."
+      "text05700b032dac": "Eine befristete Gewährung eines Plans. Nach Ablauf kehrt das Konto zu <tier>{plan}</tier> zurück.",
+      "textdffd02b805cb": "Befehle werden noch geladen",
+      "textd943cb31f962": "Nichts wurde gesendet. Deine Nachricht und deine Dateien bleiben im Eingabefeld — sende gleich noch einmal."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

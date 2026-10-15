@@ -20013,7 +20013,9 @@
       "text5f2d23caa972": "Estender período de teste",
       "texta88fdf3e2772": "Conceder o plano que já está em teste move a data de término (Estender).",
       "textfdd57ee91bdc": "Uma concessão de créditos no início, que expira com o período de teste. Deixe o valor vazio para usar o padrão: ${amount} para Enterprise, $0 para Créditos.",
-      "text05700b032dac": "Uma concessão de plano com data. Quando termina, a conta volta para <tier>{plan}</tier>."
+      "text05700b032dac": "Uma concessão de plano com data. Quando termina, a conta volta para <tier>{plan}</tier>.",
+      "textdffd02b805cb": "Os comandos ainda estão carregando",
+      "textd943cb31f962": "Nada foi enviado. Sua mensagem e seus arquivos ficam no compositor — envie novamente em instantes."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

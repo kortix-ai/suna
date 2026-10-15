@@ -20013,7 +20013,9 @@
       "text5f2d23caa972": "Estendi prova",
       "texta88fdf3e2772": "Concedere il piano già in prova sposta la sua data di fine (Estendi).",
       "textfdd57ee91bdc": "Una concessione di crediti all’inizio, che scade con la prova. Lascia vuoto l’importo per il valore predefinito: ${amount} per Enterprise, $0 per Crediti.",
-      "text05700b032dac": "Una concessione a termine di un piano. Alla scadenza l’account torna a <tier>{plan}</tier>."
+      "text05700b032dac": "Una concessione a termine di un piano. Alla scadenza l’account torna a <tier>{plan}</tier>.",
+      "textdffd02b805cb": "I comandi sono ancora in caricamento",
+      "textd943cb31f962": "Niente è stato inviato. Il messaggio e i file restano nel compositore — invia di nuovo tra un attimo."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
