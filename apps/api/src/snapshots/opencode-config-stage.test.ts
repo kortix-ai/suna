@@ -47,7 +47,7 @@ test('stageStarterOpencodeConfig composes a config dir from the starter pty exte
   try {
     await stageStarterOpencodeConfig(extension, destination);
 
-    expect(JSON.parse(await readFile(join(destination, 'package.json'), 'utf8')).dependencies).toEqual({ zod: '4.1.8' });
+    expect(JSON.parse(await readFile(join(destination, 'package.json'), 'utf8')).dependencies).toEqual({ 'bun-pty': '0.4.11', zod: '4.1.8' });
     expect(await exists(join(destination, 'bun.lock'))).toBe(true);
     expect(await readFile(join(destination, 'opencode.jsonc'), 'utf8')).toContain('"permission": "allow"');
     expect(await readFile(join(destination, 'plugins', 'pty.ts'), 'utf8')).toContain("from './lib/tool'");

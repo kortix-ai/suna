@@ -19,11 +19,11 @@ describe('opencode config dependencies', () => {
     expect(pkg.dependencies?.['@opencode-ai/plugin']).toBeUndefined();
   });
 
-  test('keeps one exact runtime dependency', () => {
+  test('keeps exact runtime dependencies: the native pty and zod', () => {
     const pkg = JSON.parse(readFileSync(STARTER_CONFIG_PKG, 'utf8')) as {
       dependencies?: Record<string, string>;
     };
 
-    expect(pkg.dependencies).toEqual({ zod: '4.1.8' });
+    expect(pkg.dependencies).toEqual({ 'bun-pty': '0.4.11', zod: '4.1.8' });
   });
 });
