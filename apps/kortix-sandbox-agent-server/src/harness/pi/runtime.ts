@@ -1795,7 +1795,10 @@ export class PiRuntime {
   stateDoc(): Record<string, unknown> {
     const bus = kortixEventBus()
     const selected = this.selected
-    const agents = Object.entries(this.compiled?.agent ?? { [this.agentName]: this.compiledAgent() ?? {} }).map(([name, agent]) => ({
+    // A disabled agent cannot run, so no picker lists it (OpenCode drops it too).
+    const agents = Object.entries(this.compiled?.agent ?? { [this.agentName]: this.compiledAgent() ?? {} })
+      .filter(([, agent]) => agent?.disable !== true)
+      .map(([name, agent]) => ({
       name,
       description: agent?.description ?? null,
       mode: agent?.mode ?? null,

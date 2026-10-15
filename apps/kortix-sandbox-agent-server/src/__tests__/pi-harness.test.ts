@@ -3719,6 +3719,20 @@ describe('kortix.yaml v3 on pi', () => {
     expect(system).toContain('deploy')
   })
 
+  test('a disabled compiled agent is not listed: the built-ins v3 disables never reach a picker', async () => {
+    const r = await boot({
+      script: [],
+      env: {
+        KORTIX_COMPILED_AGENT_CONFIG: v3({
+          default_agent: 'lead',
+          agent: { lead: { mode: 'primary', prompt: 'Lead.' }, off: { mode: 'subagent', prompt: 'Off.', disable: true }, build: { disable: true }, general: { disable: true } },
+        }),
+      },
+    })
+    const agents = (r.service.runtime()!.stateDoc().agents as { value: Array<{ name: string }> }).value.map((agent) => agent.name)
+    expect(agents).toEqual(['lead'])
+  })
+
   test('v2 with the same tree keeps reading the harness folder and the skills/ dir', async () => {
     const r = await boot({ script: [], prepare: harnessFolders })
     const names = await skillNames(r)
