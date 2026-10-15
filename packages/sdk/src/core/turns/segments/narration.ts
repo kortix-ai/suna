@@ -766,6 +766,8 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
     case 'retired':
       return 'Used a connector that has since been removed';
     case 'other': {
+      // pi's codemode: a script the model wrote that calls other tools (its row lists them).
+      if (parts.every(isScript)) return n === 1 ? 'Ran a script' : `Ran ${n} scripts`;
       if (n === 1) return `Used ${narrationToolName(parts[0].tool)}`;
       // Never inspect only parts[0] — a mixed group of unrecognized/MCP tools
       // must name every distinct one, not silently drop the rest.
@@ -775,6 +777,8 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
     }
   }
 }
+
+const isScript = (part: ToolPart) => normalizeName(part.tool) === 'codemode';
 
 /**
  * The failure phrasing for a step whose status is 'error' (W7). Same rules as
@@ -827,6 +831,7 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
       // distinct tools of which only one errored — naming parts[0] would blame
       // the wrong tool by name. Prefer the parts that actually failed, and
       // name every distinct one, mirroring narrateStep's own 'other' handling.
+      if (parts.every(isScript)) return 'A script failed';
       const failed = parts.filter(
         (p) => (p.state as { status?: string } | undefined)?.status === 'error',
       );
