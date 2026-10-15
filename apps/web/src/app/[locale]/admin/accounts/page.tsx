@@ -1552,12 +1552,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             placeholder={tI18nComplete.raw('text7477f5a7b656')}
           />
           <label className="text-muted-foreground flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isExpiring}
-              onChange={(e) => setIsExpiring(e.target.checked)}
-              className="size-4"
-            />
+            <Checkbox checked={isExpiring} onCheckedChange={(v) => setIsExpiring(v === true)} />
             {tI18nComplete.raw('texta9141e58e179')}
           </label>
         </div>
@@ -1671,6 +1666,12 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
     key: 'managedModels',
     title: 'Managed models entitlement',
     description: 'Managed model access. Forcing it off withdraws it from a plan that includes it.',
+  },
+  {
+    key: 'byokFee',
+    title: 'BYOK platform fee',
+    description:
+      '5% of own-key model usage past $1,000 a month. On by default (off on Enterprise); Force off waives it for this account.',
   },
 ];
 

@@ -1,3 +1,4 @@
+import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env';
 import { agentConfigEtag } from './compile-agent-config';
 
 export interface SessionRuntimeEnvInput {
@@ -192,7 +193,11 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
       ? {
-          KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig,
+          // `KORTIX_COMPILED_AGENT_CONFIG=<json>` whenever it fits in one env
+          // string, which is every config today's daemons read. Past 128 KiB the
+          // guest cannot exec with it, so it travels gzipped in parts that each
+          // fit (@kortix/api-contract/compiled-agent-config-env).
+          ...encodeCompiledAgentConfigEnv(input.compiledAgentConfig),
           // Content hash of the line above, echoed by the daemon's /kortix/health.
           // It is what makes "is this session running the latest config?" a
           // question anyone can answer — the box reports what it actually

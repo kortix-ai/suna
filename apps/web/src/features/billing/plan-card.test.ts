@@ -2,7 +2,7 @@ import type { AccountState } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { describePlanStatus } from './account-overview';
-import { describePlanChange } from './plan-card';
+import { describePlanChange, planPickerView } from './plan-card';
 
 /**
  * The Plan pane's model, tested without React.
@@ -171,14 +171,17 @@ describe('describePlanStatus for trials and contracts', () => {
   const enterprise = { key: 'enterprise', family: 'enterprise', label: 'Enterprise', sublabel: null, monthly_usd: null };
   const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-  test('a trial names itself, its days left and its end date', () => {
+  const credits = { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: null };
+  const free = { key: 'free', family: 'free', label: 'Free', sublabel: null, monthly_usd: null };
+
+  test('a Credits trial names itself, its days left and its end date', () => {
     const status = describePlanStatus(
       stateWith({
-        plan: enterprise,
-        trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+        plan: credits,
+        trial: { plan: 'credits', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
       } as Partial<AccountState>),
     );
-    expect(status).toMatchObject({ name: 'Enterprise', sublabel: 'Trial · 9 days left', detail: `Ends ${day('2026-11-14T00:00:00.000Z')}` });
+    expect(status).toMatchObject({ name: 'Credits', sublabel: 'Trial · 9 days left', detail: `Ends ${day('2026-11-14T00:00:00.000Z')}` });
     expect(status.isActive).toBe(true);
     expect(status.isWindingDown).toBe(true);
   });
@@ -186,11 +189,22 @@ describe('describePlanStatus for trials and contracts', () => {
   test('a trial on its last day says so', () => {
     const status = describePlanStatus(
       stateWith({
-        plan: enterprise,
-        trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 0 },
+        plan: credits,
+        trial: { plan: 'credits', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 0 },
       } as Partial<AccountState>),
     );
     expect(status.sublabel).toBe('Trial · ends today');
+  });
+
+  test('an Enterprise trial leaves the plan card on what the account pays for', () => {
+    const status = describePlanStatus(
+      stateWith({
+        plan: free,
+        trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+      } as Partial<AccountState>),
+    );
+    expect(status.name).toBe('Free');
+    expect(status.sublabel ?? '').not.toContain('Trial');
   });
 
   test('a renewing contract renews; a contract that does not renew ends', () => {
@@ -216,5 +230,37 @@ describe('describePlanStatus for trials and contracts', () => {
       } as Partial<AccountState>),
     );
     expect(status.detail).toBe(`SSO stays on until ${day('2026-11-28T00:00:00.000Z')}`);
+  });
+});
+
+describe('planPickerView', () => {
+  const view = (over: Partial<AccountState>, subscription: Record<string, unknown> = {}) =>
+    planPickerView(
+      stateWith({
+        ...over,
+        subscription: { status: 'none', cancel_at_period_end: false, current_period_end: null, ...subscription },
+      } as Partial<AccountState>),
+    );
+  const enterprisePlan = { key: 'enterprise', family: 'enterprise', label: 'Enterprise', sublabel: null, status: 'current', shape: 'contract', rank: 3, monthly_usd: null } as AccountState['plan'];
+  const trial = { plan: 'enterprise' as const, started_at: null, ends_at: '2026-10-29T00:00:00.000Z', days_left: 14 };
+
+  test('an Enterprise contract is managed with the account team: no picker', () => {
+    expect(view({ plan: enterprisePlan }).kind).toBe('enterprise');
+  });
+
+  const freePlan = { key: 'free', family: 'free', label: 'Free', sublabel: null, status: 'current', shape: 'none', rank: 1, monthly_usd: null } as AccountState['plan'];
+  const creditsPlan = { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, status: 'current', shape: 'credits', rank: 2, monthly_usd: 500 } as AccountState['plan'];
+
+  test('an Enterprise trial on Free gets the picker on the default tier', () => {
+    expect(view({ plan: freePlan, trial })).toEqual({ kind: 'picker', currentUsd: null, initialUsd: 200, enterpriseTrial: true });
+  });
+
+  test('an Enterprise trial on a paid plan opens on the amount it pays', () => {
+    expect(view({ plan: creditsPlan, trial }, { monthly_usd: 500, subscription_id: 'sub_1', status: 'active' })).toEqual({
+      kind: 'picker',
+      currentUsd: 500,
+      initialUsd: 500,
+      enterpriseTrial: true,
+    });
   });
 });

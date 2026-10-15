@@ -10,6 +10,8 @@ import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-prox
 import { logger } from '@/lib/log/logger'
 import { convergeManagedModelCatalog, requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
+import { compiledAgentConfigFromEnv, setCompiledAgentConfigEnv } from '@/services/config-provider/compiled-agent-config'
+import { COMPILED_AGENT_CONFIG_ENV } from '@kortix/api-contract/compiled-agent-config-env'
 import { readRepoInfo, refreshRepo, syncConfigDirToBase, syncWorkspaceToBase, type ConfigDirSyncResult } from '@/lib/git/git'
 import { readBootLinkTarget } from '@/services/config-provider/boot-config'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
@@ -202,6 +204,15 @@ function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: str
     if (!OPENCODE_RUNTIME_ENV_NAMES.has(name)) continue
     if (releaseOwned && RELEASE_OWNED_ENV_NAMES.has(name)) {
       logger.info('[env] compiled governance push ignored; the config release owns it', { name })
+      continue
+    }
+    if (name === COMPILED_AGENT_CONFIG_ENV) {
+      // Compared and stored in whichever form fits: OpenCode inherits this env.
+      if (rawValue !== null && typeof rawValue !== 'string') continue
+      if (compiledAgentConfigFromEnv(process.env) !== (rawValue ?? undefined)) {
+        setCompiledAgentConfigEnv(process.env, rawValue)
+        changedNames.push(name)
+      }
       continue
     }
     if (rawValue === null) {

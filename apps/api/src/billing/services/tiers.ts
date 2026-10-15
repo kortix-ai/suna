@@ -20,7 +20,8 @@ export {
  * provider's base price. Customers see base prices; the fee is stated once.
  * 5.5% matches what the upstream router charges on credit purchases, so
  * managed models run at break-even until routes move to direct providers.
- * BYOK and ChatGPT-subscription usage carry no fee and cost no credits.
+ * BYOK usage is free up to a monthly allowance, then carries its own fee
+ * (byok-fee.ts); ChatGPT-subscription usage costs no credits.
  */
 export const LLM_PLATFORM_FEE_PERCENT = 5.5;
 

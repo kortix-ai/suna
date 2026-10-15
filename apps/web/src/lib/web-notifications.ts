@@ -326,8 +326,10 @@ export function sendWebNotification(
   // channel that works on a default profile — permission untouched, browser
   // notifications disabled — which is exactly where the completion signal
   // used to die (the old permission gates returned before the toast ran).
+  // A failed turn toasts even to the person watching it: the toast is how an
+  // error is noticed. A finished turn does not: the chat already shows it.
+  if (!watching || payload.type === 'error') showInAppToast(payload);
   if (!watching) {
-    showInAppToast(payload);
     if (payload.type === 'completion' && payload.sessionId) {
       // The toast fades after 8 s; the favicon badge is what a returning
       // user still sees, so a finished turn registers for it here.
@@ -614,15 +616,19 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
   }
 
   const id = singleSessionToastId(sessionId);
+  // A toast for the session on screen (it fired while the window had no
+  // focus) names nothing and opens nothing: the person is already there.
+  // Read at render, so it follows where the person is now.
+  const elsewhere = () => !isViewingSession(sessionId);
   if (item.failed) {
     customToast(
       (dismiss) =>
         createElement(SessionFailedCard, {
-          label: item.label,
-          meta: payload.inAppTitle ?? payload.title,
-          preview: payload.preview,
+          title: payload.inAppTitle ?? payload.title,
+          label: elsewhere() ? item.label : undefined,
+          detail: payload.preview,
           openLabel,
-          onOpen: () => open(item),
+          onOpen: elsewhere() ? () => open(item) : undefined,
           onDismiss: dismiss,
         }),
       { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
@@ -636,10 +642,12 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
         message: payload.inAppTitle ?? payload.title,
         icon: toastIcon('success'),
         variant: 'success',
-        options: {
-          entity: { label: item.label },
-          actions: [{ label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) }],
-        },
+        options: elsewhere()
+          ? {
+              entity: { label: item.label },
+              actions: [{ label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) }],
+            }
+          : undefined,
         onDismiss: dismiss,
       }),
     { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
