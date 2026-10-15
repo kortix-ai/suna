@@ -2743,7 +2743,9 @@ nativeBrowserTest?.(
       await expect(preview).toBeVisible();
       const geometry = await preview.evaluate((element) => {
         const box = element.getBoundingClientRect();
-        const header = element.querySelector("header")!.getBoundingClientRect();
+        const headerElement = element.querySelector("header");
+        if (!headerElement) throw new Error("App preview header is missing");
+        const header = headerElement.getBoundingClientRect();
         return { x: box.x, y: box.y, width: box.width, height: box.height,
           viewportWidth: innerWidth, viewportHeight: innerHeight, headerTop: header.top };
       });

@@ -49,7 +49,8 @@ test.describe('18 — Kortix Apps UI', () => {
     let projectId: string | null = null;
     try {
       const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
-      const account = accounts.find((item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner')!;
+      const account = accounts.find((item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner');
+      if (!account) throw new Error('test user has no personal account');
       await setDatabaseEnterpriseDemo(env, account.account_id, true);
       const project = await createDatabaseProject(env, { accountId: account.account_id, userId: user.id, name: 'Preview geometry', appsEnabled: true });
       projectId = project.id;
