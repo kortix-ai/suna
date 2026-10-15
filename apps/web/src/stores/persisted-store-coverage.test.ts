@@ -29,53 +29,16 @@ const STORES_DIR = resolve(import.meta.dir);
  * must capture three groups: [1] the opening quote of a string literal (a
  * backreference anchor, discarded), [2] the literal's own text, [3] a bare
  * identifier — exactly one of [2] / [3] is set per match. A bare identifier
- * resolves against a `const <identifier> = '...'` declared in the SAME file,
- * or — when the identifier is imported — against the same declaration one
- * import hop away (the aliased `@/…` root is `src/`).
+ * resolves against a `const <identifier> = '...'` declared in the SAME file.
  *
  * Shared by the `persist(` and `registerPersistedStore(` walks below — both
- * name a store the same three ways in this codebase (an inline literal, a
- * `STORAGE_KEY` const, or an imported const).
+ * name a store the same two ways in this codebase (an inline literal, or a
+ * `STORAGE_KEY` const).
  *
  * Throws rather than skipping when an identifier cannot be resolved: a call
  * this walker cannot read is a hole in the coverage guarantee, not something
  * to silently pass over.
  */
-const SRC_ROOT = resolve(import.meta.dir, '..');
-
-/**
- * Resolve `import { <identifier> } from '<spec>'` in `source` to the string
- * value of `const <identifier> = '...'` in the imported module — one hop,
- * the shape every current store key uses (e.g. a key const owned by the
- * module that also defines the store's theme defaults). Unresolvable specs
- * and missing declarations return null so the caller throws its own,
- * caller-shaped error.
- */
-function resolveImportedConst(source: string, identifier: string): string | null {
-  const importMatch = source.match(
-    new RegExp(
-      `import\\s*\\{[^}]*\\b${identifier}\\b[^}]*\\}\\s*from\\s*(['"])([^'"]+)\\1`,
-    ),
-  );
-  if (!importMatch) return null;
-  const spec = importMatch[2];
-  const base = spec.startsWith('@/') ? resolve(SRC_ROOT, spec.slice(2)) : resolve(import.meta.dir, spec);
-  const candidates = [`${base}.ts`, `${base}.tsx`, resolve(base, 'index.ts'), resolve(base, 'index.tsx')];
-  for (const candidate of candidates) {
-    let importedSource: string;
-    try {
-      importedSource = readFileSync(candidate, 'utf8');
-    } catch {
-      continue;
-    }
-    const match = importedSource.match(
-      new RegExp(`const\\s+${identifier}\\s*=\\s*(['\"])((?:(?!\\1).)*)\\1`),
-    );
-    if (match) return match[2];
-  }
-  return null;
-}
-
 function extractNames(
   source: string,
   file: string,
@@ -93,15 +56,10 @@ function extractNames(
       new RegExp(`const\\s+${identifier}\\s*=\\s*(['"])((?:(?!\\1).)*)\\1`),
     );
     if (!constMatch) {
-      const imported = resolveImportedConst(source, identifier);
-      if (imported === null) {
-        throw new Error(
-          `${file}: ${callDescription} names '${identifier}' but no matching ` +
-            `'const ${identifier} = "..."' was found in the same file`,
-        );
-      }
-      names.push(imported);
-      continue;
+      throw new Error(
+        `${file}: ${callDescription} names '${identifier}' but no matching ` +
+          `'const ${identifier} = "..."' was found in the same file`,
+      );
     }
     names.push(constMatch[2]);
   }
@@ -110,10 +68,9 @@ function extractNames(
 
 /**
  * Every `persist(..., { name: <literal-or-const> })` name declared in
- * `source`. Current stores write `name: STORAGE_KEY` — a module-level
- * `const`, local or imported — rather than an inline literal; every form
- * resolves to the real string value a `persist` `StateStorage` actually
- * reads and writes.
+ * `source`. Two current stores write `name: STORAGE_KEY` — a module-level
+ * `const` — rather than an inline literal; both forms resolve to the real
+ * string value a `persist` `StateStorage` actually reads and writes.
  */
 function extractPersistNames(source: string, file: string): string[] {
   if (!/\bpersist\(/.test(source)) return [];

@@ -8,10 +8,6 @@
  * the only completion path.
  */
 import { expect, mock, test } from 'bun:test';
-// The real module namespace: `mock.module` replaces it WHOLESALE, so a stub that
-// lists exports by hand deletes every export it omits — the failure surfaces in
-// whatever unrelated file imports the missing name next, attributed to no test.
-import * as realLifecycle from '../projects/session-lifecycle';
 
 let finalizeResults: Array<{ connected: boolean }> = [];
 let finalizeCalls = 0;
@@ -42,7 +38,6 @@ mock.module('../shared/db', () => ({
   },
 }));
 mock.module('../projects/session-lifecycle', () => ({
-  ...realLifecycle,
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     notified.push({
       sessionId: input.sessionId,
