@@ -1,0 +1,15 @@
+{
+  "source_hash": "42f21cd08726a1a944b0f414e82020c9f6743c690f4932fa3b6db6d72ae49129",
+  "diff_files": [
+    "tests/src/flows/sessions.flow.ts"
+  ],
+  "diff_hash": "72f76ce529717048f029f1f71bd5038a051323770f4410eb7aa91f0108f06874",
+  "head": "afb132ae6aeb60c74523d0717b9db2b869519752",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T13:31:33.007Z"
+}
