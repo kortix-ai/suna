@@ -62,8 +62,8 @@ function staticImportsOf(file: string): string[] {
     // The type-only flag sits on the import clause for `import type`, and on
     // the declaration itself for `export type`.
     const typeOnly =
-      (node as { isTypeOnly?: boolean }).isTypeOnly === true ||
-      (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly === true);
+      (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly === true) ||
+      (ts.isExportDeclaration(node) && node.isTypeOnly === true);
     if (!typeOnly && (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))) specifier = node.moduleSpecifier;
     if (specifier && ts.isStringLiteralLike(specifier) && specifier.text.startsWith('.')) {
       const resolved = resolveRelativeImport(file, specifier.text);
