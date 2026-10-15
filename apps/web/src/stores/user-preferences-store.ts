@@ -3,7 +3,6 @@
 import {
   DEFAULT_DARK_THEME,
   DEFAULT_LIGHT_THEME,
-  USER_PREFERENCES_STORAGE_KEY,
   type DarkThemeId,
   type LightThemeId,
 } from '@/lib/interface-themes';
@@ -11,6 +10,12 @@ import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+
+// Same-file literal, required by persisted-store-coverage.test.ts: the storage
+// key a persist() call names must be declared in the store file itself so a
+// refactor cannot silently move it. Keep in sync with the export in
+// interface-themes.ts (its inline theme script reads the same key).
+const USER_PREFERENCES_STORAGE_KEY = 'kortix-user-preferences';
 
 // ============================================================================
 // Types
