@@ -249,6 +249,7 @@ export * from './use-sessions-needing-input';
 export * from './use-review-summary';
 // The caller's notification inbox, preferences and session watch (KRTX-1742).
 export * from './use-notifications';
+export * from './use-session-list-state';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';

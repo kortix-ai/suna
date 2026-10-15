@@ -48,6 +48,7 @@ import {
 import {
   deleteProjectSession,
   restartProjectSession,
+  setSessionArchived,
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
@@ -60,6 +61,8 @@ import {
 import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
+import { useSearchParams } from 'next/navigation';
+import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
@@ -97,6 +100,8 @@ const SEARCH_DEBOUNCE_MS = 250;
 const CHILDREN_PAGE_SIZE = 20;
 
 type StartedByFilter = 'all' | 'me' | 'others' | 'automated';
+/** The tabs: who started the session, or the viewer's own archive (KRTX-2418). */
+type SessionsTab = StartedByFilter | 'archived';
 const STARTED_BY_FILTERS: readonly StartedByFilter[] = ['all', 'me', 'others', 'automated'];
 
 /** Concurrent DELETEs during a bulk removal. There is no bulk endpoint, so a
@@ -248,9 +253,23 @@ function SessionChildrenRows({
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSidebar = useTranslations('sidebar');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
-  const [startedBy, setStartedBy] = useState<StartedByFilter>('all');
+  // `?view=archived` opens the archive (the sidebar's "Archived sessions" link).
+  const [startedBy, setStartedBy] = useState<SessionsTab>(() =>
+    searchParams?.get('view') === 'archived' ? 'archived' : 'all',
+  );
+  const archivedTab = startedBy === 'archived';
+  // The sidebar's link can land while this page is already open: a new
+  // `?view=archived` opens the archive (state adjusted during render).
+  const viewParam = searchParams?.get('view') ?? null;
+  const [seenViewParam, setSeenViewParam] = useState(viewParam);
+  if (viewParam !== seenViewParam) {
+    setSeenViewParam(viewParam);
+    if (viewParam === 'archived') setStartedBy('archived');
+  }
   // Search is the server's: `q` reaches every session the viewer may open, not
   // only the pages already loaded. Debounced so a keystroke is not a request.
   const searchQuery = useDebounce(search.trim(), SEARCH_DEBOUNCE_MS);
@@ -286,11 +305,13 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   // the probe so a manager does not fetch both scopes.
   const manage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
   const listFilters = {
-    // Top-level sessions only; spawned sessions load under their parent.
-    parent: 'root',
-    startedBy: startedBy === 'all' ? undefined : startedBy,
+    // Top-level sessions only; spawned sessions load under their parent. The
+    // archive is flat: an archived spawned session is listed on its own.
+    parent: archivedTab ? undefined : 'root',
+    startedBy: startedBy === 'all' || archivedTab ? undefined : startedBy,
     q: searchQuery || undefined,
     labels: labelFilters.length > 0 ? labelFilters : undefined,
+    view: archivedTab ? 'archived' : undefined,
   } as const;
   const sessionsQuery = useProjectSessions(projectId, {
     enabled: !manage.isLoading,
@@ -559,6 +580,33 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     },
   });
 
+  // Archive (or, in the archive, unarchive) the selection in the viewer's own
+  // list. Per session, so a refusal leaves the rest done.
+  const bulkArchiveMutation = useMutation({
+    mutationFn: async ({ sessionIds, archived }: { sessionIds: string[]; archived: boolean }) => {
+      const results = await mapWithConcurrency(sessionIds, DELETE_CONCURRENCY, async (sessionId) => {
+        try {
+          await setSessionArchived(projectId, sessionId, archived);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      const succeeded = results.filter(Boolean).length;
+      return { archived, succeeded, failed: results.length - succeeded };
+    },
+    onSuccess: ({ archived, succeeded, failed }) => {
+      if (succeeded > 0) {
+        successToast(tPinArchive(archived ? 'bulkArchived' : 'bulkUnarchived', { count: succeeded }));
+      }
+      if (failed > 0) errorToast(tPinArchive('bulkFailed', { count: failed }));
+      exitSelectMode();
+      invalidateSessions();
+    },
+  });
+
+  const listActions = useSessionListActions(projectId);
+
   // Depends on the two `mutate` functions, not on the mutation objects.
   // `useMutation` returns a NEW object every render (isPending, variables and
   // friends all live on it), so the old deps rebuilt `rowActions` on every
@@ -574,8 +622,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       onDelete: (id, label) => setSessionToDelete({ id, label }),
       onRestart: (sessionId, label) => restart({ sessionId, label }),
       onStop: (sessionId, label) => stop({ sessionId, label }),
+      onPin: (sessionId, pinned) => void listActions.setPinned(sessionId, pinned),
+      onArchive: (sessionId, archived) => void listActions.setArchived(sessionId, archived),
     }),
-    [restart, stop],
+    [restart, stop, listActions],
   );
 
   // One callback shared by every row, rather than a closure per row per render.
@@ -682,6 +732,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       onExit={exitSelectMode}
       onDelete={() => setBulkConfirmOpen(true)}
       deleting={bulkDeleteMutation.isPending}
+      onArchive={() =>
+        bulkArchiveMutation.mutate({ sessionIds: [...visibleSelection], archived: !archivedTab })
+      }
+      archiveLabel={tPinArchive(archivedTab ? 'bulkUnarchive' : 'bulkArchive')}
+      archiving={bulkArchiveMutation.isPending}
     />
   ) : (
     <SessionsToolbar
@@ -722,7 +777,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         <div className={cn('mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4')}>
           <Tabs
             value={startedBy}
-            onValueChange={(value) => setStartedBy(value as StartedByFilter)}
+            onValueChange={(value) => setStartedBy(value as SessionsTab)}
             className="shrink-0"
           >
             <TabsListCompact aria-label={tSidebar('startedBy.label')}>
@@ -731,6 +786,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                   {tSidebar(`startedBy.${value}`)}
                 </TabsTriggerCompact>
               ))}
+              <TabsTriggerCompact value="archived">{tPinArchive('view')}</TabsTriggerCompact>
             </TabsListCompact>
           </Tabs>
           {listState === 'loading' ? (
@@ -752,6 +808,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             // No row the viewer can see on the pages read so far, and more
             // pages exist (KRTX-1727): offer them, never "No sessions yet".
             <div className="pt-6">{loadMoreButton}</div>
+          ) : listState === 'empty' && !searching && archivedTab ? (
+            <EmptyState size="sm" title={tPinArchive('empty')} />
           ) : listState === 'empty' && !searching && startedBy === 'all' ? (
             <SessionsEmptyState className="flex-1 pb-24" />
           ) : grouped.sections.length === 0 || listState === 'empty' ? (

@@ -506,7 +506,9 @@ export async function finalizeTurn(
   // decides that from the card's real size.
   const raw = opts.answer ?? opts.error ?? '';
   const body = raw.length > MAX_BODY_CHARS ? raw.slice(0, MAX_BODY_CHARS) : raw;
-  const title = opts.title ?? (opts.error ? 'Run failed' : 'Task complete');
+  // A finished run gets no title: the answer is the card. Failures, stops and
+  // waits keep theirs, because there the title is the news.
+  const title = opts.title ?? (opts.error ? 'Run failed' : undefined);
   const sessionUrl =
     handle.projectId && handle.sessionId
       ? sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId)

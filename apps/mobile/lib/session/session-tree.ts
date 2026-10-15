@@ -32,11 +32,16 @@ export function startedByForScope(scope: SessionScope): SessionStartedBy | undef
   return undefined;
 }
 
-/** A list filter as the hooks take it: `parent`, `startedBy`, `q`. */
+/** The viewer's own pinned or archived sessions (KRTX-2418): `pinned=only` / `archived=only`. */
+export type SessionListView = 'pinned' | 'archived';
+
+/** A list filter as the hooks take it: `parent`, `startedBy`, `q`, `view`. */
 export interface SessionListFilter {
   parent?: 'root' | string;
   startedBy?: SessionStartedBy;
   q?: string;
+  /** Only the viewer's pinned or archived sessions. Absent: the list, which leaves out the archived ones. */
+  view?: SessionListView;
 }
 
 /**
@@ -49,7 +54,32 @@ export function normalizeSessionListFilter(filter: SessionListFilter | undefined
   if (filter?.startedBy) out.startedBy = filter.startedBy;
   const q = filter?.q?.trim();
   if (q) out.q = q.slice(0, 200);
+  if (filter?.view) out.view = filter.view;
   return out;
+}
+
+/**
+ * The rows a pinned or archived view shows: those that carry the view's
+ * stamp. A server without the feature ignores `pinned=only` and answers the
+ * whole list, whose rows carry neither field: the view stays empty.
+ */
+export function sessionsInView(rows: readonly ProjectSession[], view: SessionListView): ProjectSession[] {
+  return rows.filter((row) => (view === 'pinned' ? row.pinned_at : row.archived_at));
+}
+
+/**
+ * The Sessions page's list query. The list: top-level sessions. Archived on:
+ * every session the viewer archived, a sub-agent session too. An archived
+ * child leaves its parent's children, so this view is the way back to it.
+ */
+export function sessionsPageFilter(input: { scope: SessionScope; archived: boolean; q?: string }): SessionListFilter {
+  const startedBy = startedByForScope(input.scope);
+  return input.archived ? { view: 'archived', startedBy, q: input.q } : { parent: 'root', startedBy, q: input.q };
+}
+
+/** The rows the Sessions page lists from its query (`sessionsPageFilter`). */
+export function sessionsPageRows(rows: readonly ProjectSession[], archived: boolean): ProjectSession[] {
+  return archived ? sessionsInView(rows, 'archived') : rootRowsOnly(rows);
 }
 
 /** The server rejects a `q` over 200 characters and an empty one: send neither. */
@@ -150,13 +180,13 @@ export function sessionStarter(session: ProjectSession, viewerId: string | null 
 
 // ── Drawer list ─────────────────────────────────────────────────────────────
 
-export type DrawerSectionId = 'sessions' | 'shared' | 'automated';
+export type DrawerSectionId = 'pinned' | 'sessions' | 'shared' | 'automated';
 
 /** One drawer section as `buildDrawerItems` takes it. */
 export interface DrawerSectionInput {
   id: DrawerSectionId;
   title: string;
-  /** Top-level rows already loaded for this section, in server order. */
+  /** Rows already loaded for this section, in server order: top-level rows, every pinned row in Pinned. */
   rows: readonly ProjectSession[];
   /** Rows show only while open; the header always shows unless `hidden`. */
   open: boolean;
@@ -175,9 +205,12 @@ export type DrawerItem =
 
 /**
  * The drawer's one flat list: per section a header, then its root rows, each
- * expanded parent followed by its children block. A child never appears as a
- * root row (`rootRowsOnly`), so no child renders without its parent. A session
- * in two sections' caches renders once, in the first (`uniqueSessions`).
+ * expanded parent followed by its children block. Outside Pinned a child never
+ * appears as a root row (`rootRowsOnly`), so no child renders without its
+ * parent; Pinned lists every session the viewer pinned, a sub-agent session
+ * too (KRTX-2418). A session in two sections' caches renders once, in the
+ * first (`uniqueSessions`), also while that section is collapsed: a pinned
+ * session never repeats under Sessions.
  */
 export function buildDrawerItems(
   sections: readonly DrawerSectionInput[],
@@ -188,10 +221,13 @@ export function buildDrawerItems(
   for (const section of sections) {
     if (section.hidden) continue;
     items.push({ kind: 'header', section: section.id, title: section.title, open: section.open });
-    if (!section.open) continue;
-    for (const session of rootRowsOnly(section.rows)) {
-      if (shown.has(session.session_id)) continue;
+    const rows = (section.id === 'pinned' ? section.rows : rootRowsOnly(section.rows)).filter((session) => {
+      if (shown.has(session.session_id)) return false;
       shown.add(session.session_id);
+      return true;
+    });
+    if (!section.open) continue;
+    for (const session of rows) {
       items.push({ kind: 'root', section: section.id, session });
       if (childCountOf(session) > 0 && isExpanded(session)) {
         items.push({ kind: 'children', section: section.id, session });

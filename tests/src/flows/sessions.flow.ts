@@ -1478,6 +1478,182 @@ flow(
 );
 
 /**
+ * SESS-54 — a person pins a session to the top of their list or archives it
+ * out of the list (KRTX-2418). Per person: a pin or an archive changes only the
+ * caller's own list, and neither moves the session's `updated_at`. Local
+ * profile: database sessions.
+ */
+flow(
+  'SESS-54',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'PUT /v1/projects/:projectId/sessions/:sessionId/pin',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/archive',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/accounts/tokens',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const seed = async (visibility: 'private' | 'project' = 'project') => {
+      const id = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        userId: ctx.P.OWNER.userId!,
+        visibility,
+      });
+      ctx.track('session', id, { projectId: project.id });
+      return id;
+    };
+    // Oldest first: the list serves them newest first, [s4, s3, s2, s1, private].
+    const privateId = await seed('private');
+    const s1 = await seed();
+    const s2 = await seed();
+    const s3 = await seed();
+    const s4 = await seed();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = (sessionId: string) => ({ projectId: project.id, sessionId });
+    const pin = (sessionId: string, pinned: boolean, who = owner) =>
+      who.put('/v1/projects/:projectId/sessions/:sessionId/pin', { pinned }, { params: params(sessionId) });
+    const archive = (sessionId: string, archived: boolean, who = owner) =>
+      who.put('/v1/projects/:projectId/sessions/:sessionId/archive', { archived }, { params: params(sessionId) });
+    type Row = { session_id: string; pinned_at?: string | null; archived_at?: string | null };
+    const list = async (query: Record<string, string> = {}, who = owner) => {
+      const r = (await who.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query })).status(200);
+      // The private session belongs to the owner alone and is not part of these checks.
+      return { rows: r.json<Row[]>().filter((row) => row.session_id !== privateId), cursor: r.header('x-next-cursor') ?? null };
+    };
+    /** A 200 state body with these fields. */
+    const state = async (pending: ReturnType<typeof pin>, expected: Partial<Row>) => {
+      const body = (await pending).status(200).json<Row>();
+      for (const [key, value] of Object.entries(expected)) {
+        if (body[key as keyof Row] !== value) throw new Error(`${key}: got ${String(body[key as keyof Row])}, want ${String(value)}`);
+      }
+      return body;
+    };
+    const ids = (rows: Row[]) => rows.map((row) => row.session_id).join(',');
+    const expectIds = (rows: Row[], expected: string[], what: string) => {
+      if (ids(rows) !== expected.join(',')) throw new Error(`${what}: got [${ids(rows)}], want [${expected.join(',')}]`);
+    };
+
+    await ctx.step('the list carries the person`s pinned_at and archived_at, both null at first', async () => {
+      const { rows } = await list();
+      expectIds(rows, [s4, s3, s2, s1], 'the first list');
+      for (const row of rows) {
+        if (row.pinned_at !== null || row.archived_at !== null) throw new Error(`${row.session_id} is not null/null`);
+      }
+    });
+
+    await ctx.step('PUT …/pin {pinned:true} → 200 pinned_at set; a repeat keeps the first pinned_at; the order stays', async () => {
+      const first = await state(pin(s1, true), { archived_at: null });
+      if (!first.pinned_at) throw new Error('no pinned_at');
+      (await pin(s1, true)).status(200).body().has('$.pinned_at', first.pinned_at);
+      expectIds((await list({ pinned: 'only' })).rows, [s1], 'pinned=only');
+      const { rows } = await list();
+      expectIds(rows, [s4, s3, s2, s1], 'a pin does not move the session');
+      if (rows.find((row) => row.session_id === s1)?.pinned_at !== first.pinned_at) throw new Error('the list row has no pinned_at');
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params: params(s1) }))
+        .status(200).body().has('$.pinned_at', first.pinned_at).has('$.archived_at', null);
+      // The session open bundle serves the same row as the read by id.
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', { params: params(s1), query: { transcript: '0' } }))
+        .status(200).body().has('$.session.pinned_at', first.pinned_at).has('$.session.archived_at', null);
+    });
+
+    await ctx.step('PUT …/archive {archived:true} → 200; the default list leaves it out, archived=only lists it', async () => {
+      const r = await state(archive(s2, true), { pinned_at: null });
+      if (!r.archived_at) throw new Error('no archived_at');
+      expectIds((await list()).rows, [s4, s3, s1], 'the default list');
+      expectIds((await list({ archived: 'only' })).rows, [s2], 'archived=only');
+    });
+
+    await ctx.step('another member`s list is unchanged: no pin, nothing archived', async () => {
+      const { rows } = await list({}, ctx.client.as(member));
+      expectIds(rows.filter((row) => row.session_id !== privateId), [s4, s3, s2, s1], 'the member`s list');
+      if (rows.some((row) => row.pinned_at !== null || row.archived_at !== null)) throw new Error('the member sees the owner`s state');
+      expectIds((await list({ pinned: 'only' }, ctx.client.as(member))).rows, [], 'the member`s pinned=only');
+    });
+
+    await ctx.step('archiving a pinned session unpins it; pinning an archived one unarchives it', async () => {
+      (await archive(s1, true)).status(200).body().has('$.pinned_at', null);
+      expectIds((await list({ pinned: 'only' })).rows, [], 'pinned=only after the archive');
+      expectIds((await list({ archived: 'only' })).rows, [s2, s1], 'archived=only');
+      const repinned = await state(pin(s1, true), { archived_at: null });
+      if (!repinned.pinned_at) throw new Error('no pinned_at after the re-pin');
+      expectIds((await list({ archived: 'only' })).rows, [s2], 'archived=only after the re-pin');
+    });
+
+    await ctx.step('a page stays full: with the 2 newest and the oldest archived, ?limit=2 → the 2 between and no cursor', async () => {
+      (await archive(privateId, true)).status(200);
+      (await archive(s4, true)).status(200);
+      (await archive(s3, true)).status(200);
+      (await archive(s2, false)).status(200).body().has('$.archived_at', null);
+      const page = await list({ limit: '2' });
+      expectIds(page.rows, [s2, s1], 'the default page');
+      if (page.cursor) throw new Error('the last page carries a cursor');
+      const first = await list({ archived: 'only', limit: '1' });
+      expectIds(first.rows, [s4], 'archived=only page 1');
+      if (!first.cursor) throw new Error('archived=only page 1 has no cursor');
+      expectIds((await list({ archived: 'only', limit: '1', cursor: first.cursor })).rows, [s3], 'archived=only page 2');
+    });
+
+    await ctx.step('unpin and unarchive → 200 null/null; the list is whole again', async () => {
+      (await pin(s1, false)).status(200).body().has('$.pinned_at', null).has('$.archived_at', null);
+      (await archive(s4, false)).status(200);
+      (await archive(s3, false)).status(200);
+      expectIds((await list()).rows, [s4, s3, s2, s1], 'the restored list');
+    });
+
+    await ctx.step('pinned=only with archived=only → 400; a body without the flag → 400', async () => {
+      (await owner.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query: { pinned: 'only', archived: 'only' } })).status(400);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/pin', {}, { params: params(s1) })).status(400);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/archive', { archived: 'yes' }, { params: params(s1) })).status(400);
+    });
+
+    await ctx.step('a session the caller cannot see → 404; ANON → 401; outside the account → 403', async () => {
+      (await pin(privateId, true, ctx.client.as(member))).status(404);
+      (await pin(crypto.randomUUID(), true)).status(404);
+      (await pin(s1, true, ctx.client.as(ctx.P.ANON))).status(401);
+      (await archive(s1, true, ctx.client.as(ctx.P.NONMEMBER))).status(403);
+    });
+
+    await ctx.step('a deleted session cannot be pinned or archived → 404', async () => {
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: params(s4) })).status(200);
+      (await pin(s4, true)).status(404);
+      (await archive(s4, true)).status(404);
+    });
+
+    const db = await openFlowDb(ctx.env);
+    try {
+      const turn = await seedTurnSession(ctx, db, { projectId: project.id, accountId: team.id, creator: ctx.P.OWNER });
+      try {
+        await ctx.step('a session`s own sandbox token is not a person → 403; its list carries no pinned_at', async () => {
+          (await turn.sandbox.put('/v1/projects/:projectId/sessions/:sessionId/pin', { pinned: true }, { params: params(turn.sessionId) })).status(403);
+          (await turn.sandbox.put('/v1/projects/:projectId/sessions/:sessionId/archive', { archived: true }, { params: params(turn.sessionId) })).status(403);
+          const rows = (await turn.sandbox.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } }))
+            .status(200).json<Row[]>();
+          if (rows.some((row) => 'pinned_at' in row || 'archived_at' in row)) throw new Error('a sandbox token got pin state');
+          const archivedView = (await turn.sandbox.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query: { archived: 'only' } }))
+            .status(200).json<Row[]>();
+          if (archivedView.length !== 0) throw new Error('a sandbox token has an archive');
+        });
+      } finally {
+        await turn.cleanup();
+      }
+    } finally {
+      await db.end();
+    }
+  },
+);
+
+/**
  * SESS-17 — session preview candidates (projects/routes/public-shares.ts). A
  * human-friendly fallback list of preview ports/paths for a session; the
  * frontend passes its own active tab when it has one. Same visibility gate as
