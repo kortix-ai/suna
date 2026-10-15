@@ -543,6 +543,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/connections/me': { action: 'connector.connection.personal.create', title: 'Created personal connector account' },
   'POST /v1/projects/:projectId/connectors/:slug/oauth2/connection': { action: 'connector.connection.shared.create', title: 'Created shared connector account' },
   'PUT /v1/projects/:projectId/default-agent': { action: 'project.default_agent.update', title: 'Updated default agent' },
+  'PUT /v1/projects/:projectId/default-reasoning-effort': { action: 'project.default_reasoning_effort.update', title: 'Updated default reasoning effort' },
   'GET /v1/projects/:projectId/detail': { action: 'project.detail.read', title: 'Viewed project details' },
   'PATCH /v1/projects/:projectId/experimental': 'PATCH /v1/projects/:projectId/features',
   'PATCH /v1/projects/:projectId/features': { action: 'project.feature_flag.update', title: 'Updated project feature flag' },

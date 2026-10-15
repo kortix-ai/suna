@@ -271,6 +271,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       base_ref: 'main',
       agent_name: 'kortix',
       llm_gateway_enabled: true,
+      default_reasoning_effort: null,
     });
     expect(body.models.known).toBe(true);
     expect(body.models.projectDefault).toBe('p');

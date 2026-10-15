@@ -6,6 +6,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
@@ -20,6 +21,10 @@ import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
 import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import {
+  DEFAULT_REASONING_EFFORT_METADATA_KEY,
+  normalizeDefaultReasoningEffort,
+} from '../lib/effort-default';
+import {
   featureFlagDef,
   isDerivedFeatureFlag,
   isFeatureFlagKey,
@@ -27,6 +32,7 @@ import {
   resolveFeatureFlag,
 } from '../../feature-flags/registry';
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
+import type { AppEnv } from '../../types';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
@@ -417,6 +423,90 @@ export function registerProjectSettingsRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       return c.json(await readPublicProjectTransitionState(projectId));
+    },
+  );
+
+  // PUT /:projectId/default-reasoning-effort — set or clear the project's
+  // default reasoning effort (Settings → General). Stored in
+  // `metadata.default_reasoning_effort` (no migration — same jsonb as
+  // `onboarding_completed_at`); delivery injects it as the prompt's `variant`
+  // whenever the prompt carries none, clamped to the session model's own
+  // options (lib/effort-default.ts). Human callers only: project.settings.write,
+  // and never a session principal — the setting rides EVERY prompt in the
+  // project, so an agent session must not be able to turn its own effort up.
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/default-reasoning-effort',
+      tags: ['projects'],
+      summary: 'Set or clear the project default reasoning effort',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(AnyObject, 'Updated project (with the default reasoning effort)'),
+        ...errors(400, 401, 403, 404),
+      },
+    }),
+    async (c: Context<AppEnv>) => {
+      const projectId = c.req.param('projectId');
+      if (!projectId) return c.json({ error: 'Not found' }, 404);
+      const body = await readJsonObject(c);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Same guard as the sandbox-provider pin: a session-bound or agent-grant
+      // token may not flip a project-wide delivery behavior, whatever its
+      // kortix_permissions. No grant unlocks this (agent_session_forbidden).
+      if (isProjectSessionPrincipal(c)) {
+        return c.json(
+          {
+            error: 'Agent sessions cannot change the project default reasoning effort — ask a person to change it in Settings',
+            code: 'agent_session_forbidden',
+          },
+          403,
+        );
+      }
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+      // Archived projects are read-only: reject BEFORE the write.
+      if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+
+      if (!('effort' in body)) {
+        return c.json({ error: 'effort is required (an effort label or null to clear)', code: 'invalid_body' }, 400);
+      }
+      const raw = body.effort;
+      // `null` / '' clears (Automatic). Anything else must be a label the
+      // catalog publishes — validated here against the same vocabulary the
+      // delivery clamp trusts, so a stored value can never be one no model
+      // accepts.
+      if (raw !== null && raw !== '' && typeof raw !== 'string') {
+        return c.json({ error: 'effort must be a string or null', code: 'invalid_body' }, 400);
+      }
+      const effort = typeof raw === 'string' ? normalizeDefaultReasoningEffort(raw) : null;
+      if (raw !== null && raw !== '' && !effort) {
+        return c.json(
+          { error: `Unknown reasoning effort '${String(raw)}'`, code: 'unknown_effort' },
+          400,
+        );
+      }
+
+      // FIX-J: SQL-side atomic merge of ONLY this key (set / delete) so this
+      // write can't revert a routing pin or a feature flag written concurrently.
+      const metadataExpr = effort
+        ? metadataMerge({ [DEFAULT_REASONING_EFFORT_METADATA_KEY]: effort })
+        : metadataMerge({}, [DEFAULT_REASONING_EFFORT_METADATA_KEY]);
+      const [row] = await db
+        .update(projects)
+        .set({ metadata: metadataExpr, updatedAt: new Date() })
+        .where(eq(projects.projectId, projectId))
+        .returning();
+
+      if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+      return c.json(serializeProject(row, {
+        projectRole: loaded.projectRole,
+        effectiveRole: loaded.effectiveRole,
+      }));
     },
   );
 }

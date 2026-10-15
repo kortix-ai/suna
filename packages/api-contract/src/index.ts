@@ -183,6 +183,11 @@ export const ProjectSchema = z.object({
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
   available_sandbox_providers: z.array(SandboxProviderSchema),
+  /** Per-project default reasoning effort (a models.dev effort label such as
+   *  `low`/`high`/`xhigh`), or null for automatic. Delivery injects it as the
+   *  prompt's `variant` whenever the prompt carries none; re-validated on read
+   *  so a value the catalog never published never reaches a client. */
+  default_reasoning_effort: z.string().nullable(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
@@ -1832,6 +1837,8 @@ export const SessionSnapshotSchema = z.object({
     base_ref: z.string().nullable(),
     agent_name: z.string().nullable(),
     llm_gateway_enabled: z.boolean(),
+    /** The project's default reasoning effort, or null for automatic. */
+    default_reasoning_effort: z.string().nullable(),
   }),
   models: z.union([
     z.object({

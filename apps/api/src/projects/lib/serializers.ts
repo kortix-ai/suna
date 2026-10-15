@@ -7,6 +7,7 @@ import type {
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
 import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
+import { normalizeDefaultReasoningEffort } from './effort-default';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -336,6 +337,13 @@ export function serializeProject(
     })(),
     available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
       config.isProviderEnabled(p),
+    ),
+    // Per-project default reasoning effort (Settings → General). Re-validated
+    // on read so a value written before the validator existed, or written
+    // directly to the DB, can never reach the UI unchecked (same mechanism as
+    // the icon fields above).
+    default_reasoning_effort: normalizeDefaultReasoningEffort(
+      (row.metadata as Record<string, unknown> | null | undefined)?.default_reasoning_effort,
     ),
   };
 }
