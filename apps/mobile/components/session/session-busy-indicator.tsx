@@ -27,7 +27,8 @@ import Animated, {
   withSpring,
   type EntryExitAnimationFunction,
 } from 'react-native-reanimated';
-import { getTurnStatus, type PartLike } from '@kortix/sdk';
+import type { SessionLogBlock } from '@kortix/sdk';
+import { busyStatusText } from '@/lib/session/turn-body';
 
 import { Text } from '@/components/ui/text';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
@@ -166,7 +167,7 @@ SessionBusyIndicator.displayName = 'SessionBusyIndicator';
 
 /**
  * Web session-chat.tsx's busy status for one turn:
- * - `getTurnStatus` only once the turn has an assistant message (before that
+ * - the SDK's activity line (`busyStatusText`) only once the turn has an assistant message (before that
  *   the row keeps "Thinking" — the fallback phrase would claim work that has
  *   not started);
  * - a new status applies at most once per 2.5s, measured from mount;
@@ -176,22 +177,23 @@ SessionBusyIndicator.displayName = 'SessionBusyIndicator';
  * Pass the result straight to `SessionBusyIndicator`.
  */
 export function useTurnBusyStatus({
-  allParts,
+  blocks,
   working,
   hasAssistantContent,
 }: {
-  allParts: ReadonlyArray<{ part: PartLike }>;
+  /** Every reply block of the turn, reasoning included (its text never shows). */
+  blocks: ReadonlyArray<SessionLogBlock>;
   working: boolean;
   hasAssistantContent: boolean;
 }): { statusText: string | undefined; elapsedLabel: string | undefined } {
   const rawStatus = useMemo(
-    () => (hasAssistantContent ? getTurnStatus(allParts) : ''),
-    [allParts, hasAssistantContent],
+    () => (hasAssistantContent ? busyStatusText(blocks) : ''),
+    [blocks, hasAssistantContent],
   );
   const [mountedAt] = useState(() => Date.now());
   const lastChangeRef = useRef(mountedAt);
-  const allPartsRef = useRef(allParts);
-  allPartsRef.current = allParts;
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
   const [throttledStatus, setThrottledStatus] = useState('');
 
   useEffect(() => {
@@ -208,11 +210,11 @@ export function useTurnBusyStatus({
       return;
     }
     const timer = setTimeout(() => {
-      setThrottledStatus(getTurnStatus(allPartsRef.current));
+      setThrottledStatus(busyStatusText(blocksRef.current));
       lastChangeRef.current = Date.now();
     }, decision.delayMs);
     return () => clearTimeout(timer);
-  }, [allParts, rawStatus, throttledStatus]);
+  }, [blocks, rawStatus, throttledStatus]);
 
   const [elapsedState, setElapsedState] = useState(() =>
     statusElapsedFrame(undefined, { status: throttledStatus, working, nowMs: Date.now() }),

@@ -10,6 +10,19 @@ single long-lived Bun worker retained 8.9 GiB during a full suite. Set
 runner with measured headroom. A detached suite continues after an agent turn
 ends; check and stop that process before retrying a memory-guarded turn.
 
+The kortixd and CLI suites run four isolated Bun workers each
+(`--isolate --parallel=4`). A kortixd test that writes a fixed host path must
+take it from an env var that `src/__tests__/preload-isolated-home.ts` points
+into the worker's own `HOME`, as `KORTIX_CONFIG_RELEASE_NOTICE_PATH` does.
+
+`pnpm test` warns when the running Bun differs from the `bun-version` that
+`.github/workflows/tests.yml` pins. Install the pin: a Bun 1.4.2 test worker
+hung for 12 min on a suite that passes on 1.4.3.
+
+The local API that the flows start refreshes its git mirror every second
+(`KORTIX_GIT_REFRESH_INTERVAL_MS=1000`, `src/core/local-stack.ts`). The 60 s
+default made each flow that pushes `kortix.yaml` wait up to 60 s per push.
+
 The default run has six lanes plus package quality. It runs only the lanes and
 packages the branch's diff can affect ([Diff-scoped default run](#diff-scoped-default-run)):
 

@@ -10,6 +10,7 @@ import {
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
+  readBootReleaseRoot,
   readQuarantine,
   releaseDir,
   verifyRelease,
@@ -454,7 +455,8 @@ async function revertToPreReleaseConfig(
     return respond('failed', null, 'a turn is running or its state is unknown; the revert waits for the next trigger')
   }
   const previousDir = await servingConfigDir(root)
-  await serveConfigDir(dir, 'config releases are disabled for this project', root)
+  const previousRoot = await readBootReleaseRoot(root)
+  await serveConfigDir(dir, 'config releases are disabled for this project', root, cfg.projectTarget)
   const result = await opencode.reloadVerified({
     prove: (baseUrl, deadline) =>
       (deps.prove ?? provenCheck)(baseUrl, deadline, {
@@ -467,7 +469,7 @@ async function revertToPreReleaseConfig(
     mayPromote: deps.turnInFlight ? idle : undefined,
   })
   if (result.outcome === 'kept-old') {
-    if (previousDir) await serveConfigDir(previousDir, 'the workspace config dir did not start', root)
+    if (previousDir) await serveConfigDir(previousDir, 'the workspace config dir did not start', root, previousRoot)
     if (result.promotionCalledOff) return respond('failed', null, result.reason)
     logger.warn('[config-release] disabled, but the workspace config dir did not start; keeping the release', {
       dir,
@@ -542,7 +544,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     // memory, so the candidate on the standby port is the only reader of the
     // new target; a declined candidate puts the old target back.
     const previousDir = await servingConfigDir(root)
-    await serveConfigDir(dir, 'a convergence is replacing opencode', root)
+    const previousRoot = await readBootReleaseRoot(root)
+    await serveConfigDir(dir, 'a convergence is replacing opencode', root, releaseRoot)
     // Tell the session which commit's config it is about to run, BEFORE the
     // replacement spawns: `writeComposedConfig` declares this file in
     // OpenCode's `instructions`, so the new process reads it (spec, "Telling
@@ -562,7 +565,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       mayPromote: deps.turnInFlight ? idle : undefined,
     })
     if (result.outcome === 'kept-old') {
-      if (previousDir) await serveConfigDir(previousDir, 'the candidate was declined', root)
+      if (previousDir) await serveConfigDir(previousDir, 'the candidate was declined', root, previousRoot)
       restoreGovernance()
     }
     return result

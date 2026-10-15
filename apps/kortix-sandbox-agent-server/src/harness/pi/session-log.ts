@@ -34,6 +34,18 @@
  *   the root `task` call whose result names it.
  * - `native_hash` digests the pi entries (or child messages) a record is built
  *   from, its v1 message, its seq and whether it streams.
+ * - `usage.reasoning` is pi's `usage.reasoning` when pi reports a number
+ *   (pi-ai's OpenAI dialects always do, 0 without a breakdown) (P2.10).
+ * - A call's `title` is its v1 part's `state.title` (pi's v1 sets the tool
+ *   name on a completed call; an errored or open call has none) (P2.10).
+ * - `created_at` is pi's own message timestamp (the compaction entry's time
+ *   for a compaction), not the v1 `time.created`. pi-ai stamps an assistant
+ *   message when it sends the model request; the runtime stamps the v1 row at
+ *   pi's `message_start`, when the response starts. So a reply's `created_at`
+ *   is earlier than its v1 row by the time to the response (P2 dev check on a
+ *   real session: -3750..+16 ms). pi-ai stamps a child's initial system
+ *   message 0: that context message gets the thread's `created_at` (P2.10).
+ *   An assistant's `completed_at` is the v1 `time.completed`.
  *
  * The seq rule. `seq` is monotonic per thread and never reused: the API keeps
  * a tombstoned row with its seq and rejects a second row on the same
@@ -67,8 +79,7 @@ import type { SessionEntry, SessionHeader } from '@earendil-works/pi-coding-agen
 import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
-  type AdapterCapabilities,
-  type CapabilityFeatures,
+  PI_CAPABILITIES,
   type ExportCursor,
   type SessionLog,
   type SessionLogBlock,
@@ -130,7 +141,7 @@ export interface PiSessionSnapshot {
 }
 
 export const PI_VERSION = PI_HARNESS_VERSION.split('@').pop() ?? PI_HARNESS_VERSION
-export const PI_ADAPTER_VERSION = '1.0.0'
+export const PI_ADAPTER_VERSION = '1.1.0'
 const PRODUCER = { harness: 'pi', harness_version: PI_VERSION, adapter_version: PI_ADAPTER_VERSION }
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const
 /** What pi-ai sends for a call whose result is missing. */
@@ -138,29 +149,8 @@ export const PI_NO_RESULT = 'No result provided'
 const DIALECT: Record<string, string> = { 'openai-completions': 'openai-chat', 'openai-responses': 'openai-responses', 'anthropic-messages': 'anthropic-messages' }
 const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', task: 'task', question: 'question', web_search: 'web_search' }
 
-const native: CapabilityFeatures = {
-  tool_error_channel: false, // openai-chat role:tool has no is_error
-  attachments: { user: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], tool_result: false },
-  compaction: ['summary_first_tail'],
-  subagents: 'sync', // the Kortix `task` tool runs a child agent in process
-  todos: false,
-  reasoning_replay: 'lowers_to_text', // pi-ai replays another model's thinking as text
-  freeform_tool_input: false,
-}
-/**
- * `harness_versions` and `schema_minors` name what the oracle suites (`pi-session-log-restore.test.ts`,
- * `pi-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
- * fails when the pin (package.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
- */
-export const PI_CAPABILITIES: AdapterCapabilities = {
-  harness: 'pi',
-  harness_versions: '1.0.3',
-  schema_minors: [1],
-  dialects: ['openai-chat'],
-  native,
-  // A tool-result image becomes a follow-up user turn; a layout compaction is rendered as entries.
-  rendered: { ...native, attachments: { ...native.attachments, tool_result: true }, compaction: ['summary_first_tail', 'layout'] },
-}
+/** The manifest (C12, F9) lives in `@kortix/api-contract/session-log` (`capabilities.ts`): apps/api reads it for the switch preflight. */
+export { PI_CAPABILITIES }
 
 // ── native shapes (pi's types are wider than what this reads) ─────────────
 type J = Record<string, any>
@@ -228,6 +218,8 @@ function deriveThread(input: {
   busy: boolean
   child: boolean
   seqOf: (entry: J) => number
+  /** The thread's creation (ms): the time of a message pi-ai stamps 0 (its initial system message). */
+  createdAt: number
 }): Derived[] {
   const { threadId, entries } = input
   const v1 = new Map(input.transcript.map((m) => [m.info.id as string, m]))
@@ -275,7 +267,7 @@ function deriveThread(input: {
     const nativeParts: unknown[] = [e, ...own, row ?? null]
 
     if (msg.role === 'user' || msg.role === 'custom' || msg.role === 'system') {
-      const m = message(threadId, id, msg.role === 'system' ? 'system' : 'user', iso(msg.timestamp))
+      const m = message(threadId, id, msg.role === 'system' ? 'system' : 'user', iso(msg.timestamp || input.createdAt))
       if (msg.role === 'system') m.kind = 'context'
       if (msg.role === 'custom') m.origin = 'automation'
       if (input.child && msg.role === 'user' && !out.some((x) => x.message.role === 'user')) m.origin = 'subagent'
@@ -366,7 +358,9 @@ function deriveThread(input: {
 }
 
 function usageOf(u: J | undefined) {
-  return u ? { input: u.input ?? 0, output: u.output ?? 0, cache_read: u.cacheRead ?? 0, cache_write: u.cacheWrite ?? 0, ...(u.cost?.total ? { cost: u.cost.total } : {}) } : null
+  return u
+    ? { input: u.input ?? 0, output: u.output ?? 0, cache_read: u.cacheRead ?? 0, cache_write: u.cacheWrite ?? 0, ...(typeof u.reasoning === 'number' ? { reasoning: u.reasoning } : {}), ...(u.cost?.total ? { cost: u.cost.total } : {}) }
+    : null
 }
 
 /** The message pi keeps from: the first message entry at or after `firstKeptEntryId`, before the compaction. */
@@ -390,6 +384,7 @@ function toolCall(c: J, part: J | undefined, result: J | undefined, edits: Map<s
     kind: KIND[c.name] ?? (c.name.includes('__') || c.name.startsWith('mcp_') ? 'mcp' : 'other'),
     input: c.arguments,
     status: 'pending',
+    ...(typeof part?.state?.title === 'string' && part.state.title ? { title: part.state.title } : {}),
     ...(time?.start ? { started_at: iso(time.start) } : {}),
   }
   if (c.thoughtSignature) block.ext = { pi: { version: PI_VERSION, data: { thoughtSignature: c.thoughtSignature } } }
@@ -426,14 +421,14 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     })
   const all = s.entries as J[]
   const seqOf = rootSeqs(s)
-  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: activeBranch(all, s.leafId), ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => seqOf(e.id) }))
+  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: activeBranch(all, s.leafId), ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => seqOf(e.id), createdAt: Date.parse(created) }))
   const root: SessionLogThread = {
     ...V, thread_id: s.rootId, parent_thread_id: null, spawned_by: null, agent: s.agent, title: s.title, created_at: created, messages: rootMessages,
     ...(s.header ? { ext: { pi: { version: PI_VERSION, native_id: s.header.id, data: { cwd: s.header.cwd, header_version: s.header.version ?? null } } } } : {}),
   }
   const children = s.children.map((child): SessionLogThread => {
     const entries = child.agentMessages.map((m, i) => ({ type: 'message', id: `${child.id}:s${child.seqs[i]}`, index: i, message: m }))
-    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true, seqOf: (e) => child.seqs[e.index]! }))
+    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true, seqOf: (e) => child.seqs[e.index]!, createdAt: child.createdAt }))
     return { ...V, thread_id: child.id, parent_thread_id: s.rootId, spawned_by: spawnedBy(rootMessages, child.id), agent: child.agentName, title: child.title, created_at: iso(child.createdAt), messages }
   })
   const log: SessionLog = {

@@ -1,11 +1,12 @@
 /**
  * `resolveDesiredRelease`'s mirror-refresh contract (KRTX-629).
  *
- * Default: the freshness stamp is dropped, so resolving the base tip fetches.
- * `refreshProjectMirror: false` — what `GET /config` passes, because its own
- * etag compile refreshed the same mirror moments earlier IN THE SAME REQUEST —
- * must not drop the stamp again: that second drop made every read of the
- * polled route pay a second sequential `git fetch`.
+ * Default: the base tip is the upstream's, through the shared check
+ * (`checkBase`, config-releases/base-tip.ts). `refreshProjectMirror: false` —
+ * what `GET /config` passes, because its own etag compile refreshed the same
+ * mirror moments earlier IN THE SAME REQUEST — reads the mirror as it is: a
+ * second refresh made every read of the polled route pay a second sequential
+ * `git fetch`.
  *
  * Every dep is injected, so these assert the DECISION, not the mirror.
  */
@@ -43,19 +44,23 @@ const RELEASE: ConfigRelease = {
   reason: null,
 };
 
-function deps(invalidated: string[]): DesiredReleaseDeps {
+/** `calls` gets the project ID of every upstream check. */
+function deps(calls: string[]): DesiredReleaseDeps {
   return {
     ledger: new MemoryConfigReleaseLedger(),
     build: async () => RELEASE,
     resolveBase: async () => TIP,
     readBase: async () => TIP,
+    checkBase: async (project) => {
+      calls.push(project.projectId);
+      return TIP;
+    },
     loadRoster: async () => ROSTER,
-    invalidate: (projectId) => invalidated.push(projectId),
   };
 }
 
-describe('resolveDesiredRelease decides when to refresh the mirror', () => {
-  test('the default refreshes exactly once, for this project', async () => {
+describe('resolveDesiredRelease decides when to ask the upstream', () => {
+  test('the default asks the shared check exactly once, for this project', async () => {
     const calls: string[] = [];
     await resolveDesiredRelease(
       { project: PROJECT, baseRef: 'main', sessionAgent: null, repositoryAccess: true },
@@ -64,7 +69,7 @@ describe('resolveDesiredRelease decides when to refresh the mirror', () => {
     expect(calls).toEqual([PROJECT.projectId]);
   });
 
-  test('refreshProjectMirror: false never invalidates — the caller just refreshed', async () => {
+  test('refreshProjectMirror: false never asks — the caller just refreshed', async () => {
     const calls: string[] = [];
     await resolveDesiredRelease(
       {
@@ -79,7 +84,7 @@ describe('resolveDesiredRelease decides when to refresh the mirror', () => {
     expect(calls).toEqual([]);
   });
 
-  test('an explicit true refreshes like the default', async () => {
+  test('an explicit true asks like the default', async () => {
     const calls: string[] = [];
     await resolveDesiredRelease(
       {
@@ -104,7 +109,7 @@ describe('resolveDesiredRelease decides when to refresh the mirror', () => {
     expect(desired.baseSha).toBe(TIP);
   });
 
-  test('a boot tip the mirror does not hold refreshes: the hint never chooses the release', async () => {
+  test('a boot tip the mirror does not hold asks: the hint never chooses the release', async () => {
     const calls: string[] = [];
     const desired = await resolveDesiredRelease(
       { project: PROJECT, baseRef: 'main', sessionAgent: null, repositoryAccess: true, bootTip: 'd'.repeat(40) },

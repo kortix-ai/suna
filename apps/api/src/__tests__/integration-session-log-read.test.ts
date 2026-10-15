@@ -15,7 +15,7 @@
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { fromV1, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
-import { accountMembers, projectSessions, projects, sessionLogs, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
+import { accountMembers, projectMembers, projectSessions, projects, sessionLogs, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -265,6 +265,39 @@ describe('GET .../log', () => {
     } finally {
       await db.delete(projects).where(eq(projects.projectId, other.project_id));
     }
+  });
+
+  test('a KaaB backend-origin sibling and another user\'s private session: the log refuses them where the transcript does', async () => {
+    const MEMBER = crypto.randomUUID();
+    await insertIntoView(db, accountMembers, { userId: MEMBER, accountId: project.account_id, accountRole: 'member' });
+    await insertIntoView(db, projectMembers, { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' });
+    // Two KaaB sessions: one wrapper credential (OWNER) created both, each box acts for one end-user.
+    const [backendA, backendB, memberSession] = [await seedSession(project, OWNER), await seedSession(project, OWNER), await seedSession(project, MEMBER)];
+    await db.update(projectSessions).set({ origin: 'backend' }).where(sql`${projectSessions.sessionId} in (${backendA}, ${backendB})`);
+    for (const id of [backendA, backendB, memberSession]) await storeBothWays(id, 6);
+    // `session` is OWNER's private session (the column default): a log is stored, so a 404 below is the gate, not a missing log.
+    const [row] = await db.select({ visibility: projectSessions.visibility }).from(projectSessions).where(eq(projectSessions.sessionId, session));
+    expect(row!.visibility).toBe('private');
+    const boxToken = async (sessionId: string, userId: string) => {
+      await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
+      return (await createAccountToken({ accountId: project.account_id, userId, projectId: project.project_id, sessionId, name: `session-log-read-${sessionId}` })).secretKey;
+    };
+    const backendBox = await boxToken(backendA, OWNER);
+    const memberBox = await boxToken(memberSession, MEMBER);
+    const memberToken = (await createAccountToken({ accountId: project.account_id, userId: MEMBER, name: 'session-log-read-member' })).secretKey;
+    const statuses = async (sessionId: string, token: string) => [
+      (await get(`${base(sessionId)}/transcript?shape=sync`, token)).status,
+      (await get(`${base(sessionId)}/log`, token)).status,
+    ];
+    // The backend box reads its own session, never its sibling; the signed-in human reads both.
+    expect(await statuses(backendA, backendBox)).toEqual([200, 200]);
+    expect(await statuses(backendB, backendBox)).toEqual([404, 404]);
+    expect(await statuses(backendB, ownerToken)).toEqual([200, 200]);
+    // Another user's private session: refused to the member and to the member's box; the owner reads it.
+    expect(await statuses(session, memberToken)).toEqual([404, 404]);
+    expect(await statuses(session, memberBox)).toEqual([404, 404]);
+    expect(await statuses(memberSession, memberBox)).toEqual([200, 200]);
+    expect(await statuses(session, ownerToken)).toEqual([200, 200]);
   });
 
   test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {

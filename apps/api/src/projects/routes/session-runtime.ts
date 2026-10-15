@@ -18,7 +18,6 @@ import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
-import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
@@ -143,7 +142,6 @@ export function registerSessionRuntimeRoutes(): void {
             balance: billing.balance,
             // Same discrimination the create/start 402 carries — a resume block on
             // a paying-but-drained Team account must not read as "no plan".
-            billing_model: billing.billingModel,
             has_subscription: billing.hasSubscription,
             billing_state: billing.billingState,
             account_id: loaded.row.accountId,
@@ -210,22 +208,6 @@ export function registerSessionRuntimeRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: {
-          required: false,
-          content: {
-            'application/json': {
-              schema: z.object({
-                // Persistent machines only: discard the disk and boot a fresh box
-                // from the current image (the session's branch is restored).
-                reset_machine: z.boolean().optional(),
-                // With reset_machine: reset even when the chat cannot be saved
-                // first. Without it such a reset is refused (409
-                // reset_state_not_preserved) and nothing is deleted.
-                discard_state: z.boolean().optional(),
-              }),
-            },
-          },
-        },
       },
       responses: {
         202: json(z.any(), 'OK'),
@@ -256,14 +238,11 @@ export function registerSessionRuntimeRoutes(): void {
           403,
         );
       }
-      const body = await readJsonObject(c);
       const result = await restartSession({
         loaded,
         session: visible.row,
         projectId,
         sessionId,
-        resetMachine: body.reset_machine === true,
-        discardState: body.discard_state === true,
       });
       return c.json(result.body, result.status as any);
     },

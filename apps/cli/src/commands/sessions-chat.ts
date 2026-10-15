@@ -13,7 +13,10 @@ import {
   sessionLogCallStatus,
   sessionLogOfV1Rows,
   sessionModelPin,
+  toolCallError,
+  toolCallRawOutput,
 } from '@kortix/sdk';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
@@ -110,13 +113,15 @@ const fileText = (name: string | undefined) => `${C.faded}[file${name ? ` · ${n
 function blockToText(block: SessionLogBlock, streaming: boolean): string {
   switch (block.type) {
     case 'text':
-      return block.synthetic ? '' : block.text;
+      return block.synthetic ? '' : genuiToMarkdown(block.text, { streaming });
     case 'reasoning':
       return `${C.dim}[reasoning] ${block.text}${C.reset}`;
     case 'tool_call': {
       const status = sessionLogCallStatus(block, streaming);
-      const output = (block.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('\n');
-      return `${C.faded}[${block.name} · ${status}]${C.reset}${output ? `\n${C.dim}${output}${C.reset}` : ''}`;
+      // A failed call prints the SDK's error text (its `result.error`, else its result text), as the web does.
+      const error = toolCallError(block);
+      const output = error ?? toolCallRawOutput(block);
+      return `${C.faded}[${block.name} · ${status}]${C.reset}${output ? `\n${error ? C.red : C.dim}${output}${C.reset}` : ''}`;
     }
     case 'attachment':
       return fileText(block.name);
@@ -133,17 +138,28 @@ function blockToText(block: SessionLogBlock, streaming: boolean): string {
   }
 }
 
+/** A session-log message's blocks as text; a still-streaming genui block never prints the cut-off note. */
+function logMessageText(message: SessionLogMessage): string {
+  const streaming = message.status === 'streaming';
+  return message.blocks
+    .map((block) => blockToText(block, streaming))
+    .filter((text) => text.length > 0)
+    .join('\n');
+}
+
+/** A v1 message's text, as `sessions chat` prints it. */
+export function extractMessageText(msg: MessageWithParts): string {
+  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
+  return message ? logMessageText(message) : '';
+}
+
 /** Print one session-log message: a role header, its blocks as text, and its error. */
 export function printLogMessage(message: SessionLogMessage): void {
   const role = message.kind === 'compaction' ? 'compaction' : message.role;
   const color = role === 'user' || role === 'system' ? C.green : C.cyan;
   const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
   process.stdout.write(`\n${color}${C.bold}${role}${C.reset} ${C.faded}${ts}${C.reset}\n`);
-  const streaming = message.status === 'streaming';
-  const body = message.blocks
-    .map((block) => blockToText(block, streaming))
-    .filter((text) => text.length > 0)
-    .join('\n');
+  const body = logMessageText(message);
   if (body) {
     for (const line of body.split('\n')) process.stdout.write(`  ${line}\n`);
   }
@@ -570,8 +586,11 @@ noted on stderr when the session is not read live.
                     or "v1" for a session with no stored log, converted), and
                     "threads" (root and sub-agents), each with its newest
                     messages and "has_more". A running turn's messages
-                    the log does not hold yet carry "provisional": true
-                    (their seq is not stored yet).
+                    the log does not hold yet carry
+                    "ext": {"kortix": {"data": {"provisional": true}}}
+                    (their seq is not stored yet). The top-level
+                    "provisional": true they also carry is deprecated
+                    and goes in the next release: read the ext key.
   --schema v1       Deprecated: emit the old JSON (role / text / parts per
                     root message) from the v1 transcript. Goes in the next
                     release.
@@ -752,7 +771,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   const s = session;
   process.stdout.write(
     `\n${C.bold}${s.name ?? s.session_id.split('-')[0]}${C.reset} ` +
-      `${C.faded}(${s.agent_name} · ${s.status})${C.reset}\n`,
+      `${C.faded}(${s.agent_name} · ${logHeaderState(s.status, live?.messages ?? null)})${C.reset}\n`,
   );
   const root = output.threads.find((thread) => thread.parent_thread_id === null) ?? output.threads[0];
   const messages = root?.messages ?? [];
@@ -772,6 +791,16 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   }
   process.stdout.write('\n');
   return 0;
+}
+
+/**
+ * The `sessions log` header's state: the session status is the sandbox's (`running` while
+ * the box is up, whatever the agent does), so it is named as such. A live read adds what the
+ * agent does now (`deriveActivity`): `working` or `idle`.
+ */
+export function logHeaderState(status: ProjectSession['status'], live: MessageWithParts[] | null): string {
+  const sandbox = `sandbox ${status}`;
+  return live ? `${sandbox} · ${deriveActivity(live, status).working ? 'working' : 'idle'}` : sandbox;
 }
 
 type LogThread = SessionLogThread & { has_more: boolean };
@@ -835,7 +864,8 @@ export async function readStoredSessionLog(
 /**
  * A running session's threads with the turn it runs now. The stored log is
  * journaled at each turn end, so the root thread takes the live messages it
- * does not hold yet (newer than its last), marked `provisional: true`: their
+ * does not hold yet (newer than its last), marked `ext.kortix.data.provisional: true` and,
+ * deprecated for one release, a top-level `provisional: true`: their
  * seq is not stored yet. A tail keeps the seqs `fromV1` gives the live read
  * when those agree with the stored ones, else it goes above the newest stored
  * seq. A deleted message's seq is not served, so a provisional seq can differ
@@ -844,7 +874,18 @@ export async function readStoredSessionLog(
  * its newest `limit` messages, and `has_more` says when older ones exist.
  */
 export function withLiveTurn(threads: LogThread[], live: SessionLogThread, limit: number): LogThread[] {
-  const provisional = (message: SessionLogMessage) => ({ ...message, thread_id: live.thread_id, provisional: true });
+  // Both marks for one release: the top-level `provisional` (v0.13.57, deprecated) and
+  // `ext.kortix.data.provisional`. An `ext.kortix.data` that is not a plain object is left as
+  // it is; the top-level mark still says provisional.
+  const provisional = (message: SessionLogMessage): SessionLogMessage & { provisional: true } => {
+    const kortix = message.ext?.kortix;
+    const data = kortix?.data;
+    const plain = data === undefined || (typeof data === 'object' && data !== null && !Array.isArray(data));
+    const ext = plain
+      ? { ...message.ext, kortix: { ...kortix, version: kortix?.version ?? '1', data: { ...(data as Record<string, unknown> | undefined), provisional: true } } }
+      : message.ext;
+    return { ...message, thread_id: live.thread_id, ...(ext && { ext }), provisional: true };
+  };
   const fit = (thread: SessionLogThread, messages: SessionLogMessage[], older: boolean): LogThread => ({
     ...thread,
     messages: messages.slice(-limit),
@@ -1276,7 +1317,8 @@ export function deriveActivity(
     return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
   }
 
-  // Otherwise the last assistant turn is done — summarize its reply.
+  // Otherwise the last assistant turn is done (or failed) — summarize its reply. A turn still
+  // streaming returned "working…" above, so a cut-off note here is real.
   const completed = lastInfo.time?.completed;
   const text = last.parts
     .filter(
@@ -1285,7 +1327,7 @@ export function deriveActivity(
         !(p as { synthetic?: boolean }).synthetic &&
         typeof (p as { text?: string }).text === 'string',
     )
-    .map((p) => (p as { text: string }).text)
+    .map((p) => genuiToMarkdown((p as { text: string }).text))
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();

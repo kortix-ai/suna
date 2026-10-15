@@ -53,10 +53,6 @@ mock.module('./free-tier', () => ({
 // unconditional getCreditAccount(). They reach getCreditAccount only via the
 // mocked ../repositories/credit-accounts, so the real modules run here.
 
-mock.module('./seat-management', () => ({
-  countActiveMembers: async (_accountId: string) => trackedDelay(3),
-}));
-
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand silently deletes every other one — and the failure
 // lands in whatever file imports the missing name next, as
@@ -94,7 +90,6 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
   return {
     accountId: 'acct-1',
     tier: 'free',
-    billingModel: 'legacy',
     balance: '10.00',
     dailyCreditsBalance: '1.00',
     expiringCredits: '5.00',
@@ -117,7 +112,7 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
     revenuecatPendingChangeProduct: null,
     revenuecatPendingChangeDate: null,
     planType: null,
-    seatCount: null,
+    planMonthlyUsd: null,
     ...overrides,
   };
 }
@@ -134,7 +129,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
 
   test('the independent lookups actually run concurrently, not sequentially', async () => {
     getCreditAccountCalls = 0;
-    account = creditAccount({ billingModel: 'per_seat' });
+    account = creditAccount();
     inFlight = 0;
     maxInFlight = 0;
 
@@ -143,7 +138,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(maxInFlight).toBeGreaterThan(1);
   });
 
-  test('response shape is unchanged — credits, subscription, tier, auto_topup, instances, limits all present', async () => {
+  test('response shape — credits, subscription, tier, auto_topup present; no legacy machine fields', async () => {
     getCreditAccountCalls = 0;
     account = creditAccount();
 
@@ -168,7 +163,9 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       status: 'current',
       sublabel: null,
       rank: 1,
+      monthly_usd: null,
     });
+    expect('is_grandfathered' in (state.plan ?? {})).toBe(false);
     expect(state.auto_topup).toEqual({
       enabled: false,
       threshold: expect.any(Number),
@@ -178,24 +175,28 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       last_failure_reason: null,
       last_failure_at: null,
     });
-    expect(state.instances).toEqual([]);
+    expect('instances' in state).toBe(false);
+    expect('can_add_instances' in state).toBe(false);
     expect('limits' in state).toBe(false);
-    expect(state.billing_model).toBe('legacy');
-    expect(state.member_count).toBe(3);
+    // Credits-only: no seats, no billing model, no claim flags.
+    for (const removed of ['billing_model', 'seats', 'member_count', 'can_claim_per_seat', 'can_claim_computer']) {
+      expect(removed in state).toBe(false);
+    }
+    expect(state.plan?.monthly_usd).toBeNull();
     expect(state.billing_state).toBe('active');
     expect(state.has_active_subscription).toBe(false);
   });
 
-  test('a per-seat account on an ACTIVE subscription with a drained wallet CANNOT run, and reports why', async () => {
+  test('a credits account on an ACTIVE subscription with a drained wallet CANNOT run, and reports why', async () => {
     // Was `can_run: true` while the wallet sat at $0.0099, because a paying
-    // per-seat subscription bypassed the floor. The bypass is gone. What this
+    // subscription bypassed the floor. The bypass is gone. What this
     // test now pins is that the three fields stay CONSISTENT with each other:
     // blocked (`can_run` false), correctly diagnosed (`out_of_credits`, so the
     // UI says "Top up"), and still recognised as a customer
     // (`has_active_subscription` true, so nothing pitches them a subscription).
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
+      planMonthlyUsd: '100',
       balance: '0.0099614711',
       stripeSubscriptionId: 'sub_live',
       stripeSubscriptionStatus: 'active',
@@ -206,12 +207,13 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(state.billing_state).toBe('out_of_credits');
     expect(state.credits.can_run).toBe(false);
     expect(state.has_active_subscription).toBe(true);
+    expect(state.plan?.monthly_usd).toBe(100);
+    expect(state.tier.monthly_credits).toBe(100);
   });
 
-  test('a per-seat account whose subscription lapsed and whose wallet is drained is out_of_credits, not no_subscription', async () => {
+  test('a credits account whose subscription lapsed and whose wallet is drained is out_of_credits, not no_subscription', async () => {
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
       balance: '0',
       stripeSubscriptionId: 'sub_gone',
       stripeSubscriptionStatus: 'canceled',
@@ -267,7 +269,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
  *   plan.* / tier.*        → RESOLVED. What the account behaves as.
  */
 describe('buildMinimalAccountState — trialing account reports the trial plan', () => {
-  const TRIAL_TIER = 'tier_25_200';
+  const TRIAL_TIER = 'credits';
 
   function trialing(overrides: Record<string, unknown> = {}) {
     return creditAccount({
@@ -290,14 +292,15 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
 
     // Resolved — what the gates enforce.
     expect(state.tier.name).toBe(TRIAL_TIER);
-    expect(state.tier.display_name).toBe('Ultra (Legacy)');
+    expect(state.tier.display_name).toBe('Credits');
     expect(state.plan?.key).toBe(TRIAL_TIER);
-    expect(state.plan?.family).toBe('team');
-    expect(state.plan?.label).toBe('Team');
-    expect(state.plan?.status).toBe('grandfathered');
-    expect(state.plan?.is_grandfathered).toBe(true);
-    expect(state.plan?.shape).toBe('flat');
-    expect(state.plan?.sublabel).toBe('$200/mo · grandfathered');
+    expect(state.plan?.family).toBe('credits');
+    expect(state.plan?.label).toBe('Credits');
+    expect(state.plan?.status).toBe('current');
+    expect(state.plan?.shape).toBe('credits');
+    expect(state.plan?.sublabel).toBeNull();
+    // A trial carries no self-serve monthly amount.
+    expect(state.plan?.monthly_usd).toBeNull();
   });
 
   test('credit purchases follow the resolved plan — the same predicate the purchase route gates on', async () => {
@@ -332,8 +335,7 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
 describe('buildMinimalAccountState — reports a pending cancellation from paymentStatus', () => {
   function cancelling(overrides: Record<string, unknown> = {}) {
     return creditAccount({
-      tier: 'per_seat',
-      billingModel: 'per_seat',
+      tier: 'credits',
       stripeSubscriptionId: 'sub_cancelling',
       stripeSubscriptionStatus: 'active',
       ...overrides,

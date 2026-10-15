@@ -74,7 +74,7 @@ export async function syncLegacyStripeSubscription(
 
     const { getStripe } = await import('../../shared/stripe');
     const stripe = getStripe();
-    const { getBillingPeriodByPriceId, getTier, getTierByPriceId } = await import('./tiers');
+    const { billingPeriodForSubscription, monthlyCreditsForSubscription, planForSubscription } = await import('./tiers');
     const { applyStripeSync } = await import('./account-write-owner');
     const { wallet } = await import('../wallet');
 
@@ -112,13 +112,11 @@ export async function syncLegacyStripeSubscription(
       });
 
       for (const subscription of subscriptions.data) {
-        const priceId = subscription.items.data[0]?.price?.id;
-        if (!priceId) continue;
+        if (planForSubscription(subscription) !== 'credits') continue;
+        const tierConfig = { name: 'credits' };
+        const monthlyUsd = monthlyCreditsForSubscription(subscription);
 
-        const tierConfig = getTierByPriceId(priceId);
-        if (!tierConfig || tierConfig.name === 'free' || tierConfig.name === 'none') continue;
-
-        const billingPeriod = getBillingPeriodByPriceId(priceId) ?? 'monthly';
+        const billingPeriod = billingPeriodForSubscription(subscription);
         const planType = billingPeriod === 'yearly_commitment' ? 'yearly' : billingPeriod;
         const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : null;
         const shouldUpdateMetadata =
@@ -168,12 +166,11 @@ export async function syncLegacyStripeSubscription(
         };
 
         if (!dryRun) {
-          const tier = getTier(tierConfig.name);
-
           await applyStripeSync(
             accountId,
             {
               tier: tierConfig.name,
+              planMonthlyUsd: String(monthlyUsd),
               provider: 'stripe',
               stripeSubscriptionId: subscription.id,
               stripeSubscriptionStatus: subscription.status,
@@ -189,11 +186,11 @@ export async function syncLegacyStripeSubscription(
             { reason: 'legacy-stripe-sync' },
           );
 
-          if (tier.monthlyCredits > 0) {
+          if (monthlyUsd > 0) {
             await wallet.reset({
               accountId,
-              amount: tier.monthlyCredits,
-              description: `Recovered legacy Stripe subscription: ${tier.monthlyCredits} credits`,
+              amount: monthlyUsd,
+              description: `Recovered legacy Stripe subscription: ${Math.round(monthlyUsd * 100)} credits`,
               key: { event: `legacy_sync:${subscription.id}` },
             });
           }

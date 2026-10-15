@@ -35,16 +35,18 @@ describe('admin accounts — Entitlements tab', () => {
     expect(pageSource).not.toContain('/admin/api/accounts/');
   });
 
-  test('trial grant sends tier, seats, duration, credit grant and note', () => {
+  test('trial grant sends tier, duration, credit grant and note, and no seats', () => {
     const grant = pageSource.match(/grantTrial\.mutateAsync\(\{([\s\S]*?)\}\);/)?.[1] ?? '';
     expect(grant).not.toBe('');
-    for (const field of ['tierKey', 'seats:', 'durationDays', 'creditGrant', 'note:']) {
+    for (const field of ['tierKey', 'durationDays', 'creditGrant', 'note:']) {
       expect(grant).toContain(field);
     }
+    expect(grant).not.toContain('seats');
   });
 
-  test('the grant form defaults to 5 seats, 30 days and a $25 credit grant', () => {
-    expect(pageSource).toContain("useState('5')");
+  test('the grant form defaults to the credits tier, 30 days and a $25 credit grant', () => {
+    expect(pageSource).toContain("useState('credits')");
+    expect(pageSource).not.toMatch(/MAX_TRIAL_SEATS|setSeats/);
     expect(pageSource).toContain("useState('30')");
     expect(pageSource).toContain("useState('25')");
     for (const preset of [14, 30, 60, 90]) {
@@ -64,23 +66,22 @@ describe('admin accounts — Entitlements tab', () => {
     expect(choices).toContain('value: false');
   });
 
-  test('trial picker offers exactly Team and Enterprise — model access is the switch, not the tier', () => {
+  test('trial picker offers exactly Credits and Enterprise — model access is the switch, not the tier', () => {
     const options = pageSource.match(/TRIAL_TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(options).not.toBe('');
-    for (const tier of ['team', 'enterprise']) {
+    for (const tier of ['credits', 'enterprise']) {
       expect(options).toContain(`value: '${tier}'`);
     }
     // Never offer non-plans, legacy plans, or the whole catalog — that picker
     // confused even the founder ("what are these tiers dude").
-    for (const tier of ['free', 'none', 'starter', 'pro', 'per_seat', 'scale', 'tier_']) {
+    for (const tier of ['free', 'none', 'team', 'starter', 'pro', 'per_seat', 'scale', 'tier_']) {
       expect(options).not.toContain(`value: '${tier}'`);
     }
   });
 
   // The page used to own a TIER_CATALOG and stamp "· legacy" onto any key in
   // it — a second, hand-maintained plan vocabulary that drifted from the
-  // server's. The API now resolves the plan (trial + per-seat self-heal
-  // applied) and ships it as `account.plan`; the page renders that.
+  // server's. The API now resolves the plan (trial applied) and ships it as `account.plan`; the page renders that.
   test('an account plan is rendered from the API plan block, never re-derived', () => {
     expect(pageSource).not.toContain('TIER_CATALOG');
     expect(pageSource).not.toMatch(/function tierLabel\b/);
@@ -103,17 +104,19 @@ describe('admin accounts — Entitlements tab', () => {
     expect(pageSource.toLowerCase()).not.toContain('legacy');
   });
 
-  test('the tier filter still sends raw tier keys, grandfathered ones grouped', () => {
+  test('the tier filter sends the four raw plan keys', () => {
     // The list route filters on the STORED credit_accounts.tier column, so the
     // filter values must stay the raw keys even though nothing else on the
     // page names a plan from them.
     const options = pageSource.match(/TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(options).not.toBe('');
-    for (const key of ['free', 'none', 'per_seat', 'tier_25_200', 'enterprise']) {
+    for (const key of ['none', 'free', 'credits', 'enterprise']) {
       expect(options).toContain(`value: '${key}'`);
     }
-    expect(options).toContain('grandfathered: true');
-    expect(pageSource).toContain('Grandfathered');
+    for (const key of ['per_seat', 'team', 'tier_']) {
+      expect(options).not.toContain(`value: '${key}`);
+    }
+    expect(pageSource).not.toContain('Grandfathered');
   });
 
   test('the open sheet resolves a live row via the exact-id lookup, with list/snapshot fallback', () => {

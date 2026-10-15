@@ -9,6 +9,7 @@ import {
   sessionFileKindLabel,
   sessionFileMentionLabel,
 } from './session-files';
+import { threadOf } from '@/lib/testing/session-log';
 
 let seq = 0;
 function tool(name: string, input: Record<string, unknown>, state: Record<string, unknown> = {}) {
@@ -21,8 +22,9 @@ function tool(name: string, input: Record<string, unknown>, state: Record<string
     state: { status: 'completed', input, ...state },
   };
 }
+/** A v1 row as the session-log message the files list reads (the `fromV1` view). */
 function msg(role: 'user' | 'assistant', parts: unknown[]) {
-  return { info: { id: `m${(seq += 1)}`, role }, parts } as never;
+  return threadOf([{ info: { id: `m${(seq += 1)}`, role, sessionID: 'ses_files', time: { created: seq } }, parts }]).messages[0]!;
 }
 
 describe('deriveSessionFiles', () => {

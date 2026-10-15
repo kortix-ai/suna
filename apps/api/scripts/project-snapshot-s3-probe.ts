@@ -1,9 +1,10 @@
 /**
  * Project snapshot — object-store probe for the API IMAGE's Bun.
  *
- * `apps/api/Dockerfile` pins `BUN_VERSION=1.2` while laptops and CI run a newer
- * Bun, so a Web/Node API the producer relies on can be missing or broken only
- * in the deployed image (see the 2026-08-27 `CompressionStream` learning). This
+ * Until 2026-10-14 `apps/api/Dockerfile` pinned `BUN_VERSION=1.2` while laptops
+ * and CI ran a newer Bun, so a Web/Node API the producer relied on could be
+ * missing or broken only in the deployed image (the 2026-08-27 `CompressionStream`
+ * learning). The image now runs the test Bun (tests/unit/image-bun.test.ts). This
  * script exercises the exact AWS SDK call shapes `project-snapshot-store.ts`
  * uses — conditional PutObject (`IfNoneMatch: '*'`) with a Buffer body,
  * duplicate put → 412, HeadObject, GetObject `transformToString`, presigned GET
@@ -13,7 +14,7 @@
  *
  *   docker run --rm --network host -v "$PWD/apps/api:/app" -w /app \
  *     -e S3_ENDPOINT=http://127.0.0.1:19100 -e S3_ACCESS_KEY_ID=… -e S3_SECRET_ACCESS_KEY=… \
- *     oven/bun:1.2-slim bun run scripts/project-snapshot-s3-probe.ts
+ *     oven/bun:<BUN_VERSION>-slim bun run scripts/project-snapshot-s3-probe.ts
  *
  * (Docker Desktop without host networking: `--add-host` or the MinIO container's
  * bridge IP as S3_ENDPOINT.) Expected: `stream_put` is NOT exercised — on Bun

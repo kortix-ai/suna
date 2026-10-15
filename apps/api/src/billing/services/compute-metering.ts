@@ -29,7 +29,7 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import {
   type ProviderName,
@@ -60,21 +60,6 @@ import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,
 } from './entitlement-overrides';
-import { LEGACY_PAID_TIERS_UNMETERED, accountRowMetersCompute } from './tiers';
-
-/** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
-const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
-
-/**
- * SQL form of `accountRowMetersCompute()`: a metered model, or any row that is
- * not a legacy paid plan. `tier` is coalesced because `NULL NOT IN (...)` is
- * NULL, which would drop a row the TypeScript predicate meters.
- */
-const accountRowMetersComputeSql = () =>
-  or(
-    inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
-    notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]),
-  );
 
 // Match the project-maintenance cadence so active compute appears on Billing
 // without waiting for a stop hook or a full hour.
@@ -154,19 +139,16 @@ async function computeRateMultiplierFor(accountId: string): Promise<number> {
 
 /**
  * Open a metering row when a sandbox transitions to `active`.
- * No-op for a legacy PAID plan only (see `accountRowMetersCompute`). Every
- * other account, free and trial included, pays for compute from its wallet.
+ * Every account with a credit row, free and trial included, pays for compute
+ * from its wallet.
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
-  // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
-  // if a credit_accounts row has a metered billing_model (stale data).
+  // Hard gate: self-hosted / billing-disabled deploys never meter compute.
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
-  // `accountRowMetersCompute`, NOT a check on `billing_model` alone. The column
-  // defaults to 'legacy', so a model-only gate hands free compute to every
-  // account that never completed a checkout — free accounts and admin trials.
-  // Only a legacy PAID plan is exempt. See tier-facts.ts.
-  if (!accountRowMetersCompute(account)) return null;
+  // Every account with a credit row pays for compute. No credit account →
+  // nothing to debit → not metered.
+  if (!account) return null;
 
   // If a row is already open (e.g. duplicate hook), reuse it.
   const existing = await getOpenComputeSession(opts.sandboxId);
@@ -487,8 +469,7 @@ export interface ReconcileMissingComputeResult {
  *
  * This sweeps every `active` sandbox with no currently-open compute row and
  * reopens one via `reopenComputeForSandbox`, which already applies the
- * `accountRowMetersCompute` gate (no-op for a legacy paid plan — never reimplemented
- * here) and reuses the sandbox's last known spec so a reconciled window bills
+ * credit-row gate in `startComputeSession` and reuses the sandbox's last known spec so a reconciled window bills
  * at the same rate the sandbox always has. Idempotent: `startComputeSession`
  * underneath is a no-op if a row already raced open between the SELECT below
  * and this call. Bounded per pass. Deliberately does NOT back-bill — the
@@ -499,13 +480,9 @@ export interface ReconcileMissingComputeResult {
 /**
  * Candidate query.
  *
- * The metered-account inner join is load-bearing, not defence-in-depth: a legacy
- * paid plan can NEVER be metered (`startComputeSession` returns early), so every
- * active box on one matches "no open window" permanently. Without this filter an
- * unordered `LIMIT` fills with those rows on every pass and the metered rows
- * this sweep exists for are never reached — a no-op that costs a round-trip per
- * row. The inner join also drops accounts with no `credit_accounts` row at all,
- * which is the same fail-closed outcome as the `accountRowMetersCompute` gate below.
+ * The inner join on `credit_accounts` drops boxes whose account has no credit
+ * row: `startComputeSession` cannot meter them, so without it an unordered
+ * `LIMIT` could fill with rows that never open a window.
  */
 function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
@@ -521,9 +498,6 @@ function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
       creditAccounts,
       and(
         eq(creditAccounts.accountId, sessionSandboxes.accountId),
-        // Mirrors accountRowMetersCompute(). An account missing here silently
-        // stops being charged.
-        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(
@@ -572,7 +546,6 @@ function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE)
       creditAccounts,
       and(
         eq(creditAccounts.accountId, appRuntimes.accountId),
-        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(

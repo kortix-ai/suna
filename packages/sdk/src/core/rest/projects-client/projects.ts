@@ -62,6 +62,7 @@ export type FeatureFlagKey =
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
+  | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
   | 'config_releases'
   /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
@@ -70,8 +71,10 @@ export type FeatureFlagKey =
   | 'event_triggers'
   | 'notification_center'
   | 'volumes'
+  /** @deprecated Withdrawn — stateless sessions left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'stateless_sessions'
   | 'drives'
+  /** @deprecated Withdrawn with `stateless_sessions`. The API no longer lists or resolves it. Removed in the next major. */
   | 'ephemeral_sandboxes'
   | 'session_log'
   | 'session_log_restore'
@@ -87,7 +90,9 @@ type GraduatedFeatureFlagKey =
   | 'agent_principal'
   | 'human_messaging'
   | 'pi_worker'
-  | 'config_releases';
+  | 'config_releases'
+  | 'stateless_sessions'
+  | 'ephemeral_sandboxes';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -109,13 +114,12 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'secrets_egress',
   'pooled_provider_secrets',
   'pi_harness',
+  'genui',
   'us_region',
   'event_triggers',
   'notification_center',
   'volumes',
-  'stateless_sessions',
   'drives',
-  'ephemeral_sandboxes',
   'session_log',
   'session_log_restore',
 ] as const;
@@ -148,7 +152,7 @@ export interface FeatureFlagView {
   operator_only?: boolean;
   /**
    * Always `project`: every flag is set per project. A server from
-   * 2026-10-12 sent `organization` for `volumes` and `stateless_sessions`.
+   * 2026-10-12 sent `organization` for `volumes` and the withdrawn `stateless_sessions`.
    * Absent on servers older than this field.
    */
   scope?: 'project' | 'organization';
@@ -320,7 +324,9 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Customer USD per million tokens for each eligible managed route. */
+  /** Kortix's platform fee on managed model usage, in percent of the base prices below. */
+  platformFeePercent?: number;
+  /** Base provider USD per million tokens, before `platformFeePercent`. */
   managedPricingRoutes?: Record<string, Array<{
     route: string;
     role: 'preferred' | 'eligible';

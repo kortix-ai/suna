@@ -41,6 +41,7 @@
  * tool call itself — there's no tool named `permission` on the wire.
  */
 
+import { editBlocks } from './edit-blocks';
 import { toolKind } from './tool-kind';
 import type { ToolView } from './classify';
 
@@ -322,20 +323,6 @@ function computeLineDiff(oldStr: string, newStr: string): DiffLine[] | undefined
   for (let i = start; i < newEnd; i++) lines.push({ type: 'added', text: newLines[i] });
   for (let i = oldEnd; i < oldLines.length; i++) lines.push({ type: 'unchanged', text: oldLines[i] });
   return lines;
-}
-
-/** The replaced blocks of an edit: OpenCode's one `oldString`/`newString`, or pi's `edits[]`. */
-function editBlocks(input: Record<string, unknown> | undefined): Array<[string, string]> {
-  const oldString = firstString(input?.oldString);
-  const newString = firstString(input?.newString);
-  if (oldString !== undefined && newString !== undefined) return [[oldString, newString]];
-  const edits = Array.isArray(input?.edits) ? input.edits : [];
-  return edits.flatMap((edit) => {
-    const e = asRecord(edit);
-    const before = e && firstString(e.oldText);
-    const after = e && firstString(e.newText);
-    return before !== undefined && after !== undefined ? [[before, after] as [string, string]] : [];
-  });
 }
 
 function fileEditViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'file-edit' }> {

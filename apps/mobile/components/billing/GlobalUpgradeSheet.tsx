@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { CheckIcon as Check, CaretRightIcon as ChevronRight, UserPlusIcon as UserPlus, UsersIcon as Users } from '@/lib/icons';
+import { CheckIcon as Check, CaretRightIcon as ChevronRight, UserPlusIcon as UserPlus } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/button';
@@ -11,50 +11,28 @@ import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useLanguage } from '@/contexts';
-import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useAccountState } from '@/lib/billing/hooks';
+import { canManageBilling } from '@/lib/billing/plan-action';
 import { haptics } from '@/lib/haptics';
-import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import { getUpgradeSheetIncludedItems } from '@/lib/billing/upgrade-sheet-included';
-import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 
-/** Opens the upgrade sheet when the root sandbox bootstrap is blocked by billing. */
-export function SandboxUpgradeGateListener() {
-  const { error } = useSandboxContext();
-  const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
-  const handledError = useRef<Error | null>(null);
-
-  useEffect(() => {
-    const gate = getUpgradeGate(error);
-    if (!gate || error === handledError.current) return;
-
-    handledError.current = error as Error;
-    openUpgradeSheet(gate);
-  }, [error, openUpgradeSheet]);
-
-  return null;
-}
-
 /**
- * Global native counterpart to the web upgrade modal: the Team offer when a
+ * Global native counterpart to the web upgrade modal: the Credits offer when a
  * billing gate blocks the user.
  *
- * Layout (apps/mobile/design.md): centred plan name and per-seat price (the
- * Billing hero's type), the gate message, an Includes group, the seat total,
+ * Layout (apps/mobile/design.md): centred plan name, a one-line "pick any
+ * monthly amount on the web" pitch, the gate message, an Includes group,
  * then one primary pill to the Plans screen and a Not now pill. A member who
  * cannot manage billing sees an Ask an account owner row instead of the pill.
  *
- * iOS (App Store guideline 3.1.1): no price anywhere in the sheet — the
- * header's per-seat price and "per seat / month", the seat-math total, and
- * the Includes group's first line (`getUpgradeSheetIncludedItems`,
- * `lib/billing/upgrade-sheet-included.ts`) all drop the `$` amount — and no
- * pill to Plans. `canShowExternalPurchase` (`lib/billing/store-policy`)
- * gates all of it. iOS sees the plan name, the gate message, the Includes
- * group (price-free), and Not now only (still an Ask-an-owner row for a
- * member who can't manage billing — that row was never a purchase link).
+ * iOS (App Store guideline 3.1.1): the pitch line and the pill to Plans drop
+ * out. `canShowExternalPurchase` (`lib/billing/store-policy`) gates both. iOS
+ * sees the plan name, the gate message, the Includes group, and Not now only
+ * (still an Ask-an-owner row for a member who can't manage billing — that
+ * row was never a purchase link).
  */
 export function GlobalUpgradeSheet() {
   const { t } = useLanguage();
@@ -69,9 +47,9 @@ export function GlobalUpgradeSheet() {
     accountId: accountId ?? undefined,
     enabled: isOpen,
   });
-  const offer = getTeamUpgradeOffer(accountState);
+  const canManage = canManageBilling(accountState);
   const canPurchase = canShowExternalPurchase(Platform.OS);
-  const included = getUpgradeSheetIncludedItems(offer.pricePerSeat, canPurchase);
+  const included = getUpgradeSheetIncludedItems();
 
   useEffect(() => {
     const transition = sheetOpenMove(isOpen, wasPresentedRef.current);
@@ -113,16 +91,14 @@ export function GlobalUpgradeSheet() {
           gap: 18,
         }}>
         <View className="items-center">
-          <Text variant="large">{t('upgrade.teamPlan', 'Kortix Team')}</Text>
+          <Text variant="large">{t('upgrade.creditsPlan', 'Kortix Credits')}</Text>
           {canPurchase ? (
-            <>
-              <Text variant="h1" className="mt-1 tabular-nums">
-                ${offer.pricePerSeat}
-              </Text>
-              <Text variant="muted" className="mt-1">
-                {t('upgrade.perSeatMonthly', 'per seat / month')}
-              </Text>
-            </>
+            <Text variant="muted" className="mt-1 text-center">
+              {t(
+                'upgrade.pickAmount',
+                'Pick any monthly amount on the web. Unlimited members share one credit pool.'
+              )}
+            </Text>
           ) : null}
           {message ? (
             <Text variant="muted" className="mt-4 text-center">
@@ -137,32 +113,18 @@ export function GlobalUpgradeSheet() {
           ))}
         </SettingsGroup>
 
-        {canPurchase && offer.hasSeatMath ? (
-          <SettingsGroup>
-            <SettingsRow
-              icon={Users}
-              label={t('plans.seats', {
-                defaultValue: '{{count}} seats × ${{price}}',
-                count: offer.seatCount,
-                price: offer.pricePerSeat,
-              })}
-              value={t('plans.perMonth', { defaultValue: '${{total}} / mo', total: offer.monthlyTotal })}
-            />
-          </SettingsGroup>
-        ) : null}
-
         <View style={{ gap: 10 }}>
-          {!offer.canManageBilling ? (
+          {!canManage ? (
             <SettingsGroup>
               <SettingsRow
                 icon={UserPlus}
-                label={t('upgrade.askOwner', 'Ask an account owner for a seat')}
+                label={t('plans.askOwner', 'Ask an account owner to upgrade')}
                 multiline
               />
             </SettingsGroup>
           ) : canPurchase ? (
             <Button size="lg" className="justify-between rounded-full" onPress={handleViewPlans}>
-              <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Team' })}</Text>
+              <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Credits' })}</Text>
               <Icon as={ChevronRight} size={18} />
             </Button>
           ) : null}

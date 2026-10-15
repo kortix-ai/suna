@@ -3,14 +3,14 @@
  * drawer avatar.
  *
  * The API's `plan.label` is the family name (`PLAN_FAMILY_LABELS`,
- * apps/api/src/billing/services/plan-catalog.ts): "Free", "Team", or
+ * apps/api/src/billing/services/plan-catalog.ts): "Free", "Credits", or
  * "Enterprise". Every tier key, current or grandfathered, displays under one
  * of the three. Legacy tier names (Plus, Pro, Ultra, …) are not read
  * (Jay, 2026-09-23).
  */
-export type PlanTier = 'free' | 'team' | 'enterprise';
+export type PlanTier = 'free' | 'credits' | 'enterprise';
 
-const TIERS: Record<string, PlanTier> = { free: 'free', team: 'team', enterprise: 'enterprise' };
+const TIERS: Record<string, PlanTier> = { free: 'free', credits: 'credits', enterprise: 'enterprise' };
 
 export function planTier(planLabel: string | null | undefined): PlanTier | null {
   return TIERS[planLabel?.trim().toLowerCase() ?? ''] ?? null;

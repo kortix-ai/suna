@@ -360,11 +360,16 @@ export async function runReconcileTick(trigger: RuntimeTruthTrigger): Promise<Ru
   // Kick every component's own convergence. Each swallows its own errors
   // (the injected closures are required to; `./runtime-assets` already does)
   // — a tick must never throw, or the ticker that calls it stops forever.
-  deps?.reconcileAssets()
   await Promise.allSettled([
     deps?.reconcileConfigRelease().catch((err) => logger.warn('[runtime-truth] config-release tick failed', { err: String(err) })),
     deps?.reconcileCatalog?.().catch((err) => logger.warn('[runtime-truth] catalog tick failed', { err: String(err) })),
   ])
+  // Assets LAST. Their pass ends in the staged-daemon swap request, and the
+  // `config-convergence` swap blocker refuses it while a convergence runs.
+  // Started before the await, the request raced this tick's own convergence
+  // and lost (2 of 3 requests on two idle boxes, 2026-10-14), so an idle box
+  // kept its old daemon for as long as the race kept losing.
+  deps?.reconcileAssets()
 
   const nowIso = new Date().toISOString()
   const assets = await runtimeConvergenceReport()

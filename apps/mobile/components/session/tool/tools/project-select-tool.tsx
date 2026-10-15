@@ -25,14 +25,14 @@ import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 
 /** The tap handler for a completed project_select / project_create row, or `undefined`. */
-export function useOpenProjectHandler(part: ToolProps['part']): (() => void) | undefined {
+export function useOpenProjectHandler(call: ToolProps['call']): (() => void) | undefined {
   const { enabled } = useToolNavigation();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const target = useMemo(
-    () => projectOpenTarget(part.tool, status, input, output),
-    [part.tool, status, input, output],
+    () => projectOpenTarget(call.name, status, input, output),
+    [call.name, status, input, output],
   );
   const open = useCallback(() => {
     if (!target) return;
@@ -41,18 +41,18 @@ export function useOpenProjectHandler(part: ToolProps['part']): (() => void) | u
   return enabled && target ? open : undefined;
 }
 
-export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
-  const input = partInput(part);
-  const output = partOutput(part);
+export function ProjectSelectTool({ call, defaultOpen, forceOpen }: ToolProps) {
+  const input = partInput(call);
+  const output = partOutput(call);
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it.
   const errored = useMemo(() => isErrorOutput(output), [output]);
   const trigger = useMemo(() => projectSelectTrigger(input, output, errored), [input, output, errored]);
-  const openProject = useOpenProjectHandler(part);
+  const openProject = useOpenProjectHandler(call);
 
   if (errored) {
     return (
       <BasicTool
-        disclosureId={disclosureKey('tool', part.id)}
+        disclosureId={disclosureKey('tool', call.id)}
         icon={FolderIcon}
         trigger={trigger}
         defaultOpen={defaultOpen}
@@ -65,7 +65,7 @@ export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={FolderIcon}
       trigger={trigger}
       onClick={openProject}

@@ -435,16 +435,99 @@ describe('buildConfigRelease', () => {
     expect(store.objects.size).toBe(3);
   });
 
-  test('the agent variant compiles one agent and shares the archive', async () => {
+  test('the agent variant compiles one agent and, with no project tool, ships no tree', async () => {
     const sha = seed();
     const whole = await buildConfigRelease(project, sha, 'project', { store });
     const one = await buildConfigRelease(project, sha, 'agent:reviewer', { store });
-    expect(one.config_tree_id).toBe(whole.config_tree_id);
-    expect(one.archive).toEqual(whole.archive);
+    expect(one.config_tree_id).toBeNull();
+    expect(one.files).toBeNull();
+    expect(one.archive).toBeNull();
+    expect(one.release_id).toBe(configReleaseId(null, one.compiled_governance_etag));
     expect(one.compiled_governance_etag).not.toBe(whole.compiled_governance_etag);
     const agents = Object.keys(JSON.parse(one.compiled_governance!).agent ?? {});
     expect(agents).toContain('reviewer');
     expect(agents).not.toContain('kortix');
+  });
+
+  // A customer's locked-down agent (no repository access) declared project
+  // tools, and the box logged "this session has no project checkout to load it from".
+  test('the agent variant ships exactly the modules of the project tools its agent may call', async () => {
+    const sha = commit(
+      {
+        'kortix.yaml': [
+          'kortix_version: 2',
+          'project:',
+          '  name: builder-test',
+          'default_agent: kortix',
+          'tools:',
+          '  web_search: kortix:web_search',
+          '  lookup_order: tools/lookup_order.ts',
+          '  refund_order: tools/refund_order.ts',
+          '  hidden_tool: tools/hidden.ts',
+          'agents:',
+          '  kortix: {}',
+          '  support:',
+          '    workspace:',
+          '      project_repository: false',
+          '    tools:',
+          '      exclude: [hidden_tool]',
+          '',
+        ].join('\n'),
+        'agents/kortix.md': AGENT,
+        'agents/support.md': '---\ndescription: support\n---\nHelp.\n',
+        // A relative import without an extension, a `./x.js` that names `x.ts`,
+        // a `../` import, a JSON import, a type-only import, and a package import.
+        'tools/lookup_order.ts': [
+          "import { client } from './lib/client'",
+          "import type { Order } from './lib/types'",
+          "import data from '../data/regions.json'",
+          "import zod from 'zod'",
+          'export default { description: "d", parameters: { type: "object" }, execute: () => client(data) }',
+          '',
+        ].join('\n'),
+        'tools/refund_order.ts': "import { client } from './lib/client.js'\nexport default { description: 'r', parameters: { type: 'object' }, execute: () => client() }\n",
+        'tools/lib/client.ts': "import { sign } from './sign/index'\nexport const client = (x?: unknown) => sign(x)\n",
+        'tools/lib/sign/index.ts': 'export const sign = (x: unknown) => x\n',
+        'tools/lib/types.ts': 'export type Order = { id: string }\n',
+        'tools/lib/unused.ts': 'export const secret = 1\n',
+        'tools/hidden.ts': 'export default {}\n',
+        'data/regions.json': '["eu"]\n',
+        'src/app.ts': 'console.log(1)\n',
+      },
+      'tools',
+    );
+    const release = await buildConfigRelease(project, sha, 'agent:support', { store });
+    expect(release.reason).toBeNull();
+    expect(release.tools_only).toBe(true);
+    expect(release.config_dir).toBeNull();
+    expect(release.files?.map(([path]) => path)).toEqual([
+      'data/regions.json',
+      'tools/lib/client.ts',
+      'tools/lib/sign/index.ts',
+      'tools/lookup_order.ts',
+      'tools/refund_order.ts',
+    ]);
+    expect(release.archive?.url).toBe(
+      `/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}?commit=${sha}&agent=support`,
+    );
+    const archive = store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!));
+    const dir = extract(archive!);
+    expect(run('find', ['.', '-type', 'f'], dir).split('\n').map((path) => path.slice(2)).sort()).toEqual(release.files!.map(([path]) => path));
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+
+    const descriptor = toDescriptor(release, { repositoryAccess: false });
+    expect(descriptor.files).toEqual(release.files);
+    expect(descriptor.archive).toEqual(release.archive);
+    expect(descriptor.config_tree_id).toBe(release.config_tree_id);
+    expect(descriptor.release_id).toBe(configReleaseId(release.config_tree_id, release.compiled_governance_etag));
+    expect(descriptor.reason).toBeNull();
+    expect('tools_only' in descriptor).toBe(false);
+
+    // A change to a module the agent loads moves the release; any other file does not.
+    const moved = await buildConfigRelease(project, commit({ 'tools/lib/client.ts': 'export const client = () => 2\n' }, 'client'), 'agent:support', { store });
+    expect(moved.release_id).not.toBe(release.release_id);
+    const still = await buildConfigRelease(project, commit({ 'src/app.ts': 'console.log(2)\n' }, 'app'), 'agent:support', { store });
+    expect(still.release_id).toBe(moved.release_id);
   });
 
   test('an unknown selected agent produces no release and names the reason', async () => {
@@ -584,7 +667,7 @@ describe('buildConfigRelease', () => {
     expect(descriptor.compiled_governance).toBe(release.compiled_governance);
   });
 
-  test('a session without repository access gets governance and no archive', async () => {
+  test('a session without repository access and no project tool gets governance and no archive', async () => {
     const sha = seed();
     const release = await buildConfigRelease(project, sha, 'agent:reviewer', { store });
     const descriptor = toDescriptor(release, { repositoryAccess: false });
@@ -592,10 +675,19 @@ describe('buildConfigRelease', () => {
     expect(descriptor.files).toBeNull();
     expect(descriptor.config_tree_id).toBeNull();
     expect(descriptor.release_id).toBe(configReleaseId(null, release.compiled_governance_etag));
-    expect(descriptor.release_id).not.toBe(release.release_id);
     expect(descriptor.reason).toBe('repository access withheld');
     expect(descriptor.compiled_governance).toBe(release.compiled_governance);
     expect(descriptor.compiled_governance_etag).toBe(release.compiled_governance_etag);
+  });
+
+  test('a whole-tree release given to a session without repository access loses its files', async () => {
+    const sha = seed();
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const descriptor = toDescriptor(release, { repositoryAccess: false });
+    expect(descriptor.files).toBeNull();
+    expect(descriptor.archive).toBeNull();
+    expect(descriptor.config_tree_id).toBeNull();
+    expect(descriptor.release_id).toBe(configReleaseId(null, release.compiled_governance_etag));
   });
 });
 

@@ -1051,6 +1051,41 @@
       "when": 1791818976422,
       "tag": "20261012152936_session_content_purges",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1791975144985,
+      "tag": "20261014105224_session_list_live_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1791993644874,
+      "tag": "20261014160044_config_release_heads",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1791998157484,
+      "tag": "20261014171557_base_tip_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792004928234,
+      "tag": "20261014190848_session_log_tool_input_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1792021625676,
+      "tag": "20261014234705_credit_accounts_plan_monthly_usd",
+      "breakpoints": true
     }
   ]
 }

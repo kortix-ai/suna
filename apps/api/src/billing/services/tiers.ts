@@ -1,36 +1,35 @@
+import type Stripe from 'stripe';
 import { config } from '../../config';
-import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../types';
+import type { TierConfig, TierEntitlements } from '../../types';
+import { canonicalTier } from './tier-facts';
+
 // Config-free tier facts live in their own module so genuinely pure consumers
 // (billing-state.ts) can import them without booting env validation. Re-exported
-// here so every existing `from './tiers'` import keeps working — one definition.
-// Only what this module CALLS. Everything else from tier-facts reaches
-// consumers through the re-export block below — importing a name here purely to
-// re-export it is a dead local binding (CodeQL flags it, and `isPaidTier` had
-// been sitting unused on this line since before the credit plans landed).
-import { isPerSeatAccount } from './tier-facts';
-
+// here so every `from './tiers'` import keeps working — one definition.
 export {
-  LEGACY_PAID_TIERS_UNMETERED,
+  LEGACY_PAID_PLAN_KEYS,
   MINIMUM_CREDIT_FOR_RUN,
-  accountMetersCompute,
-  accountRowMetersCompute,
-  isCreditPlanAccount,
+  PLAN_KEYS,
+  canonicalTier,
   isPaidTier,
-  isPerSeatAccount,
+  type PlanKey,
 } from './tier-facts';
 
-export const TOKEN_PRICE_MULTIPLIER = 1.2;
-
-/** One-time credit grant per machine provisioned ($5 = 500 display credits). */
-export const MACHINE_CREDIT_BONUS = 5;
+/**
+ * The platform fee on Kortix-managed model usage, as a percent of the
+ * provider's base price. Customers see base prices; the fee is stated once.
+ * 5.5% matches what the upstream router charges on credit purchases, so
+ * managed models run at break-even until routes move to direct providers.
+ * BYOK and ChatGPT-subscription usage carry no fee and cost no credits.
+ */
+export const LLM_PLATFORM_FEE_PERCENT = 5.5;
 
 /**
- * Margin multiplier applied to the live models.dev cost on every LLM gateway
- * call. 1.2 = 20% profit (default). Override per-environment with
- * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
- * periods. Clamped to >= 1 so we never undercut the provider.
+ * Multiplier applied to the provider cost on every managed LLM gateway call:
+ * base × (1 + fee). Override per environment with KORTIX_LLM_MARKUP (1.0 =
+ * at cost). Clamped to >= 1 so we never undercut the provider.
  */
-const DEFAULT_LLM_PRICE_MARKUP = 1.2;
+const DEFAULT_LLM_PRICE_MARKUP = 1 + LLM_PLATFORM_FEE_PERCENT / 100;
 
 export function llmPriceMarkup(): number {
   const raw = Number.parseFloat(process.env.KORTIX_LLM_MARKUP ?? '');
@@ -38,151 +37,66 @@ export function llmPriceMarkup(): number {
   return raw;
 }
 
-// ─── Billing v2 — per-seat model ─────────────────────────────────────────────
-// Every new account starts on the free tier with $2 of expiring sandbox-only
-// credits. Upgrading to Team moves them onto the per-seat model.
-//
-// Team accounts are billed $40/month × number of accepted account_members.
-// $25 grants $25 of fungible wallet credits — there's NO separate compute/
-// LLM bucket in the wallet. Spend is debited from the unified balance; the
-// credit_ledger.type tag (`compute_debit` / `llm_debit`) drives the UI
-// usage breakdown. The free tier keeps its $2 wallet sandbox-only by blocking
-// managed premium LLM access while leaving OpenCode, BYOK, and ChatGPT
-// subscription paths intact.
-//
-// The two TYPICAL_* constants below are display-only — surfaced on the
-// pricing page as "roughly N hours of compute or M tokens" rough guidance,
-// not enforced anywhere.
+// ─── Credits-only billing ────────────────────────────────────────────────────
+// One credit = $0.01. A paid account picks any monthly amount; every member
+// spends from one shared wallet; plans differ only in credit volume. Free keeps
+// $2 (200 credits) a month. See tier-facts.ts for the legacy plan keys.
 
-export const PER_SEAT_PRICE_USD = 40;
+/** Smallest and largest self-serve monthly amount, in whole dollars. */
+export const PLAN_MIN_MONTHLY_USD = 50;
+export const PLAN_MAX_MONTHLY_USD = 10_000;
+
 /**
- * Usage credits granted per seat each month. The $40 seat price includes $25 of
- * usage credits (LLM + compute); the other $15 is platform margin. Decoupled
- * from PER_SEAT_PRICE_USD on purpose — the price and the included usage are two
- * different numbers. The two TYPICAL_* splits below add up to this value.
+ * The tier ladder the product offers: named monthly amounts of the one credits
+ * plan, same rate at every step. `popular` marks the most common paid amount
+ * at or above the minimum. The API accepts any whole amount in range; the
+ * ladder is what the UI sells.
  */
-export const INCLUDED_CREDITS_PER_SEAT_USD = 25;
-/** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
-export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
-/** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
-export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
+export const PLAN_PRESETS = [
+  { monthlyUsd: 50 },
+  { monthlyUsd: 100 },
+  { monthlyUsd: 200, popular: true },
+  { monthlyUsd: 300 },
+  { monthlyUsd: 500 },
+  { monthlyUsd: 750 },
+  { monthlyUsd: 1_000 },
+  { monthlyUsd: 1_500 },
+  { monthlyUsd: 2_000 },
+  { monthlyUsd: 3_000 },
+  { monthlyUsd: 5_000 },
+  { monthlyUsd: 7_500 },
+  { monthlyUsd: 10_000 },
+] as const;
 
-// Per-second customer compute prices live in platform/providers/compute-rates.ts.
+/**
+ * Top-up bonus: a one-time or auto top-up adds a few percent of extra credits,
+ * a little more at each step, flat from $1,000. Bonus credits never expire,
+ * like the top-up itself, and a refund or dispute takes them back with it.
+ * Monthly plan tiers carry no bonus: 1 credit = $0.01 there, at every tier.
+ */
+export const TOP_UP_BONUS_STEPS = [
+  { minUsd: 1_000, percent: 5 },
+  { minUsd: 500, percent: 4 },
+  { minUsd: 250, percent: 3 },
+  { minUsd: 100, percent: 2 },
+  { minUsd: 50, percent: 1 },
+] as const;
 
-// Auto-topup defaults for per-seat accounts scale with seat count.
-// effectiveThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT × seat_count
-// effectiveAmount    = AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT × seat_count
-//   threshold = 25% of one seat (top up when wallet has < 1/4 seat-month left)
-//   amount    = 1 seat-month (refill the equivalent of one seat)
-// Legacy accounts keep their flat $5/$20 (auto_topup_customized=true or just unaffected).
-const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
-const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
+/** Bonus credits (USD) a top-up of `amountUsd` adds. 0 below $50. */
+export function topUpBonusUsd(amountUsd: number): number {
+  const step = TOP_UP_BONUS_STEPS.find((s) => amountUsd >= s.minUsd);
+  return step ? Math.round(amountUsd * step.percent) / 100 : 0;
+}
 
-// Sensible caps for the per-seat plan. Effectively uncapped for normal use.
 export const MAX_PROJECTS_PER_ACCOUNT = 200;
-export const MAX_SEATS_PER_ACCOUNT = 100;
-
-export type BillingModel = 'legacy' | 'per_seat' | 'credit';
-
-/** Default auto-topup for a per-seat account given its current seat count. */
-export function defaultAutoTopupForSeats(seatCount: number): { threshold: number; amount: number } {
-  const seats = Math.max(1, seatCount);
-  return {
-    threshold: AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT * seats,
-    amount: AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT * seats,
-  };
-}
-
-/**
- * Monthly wallet grant for N seats. INCLUDED_CREDITS_PER_SEAT_USD ($25) per
- * seat, fungible across compute and LLM usage — NOT the full $40 seat price
- * (the other $15 is platform margin). Per-category transparency comes from the
- * credit_ledger (compute_debit / llm_debit), not from a wallet partition.
- */
-export function grantForSeats(seatCount: number): number {
-  return INCLUDED_CREDITS_PER_SEAT_USD * Math.max(1, seatCount);
-}
-
-/**
- * Included-usage share of every subscription dollar: $25 of each $40 seat.
- * The one ratio the whole renewal-grant rule reduces to — see
- * `resolveRenewalGrant`.
- */
-export const INCLUDED_CREDITS_RATIO = INCLUDED_CREDITS_PER_SEAT_USD / PER_SEAT_PRICE_USD;
-
-/**
- * THE renewal-grant rule: what a paid subscription-cycle invoice puts in the
- * wallet. One resolver, resolved from the SUBSCRIPTION that was billed, in
- * precedence order:
- *
- *   1. Per-seat: seats × $25 — the seat count is the contract. (For the
- *      standard $40 seat price this equals amount × INCLUDED_CREDITS_RATIO
- *      exactly; the seat count stays authoritative for discounted invoices.)
- *   2. A tier with a configured monthly grant (v3 credit plans, free): that
- *      grant, unchanged.
- *   3. Everything else that PAID — the legacy zoo (machine subscriptions,
- *      legacy `pro`, retired tier_* keys with no grant): the money that
- *      actually moved × INCLUDED_CREDITS_RATIO. Before this rule those
- *      renewals granted 0: a $40/mo "Kortix Computer" customer paid every
- *      month, sat at a $0 wallet, and could not run anything. There is no
- *      per-key mapping table to maintain — the paid invoice IS the mapping.
- *
- * Pure — testable without Stripe or a DB.
- */
-export function resolveRenewalGrant(args: {
-  tierName: string;
-  billingModel: string | null | undefined;
-  seatCount: number | null | undefined;
-  /** invoice.amount_paid, in USD (Stripe reports cents — divide by 100). */
-  amountPaidUsd: number;
-}): { credits: number; description: string } {
-  if (args.tierName === 'per_seat' || isPerSeatAccount(args.billingModel)) {
-    const seats = Math.max(1, args.seatCount ?? 1);
-    const credits = grantForSeats(seats);
-    return {
-      credits,
-      description: `Monthly renewal: ${credits} credits (${seats} ${seats === 1 ? 'seat' : 'seats'})`,
-    };
-  }
-  const configured = getMonthlyCredits(args.tierName);
-  if (configured > 0) {
-    return { credits: configured, description: `Monthly renewal: ${configured} credits` };
-  }
-  const credits = Math.round(Math.max(0, args.amountPaidUsd) * INCLUDED_CREDITS_RATIO * 100) / 100;
-  return {
-    credits,
-    description: `Monthly renewal: ${credits} credits (legacy subscription, $${args.amountPaidUsd} paid)`,
-  };
-}
-
-// ─── Compute instance definitions ───────────────────────────────────────────
-// Single source of truth for the machine tiers we sell.
-
-interface ComputeTier {
-  label: string;
-  cores: number;
-  memoryGb: number;
-  diskGb: number;
-  priceUsd: number;
-}
-
-export const COMPUTE_TIERS: Record<string, ComputeTier> = {
-  pro: { label: 'Pro', cores: 8, memoryGb: 16, diskGb: 320, priceUsd: 40 },
-  power: { label: 'Power', cores: 12, memoryGb: 24, diskGb: 480, priceUsd: 60 },
-  ultra: { label: 'Ultra', cores: 16, memoryGb: 32, diskGb: 640, priceUsd: 80 },
-};
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 
 // Enterprise feature gates. The whole IAM surface — groups + custom
 // roles/policies (`rbac`), the identity providers (SAML SSO + SCIM), and
-// audit log access — is exclusive to the sales-assigned `enterprise` tier
-// (re-gated 2026-07-09; rbac was briefly open to every tier via #4326).
+// audit log access — is exclusive to the sales-assigned `enterprise` tier.
 // Non-entitled accounts see an upsell in the UI and a 402 from the
-// requireEntitlement() guard on create/update routes. Reads, revokes, and
-// deletes stay ungated so a downgraded account can still see and unwind what
-// it already has — existing grants keep resolving in the IAM engine.
-// See TierEntitlements in ../../types.
+// requireEntitlement() guard on create/update routes. See TierEntitlements.
 const SELF_SERVE: TierEntitlements = {
   sso: false,
   scim: false,
@@ -198,17 +112,18 @@ const ALL_ENTERPRISE: TierEntitlements = {
   branding: true,
 };
 
+/**
+ * `monthlyCredits` is the FIXED allowance. `credits` has none: its allowance is
+ * the account's chosen amount (`credit_accounts.plan_monthly_usd`), resolved
+ * from the subscription by `monthlyCreditsForSubscription`.
+ */
 const TIERS: Record<string, TierConfig> = {
   none: {
     name: 'none',
     displayName: 'No Plan',
-    monthlyPrice: 0,
-    yearlyPrice: 0,
     monthlyCredits: 0,
     canPurchaseCredits: false,
     models: [],
-    dailyCreditConfig: null,
-    hidden: true,
     appLimit: 50,
     entitlements: SELF_SERVE,
   },
@@ -216,300 +131,53 @@ const TIERS: Record<string, TierConfig> = {
   free: {
     name: 'free',
     displayName: 'Free',
-    monthlyPrice: 0,
-    yearlyPrice: 0,
     monthlyCredits: 2,
     canPurchaseCredits: false,
     models: [],
-    dailyCreditConfig: null,
-    hidden: false,
     appLimit: 50,
     entitlements: SELF_SERVE,
   },
 
-  pro: {
-    name: 'pro',
-    displayName: 'Pro',
-    monthlyPrice: 20,
-    yearlyPrice: 0, // No yearly billing
-    monthlyCredits: 0, // No monthly credits — $5 one-time per machine only
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: false,
-    appLimit: 200,
-    entitlements: SELF_SERVE,
-  },
-
-  // Billing v2 — per-member seat plan. $25 × seat_count / month.
-  // The TIERS entry models a single seat; multi-seat math is in
-  // grantForSeats() and applied at subscription create + renew.
-  //
-  // GRANDFATHERED (billing v3). Existing per-seat customers keep this tier
-  // exactly as it is — same price, same $25/seat grant, same 200 Apps,
-  // and `models: ['all']` so their managed-model access is NOT withdrawn under
-  // them. It is `hidden` only so the self-serve grid stops offering it to new
-  // customers; every existing subscription resolves it unchanged.
-  per_seat: {
-    name: 'per_seat',
-    displayName: 'Team (legacy seats)',
-    monthlyPrice: PER_SEAT_PRICE_USD,
-    yearlyPrice: 0,
-    monthlyCredits: INCLUDED_CREDITS_PER_SEAT_USD,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 200,
-    entitlements: SELF_SERVE,
-  },
-
-  // ── Billing v3 — flat credit plans ───────────────────────────────────────
-  // The plan carries the credit pool and the concurrency limit; headcount does
-  // not enter the price. Seats priced humans, but the cost driver is agents,
-  // and agents run unattended — a team of two could run fifty of them, and a
-  // Kortix-as-a-Backend customer serves end users who are not seats at all.
-  //
-  // `models: []` — NO included managed LLM. `tierGrantsAllModels` is false, so
-  // the wallet funds sandbox compute only, exactly as the free tier already
-  // works. BYOK, OpenCode and ChatGPT-subscription paths are untouched; a
-  // managed key is billed against the wallet only for tiers that grant models.
-  // This takes Kortix out of a short position on model prices: an upstream
-  // increase can no longer eat a fixed plan's margin.
-  //
-  // Price : credits holds at 1.6 : 1, which is ~48% gross margin when a plan
-  // burns its whole pool (COGS = pool ÷ KORTIX_MARKUP). Keep that ratio if you
-  // add a tier — it is the number that makes the ladder coherent.
-  starter: {
-    name: 'starter',
-    displayName: 'Starter',
-    monthlyPrice: 40,
-    yearlyPrice: 0,
-    monthlyCredits: 25,
-    canPurchaseCredits: true,
-    models: [],
-    dailyCreditConfig: null,
-    hidden: false,
-    appLimit: 3,
-    entitlements: SELF_SERVE,
-  },
-
-  team: {
-    name: 'team',
-    displayName: 'Team',
-    monthlyPrice: 200,
-    yearlyPrice: 0,
-    monthlyCredits: 125,
-    canPurchaseCredits: true,
-    models: [],
-    dailyCreditConfig: null,
-    hidden: false,
-    appLimit: 10,
-    entitlements: SELF_SERVE,
-  },
-
-  scale: {
-    name: 'scale',
-    displayName: 'Scale',
-    monthlyPrice: 800,
-    yearlyPrice: 0,
-    monthlyCredits: 500,
-    canPurchaseCredits: true,
-    models: [],
-    dailyCreditConfig: null,
-    hidden: false,
-    appLimit: 30,
-    entitlements: SELF_SERVE,
-  },
-
-  // ── Enterprise (sales-assigned, not self-serve) ──────────────────────────
-  // Custom / contact-sales. Not purchasable through normal checkout — an
-  // operator sets credit_accounts.tier='enterprise' as part of the deal, and
-  // credits are granted out-of-band per the contract. This is the ONLY tier
-  // that unlocks the enterprise identity surfaces (SSO + SCIM). Hidden from the
-  // self-serve pricing grid (the public page renders a static "Contact sales"
-  // card); high session limit for big teams.
-  enterprise: {
-    name: 'enterprise',
-    displayName: 'Enterprise',
-    monthlyPrice: 0,
-    yearlyPrice: 0,
+  // The highest App limit any legacy paid plan had, so nobody loses Apps when
+  // their plan key folds into this one.
+  credits: {
+    name: 'credits',
+    displayName: 'Credits',
     monthlyCredits: 0,
     canPurchaseCredits: true,
     models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 5000,
-    entitlements: ALL_ENTERPRISE,
-  },
-
-  // ── Legacy tiers (kept for backward compat with existing DB rows) ────────
-  // All hidden, resolve to their closest equivalent for display.
-  // Legacy tiers: monthlyCredits = monthlyPrice (1:1 ratio, i.e. $20 plan → $20 credits → 2000 display credits)
-  tier_2_20: {
-    name: 'tier_2_20',
-    displayName: 'Plus (Legacy)',
-    monthlyPrice: 20,
-    yearlyPrice: 204,
-    monthlyCredits: 20,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 200,
-    entitlements: SELF_SERVE,
-  },
-  tier_6_50: {
-    name: 'tier_6_50',
-    displayName: 'Pro (Legacy)',
-    monthlyPrice: 50,
-    yearlyPrice: 510,
-    monthlyCredits: 50,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 300,
-    entitlements: SELF_SERVE,
-  },
-  tier_12_100: {
-    name: 'tier_12_100',
-    displayName: 'Business (Legacy)',
-    monthlyPrice: 100,
-    yearlyPrice: 1020,
-    monthlyCredits: 100,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 400,
-    entitlements: SELF_SERVE,
-  },
-  tier_25_200: {
-    name: 'tier_25_200',
-    displayName: 'Ultra (Legacy)',
-    monthlyPrice: 200,
-    yearlyPrice: 2040,
-    monthlyCredits: 200,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 500,
-    entitlements: SELF_SERVE,
-  },
-  tier_50_400: {
-    name: 'tier_50_400',
-    displayName: 'Enterprise (Legacy)',
-    monthlyPrice: 400,
-    yearlyPrice: 4080,
-    monthlyCredits: 400,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 750,
-    entitlements: SELF_SERVE,
-  },
-  tier_125_800: {
-    name: 'tier_125_800',
-    displayName: 'Scale (Legacy)',
-    monthlyPrice: 800,
-    yearlyPrice: 8160,
-    monthlyCredits: 800,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 1000,
-    entitlements: SELF_SERVE,
-  },
-  tier_200_1000: {
-    name: 'tier_200_1000',
-    displayName: 'Max (Legacy)',
-    monthlyPrice: 1000,
-    yearlyPrice: 10200,
-    monthlyCredits: 1000,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
-    appLimit: 1500,
-    entitlements: SELF_SERVE,
-  },
-  tier_150_1200: {
-    name: 'tier_150_1200',
-    displayName: 'Enterprise Max (Legacy)',
-    monthlyPrice: 1200,
-    yearlyPrice: 12240,
-    monthlyCredits: 1200,
-    canPurchaseCredits: true,
-    models: ['all'],
-    dailyCreditConfig: null,
-    hidden: true,
     appLimit: 2000,
     entitlements: SELF_SERVE,
   },
+
+  // Sales-assigned, never self-serve. Credits are granted per contract. The
+  // only tier that unlocks the enterprise identity surfaces (SSO + SCIM).
+  enterprise: {
+    name: 'enterprise',
+    displayName: 'Enterprise',
+    monthlyCredits: 0,
+    canPurchaseCredits: true,
+    models: ['all'],
+    appLimit: 5000,
+    entitlements: ALL_ENTERPRISE,
+  },
 };
 
-// ─── Stripe Price IDs ────────────────────────────────────────────────────────
-
-interface TierPriceIds {
-  monthly?: string;
-  yearly?: string;
-  yearlyCommitment?: string;
-}
+// ─── Stripe prices ───────────────────────────────────────────────────────────
 
 interface StripePriceConfig {
-  subscriptions: Record<string, TierPriceIds>;
-  credits: Record<number, string>;
-  productId: string;
+  /** The $0 subscription every free account holds. */
+  free: string;
+  /** "Kortix credits": $0.01 per unit per month, quantity = credits. */
+  credits: string;
+  /** One-time top-up packages, by whole-dollar amount. */
+  topUps: Record<number, string>;
 }
 
-// TODO(billing-v2-ops): create the per-seat Stripe price in prod + staging.
-//   - Recurring monthly, $20 USD per unit, unit = 1 seat.
-//   - Replace the PLACEHOLDER below with the resulting price IDs before deploy.
-//   - Webhook handler for customer.subscription.updated (services/webhooks.ts)
-//     reconciles the `quantity` field on this price item into credit_accounts.seat_count.
 const STRIPE_PRICES_PROD: StripePriceConfig = {
-  subscriptions: {
-    free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro: { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
-    per_seat: { monthly: 'price_1TdyruG6l1KZGqIrMzPVmQSO' }, // live "Kortix seat" $40/mo
-    // Legacy price → tier mappings (for webhook resolution of existing subs)
-    tier_2_20: {
-      monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO',
-      yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM',
-      yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s',
-    },
-    tier_6_50: {
-      monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn',
-      yearly: 'price_1ReHAsG6l1KZGqIrlAog487C',
-      yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi',
-    },
-    tier_12_100: {
-      monthly: 'price_1RILb4G6l1KZGqIr5Y20ZLHm',
-      yearly: 'price_1ReHAWG6l1KZGqIrBHer2PQc',
-    },
-    tier_25_200: {
-      monthly: 'price_1RILb4G6l1KZGqIrGAD8rNjb',
-      yearly: 'price_1ReH9uG6l1KZGqIrsvMLHViC',
-      yearlyCommitment: 'price_1RqtrUG6l1KZGqIrEb8hLsk3',
-    },
-    tier_50_400: {
-      monthly: 'price_1RILb4G6l1KZGqIruNBUMTF1',
-      yearly: 'price_1ReH9fG6l1KZGqIrsPtu5KIA',
-    },
-    tier_125_800: {
-      monthly: 'price_1RILb3G6l1KZGqIrbJA766tN',
-      yearly: 'price_1ReH9GG6l1KZGqIrfgqaJyat',
-    },
-    tier_200_1000: {
-      monthly: 'price_1RILb3G6l1KZGqIrmauYPOiN',
-      yearly: 'price_1ReH8qG6l1KZGqIrK1akY90q',
-    },
-  },
-  credits: {
+  free: 'price_1RIGvuG6l1KZGqIrw14abxeL',
+  credits: 'price_1UQEUsG6l1KZGqIrSUPCdtIO', // live "Kortix credits", $0.01/credit/month
+  topUps: {
     10: 'price_1RxmQUG6l1KZGqIru453O1zW',
     25: 'price_1RxmQlG6l1KZGqIr3hS5WtGg',
     50: 'price_1RxmQvG6l1KZGqIrLbMZ3D6r',
@@ -517,23 +185,14 @@ const STRIPE_PRICES_PROD: StripePriceConfig = {
     250: 'price_1RxmRAG6l1KZGqIrtBIMsZAj',
     500: 'price_1RxmRGG6l1KZGqIrSyvl6w1G',
   },
-  productId: 'prod_SCl7AQ2C8kK1CD',
 };
 
-// Staging shares the MAIN Kortix Stripe account TEST mode (acct_1R5BVvG6l1KZGqIr)
-// — the same test sandbox as STRIPE_PRICES_DEV, which is the account staging's
-// deployed STRIPE_SECRET_KEY (sk_test_…) actually points at. The subscription
-// price + product ids therefore mirror the dev test catalog. The older
-// …G6CaZppiKc ids lived in a different account and 404 ("No such price") under
-// the staging key, which broke Pro/per-seat checkout creation. The credit ids
-// below are main-account test ids and already resolve.
+// Staging and dev share the main Kortix Stripe account's TEST mode
+// (acct_1R5BVvG6l1KZGqIr); both deployed keys are the same sk_test_ key.
 const STRIPE_PRICES_STAGING: StripePriceConfig = {
-  subscriptions: {
-    free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro: { monthly: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' },
-    per_seat: { monthly: 'price_1TeyA7G6l1KZGqIrTb2DKGS0' }, // test "Kortix seat" $40/mo
-  },
-  credits: {
+  free: 'price_1RIGvuG6l1KZGqIrw14abxeL',
+  credits: 'price_1UQERpG6l1KZGqIrIH1EuX7p',
+  topUps: {
     10: 'price_1RxXOvG6l1KZGqIrMqsiYQvk',
     25: 'price_1RxXPNG6l1KZGqIrQprPgDme',
     50: 'price_1RxmNhG6l1KZGqIrTq2zPtgi',
@@ -541,23 +200,12 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
     250: 'price_1RxmO6G6l1KZGqIrBF8Kx87G',
     500: 'price_1RxmOFG6l1KZGqIrn4wgORnH',
   },
-  productId: 'prod_UeGhOr4r0v9gna',
 };
 
-// Local-dev Stripe TEST-mode sandbox. Every id here lives in the test mode of
-// the main Kortix Stripe account (acct_1R5BVvG6l1KZGqIr) — the account your
-// local `STRIPE_SECRET_KEY` (sk_test_…) points at. The prod/staging configs
-// above are LIVE-mode ids in other accounts and 404 with a test key ("No such
-// price"), which is why local per-seat checkout was failing. Created via the
-// Stripe API; regenerate with apps/api/scripts/ or the Stripe dashboard (test
-// mode) if the sandbox account is ever reset.
 const STRIPE_PRICES_DEV: StripePriceConfig = {
-  subscriptions: {
-    free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro: { monthly: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' },
-    per_seat: { monthly: 'price_1TeyA7G6l1KZGqIrTb2DKGS0' }, // test "Kortix seat" $40/mo
-  },
-  credits: {
+  free: 'price_1RIGvuG6l1KZGqIrw14abxeL',
+  credits: 'price_1UQERpG6l1KZGqIrIH1EuX7p',
+  topUps: {
     10: 'price_1TeyA8G6l1KZGqIrWYDbPN0O',
     25: 'price_1TeyA9G6l1KZGqIrbdZNyyDn',
     50: 'price_1TeyA9G6l1KZGqIrNbj3otrU',
@@ -565,8 +213,58 @@ const STRIPE_PRICES_DEV: StripePriceConfig = {
     250: 'price_1TeyAAG6l1KZGqIrZavIxtSE',
     500: 'price_1TeyAAG6l1KZGqIrm5HnnDaT',
   },
-  productId: 'prod_UeGhOr4r0v9gna',
 };
+
+/**
+ * Every subscription price sold before credits-only billing, and the monthly
+ * credits (USD) one unit of it grants. Existing subscriptions keep their price
+ * and their bill; this table is what turns each into a monthly allowance.
+ *
+ * Monthly prices grant their price. Yearly prices grant the plan's MONTHLY
+ * allowance (price ÷ 12 would cut a yearly customer's grant by the 15% yearly
+ * discount). `per_seat` grants $40 per seat (it granted $25 before; same bill,
+ * more credits).
+ */
+const LEGACY_PRICE_MONTHLY_USD: Record<string, number> = {
+  // tier_2_20 "Plus" (also legacy `pro` monthly)
+  price_1RILb4G6l1KZGqIrhomjgDnO: 20,
+  price_1ReHB5G6l1KZGqIrD70I1xqM: 20,
+  price_1RqtqiG6l1KZGqIrhjVPtE1s: 20,
+  // tier_6_50 "Pro"
+  price_1RILb4G6l1KZGqIr5q0sybWn: 50,
+  price_1ReHAsG6l1KZGqIrlAog487C: 50,
+  price_1Rqtr8G6l1KZGqIrQ0ql0qHi: 50,
+  // tier_12_100 "Business"
+  price_1RILb4G6l1KZGqIr5Y20ZLHm: 100,
+  price_1ReHAWG6l1KZGqIrBHer2PQc: 100,
+  // tier_25_200 "Ultra"
+  price_1RILb4G6l1KZGqIrGAD8rNjb: 200,
+  price_1ReH9uG6l1KZGqIrsvMLHViC: 200,
+  price_1RqtrUG6l1KZGqIrEb8hLsk3: 200,
+  // tier_50_400
+  price_1RILb4G6l1KZGqIruNBUMTF1: 400,
+  price_1ReH9fG6l1KZGqIrsPtu5KIA: 400,
+  // tier_125_800
+  price_1RILb3G6l1KZGqIrbJA766tN: 800,
+  price_1ReH9GG6l1KZGqIrfgqaJyat: 800,
+  // tier_200_1000 "Max"
+  price_1RILb3G6l1KZGqIrmauYPOiN: 1000,
+  price_1ReH8qG6l1KZGqIrK1akY90q: 1000,
+  // per_seat, live and test, per seat
+  price_1TdyruG6l1KZGqIrMzPVmQSO: 40,
+  price_1TeyA7G6l1KZGqIrTb2DKGS0: 40,
+  // legacy `pro`, test mode
+  price_1TeyA7G6l1KZGqIr7ZhEpoVm: 20,
+};
+
+/** Legacy yearly prices sold with a 12-month commitment (no cancel before term). */
+const YEARLY_COMMITMENT_PRICE_IDS = new Set([
+  'price_1RqtqiG6l1KZGqIrhjVPtE1s',
+  'price_1Rqtr8G6l1KZGqIrQ0ql0qHi',
+  'price_1RqtrUG6l1KZGqIrEb8hLsk3',
+]);
+
+const ALL_PRICE_CONFIGS = [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV];
 
 function getStripePrices(): StripePriceConfig {
   switch (config.INTERNAL_KORTIX_ENV) {
@@ -579,142 +277,163 @@ function getStripePrices(): StripePriceConfig {
   }
 }
 
-export function resolvePriceId(tierKey: string, billingPeriod?: string): string | null {
-  const prices = getStripePrices();
-  const tierPrices = prices.subscriptions[tierKey];
-  if (!tierPrices) return null;
+/** The free plan's $0 price for this environment. */
+export function resolveFreePriceId(): string {
+  return getStripePrices().free;
+}
 
-  if (billingPeriod === 'yearly_commitment') return tierPrices.yearlyCommitment ?? null;
-  if (billingPeriod === 'yearly') return tierPrices.yearly ?? null;
-  return tierPrices.monthly ?? null;
+/** The "Kortix credits" price for this environment. */
+export function resolveCreditsPriceId(): string {
+  return getStripePrices().credits;
 }
 
 export function resolveCreditPriceId(amountDollars: number): string | null {
-  const prices = getStripePrices();
-  return prices.credits[amountDollars] ?? null;
+  return getStripePrices().topUps[amountDollars] ?? null;
 }
 
-// ─── Price ID ↔ Tier reverse lookup ─────────────────────────────────────────
-
-const priceIdToTier = new Map<string, string>();
-
-function registerPriceId(priceId: string, tierName: string) {
-  priceIdToTier.set(priceId, tierName);
+function isCreditsPrice(priceId: string): boolean {
+  return ALL_PRICE_CONFIGS.some((c) => c.credits === priceId);
 }
 
-function initPriceIdMap() {
-  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV]) {
-    for (const [tierName, tierPrices] of Object.entries(priceConfig.subscriptions)) {
-      if (tierPrices.monthly) registerPriceId(tierPrices.monthly, tierName);
-      if (tierPrices.yearly) registerPriceId(tierPrices.yearly, tierName);
-      if (tierPrices.yearlyCommitment) registerPriceId(tierPrices.yearlyCommitment, tierName);
-    }
-  }
-}
-initPriceIdMap();
-
-// ─── Tier helpers ────────────────────────────────────────────────────────────
-
-export function getTier(name: string): TierConfig {
-  return TIERS[name] ?? TIERS.none;
+function isFreePrice(priceId: string): boolean {
+  return ALL_PRICE_CONFIGS.some((c) => c.free === priceId);
 }
 
-export function getTierByPriceId(priceId: string): TierConfig | null {
-  const name = priceIdToTier.get(priceId);
-  return name ? (TIERS[name] ?? null) : null;
-}
-
-/**
- * The plan a SUBSCRIPTION PRICE pays for — the only trustworthy answer to "which
- * tier did this customer buy". Request bodies and client-supplied tier keys are
- * never an input.
- *
- * One price can be registered under more than one tier (a legacy price reused
- * as a newer plan's price). `planKeyHint` — the plan key our own server wrote
- * into the subscription metadata — breaks that tie, and ONLY that tie: a hint
- * whose configured prices do not include `priceId` is ignored.
- */
-export function resolveTierForPrice(
-  priceId: string | null | undefined,
-  planKeyHint?: string | null,
-): string | null {
+/** The plan a subscription PRICE pays for. Unknown prices answer null. */
+export function planForPrice(priceId: string | null | undefined): 'free' | 'credits' | null {
   if (!priceId) return null;
-  if (planKeyHint && tierHasPrice(planKeyHint, priceId)) return planKeyHint;
-  return priceIdToTier.get(priceId) ?? null;
-}
-
-function tierHasPrice(tierName: string, priceId: string): boolean {
-  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV]) {
-    const tierPrices = priceConfig.subscriptions[tierName];
-    if (!tierPrices) continue;
-    if (
-      tierPrices.monthly === priceId ||
-      tierPrices.yearly === priceId ||
-      tierPrices.yearlyCommitment === priceId
-    ) return true;
-  }
-  return false;
-}
-
-export function getBillingPeriodByPriceId(
-  priceId: string,
-): 'monthly' | 'yearly' | 'yearly_commitment' | null {
-  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV]) {
-    for (const tierPrices of Object.values(priceConfig.subscriptions)) {
-      if (tierPrices.monthly === priceId) return 'monthly';
-      if (tierPrices.yearly === priceId) return 'yearly';
-      if (tierPrices.yearlyCommitment === priceId) return 'yearly_commitment';
-    }
-  }
-
+  if (isFreePrice(priceId)) return 'free';
+  if (isCreditsPrice(priceId) || priceId in LEGACY_PRICE_MONTHLY_USD) return 'credits';
   return null;
 }
 
-/** Every tier row. The plan-catalog parity test reads the table through it. */
-export function getAllTiers(): TierConfig[] {
-  return Object.values(TIERS);
+type SubscriptionItemLike = Pick<Stripe.SubscriptionItem, 'quantity'> & {
+  price?: Pick<Stripe.Price, 'id' | 'unit_amount' | 'recurring'> | null;
+};
+
+/**
+ * The plan a SUBSCRIPTION pays for — the only trustworthy answer to "which plan
+ * did this customer buy". In order:
+ *   1. a known price (free, credits, a legacy plan price);
+ *   2. our own metadata (`plan_key`, `tier_key`, or the oldest key, `tier`),
+ *      for prices this table never saw (legacy machine subscriptions);
+ *   3. the amount: any price above $0 is the one paid plan, Credits. There is
+ *      no other plan to buy, so a paying subscription is never left without one
+ *      (a 2026-10-15 prod audit found paying subscriptions with neither a known
+ *      price nor metadata). An all-$0 subscription with no metadata answers
+ *      null: the stored plan decides, so a comped account keeps its plan.
+ */
+export function planForSubscription(subscription: {
+  items: { data: SubscriptionItemLike[] };
+  metadata?: Stripe.Metadata | null;
+}): 'free' | 'credits' | 'enterprise' | null {
+  for (const item of subscription.items.data) {
+    const plan = planForPrice(item.price?.id);
+    if (plan) return plan;
+  }
+  const meta = subscription.metadata;
+  const hint = canonicalTier(meta?.plan_key || meta?.tier_key || meta?.tier);
+  if (hint !== 'none') return hint;
+  return subscription.items.data.some((item) => (item.price?.unit_amount ?? 0) > 0) ? 'credits' : null;
 }
 
 /**
- * Tiers the product may advertise.
+ * THE allowance rule: the credits (USD) one month of this subscription grants.
+ * Σ items: monthly credits per unit × quantity. Discounts do not reduce it —
+ * the allowance is what the plan lists, as the seat rule always was.
  *
- * A tier must also be BUYABLE, not merely unhidden. Checkout resolves a Stripe
- * price and throws `No price configured for this tier` when there is none, so a
- * tier defined ahead of its Stripe products would otherwise be listed as an
- * option that fails the moment anyone clicks it.
+ *   - "Kortix credits": $0.01 × quantity.
+ *   - A legacy price: its row in LEGACY_PRICE_MONTHLY_USD.
+ *   - Any other price (a legacy machine subscription): its list price per month.
  *
- * Deriving this instead of carrying a second `hidden` flag means the v3 credit
- * plans stay dark until their prices are created, then appear on their own —
- * there is no flag to remember to flip, and no window where the grid offers a
- * plan the billing system cannot sell.
+ * Pure — testable without Stripe or a DB.
  */
-export function getVisibleTiers(): TierConfig[] {
-  return Object.values(TIERS).filter(
-    (t) => !t.hidden && t.name !== 'none' && resolvePriceId(t.name, 'monthly') !== null,
-  );
+export function monthlyCreditsForSubscription(subscription: {
+  items: { data: SubscriptionItemLike[] };
+}): number {
+  let cents = 0;
+  for (const item of subscription.items.data) {
+    const quantity = Math.max(0, item.quantity ?? 1);
+    const price = item.price;
+    if (!price) continue;
+    if (isCreditsPrice(price.id)) cents += quantity;
+    else if (price.id in LEGACY_PRICE_MONTHLY_USD) cents += LEGACY_PRICE_MONTHLY_USD[price.id] * 100 * quantity;
+    else {
+      const perMonth = price.recurring?.interval === 'year' ? (price.unit_amount ?? 0) / 12 : (price.unit_amount ?? 0);
+      cents += Math.round(perMonth) * quantity;
+    }
+  }
+  return cents / 100;
+}
+
+/** Billing period of a subscription's first item. */
+export function billingPeriodForSubscription(subscription: {
+  items: { data: SubscriptionItemLike[] };
+}): 'monthly' | 'yearly' | 'yearly_commitment' {
+  const price = subscription.items.data[0]?.price;
+  if (price && YEARLY_COMMITMENT_PRICE_IDS.has(price.id)) return 'yearly_commitment';
+  return price?.recurring?.interval === 'year' ? 'yearly' : 'monthly';
+}
+
+/**
+ * Monthly allowance of a row written before credits-only billing, which has no
+ * `plan_monthly_usd` yet: the legacy plan's price, or $40 per seat.
+ * ponytail: transitional; delete once the backfill has written every paid row.
+ */
+const LEGACY_TIER_MONTHLY_USD: Record<string, number> = {
+  pro: 20,
+  tier_2_20: 20,
+  tier_6_50: 50,
+  tier_12_100: 100,
+  tier_25_200: 200,
+  tier_50_400: 400,
+  tier_125_800: 800,
+  tier_200_1000: 1000,
+  tier_150_1200: 1200,
+};
+
+/** The monthly allowance (USD) an account's plan grants. */
+export function planMonthlyUsd(row: {
+  tier?: string | null;
+  planMonthlyUsd?: string | number | null;
+  seatCount?: number | null;
+}): number {
+  const stored = Number(row.planMonthlyUsd);
+  if (row.planMonthlyUsd != null && Number.isFinite(stored)) return stored;
+  const tier = row.tier ?? 'none';
+  if (tier === 'per_seat') return 40 * Math.max(1, row.seatCount ?? 1);
+  return LEGACY_TIER_MONTHLY_USD[tier] ?? getTier(tier).monthlyCredits;
+}
+
+/**
+ * The monthly allowance of a PAID account billed by `subscription`. The
+ * subscription's list price decides, except for a comped account: support
+ * assigns a paid plan to an account that stays on a $0 price, and that account
+ * keeps its stored (or legacy) monthly amount.
+ */
+export function paidMonthlyUsd(
+  subscription: { items: { data: SubscriptionItemLike[] } },
+  row: Parameters<typeof planMonthlyUsd>[0] | null | undefined,
+): number {
+  const fromSubscription = monthlyCreditsForSubscription(subscription);
+  return fromSubscription > 0 || !row ? fromSubscription : planMonthlyUsd(row);
+}
+
+// ─── Tier helpers ────────────────────────────────────────────────────────────
+
+/** The plan config a stored tier key means. Legacy keys resolve to `credits`. */
+export function getTier(name: string): TierConfig {
+  return TIERS[canonicalTier(name)];
 }
 
 export function isValidTier(name: string): boolean {
   return name in TIERS;
 }
 
-export function getMonthlyCredits(tierName: string): number {
-  return getTier(tierName).monthlyCredits;
-}
-
 /**
- * Whether a tier unlocks the full model catalog — i.e. the premium LLM gateway
- * (Claude/GPT/Gemini/…), not just OpenCode's built-in Zen models.
- *
- * Driven entirely by the tier's `models` config: every paid tier — `pro`,
- * `per_seat`, and all legacy `tier_*` plans — carries `models: ['all']`, so this
- * is the single source of truth for premium-model entitlement. Crucially it keys
- * off the resolved TIER, not `billing_model`: legacy paid customers are just as
- * entitled to premium models as per-seat teams (the gateway meters every account
- * the same way), and gating on `isPerSeatAccount` wrongly locked them out.
- *
- * Pure function of tier config only. Environment and wallet balance cannot
- * grant managed-model entitlement.
+ * Whether a tier unlocks the full model catalog — the premium LLM gateway
+ * (Claude/GPT/Gemini/…), not just OpenCode's built-in models. Pure function of
+ * tier config: environment and wallet balance cannot grant it.
  */
 export function tierGrantsAllModels(tierName: string): boolean {
   return getTier(tierName).models.includes('all');
@@ -725,103 +444,26 @@ export function getTierEntitlements(tierName: string): TierEntitlements {
   return getTier(tierName).entitlements;
 }
 
-/** Returns the per-seat Stripe price ID for the current environment. */
-export function resolvePerSeatPriceId(): string | null {
-  const prices = getStripePrices();
-  return prices.subscriptions.per_seat?.monthly ?? null;
-}
+// ─── RevenueCat (mobile in-app purchases) ────────────────────────────────────
+// The store sells fixed products, so mobile keeps them. Each maps to `credits`
+// with the monthly allowance it grants.
 
-/**
- * Whether to show the "Claim seat-based pricing" card. It must appear ONLY for a
- * genuine legacy per-machine account that has something to migrate, so clicking
- * actually does something. A new per-seat-era user (no machine) must NOT see it:
- * `billing_model` is `'legacy'` for everyone who isn't explicitly `per_seat`
- * (incl. brand-new free accounts with a null model), so gating the card on
- * `billing_model === 'legacy'` showed it to new users — whose claim then
- * dead-ends on "nothing to switch" while the card hides the normal top-up /
- * subscribe path, stranding them out of credits. Mirrors the preconditions of
- * maybeMigrateLegacyAccount (not already per-seat; has a legacy machine; not
- * under an active yearly commitment) so the card never offers a no-op.
- */
-export function canClaimPerSeat(args: {
-  billingModel: string | null | undefined;
-  hasLegacyMachine: boolean;
-  commitmentType?: string | null;
-  commitmentEndDate?: string | Date | null;
-  now?: Date;
-}): boolean {
-  if (isPerSeatAccount(args.billingModel)) return false;
-  if (!args.hasLegacyMachine) return false;
-  if (args.commitmentType === 'yearly_commitment' && args.commitmentEndDate) {
-    const ends = new Date(args.commitmentEndDate);
-    if (ends > (args.now ?? new Date())) return false;
-  }
-  return true;
-}
-
-/** Legacy paid tiers eligible for the "claim computer" flow. */
-export const LEGACY_PAID_TIERS = [
-  'tier_2_20',
-  'tier_6_50',
-  'tier_12_100',
-  'tier_25_200',
-  'tier_50_400',
-  'tier_125_800',
-  'tier_200_1000',
-  'tier_150_1200',
-] as const;
-
-export function isLegacyPaidTier(tierName: string): boolean {
-  return (LEGACY_PAID_TIERS as readonly string[]).includes(tierName);
-}
-
-export function getDailyCreditConfig(tierName: string): DailyCreditConfig | null {
-  return getTier(tierName).dailyCreditConfig;
-}
-
-export function getTierOrder(tierName: string): number {
-  const order = [
-    'none',
-    'free',
-    'pro',
-    // Legacy tiers ordered above pro for backward compat
-    'tier_2_20',
-    'tier_6_50',
-    'tier_12_100',
-    'tier_25_200',
-    'tier_50_400',
-    'tier_125_800',
-    'tier_200_1000',
-    'tier_150_1200',
-    // Enterprise sits above everything — sales-assigned, highest entitlements.
-    'enterprise',
-  ];
-  const idx = order.indexOf(tierName);
-  return idx >= 0 ? idx : 0;
-}
-
-export function isUpgrade(fromTier: string, toTier: string): boolean {
-  return getTierOrder(toTier) > getTierOrder(fromTier);
-}
-
-// ─── RevenueCat (mobile billing — untouched) ─────────────────────────────────
-
-const REVENUECAT_PRODUCT_MAPPING: Record<string, string> = {
-  kortix_plus_monthly: 'tier_2_20',
-  kortix_plus_yearly: 'tier_2_20',
-  'plus:plus-monthly': 'tier_2_20',
-
-  kortix_pro_monthly: 'pro',
-  kortix_pro_yearly: 'pro',
-  'pro:pro-monthly': 'pro',
-
-  kortix_ultra_monthly: 'tier_25_200',
-  kortix_ultra_yearly: 'tier_25_200',
-  'ultra:ultra-monthly': 'tier_25_200',
+const REVENUECAT_PRODUCT_MONTHLY_USD: Record<string, number> = {
+  kortix_plus_monthly: 20,
+  kortix_plus_yearly: 20,
+  'plus:plus-monthly': 20,
+  plus: 20,
+  kortix_pro_monthly: 20,
+  kortix_pro_yearly: 20,
+  'pro:pro-monthly': 20,
+  kortix_ultra_monthly: 200,
+  kortix_ultra_yearly: 200,
+  'ultra:ultra-monthly': 200,
 };
 
-export function mapRevenueCatProductToTier(productId: string): string | null {
-  return REVENUECAT_PRODUCT_MAPPING[productId.toLowerCase()] ?? null;
+/** Monthly allowance (USD) of a RevenueCat product, or null when the product is unknown. */
+export function revenueCatProductMonthlyUsd(productId: string): number | null {
+  return REVENUECAT_PRODUCT_MONTHLY_USD[productId.toLowerCase()] ?? null;
 }
 
 export function getRevenueCatPeriodType(

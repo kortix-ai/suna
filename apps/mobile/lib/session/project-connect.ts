@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { appIsActive } from '@/hooks/useWarmProjectSession';
 import { warmSessionPool } from '@/lib/session/warm-session-pool';
@@ -7,7 +7,7 @@ import { useTabStore } from '@/stores/tab-store';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
-import { listCreatedSession, projectKeys, useCreateProjectSession } from '@/lib/projects/hooks';
+import { listCreatedSession, projectKeys, useCreateProjectSession, useProjectSession } from '@/lib/projects/hooks';
 import { getSessionHealth, projectSessionForRuntimeId, sessionStartKey } from '@kortix/sdk';
 import { mapSandboxHealth, type SandboxHealth } from './project-health';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
@@ -24,7 +24,6 @@ import {
   addOptimisticMessage,
   markSeededPrompt,
   sessionMessageIds,
-  sessionRows,
   sessionStatus,
   setLocalSessionStatus,
 } from '@/lib/session/session-store';
@@ -149,7 +148,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       clearTimeout(seedWatchdogsRef.current[root]);
       seedWatchdogsRef.current[root] = setTimeout(() => {
         delete seedWatchdogsRef.current[root];
-        if (seedUndelivered(sessionRows(root), seed.info.id) && sessionStatus(root)?.type === 'busy') {
+        if (seedUndelivered(sessionMessageIds(root), seed.info.id) && sessionStatus(root)?.type === 'busy') {
           log.warn(`⏱️ [connect] first prompt not seen in ${SEED_BUSY_WATCHDOG_MS} ms; clearing busy`);
           setLocalSessionStatus(root, { type: 'idle' });
         }
@@ -163,6 +162,10 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // the sessions list has not caught up with a just-created session, so a
   // new thread takes photos from its first frame (COR-185).
   const openedProjectSessionIdsRef = useRef<Record<string, string>>({});
+  // The Kortix `session_id` whose sandbox the last connect switched in. Every
+  // runtime session a thread shows runs in that sandbox, so it names the row
+  // of a sub-session no snapshot lists yet. Cleared by `goHome`.
+  const connectedSessionIdRef = useRef<string | null>(null);
   // A sub-session to show once its project session's thread connects: a
   // sub-session row tapped while its parent was not open (or still
   // connecting). `connectToProjectSession` opens the thread on it instead of
@@ -210,6 +213,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       delete firstPromptRef.current[ps.session_id];
       openedProjectSessionIdsRef.current[rootId] = ps.session_id;
       openedProjectSessionIdsRef.current[threadId] = ps.session_id;
+      connectedSessionIdRef.current = ps.session_id;
       // The thread first, the connecting state cleared after. Every render in
       // between must see one of them: `isHome` is "no page, no thread, not
       // connecting", and the view route pops itself and resets the project
@@ -423,19 +427,27 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // The active tab's project-session row. The tab store's activeSessionId is a
   // RUNTIME session id — the root (connectToProjectSession navigates with
   // the row's `runtime_session_id`), or a sub-session of it (a drawer
-  // sub-session row, a task tool's View) — so resolve back to the Kortix row
-  // through the pin or the row's `runtime_sessions` snapshot. Every
-  // /projects/:id/sessions/:sid API call needs the Kortix UUID.
-  const activeProjectSession = useMemo(
-    () => projectSessionForRuntimeId(projectSessions, activeSessionId),
-    [projectSessions, activeSessionId]
-  );
+  // sub-session row, a task tool's View) — so resolve back to the Kortix id:
+  // the first page's pin or `runtime_sessions` snapshot, else the thread this
+  // screen opened, else the session whose sandbox is switched in (a thread
+  // only ever shows a runtime session of that sandbox). That last fallback
+  // names the row only: ProjectScreen reads any id other than the row's root
+  // pin as a sub-session. Every /projects/:id/sessions/:sid API call needs
+  // the Kortix UUID.
+  const activeProjectSessionId = activeSessionId
+    ? (projectSessionForRuntimeId(projectSessions, activeSessionId)?.session_id ??
+      openedProjectSessionIdsRef.current[activeSessionId] ??
+      connectedSessionIdRef.current)
+    : null;
+  // The row itself is read by id (KRTX-2316): the first page (50 rows) does
+  // not hold an older session, and without its row the thread lost its
+  // title, "···", rename, drawer highlight and saved copy.
+  const activeProjectSession = useProjectSession(projectId, activeProjectSessionId).data ?? null;
   // The loading page's header title and first message, so it reads as the
   // thread it becomes: the session's own title once it has one, else the
   // just-sent prompt, else "New session".
-  const connectingRow = connectingProjectSessionId
-    ? (projectSessions.find((s) => s.session_id === connectingProjectSessionId) ?? null)
-    : activeProjectSession;
+  const connectingSessionRow = useProjectSession(projectId, connectingProjectSessionId).data ?? null;
+  const connectingRow = connectingProjectSessionId ? connectingSessionRow : activeProjectSession;
   const connectingFirstPrompt = connectingProjectSessionId
     ? firstPromptRef.current[connectingProjectSessionId]
     : undefined;
@@ -499,6 +511,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     returnThreadRef.current = null;
     ensuringRef.current = null;
     openedThreadRef.current = null;
+    connectedSessionIdRef.current = null;
     setConnectingProjectSessionId(null);
     setConnectError(null);
     clearSandbox();

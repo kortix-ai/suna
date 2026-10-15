@@ -185,7 +185,7 @@ describe('free tier monthly credit rotation', () => {
   test.each([
     ['a free account never granted before is processed', { tier: 'free', nextCreditGrant: null }, 'processed'],
     ['a free account not due yet is skipped', { tier: 'free', nextCreditGrant: '2026-08-25T00:00:00.000Z' }, 'skipped'],
-    ['a per-seat account is skipped', { tier: 'per_seat', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
+    ['a credits account is skipped', { tier: 'credits', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
     ['a none-tier account is skipped', { tier: 'none', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
   ] as const)('%s', async (_name, row, outcome) => {
     freeAccountsDueResult = [createMockCreditAccount({ accountId: 'acc_row', ...row })];

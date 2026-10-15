@@ -252,7 +252,7 @@ export function AccountHubContent() {
   }, [accountId, activeSection, closeHubSheet]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
   }
 
   const account = accountQuery.data;
@@ -374,8 +374,8 @@ export function AccountHubContent() {
                   returnUrl={typeof window !== 'undefined' ? window.location.href : '/projects'}
                   isActive
                 />
-                {/* The "Subscribe to Team plan" button opens the global
-                    upgrade-dialog store; mount its renderer here (the global
+                {/* The plan picker's subscribe button starts checkout, and the
+                    top-up view opens the global upgrade-dialog store; mount its renderer here (the global
                     one lives only on share pages) so the dialog actually
                     appears, scoped to THIS account via the provider above. */}
                 <GlobalUpgradeModal />
@@ -764,7 +764,11 @@ function GitHubConnectionCard({
       ) : (
         <ul className="space-y-2">
           {installations.map((installation) => {
-            const contentsPermission = permissionLabel(installation.permissions?.contents);
+            const contents = installation.permissions?.contents;
+            const contentsPermission =
+              typeof contents === 'string' && contents
+                ? tI18nComplete('text65ef045d1ffa', { value0: contents })
+                : null;
             const repoSelection =
               installation.repository_selection === 'selected'
                 ? tI18nComplete.raw('texte0a8d25fe959')
@@ -865,11 +869,6 @@ function GitHubConnectionCard({
       />
     </div>
   );
-}
-
-function permissionLabel(value: unknown): string | null {
-  if (typeof value !== 'string' || !value) return null;
-  return `Contents ${value}`;
 }
 
 // ============================== SETTINGS ==============================
@@ -1292,7 +1291,9 @@ function MembersCard({
           userId,
           email: member?.email ?? userId,
           reason:
-            r.reason instanceof Error ? r.reason.message : String(r.reason ?? 'Unknown error'),
+            r.reason instanceof Error
+              ? r.reason.message
+              : String(r.reason ?? tI18nComplete.raw('text27c2ccd962c2')),
         });
       }
     });
@@ -1306,13 +1307,14 @@ function MembersCard({
 
     // Devtools-friendly dump. console.error renders one row per failure
     // so an admin can copy/paste or grep through them.
-    console.error(`[bulk:${label}] ${failures.length} failed`, failures);
+    console.error(`[bulk] ${failures.length} failed`, failures);
 
     // First failure is shown inline; rest summarised. Trim long
     // messages so a 500-char stack trace doesn't blow up the toast.
     const first = failures[0];
     const reasonShort = first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
-    const tail = failures.length > 1 ? ` (+${failures.length - 1} more — see console)` : '';
+    const tail =
+      failures.length > 1 ? tI18nComplete('text4e9efdcbbcbe', { count: failures.length - 1 }) : '';
     errorToast(
       tI18nComplete('text479974eaff88', {
         value0: label,
@@ -1665,15 +1667,18 @@ function MembersCard({
         open={bulkDialog === 'remove'}
         onOpenChange={(o) => !o && setBulkDialog(null)}
         title={tI18nComplete.raw('text914d43beac26')}
-        description={tI18nComplete('text37074af6784c', {
-          value0: selectedCount,
-          value1: selectedCount === 1 ? '' : 's',
-          value2: account.name,
+        description={tI18nComplete('text586a24125900', {
+          count: selectedCount,
+          account: account.name,
         })}
-        confirmLabel={`Remove ${selectedCount}`}
+        confirmLabel={tI18nComplete('text3028bf7d2dec', { value0: selectedCount })}
         confirmVariant="destructive"
         isPending={bulkBusy}
-        onConfirm={() => bulkRun('Removed', (uid) => removeAccountMember(account.account_id, uid))}
+        onConfirm={() =>
+          bulkRun(tI18nComplete.raw('text4118fb4fed0e'), (uid) =>
+            removeAccountMember(account.account_id, uid),
+          )
+        }
       />
     </div>
   );

@@ -39,6 +39,20 @@ async function loadProjectSessionRow(
   return row ?? null;
 }
 
+/**
+ * The project that holds `sessionId`, or null. One primary-key read; it decides
+ * nothing about access: the caller still runs the project gate and
+ * `loadVisibleSession` on the project it returns.
+ */
+export async function sessionProjectId(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ projectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row?.projectId ?? null;
+}
+
 // Memoized like the membership/role loaders above, and for the same reason:
 // every session read now asks this question, and the answer for one principal
 // is identical across a burst of parallel requests. Positive AND negative

@@ -43,7 +43,7 @@ mock.module('../billing/services/billing-gate', () => ({
   checkBillingAdmission: async (accountId: string) => unfundedAccounts.has(accountId)
     ? {
         ok: false, reason: 'insufficient_credits', balance: 0, message: 'Insufficient credits',
-        billingModel: 'credits', hasSubscription: false, billingState: 'unfunded',
+        hasSubscription: false, billingState: 'unfunded',
       }
     : { ok: true },
 }));

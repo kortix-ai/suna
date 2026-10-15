@@ -6,20 +6,26 @@ test.describe('free-tier pricing and onboarding surface', () => {
   }) => {
     await page.goto('/pricing', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('heading', { name: /simple per-seat/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /simple credit pricing/i })).toBeVisible();
     await expect(page.getByText('Free', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Team', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Credits', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
-    await expect(page.getByText('200 credits / month for sandbox compute').first()).toBeVisible();
+    await expect(page.getByText('200 credits / month, no card needed').first()).toBeVisible();
     await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Bring your own API key for any premium model')).toBeVisible();
-    await expect(page.getByText('2,500 credits / month per seat, pooled')).toBeVisible();
+    await expect(page.getByText('Unlimited members, one shared credit pool')).toBeVisible();
+    await expect(page.getByText('Unused credits roll over one month')).toBeVisible();
     await expect(
       page.getByText('Connect your ChatGPT subscription', { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText('Optional managed models use pooled credits')).toBeVisible();
-    await expect(page.getByText(/about 125 default Agent Computer hours/i).first()).toBeVisible();
+
+    // The credits card opens on Pro and updates the credits line live.
+    await expect(page.getByText('10,000 credits / month')).toBeVisible();
+    await page.getByRole('radio', { name: /Scale/ }).click();
+    await expect(page.getByText('50,000 credits / month')).toBeVisible();
+    await page.getByLabel('Monthly amount in dollars').fill('250');
+    await expect(page.getByText('25,000 credits / month')).toBeVisible();
 
     await expect(page.getByRole('link', { name: /get started/i }).first()).toHaveAttribute(
       'href',

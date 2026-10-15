@@ -50,8 +50,8 @@ describe('admin member-role mutation contract', () => {
 
 describe('admin live-Stripe-subscription read', () => {
   // What Stripe ACTUALLY charges, shown next to the resolved plan badge. A
-  // stored 'pro' tier renders "Team · $20/mo · grandfathered" while the real
-  // subscription can be a $40/mo legacy machine sub — the sheet needs both.
+  // stored legacy tier renders as Credits while the real
+  // subscription can be a legacy machine sub — the sheet needs both.
   test('adminAccountSubscriptionPath targets the admin subscription route', () => {
     expect(adminAccountSubscriptionPath('acct_1')).toBe('/admin/api/accounts/acct_1/subscription');
   });
@@ -102,20 +102,20 @@ describe('admin accounts list — resolved plan block', () => {
   // and that it stays OPTIONAL so a console pointed at an older API still
   // type-checks (and falls back at runtime).
   test('AdminAccount carries the resolved plan, and it is optional', () => {
-    const grandfathered: Pick<AdminAccount, 'plan'> = {
+    const paid: Pick<AdminAccount, 'plan'> = {
       plan: {
-        key: 'per_seat',
-        family: 'team',
-        label: 'Team',
-        sublabel: '$40/seat/mo · grandfathered',
-        status: 'grandfathered',
-        is_grandfathered: true,
+        key: 'credits',
+        family: 'credits',
+        label: 'Credits',
+        sublabel: null,
+        status: 'current',
+        monthlyUsd: 100,
       },
     };
     const olderApi: Pick<AdminAccount, 'plan'> = {};
 
-    expect(grandfathered.plan?.label).toBe('Team');
-    expect(grandfathered.plan?.sublabel).toContain('grandfathered');
+    expect(paid.plan?.label).toBe('Credits');
+    expect(paid.plan?.monthlyUsd).toBe(100);
     expect(olderApi.plan).toBeUndefined();
   });
 });

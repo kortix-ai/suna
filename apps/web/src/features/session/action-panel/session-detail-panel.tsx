@@ -75,7 +75,7 @@ export function SessionDetailPanel() {
                   <TerminalIcon className="text-muted-foreground size-4 shrink-0" />
                   {tI18nComplete.raw('texte0926fdac700')}
                 </span>
-                <CloseButton onClose={closeTerminal} />
+                <CloseButton onClose={closeTerminal} variant="ghost" />
               </DrawerTitle>
             </DrawerHeader>
             <div className="min-h-0 flex-1 overflow-hidden">

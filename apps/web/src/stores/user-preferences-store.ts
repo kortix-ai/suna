@@ -1,5 +1,12 @@
 'use client';
 
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  USER_PREFERENCES_STORAGE_KEY,
+  type DarkThemeId,
+  type LightThemeId,
+} from '@/lib/interface-themes';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { create } from 'zustand';
@@ -32,8 +39,15 @@ export interface KeyboardShortcutPreferences {
 
 export interface UserPreferences {
   keyboard: KeyboardShortcutPreferences;
-  /** Selected Kortix theme ID (e.g. 'default', 'ember', 'aurora') */
-  themeId: string;
+  /**
+   * The palette used in light mode and in dark mode — defaults 'pure-light'
+   * and 'pure-dark'. The mode itself (light / dark / system) stays in
+   * `next-themes`; see `lib/interface-themes.ts`. Legacy persisted preferences
+   * predate these keys, so read sites go through `normalizeLightTheme` /
+   * `normalizeDarkTheme`.
+   */
+  lightTheme: LightThemeId;
+  darkTheme: DarkThemeId;
   /** Selected desktop wallpaper ID */
   wallpaperId: string;
   /** Session action panel mode — defaults to 'easy' for all users */
@@ -44,6 +58,11 @@ export interface UserPreferences {
    * `?? 'normal'` (same rule as `panelMode`).
    */
   conversationDensity: ConversationDensity;
+  /**
+   * Render generative UI blocks as UI (true) or as their markdown fallback (false).
+   * Legacy persisted preferences predate this key: read sites use `?? true`.
+   */
+  genuiEnabled?: boolean;
 }
 
 // ============================================================================
@@ -70,8 +89,11 @@ interface UserPreferencesState {
   /** Update keyboard shortcut preferences (partial merge) */
   setKeyboardPreferences: (prefs: Partial<KeyboardShortcutPreferences>) => void;
 
-  /** Set the active Kortix theme by ID */
-  setThemeId: (themeId: string) => void;
+  /** Set the palette used in light mode */
+  setLightTheme: (theme: LightThemeId) => void;
+
+  /** Set the palette used in dark mode */
+  setDarkTheme: (theme: DarkThemeId) => void;
 
   /** Set the active desktop wallpaper by ID */
   setWallpaperId: (wallpaperId: string) => void;
@@ -82,16 +104,21 @@ interface UserPreferencesState {
   /** Set the conversation density */
   setConversationDensity: (density: ConversationDensity) => void;
 
+  /** Render generative UI blocks as UI (true) or as markdown (false) */
+  setGenuiEnabled: (enabled: boolean) => void;
+
   /** Get the label for the current tab switch modifier (e.g. "Cmd" or "Ctrl") */
   getModifierLabel: () => string;
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   keyboard: getDefaultKeyboardPreferences(),
-  themeId: 'graphite',
+  lightTheme: DEFAULT_LIGHT_THEME,
+  darkTheme: DEFAULT_DARK_THEME,
   wallpaperId: DEFAULT_WALLPAPER_ID,
   panelMode: 'easy',
   conversationDensity: 'normal',
+  genuiEnabled: true,
 };
 
 export const useUserPreferencesStore = create<UserPreferencesState>()(
@@ -103,7 +130,9 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
 
       setKeyboardPreferences: (prefs) => get().patchPreferences({ keyboard: { ...get().preferences.keyboard, ...prefs } }),
 
-      setThemeId: (themeId) => get().patchPreferences({ themeId }),
+      setLightTheme: (lightTheme) => get().patchPreferences({ lightTheme }),
+
+      setDarkTheme: (darkTheme) => get().patchPreferences({ darkTheme }),
 
       setWallpaperId: (wallpaperId) => get().patchPreferences({ wallpaperId }),
 
@@ -120,13 +149,15 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
 
       setConversationDensity: (density) => get().patchPreferences({ conversationDensity: density }),
 
+      setGenuiEnabled: (enabled) => get().patchPreferences({ genuiEnabled: enabled }),
+
       getModifierLabel: () => {
         const mod = get().preferences.keyboard.tabSwitchModifier;
         return mod === 'meta' ? (isMac ? 'Cmd' : 'Win') : 'Ctrl';
       },
     }),
     {
-      name: 'kortix-user-preferences',
+      name: USER_PREFERENCES_STORAGE_KEY,
       storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,
