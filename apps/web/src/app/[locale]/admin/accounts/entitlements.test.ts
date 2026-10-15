@@ -159,10 +159,10 @@ describe('admin accounts — Overrides card', () => {
     const rows =
       pageSource.match(/OVERRIDE_ENTITLEMENT_ROWS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(rows).not.toBe('');
-    for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'branding', 'managedModels']) {
+    for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'branding', 'managedModels', 'byokFee']) {
       expect(rows).toContain(`key: '${key}'`);
     }
-    expect(rows.match(/key: '/g)).toHaveLength(6);
+    expect(rows.match(/key: '/g)).toHaveLength(7);
   });
 
   test('the entitlement rows are tri-state — inherit, force on, force off', () => {

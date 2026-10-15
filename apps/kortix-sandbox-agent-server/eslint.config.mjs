@@ -62,6 +62,8 @@ const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
+  // How the compiled agent config is carried in env (`@kortix/api-contract/compiled-agent-config-env`).
+  'config-provider': API_CONTRACT,
   'egress-shim': [...pkg('node-forge'), ...API_CONTRACT],
   // MONITOR_INGEST_MAX_EVENTS and the ingest body.
   monitor: API_CONTRACT,

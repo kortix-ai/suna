@@ -360,3 +360,18 @@ describe('purity', () => {
     expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.managedModels).toBe(false);
   });
 });
+
+describe('byokFee entitlement', () => {
+  test('on by default for Free and Credits, off on Enterprise', () => {
+    expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.byokFee).toBe(true);
+    expect(resolveBillingFromRow({ tier: 'credits' }, NOW).entitlements.byokFee).toBe(true);
+    expect(resolveBillingFromRow({ tier: 'enterprise' }, NOW).entitlements.byokFee).toBe(false);
+  });
+
+  test('an operator override switches it per account, either way', () => {
+    const waived = resolveBillingFromRow({ tier: 'credits', entitlementOverrides: { byokFee: { value: false } } }, NOW);
+    expect(waived.entitlements.byokFee).toBe(false);
+    const charged = resolveBillingFromRow({ tier: 'enterprise', entitlementOverrides: { byokFee: { value: true } } }, NOW);
+    expect(charged.entitlements.byokFee).toBe(true);
+  });
+});
