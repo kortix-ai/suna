@@ -6,12 +6,12 @@
     "apps/mobile/components/icons/teams-icon.tsx"
   ],
   "diff_hash": "fe874afca6373a51ffb902f5fccf7935b0b7cacc7a086ed61327511213f7a983",
-  "head": "c5a70e04dde3828e301dfa57841930c1ce370a3b",
+  "head": "162da923e20199859d61af68cd3bca54076866e3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T21:16:24.011Z"
+  "at": "2026-10-15T22:24:01.436Z"
 }
