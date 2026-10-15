@@ -2392,9 +2392,9 @@
         },
         "enterprise": {
           "name": "Enterprise",
-          "note": "Ein Jahresvertrag: Lizenz plus ein vorausbezahlter Credit-Pool.",
+          "note": "Skalierung, Sicherheit und dein Deployment.",
           "price": "Individuell",
-          "f1": "Alles aus Credits, mit einem jährlichen Credit-Pool",
+          "f1": "Alles aus Credits",
           "f2": "SAML-SSO + SCIM-Verzeichnissynchronisierung",
           "f3": "Erweitertes RBAC + Audit-Logs",
           "f4": "Cloud, VPC oder On-Prem",
@@ -2441,7 +2441,7 @@
         },
         "enterprise": {
           "question": "Was ist mit Enterprise?",
-          "answer": "Ein Jahresvertrag: eine Plattformlizenz plus ein vorausbezahlter Credit-Pool für das Jahr, per Rechnung oder Karte bezahlt. Dazu kommen SAML-SSO, SCIM-Verzeichnissynchronisierung (Okta, Microsoft Entra, JumpCloud), erweitertes RBAC, Audit-Logs, SLA und DPA sowie Cloud-/VPC-/On-Prem-Deployment. Frag uns nach einer 30-tägigen Enterprise-Testphase."
+          "answer": "Alles aus Credits plus SAML-SSO, SCIM-Verzeichnissynchronisierung (Okta, Microsoft Entra, JumpCloud), erweitertes RBAC, Audit-Logs, SLA und DPA sowie Cloud-/VPC-/On-Prem-Deployment. Sprich uns für Mengenpreise an."
         }
       },
       "hero": {

@@ -33,10 +33,8 @@ export function PlanAccessNotice({ state }: { state: AccountState }) {
   const t = useTranslations('billing.access');
   const locale = useLocale();
   const accountId = useBillingAccountId();
-  const billingReturnUrl = useBillingReturnUrl();
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const openDemo = useRequestDemo();
-  const accept = useAcceptEnterpriseOffer();
 
   if (!isBillingEnabled()) return null;
   const manager = canManageBilling(state);
@@ -46,20 +44,6 @@ export function PlanAccessNotice({ state }: { state: AccountState }) {
 
   const upgrade = () => openUpgradeDialog({ reason: 'subscription_required', accountId: accountId ?? undefined });
   const talkToSales = () => openDemo({ source: 'billing-access-notice' });
-  const acceptOffer = () =>
-    accept.mutate(
-      {
-        successUrl: billingReturnUrl('enterprise_contract'),
-        cancelUrl: window.location.href,
-        accountId: accountId ?? undefined,
-      },
-      {
-        onSuccess: (result) => {
-          window.location.href = result.checkout_url;
-        },
-        onError: (error) => errorToast(t('offerFailed'), { description: error.message }),
-      },
-    );
 
   const salesButton = (
     <Button size="sm" variant="outline" onClick={talkToSales}>
@@ -69,27 +53,7 @@ export function PlanAccessNotice({ state }: { state: AccountState }) {
 
   return (
     <div className="space-y-3 empty:hidden">
-      {offer ? (
-        <InfoBanner
-          tone="info"
-          title={t('offerTitle')}
-          action={
-            offer.collection === 'checkout' && manager ? (
-              <Button size="sm" className="gap-1.5" onClick={acceptOffer} disabled={accept.isPending}>
-                {accept.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                {t('offerAccept')}
-              </Button>
-            ) : null
-          }
-        >
-          {t('offerBody', {
-            license: formatWholeUsd(offer.license_usd, locale),
-            credits: formatWholeUsd(offer.credits_usd, locale),
-            months: offer.term_months,
-          })}{' '}
-          {offer.collection !== 'checkout' ? t('offerInvoiced') : manager ? null : t('askManager')}
-        </InfoBanner>
-      ) : null}
+      {offer ? <OfferBanner offer={offer} manager={manager} /> : null}
 
       {trial ? (
         <InfoBanner
@@ -134,5 +98,54 @@ export function PlanAccessNotice({ state }: { state: AccountState }) {
         </InfoBanner>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * An open Enterprise offer. Its own component so the accept mutation exists
+ * only while there is an offer to accept.
+ */
+function OfferBanner({ offer, manager }: { offer: NonNullable<AccountState['enterprise_offer']>; manager: boolean }) {
+  const t = useTranslations('billing.access');
+  const locale = useLocale();
+  const accountId = useBillingAccountId();
+  const billingReturnUrl = useBillingReturnUrl();
+  const accept = useAcceptEnterpriseOffer();
+
+  const acceptOffer = () =>
+    accept.mutate(
+      {
+        successUrl: billingReturnUrl('enterprise_contract'),
+        cancelUrl: window.location.href,
+        accountId: accountId ?? undefined,
+      },
+      {
+        onSuccess: (result) => {
+          window.location.href = result.checkout_url;
+        },
+        onError: (error) => errorToast(t('offerFailed'), { description: error.message }),
+      },
+    );
+
+  return (
+    <InfoBanner
+      tone="info"
+      title={t('offerTitle')}
+      action={
+        offer.collection === 'checkout' && manager ? (
+          <Button size="sm" className="gap-1.5" onClick={acceptOffer} disabled={accept.isPending}>
+            {accept.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            {t('offerAccept')}
+          </Button>
+        ) : null
+      }
+    >
+      {t('offerBody', {
+        license: formatWholeUsd(offer.license_usd, locale),
+        credits: formatWholeUsd(offer.credits_usd, locale),
+        months: offer.term_months,
+      })}{' '}
+      {offer.collection !== 'checkout' ? t('offerInvoiced') : manager ? null : t('askManager')}
+    </InfoBanner>
   );
 }

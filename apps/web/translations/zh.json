@@ -2392,9 +2392,9 @@
         },
         "enterprise": {
           "name": "企业版",
-          "note": "年度合同：许可证加预付积分池。",
+          "note": "规模、安全与你的部署方式。",
           "price": "定制",
-          "f1": "包含积分版的全部功能，并含年度积分池",
+          "f1": "包含积分版的全部功能",
           "f2": "SAML SSO + SCIM 目录同步",
           "f3": "高级 RBAC + 审计日志",
           "f4": "云端、VPC 或本地部署",
@@ -2441,7 +2441,7 @@
         },
         "enterprise": {
           "question": "企业版呢？",
-          "answer": "年度合同：平台许可证加全年预付积分池，可开票或刷卡支付。另有 SAML SSO、SCIM 目录同步（Okta、Microsoft Entra、JumpCloud）、高级 RBAC、审计日志、SLA 与 DPA，以及云端 / VPC / 本地部署。如需 30 天企业版试用，请联系我们。"
+          "answer": "包含积分版的全部功能，另有 SAML SSO、SCIM 目录同步（Okta、Microsoft Entra、JumpCloud）、高级 RBAC、审计日志、SLA 与 DPA，以及云端 / VPC / 本地部署。批量定价请联系我们。"
         }
       },
       "hero": {

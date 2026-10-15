@@ -2392,9 +2392,9 @@
         },
         "enterprise": {
           "name": "Enterprise",
-          "note": "An annual contract: license plus a prepaid credit pool.",
+          "note": "Scale, security, and your deployment.",
           "price": "Custom",
-          "f1": "Everything in Credits, with an annual credit pool",
+          "f1": "Everything in Credits",
           "f2": "SAML SSO + SCIM directory sync",
           "f3": "Advanced RBAC + audit logs",
           "f4": "Cloud, VPC, or on-prem",
@@ -2441,7 +2441,7 @@
         },
         "enterprise": {
           "question": "What about Enterprise?",
-          "answer": "An annual contract: a platform license plus a prepaid pool of credits for the year, invoiced or paid by card. It adds SAML SSO, SCIM directory sync (Okta, Microsoft Entra, JumpCloud), advanced RBAC, audit logs, an SLA and DPA, and Cloud / VPC / on-prem deployment. Ask us for a 30-day Enterprise trial."
+          "answer": "Everything in Credits plus SAML SSO, SCIM directory sync (Okta, Microsoft Entra, JumpCloud), advanced RBAC, audit logs, an SLA and DPA, and Cloud / VPC / on-prem deployment. Talk to us for volume pricing."
         }
       },
       "hero": {

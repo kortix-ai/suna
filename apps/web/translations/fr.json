@@ -2392,9 +2392,9 @@
         },
         "enterprise": {
           "name": "Enterprise",
-          "note": "Un contrat annuel : licence plus un pool de crédits prépayé.",
+          "note": "Échelle, sécurité et votre déploiement.",
           "price": "Sur mesure",
-          "f1": "Tout ce qui est dans Crédits, avec un pool de crédits annuel",
+          "f1": "Tout ce qui est dans Crédits",
           "f2": "SAML SSO + synchronisation d'annuaire SCIM",
           "f3": "RBAC avancé + journaux d'audit",
           "f4": "Cloud, VPC ou sur site",
@@ -2441,7 +2441,7 @@
         },
         "enterprise": {
           "question": "Et pour Enterprise ?",
-          "answer": "Un contrat annuel : une licence de plateforme plus un pool de crédits prépayé pour l'année, facturé ou payé par carte. Il ajoute SAML SSO, la synchronisation d'annuaire SCIM (Okta, Microsoft Entra, JumpCloud), RBAC avancé, journaux d'audit, SLA et DPA, et le déploiement Cloud / VPC / sur site. Demandez-nous un essai Enterprise de 30 jours."
+          "answer": "Tout ce qui est dans Crédits, plus SAML SSO, synchronisation d'annuaire SCIM (Okta, Microsoft Entra, JumpCloud), RBAC avancé, journaux d'audit, SLA et DPA, et déploiement Cloud / VPC / sur site. Contactez-nous pour une tarification au volume."
         }
       },
       "hero": {

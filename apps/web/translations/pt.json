@@ -2392,9 +2392,9 @@
         },
         "enterprise": {
           "name": "Enterprise",
-          "note": "Um contrato anual: licença mais um pool de créditos pré-pago.",
+          "note": "Escala, segurança e a sua implantação.",
           "price": "Personalizado",
-          "f1": "Tudo do Créditos, com um pool anual de créditos",
+          "f1": "Tudo do Créditos",
           "f2": "SAML SSO + sincronização de diretório SCIM",
           "f3": "RBAC avançado + logs de auditoria",
           "f4": "Nuvem, VPC ou local",
@@ -2441,7 +2441,7 @@
         },
         "enterprise": {
           "question": "E o Enterprise?",
-          "answer": "Um contrato anual: uma licença da plataforma mais um pool de créditos pré-pago para o ano, com fatura ou pagamento por cartão. Adiciona SAML SSO, sincronização de diretório SCIM (Okta, Microsoft Entra, JumpCloud), RBAC avançado, logs de auditoria, SLA e DPA, e implantação em nuvem / VPC / local. Peça-nos um teste Enterprise de 30 dias."
+          "answer": "Tudo do Créditos mais SAML SSO, sincronização de diretório SCIM (Okta, Microsoft Entra, JumpCloud), RBAC avançado, logs de auditoria, SLA e DPA, e implantação em nuvem / VPC / local. Fale conosco sobre preços por volume."
         }
       },
       "hero": {
