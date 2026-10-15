@@ -262,11 +262,14 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     searchParams?.get('view') === 'archived' ? 'archived' : 'all',
   );
   const archivedTab = startedBy === 'archived';
-  // The sidebar's link can land while this page is already open.
-  const viewParam = searchParams?.get('view');
-  useEffect(() => {
+  // The sidebar's link can land while this page is already open: a new
+  // `?view=archived` opens the archive (state adjusted during render).
+  const viewParam = searchParams?.get('view') ?? null;
+  const [seenViewParam, setSeenViewParam] = useState(viewParam);
+  if (viewParam !== seenViewParam) {
+    setSeenViewParam(viewParam);
     if (viewParam === 'archived') setStartedBy('archived');
-  }, [viewParam]);
+  }
   // Search is the server's: `q` reaches every session the viewer may open, not
   // only the pages already loaded. Debounced so a keystroke is not a request.
   const searchQuery = useDebounce(search.trim(), SEARCH_DEBOUNCE_MS);

@@ -116,6 +116,7 @@ import {
   readRuntimeSessionParam,
 } from '@/features/session/tool/tools/session-spawn-urls';
 import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
+import { Separator } from '@/components/ui/separator';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -644,6 +645,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onToggle={() => toggleSectionCollapsed(projectId, PINNED_SECTION_ID)}
           renderNode={(session) => renderSessionNode(session, false)}
         />
+        {/* Without grouping the list below has no header of its own: the line
+            keeps an unpinned row from reading as part of Pinned. */}
+        {visiblePinned.length > 0 && (
+          <div className="px-2 py-1">
+            <Separator />
+          </div>
+        )}
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
