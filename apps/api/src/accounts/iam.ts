@@ -63,8 +63,8 @@ export function registerIamRoutes(): void {
   registerIamServiceAccountsRoutes();
   registerIamOauthClientsRoutes();
   registerIamSessionOversightRoutes();
-  registerIamAssignmentsRoutes();
   registerIamEnterpriseDemoRoutes();
+  registerIamAssignmentsRoutes();
 }
 
 export { iamRouter };
