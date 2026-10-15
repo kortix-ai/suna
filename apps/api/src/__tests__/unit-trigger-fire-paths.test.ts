@@ -455,8 +455,8 @@ mock.module('../projects/secrets', () => ({
 const triggerDbMock: any = {
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
-        where: () => {
+      from: (table: unknown) => {
+        const where = () => {
           const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
           (result as any).for = () => result;
           result.orderBy = () => {
@@ -523,8 +523,17 @@ const triggerDbMock: any = {
             else resolve([]);
           };
           return result;
-        },
-      }),
+        };
+        return {
+          where,
+          // `resolveSessionHarness` (session-sandbox-env-build.ts) reads the
+          // session's metadata through a join:
+          // `.leftJoin(projectSessions, …).where(eq(projects.projectId, …))`.
+          // The join only widens the projects row, so the same `where` chain
+          // answers it.
+          leftJoin: () => ({ where }),
+        };
+      },
     }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
