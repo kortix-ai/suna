@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 795,
+  "count": 796,
   "routes": [
     {
       "method": "GET",
@@ -933,6 +933,10 @@
     {
       "method": "POST",
       "path": "/v1/billing/deduct-usage"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/plan"
     },
     {
       "method": "GET",

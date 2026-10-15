@@ -724,7 +724,7 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     // The roster half. 'invite' belongs to `proj-invite`, the verb row.
     keywords:
-      'members member workspace access collaborators people teammates roster who can see permissions grant share seats',
+      'members member workspace access collaborators people teammates roster who can see permissions grant share',
   },
   {
     id: 'proj-files',
@@ -1122,7 +1122,7 @@ export const menuRegistry: MenuItemDef[] = [
     // 'members' alone stays off this row: it names the project settings
     // Members tab, which is a different roster. These words name the ACCOUNT
     // roster specifically.
-    keywords: 'account members organization roster owners admins seats',
+    keywords: 'account members organization roster owners admins',
   },
   {
     id: 'account-billing',

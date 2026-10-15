@@ -1,7 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accountMemberships, accounts, projects } from '@kortix/db';
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { onMemberAdded } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { actorOf } from '../../iam/actor';
@@ -110,23 +109,6 @@ export function registerMemberInviteRoute(): void {
         }
       }
 
-      // Trial seat gate — covers both branches below (direct add + invite).
-      const { trialSeatLimitBlocksNewMember } = await import(
-        '../../billing/services/seat-management'
-      );
-      const seatBlock = await trialSeatLimitBlocksNewMember(accountId);
-      if (seatBlock) {
-        return c.json(
-          {
-            error: `Your trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Contact the Kortix team to extend the trial.`,
-            code: 'trial_seat_limit_reached',
-            limit: seatBlock.limit,
-            members: seatBlock.members,
-          },
-          403,
-        );
-      }
-
       // Need account name for the invite email
       const [accountRow] = await db
         .select({ name: accounts.name })
@@ -164,12 +146,6 @@ export function registerMemberInviteRoute(): void {
           WHERE account_id=${accountId}::uuid AND lower(user_name)=lower(${email})
         `);
 
-        // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
-        void onMemberAdded(accountId, targetUserId).catch((err) =>
-        // No seat reconciler exists: a failure here leaves the Stripe seat count
-        // (and the member's YOLO token) wrong until the next member change.
-        logger.error('[billing] seat sync FAILED after member added', { accountId: accountId, userId: targetUserId, error: err instanceof Error ? err.message : String(err) }),
-      );
 
         for (const g of projectGrants) {
           await grantProjectRole({

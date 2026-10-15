@@ -85,7 +85,7 @@ describe('channelModelContext — freeManagedOnly honors managed_models_override
   });
 
   test('paid plan, no override → managed models offered (unchanged)', async () => {
-    expect((await gateFor({ tier: 'per_seat' })).freeManagedOnly).toBe(false);
+    expect((await gateFor({ tier: 'credits' })).freeManagedOnly).toBe(false);
   });
 
   test('THE BUG: override=true on a free plan now grants managed models', async () => {
@@ -98,7 +98,7 @@ describe('channelModelContext — freeManagedOnly honors managed_models_override
 
   test('THE BUG, other direction: override=false on a paid plan withdraws them', async () => {
     expect(
-      (await gateFor({ tier: 'per_seat', managedModelsOverride: false })).freeManagedOnly,
+      (await gateFor({ tier: 'credits', managedModelsOverride: false })).freeManagedOnly,
     ).toBe(true);
   });
 
