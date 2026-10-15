@@ -437,3 +437,35 @@ export function selectedKortixTools(tools: unknown): string[] {
   const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
   return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name));
 }
+
+// ─── kortix_version 3 registries ────────────────────────────────────────────
+
+/** A skill, command or extension name (the Agent Skills name rule). */
+export const REGISTRY_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const REGISTRY_NAME_MAX = 64;
+/**
+ * The Kortix skills (packages/starter/templates/managed/skills). Every v3
+ * project has them without a `skills` entry; an agent grants them by name.
+ */
+export const KORTIX_SKILL_NAMES = [
+  'kortix-apps',
+  'kortix-computer',
+  'kortix-connectors',
+  'kortix-drives',
+  'kortix-genui',
+  'kortix-harness-refinement',
+  'kortix-marketplace',
+  'kortix-memory',
+  'kortix-onboarding',
+  'kortix-slack',
+  'kortix-system',
+  'kortix-teams',
+] as const;
+/** The prefix only Kortix skills use. */
+export const KORTIX_SKILL_PREFIX = 'kortix-';
+/** `agents.<name>.codemode`: pi's codemode tool. `on` (default) keeps every tool declared; `only` declares codemode alone. */
+export const CODEMODE_VALUES = ['on', 'only', 'off'] as const;
+/** The harnesses an extension can implement. */
+export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
+/** OpenCode's built-in agents that v3 disables unless the manifest declares the name. */
+export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;
