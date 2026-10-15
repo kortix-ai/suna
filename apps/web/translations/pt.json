@@ -2088,6 +2088,7 @@
     "expandQuotes": "Expandir citações",
     "collapseQuotes": "Recolher citações",
     "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
+    "stoppedBy": "Parado por {name}",
     "queued": "Na fila",
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",

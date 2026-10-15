@@ -122,6 +122,8 @@ kortix sessions queue <session_id> now <prompt_id> # run this one next
 - **The Stop button** ends the running turn and holds the queue. The sandbox keeps running. Send any new message to release the hold. From the CLI: `kortix sessions queue <id> hold` and `kortix sessions queue <id> release`.
 - **`kortix sessions stop <id>`** ends the running turn and stops the sandbox. See [Stop, resume and delete](#stop-resume-and-delete).
 
+In a shared session, only the member who started a run, the session owner or a project manager can stop it. Everyone else sees no Stop button, and their messages queue. Under a run that another member stopped, the transcript shows **Stopped by** and that member's name. Any other stop request answers `403` with `code: not_turn_prompter`.
+
 ### Change a running session
 
 | Command | Effect |

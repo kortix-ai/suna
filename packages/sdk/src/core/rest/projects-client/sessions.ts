@@ -1105,6 +1105,11 @@ export interface SessionTurnStatus {
    *  Reported whether or not a turn is running; `last_ended` is only one row.
    *  Absent when there are none. */
   recent_failures?: SessionTurnFailure[];
+  /** May the CALLER stop the running turn? In a shared session only the member
+   *  who started it, the session owner or a project manager may; a refused
+   *  stop answers 403 `not_turn_prompter`. True when nothing runs. Absent from
+   *  an older server: treat it as allowed. */
+  can_stop?: boolean;
 }
 
 /** Server truth about this session's running turns (`GET .../turn`), answered
@@ -2241,6 +2246,10 @@ export interface SessionMessageAuthors {
   /** A spawned session's first message came from its parent's agent. Null
    *  when the session was not spawned with a first prompt. */
   initial_author: SessionMessageAuthor | null;
+  /** Who stopped a turn, keyed by the user message that started it (the same
+   *  ids as `authors`). Only stops a known member asked for are listed. Absent
+   *  from an older server. */
+  stops?: Record<string, SessionMessageAuthor>;
 }
 
 /** Who wrote each message of a session, from the server's authenticated

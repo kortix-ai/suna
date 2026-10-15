@@ -2065,6 +2065,7 @@
     "expandQuotes": "Expand quotes",
     "collapseQuotes": "Collapse quotes",
     "stopUnconfirmed": "Could not confirm Stop. The agent may still be running. Try Stop again.",
+    "stoppedBy": "Stopped by {name}",
     "queued": "Queued",
     "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "queuedCount": "{count} Queued",

@@ -2088,6 +2088,7 @@
     "expandQuotes": "Прошири цитате",
     "collapseQuotes": "Скупи цитате",
     "stopUnconfirmed": "Zaustavljanje nije potvrđeno. Agent je možda i dalje aktivan. Pokušajte ponovo da ga zaustavite.",
+    "stoppedBy": "Zaustavio {name}",
     "queued": "На чекању",
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
     "queuedCount": "{count} u redu",

@@ -2088,6 +2088,7 @@
     "expandQuotes": "展开引用",
     "collapseQuotes": "收起引用",
     "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
+    "stoppedBy": "由 {name} 停止",
     "queued": "排队中",
     "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}",
     "queuedCount": "{count} 条排队中",

@@ -69,3 +69,21 @@ describe('editing a queued message shows Submit, never Stop', () => {
     expect(markup).not.toContain('>Submit</button>');
   });
 });
+
+describe('a viewer who may not stop the running turn gets Send, never Stop', () => {
+  test('busy with canStop false renders Send, so a message queues', () => {
+    const markup = renderToStaticMarkup(<SendStopControl {...idle} isBusy onStop={() => {}} canStop={false} />);
+    expect(markup).toContain('aria-label="Send message"');
+    expect(markup).not.toContain('aria-label="Stop');
+  });
+
+  test('busy with canStop true (or unset) still renders Stop', () => {
+    for (const markup of [
+      renderToStaticMarkup(<SendStopControl {...idle} isBusy onStop={() => {}} canStop />),
+      renderToStaticMarkup(<SendStopControl {...idle} isBusy onStop={() => {}} />),
+    ]) {
+      expect(markup).toContain('aria-label="Stop');
+      expect(markup).not.toContain('aria-label="Send message"');
+    }
+  });
+});

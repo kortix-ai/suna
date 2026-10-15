@@ -2088,6 +2088,7 @@
     "expandQuotes": "Expandir citas",
     "collapseQuotes": "Contraer citas",
     "stopUnconfirmed": "No se pudo confirmar la detención. El agente podría seguir ejecutándose. Inténtalo de nuevo.",
+    "stoppedBy": "Detenido por {name}",
     "queued": "En cola",
     "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}",
     "queuedCount": "{count} en cola",

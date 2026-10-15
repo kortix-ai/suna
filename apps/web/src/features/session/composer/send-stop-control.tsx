@@ -30,6 +30,12 @@ export interface SendStopControlProps {
   isBusy: boolean;
   onStop?: () => void;
   stopDisabled: boolean;
+  /**
+   * May this viewer stop the running turn (`useSession().canStop`)? In a
+   * shared session only the member who started it, the session owner or a
+   * project manager may. False shows Send while busy: the message queues.
+   */
+  canStop?: boolean;
   escCount: number;
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
@@ -63,6 +69,7 @@ export function SendStopControl({
   isBusy,
   onStop,
   stopDisabled,
+  canStop = true,
   escCount,
   lockForQuestion,
   questionButtonLabel,
@@ -127,7 +134,7 @@ export function SendStopControl({
   // through to `return null` and the button VANISHED mid-turn. A disabled stop
   // says "working, cannot cancel yet"; nothing at all says "broken", and
   // `project-home.tsx:249` had to pass a dummy `stopDisabled` to work around it.
-  if (!isSending && isBusy && !lockForQuestion) {
+  if (!isSending && isBusy && canStop && !lockForQuestion) {
     return (
       <div className="relative flex items-center">
         {escCount > 0 && (
