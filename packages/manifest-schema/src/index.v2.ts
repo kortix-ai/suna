@@ -210,14 +210,6 @@ export interface AgentBlockV2 {
    *  Writers always set it; readers fall back to the conventional paths when
    *  it is omitted. */
   file?: string;
-  /** v3 only: inline system prompt or a repo-relative Markdown prompt file. */
-  prompt?: string;
-  prompt_file?: string;
-  /** v3: agent-specific model and native permission rules. */
-  model?: string;
-  description?: string;
-  mode?: 'primary' | 'subagent' | 'all';
-  permission?: PermissionConfigV2;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
