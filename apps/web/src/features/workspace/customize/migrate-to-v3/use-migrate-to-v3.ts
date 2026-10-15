@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * useMigrateToV2 — start an agent-led "migrate this project's manifest to v2"
+ * useMigrateToV3 — start an agent-led "upgrade this project's manifest to v3"
  * session from anywhere in Customize.
  *
  * Same shape as `useConfigureThread` (the sibling "Create new agent/skill/
@@ -20,16 +20,16 @@ import { useCallback } from 'react';
 
 import type { StartStash } from '@kortix/sdk/react';
 
-import { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
+import { MIGRATE_TO_V3_PROMPT } from './migration-prompt';
 import { buildUpgradeStash, useRunUpgrade } from './use-run-upgrade';
 
 /** Pure — the exact stash payload the migration session is seeded with.
  *  Split out from the hook so it's unit-testable without React. */
-export function buildMigrateToV2Stash(): StartStash {
-  return buildUpgradeStash(MIGRATE_TO_V2_PROMPT);
+export function buildMigrateToV3Stash(): StartStash {
+  return buildUpgradeStash(MIGRATE_TO_V3_PROMPT);
 }
 
-export interface MigrateToV2 {
+export interface MigrateToV3 {
   /** Mint + navigate to the migration session. Safe to call repeatedly —
    *  ignored while a session is already being created. */
   start: () => void;
@@ -38,8 +38,8 @@ export interface MigrateToV2 {
   pending: boolean;
 }
 
-export function useMigrateToV2(projectId: string): MigrateToV2 {
+export function useMigrateToV3(projectId: string): MigrateToV3 {
   const run = useRunUpgrade(projectId);
-  const start = useCallback(() => run.start(MIGRATE_TO_V2_PROMPT), [run]);
+  const start = useCallback(() => run.start(MIGRATE_TO_V3_PROMPT), [run]);
   return { start, pending: run.pending };
 }
