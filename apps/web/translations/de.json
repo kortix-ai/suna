@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Projekt",
         "personal": "Persönlich",
-        "account": "Konto"
+        "account": "Konto",
+        "connect": "Verbinden"
       },
       "items": {
         "workspace": {
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Tarif",
           "description": "Dein Plan, deine Credits und die Abrechnung für dieses Konto."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Nutze Kortix in Claude, Claude Code, Cursor, Codex oder jedem MCP-Client. Du meldest dich einmal an. Keine Installation nötig."
+        },
+        "computer": {
+          "label": "Computer",
+          "description": "Lass Kortix-Agenten mit den Dateien, dem Terminal und den Apps auf deinem Computer arbeiten."
         }
       }
     },
@@ -1381,6 +1390,19 @@
       "adminOnly": "Nur Kontoinhaber oder Administratoren können GitHub für dieses Konto verbinden.",
       "disconnectedToast": "GitHub-Verbindung getrennt",
       "disconnectFailed": "GitHub-Verbindung konnte nicht getrennt werden"
+    },
+    "mcp": {
+      "serverTitle": "Server",
+      "serverDescription": "Eine URL für jedes Projekt, das Sie öffnen können. Ihr Client meldet sich bei der ersten Verbindung mit Kortix an.",
+      "urlLabel": "Server-URL",
+      "clientsTitle": "Clients",
+      "clientsDescription": "Fügen Sie Kortix zu dem Client hinzu, den Sie verwenden."
+    },
+    "computer": {
+      "oneClickDescription": "Die Desktop-App verbindet diesen Computer mit einem Klick.",
+      "desktopLabel": "Desktop-App",
+      "download": "Herunterladen",
+      "cliLabel": "Befehlszeile"
     }
   },
   "triggers": {
@@ -2091,6 +2113,7 @@
     "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}",
     "queuedCount": "{count} in Warteschlange",
     "editingQueued": "Wird bearbeitet",
+    "queuedActions": "Nachrichtenaktionen",
     "steerNextStep": "Wird beim nächsten Schritt gelesen",
     "queuedByAnotherMember": "Von einem anderen Mitglied gesendet. Nur diese Person kann sie bearbeiten oder senden.",
     "steerFallbackUnsupported": "Wartet auf diesen Durchlauf. Diese Sitzung nimmt während eines Durchlaufs keine Nachrichten an.",

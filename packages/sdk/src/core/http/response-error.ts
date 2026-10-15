@@ -68,6 +68,34 @@ const isGitMirrorUnavailableResponse = (
   );
 };
 
+/**
+ * Stable error code the platform API returns (HTTP 503) when the hosted
+ * connectors provider (Composio) is transiently unavailable — the provider's
+ * own API 5xx-ing (e.g. its DB-backed API-key lookup failing, error code 809:
+ * `Failed to fetch API key information from DB`) or the connection dropping.
+ * The API already classifies the cause out of its OWN Sentry
+ * (`apps/api/src/shared/composio-transient.ts`'s
+ * `isComposioTransientProviderError`) and answers a clean 503 + Retry-After;
+ * this is the frontend mirror of `CONNECTORS_PROVIDER_UNAVAILABLE_CODE`.
+ *
+ * The 503 RESPONSE crosses the boundary exactly like the git-mirror one:
+ * `handleApiError` captures every 5xx to the FRONTEND Sentry (app 2346967),
+ * so an unclassified provider blip on the connectors catalogue page paged a
+ * SECOND time from the browser. Treat it as SILENT here — skip the global
+ * `onError` (Sentry) capture — but still return the `ApiError` so callers can
+ * branch on `.code`. A genuine 503 with another message/code still reports.
+ */
+const CONNECTORS_PROVIDER_UNAVAILABLE_CODE = 'connectors_provider_unavailable';
+
+const isConnectorsProviderUnavailableResponse = (status: number, errorData: unknown): boolean => {
+  if (status !== 503) return false;
+  const code =
+    typeof errorData === 'object' && errorData !== null && 'code' in errorData
+      ? (errorData as { code?: unknown }).code
+      : undefined;
+  return code === CONNECTORS_PROVIDER_UNAVAILABLE_CODE;
+};
+
 async function readErrorBody(
   response: Response,
   signal: AbortSignal,
@@ -91,6 +119,7 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
   return (
     isRequestDeadlineResponse(status, data, message) ||
     isGitMirrorUnavailableResponse(status, data, message) ||
+    isConnectorsProviderUnavailableResponse(status, data) ||
     (status === 501 && data?.code === FEATURE_NOT_SUPPORTED_CODE) ||
     (status === 409 &&
       (data?.code === MODEL_NOT_SERVABLE_CODE ||
