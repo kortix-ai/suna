@@ -321,3 +321,8 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('bash', BashTool);
+// pi 1.2.0's codemode runs a script — the same kind as bash (`tool-kind.ts`),
+// so an unregistered name resolves here. The `mcp/` spelling still has to land
+// on the same renderer, and the kind fallback for an `mcp/` name is `other`,
+// not bash — register the tool name explicitly so every spelling agrees.
+ToolRegistry.register('codemode', BashTool);

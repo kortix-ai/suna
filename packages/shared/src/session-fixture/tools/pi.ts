@@ -66,6 +66,22 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
       note: 'pi returns the answers as `details.answers` (the part metadata), as OpenCode does.',
     },
     {
+      renderer: 'codemode-tool.tsx',
+      tool: 'codemode',
+      input: {
+        code: "const rows = await kortix.projects.list()\nfor (const row of rows) {\n  console.log(row.name)\n}",
+      },
+      metadata: {
+        calls: [
+          { id: 'call_pi_read_1', name: 'read', args: '{"path":"src/lib/format.ts"}', status: 'complete', durationMs: 18 },
+          { id: 'call_pi_bash_1', name: 'bash', args: '{"command":"node scripts/verify-format.mjs"}', status: 'complete', durationMs: 421 },
+        ],
+      },
+      output: 'Script completed\nWall time 1.1s\nOutput:\nformat-currency\nrevenue-report',
+      error: 'Script failed\nWall time 0.4s\nOutput:\nTypeError: rows is not iterable',
+      note: "pi 1.2.0's codemode: a script the model wrote that calls other tools; the row lists metadata.calls. The runtime blocks a call by policy with 'The project policy denies …', which the renderer reads as refused.",
+    },
+    {
       renderer: 'edit-tool.tsx',
       tool: 'edit',
       input: {
