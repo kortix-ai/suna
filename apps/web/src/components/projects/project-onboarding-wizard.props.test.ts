@@ -38,6 +38,17 @@ describe('ProjectOnboardingWizard: completion wiring', () => {
     expect(code).not.toMatch(/const complete = useCallback\(\(\) => onboarding\.complete\(\)/);
   });
 
+  // The project shell passes `onSkip` only to render the control and does not
+  // navigate, so a skip that set `leaving` left the wizard on screen until a
+  // reload (KRTX-2378). Skip closes it in place through the optimistic stamp.
+  // (Upstream #9963 added this assertion; the `leaving` machinery it contrasts
+  // with is gone entirely here, which the tests below pin.)
+  test('skip closes the wizard in place', () => {
+    const skip = code.slice(code.indexOf('const skip = useCallback'), code.indexOf('const openProject'));
+    expect(skip).not.toContain('setLeaving');
+    expect(skip).toContain('completeThenNotify(() => onboarding.complete(), onSkip)');
+  });
+
   test('both exits start the first chat', () => {
     expect(code).toMatch(/const skip = useCallback\(\(\) => \{\s*startFirstChat\(\);/);
     expect(code).toMatch(/const openProject = useCallback\(\(\) => \{\s*startFirstChat\(\);/);

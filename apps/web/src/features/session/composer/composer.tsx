@@ -166,6 +166,8 @@ export interface SessionChatInputProps {
   runtimeReady?: boolean;
   onStop?: () => void;
   stopDisabled?: boolean;
+  /** See `SendStopControl`. Default true. */
+  canStop?: boolean;
   isSending?: boolean;
   /**
    * The session sits on a rewound path: sending commits it, restoring keeps

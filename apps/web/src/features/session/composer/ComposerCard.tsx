@@ -167,6 +167,7 @@ export function ComposerCard({
   isSending = false,
   onStop,
   stopDisabled = false,
+  canStop = true,
   modelsLoading = false,
   modelRequired = false,
   onModelChange,
@@ -398,6 +399,7 @@ export function ComposerCard({
             isBusy={isBusy}
             onStop={onStop}
             stopDisabled={stopDisabled}
+            canStop={canStop}
             escCount={escCount}
             lockForQuestion={lockForQuestion}
             questionButtonLabel={questionButtonLabel}

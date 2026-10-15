@@ -1051,6 +1051,22 @@ describe('session.error', () => {
     ]);
   });
 
+  // A Stop ends the turn with `MessageAbortedError`. Every other viewer's tab
+  // got a "Session Error" notification for it, beside the transcript's
+  // "Stopped by <name>". An abort is the effect of a stop, not a failure.
+  test('an abort raises no session-error notification', () => {
+    const { handleEvent } = buildHandler();
+    handleEvent({
+      id: 'evt_abort',
+      type: 'session.error',
+      properties: {
+        sessionID: 'ses_1',
+        error: { name: 'MessageAbortedError', data: { message: 'The operation was aborted.' } },
+      },
+    });
+    expect(notifications).toEqual([]);
+  });
+
   test('non-abort errors rehydrate real messages from the injected client', async () => {
     const rehydrated: Message[] = [assistantMessage('msg_real')];
     const { handleEvent, queryClient } = buildHandler({

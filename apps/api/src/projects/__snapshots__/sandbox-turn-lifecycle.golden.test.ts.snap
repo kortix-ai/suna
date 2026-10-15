@@ -1460,7 +1460,11 @@ exports[`golden SQL: requested-stop marks markTurnStopRequested scopes to one Op
 [
   
 "UPDATE kortix.session_turns
-           SET end_error =  {"name":"UserStop","message":null} ::jsonb,
+           SET end_error = CASE
+                 WHEN   ::text IS NULL AND end_error->>'name' =  UserStop  AND end_error ? 'by'
+                   THEN end_error
+                 ELSE  {"name":"UserStop","message":null} ::jsonb
+               END,
                updated_at = now()
          WHERE session_id =  sess-1 
            AND state <> 'ended'
@@ -1477,7 +1481,11 @@ exports[`golden SQL: requested-stop marks markTurnStopRequested without a scope 
 [
   
 "UPDATE kortix.session_turns
-           SET end_error =  {"name":"QueueInterrupt","message":null} ::jsonb,
+           SET end_error = CASE
+                 WHEN   ::text IS NULL AND end_error->>'name' =  QueueInterrupt  AND end_error ? 'by'
+                   THEN end_error
+                 ELSE  {"name":"QueueInterrupt","message":null} ::jsonb
+               END,
                updated_at = now()
          WHERE session_id =  sess-1 
            AND state <> 'ended'
@@ -1624,6 +1632,27 @@ exports[`golden SQL: settle backstops settleOrphanedSandboxTurns returns the row
                     FROM kortix.session_sandboxes s
                    WHERE s.sandbox_id = t.sandbox_id
                      AND s.status IN ('active', 'provisioning'))"
+,
+]
+`;
+
+exports[`golden SQL: requested-stop marks markTurnStopRequested records the person who stopped the turn 1`] = `
+[
+  
+"UPDATE kortix.session_turns
+           SET end_error = CASE
+                 WHEN  user-1 ::text IS NULL AND end_error->>'name' =  UserStop  AND end_error ? 'by'
+                   THEN end_error
+                 ELSE  {"name":"UserStop","message":null,"by":"user-1"} ::jsonb
+               END,
+               updated_at = now()
+         WHERE session_id =  sess-1 
+           AND state <> 'ended'
+           AND ( ses_root ::text IS NULL
+             OR opencode_session_id IS NULL
+             OR opencode_session_id =  ses_root )
+           AND (  ::text IS NULL
+             OR message_id =   )"
 ,
 ]
 `;
