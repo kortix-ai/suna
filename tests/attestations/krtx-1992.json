@@ -1,5 +1,5 @@
 {
-  "source_hash": "ec30c824172f06bf03a19e49ba9edfce877c22c2a3970798008a473f1cb00e64",
+  "source_hash": "ea2cecfa3a43764151136b225502a7f465dd1c89ce84e89d9cab0beb0622eede",
   "diff_files": [
     "apps/web/src/app/[locale]/presentations/decks/security-diagram-content.ts",
     "apps/web/src/app/[locale]/presentations/decks/security-localization.test.tsx",
@@ -138,13 +138,13 @@
     "packages/sdk/src/react/teams-install-polling.ts",
     "packages/sdk/src/react/use-project-name.ts"
   ],
-  "diff_hash": "4cda7d29a379eb7ac62bedbaccaaa5dbbfa899a0473dfb3eff7c60d2613f012c",
-  "head": "4c7285c0bdd71f2a735962f11460960db956935b",
+  "diff_hash": "0fad41751d4631297ebdce8091489ffb13c5586a30989d9992024c7197c89f1f",
+  "head": "e9d02e58c5763ceb19bce23a2bff5df5fe0ac5d4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T08:03:27.470Z"
+  "at": "2026-10-15T09:23:15.795Z"
 }
