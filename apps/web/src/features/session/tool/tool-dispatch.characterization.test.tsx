@@ -23,7 +23,9 @@ function render(tool: string) {
 describe('tool registry dispatch', () => {
   test('registered bash tool renders its command', () => {
     expect(ToolRegistry.get('bash')).toBeDefined();
-    expect(render('bash')).toContain('echo dispatch');
+    // Text only: once Shiki has loaded in this process (another file highlighted code), the
+    // command renders as token spans.
+    expect(render('bash').replace(/<[^>]+>/g, '')).toContain('echo dispatch');
   });
 
   test('unknown tool renders the generic fallback', () => {

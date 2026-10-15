@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "{credits} кредита / месец",
         "credits": "{credits} кредита",
         "price": "{amount} / мес.",
-        "popular": "Најпопуларније",
         "current": "Тренутни",
         "choose": "Изаберите ниво",
         "chooseHint": "Нивои почињу од {min} месечно.",
@@ -2853,7 +2852,14 @@
     "failedToCopyFileContent": "Копирање садржаја датотеке није успело",
     "noContentAvailable": "Нема доступног садржаја",
     "noContentDescription": "Извршење овог алата није произвело никакав улазни или излазни садржај за приказ.",
-    "tool": "Алат"
+    "tool": "Алат",
+    "codemode": {
+      "ranScript": "Скрипта је покренута",
+      "runningScript": "Скрипта се извршава",
+      "scriptFailed": "Скрипта није успела",
+      "calls": "{count, plural, one {# позив алата} few {# позива алата} other {# позива алата}}",
+      "noOutput": "Нема излаза"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Схватио сам",

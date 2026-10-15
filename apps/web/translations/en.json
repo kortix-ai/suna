@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "{credits} credits / month",
         "credits": "{credits} credits",
         "price": "{amount} / mo",
-        "popular": "Most popular",
         "current": "Current",
         "choose": "Choose a tier",
         "chooseHint": "Tiers start at {min} a month.",
@@ -2853,7 +2852,14 @@
     "failedToCopyFileContent": "Failed to copy file content",
     "noContentAvailable": "No Content Available",
     "noContentDescription": "This tool execution did not produce any input or output content to display.",
-    "tool": "Tool"
+    "tool": "Tool",
+    "codemode": {
+      "ranScript": "Ran script",
+      "runningScript": "Running script",
+      "scriptFailed": "Script failed",
+      "calls": "{count, plural, one {# tool call} other {# tool calls}}",
+      "noOutput": "No output"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Got it",
