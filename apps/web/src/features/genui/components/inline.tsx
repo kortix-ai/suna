@@ -61,6 +61,17 @@ export function GenuiImage({ props }: GenuiComponentProps) {
   const t = useTranslations('genui');
   const inGrid = useContext(GenuiImageGridContext);
   const src = String(props.src);
+  // An image with text is a figure: the picture beside the sentences that say what to look for in it.
+  if (props.text && !inGrid) {
+    return (
+      <figure className="flex items-start gap-4">
+        <span className="bg-muted w-28 shrink-0 overflow-hidden rounded-lg sm:w-40 [&_img]:w-full [&_img]:rounded-none [&_img]:outline-0 [&>span]:block">
+          <MarkdownImage src={src} alt={props.alt} flush />
+        </span>
+        <figcaption className="text-foreground min-w-0 text-sm text-pretty">{props.text}</figcaption>
+      </figure>
+    );
+  }
   return (
     <figure
       className={cn(

@@ -298,6 +298,9 @@ const envSchema = z.object({
   // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
   // On by default. Off answers 503 and claims nothing: the box boots without a restore.
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
+  // How long `PUT …/log/blobs/<sha256>` waits for its body (P2.13): a body not read by then is
+  // cancelled with 408 and its upload slot freed. Under the route's 95 s request deadline.
+  SESSION_LOG_BLOB_READ_MS: optInt(60_000),
   // Operator switch for the retention purge of session content (P2.8, decision D6): session
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
@@ -1272,6 +1275,7 @@ export const config = {
   GENUI_ENABLED: env.GENUI_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
+  SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
