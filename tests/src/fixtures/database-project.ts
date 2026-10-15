@@ -44,7 +44,6 @@ export async function createDatabaseProject(
     userId: string;
     name: string;
     repoUrl?: string | null;
-    appsEnabled?: boolean;
     metadata?: Record<string, unknown>;
   },
   open: OpenProjectDb = openProjectDb,
@@ -99,7 +98,6 @@ export async function createDatabaseProject(
         input.repoUrl ?? null,
         JSON.stringify({
           ke2e: { database_only: true },
-          experimental: { apps: input.appsEnabled ?? true },
           onboarding_completed_at: "2026-01-01T00:00:00.000Z",
           ...(input.metadata ?? {}),
         }),
@@ -141,35 +139,6 @@ export async function setDatabaseEnterpriseDemo(
              trial_ends_at = now() + interval '30 days'`
         : `UPDATE kortix.credit_accounts SET trial_status = 'none', trial_tier = NULL WHERE account_id = $1::uuid`,
       [accountId],
-    );
-  } finally {
-    await client.end();
-  }
-}
-
-/**
- * Set one feature-flag override on a project row, as the operator route
- * (`PUT /v1/admin/api/projects/:id/features`) does. For browser journeys that
- * need the internal-only flag `apps`: a project owner cannot
- * write those through `PATCH /projects/:id/features`.
- */
-export async function setDatabaseProjectFeature(
-  env: Env,
-  projectId: string,
-  feature: string,
-  enabled: boolean,
-  open: OpenProjectDb = openProjectDb,
-): Promise<void> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, "set a feature flag for");
-  const client = await open(databaseUrl);
-  try {
-    await client.query(
-      `UPDATE kortix.projects
-       SET metadata = coalesce(metadata, '{}'::jsonb)
-         || jsonb_build_object('experimental', coalesce(metadata->'experimental', '{}'::jsonb) || jsonb_build_object($2::text, $3::boolean)),
-         updated_at = now()
-       WHERE project_id = $1::uuid`,
-      [projectId, feature, enabled],
     );
   } finally {
     await client.end();

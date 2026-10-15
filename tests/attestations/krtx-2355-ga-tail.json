@@ -1,0 +1,21 @@
+{
+  "source_hash": "59e60bdede42e9d37d1dfc35045022cf7e0dfca0981da6a309869e486ef22bb4",
+  "diff_files": [
+    "apps/cli/src/commands/projects.ts",
+    "apps/web/src/features/workspace/capabilities/agents/agent-apps-grant.test.ts",
+    "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
+    "tests/e2e/specs/18-apps-ui.spec.ts",
+    "tests/e2e/specs/31-agent-apps-grant.spec.ts",
+    "tests/src/fixtures/database-project.ts",
+    "tests/unit/database-project-fixture.test.ts"
+  ],
+  "diff_hash": "ffc97edf4187ca93693a07404a2f786dda609517e3be5f4dbbce436ae6d5c062",
+  "head": "81467e6a84d14aedac7915eb38fe03f9b4459a0a",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T14:47:46.901Z"
+}

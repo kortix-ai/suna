@@ -646,7 +646,7 @@ function AgentHeader({
 
 // ─── Editable body ─────────────────────────────────────────────────────────
 
-const EDITABLE_SECTIONS: readonly AgentConfigSectionKey[] = AGENT_CONFIG_SECTIONS.map((s) => s.key);
+export const EDITABLE_SECTIONS: readonly AgentConfigSectionKey[] = AGENT_CONFIG_SECTIONS.map((s) => s.key);
 
 /** What a v1 project, or a reader without write, can still see. */
 const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [

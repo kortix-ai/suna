@@ -96,7 +96,6 @@ describe("database-only project fixture", () => {
       null,
       JSON.stringify({
         ke2e: { database_only: true },
-        experimental: { apps: true },
         onboarding_completed_at: "2026-01-01T00:00:00.000Z",
       }),
     ]);
@@ -125,13 +124,12 @@ describe("database-only project fixture", () => {
       "/tmp/ke2e-local.git",
       JSON.stringify({
         ke2e: { database_only: true },
-        experimental: { apps: true },
         onboarding_completed_at: "2026-01-01T00:00:00.000Z",
       }),
     ]);
   });
 
-  it("can create a project with Apps disabled for the opt-in journey", async () => {
+  it("writes no experimental key — Apps is GA and there is no flag to opt into", async () => {
     const db = database();
 
     await createDatabaseProject(
@@ -139,15 +137,12 @@ describe("database-only project fixture", () => {
       {
         accountId: "11111111-1111-4111-8111-111111111111",
         userId: "22222222-2222-4222-8222-222222222222",
-        name: "apps-opt-in",
-        appsEnabled: false,
+        name: "apps-ga",
       },
       db.open,
     );
 
-    expect(JSON.parse(db.query.mock.calls[0][1][5])).toMatchObject({
-      experimental: { apps: false },
-    });
+    expect(JSON.parse(db.query.mock.calls[0][1][5])).not.toHaveProperty("experimental");
   });
 
   it("merges setup-only metadata without replacing existing project metadata", async () => {

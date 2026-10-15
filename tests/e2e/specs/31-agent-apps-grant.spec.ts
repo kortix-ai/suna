@@ -1,7 +1,5 @@
 import { expect, test } from '@playwright/test';
 
-import { loadEnv } from '../../src/core/env';
-import { setDatabaseProjectFeature } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import { createManifestProject, type ManifestProject } from '../helpers/manifest-project';
 import {
@@ -10,7 +8,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../helpers/ui';
+import { dismissWelcomeCard, selectAccountForUi } from '../helpers/ui';
 
 /**
  * Apps are a per-agent resource — the editor's Access rail has an Apps page
@@ -18,7 +16,8 @@ import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../he
  * through the same agent-config PUT as every other grant.
  *
  * Three things only a browser can prove, so they live here rather than in a
- * REST flow: the page is gated on the project's `apps` feature flag, a pick
+ * REST flow: the grant page renders for every project (Apps went GA,
+ * 2026-10-14 — there is no flag left to gate it), a pick
  * puts the App's SLUG (never its id) on the wire, and `All` sends the `all`
  * literal instead of an expanded list that would freeze the grant at today's
  * App roster.
@@ -31,7 +30,7 @@ const auth = {
 };
 const api = createApiJsonClient(apiBase);
 
-test('31 — the agent editor grants Apps by slug, gated on the Apps feature flag', async ({
+test('31 — the agent editor grants Apps by slug for every project', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -65,28 +64,8 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
     await installBrowserSessionDirect(page, session, route, auth);
     await selectAccountForUi(page, accountId);
 
-    // 1. Flag off: the rail has no Apps topic and `?section=apps` falls back.
-    // The fixture enables `apps` by default (`database-project.ts`), so turn it
-    // off rather than assuming the project's state. `apps` is internal-only: a
-    // project owner gets 403 on PATCH /features, so write the operator's
-    // override directly.
-    await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', false);
-    await page.goto(route, { waitUntil: 'domcontentloaded' });
-    await dismissOnboarding(page);
-    await dismissWelcomeCard(page);
-    // The rail is a vertical tablist, and the project sidebar has its own
-    // "Apps" link — scope to the rail or the sidebar answers for it.
-    const rail = page.getByRole('navigation', { name: 'Agent sections' });
-    await expect(rail.getByRole('tab', { name: 'Kortix permissions' })).toBeVisible();
-    await expect(rail.getByRole('tab', { name: 'Apps', exact: true })).toHaveCount(0);
-    await expect(page.getByTestId('agent-apps-grant')).toHaveCount(0);
-    await expect(rail.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
-
-    // 2. Flag on, with one restricted App to grant.
-    await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', true);
+    // One restricted App to grant. Apps went GA (2026-10-14): creation needs
+    // no flag, and `?section=apps` lands on the grant page for every project.
     const app = await api<{ app_id: string; slug: string }>(
       token,
       'POST',
@@ -109,6 +88,10 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
 
     await page.goto(route, { waitUntil: 'domcontentloaded' });
     await dismissWelcomeCard(page);
+    // The rail is a vertical tablist, and the project sidebar has its own
+    // "Apps" link — scope to the rail or the sidebar answers for it.
+    const rail = page.getByRole('navigation', { name: 'Agent sections' });
+    await expect(rail.getByRole('tab', { name: 'Kortix permissions' })).toBeVisible();
     const section = page.getByTestId('agent-apps-grant');
     await expect(section).toBeVisible();
     await expect(rail.getByRole('tab', { name: 'Apps', exact: true })).toBeVisible();
@@ -120,7 +103,7 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
       section.getByText('The agent also needs project.app.read in its Kortix permissions.'),
     ).toBeVisible();
 
-    // 3. Pick the App. The PUT carries the slug, and the read-back agrees.
+    // 1. Pick the App. The PUT carries the slug, and the read-back agrees.
     await section.getByRole('tab', { name: 'Pick' }).click();
     await section.getByRole('checkbox', { name: `Grant ${app.slug}` }).click();
     await dismissWelcomeCard(page);
@@ -130,7 +113,7 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
     const picked = await api<{ block: { apps: string[] | 'all' } }>(token, 'GET', configEndpoint);
     expect(picked.block.apps).toEqual([app.slug]);
 
-    // 4. All sends the literal, so an App added later is covered too.
+    // 2. All sends the literal, so an App added later is covered too.
     await page.reload({ waitUntil: 'domcontentloaded' });
     await dismissWelcomeCard(page);
     await expect(section.getByRole('checkbox', { name: `Grant ${app.slug}` })).toBeChecked();
