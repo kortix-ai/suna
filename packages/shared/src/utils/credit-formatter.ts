@@ -28,6 +28,29 @@ export function formatDollarsAsCredits(
 }
 
 /**
+ * A USD amount the account HOLDS or SPENT (balance, usage, a turn's cost),
+ * shown in credits (1 credit = $0.01). Prices the customer pays stay in USD.
+ *
+ * Whole credits from 10 up; below that up to two decimals, so a sub-cent turn
+ * never reads 0; a non-zero amount under 0.01 credits reads `<0.01`.
+ */
+export function formatUsdAsCredits(
+  usd: number | null | undefined,
+  options?: { locale?: string },
+): string {
+  if (usd === null || usd === undefined || isNaN(usd)) return "0";
+  const credits = usd * CREDITS_PER_DOLLAR;
+  const magnitude = Math.abs(credits);
+  const locale = options?.locale ?? "en-US";
+  if (magnitude === 0) return "0";
+  if (magnitude < 0.01) return `${credits < 0 ? "-" : ""}<${(0.01).toLocaleString(locale)}`;
+  if (magnitude < 10) {
+    return credits.toLocaleString(locale, { maximumFractionDigits: 2 });
+  }
+  return (Math.round(credits) + 0).toLocaleString(locale);
+}
+
+/**
  * Format credits for display with thousand separators
  * @param credits - The credit amount to format
  * @param options - Formatting options
