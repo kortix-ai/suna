@@ -19651,7 +19651,12 @@
       "text91dc861375bc": "モバイルのリリースポリシーを表示しました",
       "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
       "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar",
-      "text2313fe21ea84": "{name}を編集"
+      "text2313fe21ea84": "{name}を編集",
+      "text7193a9579bbc": "ボタングループ",
+      "text0abba441f16e": "水平",
+      "text727cd3a64d79": "垂直",
+      "textcecd0c56d299": "メールを接続",
+      "text856f98cb4a26": "メンバーは 1px 離れて並びます。外側の角はボタンの角丸を保ち、隣と接する角は 4px に縮みます。すべての Button バリアントで、水平または <code>orientation=\"vertical\"</code> で動作します。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

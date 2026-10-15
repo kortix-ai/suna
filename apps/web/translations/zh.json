@@ -19651,7 +19651,12 @@
       "text91dc861375bc": "已查看移动端发布策略",
       "texta37dd5ef6ef2": "自定义侧边栏",
       "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar",
-      "text2313fe21ea84": "编辑 {name}"
+      "text2313fe21ea84": "编辑 {name}",
+      "text7193a9579bbc": "按钮组",
+      "text0abba441f16e": "水平",
+      "text727cd3a64d79": "垂直",
+      "textcecd0c56d299": "连接电子邮箱",
+      "text856f98cb4a26": "成员之间相距 1px。外侧圆角保留按钮圆角半径；与相邻元素相接的圆角缩小为 4px。适用于所有 Button 变体，水平或 <code>orientation=\"vertical\"</code>。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
