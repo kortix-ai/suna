@@ -408,14 +408,9 @@ export function ProjectHome({
       <FloatingMenuButton onPress={onOpenDrawer}>
         {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
         {__DEV__ ? (
-          <>
-            <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/genui-debug')}>
-              <Text>Debug GenUI</Text>
-            </Button>
-            <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/toast-debug')}>
-              <Text>Debug toasts</Text>
-            </Button>
-          </>
+          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/genui-debug')}>
+            <Text>Debug GenUI</Text>
+          </Button>
         ) : null}
       </FloatingMenuButton>
 

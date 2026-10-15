@@ -160,7 +160,7 @@ function ToastActions({
 }) {
   if (!actions?.length && !meta) return null;
   // xs ghost buttons, pulled left by their own padding so the first label
-  // lines up with the title (Linear's "View recently deleted").
+  // lines up with the title.
   return (
     <div className="-ml-2.5 flex items-center gap-0.5 text-xs leading-5">
       {(actions ?? []).map((action) => (
@@ -240,8 +240,8 @@ function EntityTile({
 }
 
 /**
- * The toast card itself. `renderToast` mounts it through sonner; /debug/toast
- * renders it inline so every variant is visible at once.
+ * The toast card itself. `renderToast` mounts it through sonner; the session
+ * notifications mount it through `customToast`.
  */
 export function ToastCard({
   message,
@@ -306,7 +306,7 @@ const isEditable = (target: EventTarget | null) =>
  * The one-line undo toast: icon, message, an Undo key and ×. While it is on
  * screen, ⌘Z / Ctrl+Z outside a text field undoes too.
  */
-export function UndoToastCard({
+function UndoToastCard({
   message,
   icon,
   undoLabel,

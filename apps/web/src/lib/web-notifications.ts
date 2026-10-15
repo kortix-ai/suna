@@ -482,8 +482,8 @@ const TOAST_BY_VARIANT = {
   info: infoToast,
 } as const;
 
-/** Which toast variant each kind uses. Shared with /debug/toast, which draws them. */
-export const NOTIFICATION_TOAST_VARIANT: Record<WebNotificationType, 'success' | 'error' | 'warning' | 'info'> = {
+/** Which toast variant each kind uses. */
+const NOTIFICATION_TOAST_VARIANT: Record<WebNotificationType, 'success' | 'error' | 'warning' | 'info'> = {
   completion: 'success',
   error: 'error',
   question: 'warning',
@@ -550,7 +550,7 @@ function showInAppToast(payload: WebNotificationPayload) {
   }
 }
 
-/** The in-app toast alone — no sound, badge or OS notification. For /debug/toast. */
+/** The in-app toast alone — no sound, badge or OS notification (an inbox arrival). */
 export const showInAppNotification = (payload: WebNotificationPayload) => showInAppToast(payload);
 
 // ----------------------------------------------------------------------------

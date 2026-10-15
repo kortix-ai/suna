@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils';
  * The session notification cards drawn on the toast surface: a failed turn
  * (error glyph + error preview + Open) and the stack several finished turns
  * collapse into. A single finished turn uses the plain `ToastCard` with an
- * entity row. Board: Paper "Toasts · Linear-style system + task-complete
- * notification", artboard 02.
+ * entity row. Board: Paper, Kortix file, the toasts page,
+ * artboard 02.
  */
 
 const CARD = 'bg-background text-foreground smooth-shadow-ring-sm rounded-xl';
