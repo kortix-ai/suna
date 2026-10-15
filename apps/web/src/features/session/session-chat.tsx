@@ -145,7 +145,7 @@ import { sessionTurnSpan } from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
+import { dismissToast, errorToast, infoToast, undoToast } from '@/components/ui/toast';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
@@ -1414,30 +1414,23 @@ export function SessionChat({
       // gating every removal behind a modal would make it unusable, and the
       // thing being removed is a draft, not data. Reversible beats guarded.
       const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
-      infoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
+      undoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
         id: undoToastId,
         duration: 5000,
-        button: (
-          <Button
-            size="sm"
-            variant="outline"
-            // The SAME `clientMessageId`, so an undo re-creates ONE row and a
+        undoLabel: tHardcodedUi.raw('i18nComplete.texta737e54996f8'),
+        // The SAME `clientMessageId`, so an undo re-creates ONE row and a
             // double-click cannot create two. A FRESH wire id, because
             // OpenCode orders by id and the original one was minted before the
             // turn that has been writing higher ids since. The parts and
             // overrides are the ORIGINALS, straight from the delete's own
             // response — see `createQueueUndoAction`.
-            onClick={createQueueUndoAction({
-              removed,
-              mintMessageId: () => mintSessionWireMessageId(sessionId),
-              enqueue: promptInbox.enqueue,
-              dismiss: () => dismissToast(undoToastId),
-              onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
-            })}
-          >
-            {tHardcodedUi.raw('i18nComplete.texta737e54996f8')}
-          </Button>
-        ),
+        onUndo: createQueueUndoAction({
+          removed,
+          mintMessageId: () => mintSessionWireMessageId(sessionId),
+          enqueue: promptInbox.enqueue,
+          dismiss: () => dismissToast(undoToastId),
+          onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
+        }),
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps

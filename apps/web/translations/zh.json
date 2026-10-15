@@ -11184,6 +11184,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "未知错误",
       "text27d628c8b427": "{label} 已完成。",
+      "textc0589750863c": "{count} 个任务已完成",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "返回应用（Applications → 您的应用），并确认已选中“Sign On”标签页。",

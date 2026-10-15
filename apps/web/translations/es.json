@@ -11184,6 +11184,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Error desconocido",
       "text27d628c8b427": "{label} ha terminado.",
+      "textc0589750863c": "{count} tareas terminadas",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Vuelve a la aplicación (Applications → tu aplicación) y asegúrate de que la pestaña \"Sign On\" esté seleccionada.",

@@ -11184,6 +11184,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "不明なエラー",
       "text27d628c8b427": "{label}が完了しました。",
+      "textc0589750863c": "{count} 件のタスクが完了しました",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "アプリケーション（Applications → 対象アプリ）に戻り、「Sign On」タブが選択されていることを確認します。",

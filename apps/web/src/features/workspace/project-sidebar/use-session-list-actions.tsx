@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { dismissToast, errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast, undoToast } from '@/components/ui/toast';
+import { ArchiveIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionListState } from '@kortix/sdk/react';
 import { useMemo } from 'react';
@@ -38,23 +38,13 @@ export function useSessionListActions(projectId: string) {
         successToast(t('unarchived'));
         return;
       }
-      const toastId = `session-archive-undo-${sessionId}`;
-      successToast(t('archived'), {
-        id: toastId,
+      undoToast(t('archived'), {
+        id: `session-archive-undo-${sessionId}`,
         // As long as delete's Undo: the row has already left the list.
         duration: UNDO_TOAST_MS,
-        button: (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              dismissToast(toastId);
-              void setArchived(sessionId, false);
-            }}
-          >
-            {t('undo')}
-          </Button>
-        ),
+        icon: <ArchiveIcon className="size-4" />,
+        undoLabel: t('undo'),
+        onUndo: () => void setArchived(sessionId, false),
       });
     };
 

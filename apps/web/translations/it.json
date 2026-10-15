@@ -11184,6 +11184,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Errore sconosciuto",
       "text27d628c8b427": "{label} ha terminato.",
+      "textc0589750863c": "{count} attività completate",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Torna all'applicazione (Applications → la tua app) e assicurati che sia selezionata la scheda \"Sign On\".",

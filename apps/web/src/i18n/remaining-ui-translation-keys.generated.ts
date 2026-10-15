@@ -3,6 +3,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Drive: 'text6312b4b9baf1',
   Drives: 'text729fe0e7b138',
   '{label} has finished.': 'text27d628c8b427',
+  '{count} tasks finished': 'textc0589750863c',
   '{label} needs permission for: {toolName}': 'textbe9a4d2a34e1',
   '**This week:** 7 deals advanced, 2 slipped. - **Acme** → Proposal ($120k) - **Globex** → Negotiation ($90k) - At risk: **Initech**, **Umbrella** — no activity in 14 days':
     'texte0f5b5af5e02',
