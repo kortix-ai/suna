@@ -1581,6 +1581,29 @@ html[data-desktop='true'] .kx-desktop-band-row {
     calc(var(--kx-titlebar-control-top) + var(--kx-titlebar-control-size) + var(--spacing))
   );
 }
+
+/* The project shell's floating account corner (KRTX-2145): the identity chip
+   that sits top-right on every project view that does not render its own
+   (`project-shell.tsx`). Same band arithmetic as `.kx-desktop-band-row` — on
+   the desktop shell the top of the window is the title-bar band, and the
+   corner must clear the macOS traffic lights and the Win/Linux controls with
+   one spacing step of air. Unlayered, so it beats the element's own `top-*`
+   utilities, exactly like the rule above. */
+html[data-desktop='true'] .kx-app-account-corner {
+  top: max(
+    calc(var(--kx-titlebar-inset) + var(--spacing) * 2),
+    calc(var(--kx-titlebar-control-top) + var(--kx-titlebar-control-size) + var(--spacing))
+  );
+}
+
+/* A view that carries its own account chip (the capability headers and the
+   session header render `<AccountMenuButton embedded>`) steps the corner
+   aside — two identity buttons for one person is the bug, not the feature.
+   The same `:has()` pattern the drag region above uses to detect a view that
+   owns the titlebar band. */
+[data-kx-titlebar-owner]:has([data-kx-account-owner]) .kx-app-account-corner {
+  display: none;
+}
 html[data-desktop='true'] .kx-web-only-back {
   display: none;
 }

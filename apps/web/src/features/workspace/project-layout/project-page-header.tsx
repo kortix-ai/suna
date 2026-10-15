@@ -1,6 +1,7 @@
 'use client';
 
 import { useOptionalSidebar } from '@/components/ui/sidebar';
+import { AccountMenuButton } from '@/features/workspace/account-menu-button';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 
 /**
@@ -10,6 +11,10 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
  * has the same height and clears the desktop window controls the same way.
  * A page has one view, so the title is plain text, not a one-tab underline
  * bar. `children` sit at the trailing edge (page actions, a docs link).
+ *
+ * The trailing edge ends with the account chip (KRTX-2145): identity, profile
+ * settings and log out live in every top row. The embedded marker tells the
+ * project shell's floating corner to stand down on these views.
  *
  * The e2e journeys (`18-apps-ui`, `36-reminders-ui`) find the page by the
  * `<h1>`.
@@ -32,6 +37,7 @@ export function ProjectPageHeader({
         <h1 className="text-foreground truncate text-sm font-medium">{title}</h1>
       </div>
       {children ? <div className="flex shrink-0 items-center gap-1">{children}</div> : null}
+      <AccountMenuButton embedded />
     </div>
   );
 }

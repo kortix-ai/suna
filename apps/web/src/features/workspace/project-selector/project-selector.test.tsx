@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -6,6 +6,17 @@ import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk'
 
 import { ProjectSelectorView, type ProjectSelectorViewProps } from './project-selector';
 import { buildAccountSections } from './project-selector-model';
+
+// The top bar's account chip reads the session itself now (KRTX-2145), so the
+// static render stands in a stub provider — the selector no longer threads
+// `email` / `name` / `signingOut` / `onLogOut` through.
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({
+    user: { email: 'user@example.com', user_metadata: { name: 'Dogfood Tester' } },
+    session: null,
+    isLoading: false,
+  }),
+}));
 
 function account(id: string, role: KortixAccount['account_role'], name: string): KortixAccount {
   return { account_id: id, name, account_role: role } as KortixAccount;
@@ -28,7 +39,6 @@ const invite = {
 
 function render(overrides: Partial<ProjectSelectorViewProps>): string {
   const props: ProjectSelectorViewProps = {
-    email: 'user@example.com',
     loading: false,
     loadFailed: false,
     sections: [],
@@ -36,12 +46,10 @@ function render(overrides: Partial<ProjectSelectorViewProps>): string {
     createHref: '/new?account=a',
     joiningInviteId: null,
     openingProjectId: null,
-    signingOut: false,
     onJoin: () => {},
     onOpenProject: () => {},
     onRetryAccount: () => {},
     onRetryAll: () => {},
-    onLogOut: () => {},
     ...overrides,
   };
   return renderToStaticMarkup(createElement(ProjectSelectorView, props));
@@ -136,10 +144,11 @@ describe('ProjectSelectorView', () => {
   });
 
   test('the account menu (which holds Log out) is always present', () => {
+    // KRTX-2145: the identity is the signed-in user's, from the session the
+    // chip reads itself — not a prop the page threads through.
     expect(render({})).toContain('Logged in as');
     expect(render({ loading: true })).toContain('Logged in as');
-    expect(render({ name: 'Dogfood Tester' })).toContain('>Dogfood Tester</span>');
-    expect(render({ name: 'Dogfood Tester' })).toContain('Logged in as Dogfood Tester');
-    expect(render({ name: '  ' })).toContain('>user@example.com</span>');
+    expect(render({})).toContain('>Dogfood Tester</span>');
+    expect(render({})).toContain('Logged in as Dogfood Tester');
   });
 });

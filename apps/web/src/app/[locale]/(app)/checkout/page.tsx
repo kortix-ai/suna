@@ -12,6 +12,8 @@ import { useSearchParams } from 'next/navigation';
 import Script from 'next/script';
 import { Suspense, useEffect, useState } from 'react';
 
+import { AccountTopBar } from '@/features/workspace/account-top-bar';
+
 /** The slice of Stripe.js (loaded from js.stripe.com below) this page calls.
  *  `window.Stripe` used to type-check only because `@next/third-parties`
  *  widened `Window` with an `any` index signature; the root layout no longer
@@ -147,6 +149,12 @@ function CheckoutContent() {
           setStripeLoaded(true);
         }}
       />
+
+      {/* The account row (KRTX-2145): identity, profile settings and log out
+          on every authenticated page. Outside the positioned frames below on
+          purpose, so its `absolute` resolves against the viewport — the same
+          trick /new documents on its own <main>. */}
+      <AccountTopBar />
 
       {error ? (
         <AuthFrame footerVariant="none">

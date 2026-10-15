@@ -88,12 +88,13 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
     to: 'function ProjectStartError(',
   },
   {
-    name: "/new's Log out",
-    file: 'features/workspace/new/new-workspace-page.tsx',
-    // The control moved into `AccountTopBar` (#8286); the page owns only the
-    // `onLogOut` handler it passes in, so the slice is that handler.
-    from: 'onLogOut={() => {',
-    to: 'back={{',
+    name: "the account chip's Log out (every authenticated page)",
+    file: 'features/workspace/account-menu-button.tsx',
+    // The control moved into `AccountMenuButton` (KRTX-2145); /new renders it
+    // through `AccountTopBar` like every other page now, so the slice is the
+    // menu item's onSelect handler — the only sign-out trigger the chip owns.
+    from: 'onSelect={() => {',
+    to: '</DropdownMenuItem>',
   },
   {
     name: "phone verification's Sign out",
@@ -440,9 +441,9 @@ describe('the three bare logout controls now say something is happening', () => 
       holdsDialog: true,
     },
     {
-      name: "/new's Log out",
-      file: 'features/workspace/account-top-bar.tsx',
-      handler: ['disabled={signingOut}', 'onSelect={onLogOut}'],
+      name: "the account chip's Log out",
+      file: 'features/workspace/account-menu-button.tsx',
+      handler: ['disabled={signingOut}', 'onSelect={() => {'],
       control: ['disabled={signingOut}', '</button>'],
       holdsDialog: false,
     },

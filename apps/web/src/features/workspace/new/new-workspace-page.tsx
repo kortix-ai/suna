@@ -36,7 +36,6 @@ import {
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -163,8 +162,6 @@ export function NewWorkspacePage() {
   useEffect(() => {
     setState((current) => (current.name ? current : { ...current, name: suggestWorkspaceName() }));
   }, []);
-  // Never cleared: the document is replaced, not re-rendered.
-  const [signingOut, setSigningOut] = useState(false);
   const reduceMotion = useReducedMotion();
   // One source for "is the icon column open" — the animation, the a11y
   // attributes and the inert gate all read the same value.
@@ -294,16 +291,10 @@ export function NewWorkspacePage() {
           this tree, the bar's `absolute` resolves against the initial
           containing block — the true viewport edges — rather than the centered
           max-w-md column. Sits ahead of the <form> so it stays reachable
-          regardless of form state. `performSignOut`, not a bare `signOut()`:
-          that neither awaited nor navigated, and left the user on the form. */}
+          regardless of form state. The bar's account menu signs out itself
+          (`performSignOut`, not a bare `signOut()`: that neither awaited nor
+          navigated, and left the user on the form). */}
       <AccountTopBar
-        email={user?.email ?? null}
-        name={user?.user_metadata?.name}
-        signingOut={signingOut}
-        onLogOut={() => {
-          setSigningOut(true);
-          void performSignOut();
-        }}
         back={{ href: '/projects', label: t('actions.back') }}
         // Desktop only. The shell has no browser toolbar, so without this the
         // account menu was the only way off this page there. `replace`, not

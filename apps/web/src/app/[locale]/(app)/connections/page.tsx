@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { OutcomeTitle } from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { AccountTopBar } from '@/features/workspace/account-top-bar';
 import { isConnectorsEnabled } from '@/lib/config';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 
@@ -48,7 +49,13 @@ function ConnectionResult() {
   if (!connectorsEnabled) return null;
 
   return (
-    <AuthFrame footerVariant="none">
+    <>
+      {/* The account row (KRTX-2145): identity, profile settings and log out
+          on every authenticated page. Outside the positioned `AuthFrame` on
+          purpose, so its `absolute` resolves against the viewport — the same
+          trick /new documents on its own <main>. */}
+      <AccountTopBar />
+      <AuthFrame footerVariant="none">
       <Rise>
         <StepHeader
           title={
@@ -78,6 +85,7 @@ function ConnectionResult() {
           {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad')}
         </Button>
       </Rise>
-    </AuthFrame>
+      </AuthFrame>
+    </>
   );
 }

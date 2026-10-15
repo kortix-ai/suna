@@ -114,25 +114,21 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     // invalid form read it as "you cannot leave" (dev, 2026-09-17). The exit
     // is a plain link to the project selector, rendered ahead of the <form> so
     // it is reachable regardless of form state. The row is the shared
-    // `AccountTopBar`; Log out lives in its account menu.
+    // `AccountTopBar`; since KRTX-2145 the Log out control lives in the
+    // self-contained `AccountMenuButton` the bar renders — the same chip every
+    // other page uses — so the page carries none of the sign-out wiring.
     expect(code).toContain("back={{ href: '/projects', label: t('actions.back') }}");
     const formIndex = code.indexOf('<form');
     expect(code.indexOf('<AccountTopBar')).toBeGreaterThan(0);
     expect(code.indexOf('<AccountTopBar')).toBeLessThan(formIndex);
     expect(bar).toContain('<Link href={back.href}>');
-    expect(bar).toContain("t('actions.logOut')");
-    // `performSignOut()`, not the old bare `void signOut()`. Spelled in full on
-    // purpose: `signOut()` is a SUBSTRING of `performSignOut()`, so the previous
-    // assertion could not tell the fixed control from the broken one — which
-    // neither awaited the sign-out nor navigated, and so signed the user out
-    // and left them sitting on this form.
-    expect(code).toContain('void performSignOut();');
-    // ...and it now says so while it works. The sign-out makes a server round
-    // trip this control never made before and is bounded at four steps, which
-    // is long enough that a silent button reads as a dead one.
-    expect(code).toContain('signingOut={signingOut}');
-    expect(bar).toContain('disabled={signingOut}');
-    expect(bar).toContain("signingOut ? t('actions.signingOut') : t('actions.logOut')");
+    // The bar's sign-out is the shared chip; the chip's handler, its spinner
+    // state and its navigation-free sign-out are audited in
+    // `sign-out-navigation.test.ts` and `account-menu-button.test.tsx`.
+    expect(bar).toContain('<AccountMenuButton />');
+    expect(code).not.toContain('performSignOut');
+    expect(code).not.toContain('signingOut');
+    expect(code).not.toContain('onLogOut');
   });
 
   test('the create-into account is a field IN the form, above the repository fields', () => {

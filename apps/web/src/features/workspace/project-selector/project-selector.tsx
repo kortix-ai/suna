@@ -28,7 +28,6 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
@@ -55,8 +54,6 @@ import { useProjectSelectorData } from './use-project-selector-data';
  * pushed into the create form when they have something to open.
  */
 export interface ProjectSelectorViewProps {
-  email: string | null;
-  name?: string | null;
   loading: boolean;
   loadFailed: boolean;
   sections: AccountSection[];
@@ -65,17 +62,19 @@ export interface ProjectSelectorViewProps {
   createHref: string | null;
   joiningInviteId: string | null;
   openingProjectId: string | null;
-  signingOut: boolean;
   onJoin: (invite: MyAccountInvite) => void;
   onOpenProject: (event: MouseEvent<HTMLAnchorElement>, project: KortixProject) => void;
   onRetryAccount: (accountId: string) => void;
   onRetryAll: () => void;
-  onLogOut: () => void;
 }
 
 export function ProjectSelectorView(props: ProjectSelectorViewProps) {
   const t = useTranslations('projectSelector');
-  const { email, loading, loadFailed, sections, invites, createHref } = props;
+  // The no-access copy names the signed-in email — read from the session like
+  // the top bar's account chip does (KRTX-2145 removed the page-threaded
+  // `email` prop this used to share with it).
+  const email = useAuth().user?.email ?? null;
+  const { loading, loadFailed, sections, invites, createHref } = props;
   const [query, setQuery] = useState('');
 
   const total = countProjects(sections);
@@ -101,7 +100,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-lg flex-col px-6 py-20">
-      <AccountTopBar email={email} name={props.name} signingOut={props.signingOut} onLogOut={props.onLogOut} />
+      <AccountTopBar />
 
       {/* `my-auto` centers the block in the viewport while it fits, and lets
           it start at the top and scroll once the project list is taller.
@@ -419,8 +418,6 @@ export function ProjectSelector() {
   const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
   const data = useProjectSelectorData();
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
-  // Never cleared: `performSignOut` replaces the document.
-  const [signingOut, setSigningOut] = useState(false);
 
   useSignedOutRedirect();
 
@@ -446,8 +443,6 @@ export function ProjectSelector() {
 
   return (
     <ProjectSelectorView
-      email={user?.email ?? null}
-      name={user?.user_metadata?.name}
       loading={data.listsLoading || data.invitesQuery.isLoading}
       loadFailed={data.accountsQuery.isError || data.allListsFailed}
       sections={data.sections}
@@ -455,7 +450,6 @@ export function ProjectSelector() {
       createHref={createHref}
       joiningInviteId={join.isPending ? (join.variables?.invite_id ?? null) : null}
       openingProjectId={openingProjectId}
-      signingOut={signingOut}
       onJoin={(invite) => join.mutate(invite)}
       onOpenProject={(event, project) => {
         // A modified click opens a new tab; this tab's state must not move.
@@ -466,10 +460,6 @@ export function ProjectSelector() {
       }}
       onRetryAccount={data.retryAccount}
       onRetryAll={data.retryAll}
-      onLogOut={() => {
-        setSigningOut(true);
-        void performSignOut();
-      }}
     />
   );
 }

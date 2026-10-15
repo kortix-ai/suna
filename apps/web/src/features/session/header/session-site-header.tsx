@@ -37,6 +37,7 @@ import { Copy } from '@/features/icon/icons/copy';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
+import { AccountMenuButton } from '@/features/workspace/account-menu-button';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -750,6 +751,12 @@ export function SessionSiteHeader({
                 </Button>
               </Hint>
             )}
+
+            {/* The account chip (KRTX-2145): identity, profile settings and log
+                out live in every top row. The embedded marker tells the
+                project shell's floating corner to stand down — this header is
+                the account surface for this view. */}
+            <AccountMenuButton embedded />
           </div>
         </div>
         {/* Floats under this row, anchored to it, so it tracks the titlebar
