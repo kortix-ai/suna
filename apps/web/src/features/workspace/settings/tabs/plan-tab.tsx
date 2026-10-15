@@ -60,15 +60,13 @@ export function PlanTab({ accountId }: { accountId: string | undefined }) {
         </div>
       ) : canWrite.allowed ? (
         <BillingAccountProvider accountId={accountId}>
-          {/* `showWallet={false}` (Jay, 2026-09-03: "in the plan, you need to
-              show just the team part, team seat"). The pane leads with
-              `PlanCard` — the subscription, with the seat count, price each
-              and monthly total as properties under it — instead of the
-              wallet-first `AccountOverviewTab`. Balance, credit composition,
-              period spend and limits are the Credits pane's subject now
-              (`tabs/credits-tab.tsx`), one row above this one in the rail.
-              the hub's Billing pane passes nothing and keeps the
-              wallet-first layout unchanged. */}
+          {/* `showWallet={false}`: the pane leads with `PlanCard` — the
+              subscription, its monthly amount, and the picker that changes
+              it — instead of the wallet-first `AccountOverviewTab`. Balance,
+              credit composition, period spend and limits are the Credits
+              pane's subject (`tabs/credits-tab.tsx`), one row above this one
+              in the rail. The hub's Billing pane passes nothing and keeps the
+              wallet-first layout. */}
           <BillingTab returnUrl={planReturnUrl()} isActive showWallet={false} />
           <GlobalUpgradeModal />
         </BillingAccountProvider>

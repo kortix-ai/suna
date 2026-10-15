@@ -212,10 +212,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const accountLoaded = !!accountState;
   // ONE resolver for "what is this account's billing situation" (see
   // lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
-  // `noPlan` with a "Subscribe to Team plan" pitch — which told a Team account
-  // on an ACTIVE $40/mo subscription with a $0.0099 wallet that it had no plan,
-  // while the modal that CTA opened correctly said "Out of credits — your Team
-  // plan and seats are unaffected". `can_run: false` means blocked, not unplanned.
+  // `noPlan` with a subscribe pitch — which told an account on an ACTIVE
+  // subscription with a $0.0099 wallet that it had no plan, while the modal
+  // that CTA opened correctly said "Out of credits — your plan is unaffected".
+  // `can_run: false` means blocked, not unplanned.
   const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);

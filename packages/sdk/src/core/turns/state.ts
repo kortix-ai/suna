@@ -317,15 +317,16 @@ export function formatDuration(ms: number): string {
 // ============================================================================
 
 /**
- * Platform markup applied to raw provider costs.
+ * Platform fee applied to raw provider costs: base × 1.055 (a 5.5% fee).
  *
  * The step-finish parts report raw provider cost (what the LLM vendor charges).
  * The billing system deducts cost × COST_MARKUP from the user's credits.
  * We apply the same multiplier here so the UI matches what's actually billed.
  *
- * Must stay in sync with KORTIX_MARKUP in apps/api/src/config.ts.
+ * Must stay in sync with LLM_PLATFORM_FEE_PERCENT in
+ * apps/api/src/billing/services/tiers.ts.
  */
-export const COST_MARKUP = 1.2;
+export const COST_MARKUP = 1.055;
 
 function estimateTokenCost(tokens: TokenUsageLike | undefined, rates: ModelCostRates): number {
   if (!tokens) return 0;
@@ -392,7 +393,7 @@ function assistantMessageIds(message: MessageInfoLike): {
  * Returns undefined if no step-finish parts found.
  *
  * The cost is multiplied by COST_MARKUP so the displayed value matches
- * the actual credits deducted (raw provider cost × 1.2).
+ * the actual credits deducted (raw provider cost × 1.055).
  */
 export function getTurnCost(
   parts: ReadonlyArray<PartWithMessage>,

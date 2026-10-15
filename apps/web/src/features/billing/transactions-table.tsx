@@ -50,6 +50,7 @@ const TRANSACTION_BADGES: Record<string, { label: string; variant: BadgeVariant 
   free_tier_grant: { label: 'Tier Grant', variant: 'secondary' },
   purchase: { label: 'Purchase', variant: 'default' },
   auto_topup: { label: 'Auto Top-up', variant: 'default' },
+  topup_bonus: { label: 'Top-up Bonus', variant: 'secondary' },
   machine_bonus: { label: 'Machine Bonus', variant: 'secondary' },
   admin_grant: { label: 'Admin Grant', variant: 'secondary' },
   promotional: { label: 'Promotional', variant: 'secondary' },

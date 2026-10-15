@@ -17,6 +17,7 @@ import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT } from '@/lib/desktop';
+import { INTERFACE_THEME_INIT_SCRIPT } from '@/lib/interface-themes';
 import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -256,6 +257,10 @@ export default async function RootLayout({
 
         {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
         <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
+
+        {/* Interface theme palettes on /new, /projects/** and /settings — set
+            before first paint so the stored palette never flashes the default. */}
+        <script dangerouslySetInnerHTML={{ __html: INTERFACE_THEME_INIT_SCRIPT }} />
 
         {/* Font preloading is handled automatically by next/font/local in fonts/roobert.ts */}
 

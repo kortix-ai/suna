@@ -522,12 +522,16 @@ export interface LegacyCheckRecord {
   klass: RuntimeClass;
   /** `[]` for every klass but `stale`. */
   staleReasons: StaleReason[];
+  /** The manifest build and the box the verdict was taken against. A check from another build or box proves nothing; absent on rows written before 2026-10-15. */
+  manifestBuild?: number | null;
+  externalId?: string | null;
 }
 
 export type LegacyBootstrapOutcome =
   | 'not-legacy'
   | 'unreachable'
   | 'skipped-recent-check'
+  | 'skipped-self-updating'
   | 'skipped-cooldown'
   | 'skipped-exhausted'
   | 'skipped-in-progress'
@@ -666,7 +670,80 @@ function readCheck(metadata: Record<string, unknown> | null | undefined): Legacy
     klass: r.klass as RuntimeClass,
     // Absent on a check written before this deploy — never invented.
     staleReasons: Array.isArray(r.staleReasons) ? (r.staleReasons as StaleReason[]) : [],
+    manifestBuild: typeof r.manifestBuild === 'number' || r.manifestBuild === null ? r.manifestBuild : undefined,
+    externalId: typeof r.externalId === 'string' ? r.externalId : undefined,
   };
+}
+
+/**
+ * A `current` verdict younger than {@link LEGACY_CHECK_TTL_MS}, taken against
+ * this manifest build on this box: an unforced bootstrap skips the box. A deploy
+ * (new build) or a new box under the row (new `externalId`) expires it, so the
+ * guarantee, the repair and the reaper re-probe once.
+ */
+function recentCurrentCheck(
+  check: LegacyCheckRecord | null,
+  nowMs: number,
+  manifestBuild: number | null,
+  externalId: string | null,
+): boolean {
+  if (check?.klass !== 'current') return false;
+  if (check.manifestBuild === undefined || check.manifestBuild !== manifestBuild) return false;
+  if (check.externalId !== externalId) return false;
+  const atMs = Date.parse(check.at);
+  return Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS;
+}
+
+const SELF_UPDATE_MAX_TICKS = 360;
+const FRESH_BOX_S = 600;
+const SELF_CONVERGING_REASONS: ReadonlySet<StaleReason> = new Set(['agent_swap_pending', 'running_assets_stale']);
+
+/**
+ * Is this box behind only on its OWN pending update, on a daemon that installs
+ * that update by itself? Then neither the open nor the reaper relaunches it:
+ * a legacy relaunch costs ~2 min of `starting` and races the daemon's swap.
+ *
+ * The marker is `runtime_truth` in the health body: daemons report it since
+ * the runtime-truth tick (#7792, 2026-09-27), which re-runs the asset pass and
+ * its swap request every 60 s. Every such daemon runs under the entrypoint
+ * supervisor loop that installs `agent.next` (since 2026-08-20). Any other
+ * stale reason, a daemon without the tick, or a daemon entry that is not
+ * `current` or young `converging` still repairs.
+ */
+export function updatesItself(health: unknown, classification: RuntimeClassification): boolean {
+  if (classification.klass !== 'stale') return false;
+  if (!classification.staleReasons.every((reason) => SELF_CONVERGING_REASONS.has(reason))) return false;
+  const truth = isRecord(health) ? health.runtime_truth : null;
+  if (!isRecord(truth) || !isRecord(truth.components)) return false;
+  // Positive evidence only: the box's own daemon entry reads current, or has
+  // been converging for under ~6 h (`attempts` grows by 1 per 60 s tick). A
+  // fresh box reads `unknown` until the tick after its first asset pass; its
+  // staged agent (`runtime.components.agent`) is the evidence there, within
+  // the first 10 min. Self-update off reports agent `skipped` and repairs.
+  const daemon = truth.components.daemon;
+  if (!isRecord(daemon)) return false;
+  if (daemon.state === 'current') return true;
+  if (daemon.state === 'converging') return Number(daemon.attempts) < SELF_UPDATE_MAX_TICKS;
+  if (daemon.state !== 'unknown' || !isRecord(health) || !isRecord(health.runtime)) return false;
+  const agent = isRecord(health.runtime.components) ? health.runtime.components.agent : null;
+  return agent === 'staged' && !(typeof health.uptime_s === 'number' && health.uptime_s >= FRESH_BOX_S);
+}
+
+/**
+ * Would an unforced bootstrap of this box, run now, return without touching
+ * it? True for a recent `current` check and for a box already staged on this
+ * manifest build. The open guarantee asks this before it reports `repairing`:
+ * a repair that will not run must not hold a serving box in `starting`.
+ */
+export function bootstrapWouldSkip(
+  metadata: Record<string, unknown> | null | undefined,
+  currentManifestBuild: number | null,
+  nowMs: number,
+  externalId: string | null,
+): boolean {
+  if (recentCurrentCheck(readCheck(metadata), nowMs, currentManifestBuild, externalId)) return true;
+  const record = readRecord(metadata);
+  return record?.state === 'staged' && record.manifestBuild === currentManifestBuild;
 }
 
 export function opencodeIdle(status: Record<string, unknown> | null): boolean {
@@ -786,6 +863,8 @@ export async function bootstrapLegacyRuntime(
         at: nowIso,
         klass: classification.klass,
         staleReasons: classification.staleReasons,
+        manifestBuild: build,
+        externalId: input.externalId,
       } satisfies LegacyCheckRecord,
     },
     new Date(nowMs - LEGACY_BOOTSTRAP_STALE_RUNNING_MS).toISOString(),
@@ -839,11 +918,9 @@ async function probeRuntimeForBootstrap(
       return { result: { outcome: 'skipped-in-progress' } };
     }
   }
-  if (!input.force && check && check.klass === 'current') {
-    const atMs = Date.parse(check.at);
-    if (Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS) {
-      return { result: { outcome: 'skipped-recent-check' } };
-    }
+  const manifestBuild = await deps.manifestBuild();
+  if (!input.force && recentCurrentCheck(check, nowMs, manifestBuild, input.externalId)) {
+    return { result: { outcome: 'skipped-recent-check' } };
   }
 
   const health = await deps.fetchHealth();
@@ -911,6 +988,12 @@ async function probeRuntimeForBootstrap(
       if (classification.klass === 'not-ok') return { result: { outcome: 'unreachable', classification } };
     }
   }
+  if (!input.force && updatesItself(health, classification)) {
+    // The daemon installs its own pending update (see `updatesItself`); a
+    // relaunch now would race that swap. Nothing is recorded, so the next
+    // pass probes again and repairs if the daemon stops converging.
+    return { result: { outcome: 'skipped-self-updating', classification } };
+  }
   if (classification.klass === 'blocked' && !input.unpin) {
     // The daemon's own supervisor already tried, rolled back, and latched
     // updates off. Repairing again would relaunch into the same rollback —
@@ -920,6 +1003,8 @@ async function probeRuntimeForBootstrap(
         at: nowIso,
         klass: 'blocked',
         staleReasons: [],
+        manifestBuild,
+        externalId: input.externalId,
       } satisfies LegacyCheckRecord,
     });
     deps.log('daemon is pinned after a rollback — blocked, not repaired', {
@@ -945,7 +1030,7 @@ async function probeRuntimeForBootstrap(
     });
   } else if (classification.klass === 'current') {
     const patch: Record<string, unknown> = {
-      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
+      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [], manifestBuild, externalId: input.externalId } satisfies LegacyCheckRecord,
     };
     // A bootstrap that was mid-flight is proven done by a current daemon.
     if (record && record.state !== 'converged') {
@@ -1199,7 +1284,13 @@ async function settleBootstrapReport(
       (after.opencodeComponent === 'current' || after.opencodeComponent === 'updated')
     ) {
       await deps.patchMetadata({
-        [LEGACY_CHECK_METADATA_KEY]: { at: new Date(deps.now()).toISOString(), klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
+        [LEGACY_CHECK_METADATA_KEY]: {
+          at: new Date(deps.now()).toISOString(),
+          klass: 'current',
+          staleReasons: [],
+          manifestBuild: attempt.running.manifestBuild,
+          externalId: input.externalId,
+        } satisfies LegacyCheckRecord,
       });
       const converged = await finishBootstrap(attempt, 'converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
       // `updated` = this daemon installed OpenCode during its boot pass. Daemon

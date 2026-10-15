@@ -21,13 +21,14 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
-import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { track } from '@/lib/track';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
@@ -40,8 +41,12 @@ import {
   SparkleIcon as SparklesSolid,
   WarningIcon,
 } from '@phosphor-icons/react';
-import { PreviewLoadingOverlay, PreviewRecentsLanding, SandboxAddressBar } from '../shared/sandbox-browser-chrome';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  PreviewLoadingOverlay,
+  PreviewRecentsLanding,
+  SandboxAddressBar,
+} from '../shared/sandbox-browser-chrome';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PREVIEW_MAX_WAIT_MS,
@@ -299,26 +304,28 @@ export function AppPreview({
         {/* Opening the app in a real browser tab is the only capability the
             panel itself cannot offer, so it is a visible control outside the
             pill. */}
-        <Hint label={tI18nComplete.raw('text306ef19c8ac3')} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!hasPreview}
-            aria-label={tI18nComplete.raw('text306ef19c8ac3')}
-            onClick={() => {
-              if (!previewUrl) return;
-              track('app_opened_new_tab');
-              window.open(previewUrl, '_blank', 'noopener,noreferrer');
-            }}
-            className="size-7 shrink-0 active:scale-[0.96]"
-          >
-            <ArrowSquareOutIcon className="size-3.5" />
-          </Button>
-        </Hint>
+        <ButtonGroup className="shrink-0">
+          <Hint label={tI18nComplete.raw('text306ef19c8ac3')} side="bottom">
+            <Button
+              variant="secondary"
+              size="icon"
+              disabled={!hasPreview}
+              aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+              onClick={() => {
+                if (!previewUrl) return;
+                track('app_opened_new_tab');
+                window.open(previewUrl, '_blank', 'noopener,noreferrer');
+              }}
+              className="size-7 shrink-0 active:scale-[0.96]"
+            >
+              <ArrowSquareOutIcon className="size-3.5" />
+            </Button>
+          </Hint>
 
-        <PanelWidthButton isMobile={isMobile} />
+          <PanelWidthButton isMobile={isMobile} />
 
-        <CloseButton onClose={onClose} />
+          <CloseButton onClose={onClose} />
+        </ButtonGroup>
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">

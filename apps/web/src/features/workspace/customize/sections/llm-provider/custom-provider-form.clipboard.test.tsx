@@ -23,7 +23,9 @@ mock.module('@kortix/sdk/react', () => ({
 }));
 mock.module('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
+  MotionConfig: ({ children }: { children: ReactNode }) => children,
   m: { span: ({ children }: { children: ReactNode }) => <span>{children}</span> },
+  MotionConfig: ({ children }: { children: ReactNode }) => children,
 }));
 const { CustomProviderForm } = await import('./custom-provider-form');
 const expectedSnippet = JSON.stringify(

@@ -16,9 +16,11 @@
  * `seq_max` is the highest seq each thread holds, tombstones included: a restored box
  * numbers its next message above it, so it never collides on (session, thread, seq).
  *
- * Records are served as stored. A text over 256 kB is its 16 kB preview; `blobs` names
- * each one, and the daemon reads the full text through the attachments route with its
- * own credential. The API never holds a session's full texts in memory here.
+ * Records are served as stored, with each tool_call input in the key order the
+ * harness wrote (`session-log-input-order.ts`; jsonb sorts keys). A text over 256 kB
+ * is its 16 kB preview; `blobs` names each one, and the daemon reads the full text
+ * through the attachments route with its own credential. The API never holds a
+ * session's full texts in memory here.
  *
  * A stored log can lack parts of a `SessionLog`: a session record built only from a
  * first batch without a session patch, or messages whose thread was never upserted.
@@ -36,6 +38,7 @@ import { sessionLogBlobs, sessionLogMessages, sessionLogs, sessionLogThreads } f
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { referencedTexts } from './session-log-blobs';
+import { withToolInputOrder } from './session-log-input-order';
 import type { SessionLogScope } from './session-log-ingest';
 
 type Thread = SessionLog['threads'][number];
@@ -78,6 +81,7 @@ async function readWholeLog(tx: Tx, log: LogRow): Promise<SessionLogRestore> {
       rev: sessionLogMessages.rev,
       deletedAt: sessionLogMessages.deletedAt,
       record: sessionLogMessages.record,
+      toolInputOrder: sessionLogMessages.toolInputOrder,
     })
     .from(sessionLogMessages)
     .where(eq(sessionLogMessages.sessionId, sessionId))
@@ -98,7 +102,7 @@ async function readWholeLog(tx: Tx, log: LogRow): Promise<SessionLogRestore> {
     revs[m.messageId] = m.rev;
     seqMax[m.threadId] = Math.max(seqMax[m.threadId] ?? 0, m.seq);
     if (m.deletedAt !== null) continue;
-    const record = m.record as unknown as SessionLogMessage;
+    const record = withToolInputOrder(m.record as unknown as SessionLogMessage, m.toolInputOrder);
     let thread = byThread.get(m.threadId);
     if (!thread) {
       thread = { schema: SESSION_LOG_SCHEMA, v: log.v, thread_id: m.threadId, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: record.created_at, messages: [], ext: {} };

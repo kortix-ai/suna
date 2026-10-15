@@ -18,6 +18,7 @@ import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { analyticsApp } from './analytics';
 import { isUuid } from '../shared/validate';
+import { isoValue } from '../shared/cost-values';
 import { readJsonObject } from '../shared/http-body';
 import { errorSqlstate } from '../shared/error-cause';
 import { logger } from '../lib/logger';
@@ -143,6 +144,7 @@ adminApp.openapi(
     // extra queries (no N+1) and reports the same plan every server gate
     // enforces for that account.
     const { resolveBillingFromRow } = await import('../billing/services/resolve-billing');
+    const { planMonthlyUsd } = await import('../billing/services/tiers');
 
     const query = parseAdminAccountsListQuery((k: string) => c.req.query(k));
     const { page, limit } = query;
@@ -171,8 +173,8 @@ adminApp.openapi(
 
     const now = Date.now();
     const list = rows.map((r) => {
-      // The plan the account BEHAVES as: an active admin trial and the
-      // per-seat self-heal overlay the stored `tier`, and that is what every
+      // The plan the account BEHAVES as: an active admin trial overlays the
+      // stored `tier`, and that is what every
       // gate enforces. `tier` below stays the STORED column — the tier filter
       // matches on it server-side, so the two must keep meaning the same thing.
       const resolved = resolveBillingFromRow(r, now);
@@ -192,8 +194,8 @@ adminApp.openapi(
         nonExpiringCredits: r.nonExpiringCredits ?? null,
         dailyCreditsBalance: r.dailyCreditsBalance ?? null,
         tier: r.tier ?? null,
-        // RESOLVED plan, named the way the product names plans (Free / Team /
-        // Enterprise + a qualifier). The console renders this instead of mapping
+        // RESOLVED plan, named the way the product names plans (Free / Credits /
+        // Enterprise). The console renders this instead of mapping
         // the raw key onto a hand-maintained label table of its own.
         plan: {
           key: resolved.plan.key,
@@ -201,31 +203,38 @@ adminApp.openapi(
           label: resolved.display.label,
           sublabel: resolved.display.sublabel,
           status: resolved.plan.status,
-          is_grandfathered: resolved.plan.status === 'grandfathered',
+          monthlyUsd: resolved.plan.key === 'credits' ? planMonthlyUsd(r) : null,
         },
         paymentStatus: r.paymentStatus ?? null,
         provider: r.provider ?? null,
         planType: r.planType ?? null,
         stripeSubscriptionId: r.stripeSubscriptionId ?? null,
-        billingModel: r.billingModel ?? null,
-        seatCount: r.seatCount ?? null,
         trial: {
           status: r.trialStatus ?? 'none',
           tier: r.trialTier ?? null,
-          seats: r.trialSeats ?? null,
-          startedAt: r.trialStartedAt ?? null,
-          endsAt: r.trialEndsAt ?? null,
+          startedAt: isoValue(r.trialStartedAt),
+          endsAt: isoValue(r.trialEndsAt),
           note: r.trialNote ?? null,
         },
-        managedModelsOverride: r.managedModelsOverride ?? null,
-        demoEnterprise: r.demoEnterprise ?? false,
-        enterpriseEntitled: r.enterpriseEntitled ?? false,
+        // The active Enterprise contract. Null on every other account; an
+        // Enterprise account with null here has no contract on file.
+        contract: r.contractId
+          ? {
+              id: r.contractId,
+              licenseUsd: Number(r.contractLicenseUsd),
+              creditsUsd: Number(r.contractCreditsUsd),
+              collection: r.contractCollection,
+              endsAt: isoValue(r.contractEndsAt),
+              autoRenews: r.contractAutoRenews ?? false,
+            }
+          : null,
+        // Set while SSO/SCIM stay on after an Enterprise trial ended.
+        graceEndsAt: resolved.grace?.endsAt ?? null,
         // The stored override map, exactly as PUT /accounts/{id}/overrides left
         // it. Expiry is NOT applied here — the console shows an operator what
         // is on the row, including entries that have lapsed; `resolved` above
         // is what the gates enforce.
         entitlementOverrides: r.entitlementOverrides ?? {},
-        computeRateMultiplier: resolved.compute.rateMultiplier,
         // Stripe customer id/email aren't on credit_accounts — left null until a
         // billing-customers join is added; the console degrades gracefully.
         billingCustomerId: null,
@@ -755,24 +764,23 @@ adminApp.openapi(
   },
 );
 
-// ── Set plan tier (e.g. activate Enterprise) ─────────────────────────────────
-// Sales-assigned tiers (notably `enterprise`, which unlocks SSO + SCIM) have no
-// self-serve path — this is the audited way to flip an account onto one. Upserts
-// the credit_accounts row so it works whether or not the account has billed yet,
-// and clears the tier cache so the change takes effect immediately.
+// ── Set plan tier (Free or Credits) ─────────────────────────────────────────
+// The audited way to reassign a self-serve plan by hand (a comp, a botched
+// migration). Enterprise goes through the contract routes below. Upserts the
+// credit_accounts row and clears the tier cache so the change applies at once.
 adminApp.openapi(
   createRoute({
     method: 'post',
     path: '/api/accounts/{id}/tier',
     tags: ['admin'],
-    summary: "Set an account's plan tier (e.g. activate Enterprise)",
+    summary: "Set an account's plan tier (Free or Credits)",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
           'application/json': {
-            schema: z.object({ tier: z.string() }),
+            schema: z.object({ tier: z.string(), monthly_usd: z.number().min(0).optional() }),
           },
         },
       },
@@ -794,30 +802,38 @@ adminApp.openapi(
     const { isValidTier } = await import('../billing/services/tiers');
     if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
 
-    // Enterprise is an ENTITLEMENT, not a tier. A `tier='enterprise'` write is
-    // clobbered by the next Stripe subscription sync (webhooks.ts writes the
-    // price-resolved tier back), which silently reverts the account. The flag
-    // survives sync — refuse the wrong primitive here.
+    // Enterprise has one write path: a contract, so its terms, credit pool and
+    // end date are on file (billing/services/enterprise-contracts.ts).
     if (tier === 'enterprise') {
       return c.json(
-        {
-          error:
-            "enterprise is not assignable as a tier — use POST /admin/api/accounts/{id}/enterprise-entitlement instead (the flag survives Stripe subscription sync; a tier write does not)",
-        },
+        { error: "Enterprise is set by a contract: POST /api/accounts/{id}/enterprise-contract" },
         400,
       );
+    }
+    const { getActiveContract } = await import('../billing/services/enterprise-contracts');
+    if (await getActiveContract(accountId)) {
+      return c.json({ error: 'the account has an active Enterprise contract; end it first' }, 409);
+    }
+
+    // `monthly_usd` is the plan amount of a credits plan. Omit it to leave the
+    // amount unchanged.
+    const monthlyRaw = body.monthly_usd;
+    const monthlyUsd = monthlyRaw === undefined || monthlyRaw === null ? undefined : Number(monthlyRaw);
+    if (monthlyUsd !== undefined && (!Number.isFinite(monthlyUsd) || monthlyUsd < 0 || monthlyUsd > 1_000_000)) {
+      return c.json({ error: 'monthly_usd must be a number from 0 to 1,000,000' }, 400);
     }
 
     const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
     const { applyAdminOverride } = await import('../billing/services/account-write-owner');
     const before = await getSubscriptionInfo(accountId);
     // `tier` is provider-owned everywhere else, and ADMIN_ASSIGNABLE here: an
-    // operator reassigning a plan by hand is a real support operation. The
-    // chokepoint still refuses 'enterprise' (the 400 above catches it first)
-    // and invalidates the one billing cache the value feeds.
+    // operator reassigning a plan by hand is a real support operation.
     await applyAdminOverride(
       accountId,
-      { tier },
+      {
+        tier,
+        ...(monthlyUsd !== undefined ? { planMonthlyUsd: String(monthlyUsd) } : {}),
+      },
       { userId: actorUserId ?? null, action: 'admin.account.tier.set' },
     );
 
@@ -845,87 +861,10 @@ adminApp.openapi(
   },
 );
 
-// ── Set account contracted-Enterprise entitlement flag ────────────────────────
-// `enterprise_entitled` decouples a contracted cloud Enterprise customer's
-// feature entitlements (SAML SSO, SCIM, RBAC, audit access) from the billing
-// tier. Set this when an account signs an Enterprise agreement that is ALSO
-// per-seat billed (a flat Enterprise fee plus per-seat billing): the
-// per-seat Stripe webhook reconciliation will then populate
-// billing_model/seats/credits from the subscription WITHOUT clobbering the
-// enterprise identity entitlements (it leaves `tier` untouched when this flag
-// is on). Clear it when the Enterprise term ends. For a pure-Enterprise (no
-// per-seat) deal, `tier='enterprise'` alone is still sufficient; this flag is
-// the additional, independent entitlement source for the hybrid case.
-adminApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/enterprise-entitlement',
-    tags: ['admin'],
-    summary: "Set the account's contracted-Enterprise entitlement flag",
-    ...auth,
-    request: {
-      params: z.object({ id: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({ enabled: z.boolean() }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(z.object({ ok: z.boolean(), enabled: z.boolean() }), 'Updated entitlement flag'),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-    try {
-      const accountId = c.req.param('id');
-      const actorUserId = c.get('userId') as string | undefined;
-      const body = await readJsonObject(c);
-      const enabled = body.enabled;
-      if (typeof enabled !== 'boolean') {
-        return c.json({ error: 'enabled must be a boolean' }, 400);
-      }
-
-      const { isEnterpriseEntitled } = await import('../billing/repositories/credit-accounts');
-      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
-      const before = await isEnterpriseEntitled(accountId);
-      await applyAdminOverride(
-        accountId,
-        { enterpriseEntitled: enabled },
-        { userId: actorUserId ?? null, action: 'admin.account.enterprise_entitlement.set' },
-      );
-
-      // The per-request entitlement read (SSO/SCIM gates) is uncached and sees
-      // the change immediately; no tier-cache invalidation needed because
-      // enterprise_entitled is resolved independently of the cached tier.
-      try {
-        const { recordAuditEvent } = await import('../shared/audit');
-        await recordAuditEvent({
-          accountId,
-          actorUserId,
-          action: 'admin.account.enterprise_entitlement.set',
-          resourceType: 'credit_account',
-          resourceId: accountId,
-          before: { enterprise_entitled: before },
-          after: { enterprise_entitled: enabled },
-          ip: requestClientIp(c),
-          userAgent: c.req.header('user-agent') || null,
-        });
-      } catch {
-        /* audit is best-effort — never block the entitlement change */
-      }
-
-      return c.json({ ok: true, enabled });
-    } catch (e: any) {
-      return c.json({ error: adminErrorMessage(e) }, 500);
-    }
-  },
-);
-
+// ── Grant or extend a trial ──────────────────────────────────────────────────
+// A trial is a dated grant of a plan ('credits' or 'enterprise') with one
+// expiring credit grant (billing/services/trial-admin.ts). Re-granting the same
+// plan moves the end date.
 adminApp.openapi(
   createRoute({
     method: 'post',
@@ -940,7 +879,6 @@ adminApp.openapi(
           'application/json': {
             schema: z.object({
               tier_key: z.string().min(1).max(50),
-              seats: z.number().int().min(1),
               duration_days: z.number().int().min(1),
               note: z.string().max(2000).optional(),
               credit_grant: z.number().min(0).optional(),
@@ -962,7 +900,6 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as {
         tier_key: string;
-        seats: number;
         duration_days: number;
         note?: string;
         credit_grant?: number;
@@ -973,7 +910,6 @@ adminApp.openapi(
       const input = {
         accountId,
         tierKey: body.tier_key,
-        seats: body.seats,
         durationDays: body.duration_days,
         note: body.note ?? null,
         actorUserId,
@@ -1060,140 +996,258 @@ adminApp.openapi(
   },
 );
 
-// ── Set the account managed-models override ──────────────────────────────────
-// `override: null` restores "the effective tier decides". true grants managed
-// (Kortix-credential) models regardless of tier; false forces BYOK-only.
+// ── Enterprise contracts ─────────────────────────────────────────────────────
+// The one way onto Enterprise: an annual license plus a prepaid credit pool
+// (billing/services/enterprise-contracts.ts). `checkout` makes an offer the
+// account's billing managers accept in the app; `invoice` bills through a
+// Stripe invoice; `manual` records a contract paid outside Stripe.
+const ContractBody = z.object({
+  license_usd: z.number().min(0),
+  credits_usd: z.number().min(0),
+  term_months: z.number().int().min(1).optional(),
+  collection: z.enum(['checkout', 'invoice', 'manual']),
+  note: z.string().max(2000).optional(),
+});
+
+type ContractRecord = typeof import('@kortix/db').enterpriseContracts.$inferSelect;
+
+function serializeContract(row: ContractRecord) {
+  return {
+    id: row.id,
+    status: row.status,
+    licenseUsd: Number(row.licenseUsd),
+    creditsUsd: Number(row.creditsUsd),
+    termMonths: row.termMonths,
+    collection: row.collection,
+    startsAt: isoValue(row.startsAt),
+    endsAt: isoValue(row.endsAt),
+    autoRenews: row.autoRenews,
+    stripeSubscriptionId: row.stripeSubscriptionId ?? null,
+    note: row.note ?? null,
+    createdBy: row.createdBy ?? null,
+    createdAt: isoValue(row.createdAt),
+    endedAt: isoValue(row.endedAt),
+  };
+}
+
+async function auditContract(input: {
+  accountId: string;
+  actorUserId: string | null;
+  action: string;
+  contract: ReturnType<typeof serializeContract>;
+  ip: string | null;
+  userAgent: string | null;
+}) {
+  try {
+    const { recordAuditEvent } = await import('../shared/audit');
+    await recordAuditEvent({
+      accountId: input.accountId,
+      actorUserId: input.actorUserId,
+      action: input.action,
+      resourceType: 'enterprise_contract',
+      resourceId: input.contract.id,
+      after: input.contract,
+      ip: input.ip,
+      userAgent: input.userAgent,
+    });
+  } catch {
+    /* audit is best-effort — never block the contract change */
+  }
+}
+
+/** The status a refused contract operation answers with: its own 400/404/409, else 500. */
+function contractFailure(e: unknown): { status: 400 | 404 | 409 | 500; error: string } {
+  const status = e instanceof Error && 'statusCode' in e ? (e as { statusCode: number }).statusCode : 500;
+  return {
+    status: status === 400 || status === 404 || status === 409 ? status : 500,
+    error: adminErrorMessage(e),
+  };
+}
+
+const ContractEnvelope = z.object({ contract: z.record(z.string(), z.any()) });
+const ErrorBody = z.object({ error: z.string() });
+const AccountIdParam = z.object({ id: z.string() });
+
 adminApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/managed-models',
+    method: 'get',
+    path: '/api/accounts/{id}/enterprise-contracts',
     tags: ['admin'],
-    summary: "Set the account's managed-models override",
+    summary: "List an account's Enterprise contracts, newest first",
     ...auth,
-    request: {
-      params: z.object({ id: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({ override: z.boolean().nullable() }),
-          },
-        },
-      },
-    },
+    request: { params: AccountIdParam },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), override: z.boolean().nullable() }),
-        'Updated managed-models override',
-      ),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(z.object({ contracts: z.array(z.record(z.string(), z.any())) }), 'Contracts'),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const { id } = c.req.valid('param');
+    const { listContracts } = await import('../billing/services/enterprise-contracts');
+    return c.json({ contracts: (await listContracts(id)).map(serializeContract) }, 200);
+  },
+);
+
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/enterprise-contract',
+    tags: ['admin'],
+    summary: 'Create an Enterprise contract (offer, invoice, or manual)',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      body: { content: { 'application/json': { schema: ContractBody } } },
+    },
+    responses: {
+      200: json(ContractEnvelope, 'The contract'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'Not found'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const actorUserId = c.get('userId') ?? null;
     try {
-      const accountId = c.req.param('id');
-      const actorUserId = (c.get('userId') as string | undefined) ?? null;
-      const body = c.req.valid('json') as { override: boolean | null };
-
-      const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
-      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
-      const before = (await getCreditAccount(accountId))?.managedModelsOverride ?? null;
-      // The chokepoint invalidates this account's billing cache — the one cache
-      // the managed-models answer is served from on the gateway auth hot path.
-      await applyAdminOverride(
-        accountId,
-        { managedModelsOverride: body.override },
-        { userId: actorUserId, action: 'admin.account.managed_models.set' },
-      );
-
-      try {
-        const { recordAuditEvent } = await import('../shared/audit');
-        await recordAuditEvent({
+      const { createContract } = await import('../billing/services/enterprise-contracts');
+      const contract = serializeContract(
+        await createContract({
           accountId,
+          licenseUsd: body.license_usd,
+          creditsUsd: body.credits_usd,
+          termMonths: body.term_months,
+          collection: body.collection,
+          note: body.note ?? null,
           actorUserId,
-          action: 'admin.account.managed_models.set',
-          resourceType: 'credit_account',
-          resourceId: accountId,
-          before: { managed_models_override: before },
-          after: { managed_models_override: body.override },
-          ip: requestClientIp(c),
-          userAgent: c.req.header('user-agent') || null,
-        });
-      } catch {
-        /* audit is best-effort — never block the change */
-      }
-
-      return c.json({ ok: true, override: body.override });
-    } catch (e: any) {
-      return c.json({ error: adminErrorMessage(e) }, 500);
+        }),
+      );
+      await auditContract({
+        accountId,
+        actorUserId,
+        action: 'admin.account.enterprise_contract.create',
+        contract,
+        ip: requestClientIp(c),
+        userAgent: c.req.header('user-agent') || null,
+      });
+      return c.json({ contract }, 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
     }
   },
 );
 
-// ── Set the account enterprise-demo flag (admin-only) ────────────────────────
-// The self-serve IAM toggle was retired: enterprise-demo is an operator
-// decision now (see accounts/iam/enterprise-demo.ts). Same storage
-// (credit_accounts.demo_enterprise), same entitlement effect.
 adminApp.openapi(
   createRoute({
     method: 'post',
-    path: '/api/accounts/{id}/enterprise-demo',
+    path: '/api/accounts/{id}/enterprise-contract/checkout-link',
     tags: ['admin'],
-    summary: "Set the account's enterprise-demo flag",
+    summary: 'A fresh Stripe Checkout link for the open offer (valid up to 24 h)',
     ...auth,
-    request: {
-      params: z.object({ id: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({ enabled: z.boolean() }),
-          },
-        },
-      },
-    },
+    request: { params: AccountIdParam },
     responses: {
-      200: json(z.object({ ok: z.boolean(), enabled: z.boolean() }), 'Updated demo flag'),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(z.object({ checkout_url: z.string(), contract_id: z.string() }), 'Checkout link'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'No open offer'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
     try {
-      const accountId = c.req.param('id');
-      const actorUserId = (c.get('userId') as string | undefined) ?? null;
-      const body = c.req.valid('json') as { enabled: boolean };
+      const { billingPaneUrl } = await import('../billing/services/owner-alerts');
+      const billingUrl = billingPaneUrl(accountId);
+      const { createOfferCheckout } = await import('../billing/services/enterprise-contracts');
+      return c.json(await createOfferCheckout({ accountId, successUrl: billingUrl, cancelUrl: billingUrl }), 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
+    }
+  },
+);
 
-      const { isDemoEnterprise } = await import('../billing/repositories/credit-accounts');
-      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
-      const before = await isDemoEnterprise(accountId);
-      await applyAdminOverride(
+adminApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/api/accounts/{id}/enterprise-offer',
+    tags: ['admin'],
+    summary: 'Withdraw the open Enterprise offer',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(ContractEnvelope, 'The withdrawn offer'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'No open offer'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
+    const actorUserId = c.get('userId') ?? null;
+    try {
+      const { withdrawOffer } = await import('../billing/services/enterprise-contracts');
+      const contract = serializeContract(await withdrawOffer(accountId, actorUserId));
+      await auditContract({
         accountId,
-        { demoEnterprise: body.enabled },
-        { userId: actorUserId, action: 'admin.account.enterprise_demo.set' },
-      );
+        actorUserId,
+        action: 'admin.account.enterprise_offer.withdraw',
+        contract,
+        ip: requestClientIp(c),
+        userAgent: c.req.header('user-agent') || null,
+      });
+      return c.json({ contract }, 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
+    }
+  },
+);
 
-      try {
-        const { recordAuditEvent } = await import('../shared/audit');
-        await recordAuditEvent({
-          accountId,
-          actorUserId,
-          action: 'admin.account.enterprise_demo.set',
-          resourceType: 'credit_account',
-          resourceId: accountId,
-          before: { demo_enterprise: before },
-          after: { demo_enterprise: body.enabled },
-          ip: requestClientIp(c),
-          userAgent: c.req.header('user-agent') || null,
-        });
-      } catch {
-        /* audit is best-effort — never block the change */
-      }
-
-      return c.json({ ok: true, enabled: body.enabled });
-    } catch (e: any) {
-      return c.json({ error: adminErrorMessage(e) }, 500);
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/enterprise-contract/end',
+    tags: ['admin'],
+    summary: "End the account's active Enterprise contract now",
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(ContractEnvelope, 'The ended contract'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'No active contract'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
+    const actorUserId = c.get('userId') ?? null;
+    try {
+      const { endContract, getActiveContract } = await import('../billing/services/enterprise-contracts');
+      const active = await getActiveContract(accountId);
+      if (!active) return c.json({ error: 'the account has no active Enterprise contract' }, 404);
+      const contract = serializeContract(await endContract(active.id, 'operator', actorUserId));
+      await auditContract({
+        accountId,
+        actorUserId,
+        action: 'admin.account.enterprise_contract.end',
+        contract,
+        ip: requestClientIp(c),
+        userAgent: c.req.header('user-agent') || null,
+      });
+      return c.json({ contract }, 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
     }
   },
 );
@@ -1297,10 +1351,9 @@ adminApp.openapi(
 );
 
 // ── Set per-account entitlement overrides (the JSONB map) ────────────────────
-// One route for every override an account can carry, each with an OPTIONAL
-// EXPIRY — which the four single-purpose routes above cannot express at all
-// (their columns have nowhere to put a date, so every grant they make is
-// permanent until someone remembers to undo it).
+// The one exception mechanism (.agents/skills/billing/references/plans-and-access.md):
+// a per-feature boolean (sso, scim, rbac, auditAccess, branding, managedModels),
+// each with an OPTIONAL EXPIRY.
 //
 // MERGE-PATCH semantics (RFC 7386, scoped to the known keys): a key present
 // with an entry sets it, a key present with `null` deletes it, and a key that
@@ -1326,7 +1379,7 @@ adminApp.openapi(
               z.string(),
               z
                 .object({
-                  value: z.union([z.boolean(), z.number()]),
+                  value: z.boolean(),
                   expires_at: z.string().optional(),
                 })
                 .nullable(),
@@ -1352,7 +1405,6 @@ adminApp.openapi(
       const raw = await c.req.json().catch(() => null);
 
       const {
-        legacyMirrorPatch,
         mergeOverridePatch,
         toStoredOverrides,
         validateOverridePatch,
@@ -1367,14 +1419,7 @@ adminApp.openapi(
 
       await applyAdminOverride(
         accountId,
-        {
-          entitlementOverrides: toStoredOverrides(merged),
-          // Mirror the four legacy columns for one release, so an API task
-          // that predates this column still resolves a PERMANENT override the
-          // same way. A timed entry clears its column instead — see
-          // legacyMirrorPatch for why mirroring it would defeat the expiry.
-          ...legacyMirrorPatch(validated.patch),
-        },
+        { entitlementOverrides: toStoredOverrides(merged) },
         { userId: actorUserId, action: 'admin.account.overrides.set' },
       );
 

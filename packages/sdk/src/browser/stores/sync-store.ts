@@ -1053,6 +1053,18 @@ const sessionMessageRows = new Map<
 	}
 >();
 const EMPTY_MESSAGE_ROWS: MessageWithParts[] = [];
+/**
+ * The same rows, by the store's message array. The bounded map above is for row reuse
+ * across a changed array; this one keeps a result's identity while its arrays are
+ * unchanged, however many sessions are read in between. A subscribed selector re-reads
+ * on every store change, and a rebuilt array reads as a change: past 20 sessions read
+ * per render (a context modal with 20+ sub-agent rows), the LRU alone re-rendered until
+ * React threw. Weak, so an entry goes with the array the store drops.
+ */
+const rowsByMessages = new WeakMap<
+	Message[],
+	{ msgs: Message[]; partRefs: (Part[] | undefined)[]; result: MessageWithParts[] }
+>();
 
 /** Insert-or-refresh `sessionID` as the most recently used entry, dropping the
  *  least recently used one once the map is over {@link MESSAGE_ROWS_LIMIT}.
@@ -1949,7 +1961,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	buildSessionMessages: (sessionID, msgs, parts) => {
 		if (!msgs || msgs.length === 0) return EMPTY_MESSAGE_ROWS;
 
-		const cached = sessionMessageRows.get(sessionID);
+		const cached = rowsByMessages.get(msgs) ?? sessionMessageRows.get(sessionID);
 		if (cached && cached.msgs === msgs) {
 			let same = cached.partRefs.length === msgs.length;
 			if (same) {
@@ -2005,7 +2017,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			}
 			result.push(reuse ?? { info, parts: messageParts ?? [] });
 		}
-		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
+		const entry = { msgs, partRefs, result };
+		touchSessionMessageRows(sessionID, entry);
+		rowsByMessages.set(msgs, entry);
 		return result;
 	},
 

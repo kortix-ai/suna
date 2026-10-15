@@ -253,19 +253,20 @@ pagination. Use `kortix.billing.sessionCosts.get(sessionId, options)` for model
 usage and mixed LLM/compute ledger entries.
 
 Mutations — a deliberately curated subset of `apps/api/src/billing/routes`
-(Stripe-webhook-only routes and legacy/per-seat-claim internals stay
+(Stripe-webhook-only routes and retired per-seat internals stay
 unwired) now live in `projects-client/billing.ts` and are grouped on the
-facade as `kortix.billing.{checkout, subscription, credits}`:
+facade as `kortix.billing.{setPlan, checkout, subscription, credits}`:
 | group | op | REST |
 |---|---|---|
+| (top level) | setPlan | `POST /v1/billing/plan` (`useSetBillingPlan()` hook) |
 | `checkout` | createSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `checkout` | confirmSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `subscription` | createPortalSession | `POST /v1/billing/create-portal-session` |
 | `subscription` | cancel | `POST /v1/billing/cancel-subscription` |
 | `subscription` | reactivate | `POST /v1/billing/reactivate-subscription` |
 | `subscription` | scheduleDowngrade | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
-| `subscription` | cancelScheduledChange | `POST /v1/billing/cancel-scheduled-change` |
-| `subscription` | prorationPreview | `GET /v1/billing/proration-preview` |
+| `subscription` | cancelScheduledChange | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
+| `subscription` | prorationPreview | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `credits` | purchase | `POST /v1/billing/purchase-credits` |
 | `credits` | autoTopupSettings | `GET /v1/billing/auto-topup/settings` |
 | `credits` | configureAutoTopup | `POST /v1/billing/auto-topup/configure` |

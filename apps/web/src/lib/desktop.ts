@@ -231,7 +231,11 @@ export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
 /** Back to the shell's own scale, not the browser's 100%. */
 export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
-export async function setDesktopNativeTheme(theme: string | undefined): Promise<void> {
+/** `palettes` picks the launch background (the chosen light and dark theme's canvas). */
+export async function setDesktopNativeTheme(
+  theme: string | undefined,
+  palettes?: { light: string; dark: string },
+): Promise<void> {
   if (typeof window === 'undefined' || !theme) return;
   const selected = theme === 'light' || theme === 'dark' ? theme : 'system';
   const t = (
@@ -241,7 +245,7 @@ export async function setDesktopNativeTheme(theme: string | undefined): Promise<
   ).__TAURI__;
   if (!t?.core?.invoke) return;
   try {
-    await t.core.invoke('set_native_theme', { theme: selected });
+    await t.core.invoke('set_native_theme', { theme: selected, palettes });
   } catch {
     /* older desktop shell */
   }
@@ -346,9 +350,14 @@ async function desktopAction<T>(cmd: string, args?: Record<string, unknown>): Pr
 
 /** Pause/resume answer `{ ok, error?, status }` (X5). */
 async function desktopServiceVerb(cmd: string): Promise<DesktopComputerStatus | null> {
-  const result = await desktopAction<{ ok: boolean; error?: string; status: DesktopComputerStatus }>(cmd);
+  const result = await desktopAction<{
+    ok: boolean;
+    error?: string;
+    status: DesktopComputerStatus;
+  }>(cmd);
   if (!result) return null;
-  if (!result.ok) throw new Error(result.error || 'The desktop app could not change computer access.');
+  if (!result.ok)
+    throw new Error(result.error || 'The desktop app could not change computer access.');
   return result.status;
 }
 
