@@ -12,6 +12,10 @@
  * A tool's `details` is the part's `state.metadata`. Renderers read these
  * through the SDK's `inputPath` and `toToolView`, so the rows must name the
  * file, draw the patch, and show the answers exactly as they do for OpenCode.
+ * `codemode` is pi's own scripting tool: a script the model wrote that calls
+ * the other tools. Its live record (`id`, `args` as JSON text, `ok`) and its
+ * at-rest record (`call_id`, `input`, `complete`) both land in the metadata,
+ * so the spec carries both shapes.
  */
 
 import type { FixtureToolGroup } from '../types';
@@ -99,6 +103,28 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
       error: 'Could not write file: docs/currency.md. Error code: EACCES.',
       states: ['completed'],
       note: 'pi names the file `path`.',
+    },
+    {
+      renderer: 'codemode-tool.tsx',
+      tool: 'codemode',
+      input: {
+        code: "const hits = await grep({ pattern: 'formatCurrency', include: '*.ts' });\nawait write({ path: 'docs/currency.md', content: `Found ${hits.length} call sites.` });\nreturn hits.length;",
+      },
+      output: 'Script completed\nWall time 1.4 s\nOutput:\n2',
+      metadata: {
+        calls: [
+          { call_id: 'cm1', name: 'grep', input: { pattern: 'formatCurrency' }, status: 'complete', duration_ms: 240 },
+          { call_id: 'cm2', name: 'write', input: { path: 'docs/currency.md' }, status: 'complete', duration_ms: 110 },
+        ],
+      },
+      runningMetadata: {
+        calls: [
+          { id: 'cm1', name: 'grep', args: '{"pattern":"formatCurrency"}', status: 'ok', durationMs: 240 },
+          { id: 'cm2', name: 'write', args: '{"path":"docs/currency.md"}', status: 'running' },
+        ],
+      },
+      error: 'Script failed\nWall time 0.3 s\nOutput:\nError: the grep call returned no matches',
+      note: "pi's codemode: a script the model wrote that calls the other tools; its row lists them. The live record and the at-rest record are both real shapes.",
     },
   ],
 };
