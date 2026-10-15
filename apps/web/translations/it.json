@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Progetto",
         "personal": "Personale",
-        "account": "Account"
+        "account": "Account",
+        "connect": "Connetti"
       },
       "items": {
         "workspace": {
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Piano",
           "description": "Il tuo piano, i tuoi crediti e la fatturazione per questo account."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Usa Kortix da Claude, Claude Code, Cursor, Codex o qualsiasi client MCP. Accedi una sola volta. Niente da installare."
+        },
+        "computer": {
+          "label": "Computer",
+          "description": "Consenti agli agenti Kortix di lavorare con i file, il terminale e le app del tuo computer."
         }
       }
     },
@@ -1381,6 +1390,19 @@
       "adminOnly": "Solo il proprietario o un amministratore può connettere GitHub per questo account.",
       "disconnectedToast": "GitHub disconnesso",
       "disconnectFailed": "Impossibile disconnettere GitHub"
+    },
+    "mcp": {
+      "serverTitle": "Server",
+      "serverDescription": "Un URL per ogni progetto che puoi aprire. Il tuo client accede con Kortix alla prima connessione.",
+      "urlLabel": "URL del server",
+      "clientsTitle": "Client",
+      "clientsDescription": "Aggiungi Kortix al client che usi."
+    },
+    "computer": {
+      "oneClickDescription": "L'app desktop connette questo computer con un clic.",
+      "desktopLabel": "App desktop",
+      "download": "Scarica",
+      "cliLabel": "Riga di comando"
     }
   },
   "triggers": {
@@ -2088,6 +2110,7 @@
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
+    "queuedActions": "Azioni del messaggio",
     "steerNextStep": "Letto al passo successivo",
     "queuedByAnotherMember": "Inviato da un altro membro. Solo quella persona può modificarlo o inviarlo.",
     "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",

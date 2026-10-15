@@ -4564,12 +4564,12 @@ export function SessionChat({
                 )}
               >
                 <Button
-                  variant="transparent"
+                  variant="outline"
                   size="icon-md"
                   aria-hidden={!showScrollButton}
                   tabIndex={showScrollButton ? undefined : -1}
                   className={cn(
-                    'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
+                    'hit-area-2 bg-background hover:bg-muted rounded-full',
                     'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
                     showScrollButton
                       ? 'duration-normal scale-100 opacity-100'

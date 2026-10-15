@@ -22,6 +22,11 @@ export function newPastedContentId(): string {
   return id;
 }
 
+/** Blank lines at the top and whitespace at the end go; the first line's indentation stays. */
+export function trimPastedText(text: string): string {
+  return text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd();
+}
+
 /** `</pasted_content` to `&lt;/pasted_content`, keeping the case, so a body can never close its own block. */
 function escapeBody(text: string): string {
   return text.replace(/<\/(pasted_content)/gi, '&lt;/$1');
@@ -63,7 +68,7 @@ export function pastedContentBlocks(text: string): PastedBlock[] {
     if (body.endsWith('\n')) body = body.slice(0, -1);
     body = decodeBody(body);
     if (Number(chars) !== body.length) continue;
-    out.push({ index: block.index, end: block.end, id, text: body });
+    out.push({ index: block.index, end: block.end, id, text: trimPastedText(body) });
   }
   return out;
 }

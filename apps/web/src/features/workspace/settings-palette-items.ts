@@ -51,6 +51,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'tokens',
   'credits',
   'plan',
+  'mcp',
 ];
 
 /**
