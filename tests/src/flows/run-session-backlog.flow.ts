@@ -1393,18 +1393,16 @@ flow(
     const { projectId, sessionId } = session;
     const nonce = `ke2e-run20-${Date.now()}`;
     const done = `RUN20_DONE_${Date.now()}`;
-    const script = [
-      `await tools.bash({ command: "printf ${nonce}-a > ${nonce}-a.txt" });`,
-      `await tools.bash({ command: "printf ${nonce}-b > ${nonce}-b.txt" });`,
-      `return "wrote both";`,
-    ].join(' ');
     await ctx.step('the agent runs one codemode script that makes two bash calls', async () => {
+      // A task, not pasted code: a model told to copy escaped source verbatim sent it to bash.
       await sendPrompt(
         ctx,
         projectId,
         sessionId,
-        `Call the codemode tool exactly once with this code, unchanged: ${script} ` +
-          `Use no other tool. Then reply with exactly: ${done}`,
+        `Use the codemode tool exactly once. In that one script, call tools.bash twice: ` +
+          `the first command is: printf ${nonce}-a > ${nonce}-a.txt ` +
+          `and the second command is: printf ${nonce}-b > ${nonce}-b.txt ` +
+          `Then return the text "wrote both". Use no other tool. Then reply with exactly: ${done}`,
       );
       const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
       const tools = messages.flatMap((m) => m.tools ?? []);
