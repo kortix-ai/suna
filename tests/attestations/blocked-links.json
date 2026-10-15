@@ -13,12 +13,12 @@
     "apps/web/src/features/workspace/capabilities/shared/entity/entity-modal.tsx"
   ],
   "diff_hash": "d85c63f982e6d62ab109dce830c759ac6f8bb989e589b96329b65ef3b605288c",
-  "head": "8f0793ce95e442af1e99c42f53a5e6326c80afa1",
+  "head": "370e300d6c43ddecfd084eb811ef06024a5da297",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T06:27:19.089Z"
+  "at": "2026-10-15T06:43:58.173Z"
 }
