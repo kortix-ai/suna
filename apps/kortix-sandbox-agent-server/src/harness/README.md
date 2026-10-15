@@ -324,12 +324,16 @@ root. No turn runs at either point.
   sends its adapter's one-entry history, which replaces the stored one.
 - **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
   all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
-  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the flag
-  is operator-only; the API holds the same answer in memory once per claim.
+  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the API
+  holds the same answer in memory once per claim. Dev accepts this risk (the flag
+  is on by default there since 2026-10-15) until the cap lands; elsewhere the
+  flag is operator-only.
   Before default-on, cap it (413 above a stored size, or paging).
 
-Default-on blocker (do not turn `session_log_restore` on by default before it
-is fixed): the restore memory above has no cap. Attachment bytes are no longer
+Default-on blocker (do not turn `session_log_restore` on by default in prod
+before it is fixed): the restore memory above has no cap. Dev turns it on for
+every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
+`deploy-dev.yml`, 2026-10-15). Attachment bytes are no longer
 a blocker (P2.13): the journal uploads them, and a fresh box drops only an
 attachment whose record still says `blob:` (see the restore limits below).
 

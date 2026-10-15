@@ -1667,6 +1667,12 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
     title: 'Managed models entitlement',
     description: 'Managed model access. Forcing it off withdraws it from a plan that includes it.',
   },
+  {
+    key: 'byokFee',
+    title: 'BYOK platform fee',
+    description:
+      '5% of own-key model usage past $1,000 a month. On by default (off on Enterprise); Force off waives it for this account.',
+  },
 ];
 
 const OVERRIDE_TRI_STATE_OPTIONS: { value: OverrideTriState; label: string }[] = [
