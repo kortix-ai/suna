@@ -1,0 +1,19 @@
+{
+  "source_hash": "7a795ec227b774e516841f59349cfb259266d0e48123cf21da925fd195a3c324",
+  "diff_files": [
+    "apps/web/src/features/workspace/capabilities/connectors/catalog/catalog-entry.test.ts",
+    "apps/web/src/features/workspace/capabilities/connectors/catalog/catalog-entry.ts",
+    "apps/web/src/features/workspace/capabilities/connectors/catalog/connector-browse.tsx",
+    "apps/web/src/features/workspace/capabilities/connectors/catalog/connector-icon.test.tsx",
+    "apps/web/src/features/workspace/capabilities/connectors/detail/app-page.tsx"
+  ],
+  "diff_hash": "312930adb6090a14b44c19db54508360ba83b5138525919bc5d0865103aa397e",
+  "head": "61f7ef48bdd721cd318a7c5c3db9f9bcf868bbfd",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T04:05:36.282Z"
+}
