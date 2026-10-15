@@ -1,5 +1,5 @@
 {
-  "source_hash": "005bbb4e9fa0e2e5869572f802c309daef52024eb89a35ce295c7383ae6a1c58",
+  "source_hash": "8016fb0a2423bf5e007fa24ad915f2c44b6b21d250d9a58835033ef5fc0df673",
   "diff_files": [
     "apps/web/src/components/markdown/file-links.test.ts",
     "apps/web/src/components/markdown/file-links.ts",
@@ -13,12 +13,12 @@
     "apps/web/src/features/workspace/capabilities/shared/entity/entity-modal.tsx"
   ],
   "diff_hash": "d85c63f982e6d62ab109dce830c759ac6f8bb989e589b96329b65ef3b605288c",
-  "head": "089c9dd7ae529cc5994660cb339cb9691667c603",
-  "passed": false,
+  "head": "8f0793ce95e442af1e99c42f53a5e6326c80afa1",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T21:39:30.388Z"
+  "at": "2026-10-15T06:27:19.089Z"
 }
