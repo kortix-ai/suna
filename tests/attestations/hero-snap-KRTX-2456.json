@@ -1,0 +1,15 @@
+{
+  "source_hash": "8ab21c034bd52af6a83846ce9ba0f3cc91f754f9143c98e645a32f0a627023eb",
+  "diff_files": [
+    "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap"
+  ],
+  "diff_hash": "211e28ba536aae05a0dad5126cb918ccfc2d69dadda2c92619e48165c57cf2fe",
+  "head": "4c5f05c98e4db01a30e9823de817847b61ca383b",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T22:00:15.233Z"
+}
