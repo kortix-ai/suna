@@ -54,7 +54,7 @@ describe('sandbox template provider coverage', () => {
       ]);
   });
 
-  test.each(['missing', 'building', 'unknown', 'build_failed'] as const)(
+  test.each(['missing', 'building', 'unknown', 'build_failed', 'removing'] as const)(
     'Automatic reports active with Platinum active and another provider %s', (state) => {
       const coverage = [
         { provider: 'daytona', available: true, state },

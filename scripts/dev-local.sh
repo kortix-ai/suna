@@ -169,14 +169,17 @@ ensure_dev_tunnel() {
   local url=""
   # Deadline, not a poll count: under heavy load (parallel test lanes, cold
   # caches) a single poll can take seconds, and a 30-poll cap then gives up
-  # while cloudflared is healthy and about to print the URL.
+  # while cloudflared is healthy and about to print the URL. The budget is
+  # anchored to the loop's own start: SECONDS counts from shell start, so a
+  # wait that begins after long setup steps must add its allowance.
+  local tunnel_deadline=$((SECONDS + 30))
   until url="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)" && [[ -n "$url" ]]; do
     if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
       echo "[dev] ERROR: cloudflared exited early:"
       sed 's/^/[cloudflared] /' "$TUNNEL_LOG"
       exit 1
     fi
-    if (( SECONDS >= 30 )); then break; fi
+    if (( SECONDS >= tunnel_deadline )); then break; fi
     sleep 1
   done
 
@@ -226,9 +229,11 @@ start_tunnel_watchdog() {
       TUNNEL_PID=$!
       newurl=""
       # Same deadline form as the initial tunnel wait: a slow poll under load
-      # must not exhaust a poll cap while the fresh cloudflared is starting.
+      # must not exhaust a poll cap while the fresh cloudflared is starting,
+      # and the budget anchors to this rotation attempt's own start.
+      local rotation_deadline=$((SECONDS + 30))
       until newurl="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)" && [[ -n "$newurl" ]]; do
-        if (( SECONDS >= 30 )); then break; fi
+        if (( SECONDS >= rotation_deadline )); then break; fi
         sleep 1
       done
       if [[ -z "$newurl" ]]; then

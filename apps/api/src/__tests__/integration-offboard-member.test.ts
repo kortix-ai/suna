@@ -313,6 +313,9 @@ const replyWithin = (reply: Response | Promise<Response>, ms: number) =>
 const syncStarted = (userId: string, ms: number) => (async () => {
   const deadline = performance.now() + ms;
   while (!seatSyncsStarted.includes(userId) && performance.now() < deadline) await Bun.sleep(10);
+  if (!seatSyncsStarted.includes(userId)) {
+    throw new Error(`the ${userId} seat sync never started within ${ms}ms`);
+  }
 })();
 
 // A non-streaming request has 25 s (middleware/request-deadline.ts), and a

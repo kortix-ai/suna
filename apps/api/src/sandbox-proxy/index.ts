@@ -1,4 +1,3 @@
-import { config } from '../config';
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';
 import { getAuthToken } from './routes/auth';

@@ -79,6 +79,10 @@ esac
   stub(bin, 'cloudflared', `#!/bin/sh
 n=$(cat "$STUB_STATE/cloudflared-n" 2>/dev/null || echo 0)
 n=$((n+1)); echo "$n" > "$STUB_STATE/cloudflared-n"
+# Real cloudflared takes a moment before the URL reaches its log: the delay
+# (when CLOUDFLARED_URL_DELAY is set) makes the script's wait poll a few times
+# instead of finding the URL on the first grep.
+[ -n "\${CLOUDFLARED_URL_DELAY:-}" ] && /bin/sleep "$CLOUDFLARED_URL_DELAY"
 echo "[stub] tunnel up: https://stub-tunnel-\$n.trycloudflare.com"
 # Real cloudflared is a daemon: it prints the URL and keeps running (the
 # watchdog rotates it later). A one-shot stub that exits right after the echo
@@ -160,6 +164,23 @@ test('preset healthy KORTIX_URL: the API starts with that URL instead of an unbo
     '--filter kortix-api dev|KORTIX_URL=https://preset.example.test',
   ]);
   assert.doesNotMatch(output, /DEAD\/MISSING/);
+});
+
+test('SECONDS already at 40: a fresh wait still gets its own 30s budget', () => {
+  // SECONDS counts from shell start, not from a wait loop's start. The env
+  // seeds it at 40 and the stub delays the URL, so the tunnel wait must poll
+  // several times before it can succeed: a deadline anchored to script
+  // uptime instead of the loop gives up after the first poll and fails.
+  const r = runDevLocal({ PGREP_ALIVE: '0', SECONDS: '40', CLOUDFLARED_URL_DELAY: '0.3' });
+  const output = r.stdout + r.stderr;
+  assert.doesNotMatch(output, /timed out waiting for the Cloudflare tunnel URL/);
+  assert.match(output, /Cloud sandbox callback ready/);
+  assert.equal(r.status, 0, output);
+  const urls = apiStarts(r).map((line) => line.split('KORTIX_URL=')[1]);
+  assert.deepEqual(urls, [
+    'https://stub-tunnel-1.trycloudflare.com',
+    'https://stub-tunnel-2.trycloudflare.com',
+  ]);
 });
 
 test('started quick tunnel: the watchdog still rotates a dead tunnel and bounces the API', () => {

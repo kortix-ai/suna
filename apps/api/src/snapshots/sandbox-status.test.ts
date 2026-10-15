@@ -41,7 +41,7 @@ describe('resolveSandboxRuntimeStatus', () => {
     expect(status.ready_providers).toEqual(['daytona', 'platinum']);
   });
 
-  test.each(['not_built', 'building', 'unknown', 'failed'] as const)(
+  test.each(['not_built', 'building', 'unknown', 'failed', 'unavailable'] as const)(
     'Automatic is ready with a launch-ready provider alongside %s', (otherStatus) => {
       const status = resolveSandboxRuntimeStatus({
         snapshotName: CURRENT,
