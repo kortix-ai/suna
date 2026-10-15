@@ -94,7 +94,6 @@ export async function beginPromptAttachment(
       message: billing.message,
       code: billing.reason,
       balance: billing.balance,
-      billing_model: billing.billingModel,
       has_subscription: billing.hasSubscription,
       billing_state: billing.billingState,
       account_id: scope.accountId,

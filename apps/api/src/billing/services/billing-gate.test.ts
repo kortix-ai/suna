@@ -63,7 +63,6 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
   return {
     accountId: 'acct-1',
     balance: '100.00',
-    billingModel: 'legacy',
     tier: 'free',
     paymentStatus: 'active',
     stripeSubscriptionId: null,
@@ -79,7 +78,7 @@ describe('checkBillingAdmission — the prompt path decision without a hold', ()
   test('a funded account is admitted and no credits are deducted', async () => {
     const { checkBillingAdmission } = await import('./billing-gate');
     billingEnabled = true;
-    account = creditAccount({ billingModel: 'legacy', balance: '5.00' });
+    account = creditAccount({ balance: '5.00' });
     holdCalls.length = 0;
     expect(await checkBillingAdmission('acct-1')).toEqual({ ok: true });
     expect(holdCalls).toEqual([]);
@@ -102,7 +101,7 @@ describe('checkBillingAdmission — the prompt path decision without a hold', ()
   test('a drained account gets the same blocked result checkBillingActive returns', async () => {
     const { checkBillingAdmission } = await import('./billing-gate');
     billingEnabled = true;
-    account = creditAccount({ billingModel: 'legacy', balance: '0' });
+    account = creditAccount({ balance: '0' });
     holdCalls.length = 0;
     const admission = await checkBillingAdmission('acct-1');
     expect(admission.ok).toBe(false);
@@ -138,31 +137,30 @@ describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4
     }
   });
 
-  test('per-seat account that NEVER subscribed (no subscription row) and insufficient balance → "subscription_required"', async () => {
+  test('free account that never subscribed and has no balance → "insufficient_credits", billingState no_subscription', async () => {
     billingEnabled = true;
     account = creditAccount({
-      billingModel: 'per_seat',
+      tier: 'free',
       balance: '0',
       stripeSubscriptionStatus: 'canceled',
     });
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toBe('subscription_required');
+      expect(result.reason).toBe('insufficient_credits');
       expect(result.billingState).toBe('no_subscription');
-      expect(result.billingModel).toBe('per_seat');
+      expect('billingModel' in result).toBe(false);
       expect(result.hasSubscription).toBe(false);
     }
   });
 
-  test('per-seat account on an ACTIVE subscription with a drained wallet is REFUSED (the floor is universal)', async () => {
-    // Was: admitted with no hold, because a paying per-seat subscription
-    // bypassed the wallet floor. That is the exact shape that spent $588.81
-    // against a $150 seat grant on a $0 wallet. It now 402s like anyone else.
+  test('credits account on an ACTIVE subscription with a drained wallet is REFUSED (the floor is universal)', async () => {
+    // Was: admitted with no hold, because a paying subscription bypassed the
+    // wallet floor. That is the exact shape that spent $588.81 against a $150
+    // grant on a $0 wallet. It now 402s like anyone else.
     billingEnabled = true;
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
       balance: '0.0099614711',
       stripeSubscriptionId: 'sub_live',
       stripeSubscriptionStatus: 'active',
@@ -174,7 +172,6 @@ describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4
       expect(result.reason).toBe('insufficient_credits');
       // Still recognised as a paying customer, so the client says "Top up".
       expect(result.hasSubscription).toBe(true);
-      expect(result.billingModel).toBe('per_seat');
     }
   });
 });
@@ -182,7 +179,7 @@ describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4
 describe('checkBillingActive — billingState is the unambiguous discriminator', () => {
   test('a drained FREE account reports no_subscription even though its 402 code stays insufficient_credits', async () => {
     billingEnabled = true;
-    account = creditAccount({ billingModel: 'legacy', tier: 'free', balance: '0' });
+    account = creditAccount({ tier: 'free', balance: '0' });
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -191,15 +188,15 @@ describe('checkBillingActive — billingState is the unambiguous discriminator',
     }
   });
 
-  test('a drained legacy PAID account reports out_of_credits with the legacy top-up message', async () => {
+  test('a drained legacy PAID account reports out_of_credits with the top-up-or-raise message', async () => {
     billingEnabled = true;
-    account = creditAccount({ billingModel: 'legacy', tier: 'tier_2_20', balance: '0' });
+    account = creditAccount({ tier: 'tier_2_20', balance: '0' });
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.billingState).toBe('out_of_credits');
       expect(result.reason).toBe('insufficient_credits');
-      expect(result.message).toBe('Out of credits. Top up to continue.');
+      expect(result.message).toBe('Out of credits. Top up or raise your plan to keep your agents running.');
     }
   });
 
@@ -219,13 +216,13 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
     expect((caught as InstanceType<typeof BillingGateError>).reason).toBe('no_account');
   });
 
-  test('the 402 body carries the blocked account, its balance, billing_model and has_subscription', async () => {
+  test('the 402 body carries the blocked account, its balance, billing_state and has_subscription (no billing_model)', async () => {
     // The exact "$-9k Team account" case: a real subscription row that lapsed
     // to unpaid and a deep-negative wallet. The client routes it to top-up, not
     // to "subscribe from Free", and scopes the upgrade dialog to account_id.
     billingEnabled = true;
     account = creditAccount({
-      billingModel: 'per_seat',
+      tier: 'credits',
       balance: '-9237.85',
       stripeSubscriptionId: 'sub_lapsed',
       stripeSubscriptionStatus: 'unpaid',
@@ -239,7 +236,8 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
       expect(body.code).toBe('insufficient_credits');
       expect(body.account_id).toBe('acct-1');
       expect(body.balance).toBe(-9237.85);
-      expect(body.billing_model).toBe('per_seat');
+      expect('billing_model' in body).toBe(false);
+      expect(body.billing_state).toBe('payment_failed');
       expect(body.has_subscription).toBe(true);
     }
   });
@@ -249,11 +247,10 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
     ['canceled', 'active', 'out_of_credits'],
     // A failing card is told to fix payment, not to subscribe.
     ['past_due', 'past_due', 'payment_failed'],
-  ])('the 402 body of a drained per-seat "%s" subscription (payment status "%s") carries billing_state "%s"', async (status, paymentStatus, state) => {
+  ])('the 402 body of a drained credits "%s" subscription (payment status "%s") carries billing_state "%s"', async (status, paymentStatus, state) => {
     billingEnabled = true;
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
       balance: '0',
       stripeSubscriptionId: 'sub_x',
       stripeSubscriptionStatus: status,
@@ -274,12 +271,11 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
 });
 
 describe('the wallet floor applies to every subscription that is not paying', () => {
-  test('an ACTIVE per-seat subscription WITH credit takes the hold like everyone else', async () => {
+  test('an ACTIVE credits subscription WITH credit takes the hold like everyone else', async () => {
     billingEnabled = true;
     holdCalls.length = 0;
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
       balance: '25',
       stripeSubscriptionId: 'sub_live',
       stripeSubscriptionStatus: 'active',
@@ -290,12 +286,11 @@ describe('the wallet floor applies to every subscription that is not paying', ()
     expect(holdCalls.length).toBe(1);
   });
 
-  test('a PAST_DUE per-seat account with an empty wallet is blocked as payment_failed, not "subscribe"', async () => {
+  test('a PAST_DUE credits account with an empty wallet is blocked as payment_failed, not "subscribe"', async () => {
     billingEnabled = true;
     holdCalls.length = 0;
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
       balance: '0',
       stripeSubscriptionId: 'sub_dunning',
       stripeSubscriptionStatus: 'past_due',

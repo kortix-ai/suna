@@ -656,7 +656,7 @@ async function startSessionRuntime(
   // is resolved. It pins the log's root, so the seed's marker must go, or the
   // root resolution would rotate off the restored root.
   try {
-    if (await bootOpenCodeSessionLog({ bin: opencode.getBinaryPath() ?? 'opencode', cwd: await resolveOpencodeCwd(cfg) })) clearSeedBakedMarker()
+    if (await bootOpenCodeSessionLog({ bin: opencode.getBinaryPath() ?? 'opencode', cwd: await resolveOpencodeCwd(cfg), url: opencode.getInternalUrl() })) clearSeedBakedMarker()
   } catch (err) {
     bootState.initialRuntimeSessionError = `session log restore failed: ${err instanceof Error ? err.message : String(err)}`
     logger.error('[boot] session log restore failed; the session does not start', { err: bootState.initialRuntimeSessionError })

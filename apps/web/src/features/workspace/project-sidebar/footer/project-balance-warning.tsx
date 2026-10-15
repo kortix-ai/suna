@@ -22,10 +22,9 @@ function useBalanceWarning(accountId: string | undefined, tI18nComplete: UiTrans
   const { data: accountState } = useAccountState({ accountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const isPerSeat = accountState?.billing_model === 'per_seat';
-  // Only accounts that can actually top up (Team / paid) get this warning —
+  // Only accounts that can actually top up (paid) get this warning —
   // a free account can't buy credits, so it keeps the "Upgrade Plan" button.
-  const canTopUp = (accountState?.tier?.can_purchase_credits ?? false) || isPerSeat;
+  const canTopUp = accountState?.tier?.can_purchase_credits ?? false;
 
   const handleClick = useCallback(
     () =>

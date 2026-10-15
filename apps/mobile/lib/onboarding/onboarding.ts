@@ -88,13 +88,9 @@ export function welcomeOffer(input: {
   os: string;
   family: PlanFamily;
   canManageBilling: boolean;
-  pricePerSeat: number;
 }): WelcomeOffer {
   const canPurchase = canShowExternalPurchase(input.os);
-  const benefits = getUpgradeSheetIncludedItems(input.pricePerSeat, canPurchase).slice(
-    0,
-    WELCOME_BENEFIT_COUNT
-  );
+  const benefits = getUpgradeSheetIncludedItems().slice(0, WELCOME_BENEFIT_COUNT);
   const action: WelcomeAction = !canPurchase ? 'none' : input.canManageBilling ? 'upgrade' : 'ask-owner';
   return { show: input.family === 'free', action, benefits };
 }

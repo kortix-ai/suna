@@ -51,11 +51,11 @@ describe('getCachedAccountTier — the single unified tier cache', () => {
     const acct = 'acct-ttl-boundary';
     expect(await getCachedAccountTier(acct, 10_000)).toBe('free');
 
-    fakeTier = 'per_seat';
+    fakeTier = 'credits';
     expect(await getCachedAccountTier(acct, 10_000 + 29_999)).toBe('free');
     expect(getAccountTierCalls).toBe(1);
 
-    expect(await getCachedAccountTier(acct, 10_000 + 30_000)).toBe('per_seat');
+    expect(await getCachedAccountTier(acct, 10_000 + 30_000)).toBe('credits');
     expect(getAccountTierCalls).toBe(2);
   });
 
@@ -68,12 +68,12 @@ describe('getCachedAccountTier — the single unified tier cache', () => {
     // of a 30s TTL cache; the bug fixed here is that there used to be a
     // SECOND independent cache that could disagree with this one about WHEN
     // that staleness ends).
-    fakeTier = 'per_seat';
+    fakeTier = 'credits';
     expect(await getCachedAccountTier(acct)).toBe('free');
     expect(getAccountTierCalls).toBe(1);
 
     invalidateCachedAccountTier(acct);
-    expect(await getCachedAccountTier(acct)).toBe('per_seat');
+    expect(await getCachedAccountTier(acct)).toBe('credits');
     expect(getAccountTierCalls).toBe(2);
   });
 
@@ -93,10 +93,10 @@ describe('getCachedAccountTier — the single unified tier cache', () => {
   test('different accounts are cached independently', async () => {
     fakeTier = 'free';
     expect(await getCachedAccountTier('acct-1')).toBe('free');
-    fakeTier = 'per_seat';
-    expect(await getCachedAccountTier('acct-2')).toBe('per_seat');
+    fakeTier = 'credits';
+    expect(await getCachedAccountTier('acct-2')).toBe('credits');
     // acct-1 stays cached at 'free' even though the mock now returns
-    // 'per_seat' for any new (uncached) read.
+    // 'credits' for any new (uncached) read.
     expect(await getCachedAccountTier('acct-1')).toBe('free');
     expect(getAccountTierCalls).toBe(2);
   });

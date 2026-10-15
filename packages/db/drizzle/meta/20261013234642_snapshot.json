@@ -10493,6 +10493,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "plan_monthly_usd": {
+          "name": "plan_monthly_usd",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trial_monthly_usd": {
+          "name": "trial_monthly_usd",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -22047,6 +22059,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "tool_input_order": {
+          "name": "tool_input_order",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

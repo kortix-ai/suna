@@ -140,7 +140,7 @@ capitalized only at the start of a sentence or as a UI label.
 
 **Rule.** Use a spaced em dash ( — ) as one pause per paragraph in marketing and docs prose. Do not use an em dash in a button, label, toast, error or CLI message. — *Why:* README, hero and docs already pair clauses with it (1,201 uses in `en.json`). UI strings need one short sentence, so a period or a colon replaces the dash. — *Where:* marketing | docs | email (body). — *When silent:* use a period.
 
-**Rule.** Use digits for every number in UI and docs, with a thousands separator: 2,500 credits, 3,000+ apps. Write prices as "$40 per seat per month" in prose and "$40 / seat / mo" in a pricing table. — *Why:* Digits scan faster. The pricing source uses the compact form. — *Where:* app | marketing | docs. — *When silent:* digits. Spell out one to nine only in a spoken deck note.
+**Rule.** Use digits for every number in UI and docs, with a thousands separator: 2,500 credits, 3,000+ apps. Write prices as "$100 per month" in prose and "$100 / month" in a pricing table. A plan is credits: write "10,000 credits / month". Never write "seat", "per seat" or "per user": members are free. — *Why:* Digits scan faster. The pricing source uses the compact form. — *Where:* app | marketing | docs. — *When silent:* digits. Spell out one to nine only in a spoken deck note.
 
 **Rule.** Use the Oxford comma in lists of three or more. — *Why:* README and hero use it ("agents, skills, memory, and connectors"). — *Where:* marketing | docs | email. — *When silent:* include it.
 

@@ -51,8 +51,6 @@ mockIamAssignments();
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
-  // accounts/seat-lock.ts (#9272) wraps the member insert in a transaction.
-  withDbTransaction: <T>(fn: () => Promise<T>) => fn(),
   db: {
     insert: (table: any) => ({
       values: (vals: any) => {

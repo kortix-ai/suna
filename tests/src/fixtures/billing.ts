@@ -1,11 +1,13 @@
 /**
- * Real subscribe flow (no faking). Drives the same path the dashboard uses —
- * inline checkout — and confirms the Stripe PaymentIntent in TEST MODE with a
- * test payment method, so credits are granted the legitimate way (activate →
- * webhook/activateSubscription). This is the prerequisite that lets an account
- * create sessions.
+ * Real subscribe flow (no faking). Puts an account on the credits plan through
+ * Stripe TEST mode, the way a hosted Checkout would, minus the browser:
  *
- *   create-inline-checkout → (Stripe) confirm PaymentIntent w/ pm_card_visa → confirm-inline-checkout
+ *   POST /v1/billing/plan            → our API creates + maps the Stripe customer
+ *   (Stripe) attach pm_card_visa, create the subscription on the credits price
+ *   POST /v1/billing/sync-subscription → our API adopts it and grants its credits
+ *
+ * The Stripe `invoice.paid` webhook converges on the same state where it is
+ * wired; the sync call makes the fixture independent of webhook delivery.
  */
 import { createHmac, randomUUID } from "node:crypto";
 import type { Client } from "../core/client";
@@ -15,98 +17,99 @@ import { sleep } from "../core/poll";
 import { retryBootstrapCreate } from "./transient";
 
 const TEST_PAYMENT_METHOD = "pm_card_visa";
+const CREDITS_PRICE_LOOKUP_KEY = "kortix_credits_monthly";
 
-/** Confirm a Stripe PaymentIntent in test mode using a test card. */
-async function confirmPaymentIntent(env: Env, clientSecret: string): Promise<void> {
-  if (!env.stripeSecretKey) throw new Error("KE2E_STRIPE_SECRET_KEY required to confirm the subscribe PaymentIntent");
-  const piId = clientSecret.split("_secret_")[0];
-  const form = new URLSearchParams({
-    payment_method: TEST_PAYMENT_METHOD,
-    return_url: "https://example.com/return",
-  });
-  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${piId}/confirm`, {
-    method: "POST",
+async function stripe<T>(env: Env, method: "GET" | "POST", path: string, form?: Record<string, string>): Promise<T> {
+  if (!env.stripeSecretKey) throw new Error("KE2E_STRIPE_SECRET_KEY required to subscribe in Stripe test mode");
+  const res = await fetch(`https://api.stripe.com/v1${path}`, {
+    method,
     headers: {
       authorization: `Bearer ${env.stripeSecretKey}`,
-      "content-type": "application/x-www-form-urlencoded",
+      ...(form ? { "content-type": "application/x-www-form-urlencoded" } : {}),
     },
-    body: form,
+    body: form ? new URLSearchParams(form) : undefined,
   });
-  if (!res.ok) throw new Error(`Stripe PI confirm failed: ${res.status} ${await res.text()}`);
-  const pi = (await res.json()) as { status?: string };
-  if (pi.status !== "succeeded") throw new Error(`PaymentIntent not succeeded (status=${pi.status})`);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Stripe ${method} ${path} failed: ${res.status} ${text}`);
+  return JSON.parse(text) as T;
 }
 
 /**
- * Subscribe `accountId` to a paid tier the real way → credits granted.
- * Idempotent-ish: a no_payment_required result (already entitled) short-circuits.
+ * Subscribe `accountId` to the credits plan at `monthlyUsd` a month, the real
+ * way → credits granted.
  */
 export async function subscribe(
   env: Env,
   client: Client,
   accountId: string,
-  tierKey = "pro",
+  monthlyUsd = 50,
 ): Promise<void> {
-  // Bootstrap-time create: retried through a transient edge-laundered 5xx —
-  // an abandoned predecessor checkout is inert until its PaymentIntent is
-  // confirmed, so re-creating is safe. See fixtures/transient.ts.
-  const created = await retryBootstrapCreate("inline checkout create", async () => {
-    const res = await client.post("/v1/billing/create-inline-checkout", {
+  // Bootstrap-time create: retried through a transient edge-laundered 5xx — an
+  // abandoned Checkout session is inert. See fixtures/transient.ts.
+  const created = await retryBootstrapCreate("plan checkout create", async () => {
+    const res = await client.post("/v1/billing/plan", {
       account_id: accountId,
-      tier_key: tierKey,
-      billing_period: "monthly",
+      monthly_usd: monthlyUsd,
+      success_url: "https://example.com/ok",
+      cancel_url: "https://example.com/cancel",
     });
     res.status([200, 201]);
     return res;
   });
-  const body = created.json<any>();
-
-  if (body?.no_payment_required) {
-    log.step(`subscribe: ${accountId} entitled (no payment required)`);
+  const body = created.json<{ status: string; checkout_url?: string }>();
+  if (body.status !== "checkout_created") {
+    log.step(`subscribe: ${accountId} already on a credits plan (${body.status})`);
+    await waitForCredits(client, accountId, monthlyUsd);
     return;
   }
-  if (!body?.client_secret || !body?.subscription_id) {
-    throw new Error(`create-inline-checkout returned no client_secret/subscription_id: ${created.text()}`);
-  }
 
-  await confirmPaymentIntent(env, body.client_secret);
+  const sessionId = body.checkout_url?.match(/cs_(test|live)_[A-Za-z0-9]+/)?.[0];
+  if (!sessionId) throw new Error(`POST /billing/plan returned no Checkout session: ${created.text()}`);
+  const session = await stripe<{ customer: string }>(env, "GET", `/checkout/sessions/${sessionId}`);
+  const prices = await stripe<{ data: Array<{ id: string }> }>(
+    env,
+    "GET",
+    `/prices?lookup_keys[]=${CREDITS_PRICE_LOOKUP_KEY}`,
+  );
+  const priceId = prices.data[0]?.id;
+  if (!priceId) throw new Error(`no Stripe price with lookup_key ${CREDITS_PRICE_LOOKUP_KEY} in this test account`);
 
-  // The `pro` tier grants 0 monthly credits by design ($5/machine model), so the
-  // subscription alone leaves the account with a 0 balance and sessions 402. To
-  // give the account a real, usable balance we replay a real credit-PURCHASE
-  // event (`checkout.session.completed`, mode=payment → handleCreditPurchase →
-  // wallet.grant) with a VALID signature (whsec_…) — the exact path a real "buy
-  // credits" flow takes. Stripe→API webhook delivery isn't wired to dev-api, so we
-  // supply the delivery; the handler code runs unchanged.
+  const pm = await stripe<{ id: string }>(env, "POST", `/payment_methods/${TEST_PAYMENT_METHOD}/attach`, {
+    customer: session.customer,
+  });
+  const sub = await stripe<{ id: string; status: string }>(env, "POST", "/subscriptions", {
+    customer: session.customer,
+    default_payment_method: pm.id,
+    "items[0][price]": priceId,
+    "items[0][quantity]": String(monthlyUsd * 100),
+    "metadata[account_id]": accountId,
+    "metadata[plan_key]": "credits",
+    "metadata[tier_key]": "credits",
+  });
+  if (sub.status !== "active") throw new Error(`test subscription ${sub.id} is ${sub.status}, not active`);
+
+  // Stripe→API webhook delivery is not wired to every target; fund a usable
+  // balance through the real credit-purchase handler with a signed event.
   if (env.stripeWebhookSecret) {
     await forgeCreditPurchaseWebhook(env, accountId).catch((err) =>
       log.warn(`subscribe: forged credit-purchase webhook failed: ${(err as Error)?.message ?? err}`),
     );
   }
 
-  // Drive the dashboard's confirm step too (sets sub id/status) — best effort.
   let lastErr: unknown;
-  let activated = false;
+  let synced = false;
   for (let i = 0; i < 5; i++) {
-    const confirmed = await client.post("/v1/billing/confirm-inline-checkout", {
-      account_id: accountId,
-      subscription_id: body.subscription_id,
-      tier_key: tierKey,
-    });
-    if (confirmed.statusCode < 400) {
-      activated = true;
+    const r = await client.post("/v1/billing/sync-subscription", { account_id: accountId });
+    if (r.statusCode < 400) {
+      synced = true;
       break;
     }
-    lastErr = confirmed.text();
+    lastErr = r.text();
     await sleep(1500);
   }
-  if (!activated) throw new Error(`confirm-inline-checkout never activated: ${lastErr}`);
+  if (!synced) throw new Error(`sync-subscription never adopted ${sub.id}: ${lastErr}`);
 
-  // Monthly credits are granted
-  // by the Stripe `invoice.paid` webhook (services/webhooks.ts → wallet.grant),
-  // which lands asynchronously. Poll the real account-state until the balance is
-  // usable — that's the true signal that billing-gated flows (sessions) can run.
-  await waitForCredits(client, accountId, tierKey);
+  await waitForCredits(client, accountId, monthlyUsd);
 }
 
 const FUNDING_CREDITS_USD = 50;
@@ -160,7 +163,7 @@ async function forgeCreditPurchaseWebhook(env: Env, accountId: string): Promise<
 }
 
 /** Poll account-state until the account can actually run (credits granted). */
-async function waitForCredits(client: Client, accountId: string, tierKey: string): Promise<void> {
+async function waitForCredits(client: Client, accountId: string, monthlyUsd: number): Promise<void> {
   const deadline = Date.now() + 90_000;
   let last: any = null;
   while (Date.now() < deadline) {
@@ -169,14 +172,14 @@ async function waitForCredits(client: Client, accountId: string, tierKey: string
       last = r.json<any>();
       const credits = last?.credits ?? {};
       if (credits.can_run === true || Number(credits.total) > 0) {
-        log.step(`subscribe: ${accountId} → ${tierKey} active + funded (balance ${credits.total})`);
+        log.step(`subscribe: ${accountId} → credits $${monthlyUsd}/mo active + funded (balance ${credits.total})`);
         return;
       }
     }
     await sleep(3000);
   }
   throw new Error(
-    `subscribe: ${tierKey} activated but credits never landed within 90s ` +
+    `subscribe: credits plan activated but credits never landed within 90s ` +
       `(balance ${last?.credits?.total ?? "?"}) — is the Stripe invoice.paid webhook wired to this target?`,
   );
 }

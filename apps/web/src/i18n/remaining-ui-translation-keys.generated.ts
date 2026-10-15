@@ -542,7 +542,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Your ChatGPT subscription': 'text1797cd1f264b',
   'Your last workspace is archived': 'text9a0da87b2e56',
   'Your own API key': 'text31adf1a22230',
-  'Your team is on Kortix Team. Compute and LLM credits are ready.': 'textdbe08e62ef56',
   'Your top-up landed — compute and the latest AI models are ready to go.': 'texteda7df9ad5e6',
   'your-company/': 'text7a9f6daee641',
   '. The session keeps its id; the sandbox is rebuilt.': 'text09a3bb2aced6',
@@ -841,7 +840,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'You need the project&apos;s settings permission to change a feature flag.':
     'text6d484ed8c1a0',
   'Your browser does not support notifications.': 'text51464281894d',
-  'Your subscription, team seats, and billing for this account.': 'text46470f35d5d8',
+  'Your plan, credits, and billing for this account.': 'text5dffd4db88c5',
   Attach: 'textd406ade2958c',
   'Grant access ({count})': 'text7697f2d90676',
   'Pick account members to add to this group.': 'text2f5525e787a5',
@@ -869,8 +868,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Yes. Bring your own API key for any major provider, or sign in with the ChatGPT subscription you already pay for, or use the managed gateway and bring no key at all. The model is a line of configuration in your repo, so switching provider is a diff rather than a migration.':
     'text055026a9c10e',
   'What does it cost?': 'texte8dc9deba44c',
-  'Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Team is $40 per seat per month and pools 2,500 credits a seat. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
-    'text8eb8b8551cec',
+  'Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
+    'text12836c0e435d',
   'Why we are building it': 'text7ee5a6d5e8ad',
   'Read the source': 'text625b22ba31d0',
   'who does the work': 'textf16b8eb8dbdc',

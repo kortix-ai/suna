@@ -38,20 +38,17 @@ function writeConfig(apiBase: string): string {
 const ACCOUNT_STATE = {
   credits: { total: 42.5, daily: 0, monthly: 0, extra: 0, can_run: true },
   billing_state: 'active',
-  plan: { key: 'per_seat', family: 'team', label: 'Team', sublabel: '$20/seat/mo' },
+  plan: { key: 'credits', family: 'credits', label: 'Credits', monthly_usd: 20 },
   subscription: {
-    tier_key: 'per_seat',
-    tier_display_name: 'Team',
+    tier_key: 'credits',
+    tier_display_name: 'Credits',
     status: 'active',
     billing_period: 'monthly',
     cancel_at_period_end: false,
     current_period_end: 1800000000,
     has_scheduled_change: false,
   },
-  tier: { name: 'per_seat', display_name: 'Team' },
-  billing_model: 'per_seat',
-  seats: { count: 3, price_per_seat_usd: 20 },
-  member_count: 3,
+  tier: { name: 'credits', display_name: 'Credits' },
   auto_topup: { enabled: true, threshold: 10, amount: 25 },
   can_manage_billing: true,
 };
@@ -266,9 +263,9 @@ describe('kortix billing', () => {
     expect(r.code).toBe(0);
     const c = call('GET', '/v1/billing/account-state');
     expect(c?.search).toBe(`?account_id=${ACCOUNT}`);
-    expect(r.stdout).toContain('Team');
+    expect(r.stdout).toContain('Credits · 2,000 credits/month');
     expect(r.stdout).toContain('4,250 credits');
-    expect(r.stdout).toContain('3 × $20.00/mo');
+    expect(r.stdout).not.toMatch(/seat|members|model/i);
     expect(r.stdout).toContain('on — buy $25.00 under $10.00');
   });
 
@@ -322,7 +319,7 @@ describe('kortix billing', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['billing', 'status', '--json'], config);
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).plan.key).toBe('per_seat');
+    expect(JSON.parse(r.stdout).plan.key).toBe('credits');
   });
 
   test('transactions sends limit/offset/type_filter; --breakdown hits credit-breakdown', async () => {

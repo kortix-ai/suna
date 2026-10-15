@@ -1,6 +1,6 @@
 {
   "id": "362b2390-897c-4149-b9f2-fadec982f822",
-  "prevId": "b6d49057-bc09-41af-be69-340c5e0e8cc8",
+  "prevId": "464a8151-fc9d-4941-9f27-ae3f7804e3fd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10143,6 +10143,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "plan_monthly_usd": {
+          "name": "plan_monthly_usd",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trial_monthly_usd": {
+          "name": "trial_monthly_usd",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -21697,6 +21709,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "tool_input_order": {
+          "name": "tool_input_order",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

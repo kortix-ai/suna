@@ -276,7 +276,6 @@ test("begin with inactive billing returns the prompt path's billing error", asyn
     reason: 'insufficient_credits',
     message: 'Out of credits. Top up to continue.',
     balance: 0,
-    billingModel: 'legacy',
     hasSubscription: false,
     billingState: 'out_of_credits',
   };
@@ -287,7 +286,6 @@ test("begin with inactive billing returns the prompt path's billing error", asyn
     message: 'Out of credits. Top up to continue.',
     code: 'insufficient_credits',
     balance: 0,
-    billing_model: 'legacy',
     has_subscription: false,
     billing_state: 'out_of_credits',
     account_id: scope.accountId,

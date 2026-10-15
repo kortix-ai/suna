@@ -1,5 +1,5 @@
 /**
- * Web billing links. Mobile buys through RevenueCat (./unified-checkout); a
+ * Web billing links. Mobile has no in-app purchase; a
  * Stripe subscriber manages billing on the web app.
  */
 
