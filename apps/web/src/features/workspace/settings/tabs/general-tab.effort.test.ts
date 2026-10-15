@@ -1,73 +1,218 @@
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+/** Behavioral coverage of GeneralTab effort writes through the real SDK and
+ * React Query. Only auth, IAM, routing, icon and DOM-only Select collaborators
+ * are stubbed; the component under test is imported unchanged. */
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { configureKortix, type KortixProject } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type ReactNode, createElement } from 'react';
+import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 
-/**
- * The project default-effort row, pinned the way `general-tab.rename.test.tsx`
- * pins the rename: as a scan of the source the component actually renders.
- * The same constraints apply — `apps/web`'s `bun test` runs WITHOUT
- * `--isolate`, so mocking `@tanstack/react-query` or `@kortix/sdk` here would
- * corrupt every other file in the run, and there is no jsdom harness — so
- * these tests hold the wiring the renderer cannot observe:
- *
- * - the mutation goes through the SDK's `setDefaultReasoningEffort`, which is
- *   the one client for `PUT /v1/projects/:id/default-reasoning-effort`;
- * - the picker's Automatic entry (the shared `''` sentinel) is sent as
- *   `null` — the API's clear verb — and every real effort is sent verbatim;
- * - a save writes the result into `qk.project.summary(...)` so the row and
- *   every other summary reader repaint without a refetch;
- * - the Select's value falls back to the Automatic sentinel when the project
- *   carries no stored default (the serialized field is `null`, and Radix
- *   rejects an unlisted value), and Automatic is the FIRST option so the
- *   control never opens on an effort the project does not actually have.
- */
-const source = readFileSync(join(import.meta.dir, 'general-tab.tsx'), 'utf8');
-const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
-const cardStart = code.indexOf('function GeneralWorkspaceCard(');
-const cardEnd = code.indexOf('export function GeneralTab(', cardStart);
-const cardBody = cardStart < 0 || cardEnd < 0 ? '' : code.slice(cardStart, cardEnd);
+function Passthrough({ children }: { children?: ReactNode }) {
+  return createElement('div', null, children);
+}
 
-// Scope to the effort mutation itself: the card now declares three
-// `useMutation` blocks (rename, icon, effort), so anchor on the SDK call the
-// effort mutation is the only one to contain.
-const effortAnchor = cardBody.indexOf('setDefaultReasoningEffort(project.project_id, effort)');
-const effortStart = effortAnchor < 0 ? -1 : cardBody.lastIndexOf('useMutation({', effortAnchor);
-const effortEnd = effortAnchor < 0 ? -1 : cardBody.indexOf('});', effortAnchor);
-const effortBlock =
-  effortStart < 0 || effortEnd < 0 ? '' : cardBody.slice(effortStart, effortEnd);
+const realToast = await import('@/components/ui/toast');
 
-describe('GeneralWorkspaceCard: the default-effort row', () => {
-  test('the scan found the effort mutation', () => {
-    expect(cardBody.length).toBeGreaterThan(0);
-    expect(effortBlock.length).toBeGreaterThan(0);
+// Reset transport and toast observations before each mount.
+let calls: { url: string; method: string; body: unknown; status: number }[] = [];
+let toastCalls: { kind: 'success' | 'error'; message: string }[] = [];
+let canManage = true;
+let failWrite = false;
+let releaseWrite: (() => void) | undefined;
+
+mock.module('@/components/ui/toast', () => ({
+  ...realToast,
+  successToast: (message: string) => toastCalls.push({ kind: 'success', message }),
+  errorToast: (message: string) => toastCalls.push({ kind: 'error', message }),
+}));
+// Collaborators, not the subject: the card reads `canManage` from the IAM
+// probe, the container reads the session user and the router, and the icon
+// field is a heavy picker that never opens in these tests.
+mock.module('next/navigation', () => ({
+  useRouter: () => ({ push: () => undefined, replace: () => undefined }),
+}));
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: { id: 'user-1' } }),
+}));
+mock.module('@/lib/use-project-can', () => ({
+  useProjectCans: () => ({
+    [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: canManage },
+    [PROJECT_ACTIONS.PROJECT_DELETE]: { allowed: true },
+  }),
+}));
+mock.module('@/features/projects/modal/project-icon-field', () => ({
+  ProjectIconField: Passthrough,
+}));
+
+// Only the DOM-dependent Select primitives are replaced. Keep their value,
+// disabled and onValueChange contract visible to the component test.
+function EffortSelect(props: Record<string, unknown>) {
+  return createElement('effort-select', props);
+}
+function EffortItem(props: Record<string, unknown>) {
+  return createElement('effort-item', props);
+}
+mock.module('@/components/ui/select', () => ({
+  Select: EffortSelect,
+  SelectContent: Passthrough,
+  SelectItem: EffortItem,
+  SelectTrigger: Passthrough,
+  SelectValue: Passthrough,
+}));
+
+const { GeneralTab } = await import('./general-tab');
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const savedProject: KortixProject = {
+  project_id: 'proj-1',
+  account_id: 'acc-1',
+  name: 'Triage',
+  repo_url: 'https://github.com/acme/triage.git',
+  default_branch: 'main',
+  manifest_path: 'kortix.yaml',
+  status: 'active',
+  metadata: {},
+  default_reasoning_effort: null,
+  last_opened_at: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+  updated_at: '2026-01-01T00:00:00.000Z',
+};
+
+const mounted: ReactTestRenderer[] = [];
+const clients: QueryClient[] = [];
+const tick = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+beforeEach(() => {
+  calls = [];
+  toastCalls = [];
+  canManage = true;
+  failWrite = false;
+  releaseWrite = undefined;
+  configureKortix({
+    backendUrl: 'http://api.test/v1',
+    getToken: async () => 'token',
+    fetch: async (url, init = {}) => {
+      const path = String(url).split('?')[0];
+      const method = init.method ?? 'GET';
+      if (method === 'PUT' && path.endsWith('/projects/proj-1/default-reasoning-effort')) {
+        const body = JSON.parse(String(init.body));
+        calls.push({ url: path, method, body, status: failWrite ? 500 : 200 });
+        await new Promise<void>((resolve) => { releaseWrite = resolve; });
+        return Response.json(
+          failWrite ? { message: 'effort write failed' } : {
+            ...savedProject, default_reasoning_effort: body.effort,
+          },
+          { status: failWrite ? 500 : 200 },
+        );
+      }
+      if (method === 'GET' && path.endsWith('/projects/proj-1')) {
+        return Response.json(savedProject);
+      }
+      throw new Error(`Unexpected request: ${method} ${path}`);
+    },
+  });
+});
+
+afterEach(async () => {
+  await act(async () => {
+    releaseWrite?.();
+    await tick();
+    for (const renderer of mounted.splice(0)) renderer.unmount();
+  });
+  for (const client of clients.splice(0)) client.clear();
+});
+
+async function mount(effort: string | null = null) {
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+  client.setQueryData(qk.project.summary('proj-1'), {
+    ...savedProject, default_reasoning_effort: effort,
+  });
+  clients.push(client);
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(createElement(QueryClientProvider, { client },
+      createElement(GeneralTab, { projectId: 'proj-1' })));
+    await tick();
+  });
+  mounted.push(renderer);
+  return { client, renderer };
+}
+
+const picker = (renderer: ReactTestRenderer) => renderer.root.findByType(EffortSelect);
+async function choose(renderer: ReactTestRenderer, value: string) {
+  await act(async () => {
+    picker(renderer).props.onValueChange(value);
+    await tick();
+  });
+}
+async function finishWrite() {
+  await act(async () => {
+    expect(releaseWrite).toBeDefined();
+    releaseWrite!();
+    await tick();
+  });
+}
+
+describe('GeneralTab default reasoning effort', () => {
+  test('an unset default selects Automatic first and renders the effort ladder', async () => {
+    const { renderer } = await mount();
+    expect(picker(renderer).props.value).toBe('');
+    expect(picker(renderer).props.disabled).toBe(false);
+    const options = renderer.root.findAllByType(EffortItem);
+    expect(options.map((option) => option.props.value)).toEqual([
+      '', 'none', 'low', 'medium', 'high', 'xhigh', 'max',
+    ]);
+    expect(options[0].props.children).toBe('Automatic');
+    expect(calls).toEqual([]);
   });
 
-  test('the write goes through the SDK client for the dedicated route', () => {
-    expect(effortBlock).toContain('setDefaultReasoningEffort(project.project_id, effort)');
+  test('a selection sends the exact SDK PUT, disables while pending, and repaints from summary cache', async () => {
+    const { renderer, client } = await mount();
+    await choose(renderer, 'high');
+    expect(calls).toEqual([{
+      url: 'http://api.test/v1/projects/proj-1/default-reasoning-effort',
+      method: 'PUT', body: { effort: 'high' }, status: 200,
+    }]);
+    expect(picker(renderer).props.disabled).toBe(true);
+    expect(picker(renderer).props.value).toBe('');
+    await finishWrite();
+    expect(client.getQueryData<KortixProject>(qk.project.summary('proj-1'))?.default_reasoning_effort).toBe('high');
+    expect(picker(renderer).props.value).toBe('high');
+    expect(picker(renderer).props.disabled).toBe(false);
+    expect(toastCalls).toEqual([]);
   });
 
-  test('the Automatic sentinel is sent as null — the API clear verb', () => {
-    // The handler lives in the row's JSX, outside the mutation block.
-    expect(cardBody).toMatch(
-      /effortMutation\.mutate\(v === DEFAULT_EFFORT_AUTOMATIC \? null : v\)/,
-    );
+  test('Automatic clears a stored effort with null and repaints the picker', async () => {
+    const { renderer, client } = await mount('max');
+    expect(picker(renderer).props.value).toBe('max');
+    await choose(renderer, '');
+    expect(calls[0].body).toEqual({ effort: null });
+    await finishWrite();
+    expect(client.getQueryData<KortixProject>(qk.project.summary('proj-1'))?.default_reasoning_effort).toBeNull();
+    expect(picker(renderer).props.value).toBe('');
   });
 
-  test('a save repaints the project summary cache, not a refetch', () => {
-    expect(effortBlock).toContain('queryClient.setQueryData(qk.project.summary(project.project_id), updated)');
+  test('a rejected write keeps the saved effort and reports one error', async () => {
+    failWrite = true;
+    const { renderer, client } = await mount('low');
+    await choose(renderer, 'high');
+    await finishWrite();
+    expect(calls).toHaveLength(1);
+    expect(picker(renderer).props.value).toBe('low');
+    expect(picker(renderer).props.disabled).toBe(false);
+    expect(client.getQueryData<KortixProject>(qk.project.summary('proj-1'))?.default_reasoning_effort).toBe('low');
+    expect(toastCalls).toEqual([{ kind: 'error', message: 'effort write failed' }]);
   });
 
-  test('the Select falls back to the Automatic sentinel when no default is stored', () => {
-    expect(cardBody).toContain('value={project.default_reasoning_effort ?? DEFAULT_EFFORT_AUTOMATIC}');
-  });
-
-  test('Automatic is offered first, before every effort value', () => {
-    const selectStart = cardBody.indexOf('<Select');
-    const selectEnd = cardBody.indexOf('</Select>', selectStart);
-    const selectBlock = selectStart < 0 ? '' : cardBody.slice(selectStart, selectEnd);
-    expect(selectBlock.indexOf('DEFAULT_EFFORT_AUTOMATIC')).toBeLessThan(
-      selectBlock.indexOf('DEFAULT_EFFORT_OPTIONS.map'),
-    );
+  test('a user without project.write cannot use the effort control', async () => {
+    canManage = false;
+    const { renderer } = await mount('medium');
+    expect(picker(renderer).props.disabled).toBe(true);
+    expect(picker(renderer).props.value).toBe('medium');
+    expect(calls).toEqual([]);
   });
 });

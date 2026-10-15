@@ -76,6 +76,15 @@ mock.module('@/features/projects/modal/project-icon-field', () => ({
   ProjectIconField: Passthrough,
 }));
 
+// Radix Select requires a browser DOM; rename behavior does not depend on it.
+mock.module('@/components/ui/select', () => ({
+  Select: Passthrough,
+  SelectContent: Passthrough,
+  SelectItem: Passthrough,
+  SelectTrigger: Passthrough,
+  SelectValue: Passthrough,
+}));
+
 const { GeneralTab } = await import('./general-tab');
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
