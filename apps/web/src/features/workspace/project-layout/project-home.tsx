@@ -13,6 +13,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
+import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -76,6 +77,10 @@ export function ProjectHome({
   // home, which "New session" opens, stays the normal home.
   const searchParams = useSearchParams();
   const firstChat = useFirstChatPending(projectId) && isFirstChatRequested(searchParams);
+  // The onboarding wizard opens over this page while onboarding is pending
+  // (`project-shell.tsx`); the promo waits until it is done (KRTX-2378).
+  const onboarding = useProjectOnboarding(projectId);
+  const onboarded = onboarding.hydrated && onboarding.status === 'completed';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -281,8 +286,8 @@ export function ProjectHome({
         to={accessRequestsTo}
         notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
       />
-      {/* Not over the first chat: onboarding owns that screen. */}
-      {firstChat ? null : <MobileAppPromo />}
+      {/* Not over the first chat or the onboarding wizard: onboarding owns those screens. */}
+      {firstChat || !onboarded ? null : <MobileAppPromo />}
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the
