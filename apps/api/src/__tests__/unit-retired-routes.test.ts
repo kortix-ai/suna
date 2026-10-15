@@ -33,7 +33,7 @@ describe('retired routes', () => {
   test('the table lists every route once', () => {
     const keys = RETIRED_ROUTES.map(([method, path]) => `${method} ${path}`);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.length).toBe(36);
+    expect(keys.length).toBe(41);
   });
 
   test.each(ROWS)('%s %s answers 410 ENDPOINT_RETIRED', async (method, url) => {
