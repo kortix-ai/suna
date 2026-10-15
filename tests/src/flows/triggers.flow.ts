@@ -12,7 +12,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { createDatabaseSession } from '../fixtures/database-project';
-import { grantEnterpriseTrial } from '../fixtures/enterprise-access';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { withDb } from '../fixtures/chat';
 
 type TriggerRow = { slug: string; model: string | null };
@@ -269,7 +269,7 @@ flow(
     domain: 'triggers',
     routes: [
       'GET /v1/projects/:projectId/triggers',
-      'POST /v1/admin/api/accounts/:id/trial',
+      'PUT /v1/accounts/:accountId/iam/enterprise-demo',
       'POST /v1/accounts/:accountId/iam/roles',
       'POST /v1/accounts/:accountId/iam/policies',
     ],
@@ -283,9 +283,9 @@ flow(
     let roleId = '';
 
     await ctx.step(
-      'platform admin grants an Enterprise trial (entitles this account for custom-role writes)',
+      'the Enterprise demo is turned on (entitles this account for custom-role writes)',
       async () => {
-        await grantEnterpriseTrial(ctx, team.id);
+        await enableEnterpriseDemo(ctx, team.id);
       },
     );
 

@@ -36,9 +36,9 @@ const RETIRED: Array<[method: string, template: string]> = [
   ['POST', '/v1/projects/suna-migration/start'],
   // One plan system (2026-10-15): the Enterprise preview became a dated trial,
   // and Enterprise is set by a contract.
-  ['GET', '/v1/accounts/:accountId/iam/enterprise-demo'],
-  ['PUT', '/v1/accounts/:accountId/iam/enterprise-demo'],
   ['POST', '/v1/admin/api/accounts/:id/enterprise-demo'],
+  ['POST', '/v1/admin/api/accounts/:id/trial'],
+  ['DELETE', '/v1/admin/api/accounts/:id/trial'],
   ['POST', '/v1/admin/api/accounts/:id/enterprise-entitlement'],
   ['POST', '/v1/admin/api/accounts/:id/managed-models'],
 ];

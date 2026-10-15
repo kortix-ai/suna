@@ -28,7 +28,7 @@ import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from
 import { stopAllSessionRefresh, type SupabaseSessionAuth } from './supabase-session';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
-import { ADMIN_TOKEN_LABEL, ENTERPRISE_TRIAL_BODY, NO_ADMIN_TOKEN_HINT } from './enterprise-access';
+import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-access';
 import {
   createDatabaseProject,
   createDatabaseSession,
@@ -323,17 +323,17 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
       if (opts?.enterprise) {
-        // Enterprise comes from the plan: a platform admin grants the fixture
-        // account an Enterprise trial (fixtures/enterprise-access.ts). The
-        // OWNER cannot grant it, so this runs as the run-scoped platform admin.
+        // Enterprise is a feature layer: the fixture account gets the
+        // Enterprise demo (fixtures/enterprise-access.ts), switched on by the
+        // run-scoped platform admin so it does not depend on the owner.
         if (!env.adminToken) {
           throw new Error(`enterprise team fixture needs a platform admin — ${NO_ADMIN_TOKEN_HINT}`);
         }
         const granted = await adminClient
           .withBearer(env.adminToken, ADMIN_TOKEN_LABEL)
-          .post('/v1/admin/api/accounts/:id/trial', ENTERPRISE_TRIAL_BODY, { params: { id: accountId } });
-        if (granted.statusCode !== 200 || granted.json<any>()?.trial?.status !== 'active') {
-          throw new Error(`enterprise team trial grant failed: ${granted.text()}`);
+          .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId } });
+        if (granted.statusCode !== 200 || granted.json<any>()?.state !== 'demo') {
+          throw new Error(`enterprise team demo failed: ${granted.text()}`);
         }
       }
       return {

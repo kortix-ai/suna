@@ -173,10 +173,9 @@ adminApp.openapi(
 
     const now = Date.now();
     const list = rows.map((r) => {
-      // The plan the account BEHAVES as: an active admin trial overlays the
-      // stored `tier`, and that is what every
-      // gate enforces. `tier` below stays the STORED column — the tier filter
-      // matches on it server-side, so the two must keep meaning the same thing.
+      // The billing plan and the Enterprise layer (resolve-billing.ts). `tier`
+      // below stays the STORED column — the tier filter matches on it
+      // server-side, so the two must keep meaning the same thing.
       const resolved = resolveBillingFromRow(r, now);
       return {
         accountId: r.accountId,
@@ -209,6 +208,8 @@ adminApp.openapi(
         provider: r.provider ?? null,
         planType: r.planType ?? null,
         stripeSubscriptionId: r.stripeSubscriptionId ?? null,
+        // The Enterprise feature layer: off, demo (self-serve) or licensed.
+        enterprise: resolved.enterprise,
         trial: {
           status: r.trialStatus ?? 'none',
           tier: r.trialTier ?? null,
@@ -228,7 +229,7 @@ adminApp.openapi(
               autoRenews: r.contractAutoRenews ?? false,
             }
           : null,
-        // Set while SSO/SCIM stay on after an Enterprise trial ended.
+        // Set while SSO/SCIM stay on after a license ended.
         graceEndsAt: resolved.grace?.endsAt ?? null,
         // The stored override map, exactly as PUT /accounts/{id}/overrides left
         // it. Expiry is NOT applied here — the console shows an operator what
@@ -803,17 +804,13 @@ adminApp.openapi(
     const { isValidTier } = await import('../billing/services/tiers');
     if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
 
-    // Enterprise has one write path: a contract, so its terms, credit pool and
-    // end date are on file (billing/services/enterprise-contracts.ts).
+    // Enterprise is not a billing plan: it is a license contract
+    // (POST /api/accounts/{id}/enterprise-contract) or the account's demo.
     if (tier === 'enterprise') {
       return c.json(
-        { error: "Enterprise is set by a contract: POST /api/accounts/{id}/enterprise-contract" },
+        { error: "Enterprise is a license, not a plan: POST /api/accounts/{id}/enterprise-contract" },
         400,
       );
-    }
-    const { getActiveContract } = await import('../billing/services/enterprise-contracts');
-    if (await getActiveContract(accountId)) {
-      return c.json({ error: 'the account has an active Enterprise contract; end it first' }, 409);
     }
 
     // `monthly_usd` is the plan amount of a credits plan. Omit it to leave the
@@ -862,141 +859,6 @@ adminApp.openapi(
   },
 );
 
-// ── Grant or extend a trial ──────────────────────────────────────────────────
-// A trial is a dated grant of a plan ('credits' or 'enterprise') with one
-// expiring credit grant (billing/services/trial-admin.ts). Re-granting the same
-// plan moves the end date.
-adminApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/trial',
-    tags: ['admin'],
-    summary: 'Grant or replace an account trial',
-    ...auth,
-    request: {
-      params: z.object({ id: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              tier_key: z.string().min(1).max(50),
-              duration_days: z.number().int().min(1),
-              note: z.string().max(2000).optional(),
-              credit_grant: z.number().min(0).optional(),
-            }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(z.record(z.string(), z.any()), 'Trial granted'),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-    try {
-      const accountId = c.req.param('id');
-      const actorUserId = (c.get('userId') as string | undefined) ?? null;
-      const body = c.req.valid('json') as {
-        tier_key: string;
-        duration_days: number;
-        note?: string;
-        credit_grant?: number;
-      };
-      const { grantTrial, validateGrantTrialInput } = await import(
-        '../billing/services/trial-admin'
-      );
-      const input = {
-        accountId,
-        tierKey: body.tier_key,
-        durationDays: body.duration_days,
-        note: body.note ?? null,
-        actorUserId,
-        creditGrant: body.credit_grant,
-      };
-      const invalid = validateGrantTrialInput(input);
-      if (invalid) return c.json({ error: invalid }, 400);
-
-      const result = await grantTrial(input);
-
-      try {
-        const { recordAuditEvent } = await import('../shared/audit');
-        await recordAuditEvent({
-          accountId,
-          actorUserId,
-          action: 'admin.account.trial.grant',
-          resourceType: 'credit_account',
-          resourceId: accountId,
-          before: { trial: result.before },
-          after: { trial: result.current, credit_granted: result.creditGranted },
-          ip: requestClientIp(c),
-          userAgent: c.req.header('user-agent') || null,
-        });
-      } catch {
-        /* audit is best-effort — never block the grant */
-      }
-
-      return c.json({ ok: true, trial: result.current, credit_granted: result.creditGranted });
-    } catch (e: any) {
-      return c.json({ error: adminErrorMessage(e) }, 500);
-    }
-  },
-);
-
-// ── Revoke an account trial ──────────────────────────────────────────────────
-adminApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/api/accounts/{id}/trial',
-    tags: ['admin'],
-    summary: 'Revoke an active account trial',
-    ...auth,
-    request: { params: z.object({ id: z.string() }) },
-    responses: {
-      200: json(z.record(z.string(), z.any()), 'Trial revoked'),
-      400: json(z.record(z.string(), z.any()), 'No active trial'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-    try {
-      const accountId = c.req.param('id');
-      const actorUserId = (c.get('userId') as string | undefined) ?? null;
-      const { revokeTrial } = await import('../billing/services/trial-admin');
-      let result;
-      try {
-        result = await revokeTrial(accountId);
-      } catch (e: any) {
-        return c.json({ error: adminErrorMessage(e) }, 400);
-      }
-
-      try {
-        const { recordAuditEvent } = await import('../shared/audit');
-        await recordAuditEvent({
-          accountId,
-          actorUserId,
-          action: 'admin.account.trial.revoke',
-          resourceType: 'credit_account',
-          resourceId: accountId,
-          before: { trial: result.before },
-          after: { trial: result.current },
-          ip: requestClientIp(c),
-          userAgent: c.req.header('user-agent') || null,
-        });
-      } catch {
-        /* audit is best-effort — never block the revoke */
-      }
-
-      return c.json({ ok: true, trial: result.current });
-    } catch (e: any) {
-      return c.json({ error: adminErrorMessage(e) }, 500);
-    }
-  },
-);
-
 // ── Enterprise contracts ─────────────────────────────────────────────────────
 // The one way onto Enterprise: an annual license plus a prepaid credit pool
 // (billing/services/enterprise-contracts.ts). `checkout` makes an offer the
@@ -1004,7 +866,8 @@ adminApp.openapi(
 // Stripe invoice; `manual` records a contract paid outside Stripe.
 const ContractBody = z.object({
   license_usd: z.number().min(0),
-  credits_usd: z.number().min(0),
+  /** Ignored: a license carries no credits. Accepted so an older console still saves. */
+  credits_usd: z.number().min(0).optional(),
   term_months: z.number().int().min(1).optional(),
   collection: z.enum(['checkout', 'invoice', 'manual']),
   note: z.string().max(2000).optional(),
@@ -1119,7 +982,6 @@ adminApp.openapi(
         await createContract({
           accountId,
           licenseUsd: body.license_usd,
-          creditsUsd: body.credits_usd,
           termMonths: body.term_months,
           collection: body.collection,
           note: body.note ?? null,

@@ -1,6 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { setEnterpriseDemo } from '../core/rest/projects-client/iam-enterprise';
 import {
   acceptEnterpriseOffer,
+  contactEnterpriseSales,
+  type ContactEnterpriseSalesParams,
   type AcceptEnterpriseOfferParams,
   type AcceptEnterpriseOfferResult,
   setBillingPlan,
@@ -31,5 +34,29 @@ export function useSetBillingPlan() {
 export function useAcceptEnterpriseOffer() {
   return useMutation<AcceptEnterpriseOfferResult, Error, AcceptEnterpriseOfferParams>({
     mutationFn: acceptEnterpriseOffer,
+  });
+}
+
+/**
+ * "Talk to sales": one click, no form (`POST /billing/enterprise/contact`).
+ * Resolves to `{ sent }`. Any member may ask.
+ */
+export function useContactSales() {
+  return useMutation<{ sent: boolean }, Error, ContactEnterpriseSalesParams>({
+    mutationFn: contactEnterpriseSales,
+  });
+}
+
+/**
+ * Turn the account's Enterprise demo on or off (owners and admins). Refreshes
+ * the account state, whose `enterprise.state` then reads 'demo' or 'off'.
+ */
+export function useSetEnterpriseDemo() {
+  const queryClient = useQueryClient();
+  return useMutation<boolean, Error, { accountId: string; enabled: boolean }>({
+    mutationFn: ({ accountId, enabled }) => setEnterpriseDemo(accountId, enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['account-state'] });
+    },
   });
 }

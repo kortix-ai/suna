@@ -142,7 +142,6 @@ billingApp.openapi(
     const { runAccessSweep } = await import('./services/access-notices');
     const result = await runAccessSweep();
     return c.json({
-      expired: result.trialsExpired,
       contracts_ended: result.contractsEnded,
       warnings_sent: result.warningsSent,
     });

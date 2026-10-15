@@ -397,8 +397,9 @@ flow(
   },
 );
 
-// ADM-13 — an Enterprise contract recorded manually (paid outside Stripe): the
-// one way onto Enterprise. Scoped to a FRESH run-owned team. `manual` needs no
+// ADM-13 — an Enterprise LICENSE recorded manually (paid outside Stripe): it
+// turns the Enterprise features on (Licensed) and never touches the billing
+// plan or the wallet. Scoped to a FRESH run-owned team. `manual` needs no
 // Stripe, so the local profile drives the whole lifecycle.
 flow(
   "ADM-13",
@@ -413,7 +414,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const body = { license_usd: 25000, credits_usd: 15000, term_months: 12, collection: "manual" };
+    const body = { license_usd: 25000, term_months: 12, collection: "manual" };
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
@@ -438,49 +439,46 @@ flow(
         );
         r.status(400);
       });
-      await ctx.step("admin records a manual $40,000 contract → 200, active for 12 months", async () => {
+      await ctx.step("admin records a manual $25,000 license → 200, active for 12 months, no credits", async () => {
         const r = await admin.post("/v1/admin/api/accounts/:id/enterprise-contract", body, { params: { id: team.id } });
         r.status(200)
           .body()
           .has("$.contract.status", "active")
           .has("$.contract.licenseUsd", 25000)
-          .has("$.contract.creditsUsd", 15000)
+          .has("$.contract.creditsUsd", 0)
           .has("$.contract.collection", "manual")
           .exists("$.contract.endsAt");
       });
-      await ctx.step("account-state: Enterprise, the contract, all enterprise features, the pool granted", async () => {
+      await ctx.step("account-state: Licensed with every Enterprise feature; the billing plan and wallet unchanged", async () => {
         const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
         r.status(200)
           .body()
-          .has("$.plan.family", "enterprise")
+          .has("$.enterprise.state", "licensed")
+          .has("$.plan.family", "free")
           .has("$.contract.license_usd", 25000)
-          .has("$.contract.credits_usd", 15000)
           .has("$.contract.renews", false)
           .has("$.tier.entitlements.sso", true)
           .has("$.trial", null);
         const credits = r.json<any>()?.credits?.total;
-        if (!(typeof credits === "number" && credits >= 15000)) {
-          throw new Error(`expected the $15,000 pool in the balance, got ${String(credits)}`);
+        if (typeof credits === "number" && credits >= 1000) {
+          throw new Error(`a license grants no credits, but the balance is ${String(credits)}`);
         }
       });
       await ctx.step("a second active contract → 409", async () => {
         const r = await admin.post("/v1/admin/api/accounts/:id/enterprise-contract", body, { params: { id: team.id } });
         r.status(409);
       });
-      await ctx.step("the tier route refuses to move an account off an active contract → 409", async () => {
-        const r = await admin.post("/v1/admin/api/accounts/:id/tier", { tier: "free" }, { params: { id: team.id } });
-        r.status(409);
-      });
       await ctx.step("the contract list shows it", async () => {
         const r = await admin.get("/v1/admin/api/accounts/:id/enterprise-contracts", { params: { id: team.id } });
         r.status(200).body().has("$.contracts[0].status", "active");
       });
-      await ctx.step("admin ends the contract → 200; the account is back on Free with SSO kept for the grace", async () => {
+      await ctx.step("admin ends the license → 200; Enterprise off, SSO kept for the grace", async () => {
         const r = await admin.post("/v1/admin/api/accounts/:id/enterprise-contract/end", {}, { params: { id: team.id } });
         r.status(200).body().has("$.contract.status", "ended");
         const state = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
         state.status(200)
           .body()
+          .has("$.enterprise.state", "off")
           .has("$.plan.family", "free")
           .has("$.contract", null)
           .has("$.grace.reason", "contract_ended")
@@ -495,193 +493,95 @@ flow(
   },
 );
 
-// ─── Admin-issued trials + entitlement overrides ─────────────────────────────
+// ─── Enterprise demo (the self-serve feature switch) ──────────────────────────
 // Every write below is scoped to a FRESH run-owned team account (torn down at
 // the end of the run), never the seeded OWNER account and never a real
-// customer. A trial makes the account BEHAVE as `tier_key` without touching
-// credit_accounts.tier, so nothing here can leak into a real subscription.
+// customer. Trials are removed (2026-10-15): the Enterprise demo replaces them.
 
-// ADM-14 — grant/replace a trial. `credit_grant: 0` keeps the wallet untouched
-// (the parameter is exercised at its boundary, not by minting real credits).
+// ADM-14 — a platform admin switches the Enterprise demo for any account
+// (support, or withdrawing a demo), and the admin accounts list shows it.
 flow(
   "ADM-14",
   {
     domain: "admin",
-    routes: ["POST /v1/admin/api/accounts/:id/trial", "GET /v1/admin/api/accounts"],
+    routes: ["PUT /v1/accounts/:accountId/iam/enterprise-demo", "GET /v1/admin/api/accounts"],
   },
   async (ctx) => {
-    const grant = { tier_key: "credits", duration_days: 30, credit_grant: 0 };
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/admin/api/accounts/:id/trial", grant, { params: { id: NOPE } });
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: NOPE } });
       r.status(401);
-    });
-    await ctx.step("non-admin OWNER → 403", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/admin/api/accounts/:id/trial", grant, { params: { id: NOPE } });
-      r.status(403);
     });
     if (ctx.env.capabilities.admin) {
       const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
-      const name = ctx.fixtures.name("adm14-trial");
+      const name = ctx.fixtures.name("adm14-demo");
       const team = await ctx.fixtures.team({ name });
-
-      await ctx.step("admin: tier_key that is not a trial plan (credits or enterprise) → 400", async () => {
-        const r = await admin.post(
-          "/v1/admin/api/accounts/:id/trial",
-          { ...grant, tier_key: "free" },
-          { params: { id: team.id } },
-        );
-        r.status(400);
+      await ctx.step("admin turns the demo on for an account it is not a member of → 200 state demo", async () => {
+        const r = await admin.put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: team.id } });
+        r.status(200).body().has("$.enabled", true).has("$.state", "demo");
       });
-      await ctx.step("admin: duration_days beyond the 365-day cap → 400", async () => {
-        const r = await admin.post(
-          "/v1/admin/api/accounts/:id/trial",
-          { ...grant, duration_days: 400 },
-          { params: { id: team.id } },
-        );
-        r.status(400);
+      await ctx.step("the accounts-list row reports enterprise 'demo'", async () => {
+        const r = await admin.get("/v1/admin/api/accounts", { query: { search: name } });
+        r.status(200);
+        const row = (r.json<any>()?.accounts ?? []).find((a: any) => a.accountId === team.id);
+        if (row?.enterprise !== "demo") throw new Error(`expected enterprise 'demo', got ${JSON.stringify(row?.enterprise)}`);
       });
-      await ctx.step("admin: a retired plan key ('team') is not a plan → 400", async () => {
-        const r = await admin.post(
-          "/v1/admin/api/accounts/:id/trial",
-          { ...grant, tier_key: "team" },
-          { params: { id: team.id } },
-        );
-        r.status(400);
-      });
-      await ctx.step("admin grants a 30-day 'credits' trial → 200 {ok:true, trial:{status:'active'}}", async () => {
-        const r = await admin.post(
-          "/v1/admin/api/accounts/:id/trial",
-          { ...grant, note: "ke2e ADM-14" },
-          { params: { id: team.id } },
-        );
-        r.status(200)
-          .body()
-          .has("$.ok", true)
-          .has("$.trial.status", "active")
-          .has("$.trial.tier", "credits")
-          .has("$.trial.note", "ke2e ADM-14")
-          .has("$.credit_granted", 0)
-          .exists("$.trial.startedAt")
-          .exists("$.trial.endsAt");
-      });
-      await ctx.step("the accounts-list row reports the active trial", async () => {
-        // Filter by the exact account id, NOT by `search`. `search` is a
-        // substring match over the PLATFORM-WIDE accounts list, and
-        // `ctx.fixtures.name()` is deterministic per run — so a client-retried
-        // `POST /v1/accounts` (core/client.ts retries POSTs, no idempotency
-        // guard) or a workflow re-run that reuses `github.run_id` leaves two
-        // identically-named accounts and `$.total` becomes 2. That is what
-        // failed the release gate. `accountId` is an exact-match predicate
-        // (apps/api/src/admin/index.ts:110), so `$.total` is 1 by construction.
-        const r = await admin.get("/v1/admin/api/accounts", {
-          query: { accountId: team.id, limit: "5" },
-        });
-        r.status(200)
-          .body()
-          .has("$.total", 1)
-          .has("$.accounts[0].accountId", team.id)
-          .has("$.accounts[0].trial.status", "active")
-          .has("$.accounts[0].trial.tier", "credits")
-          .has("$.accounts[0].billingModel", undefined)
-          .has("$.accounts[0].seatCount", undefined);
+      await ctx.step("admin turns it off → 200 state off", async () => {
+        const r = await admin.put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: false }, { params: { accountId: team.id } });
+        r.status(200).body().has("$.enabled", false).has("$.state", "off");
       });
     }
   },
 );
 
-// ADM-15 — revoke a trial. Status-only change: tier/amount/window stay on the
-// row as the audit trail, and a second revoke is a 400, not a silent no-op.
+// ADM-15 — the admin trial routes are retired: trials are removed.
 flow(
   "ADM-15",
   {
     domain: "admin",
-    routes: ["DELETE /v1/admin/api/accounts/:id/trial", "POST /v1/admin/api/accounts/:id/trial"],
+    routes: ["POST /v1/admin/api/accounts/:id/trial", "DELETE /v1/admin/api/accounts/:id/trial"],
   },
   async (ctx) => {
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).del("/v1/admin/api/accounts/:id/trial", { params: { id: NOPE } });
-      r.status(401);
+    await ctx.step("POST and DELETE …/trial → 410 ENDPOINT_RETIRED", async () => {
+      const grant = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/admin/api/accounts/:id/trial", { tier_key: "enterprise", duration_days: 30 }, { params: { id: NOPE } });
+      grant.status(410).body().has("$.code", "ENDPOINT_RETIRED");
+      const revoke = await ctx.client.as(ctx.P.OWNER).del("/v1/admin/api/accounts/:id/trial", { params: { id: NOPE } });
+      revoke.status(410).body().has("$.code", "ENDPOINT_RETIRED");
     });
-    await ctx.step("non-admin OWNER → 403", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/admin/api/accounts/:id/trial", { params: { id: NOPE } });
-      r.status(403);
-    });
-    if (ctx.env.capabilities.admin) {
-      const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
-      const team = await ctx.fixtures.team({ name: ctx.fixtures.name("adm15-trial") });
-
-      await ctx.step("admin revokes on an account that never had a trial → 400", async () => {
-        const r = await admin.del("/v1/admin/api/accounts/:id/trial", { params: { id: team.id } });
-        r.status(400);
-      });
-      await ctx.step("admin grants a trial to revoke → 200 active", async () => {
-        const r = await admin.post(
-          "/v1/admin/api/accounts/:id/trial",
-          { tier_key: "credits", duration_days: 30, credit_grant: 0 },
-          { params: { id: team.id } },
-        );
-        r.status(200).body().has("$.trial.status", "active");
-      });
-      await ctx.step("admin revokes it → 200 {ok:true, trial:{status:'revoked'}} (tier/amount kept)", async () => {
-        const r = await admin.del("/v1/admin/api/accounts/:id/trial", { params: { id: team.id } });
-        r.status(200)
-          .body()
-          .has("$.ok", true)
-          .has("$.trial.status", "revoked")
-          .has("$.trial.tier", "credits");
-      });
-      await ctx.step("revoking again → 400 (no active trial)", async () => {
-        const r = await admin.del("/v1/admin/api/accounts/:id/trial", { params: { id: team.id } });
-        r.status(400);
-      });
-    }
   },
 );
 
-// ADM-16 — an Enterprise trial is visible to the account: account-state
-// carries the trial, the end date and the days left, so the billing page can
-// say "Enterprise trial · N days left". The trial lends the Enterprise
-// features only: `plan` stays the plan the account pays for (Free here), so it
-// can still pick one, and the gates (`tier.*`) enforce Enterprise. A revoke
-// ends it at once, with no SSO grace (a revoke is deliberate).
+// ADM-16 — the account sees its Enterprise state: off, then demo once its owner
+// turns it on. The billing plan does not change; the gates (`tier.*`) do.
 flow(
   "ADM-16",
   {
     domain: "admin",
     serial: true,
-    routes: ["POST /v1/admin/api/accounts/:id/trial", "DELETE /v1/admin/api/accounts/:id/trial", "GET /v1/billing/account-state"],
+    routes: ["PUT /v1/accounts/:accountId/iam/enterprise-demo", "GET /v1/billing/account-state"],
   },
   async (ctx) => {
-    if (!ctx.env.capabilities.admin) return;
-    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
-    const team = await ctx.fixtures.team({ name: ctx.fixtures.name("adm16-trial") });
+    const team = await ctx.fixtures.team({ name: ctx.fixtures.name("adm16-demo") });
+    const state = () => ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
 
-    await ctx.step("a fresh account has no trial in account-state", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
-      r.status(200).body().has("$.trial", null).has("$.plan.family", "free");
+    await ctx.step("a fresh account: enterprise off, no trial", async () => {
+      (await state()).status(200).body().has("$.enterprise.state", "off").has("$.trial", null).has("$.plan.family", "free");
     });
-    await ctx.step("admin grants a 30-day Enterprise trial → account-state shows it with 30 days left, plan still Free, gates Enterprise", async () => {
-      const g = await admin.post(
-        "/v1/admin/api/accounts/:id/trial",
-        { tier_key: "enterprise", duration_days: 30, credit_grant: 0 },
-        { params: { id: team.id } },
-      );
-      g.status(200).body().has("$.trial.status", "active");
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
-      r.status(200)
+    await ctx.step("the OWNER turns the demo on → enterprise demo, plan still Free, SSO on", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: team.id } });
+      r.status(200);
+      (await state())
+        .status(200)
         .body()
+        .has("$.enterprise.state", "demo")
         .has("$.plan.family", "free")
-        .has("$.tier.name", "enterprise")
-        .has("$.trial.plan", "enterprise")
-        .has("$.trial.days_left", 30)
-        .exists("$.trial.ends_at")
-        .has("$.tier.entitlements.sso", true);
-    });
-    await ctx.step("admin revokes it → account-state is back on Free with no grace", async () => {
-      const d = await admin.del("/v1/admin/api/accounts/:id/trial", { params: { id: team.id } });
-      d.status(200);
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
-      r.status(200).body().has("$.trial", null).has("$.plan.family", "free").has("$.grace", null);
+        .has("$.tier.entitlements.sso", true)
+        .has("$.trial", null);
     });
   },
 );
@@ -717,10 +617,10 @@ flow(
     const team = await ctx.fixtures.team({ name: ctx.fixtures.name("adm17-offer") });
     const member = await team.addMember("member");
 
-    await ctx.step("admin offers a $40,000 annual contract by card → 200 offered, account-state shows the offer", async () => {
+    await ctx.step("admin offers a $25,000 annual license by card → 200 offered, account-state shows the offer", async () => {
       const r = await admin.post(
         "/v1/admin/api/accounts/:id/enterprise-contract",
-        { license_usd: 25000, credits_usd: 15000, collection: "checkout" },
+        { license_usd: 25000, collection: "checkout" },
         { params: { id: team.id } },
       );
       r.status(200).body().has("$.contract.status", "offered");
@@ -728,14 +628,13 @@ flow(
       state.status(200)
         .body()
         .has("$.enterprise_offer.license_usd", 25000)
-        .has("$.enterprise_offer.credits_usd", 15000)
         .has("$.enterprise_offer.collection", "checkout")
         .has("$.plan.family", "free");
     });
     await ctx.step("a second offer while one is open → 409", async () => {
       const r = await admin.post(
         "/v1/admin/api/accounts/:id/enterprise-contract",
-        { license_usd: 1, credits_usd: 1, collection: "checkout" },
+        { license_usd: 1, collection: "checkout" },
         { params: { id: team.id } },
       );
       r.status(409);
