@@ -20737,6 +20737,7 @@
     "zoomOut": "Verkleinern",
     "mapTwoFingers": "Verwende zwei Finger, um die Karte zu bewegen",
     "pick": "Empfehlung",
+    "checklistReady": "{done}/{total} erledigt",
     "convertFailed": "Das Transkript konnte nicht vorbereitet werden. Versuche es erneut."
   }
 }

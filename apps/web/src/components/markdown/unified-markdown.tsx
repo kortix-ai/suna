@@ -155,7 +155,20 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
  * `compact`: the click-to-load placeholder is an icon-only button that fills its box, for a small thumbnail
  * whose box would clip the labelled button.
  */
-export function MarkdownImage({ src, alt, flush = false, compact = false }: { src?: string; alt?: string; flush?: boolean; compact?: boolean }) {
+export function MarkdownImage({
+  src,
+  alt,
+  flush = false,
+  compact = false,
+  onError,
+}: {
+  src?: string;
+  alt?: string;
+  flush?: boolean;
+  compact?: boolean;
+  /** The image failed to load: a host can drop its frame or show a fallback. */
+  onError?: () => void;
+}) {
   const { proxy, policy } = useContext(MarkdownRenderContext);
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [loadRequested, setLoadRequested] = useState(false);
@@ -200,6 +213,7 @@ export function MarkdownImage({ src, alt, flush = false, compact = false }: { sr
         src={resolvedSrc}
         alt={alt || ''}
         loading="lazy"
+        onError={onError}
         className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
       />
     </span>

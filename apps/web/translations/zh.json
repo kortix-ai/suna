@@ -20737,6 +20737,7 @@
     "zoomOut": "缩小",
     "mapTwoFingers": "使用双指移动地图",
     "pick": "推荐",
+    "checklistReady": "已完成 {done}/{total}",
     "convertFailed": "无法准备对话记录。请重试。"
   }
 }

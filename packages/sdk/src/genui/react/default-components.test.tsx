@@ -56,8 +56,29 @@ describe('defaultGenuiComponents', () => {
   });
 
   test('every block component has a default', () => {
-    const names = ['Stack', 'Card', 'Stat', 'StatRow', 'Table', 'Compare', 'RankedList', 'BarChart', 'LineChart', 'PieChart', 'Map', 'Tabs', 'Accordion', 'Badge', 'Callout', 'Image', 'Link'];
+    const names = ['Stack', 'Card', 'Stat', 'StatRow', 'Table', 'Compare', 'RankedList', 'BarChart', 'LineChart', 'PieChart', 'Map', 'Steps', 'Checklist', 'Tabs', 'Accordion', 'Badge', 'Callout', 'Image', 'Link'];
     expect(Object.keys(defaultGenuiComponents).sort()).toEqual([...names].sort());
+  });
+
+  test('Steps render each title, meta, text, and photo; a Checklist renders a checkbox per item', () => {
+    const steps = render('root = Steps([a, b])\na = Step("Home → Central Station", "Take a taxi.", "https://example.com/s.jpg", "about 20 min")\nb = Step("Find your gate")');
+    for (const expected of ['<ol', 'Home → Central Station', 'about 20 min', 'Take a taxi.', 'Find your gate', 'src="https://example.com/s.jpg"', 'referrerPolicy="no-referrer"']) {
+      expect(steps).toContain(expected);
+    }
+    expect(steps).not.toContain('<pre>');
+    const list = render('root = Checklist("Pack", ["Valid passport", "Bank card"])');
+    expect(list).toContain('Pack');
+    expect(list).toContain('Valid passport');
+    expect(list.match(/type="checkbox"/g)).toHaveLength(2);
+    expect(list).not.toContain('<pre>');
+  });
+
+  test('a Step still streaming loads no photo: its URL may be half-written', () => {
+    const code = 'root = Steps([a, b])\na = Step("Done", "Go.", "https://example.com/a.jpg")\nb = Step("Next", "Go.", "https://example.com/photos/g';
+    const html = renderToStaticMarkup(<GenuiBlock code={code} streaming components={defaultGenuiComponents} renderMarkdown={md} />);
+    expect(html).toContain('Next');
+    expect(html).toContain('src="https://example.com/a.jpg"');
+    expect(html).not.toContain('https://example.com/photos/g');
   });
 
   test('external links open safely', () => {

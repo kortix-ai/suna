@@ -49,6 +49,7 @@ mock.module('@/components/ui/badge', () => ({ Badge: host('badge') }));
 mock.module('@/components/ui/button', () => ({ Button: host('button') }));
 mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
 mock.module('@/components/ui/separator', () => ({ Separator: host('separator') }));
+mock.module('@/components/ui/progress', () => ({ Progress: host('progress') }));
 mock.module('@/components/ui/tabs', () => ({
   Tabs: host('tabs'),
   TabsList: host('tabs-list'),
@@ -74,6 +75,7 @@ mock.module('@/lib/icons', () => ({
   InfoIcon: 'info',
   WarningIcon: 'warning',
   CheckCircleIcon: 'check-circle',
+  CircleIcon: 'circle',
   CaretDownIcon: 'caret-down',
   CaretRightIcon: 'caret-right',
   MapPinIcon: 'map-pin',
@@ -401,16 +403,28 @@ w = Badge("2 rooms left", "warn")`);
     expect(all(root, 'markdown-image')[0]!.props.fixedHeight).toBe(160);
   });
 
-  test('two or more cards without a hint are a list: a 72pt whole thumbnail beside the title, rating, location, body, tags', () => {
+  test('two or more cards without a hint are a list: a 72pt thumbnail beside the title, rating, location, body, and tag pills', () => {
     const root = render(`root = Stack([a, b])
-a = Card("Python", "General-purpose.", "Language", "https://example.com/python.png", "https://python.org", [t], 4.7, 1200, "Free")
+a = Card("Python", "General-purpose.", "Language", "https://example.com/python.png", "https://python.org", [t, g], 4.7, 1200, "Free")
 b = Card("Go", "Backend.", "Language")
-t = Badge("Popular")`);
+t = Badge("Popular")
+g = Badge("Best for a first project", "good")`);
     const thumbs = all(root, 'view').filter((n) => n.props.style?.width === 72);
     expect(thumbs).toHaveLength(1);
-    const [image] = all(thumbs[0]!, 'markdown-image');
-    expect([image!.props.fixedHeight, image!.props.look.resizeMode, image!.props.look.bare]).toEqual([60, 'contain', true]);
+    const image = () => all(thumbs[0]!, 'markdown-image')[0]!;
+    // Before it loads, the thumbnail is a photo: it fills the square, cropped.
+    expect([image().props.fixedHeight, image().props.look.resizeMode, image().props.look.bare]).toEqual([72, 'cover', true]);
+    expect(className(thumbs[0]!)).not.toContain('p-1.5');
+    // A narrow logo (under 240 px) sits whole inside a 6pt inset.
+    act(() => (image().props.look.onSize as (w: number, h: number) => void)(200, 200));
+    expect([image().props.fixedHeight, image().props.look.resizeMode]).toEqual([60, 'contain']);
+    expect(className(thumbs[0]!)).toContain('p-1.5');
     expect(texts(root)).toEqual(expect.arrayContaining(['Python', '4.7', '(1,200)', 'Free', 'Language', 'General-purpose.', 'Popular', 'Go']));
+    // List tags are tone-dot pills on the secondary well, not a muted "A · B" line.
+    const pill = all(root, 'view').find((n) => className(n).includes('rounded-full px-2') && texts(n).join('') === 'Best for a first project')!;
+    expect(className(pill)).toContain('bg-secondary');
+    expect(all(pill, 'view').some((n) => className(n).includes('bg-kortix-green'))).toBe(true);
+    expect(texts(root)).not.toContain('Popular · Best for a first project');
     expect(all(root, 'separator')).toHaveLength(1);
     const link = all(root, 'pressable').find((n) => n.props.accessibilityRole === 'link')!;
     act(() => (link.props.onPress as () => void)());
@@ -424,7 +438,7 @@ b = Card("Oberoi", null, null, "https://example.com/oberoi.jpg")`;
     const root = render(code);
     const size = (w: number, h: number) =>
       act(() => all(root, 'markdown-image').forEach((n) => (n.props.look.onSize as (w: number, h: number) => void)(w, h)));
-    size(1280, 1280);
+    size(200, 200);
     expect(all(root, 'view').filter((n) => n.props.style?.width === 72)).toHaveLength(2);
     size(1920, 1080);
     expect(all(root, 'view').filter((n) => n.props.style?.width === 72)).toHaveLength(0);
@@ -445,7 +459,7 @@ b = Card("Go", null, null, "https://example.com/go.png")`);
     const grid = all(root, 'view').find((n) => typeof n.props.onLayout === 'function')!;
     act(() => (grid.props.onLayout as (e: unknown) => void)({ nativeEvent: { layout: { width: 340 } } }));
     expect(all(root, 'markdown-image').map((n) => n.props.fixedHeight)).toEqual([255, 255]);
-    act(() => (all(root, 'markdown-image')[0]!.props.look.onSize as (w: number, h: number) => void)(1280, 1280));
+    act(() => (all(root, 'markdown-image')[0]!.props.look.onSize as (w: number, h: number) => void)(200, 200));
     const tile = all(root, 'view').find((n) => n.props.style?.padding === 24)!;
     expect(tile.props.style.height).toBe(340);
     expect(all(tile, 'markdown-image')[0]!.props.fixedHeight).toBe(292);
@@ -566,6 +580,127 @@ b2 = Badge("second")`;
     press(triggers(still)[0]!);
     expect(caretTurn(still, 0)).toBe('180deg');
     expect(motion.timings).toEqual([]);
+  });
+
+  test('steps are rows on a rail: a 72pt cropped photo, the title with its meta, the text lines, a hairline to the next row', () => {
+    const root = render(`root = Steps([s1, s2, s3])
+s1 = Step("Home → Central Station", "Take a taxi or the bus.", "https://example.com/station.jpg", "about 20 min")
+s2 = Step("Central Station → Airport One", "Take the airport train.\\nTrains leave every 15 minutes.", "https://example.com/train.jpg")
+s3 = Step("Airport One", "Check in and board.")`);
+    expect(all(root, 'fallback')).toHaveLength(0);
+    expect(texts(root)).toEqual(
+      expect.arrayContaining(['Home → Central Station', 'about 20 min', 'Take a taxi or the bus.', 'Take the airport train.\nTrains leave every 15 minutes.', 'Airport One']),
+    );
+    const tiles = all(root, 'view').filter((n) => n.props.style?.width === 72 && n.props.style?.height === 72);
+    const photos = tiles.filter((n) => all(n, 'markdown-image').length > 0);
+    expect(photos).toHaveLength(2);
+    // The row without a photo fills the same 72pt tile with its number, so every row has the same thumbnail.
+    expect(tiles).toHaveLength(3);
+    expect(texts(tiles[2]!)).toEqual(['3']);
+    expect(all(photos[0]!, 'markdown-image')[0]!.props).toMatchObject({ src: 'https://example.com/station.jpg', alt: '', fixedHeight: 72, look: { bare: true, resizeMode: 'cover' } });
+    // The row without a photo shows its number on the same 72pt rail.
+    const rails = all(root, 'view').filter((n) => className(n) === 'items-center');
+    expect(rails.map((n) => n.props.style.width)).toEqual([72, 72, 72]);
+    expect(texts(rails[2]!)).toEqual(['3']);
+    // A hairline joins each rail to the next row; the last row has none. min-h-4 keeps it visible on a row
+    // whose text is shorter than its photo.
+    expect(all(root, 'view').filter((n) => className(n).includes('min-h-4 w-px'))).toHaveLength(2);
+    // A photo that fails to load gives its rail back to the step number, as on web.
+    act(() => all(photos[0]!, 'markdown-image')[0]!.props.look.onError());
+    const after = all(root, 'view').filter((n) => className(n) === 'items-center');
+    expect(all(after[0]!, 'markdown-image')).toHaveLength(0);
+    expect(texts(after[0]!)).toEqual(['1']);
+    expect(all(after[1]!, 'markdown-image')).toHaveLength(1);
+  });
+
+  test('steps without photos keep a narrow rail with numbered dots', () => {
+    const root = render(`root = Steps([a, b])
+a = Step("Check in your bag")
+b = Step("Find your gate", null, null, "about 30 min")`);
+    const rails = all(root, 'view').filter((n) => className(n) === 'items-center');
+    expect(rails.map((n) => [n.props.style.width, texts(n).join('')])).toEqual([
+      [28, '1'],
+      [28, '2'],
+    ]);
+    expect(all(root, 'markdown-image')).toHaveLength(0);
+  });
+
+  test('a checklist with no items yet shows 0/0 and an empty bar, never NaN', async () => {
+    const { GenuiChecklist } = await import('./components/data');
+    const props = { title: 'Bring', items: [] };
+    act(() => {
+      tree = create(<GenuiChecklist node={{ id: 'c', type: 'Checklist', props, partial: true }} props={props} renderChild={() => null} streaming />);
+    });
+    expect(texts(tree!.root)).toEqual(expect.arrayContaining(['Bring', '0/0 ready']));
+    expect(all(tree!.root, 'progress').map((n) => n.props.value)).toEqual([0]);
+  });
+
+  test('when every step photo fails, the rail goes back to narrow numbered dots', () => {
+    const root = render(`root = Steps([s1, s2, s3])
+s1 = Step("One", "First.", "https://example.com/one.jpg")
+s2 = Step("Two", "Second.")
+s3 = Step("Three", "Third.")`);
+    const rails = () => all(root, 'view').filter((n) => className(n) === 'items-center');
+    expect(rails().map((n) => n.props.style.width)).toEqual([72, 72, 72]);
+    act(() => all(root, 'markdown-image')[0]!.props.look.onError());
+    expect(rails().map((n) => n.props.style.width)).toEqual([28, 28, 28]);
+  });
+
+  test('a checklist counts ticks: pressing an item ticks it, strikes it through, and moves the bar; pressing again unticks it', () => {
+    const root = render(`root = Checklist("Your travel checklist", ["Valid passport", "Visa", "Hotel address"])`);
+    expect(all(root, 'fallback')).toHaveLength(0);
+    expect(texts(root)).toEqual(expect.arrayContaining(['Your travel checklist', '0/3 ready', 'Valid passport', 'Visa', 'Hotel address']));
+    expect(all(root, 'progress')[0]!.props.value).toBe(0);
+    const boxes = () => all(root, 'pressable').filter((n) => n.props.accessibilityRole === 'checkbox');
+    expect(boxes().map((n) => n.props.accessibilityState.checked)).toEqual([false, false, false]);
+    // A 44pt row is a reliable tap target.
+    expect(className(boxes()[0]!)).toContain('min-h-11');
+    // An open item sends no weight, so the app weight (bold) applies; undefined would reset it to regular.
+    expect('weight' in all(boxes()[0]!, 'icon')[0]!.props).toBe(false);
+    press(boxes()[1]!);
+    expect(texts(root)).toContain('1/3 ready');
+    expect(all(root, 'progress')[0]!.props.value).toBeCloseTo(100 / 3);
+    expect(boxes().map((n) => n.props.accessibilityState.checked)).toEqual([false, true, false]);
+    expect(all(boxes()[1]!, 'icon')[0]!.props).toMatchObject({ as: 'check-circle', weight: 'fill' });
+    expect(className(all(boxes()[1]!, 'text')[0]!)).toContain('line-through');
+    press(boxes()[1]!);
+    expect(texts(root)).toContain('0/3 ready');
+    expect(all(boxes()[1]!, 'icon')[0]!.props.as).toBe('circle');
+  });
+
+  test('streaming steps and a checklist render every prefix without a crash; a half-written step waits for its photo', () => {
+    const code = `root = Stack([steps, list])
+steps = Steps([s1, s2])
+s1 = Step("Home → Station", "Take a taxi.", "https://example.com/a.jpg", "20 min")
+s2 = Step("Station → Airport", "Train.")
+list = Checklist("Bring", ["Passport", "Visa"])`;
+    for (let cut = 1; cut < code.length; cut += 7) {
+      act(() => {
+        tree?.update(<GenuiMessageBlock code={code.slice(0, cut)} version={1} isStreaming renderMarkdown={fallback} />);
+        if (!tree) tree = create(<GenuiMessageBlock code={code.slice(0, cut)} version={1} isStreaming renderMarkdown={fallback} />);
+      });
+      expect(texts(tree!.root)).not.toContain('undefined');
+    }
+    // s1 has its whole URL but is not closed yet: its rail shows the number, not a half-loaded photo.
+    const open = code.indexOf('"20 min")') + '"20 min"'.length;
+    act(() => tree!.update(<GenuiMessageBlock code={code.slice(0, open)} version={1} isStreaming renderMarkdown={fallback} />));
+    expect(all(tree!.root, 'markdown-image')).toHaveLength(0);
+    act(() => tree!.update(<GenuiMessageBlock code={code} version={1} isStreaming={false} renderMarkdown={fallback} />));
+    expect(all(tree!.root, 'markdown-image')).toHaveLength(1);
+    expect(texts(tree!.root)).toEqual(expect.arrayContaining(['Station → Airport', '0/2 ready', 'Passport', 'Visa']));
+  });
+
+  test('every shared debug sample without issues renders as UI, so the mobile debug screen shows each block', async () => {
+    const { GENUI_SAMPLES } = await import('@kortix/shared/genui-samples');
+    const { parseGenui } = await import('@kortix/sdk/genui');
+    const clean = GENUI_SAMPLES.filter((sample) => parseGenui(sample.source).issues.length === 0);
+    expect(clean.map((sample) => sample.component)).toEqual(expect.arrayContaining(['Steps', 'Checklist']));
+    for (const sample of clean) {
+      const root = render(sample.source);
+      expect([sample.title ?? sample.component, all(root, 'fallback').length]).toEqual([sample.title ?? sample.component, 0]);
+      act(() => tree?.unmount());
+      tree = undefined;
+    }
   });
 
   // Chart behavior (header row, legend, Show data sheet, pie layouts) lives in components/charts.test.tsx.

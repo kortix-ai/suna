@@ -274,7 +274,7 @@ component({
 
 component({
   name: 'RankedItem',
-  description: 'One entry inside RankedList',
+  description: 'One entry inside RankedList. Leave image empty: options with photos are Cards',
   block: false,
   fields: { title: text(80), reason: text(240), meta: optText(80), image: url().optional(), href: url().optional() },
   urls: { image: 'optional', href: 'optional' },
@@ -443,11 +443,38 @@ component({
       .join('\n\n'),
 });
 
+// ── Steps and Checklist ─────────────────────────────────────────────────────
+
+component({
+  name: 'Step',
+  description:
+    'One row inside Steps. title names the leg or action; text says what to do, one sentence per line; ' +
+    'image is a photo of that place or action; meta is a time or cost',
+  block: false,
+  fields: { title: text(80), text: optText(500), image: url().optional(), meta: optText(40) },
+  urls: { image: 'optional' },
+  toMarkdown: (p) => `**${inline(p.title)}**${p.text ? ` — ${inline(p.text)}` : ''}${p.meta ? ` (${inline(p.meta)})` : ''}`,
+});
+
+component({
+  name: 'Steps',
+  description: 'A journey or a process in order: up to 12 rows, each with its photo, joined by a line',
+  fields: { steps: { accepts: ['Step'], min: 1, max: 12 } },
+  toMarkdown: (p, child) => nodes(p.steps).map((step, i) => `${i + 1}. ${child(step)}`).join('\n'),
+});
+
+component({
+  name: 'Checklist',
+  description: 'Things to bring, buy, prepare, or confirm: a title and up to 20 items, each under 120 characters, the reader ticks off',
+  fields: { title: text(80), items: z.array(text(120)).min(1).max(20) },
+  toMarkdown: (p) => `**${inline(p.title)}**\n\n${(p.items as string[]).map((item) => `- [ ] ${inline(item)}`).join('\n')}`,
+});
+
 // ── Containers ──────────────────────────────────────────────────────────────
 
 export const GENUI_BLOCKS = [
   'Stack', 'Card', 'Stat', 'StatRow', 'Table', 'Compare', 'RankedList', 'BarChart', 'LineChart',
-  'PieChart', 'Map', 'Tabs', 'Accordion', 'Badge', 'Callout', 'Image', 'Link',
+  'PieChart', 'Map', 'Steps', 'Checklist', 'Tabs', 'Accordion', 'Badge', 'Callout', 'Image', 'Link',
 ] as const;
 const INNER_BLOCKS = GENUI_BLOCKS.filter((name) => name !== 'Tabs' && name !== 'Accordion');
 
@@ -486,7 +513,7 @@ component({
 component({
   name: 'Stack',
   description:
-    'Layout. root is always a Stack. children: 1 to 12 blocks. direction: col (default) or row. ' +
+    'Layout: 2 or more blocks in one block. children: 2 to 12 blocks. direction: col (default) or row. ' +
     'layout, for 2 or more Cards: grid (big images) or list (small thumbnails); empty lets the app choose from the images',
   container: true,
   fields: {

@@ -125,6 +125,38 @@ const RankedList = ({ props }: GenuiComponentProps) => (
   </ol>
 );
 
+// A Step renders here, not through the node view, so its own pending gate: a streaming URL may be half-written.
+const Steps = ({ props }: GenuiComponentProps) => (
+  <ol style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 8 }}>
+    {kids(props.steps).map((step) => (
+      <li key={step.id}>
+        {step.props.image && !step.partial ? (
+          <img src={String(step.props.image)} alt="" width={64} height={64} loading="lazy" referrerPolicy="no-referrer" style={{ objectFit: 'cover', borderRadius: 6 }} />
+        ) : null}
+        <strong>{String(step.props.title)}</strong>
+        {step.props.meta ? <span style={muted}> · {String(step.props.meta)}</span> : null}
+        {step.props.text ? <div style={{ whiteSpace: 'pre-line' }}>{String(step.props.text)}</div> : null}
+      </li>
+    ))}
+  </ol>
+);
+
+// Uncontrolled inputs: ticks stay in the page, with no state code and nothing sent anywhere.
+const Checklist = ({ props }: GenuiComponentProps) => (
+  <div style={box}>
+    <strong>{props.title}</strong>
+    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+      {((props.items as string[] | undefined) ?? []).map((item, i) => (
+        <li key={i}>
+          <label>
+            <input type="checkbox" /> {item}
+          </label>
+        </li>
+      ))}
+    </ul>
+  </div>
+);
+
 const SeriesChart = ({ node, props }: GenuiComponentProps) => {
   const labels: string[] = props.categories ?? props.x ?? [];
   const series = kids(props.series);
@@ -237,6 +269,8 @@ export const defaultGenuiComponents: GenuiComponentMap = {
   LineChart: SeriesChart,
   PieChart,
   Map,
+  Steps,
+  Checklist,
   Tabs,
   Accordion,
   Badge,

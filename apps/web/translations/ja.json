@@ -20737,6 +20737,7 @@
     "zoomOut": "縮小",
     "mapTwoFingers": "2本の指で地図を動かします",
     "pick": "おすすめ",
+    "checklistReady": "{done}/{total} 完了",
     "convertFailed": "トランスクリプトを準備できませんでした。もう一度お試しください。"
   }
 }

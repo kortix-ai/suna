@@ -20737,6 +20737,7 @@
     "zoomOut": "Réduire le zoom",
     "mapTwoFingers": "Utilisez deux doigts pour déplacer la carte",
     "pick": "Choix",
+    "checklistReady": "{done}/{total} prêts",
     "convertFailed": "Impossible de préparer la transcription. Réessayez."
   }
 }

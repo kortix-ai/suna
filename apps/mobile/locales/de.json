@@ -1202,6 +1202,7 @@
   },
   "genui": {
     "chartTapHint": "Tippen, um einen Wert zu lesen",
+    "checklistReady": "{{done}}/{{total}} erledigt",
     "map": "Karte",
     "mapUnavailable": "Karte nicht verfügbar",
     "openImage": "Bild öffnen",

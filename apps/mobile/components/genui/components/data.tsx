@@ -1,18 +1,19 @@
-import { createContext, Fragment, useContext } from 'react';
+import { createContext, Fragment, useContext, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
 import { Icon } from '@/components/ui/icon';
+import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { MinusIcon, TrendDownIcon, TrendUpIcon } from '@/lib/icons';
+import { CheckCircleIcon, CircleIcon, MinusIcon, TrendDownIcon, TrendUpIcon } from '@/lib/icons';
 import { TYPE } from '@/lib/markdown/markdown-layout';
 import { tableColumnWidths } from '@/lib/markdown/table-layout';
 
 import { GenuiImageView } from './inline';
-import { kids } from './layout';
+import { kids, THUMB } from './layout';
 import { openGenuiLink } from './open-link';
 
 // As on web: the glyph and the color follow the trend; with no trend, the delta's leading sign. The sign and
@@ -248,6 +249,111 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/**
+ * A journey or a process, as on web: each row is a cropped photo on a rail, the title with its meta on the right,
+ * and the text lines. A hairline under each rail joins it to the next row. A row with no photo, or a photo that
+ * fails to load, shows its number on the same rail. A streaming row waits for its photo until the row is finished,
+ * so a half-written URL never loads.
+ */
+export function GenuiSteps({ props }: GenuiComponentProps) {
+  const steps = kids(props.steps);
+  // Keyed by URL, not by step: a step whose URL changes gets a fresh try.
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
+  // A list whose every photo failed goes back to the narrow numbered rail.
+  const photos = steps.some((step) => step.props.image && !failed.has(String(step.props.image)));
+  return (
+    <View>
+      {steps.map((step, index) => {
+        const last = index === steps.length - 1;
+        const src = step.props.image && !step.partial ? String(step.props.image) : null;
+        const image = src && !failed.has(src) ? src : null;
+        return (
+          <View key={step.id} className="flex-row gap-3">
+            <View className="items-center" style={{ width: photos ? THUMB : 28 }}>
+              {image ? (
+                <View style={{ width: THUMB, height: THUMB }} className="overflow-hidden rounded-lg bg-secondary">
+                  <GenuiImageView src={image} alt="" fixedHeight={THUMB} look={{ bare: true, resizeMode: 'cover', onError: () => setFailed((known) => new Set(known).add(image)) }} />
+                </View>
+              ) : photos ? (
+                // In a list with photos, a row without one keeps the same thumbnail size: its number on the well.
+                <View style={{ width: THUMB, height: THUMB }} className="items-center justify-center rounded-lg bg-secondary">
+                  <Text variant="muted" className="font-mono tabular-nums">
+                    {index + 1}
+                  </Text>
+                </View>
+              ) : (
+                <View className="size-7 items-center justify-center rounded-full bg-secondary">
+                  <Text variant="small" className="tabular-nums">
+                    {index + 1}
+                  </Text>
+                </View>
+              )}
+              {last ? null : <View className="my-1.5 min-h-4 w-px flex-1 bg-border" />}
+            </View>
+            <View className={['flex-1 gap-0.5', last ? '' : 'pb-4', photos ? '' : 'pt-1'].filter(Boolean).join(' ')}>
+              <View className="flex-row items-baseline justify-between gap-3">
+                <Text className="shrink font-medium">{String(step.props.title)}</Text>
+                {step.props.meta ? (
+                  <Text variant="muted" className="max-w-[35%] text-right tabular-nums">
+                    {String(step.props.meta)}
+                  </Text>
+                ) : null}
+              </View>
+              {step.props.text ? (
+                <Text variant="small" className="leading-5">
+                  {String(step.props.text)}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Things to tick off, with a "3/9 ready" count and a bar. Ticks live in this component only: no store, no request. */
+export function GenuiChecklist({ props }: GenuiComponentProps) {
+  const { t } = useTranslation();
+  const items = strings(props.items);
+  const [done, setDone] = useState<ReadonlySet<number>>(new Set());
+  const toggle = (index: number) =>
+    setDone((known) => {
+      const next = new Set(known);
+      if (!next.delete(index)) next.add(index);
+      return next;
+    });
+  return (
+    <View className="gap-3 rounded-2xl bg-card px-4 py-3">
+      <View className="flex-row items-baseline justify-between gap-3">
+        <Text className="shrink font-medium">{String(props.title)}</Text>
+        <Text variant="muted" className="tabular-nums">
+          {t('genui.checklistReady', { defaultValue: '{{done}}/{{total}} ready', done: done.size, total: items.length })}
+        </Text>
+      </View>
+      <Progress value={items.length === 0 ? 0 : (done.size / items.length) * 100} className="h-1 bg-secondary" indicatorClassName="bg-foreground" />
+      {/* Keyed by position: items only append while streaming, and a model may repeat one. */}
+      <View>
+        {items.map((item, index) => {
+          const checked = done.has(index);
+          return (
+            <Pressable
+              key={index}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked }}
+              className="min-h-11 flex-row items-center gap-3 py-1.5 active:opacity-70"
+              onPress={() => toggle(index)}
+            >
+              {checked ? <Icon as={CheckCircleIcon} size={20} weight="fill" /> : <Icon as={CircleIcon} size={20} className="text-muted-foreground" />}
+              <Text className={`shrink ${checked ? 'text-muted-foreground line-through' : ''}`}>{item}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }

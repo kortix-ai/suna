@@ -1202,6 +1202,7 @@
   },
   "genui": {
     "chartTapHint": "Touchez pour lire une valeur",
+    "checklistReady": "{{done}}/{{total}} prêts",
     "map": "Carte",
     "mapUnavailable": "Carte indisponible",
     "openImage": "Ouvrir l'image",
