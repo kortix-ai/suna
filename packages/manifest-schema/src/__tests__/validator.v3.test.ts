@@ -128,6 +128,7 @@ describe('kortix_version 3: agents', () => {
   test('subagents name other declared subagents', () => {
     expect(errorPaths(swap('subagents: [researcher]', 'subagents: [nobody]'))).toContain('agents.assistant.subagents');
     expect(errorPaths(swap('subagents: [researcher]', 'subagents: [assistant]'))).toContain('agents.assistant.subagents');
+    expect(errorPaths(swap('    mode: subagent\n', '    mode: subagent\n    enabled: false\n'))).toContain('agents.assistant.subagents');
   });
 
   test('tools rejects the v2 map form', () => {

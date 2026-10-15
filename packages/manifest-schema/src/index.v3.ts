@@ -507,7 +507,7 @@ function validateAgentBlockV3(
   validateNamedGrantV3(entry.skills, `${where}.skills`, 'skills', registry.skills, issues);
   validateNamedGrantV3(entry.commands, `${where}.commands`, 'commands', registry.commands, issues);
   validateNamedGrantV3(entry.extensions, `${where}.extensions`, 'extensions', registry.extensions, issues);
-  const subagents = new Set([...agents].filter(([other, scan]) => other !== name && scan.mode !== 'primary').map(([other]) => other));
+  const subagents = new Set([...agents].filter(([other, scan]) => other !== name && scan.enabled && scan.mode !== 'primary').map(([other]) => other));
   validateNamedGrantV3(entry.subagents, `${where}.subagents`, 'subagents', subagents, issues);
 
   // Kortix governance: the v2 rules.
@@ -532,7 +532,7 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
     issues.push({
       path: where,
       message: label === 'subagents'
-        ? `not a declared subagent (mode subagent or all, not this agent): ${unknown.join(', ')}.`
+        ? `not a declared, enabled subagent (mode subagent or all, not this agent): ${unknown.join(', ')}.`
         : `not registered under \`${label}\`: ${unknown.join(', ')}.`,
       severity: 'error',
     });

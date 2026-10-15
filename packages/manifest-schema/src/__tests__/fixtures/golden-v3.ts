@@ -72,5 +72,5 @@ triggers:
     type: cron
     agent: assistant
     cron: "0 0 15 * * 1"
-    prompt: /weekly-report last 7 days
+    prompt: Write the weekly support report for the last 7 days.
 `;
