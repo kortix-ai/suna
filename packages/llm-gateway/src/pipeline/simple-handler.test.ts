@@ -1683,6 +1683,8 @@ describe('refused requests are traced', () => {
     const body = (await response.json()) as { code?: string };
     expect(body.code).toBe('plan_upgrade_required');
     const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
     expect(trace?.ok).toBe(false);
     expect(trace?.status).toBe(400);
     expect(trace?.errorCode).toBe('plan_upgrade_required');
@@ -1707,6 +1709,8 @@ describe('refused requests are traced', () => {
     );
     expect(response.status).toBe(402);
     const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
     expect(trace?.ok).toBe(false);
     expect(trace?.status).toBe(402);
     expect(trace?.errorCode).toBe('budget_exceeded');
@@ -1727,6 +1731,8 @@ describe('refused requests are traced', () => {
     const body = (await response.json()) as { code?: string };
     expect(body.code).toBe('model_unavailable');
     const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
     expect(trace?.ok).toBe(false);
     expect(trace?.status).toBe(400);
     expect(trace?.errorCode).toBe('model_unavailable');
@@ -1755,6 +1761,8 @@ describe('refused requests are traced', () => {
     const body = (await response.json()) as { code?: string };
     expect(body.code).toBe('subscription_required');
     const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
     expect(trace?.ok).toBe(false);
     expect(trace?.status).toBe(402);
     expect(trace?.errorCode).toBe('subscription_required');
@@ -1774,6 +1782,8 @@ describe('refused requests are traced', () => {
     const body = (await response.json()) as { code?: string };
     expect(body.code).toBe('invalid_json');
     const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
     expect(trace?.ok).toBe(false);
     expect(trace?.status).toBe(400);
     expect(trace?.errorCode).toBe('invalid_json');
