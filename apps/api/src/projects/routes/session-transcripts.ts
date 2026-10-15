@@ -155,7 +155,7 @@ export function registerSessionTranscriptsRoutes(): void {
       tags: ['sessions'],
       summary: 'Read who wrote each message of a session',
       description:
-        'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name, agent?}` (`agent` is the agent the sending session runs). `initial_author` is the parent session for a spawned session\'s first message, else null.',
+        'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name, agent?}` (`agent` is the agent the sending session runs). `initial_author` is the parent session for a spawned session\'s first message, else null. `stops` is keyed by the runtime message id that started a turn a member stopped: the `{kind:"member", …}` who stopped it. Always present, `{}` when none.',
       ...auth,
       request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Message authors'), ...errors(400, 403, 404) },

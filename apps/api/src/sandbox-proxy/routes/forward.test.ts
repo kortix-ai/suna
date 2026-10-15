@@ -108,6 +108,25 @@ mock.module('../backend', () => ({
   wakeSandbox: async () => {},
 }));
 
+// A client abort asks who may stop the running turn (`abort-authority.ts`, its
+// rule tested beside it), then stamps the stop. Both are recorded here.
+let abortVerdict: { allowed: true; by: string | null } | { allowed: false } = { allowed: true, by: 'u1' };
+let abortAsks: Array<{ userId: string | null; sessionId: string }> = [];
+const stopLog: Array<{ name: string; scope: unknown; by: unknown }> = [];
+mock.module('../forward/abort-authority', () => ({
+  decideClientAbort: async (access: { kind: string; userId?: string }, record: { sessionId: string }) => {
+    abortAsks.push({ userId: access.kind === 'principal' ? (access.userId ?? null) : null, sessionId: record.sessionId });
+    return abortVerdict;
+  },
+}));
+const realTurnLedger = await import('../../projects/session-turn-ledger');
+mock.module('../../projects/session-turn-ledger', () => ({
+  ...realTurnLedger,
+  markTurnStopRequested: async (_sessionId: string, name: string, scope: unknown, by: unknown) => {
+    stopLog.push({ name, scope, by });
+  },
+}));
+
 const { forwardToSandbox } = await import('./preview');
 const { __resetPromptDedupe } = await import('../prompt-dedupe');
 
@@ -242,6 +261,44 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
     const second = await forwardToSandbox(...args);
     expect(fetchCalls).toBe(2);
     expect(await second.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
+});
+
+describe('forwardToSandbox — a client abort asks who may stop the turn', () => {
+  const abort = (access: typeof principal = principal) =>
+    forwardToSandbox('sb-1', 8000, access, 'POST', '/session/ses_root/abort', '', jsonHeaders(), undefined, 'http://app.local');
+  beforeEach(() => {
+    abortVerdict = { allowed: true, by: 'u1' };
+    abortAsks = [];
+    stopLog.length = 0;
+  });
+
+  test('refused: 403 not_turn_prompter, nothing stamped, nothing forwarded', async () => {
+    abortVerdict = { allowed: false };
+    queueFetch();
+    const res = await abort();
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'Only the member who started this run, the session owner or a project manager can stop it.',
+      code: 'not_turn_prompter',
+    });
+    expect(abortAsks).toEqual([{ userId: 'u1', sessionId: 'sess-1' }]);
+    expect(stopLog).toEqual([]);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('allowed: the stop is stamped under the stopper, then forwarded once', async () => {
+    queueFetch(new Response('true', { status: 200 }));
+    expect((await abort()).status).toBe(200);
+    expect(stopLog).toEqual([{ name: 'UserStop', scope: { opencodeSessionId: 'ses_root' }, by: 'u1' }]);
+    expect(fetchCalls).toBe(1);
+  });
+
+  test('a sandbox-authored abort is the agent acting: it asks nothing and stamps nothing', async () => {
+    queueFetch(new Response('true', { status: 200 }));
+    expect((await abort({ ...principal, sandboxAuthored: true })).status).toBe(200);
+    expect(abortAsks).toEqual([]);
+    expect(stopLog).toEqual([]);
   });
 });
 

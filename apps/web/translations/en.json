@@ -1028,10 +1028,6 @@
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
         },
-        "apps": {
-          "name": "Apps",
-          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
-        },
         "monitors": {
           "name": "Monitors",
           "description": "Run persistent watchers that observe logs, feeds, or APIs and start agent sessions from events."
@@ -2079,6 +2075,7 @@
     "expandQuotes": "Expand quotes",
     "collapseQuotes": "Collapse quotes",
     "stopUnconfirmed": "Could not confirm Stop. The agent may still be running. Try Stop again.",
+    "stoppedBy": "Stopped by {name}",
     "queued": "Queued",
     "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "queuedCount": "{count} Queued",

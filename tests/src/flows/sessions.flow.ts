@@ -1313,7 +1313,11 @@ flow(
       if (await listed()) throw new Error('a refused restore listed the session');
     });
 
-    await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
+    // The local provider is unreachable, so the seeded box's removal stays
+    // unconfirmed until the flow records it. A deployed provider answers for
+    // the seeded box during the delete (or the restore), so its first restore is 200.
+    const local = ctx.env.target === 'local';
+    if (local) await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
       (await owner.post(restoreRoute, {}, { params }))
         .status(409)
         .body()
@@ -1325,17 +1329,19 @@ flow(
     });
 
     await ctx.step('the provider confirms the removal; restore → 200, the session is listed and readable again', async () => {
-      const db = await openFlowDb(ctx.env);
-      try {
-        await db.query(
-          `UPDATE kortix.session_sandboxes
-              SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
-                             || jsonb_build_object('providerRemovedAt', now()::text)
-            WHERE session_id = $1 AND status = 'archived'`,
-          [sessionId],
-        );
-      } finally {
-        await db.end();
+      if (local) {
+        const db = await openFlowDb(ctx.env);
+        try {
+          await db.query(
+            `UPDATE kortix.session_sandboxes
+                SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
+                               || jsonb_build_object('providerRemovedAt', now()::text)
+              WHERE session_id = $1 AND status = 'archived'`,
+            [sessionId],
+          );
+        } finally {
+          await db.end();
+        }
       }
       (await owner.post(restoreRoute, {}, { params })).status(200).body().has('$.ok', true);
       if (!(await listed())) throw new Error('the restored session is not listed');

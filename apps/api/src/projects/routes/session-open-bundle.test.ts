@@ -120,6 +120,24 @@ mock.module('../lib/serializers', () => ({
   ...require('../lib/serializers'),
   serializeSession: (row: Record<string, unknown>) => ({ session_id: row.sessionId }),
 }));
+// The turn leg's `can_stop` (`turn-stop-authority.ts`, tested beside it). The
+// bundle imports only this name; the real module's graph needs the inbox rows
+// this file stubs.
+let canStop = true;
+let canStopCalls: Array<{ newest: string | null; callerUserId: string | null; canManageLifecycle: boolean }> = [];
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  canStopTurns: async (
+    state: { turns: Array<{ message_id: string | null }> },
+    input: { callerUserId: string | null; canManageLifecycle: boolean },
+  ) => {
+    canStopCalls.push({
+      newest: state.turns[0]?.message_id ?? null,
+      callerUserId: input.callerUserId,
+      canManageLifecycle: !!input.canManageLifecycle,
+    });
+    return canStop;
+  },
+}));
 
 const { projectsApp } = await import('../lib/app');
 (await import('./session-open-bundle')).registerSessionOpenBundleRoutes();
@@ -148,6 +166,8 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     loadProjectCalls = [];
     capabilityCalls = [];
     legCalls = [];
+    canStop = true;
+    canStopCalls = [];
     refreshCalls = [];
     transcriptLimits = [];
     gatewayEnabled = true;
@@ -260,6 +280,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       known: true,
       turns: [],
       last_ended: { turn_token: 't1', end_reason: 'completed', ended_at: null },
+      can_stop: true,
     });
     expect(body.queue).toEqual({ known: true, prompts: [], held: false });
     expect(body.transcript.known).toBe(true);
@@ -345,6 +366,14 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     queueLeg = async () => [{ state: 'waiting', reason: 'awaiting_approval' }];
     const body = (await (await openBundle()).json()) as Record<string, any>;
     expect(body.queue.held).toBe(false);
+  });
+
+  test("the turn leg says whether THIS caller may stop the running turn, as GET .../turn does", async () => {
+    turnLeg = async () => ({ turns: [{ turn_token: 't1', message_id: 'msg_live' }] });
+    canStop = false;
+    const body = (await (await openBundle()).json()) as Record<string, any>;
+    expect(body.turn.can_stop).toBe(false);
+    expect(canStopCalls).toEqual([{ newest: 'msg_live', callerUserId: USER_ID, canManageLifecycle: false }]);
   });
 
   test('one failed leg degrades to known:false and never fails the bundle', async () => {
