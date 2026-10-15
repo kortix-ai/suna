@@ -962,8 +962,11 @@ describe('a compiled config over 128 KiB', () => {
       if (value !== undefined) expect({ name, fits: envStringBytes(name, value) <= MAX_ENV_STRING_BYTES }).toEqual({ name, fits: true });
     }
     const delivered = JSON.parse(readCompiledAgentConfigEnv(env)!);
-    expect(Object.keys(delivered.agent)).toHaveLength(17);
-    expect(delivered.agent['worker-14']).toMatchObject({ mode: 'subagent', model: 'kortix/test-model', variant: 'high', prompt: prose(14), permission: 'allow' });
+    // v3 also compiles OpenCode's build/plan/general/explore as `disable: true` entries.
+    expect(Object.keys(delivered.agent).filter((name) => !delivered.agent[name].disable)).toHaveLength(17);
+    expect(delivered.agent['worker-14']).toMatchObject({ mode: 'subagent', model: 'kortix/test-model', variant: 'high', prompt: prose(14) });
+    // `permission: allow` compiles to explicit rules; the omitted skills and subagents grants deny skill and task.
+    expect(delivered.agent['worker-14'].permission).toMatchObject({ bash: 'allow', edit: 'allow', skill: 'deny', task: 'deny' });
   });
 });
 
