@@ -326,8 +326,10 @@ export function sendWebNotification(
   // channel that works on a default profile — permission untouched, browser
   // notifications disabled — which is exactly where the completion signal
   // used to die (the old permission gates returned before the toast ran).
+  // A failed turn toasts even to the person watching it: the toast is how an
+  // error is noticed. A finished turn does not: the chat already shows it.
+  if (!watching || payload.type === 'error') showInAppToast(payload);
   if (!watching) {
-    showInAppToast(payload);
     if (payload.type === 'completion' && payload.sessionId) {
       // The toast fades after 8 s; the favicon badge is what a returning
       // user still sees, so a finished turn registers for it here.

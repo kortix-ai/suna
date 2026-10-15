@@ -637,6 +637,20 @@ describe('sendWebNotification — the session name only for another session', ()
     expect(failed().onOpen).toBeUndefined();
   });
 
+  // The chat already shows a finished turn; a failed one is worth the toast
+  // even to the person watching it.
+  test('watching the session: a failed turn still toasts, a finished one does not', () => {
+    visibility = { hidden: false, hasFocus: true };
+    win().location.pathname = '/projects/proj1/sessions/sess1';
+    sendWebNotification({ ...completionPayload(), entityLabel: 'New session' });
+    expect(toastCalls).toEqual([]);
+    sendWebNotification(errorPayload());
+    expect(toastCalls).toHaveLength(1);
+    expect(toastCalls[0].kind).toBe('error');
+    expect(failed().label).toBeUndefined();
+    expect(failed().onOpen).toBeUndefined();
+  });
+
   test('a failed turn of another session: its name and the open link', () => {
     win().location.pathname = '/projects/proj1/sessions/sess2';
     sendWebNotification(errorPayload());
