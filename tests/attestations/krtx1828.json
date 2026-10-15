@@ -1,29 +1,16 @@
 {
-  "source_hash": "77faa93cfc5b39719900afafa43848e635af2511815f393f80526f738a35a8d1",
+  "source_hash": "c405936dea6ac4e21530f5f4b8ae21caeef659e7b10ab4df31f88231846a7f72",
   "diff_files": [
-    "apps/web/src/app/[locale]/(public)/(marketing)/design-system/page.tsx",
-    "apps/web/src/i18n/design-system-translation-keys.generated.ts",
     "apps/web/src/lib/browser-error-noise.test.mts",
-    "apps/web/src/lib/browser-noise/rules/extensions.ts",
-    "apps/web/src/lib/code-theme.test.ts",
-    "apps/web/src/stores/persisted-store-coverage.test.ts",
-    "apps/web/translations/de.json",
-    "apps/web/translations/en.json",
-    "apps/web/translations/es.json",
-    "apps/web/translations/fr.json",
-    "apps/web/translations/it.json",
-    "apps/web/translations/ja.json",
-    "apps/web/translations/pt.json",
-    "apps/web/translations/sr.json",
-    "apps/web/translations/zh.json"
+    "apps/web/src/lib/browser-noise/rules/extensions.ts"
   ],
-  "diff_hash": "431a87a55fe40dcab7ee150bfc56e93be48ac1a16c5a8291a31c99dcb98bf865",
-  "head": "6241f36cf831315abddfddb74dafd420b4ff5d2d",
+  "diff_hash": "5e7676414d8a67b7220425a5e6503361dddf0ebdc05ae110357aabdf9bd88b6f",
+  "head": "d0e0eb4b5d2899ecacc54a8a3b960c892fd76094",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T22:45:35.060Z"
+  "at": "2026-10-15T04:46:25.949Z"
 }
