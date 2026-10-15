@@ -20042,7 +20042,8 @@
       "text111b159de1cc": "Could not change the Enterprise demo",
       "textc3371113b9c5": "A license turns on every Enterprise feature for its term. It carries no credits.",
       "text81e6bf495c98": "Plans, credits, Enterprise, entitlements, members and billing state, per account.",
-      "textfe3436af86b4": "Extensions"
+      "textfe3436af86b4": "Extensions",
+      "text8142608686a2": "Previewed a credits plan change"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

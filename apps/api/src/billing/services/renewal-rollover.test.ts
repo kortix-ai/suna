@@ -128,7 +128,7 @@ describe('monthly renewal on the credits plan', () => {
     await processStripeWebhook('{}', 'sig');
 
     expect(resets[0].amount).toBe(80);
-    expect(syncs.at(-1)).toMatchObject({ planMonthlyUsd: '20' });
+    expect(syncs.at(-1)).toMatchObject({ planMonthlyUsd: '20', scheduledMonthlyUsd: null, scheduledTierChangeDate: null });
   });
 
   test('a legacy per-seat subscription renews as credits: $40 a seat, not $25', async () => {

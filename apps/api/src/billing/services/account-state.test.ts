@@ -346,3 +346,42 @@ describe('buildMinimalAccountState — reports a pending cancellation from payme
     expect(state.subscription.cancel_at_period_end).toBe(false);
   });
 });
+
+describe('buildMinimalAccountState — plan changes', () => {
+  test('a scheduled cut: this period keeps its amount; scheduled_change names the new one and the renewal date', async () => {
+    account = creditAccount({
+      tier: 'credits',
+      planMonthlyUsd: '5000',
+      scheduledMonthlyUsd: '3000',
+      scheduledTierChangeDate: '2026-11-14T00:00:00.000Z',
+      stripeSubscriptionId: 'sub_live',
+      billingCycleAnchor: '2026-09-14T00:00:00.000Z',
+    });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.plan?.monthly_usd).toBe(5000);
+    expect(state.subscription.has_scheduled_change).toBe(true);
+    expect(state.subscription.scheduled_change).toEqual({
+      type: 'downgrade',
+      current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 500_000, monthly_usd: 5000 },
+      target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 300_000, monthly_usd: 3000 },
+      effective_date: '2026-11-14T00:00:00.000Z',
+    });
+  });
+
+  test('current_period_end is the next anchor-aligned renewal for a live credits subscription', async () => {
+    const anchor = new Date(Date.UTC(2026, 0, 14));
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '100', stripeSubscriptionId: 'sub_live', billingCycleAnchor: anchor.toISOString() });
+    const state = await buildMinimalAccountState('acct-1');
+    const end = new Date((state.subscription.current_period_end ?? 0) * 1000);
+    expect(end.getUTCDate()).toBe(14);
+    expect(end.getTime()).toBeGreaterThan(Date.now());
+    expect(end.getTime() - Date.now()).toBeLessThanOrEqual(31 * 86_400_000);
+  });
+
+  test('no live subscription: no period end, no scheduled change', async () => {
+    account = creditAccount({ tier: 'free' });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.subscription.current_period_end).toBeNull();
+    expect(state.subscription.scheduled_change).toBeNull();
+  });
+});

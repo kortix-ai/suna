@@ -95,10 +95,15 @@ export function parseMonthlyUsd(value: unknown): number {
  *
  * - No live paid subscription → hosted Stripe Checkout. Activation is
  *   webhook-driven (`invoice.paid` / `checkout.session.completed`).
- * - Live subscription already on the credits price → change its quantity.
- *   A raise is charged now (`always_invoice`) and applies only once paid; the
- *   paid proration invoice grants its net amount. A cut bills no proration and
- *   the next renewal grants the new amount.
+ * - Live subscription already on the credits price. The amount IN EFFECT is
+ *   `plan_monthly_usd`; the Stripe quantity is what the next renewal bills.
+ *   - A raise (above the amount in effect) is instant: charged now, prorated
+ *     (`always_invoice`), and applied only once paid. The paid proration
+ *     invoice grants its net amount at once.
+ *   - A cut is scheduled: Stripe bills the new amount from the next renewal
+ *     (no proration, no refund), `scheduled_monthly_usd` records it, and the
+ *     renewal applies it. The current period keeps its amount and its credits.
+ *   - The amount in effect again cancels a scheduled cut ("keep").
  * - Live subscription on any legacy price (per-seat, a tier, yearly) → replace
  *   its items with the credits price, prorated, so unused legacy time is
  *   credited by Stripe.
@@ -152,33 +157,61 @@ export async function setPlan(params: {
     throw new SubscriptionError('Your yearly commitment has not ended yet');
   }
 
-  const currentUsd = monthlyCreditsForSubscription(livePaid);
+  const billedUsd = monthlyCreditsForSubscription(livePaid);
   const onCreditsPrice = livePaid.items.data.length === 1 && livePaid.items.data[0].price?.id === priceId;
-  if (onCreditsPrice && currentUsd === monthlyUsd) {
-    return { status: 'unchanged' as const, monthly_usd: monthlyUsd };
+  const inEffectUsd = onCreditsPrice ? inEffectMonthlyUsd(account, billedUsd) : billedUsd;
+  const metadata = { ...livePaid.metadata, tier_key: 'credits', plan_key: 'credits' };
+  const effectiveAt = new Date(livePaid.current_period_end * 1000).toISOString();
+
+  if (onCreditsPrice && monthlyUsd <= inEffectUsd) {
+    if (monthlyUsd === inEffectUsd && billedUsd === inEffectUsd) {
+      return { status: 'unchanged' as const, change: 'none' as const, monthly_usd: monthlyUsd };
+    }
+    // A cut, or "keep" (back to the amount in effect). No money moves now:
+    // Stripe bills `quantity` from the next renewal.
+    await stripe.subscriptions.update(livePaid.id, {
+      items: [{ id: livePaid.items.data[0].id, quantity }],
+      proration_behavior: 'none',
+      metadata,
+    });
+    const kept = monthlyUsd === inEffectUsd;
+    // planMonthlyUsd is written too: the subscription.updated webhook may land
+    // first and record the billed amount; this write restores the one in effect.
+    await applyStripeSync(
+      accountId,
+      {
+        tier: 'credits',
+        planMonthlyUsd: String(inEffectUsd),
+        scheduledMonthlyUsd: kept ? null : String(monthlyUsd),
+        scheduledTierChangeDate: kept ? null : effectiveAt,
+      },
+      { mode: 'update', reason: kept ? 'set-plan:keep' : 'set-plan:cut' },
+    );
+    return kept
+      ? { status: 'updated' as const, change: 'kept' as const, monthly_usd: monthlyUsd }
+      : { status: 'updated' as const, change: 'scheduled' as const, monthly_usd: monthlyUsd, effective_at: effectiveAt };
   }
-  const isCut = onCreditsPrice && monthlyUsd < currentUsd;
+
+  // A raise. A scheduled cut is undone first, without proration, so the
+  // prorated charge runs from the amount this period was paid at.
+  if (onCreditsPrice && billedUsd !== inEffectUsd) {
+    await stripe.subscriptions.update(livePaid.id, {
+      items: [{ id: livePaid.items.data[0].id, quantity: inEffectUsd * 100 }],
+      proration_behavior: 'none',
+    });
+  }
 
   const updated = await stripe.subscriptions.update(livePaid.id, {
     items: onCreditsPrice
       ? [{ id: livePaid.items.data[0].id, quantity }]
       : [...livePaid.items.data.map((item) => ({ id: item.id, deleted: true })), { price: priceId, quantity }],
-    proration_behavior: isCut ? 'none' : 'always_invoice',
+    proration_behavior: 'always_invoice',
     // A raise applies ONLY if its charge succeeds; on a failed payment Stripe
     // keeps the old items and returns a `pending_update` instead of throwing.
-    ...(isCut ? {} : { payment_behavior: 'pending_if_incomplete' as const }),
+    payment_behavior: 'pending_if_incomplete',
     expand: ['latest_invoice.payment_intent'],
-    metadata: { ...livePaid.metadata, tier_key: 'credits', plan_key: 'credits' },
+    metadata,
   });
-
-  if (isCut) {
-    await applyStripeSync(
-      accountId,
-      { tier: 'credits', planMonthlyUsd: String(monthlyUsd) },
-      { mode: 'update', reason: 'set-plan:cut' },
-    );
-    return { status: 'updated' as const, monthly_usd: monthlyUsd };
-  }
 
   const invoice = typeof updated.latest_invoice === 'object' ? updated.latest_invoice : null;
   if (updated.pending_update || !invoice || invoice.status !== 'paid') {
@@ -196,11 +229,83 @@ export async function setPlan(params: {
   // same amount and the same invoice-keyed grant.
   await applyStripeSync(
     accountId,
-    { tier: 'credits', planMonthlyUsd: String(monthlyUsd) },
+    { tier: 'credits', planMonthlyUsd: String(monthlyUsd), scheduledMonthlyUsd: null, scheduledTierChangeDate: null },
     { mode: 'update', reason: 'set-plan:raise' },
   );
-  await grantForPaidProrationInvoice(accountId, invoice);
-  return { status: 'updated' as const, monthly_usd: monthlyUsd };
+  const grant = await grantForPaidProrationInvoice(accountId, invoice);
+  return {
+    status: 'updated' as const,
+    change: 'raised' as const,
+    monthly_usd: monthlyUsd,
+    charged_usd: (invoice.amount_paid ?? 0) / 100,
+    credits_added: grant.kind === 'raise' ? grant.netCents : 0,
+  };
+}
+
+/**
+ * What `setPlan(monthlyUsd)` would do, without doing it: the change, the
+ * charge due now and the credits added now (1 credit = $0.01). A raise is
+ * priced from Stripe's own proration preview, so coupons and the exact period
+ * length count; `credits_now` sums the same proration lines the grant sums.
+ */
+export async function previewPlan(params: { accountId: string; monthlyUsd: number }) {
+  const { accountId, monthlyUsd } = params;
+  const priceId = resolveCreditsPriceId();
+  const account = await getCreditAccount(accountId);
+  const stripe = getStripe();
+  const live = account?.stripeSubscriptionId
+    ? await stripe.subscriptions.retrieve(account.stripeSubscriptionId).catch(() => null)
+    : null;
+  const livePaid = live && !isDeadSubscriptionStatus(live.status) && planForSubscription(live) === 'credits'
+    ? live
+    : null;
+  if (!livePaid) {
+    return { change: 'checkout' as const, monthly_usd: monthlyUsd, current_monthly_usd: null, due_now_usd: monthlyUsd, credits_now: monthlyUsd * 100, effective_at: null };
+  }
+
+  const billedUsd = monthlyCreditsForSubscription(livePaid);
+  const onCreditsPrice = livePaid.items.data.length === 1 && livePaid.items.data[0].price?.id === priceId;
+  const inEffectUsd = onCreditsPrice ? inEffectMonthlyUsd(account, billedUsd) : billedUsd;
+  const renewsAt = new Date(livePaid.current_period_end * 1000).toISOString();
+  const base = { monthly_usd: monthlyUsd, current_monthly_usd: inEffectUsd };
+
+  if (onCreditsPrice && monthlyUsd <= inEffectUsd) {
+    const change = monthlyUsd < inEffectUsd ? 'scheduled' : billedUsd === inEffectUsd ? 'none' : 'kept';
+    return { ...base, change, due_now_usd: 0, credits_now: 0, effective_at: change === 'scheduled' ? renewsAt : null };
+  }
+
+  const upcoming = await stripe.invoices.retrieveUpcoming({
+    customer: typeof livePaid.customer === 'string' ? livePaid.customer : livePaid.customer.id,
+    subscription: livePaid.id,
+    subscription_items: onCreditsPrice
+      ? [{ id: livePaid.items.data[0].id, quantity: monthlyUsd * 100 }]
+      : [...livePaid.items.data.map((item) => ({ id: item.id, deleted: true })), { price: priceId, quantity: monthlyUsd * 100 }],
+    subscription_proration_behavior: 'always_invoice',
+    subscription_proration_date: Math.floor(Date.now() / 1000),
+  });
+  const prorationCents = upcoming.lines.data
+    .filter((line) => line.proration)
+    .reduce((sum, line) => sum + line.amount, 0);
+  // Stripe prices the raise from the billed quantity. With a cut scheduled,
+  // setPlan raises from the amount in effect instead; proration is linear in
+  // the quantity change, so scale to it.
+  const cents = onCreditsPrice && billedUsd !== inEffectUsd
+    ? Math.round((prorationCents * (monthlyUsd - inEffectUsd)) / (monthlyUsd - billedUsd))
+    : prorationCents;
+  const netCents = Math.max(0, cents);
+  return { ...base, change: 'raised' as const, due_now_usd: netCents / 100, credits_now: netCents, effective_at: null };
+}
+
+/**
+ * The monthly amount in effect THIS period: the stored `plan_monthly_usd`
+ * while a cut waits for the renewal, else what Stripe bills.
+ */
+export function inEffectMonthlyUsd(
+  account: { planMonthlyUsd?: string | number | null; scheduledMonthlyUsd?: string | number | null } | null | undefined,
+  billedUsd: number,
+): number {
+  const stored = Number(account?.planMonthlyUsd);
+  return account?.scheduledMonthlyUsd != null && Number.isFinite(stored) && stored > 0 ? stored : billedUsd;
 }
 
 export async function createPortalSession(accountId: string, returnUrl: string, email?: string) {

@@ -319,9 +319,14 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   // The amount follows the subscription even before it pays, so the plan page
   // shows what the customer is about to be billed. The tier needs payment.
   // A comped $0 subscription leaves the stored amount alone.
+  // A scheduled cut is the exception: Stripe already bills the lower amount,
+  // but this period keeps the amount in effect until the renewal applies it.
   const subscriptionUsd = monthlyCreditsForSubscription(subscription);
-  if (resolvedTier === 'credits' && subscriptionUsd > 0) {
+  const cutPending = account?.scheduledMonthlyUsd != null && Number(account.scheduledMonthlyUsd) === subscriptionUsd;
+  if (resolvedTier === 'credits' && subscriptionUsd > 0 && !cutPending) {
     updates.planMonthlyUsd = String(subscriptionUsd);
+    updates.scheduledMonthlyUsd = null;
+    updates.scheduledTierChangeDate = null;
   }
   if (resolvedTier && subIsPaying) {
     updates.tier = resolvedTier;
@@ -464,6 +469,7 @@ async function revertToFree(
     {
       tier: 'free',
       planMonthlyUsd: null,
+      scheduledMonthlyUsd: null,
       stripeSubscriptionStatus: 'canceled',
       scheduledTierChange: null,
       scheduledTierChangeDate: null,
@@ -545,6 +551,9 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     accountId,
     {
       ...(tierName === 'credits' ? { planMonthlyUsd: String(allowance) } : {}),
+      // A scheduled cut takes effect with this renewal.
+      scheduledMonthlyUsd: null,
+      scheduledTierChangeDate: null,
       lastRenewalPeriodStart: periodStart,
       lastProcessedInvoiceId: invoice.id,
       lastGrantDate: new Date().toISOString(),

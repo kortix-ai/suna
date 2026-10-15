@@ -434,6 +434,32 @@ describe('subscription changes', () => {
     });
   });
 
+  test('a cut scheduled for the renewal keeps the amount in effect this period', async () => {
+    // setPlan already lowered the Stripe quantity to $50; this period was paid at $500.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: 'sub_test_123', tier: 'credits', planMonthlyUsd: '500', scheduledMonthlyUsd: '50' });
+    const sub = createMockStripeSubscription({ id: 'sub_test_123' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls[0].data).not.toHaveProperty('planMonthlyUsd');
+    expect(updateCreditAccountCalls[0].data).not.toHaveProperty('scheduledMonthlyUsd');
+  });
+
+  test('any other amount change replaces a scheduled cut', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: 'sub_test_123', tier: 'credits', planMonthlyUsd: '500', scheduledMonthlyUsd: '100' });
+    const sub = createMockStripeSubscription({ id: 'sub_test_123' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls[0].data).toMatchObject({ planMonthlyUsd: '50', scheduledMonthlyUsd: null, scheduledTierChangeDate: null });
+  });
+
   test('sets paymentStatus=cancelling when cancel_at_period_end', async () => {
     const sub = createMockStripeSubscription({ cancel_at_period_end: true });
     const event = createMockStripeEvent('customer.subscription.updated', sub);
