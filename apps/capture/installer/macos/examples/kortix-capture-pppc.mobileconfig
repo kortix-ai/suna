@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Kortix Capture: Privacy Preferences Policy Control. Replace CODE_REQUIREMENT with
+  the output of:  codesign -dr - "/Applications/Kortix Capture.app"
+  (the text after "designated => "), and the two UUIDs.
+  - Accessibility and Input Monitoring: pre-granted.
+  - Screen Recording: a profile cannot grant it; a standard user may approve it.
+-->
+<plist version="1.0">
+<dict>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadIdentifier</key><string>ai.kortix.capture.pppc</string>
+  <key>PayloadUUID</key><string>00000000-0000-4000-8000-0000000000B1</string>
+  <key>PayloadDisplayName</key><string>Kortix Capture permissions</string>
+  <key>PayloadScope</key><string>System</string>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.apple.TCC.configuration-profile-policy</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>PayloadIdentifier</key><string>ai.kortix.capture.pppc.policy</string>
+      <key>PayloadUUID</key><string>00000000-0000-4000-8000-0000000000B2</string>
+      <key>Services</key>
+      <dict>
+        <key>Accessibility</key>
+        <array>
+          <dict>
+            <key>Identifier</key><string>ai.kortix.capture</string>
+            <key>IdentifierType</key><string>bundleID</string>
+            <key>CodeRequirement</key><string>CODE_REQUIREMENT</string>
+            <key>Authorization</key><string>Allow</string>
+          </dict>
+        </array>
+        <key>ListenEvent</key>
+        <array>
+          <dict>
+            <key>Identifier</key><string>ai.kortix.capture</string>
+            <key>IdentifierType</key><string>bundleID</string>
+            <key>CodeRequirement</key><string>CODE_REQUIREMENT</string>
+            <key>Authorization</key><string>Allow</string>
+          </dict>
+        </array>
+        <key>ScreenCapture</key>
+        <array>
+          <dict>
+            <key>Identifier</key><string>ai.kortix.capture</string>
+            <key>IdentifierType</key><string>bundleID</string>
+            <key>CodeRequirement</key><string>CODE_REQUIREMENT</string>
+            <key>Authorization</key><string>AllowStandardUserToSetSystemService</string>
+          </dict>
+        </array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

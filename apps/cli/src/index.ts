@@ -42,6 +42,7 @@ import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runReminders } from './commands/reminders.ts';
+import { runCapture } from './commands/capture.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -228,6 +229,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   review: (rest) => runReview(rest),
   triggers: (rest) => runTriggers(rest),
   reminders: (rest) => runReminders(rest),
+  capture: (rest) => runCapture(rest),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),
   secrets: (rest) => runSecrets(rest),

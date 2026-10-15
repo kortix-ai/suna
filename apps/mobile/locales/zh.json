@@ -1165,10 +1165,12 @@
     "current": "当前",
     "currentPlan": "当前套餐",
     "includes": "{{plan}} 包含",
-    "askOwner": "请联系账户所有者升级",
+    "askOwner": "请账户所有者或管理员升级",
     "contactSales": "联系销售",
     "upgradeTo": "升级到 {{plan}}",
-    "switchTo": "切换到 {{plan}}"
+    "switchTo": "切换到 {{plan}}",
+    "trialLabel_one": "{{plan}} 试用 · 剩余 {{count}} 天",
+    "trialLabel_other": "{{plan}} 试用 · 剩余 {{count}} 天"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",

@@ -34,6 +34,8 @@
   "docs:api": "2026-10-14T12:59:07.000Z",
   "docs:apps": "2026-10-14T17:57:03.000Z",
   "docs:audit-actions": "2026-10-14T14:50:08.000Z",
+  "docs:capture": "2026-10-14T14:08:20.000Z",
+  "docs:capture/rollout": "2026-10-14T01:22:23.000Z",
   "docs:cli": "2026-10-13T22:14:52.000Z",
   "docs:clients": "2026-10-13T17:03:47.000Z",
   "docs:connect/channels": "2026-10-11T19:28:15.000Z",

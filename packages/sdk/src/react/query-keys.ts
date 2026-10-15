@@ -71,6 +71,26 @@ function normalizeSessionListFilters(filters?: SessionListFilters) {
 }
 
 export const qk = {
+  /** Kortix Capture, not project-scoped: a device sign-in grant, keyed by its user code. */
+  capture: {
+    deviceGrant: (userCode: string) => ['capture', 'device-grant', userCode] as const,
+    /** Kortix Capture: the prefix of every capture key of one account (Capture's tenant). */
+    account: (accountId: string) => ['capture', 'account', accountId] as const,
+    /** `getCaptureWorkspace` — the account switch and what IAM lets you do. */
+    workspace: (accountId: string) => [...qk.capture.account(accountId), 'workspace'] as const,
+    /** `listCaptureDevices` — mine, a member's, or the account's (`scope`). */
+    devices: (accountId: string, scope: string, userId: string | null) =>
+      [...qk.capture.account(accountId), 'devices', scope, userId] as const,
+    /** Everything read off one person's timeline: days, runs, items, search, frames. */
+    timeline: (accountId: string) => [...qk.capture.account(accountId), 'timeline'] as const,
+    timelineRead: (accountId: string, kind: string, query: unknown) =>
+      [...qk.capture.timeline(accountId), kind, query] as const,
+    policy: (accountId: string) => [...qk.capture.account(accountId), 'policy'] as const,
+    /** `listCaptureEnrollmentTokens` — the IT rollout tokens. */
+    enrollmentTokens: (accountId: string) => [...qk.capture.account(accountId), 'enrollment-tokens'] as const,
+    /** `listCaptureEnrollments` — computers that presented a token; every status filter under one prefix. */
+    enrollments: (accountId: string) => [...qk.capture.account(accountId), 'enrollments'] as const,
+  },
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.
    *
@@ -475,6 +495,7 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
 
     /** `listProjectTriggerEventTypes` — the app events one connector can trigger on. */
     triggerEventTypes: (id: string, connector: string) =>

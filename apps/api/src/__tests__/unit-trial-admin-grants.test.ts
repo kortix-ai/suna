@@ -32,293 +32,131 @@ mock.module('../config', () => ({
 }));
 
 const {
-  grantTemporaryAccess,
+  DEFAULT_ENTERPRISE_TRIAL_CREDITS_USD,
   grantTrial,
-  temporaryAccessOverrides,
-  trialMonthlyRegrant,
-  TEMPORARY_ACCESS_OVERRIDE_KEYS,
+  markTrialConverted,
+  revokeTrial,
   TRIAL_GRANT_LEDGER_TYPE,
+  validateGrantTrialInput,
+  withoutTrialCopies,
 } = await import('../billing/services/trial-admin');
-const { PLAN_CATALOG } = await import('../billing/services/plan-catalog');
-const { readOverride } = await import('../billing/services/entitlement-overrides');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const START = new Date('2026-08-10T00:00:00Z');
-const iso = (daysFromStart: number) => new Date(START.getTime() + daysFromStart * DAY_MS).toISOString();
 
-describe('grantTrial credit grant', () => {
-  // The COSMIC bug: the issue-time grant landed as PERMANENT credits, so an
-  // ended trial left real spendable money behind. Trial credits must be
-  // expiring and stamped with the trial window's end.
-  test('issue-time grant is expiring and expires at the trial end', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    await grantTrial({
-      accountId: 'acct_1',
-      tierKey: 'credits',
-      durationDays: 50,
-      creditGrant: 150,
-    });
+function reset() {
+  grantCalls.length = 0;
+  storedRow = null;
+}
+
+// A trial is a dated grant of a plan on the trial columns, with one expiring
+// credit grant (.agents/skills/billing/references/plans-and-access.md, "Trials").
+
+describe('grantTrial', () => {
+  test('writes the trial columns and one credit grant that expires at the trial end', async () => {
+    reset();
+    const result = await grantTrial({ accountId: 'acct_1', tierKey: 'credits', durationDays: 50, creditGrant: 150 });
+    expect(storedRow!.trialStatus).toBe('active');
+    expect(storedRow!.trialTier).toBe('credits');
+    expect(storedRow!.trialMonthlyUsd).toBeNull();
     expect(grantCalls).toHaveLength(1);
     const call = grantCalls[0]!;
     expect(call.amount).toBe(150);
     expect(call.kind).toBe(TRIAL_GRANT_LEDGER_TYPE);
     expect(call.expiring).toBe(true);
-    expect(call.expiresAt).toBeTruthy();
-    // expiresAt ≈ now + 50d (grantTrial uses wall clock; assert the day).
-    const expires = new Date(call.expiresAt!).getTime();
-    expect(Math.abs(expires - (Date.now() + 50 * DAY_MS))).toBeLessThan(60_000);
-  });
-});
-
-// ─── grantTemporaryAccess — the primitive behind a trial ─────────────────────
-// "Behave as plan X, with $Y of credits, until date Z", where every part
-// expires by arithmetic instead of waiting for a sweep to notice.
-
-describe('temporaryAccessOverrides (pure)', () => {
-  const END = '2026-09-10T00:00:00.000Z';
-
-  test('an enterprise plan expands into the four identity entitlements', () => {
-    const o = temporaryAccessOverrides(PLAN_CATALOG.enterprise!, END);
-    expect(o.sso).toEqual({ value: true, expires_at: END });
-    expect(o.scim).toEqual({ value: true, expires_at: END });
-    expect(o.rbac).toEqual({ value: true, expires_at: END });
-    expect(o.auditAccess).toEqual({ value: true, expires_at: END });
-    expect(o.branding).toEqual({ value: true, expires_at: END });
-    expect(o.managedModels).toEqual({ value: true, expires_at: END });
-    expect('maxConcurrentSessions' in o).toBe(false);
+    expect(call.expiresAt).toBe(storedRow!.trialEndsAt as string);
+    expect(Math.abs(new Date(call.expiresAt!).getTime() - (Date.now() + 50 * DAY_MS))).toBeLessThan(60_000);
+    expect(result.creditGranted).toBe(150);
   });
 
-  test('a non-enterprise plan grants none of them — a credits pilot is not SSO', () => {
-    const o = temporaryAccessOverrides(PLAN_CATALOG.credits!, END);
-    expect(o.sso).toBeUndefined();
-    expect(o.scim).toBeUndefined();
-    expect(o.rbac).toBeUndefined();
-    expect(o.auditAccess).toBeUndefined();
-    expect(o.branding).toBeUndefined();
-    expect('maxConcurrentSessions' in o).toBe(false);
-  });
-
-  test('managedModels is always stated, including when the plan withholds it', () => {
-    expect(temporaryAccessOverrides(PLAN_CATALOG.free!, END).managedModels).toEqual({
-      value: false,
-      expires_at: END,
-    });
-  });
-
-  test('every key it writes is one the primitive declares it owns', () => {
-    const owned = new Set<string>(TEMPORARY_ACCESS_OVERRIDE_KEYS);
-    for (const plan of Object.values(PLAN_CATALOG)) {
-      for (const key of Object.keys(temporaryAccessOverrides(plan, END))) {
-        expect(owned.has(key)).toBe(true);
-      }
-    }
-  });
-});
-
-describe('grantTemporaryAccess', () => {
-  test('writes expiring overrides, the legacy trial columns, and an expiring credit grant', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    const result = await grantTemporaryAccess({
-      accountId: 'acct_1',
-      planKey: 'enterprise',
-      durationDays: 30,
-    });
-
-    // Overrides: the whole plan, every entry stamped with the window's end.
-    const stored = storedRow!.entitlementOverrides as Record<string, unknown>;
-    expect((stored.sso as { expires_at: string }).expires_at).toBe(result.endsAt);
-    expect(stored.maxConcurrentSessions).toBeUndefined();
-
-    // Legacy trial columns, unchanged — the overlay and the console still read them.
-    expect(storedRow!.trialStatus).toBe('active');
-    expect(storedRow!.trialTier).toBe('enterprise');
-    expect(storedRow!.trialMonthlyUsd).toBe('25');
-    expect(storedRow!.trialEndsAt).toBe(result.endsAt);
-
-    // Credits default to $25 a month, flat, and die with the window.
-    expect(result.creditGranted).toBe(25);
-    expect(grantCalls).toHaveLength(1);
-    expect(grantCalls[0]!.amount).toBe(25);
-    expect(grantCalls[0]!.expiring).toBe(true);
-    expect(grantCalls[0]!.expiresAt).toBe(result.endsAt);
-  });
-
-  test('the grant lapses by arithmetic — every entry is dead one ms after the end', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    const result = await grantTemporaryAccess({
-      accountId: 'acct_1',
-      planKey: 'enterprise',
-      durationDays: 7,
-    });
-    const endMs = new Date(result.endsAt).getTime();
-    for (const key of TEMPORARY_ACCESS_OVERRIDE_KEYS) {
-      const during = readOverride(result.overrides, key, endMs - 1);
-      const after = readOverride(result.overrides, key, endMs + 1);
-      if (during !== undefined) expect(after).toBeUndefined();
-    }
-    expect(readOverride(result.overrides, 'sso', endMs - 1)).toBe(true);
-    expect(readOverride(result.overrides, 'sso', endMs + 1)).toBeUndefined();
-  });
-
-  // Re-granting must not leave the PREVIOUS grant's key behind carrying the
-  // previous grant's expiry: an Enterprise pilot followed by a Team pilot would
-  // otherwise keep SSO alive on the Enterprise timetable.
-  test('a re-grant replaces the keys it owns and keeps the ones it does not', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    await grantTemporaryAccess({
-      accountId: 'acct_1',
-      planKey: 'enterprise',
-      durationDays: 30,
-    });
-    // An unrelated operator override that the primitive must not touch.
-    storedRow!.entitlementOverrides = {
-      ...(storedRow!.entitlementOverrides as Record<string, unknown>),
-      computeRateMultiplier: { value: 0 },
-    };
-
-    const second = await grantTemporaryAccess({
-      accountId: 'acct_1',
-      planKey: 'credits',
-      durationDays: 5,
-    });
-    const stored = storedRow!.entitlementOverrides as Record<string, unknown>;
-    expect(stored.sso).toBeUndefined();
-    expect(stored.scim).toBeUndefined();
-    expect(stored.computeRateMultiplier).toEqual({ value: 0 });
-    expect(stored.maxConcurrentSessions).toBeUndefined();
-    expect((stored.managedModels as { expires_at: string }).expires_at).toBe(second.endsAt);
-  });
-
-  test('rejects an invalid plan key / duration instead of writing anything', async () => {
-    storedRow = null;
-    for (const input of [
-      { planKey: 'free', durationDays: 30 },
-      { planKey: 'per_seat', durationDays: 30 }, // a legacy key is not a trial plan
-      { planKey: 'credits', durationDays: 0 },
-    ]) {
-      await expect(grantTemporaryAccess({ accountId: 'acct_1', ...input })).rejects.toThrow();
-    }
-    expect(storedRow).toBeNull();
-  });
-});
-
-describe('grantTrial delegates without changing its own contract', () => {
-  test('the wallet grant stays opt-in (default 0), not the $25 grantTemporaryAccess default', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    const result = await grantTrial({
-      accountId: 'acct_1',
-      tierKey: 'credits',
-      durationDays: 14,
-    });
-    expect(result.creditGranted).toBe(0);
-    expect(grantCalls).toHaveLength(0);
-    // …and it still records the trial the admin console reads.
-    expect(result.current.status).toBe('active');
-    expect(result.current.tier).toBe('credits');
-    expect(result.current.monthlyUsd).toBe(0);
-  });
-
-  test('it now also writes the expiring overrides for the trial tier', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    await grantTrial({
-      accountId: 'acct_1',
-      tierKey: 'enterprise',
-      durationDays: 21,
-      creditGrant: 10,
-    });
-    const stored = storedRow!.entitlementOverrides as Record<string, unknown>;
-    expect((stored.sso as { value: boolean }).value).toBe(true);
-    expect((stored.sso as { expires_at: string }).expires_at).toBe(
-      storedRow!.trialEndsAt as string,
+  test('an Enterprise trial grants the default credits; a Credits trial grants none unless asked', async () => {
+    reset();
+    expect((await grantTrial({ accountId: 'acct_1', tierKey: 'enterprise', durationDays: 30 })).creditGranted).toBe(
+      DEFAULT_ENTERPRISE_TRIAL_CREDITS_USD,
     );
-    expect(grantCalls[0]!.amount).toBe(10);
-  });
-});
-
-describe('ending a grant early takes its overrides with it', () => {
-  test('revokeTrial strips the derived keys and keeps the unrelated ones', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    await grantTrial({
-      accountId: 'acct_1',
-      tierKey: 'enterprise',
-      durationDays: 90,
-    });
-    storedRow!.entitlementOverrides = {
-      ...(storedRow!.entitlementOverrides as Record<string, unknown>),
-      computeRateMultiplier: { value: 0.5 },
-    };
-
-    const { revokeTrial } = await import('../billing/services/trial-admin');
-    const result = await revokeTrial('acct_1');
-    expect(result.current.status).toBe('revoked');
-    // Without this, "revoked" would not take effect until the date the revoke
-    // was supposed to bring forward.
-    expect(storedRow!.entitlementOverrides).toEqual({ computeRateMultiplier: { value: 0.5 } });
+    reset();
+    expect((await grantTrial({ accountId: 'acct_1', tierKey: 'credits', durationDays: 30 })).creditGranted).toBe(0);
+    expect(grantCalls).toHaveLength(0);
   });
 
-  test('markTrialConverted does the same — a paid plan decides its own entitlements', async () => {
-    grantCalls.length = 0;
-    storedRow = null;
-    await grantTrial({ accountId: 'acct_1', tierKey: 'enterprise', durationDays: 90 });
-
-    const { markTrialConverted } = await import('../billing/services/trial-admin');
-    expect(await markTrialConverted('acct_1')).toBe(true);
-    expect(storedRow!.trialStatus).toBe('converted');
+  test('it writes no entitlement overrides: the trial plan decides', async () => {
+    reset();
+    await grantTrial({ accountId: 'acct_1', tierKey: 'enterprise', durationDays: 30, creditGrant: 0 });
     expect(storedRow!.entitlementOverrides).toEqual({});
   });
+
+  test('re-granting the same plan extends: the start date stays, the end moves', async () => {
+    reset();
+    await grantTrial({ accountId: 'acct_1', tierKey: 'enterprise', durationDays: 10, creditGrant: 0 });
+    const startedAt = storedRow!.trialStartedAt;
+    const firstEnd = storedRow!.trialEndsAt as string;
+    await grantTrial({ accountId: 'acct_1', tierKey: 'enterprise', durationDays: 40, creditGrant: 0 });
+    expect(storedRow!.trialStartedAt).toBe(startedAt);
+    expect(new Date(storedRow!.trialEndsAt as string).getTime()).toBeGreaterThan(new Date(firstEnd).getTime());
+  });
+
+  test('only credits and enterprise are trial plans; a retired key is refused', () => {
+    expect(validateGrantTrialInput({ tierKey: 'free', durationDays: 30 })).toMatch(/'credits' or 'enterprise'/);
+    expect(validateGrantTrialInput({ tierKey: 'team', durationDays: 30 })).toMatch(/'credits' or 'enterprise'/);
+    expect(validateGrantTrialInput({ tierKey: 'enterprise', durationDays: 0 })).toMatch(/duration_days/);
+    expect(validateGrantTrialInput({ tierKey: 'enterprise', durationDays: 30, creditGrant: -1 })).toMatch(/credit_grant/);
+  });
 });
 
-describe('trialMonthlyRegrant', () => {
-  const trial = (over: Partial<Parameters<typeof trialMonthlyRegrant>[0]> = {}) => ({
-    accountId: 'acct_1',
-    startedAt: iso(0),
-    endsAt: iso(90),
-    monthlyUsd: 150 as number | null,
-    ...over,
+describe('legacy override copies', () => {
+  // Before the one-plan model a trial also wrote its plan's entitlements into
+  // entitlement_overrides, each expiring at the trial end.
+  const END = '2026-11-01T00:00:00.000Z';
+  const copies = {
+    sso: { value: true, expires_at: END },
+    scim: { value: true, expires_at: END },
+    managedModels: { value: true, expires_at: END },
+    rbac: { value: true, expires_at: '2027-01-01T00:00:00.000Z' }, // an operator's own override
+    branding: { value: false },
+  };
+
+  test('withoutTrialCopies drops exactly the entries that expire at the trial end', () => {
+    expect(withoutTrialCopies(copies, END)).toEqual({
+      rbac: { value: true, expires_at: '2027-01-01T00:00:00.000Z' },
+      branding: { value: false },
+    });
   });
 
-  test('inside month 1 → nothing due (covered by the issue-time grant)', () => {
-    expect(trialMonthlyRegrant(trial(), new Date(iso(29)))).toBeNull();
+  test('revokeTrial and markTrialConverted remove them', async () => {
+    reset();
+    storedRow = { trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: END, entitlementOverrides: copies };
+    expect((await revokeTrial('acct_1')).current.status).toBe('revoked');
+    expect(storedRow!.entitlementOverrides).toEqual(withoutTrialCopies(copies, END));
+
+    storedRow = { trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: END, entitlementOverrides: copies };
+    expect(await markTrialConverted('acct_1', 'enterprise')).toBe(true);
+    expect(storedRow!.trialStatus).toBe('converted');
+    expect(storedRow!.entitlementOverrides).toEqual(withoutTrialCopies(copies, END));
+  });
+});
+
+describe('markTrialConverted', () => {
+  test('buying Credits ends a Credits trial', async () => {
+    reset();
+    storedRow = { trialStatus: 'active', trialTier: 'credits', trialEndsAt: '2026-11-01T00:00:00.000Z' };
+    expect(await markTrialConverted('acct_1', 'credits')).toBe(true);
   });
 
-  test('day 30 → month-2 grant of the monthly trial credits', () => {
-    const plan = trialMonthlyRegrant(trial(), new Date(iso(30)));
-    expect(plan).not.toBeNull();
-    expect(plan!.monthIndex).toBe(1);
-    expect(plan!.amount).toBe(150); // trial_monthly_usd, flat
+  test('buying Credits leaves an Enterprise trial running to its end', async () => {
+    reset();
+    storedRow = { trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: '2026-11-01T00:00:00.000Z' };
+    expect(await markTrialConverted('acct_1', 'credits')).toBe(false);
+    expect(storedRow!.trialStatus).toBe('active');
   });
 
-  test('day 61 → month-3 grant, distinct idempotency key from month 2', () => {
-    const m2 = trialMonthlyRegrant(trial(), new Date(iso(30)))!;
-    const m3 = trialMonthlyRegrant(trial(), new Date(iso(61)))!;
-    expect(m3.monthIndex).toBe(2);
-    expect(m3.idempotencyKey).not.toBe(m2.idempotencyKey);
+  test('a contract ends any trial', async () => {
+    reset();
+    storedRow = { trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: '2026-11-01T00:00:00.000Z' };
+    expect(await markTrialConverted('acct_1', 'enterprise')).toBe(true);
   });
 
-  test('same month, different day → same idempotency key (idempotent per month)', () => {
-    const a = trialMonthlyRegrant(trial(), new Date(iso(30)))!;
-    const b = trialMonthlyRegrant(trial(), new Date(iso(45)))!;
-    expect(a.idempotencyKey).toBe(b.idempotencyKey);
-  });
-
-  test('after the trial window ends → nothing due', () => {
-    expect(trialMonthlyRegrant(trial({ endsAt: iso(50) }), new Date(iso(60)))).toBeNull();
-  });
-
-  test('a null or zero monthly amount grants nothing', () => {
-    expect(trialMonthlyRegrant(trial({ monthlyUsd: null }), new Date(iso(30)))).toBeNull();
-    expect(trialMonthlyRegrant(trial({ monthlyUsd: 0 }), new Date(iso(30)))).toBeNull();
-  });
-
-  test('missing window fields → null, never throws', () => {
-    expect(trialMonthlyRegrant(trial({ startedAt: null }), new Date(iso(30)))).toBeNull();
-    expect(trialMonthlyRegrant(trial({ endsAt: null }), new Date(iso(30)))).toBeNull();
+  test('a trial that is not active is left alone', async () => {
+    reset();
+    storedRow = { trialStatus: 'expired', trialTier: 'credits' };
+    expect(await markTrialConverted('acct_1')).toBe(false);
   });
 });
