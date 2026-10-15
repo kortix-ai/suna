@@ -857,6 +857,7 @@ One table per domain. The route column shows the method and route template. `any
 | `session.question.create` | Submitted session question | `POST /v1/projects/:projectId/turn-question` |
 | `session.question.read` | Viewed open session question | `GET /v1/projects/:projectId/sessions/:sessionId/question` |
 | `session.read` | Viewed session | `GET /v1/projects/:projectId/sessions/:sessionId` (also `GET /v1/sessions/:sessionId`) |
+| `session.recover` | Continued lost session on a new computer | `POST /v1/projects/:projectId/sessions/:sessionId/recover` |
 | `session.reminder.create` | Created session reminder | `POST /v1/projects/:projectId/sessions/:sessionId/reminders` |
 | `session.reminder.delete` | Deleted session reminder | `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
 | `session.reminder.list` | Listed session reminders | `GET /v1/projects/:projectId/sessions/:sessionId/reminders` |

@@ -52,6 +52,7 @@ import {
   reloadProjectSessionConfigStream,
   resolvePublicShareUrl,
   restartProjectSession,
+  recoverProjectSession,
   restoreProjectSession,
   retrySessionPrompt,
   revokeSessionPublicShare,
@@ -832,6 +833,27 @@ test('restoreProjectSession rejects a refused restore with the status and code',
   await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 410, code: 'session_purged' });
   nextResponse = { status: 409, body: { error: 'This session is not deleted', code: 'session_not_deleted' } };
   await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 409, code: 'session_not_deleted' });
+});
+
+// KRTX-2419: a lost session (the provider removed its computer) continues on a
+// new computer, whose boot restores the saved conversation.
+test('recoverProjectSession POSTs to /recover', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  expect(await recoverProjectSession('P1', 'S1')).toEqual({ ok: true });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/recover');
+  expect(last().method).toBe('POST');
+});
+
+test('recoverProjectSession rejects a refused recover with the status, code and message', async () => {
+  nextResponse = {
+    status: 409,
+    body: { error: 'This session has no saved conversation, so it cannot continue on a new computer. Nothing was changed.', code: 'session_transcript_missing' },
+  };
+  await expect(recoverProjectSession('P1', 'S1')).rejects.toMatchObject({
+    status: 409,
+    code: 'session_transcript_missing',
+    message: expect.stringContaining('no saved conversation'),
+  });
 });
 
 test('restartProjectSession POSTs to /restart', async () => {

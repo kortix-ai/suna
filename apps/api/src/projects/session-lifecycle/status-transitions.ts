@@ -124,6 +124,12 @@ export const SANDBOX_TRANSITIONS = {
    * fresh box from the session branch.
    */
   restore: { from: ['archived'], to: 'stopped' },
+  /**
+   * `recoverLostSession`: the stopped row of a lost session (provider removed
+   * the box, no in-place recovery). On a person's ask it becomes a retired row,
+   * as `restore` makes one, once the provider confirmed the box removed.
+   */
+  retireLost: { from: ['stopped'], to: 'stopped' },
   /** A `provisioning` row of a deleted session whose owner lapsed. */
   archiveProvisioning: { from: ['provisioning'], to: 'archived' },
   /** A restart or recovery claimed the row. */

@@ -55,6 +55,7 @@
     "e2e/specs/50-settings-deep-links.spec.ts": 0,
     "e2e/specs/51-account-settings-german.spec.ts": 0,
     "e2e/specs/52-session-pin-archive.spec.ts": 200.6,
+    "e2e/specs/53-lost-session-continue.spec.ts": 19.3,
     "e2e/specs/98-transcript-history-visible-contrast.spec.ts": 23.3,
     "e2e/specs/free-tier-pricing-onboarding.spec.ts": 6.9
   },
@@ -114,6 +115,7 @@
     "e2e/specs/50-settings-deep-links.spec.ts": 0,
     "e2e/specs/51-account-settings-german.spec.ts": 0,
     "e2e/specs/52-session-pin-archive.spec.ts": 0,
+    "e2e/specs/53-lost-session-continue.spec.ts": 0,
     "e2e/specs/98-transcript-history-visible-contrast.spec.ts": 33.8,
     "e2e/specs/free-tier-pricing-onboarding.spec.ts": 1.9
   }

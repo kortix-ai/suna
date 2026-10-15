@@ -58,6 +58,7 @@ export {
   listProjectSessionsPage,
   getProjectSession,
   createProjectSession,
+  recoverProjectSession,
   restartProjectSession,
   updateProjectSession,
   deleteProjectSession,
