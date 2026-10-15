@@ -106,9 +106,9 @@ function CatalogAffordance({
  * glyph tile — the same fallback a record with no icon gets, so "missing" and
  * "unavailable" look identical. Mirrors `ConnectorAppIcon`'s broken state.
  *
- * The latch is per URL: the card's call site keys this component on the icon
- * URL, so a reused virtualizer slot or a late-arriving logo gets a fresh try
- * and a URL that once failed stays failed.
+ * The latch is per URL (`failedUrl`, not a boolean): a URL that failed stays
+ * failed, while a reused virtualizer slot or a late-arriving logo — which
+ * swaps the URL — gets a fresh try without any call-site key.
  */
 export function ConnectorIcon({
   icon,
@@ -117,8 +117,8 @@ export function ConnectorIcon({
   icon: string | null;
   computer?: boolean;
 }) {
-  const [broken, setBroken] = useState(false);
-  if (!icon || broken) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (!icon || failedUrl === icon) {
     return (
       <span className="bg-card flex size-9 shrink-0 items-center justify-center rounded-sm">
         {computer ? <MonitorIcon className="size-5" /> : <GlobeIcon className="size-5" />}
@@ -138,7 +138,7 @@ export function ConnectorIcon({
         decoding="async"
         referrerPolicy="no-referrer"
         className="size-9 object-contain"
-        onError={() => setBroken(true)}
+        onError={() => setFailedUrl(icon)}
       />
     </span>
   );

@@ -73,11 +73,11 @@ describe('ConnectorIcon', () => {
     expect(() => renderer.root.findByType('img')).toThrow();
 
     // A virtualizer slot reused for another record (or a late managed logo)
-    // swaps the URL; the call site keys the component on the URL, so the new
-    // URL renders fresh instead of inheriting the old latch.
+    // swaps the URL with no remount; the latch is per URL, so the new URL
+    // renders fresh instead of inheriting the old failure.
     const NEXT = 'https://integrations.sh/logo/github.com';
     act(() => {
-      renderer.update(<ConnectorIcon key={NEXT} icon={NEXT} />);
+      renderer.update(<ConnectorIcon icon={NEXT} />);
     });
     expect(renderer.root.findByType('img').props.src).toBe(NEXT);
   });

@@ -76,12 +76,13 @@ const surfaceLabel = (kind: string) => (kind === 'openapi' ? 'OpenAPI' : kind.to
  * favicon, or the glyph tile when the record has none — and the same glyph
  * tile when the URL fails to load, which used to render the browser's
  * broken-image glyph beside the title. Mirrors the catalogue card's
- * `ConnectorIcon`. The latch is per URL: the call site keys this component on
- * the icon URL, so a late-arriving managed logo swaps in a fresh tile.
+ * `ConnectorIcon`. The latch is per URL (`failedUrl`), so a late-arriving
+ * managed logo — which swaps the URL — gets a fresh try without a call-site
+ * key.
  */
 function AppIcon({ icon, name }: { icon: string | null; name: string }) {
-  const [broken, setBroken] = useState(false);
-  if (!icon || broken) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (!icon || failedUrl === icon) {
     return <EntityAvatar icon={GlobeIcon} size="lg" label={name} />;
   }
   return (
@@ -94,7 +95,7 @@ function AppIcon({ icon, name }: { icon: string | null; name: string }) {
         height={36}
         referrerPolicy="no-referrer"
         className="size-9 object-contain"
-        onError={() => setBroken(true)}
+        onError={() => setFailedUrl(icon)}
       />
     </span>
   );
@@ -392,7 +393,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
 
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <AppIcon key={resolved.icon} icon={resolved.icon} name={resolved.name} />
+            <AppIcon icon={resolved.icon} name={resolved.name} />
             <h1 className="text-foreground min-w-0 text-xl font-medium text-balance wrap-break-word">
               {resolved.name}
             </h1>
