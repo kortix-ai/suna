@@ -115,6 +115,7 @@ import {
   childSessionHref,
   readRuntimeSessionParam,
 } from '@/features/session/tool/tools/session-spawn-urls';
+import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -222,6 +223,7 @@ function ProjectSessionListSkeleton() {
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const { holdPeek } = useSidebar();
   const canShowSessionHoverCard = useMediaQuery(
     '(min-width: 768px) and (hover: hover) and (pointer: fine)',

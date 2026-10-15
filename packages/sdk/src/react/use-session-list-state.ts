@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import {
   setSessionArchived,
   setSessionPinned,
@@ -46,9 +47,14 @@ export function useSessionListState(projectId: string) {
     onSettled: () =>
       client.invalidateQueries({ queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'] }),
   });
-  return {
-    setPinned: (sessionId: string, pinned: boolean) => mutation.mutateAsync({ sessionId, change: { pinned } }),
-    setArchived: (sessionId: string, archived: boolean) => mutation.mutateAsync({ sessionId, change: { archived } }),
-    isPending: mutation.isPending,
-  };
+  // Stable callbacks (`mutateAsync` is), so a memoized row is not re-rendered.
+  const { mutateAsync, isPending } = mutation;
+  const actions = useMemo(
+    () => ({
+      setPinned: (sessionId: string, pinned: boolean) => mutateAsync({ sessionId, change: { pinned } }),
+      setArchived: (sessionId: string, archived: boolean) => mutateAsync({ sessionId, change: { archived } }),
+    }),
+    [mutateAsync],
+  );
+  return { ...actions, isPending };
 }
