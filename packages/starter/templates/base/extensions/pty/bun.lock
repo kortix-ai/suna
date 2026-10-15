@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "kortix-opencode-config",
+      "name": "kortix-extension-pty",
       "dependencies": {
         "zod": "4.1.8",
       },

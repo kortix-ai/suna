@@ -712,7 +712,7 @@ function validateRoot(
     issues.push({
       path: 'kortix_version',
       message:
-        'kortix_version 2 and 3 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+        'kortix_version 2 and 3 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml, or run `kortix migrate --write` to convert it to a kortix_version 3 kortix.yaml.',
       severity: 'error',
     });
     return version;

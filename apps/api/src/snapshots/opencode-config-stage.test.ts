@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { stageOpencodeConfigTree } from './opencode-config-stage';
+import { stageOpencodeConfigTree, stageStarterOpencodeConfig } from './opencode-config-stage';
 
 async function exists(path: string): Promise<boolean> {
   return stat(path).then(
@@ -34,6 +34,25 @@ test('stageOpencodeConfigTree excludes developer-local dependency trees', async 
     );
     expect(await exists(join(destination, 'node_modules'))).toBe(false);
     expect(await exists(join(destination, 'tools', 'node_modules'))).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('stageStarterOpencodeConfig composes a config dir from the starter pty extension', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'kortix-opencode-stage-test-'));
+  const destination = join(root, 'destination');
+  const extension = join(import.meta.dir, '..', '..', '..', '..', 'packages', 'starter', 'templates', 'base', 'extensions', 'pty');
+
+  try {
+    await stageStarterOpencodeConfig(extension, destination);
+
+    expect(JSON.parse(await readFile(join(destination, 'package.json'), 'utf8')).dependencies).toEqual({ zod: '4.1.8' });
+    expect(await exists(join(destination, 'bun.lock'))).toBe(true);
+    expect(await readFile(join(destination, 'opencode.jsonc'), 'utf8')).toContain('"permission": "allow"');
+    expect(await readFile(join(destination, 'plugins', 'pty.ts'), 'utf8')).toContain("from './lib/tool'");
+    expect(await exists(join(destination, 'plugins', 'lib', 'tool.ts'))).toBe(true);
+    expect(await exists(join(destination, 'plugins', 'package.json'))).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
