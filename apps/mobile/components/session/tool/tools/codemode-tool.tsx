@@ -29,6 +29,7 @@ import { View } from 'react-native';
 import {
   BasicTool,
   HighlightedCode,
+  RunningLoader,
   ToolCopyButton,
   ToolRunningContext,
   partError,
@@ -38,6 +39,7 @@ import {
   partStatus,
   useToolCardFrame,
   useToolCardPad,
+  useToolIndent,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
@@ -61,9 +63,10 @@ function paneInset(pad: number): {
     : { paddingVertical: webSpace(2), paddingRight: webSpace(11) };
 }
 
-/** The mark for one call's outcome: running waits quietly, ok/error/refused carry their hue. */
+/** The mark for one call's outcome: a running call keeps the loader, ok/error/refused carry their hue, else the quiet dash. */
 function CallMark({ status }: { status: CodemodeCall['status'] }) {
   const palette = useTurnPalette();
+  if (status === 'running') return <RunningLoader size={TURN_SPACE.statusIcon} />;
   if (status === 'ok') return <CheckIcon size={TURN_SPACE.statusIcon} color={palette.success} />;
   if (status === 'error')
     return <WarningIcon weight="fill" size={TURN_SPACE.statusIcon} color={THEME.accent.red} />;
@@ -143,6 +146,7 @@ export function CodemodeTool({ call, defaultOpen, forceOpen, locked }: ToolProps
   const running = useContext(ToolRunningContext);
   const frame = useToolCardFrame();
   const pad = useToolCardPad();
+  const indent = useToolIndent();
   const palette = useTurnPalette();
 
   const input = partInput(call);
@@ -162,7 +166,13 @@ export function CodemodeTool({ call, defaultOpen, forceOpen, locked }: ToolProps
       forceOpen={forceOpen}
       locked={locked}
     >
-      <View style={[{ overflow: 'hidden' }, frame]}>
+      <View
+        style={[
+          indent ? { marginTop: TURN_SPACE.gap1_5, marginLeft: indent } : null,
+          { overflow: 'hidden' },
+          frame,
+        ]}
+      >
         {calls.length > 0 && (
           <View
             style={{
