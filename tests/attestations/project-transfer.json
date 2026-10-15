@@ -1,6 +1,8 @@
 {
-  "source_hash": "ce35712d1c74dfc8d3aceb5062b56eb75668564f6ecab006b0ea46477dee7c85",
+  "source_hash": "320e7827135a1763bd005bffb674b02088a6dc4929001d33b558000f4d094c7a",
   "diff_files": [
+    "apps/api/src/__tests__/unit-trigger-fire-paths.test.ts",
+    "apps/api/src/projects/lib/access.test.ts",
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
     "apps/api/src/projects/routes/project-settings.ts",
@@ -8,6 +10,7 @@
     "apps/web/content/docs/audit-actions.mdx",
     "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
+    "apps/web/src/features/workspace/capabilities/agents/agent-triggers-section.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.tsx",
     "apps/web/src/features/workspace/settings/tabs/transfer-workspace-dialog.test.tsx",
@@ -30,13 +33,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "66957ad282d4e2c60188451e56aca4290383bd0e706eb8952b469b22eec173ec",
-  "head": "a359de38ce031c4bf22645d5867a23dcf5c3c8d4",
-  "passed": false,
+  "diff_hash": "08cc9e9d6444063ea5fd2ccb5b65e29f424f40d1d31b6de8d657f64dfd7c6ec9",
+  "head": "443b3fbac2a99d5a719abcfd7e23aa7e1724e168",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T14:01:57.455Z"
+  "at": "2026-10-15T15:56:18.012Z"
 }
