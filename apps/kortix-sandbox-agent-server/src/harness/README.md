@@ -988,6 +988,49 @@ function in `git` mode. `contract/boot-state.ts` carries the outcome:
 `workspaceProvider` (reported in `/kortix/health` as `workspace_provider`)
 and `deferredHistoryBackfill` (`backfillAfterHydration` for an S3 start).
 
+## kortix.yaml v3 on OpenCode
+
+A v3 project's compiled set (`KORTIX_COMPILED_AGENT_CONFIG` with `schema: 3`)
+is the only input. `open-code/manifest-v3.ts` turns it into OpenCode config.
+v1 and v2 sets keep the behavior above.
+
+- **No project config dir.** OpenCode reads the image default config dir.
+  `resolveOpencodeConfigDir` ignores `opencode.config_dir`,
+  `harnesses/opencode` and `.kortix/opencode`. `manifestFromDescriptor`
+  sets a v3 release's `config_dir` to null, so the release serves the image
+  default and is proven there. The boot release link still names the
+  release: the config root is the release root, else `/workspace`.
+- **No discovery.** OpenCode spawns with `OPENCODE_DISABLE_PROJECT_CONFIG=1`
+  (no `opencode.json(c)` or `.opencode/` upward from the working directory)
+  and `OPENCODE_DISABLE_EXTERNAL_SKILLS=1` (no `.claude/skills` or
+  `.agents/skills`). A change between v2 and v3 respawns OpenCode instead of
+  disposing it, because these values ride the process env.
+- **Skills.** `skills.paths` is each registered folder (`compiled.skills`,
+  under the config root) plus the managed Kortix skills. OpenCode scans
+  `**/SKILL.md` under a path, the folder itself included, so a folder loads
+  its own skill and nothing beside it. The root `skills/` is not declared.
+  The compiled `permission.skill` allowlist decides which agent sees which
+  skill.
+- **Extensions.** The session agent is `KORTIX_AGENT_NAME`, else
+  `default_agent`. Each name in its `extensions` with an `opencode` path
+  becomes the plugin `file://<config root>/<path>`. A missing file is logged
+  and skipped. A mid-session agent switch keeps the plugins of the boot agent.
+- **Commands.** `compiled.commands` becomes OpenCode `command`
+  (`template`, `description`). `GET /command` (proxy) and the `commands`
+  section of `/kortix/runtime/state` list only the compiled commands, each
+  with `agents`. OpenCode's own `init` and `review`, MCP prompts and skills
+  are not listed. `POST /session/:id/command` for an agent the command does
+  not list answers `403 { error: "command_not_enabled", command, agent }`.
+  The agent is the body's `agent`, else the session agent.
+- **Kortix-only keys.** `schema`, `skills`, `commands`, `extensions` and the
+  per-agent `extensions` and `codemode` are removed before OpenCode reads the
+  config. `OPENCODE_CONFIG_CONTENT` from the environment is not merged.
+- **Built-in agents.** The API sends `build`, `plan`, `general` and `explore`
+  as `{ disable: true }` unless the manifest declares them. OpenCode deletes
+  a disabled agent, so the `task` tool cannot start one.
+- **Session notice.** The config-release notice names `kortix.yaml` as the
+  file to edit.
+
 ## OpenCode instance guard
 
 OpenCode builds its per-directory services on first use and caches the result

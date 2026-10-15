@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildOpencodeConfigContent, capabilityToolRules, denyBuiltinSkills } from '@/harness/open-code/lifecycle'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
+import { v3OpencodeEnv } from '@/harness/open-code/manifest-v3'
 
 const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 
@@ -424,5 +425,120 @@ describe('capability rules reach the tools that cannot ask (E9)', () => {
     expect(config.agent.locked.permission).toMatchObject({ bash: 'deny', edit: 'deny', pty_spawn: 'deny', pty_kill: 'deny' })
     expect(config.agent.open.permission).toBeUndefined()
     expect(config.permission).toEqual({ question: 'deny', skill: { 'customize-opencode': 'deny' } })
+  })
+})
+
+describe('buildOpencodeConfigContent — kortix.yaml v3 (schema: 3)', () => {
+  // The config root: the active release root, else /workspace.
+  const root = mkdtempSync(join(tmpdir(), 'kortix-v3-root-'))
+  for (const dir of ['skills/research', 'skills/unregistered', 'ext']) mkdirSync(join(root, dir), { recursive: true })
+  writeFileSync(join(root, 'skills/research/SKILL.md'), '---\nname: research\ndescription: d\n---\n')
+  writeFileSync(join(root, 'ext/audit.ts'), 'export default async () => ({})\n')
+  writeFileSync(join(root, 'ext/other.ts'), 'export default async () => ({})\n')
+  const injected = mkdtempSync(join(tmpdir(), 'kortix-v3-managed-'))
+
+  const SET = {
+    schema: 3,
+    default_agent: 'lead',
+    agent: {
+      lead: { mode: 'primary', prompt: 'Lead.', extensions: ['audit', 'gone', 'pi-only'], permission: { '*': 'allow' } },
+      helper: { mode: 'subagent', prompt: 'Help.', extensions: ['other'], codemode: 'off' },
+      build: { disable: true },
+      plan: { disable: true },
+      general: { disable: true },
+      explore: { disable: true },
+    },
+    skills: { research: 'skills/research', notes: 'docs/notes' },
+    commands: {
+      weekly: { description: 'Weekly summary', template: 'Summarize $ARGUMENTS', agents: ['lead'] },
+      triage: { template: 'Triage $1', agents: ['lead', 'helper'] },
+    },
+    extensions: {
+      audit: { opencode: 'ext/audit.ts' },
+      gone: { opencode: 'ext/missing.ts' },
+      'pi-only': { pi: 'npm:pi-thing@1.0.0' },
+      other: { opencode: 'ext/other.ts' },
+    },
+  }
+  const build = async (env: Record<string, string> = {}, set: Record<string, unknown> = SET) =>
+    JSON.parse(
+      (await buildOpencodeConfigContent(
+        { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(set), ...env },
+        { configRoot: root, injectedSkillsDir: injected, projectSkillsDir: join(root, 'skills') },
+      ))!,
+    )
+
+  test('OpenCode never sees the Kortix-only keys', async () => {
+    const config = await build()
+    expect(config.schema).toBeUndefined()
+    expect(config.commands).toBeUndefined()
+    expect(config.extensions).toBeUndefined()
+    expect(Object.keys(config.skills)).toEqual(['paths'])
+    expect(config.agent.lead.extensions).toBeUndefined()
+    expect(config.agent.helper.extensions).toBeUndefined()
+    expect(config.agent.helper.codemode).toBeUndefined()
+  })
+
+  test('the built-in agents stay disabled, so the task tool cannot offer them', async () => {
+    const config = await build()
+    for (const name of ['build', 'plan', 'general', 'explore']) expect(config.agent[name]).toEqual({ disable: true })
+  })
+
+  test('commands compile into OpenCode `command`: template and description, no agents', async () => {
+    expect((await build()).command).toEqual({
+      weekly: { template: 'Summarize $ARGUMENTS', description: 'Weekly summary' },
+      triage: { template: 'Triage $1' },
+    })
+  })
+
+  test('skills.paths: exactly the registered folders that exist, then the managed overlay; no skills/ discovery', async () => {
+    expect((await build()).skills.paths).toEqual([join(root, 'skills/research'), injected])
+  })
+
+  test("plugins: the session agent's OpenCode extensions as file:// specs; a missing file is skipped", async () => {
+    const plugins: string[] = (await build()).plugin
+    expect(plugins).toContain(`file://${join(root, 'ext/audit.ts')}`)
+    expect(plugins.some((spec) => spec.includes('missing.ts'))).toBe(false)
+    expect(plugins.some((spec) => spec.includes('other.ts'))).toBe(false)
+  })
+
+  test('KORTIX_AGENT_NAME picks the session agent, and with it the plugins', async () => {
+    const plugins: string[] = (await build({ KORTIX_AGENT_NAME: 'helper' })).plugin
+    expect(plugins).toEqual([`file://${join(root, 'ext/other.ts')}`])
+  })
+
+  test('an agent with no extensions loads no project plugin', async () => {
+    const set = { ...SET, agent: { ...SET.agent, lead: { mode: 'primary', prompt: 'Lead.' } } }
+    expect((await build({}, set)).plugin).toBeUndefined()
+  })
+
+  test('OPENCODE_CONFIG_CONTENT from the environment is not read: the compiled set is the only input', async () => {
+    const config = await build({ OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: 'repo/override', command: { x: { template: 'y' } } }) })
+    expect(config.model).toBeUndefined()
+    expect(Object.keys(config.command)).toEqual(['weekly', 'triage'])
+  })
+
+  test('v2 is unchanged: no schema, its keys and the project skills/ dir stay as they were', async () => {
+    const v2 = { agent: { support: { mode: 'primary', prompt: 'x' } }, skills: { paths: ['/repo/skills'] } }
+    const config = JSON.parse(
+      (await buildOpencodeConfigContent(
+        { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(v2), KORTIX_AGENT_NAME: 'support' },
+        { configRoot: root, injectedSkillsDir: injected, projectSkillsDir: join(root, 'skills') },
+      ))!,
+    )
+    expect(config.skills.paths).toEqual(['/repo/skills', injected, join(root, 'skills')])
+    expect(config.command).toBeUndefined()
+    expect(config.plugin).toBeUndefined()
+  })
+})
+
+describe('v3OpencodeEnv — OpenCode discovers no project config for a v3 session', () => {
+  test('v3 turns off project config and external skill discovery; v1/v2 keep both', () => {
+    expect(v3OpencodeEnv({ KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ schema: 3, agent: {} }) })).toEqual({
+      OPENCODE_DISABLE_PROJECT_CONFIG: '1',
+      OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
+    })
+    expect(v3OpencodeEnv({ KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: {} }) })).toEqual({})
+    expect(v3OpencodeEnv({})).toEqual({})
   })
 })
