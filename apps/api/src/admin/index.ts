@@ -1008,7 +1008,9 @@ const ContractBody = z.object({
   note: z.string().max(2000).optional(),
 });
 
-function serializeContract(row: Record<string, any>) {
+type ContractRecord = typeof import('@kortix/db').enterpriseContracts.$inferSelect;
+
+function serializeContract(row: ContractRecord) {
   return {
     id: row.id,
     status: row.status,
@@ -1018,7 +1020,7 @@ function serializeContract(row: Record<string, any>) {
     collection: row.collection,
     startsAt: row.startsAt ?? null,
     endsAt: row.endsAt ?? null,
-    autoRenews: row.autoRenews ?? false,
+    autoRenews: row.autoRenews,
     stripeSubscriptionId: row.stripeSubscriptionId ?? null,
     note: row.note ?? null,
     createdBy: row.createdBy ?? null,
@@ -1027,28 +1029,43 @@ function serializeContract(row: Record<string, any>) {
   };
 }
 
-async function auditContract(c: any, accountId: string, action: string, after: Record<string, unknown>) {
+async function auditContract(input: {
+  accountId: string;
+  actorUserId: string | null;
+  action: string;
+  contract: ReturnType<typeof serializeContract>;
+  ip: string | null;
+  userAgent: string | null;
+}) {
   try {
     const { recordAuditEvent } = await import('../shared/audit');
     await recordAuditEvent({
-      accountId,
-      actorUserId: (c.get('userId') as string | undefined) ?? null,
-      action,
+      accountId: input.accountId,
+      actorUserId: input.actorUserId,
+      action: input.action,
       resourceType: 'enterprise_contract',
-      resourceId: String(after.id ?? accountId),
-      after,
-      ip: requestClientIp(c),
-      userAgent: c.req.header('user-agent') || null,
+      resourceId: input.contract.id,
+      after: input.contract,
+      ip: input.ip,
+      userAgent: input.userAgent,
     });
   } catch {
     /* audit is best-effort — never block the contract change */
   }
 }
 
-function contractErrorResponse(c: any, e: any) {
-  const status = typeof e?.statusCode === 'number' ? e.statusCode : 500;
-  return c.json({ error: adminErrorMessage(e) }, status);
+/** The status a refused contract operation answers with: its own 400/404/409, else 500. */
+function contractFailure(e: unknown): { status: 400 | 404 | 409 | 500; error: string } {
+  const status = e instanceof Error && 'statusCode' in e ? (e as { statusCode: number }).statusCode : 500;
+  return {
+    status: status === 400 || status === 404 || status === 409 ? status : 500,
+    error: adminErrorMessage(e),
+  };
 }
+
+const ContractEnvelope = z.object({ contract: z.record(z.string(), z.any()) });
+const ErrorBody = z.object({ error: z.string() });
+const AccountIdParam = z.object({ id: z.string() });
 
 adminApp.openapi(
   createRoute({
@@ -1057,16 +1074,16 @@ adminApp.openapi(
     tags: ['admin'],
     summary: "List an account's Enterprise contracts, newest first",
     ...auth,
-    request: { params: z.object({ id: z.string() }) },
+    request: { params: AccountIdParam },
     responses: {
       200: json(z.object({ contracts: z.array(z.record(z.string(), z.any())) }), 'Contracts'),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const { id } = c.req.valid('param');
     const { listContracts } = await import('../billing/services/enterprise-contracts');
-    const rows = await listContracts(c.req.param('id'));
-    return c.json({ contracts: rows.map(serializeContract) });
+    return c.json({ contracts: (await listContracts(id)).map(serializeContract) }, 200);
   },
 );
 
@@ -1078,36 +1095,47 @@ adminApp.openapi(
     summary: 'Create an Enterprise contract (offer, invoice, or manual)',
     ...auth,
     request: {
-      params: z.object({ id: z.string() }),
+      params: AccountIdParam,
       body: { content: { 'application/json': { schema: ContractBody } } },
     },
     responses: {
-      200: json(z.object({ contract: z.record(z.string(), z.any()) }), 'The contract'),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      409: json(z.record(z.string(), z.any()), 'Conflict'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(ContractEnvelope, 'The contract'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'Not found'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const actorUserId = c.get('userId') ?? null;
     try {
-      const accountId = c.req.param('id');
-      const body = c.req.valid('json') as z.infer<typeof ContractBody>;
       const { createContract } = await import('../billing/services/enterprise-contracts');
-      const row = await createContract({
+      const contract = serializeContract(
+        await createContract({
+          accountId,
+          licenseUsd: body.license_usd,
+          creditsUsd: body.credits_usd,
+          termMonths: body.term_months,
+          collection: body.collection,
+          note: body.note ?? null,
+          actorUserId,
+        }),
+      );
+      await auditContract({
         accountId,
-        licenseUsd: body.license_usd,
-        creditsUsd: body.credits_usd,
-        termMonths: body.term_months,
-        collection: body.collection,
-        note: body.note ?? null,
-        actorUserId: (c.get('userId') as string | undefined) ?? null,
+        actorUserId,
+        action: 'admin.account.enterprise_contract.create',
+        contract,
+        ip: requestClientIp(c),
+        userAgent: c.req.header('user-agent') || null,
       });
-      const contract = serializeContract(row);
-      await auditContract(c, accountId, 'admin.account.enterprise_contract.create', contract);
-      return c.json({ contract });
-    } catch (e: any) {
-      return contractErrorResponse(c, e);
+      return c.json({ contract }, 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
     }
   },
 );
@@ -1119,24 +1147,26 @@ adminApp.openapi(
     tags: ['admin'],
     summary: 'A fresh Stripe Checkout link for the open offer (valid up to 24 h)',
     ...auth,
-    request: { params: z.object({ id: z.string() }) },
+    request: { params: AccountIdParam },
     responses: {
       200: json(z.object({ checkout_url: z.string(), contract_id: z.string() }), 'Checkout link'),
-      404: json(z.record(z.string(), z.any()), 'No open offer'),
-      409: json(z.record(z.string(), z.any()), 'Conflict'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'No open offer'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
     try {
-      const accountId = c.req.param('id');
       const { billingPaneUrl } = await import('../billing/services/owner-alerts');
       const billingUrl = billingPaneUrl(accountId);
       const { createOfferCheckout } = await import('../billing/services/enterprise-contracts');
-      return c.json(await createOfferCheckout({ accountId, successUrl: billingUrl, cancelUrl: billingUrl }));
-    } catch (e: any) {
-      return contractErrorResponse(c, e);
+      return c.json(await createOfferCheckout({ accountId, successUrl: billingUrl, cancelUrl: billingUrl }), 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
     }
   },
 );
@@ -1148,23 +1178,34 @@ adminApp.openapi(
     tags: ['admin'],
     summary: 'Withdraw the open Enterprise offer',
     ...auth,
-    request: { params: z.object({ id: z.string() }) },
+    request: { params: AccountIdParam },
     responses: {
-      200: json(z.object({ contract: z.record(z.string(), z.any()) }), 'The withdrawn offer'),
-      404: json(z.record(z.string(), z.any()), 'No open offer'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(ContractEnvelope, 'The withdrawn offer'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'No open offer'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
+    const actorUserId = c.get('userId') ?? null;
     try {
-      const accountId = c.req.param('id');
       const { withdrawOffer } = await import('../billing/services/enterprise-contracts');
-      const contract = serializeContract(await withdrawOffer(accountId, (c.get('userId') as string | undefined) ?? null));
-      await auditContract(c, accountId, 'admin.account.enterprise_offer.withdraw', contract);
-      return c.json({ contract });
-    } catch (e: any) {
-      return contractErrorResponse(c, e);
+      const contract = serializeContract(await withdrawOffer(accountId, actorUserId));
+      await auditContract({
+        accountId,
+        actorUserId,
+        action: 'admin.account.enterprise_offer.withdraw',
+        contract,
+        ip: requestClientIp(c),
+        userAgent: c.req.header('user-agent') || null,
+      });
+      return c.json({ contract }, 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
     }
   },
 );
@@ -1176,28 +1217,36 @@ adminApp.openapi(
     tags: ['admin'],
     summary: "End the account's active Enterprise contract now",
     ...auth,
-    request: { params: z.object({ id: z.string() }) },
+    request: { params: AccountIdParam },
     responses: {
-      200: json(z.object({ contract: z.record(z.string(), z.any()) }), 'The ended contract'),
-      404: json(z.record(z.string(), z.any()), 'No active contract'),
-      409: json(z.record(z.string(), z.any()), 'Conflict'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(ContractEnvelope, 'The ended contract'),
+      400: json(ErrorBody, 'Bad request'),
+      404: json(ErrorBody, 'No active contract'),
+      409: json(ErrorBody, 'Conflict'),
+      500: json(ErrorBody, 'Server error'),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const { id: accountId } = c.req.valid('param');
+    const actorUserId = c.get('userId') ?? null;
     try {
-      const accountId = c.req.param('id');
       const { endContract, getActiveContract } = await import('../billing/services/enterprise-contracts');
       const active = await getActiveContract(accountId);
       if (!active) return c.json({ error: 'the account has no active Enterprise contract' }, 404);
-      const contract = serializeContract(
-        await endContract(active.id, 'operator', (c.get('userId') as string | undefined) ?? null),
-      );
-      await auditContract(c, accountId, 'admin.account.enterprise_contract.end', contract);
-      return c.json({ contract });
-    } catch (e: any) {
-      return contractErrorResponse(c, e);
+      const contract = serializeContract(await endContract(active.id, 'operator', actorUserId));
+      await auditContract({
+        accountId,
+        actorUserId,
+        action: 'admin.account.enterprise_contract.end',
+        contract,
+        ip: requestClientIp(c),
+        userAgent: c.req.header('user-agent') || null,
+      });
+      return c.json({ contract }, 200);
+    } catch (e) {
+      const failure = contractFailure(e);
+      return c.json({ error: failure.error }, failure.status);
     }
   },
 );

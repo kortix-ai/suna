@@ -59,7 +59,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'members-manage-gate-test' });
   await db.insert(creditAccounts).values({
     accountId: ACCOUNT,
-    demoEnterprise: true,
+    tier: 'enterprise',
   });
   await db.insert(projects).values({
     projectId: PROJECT,

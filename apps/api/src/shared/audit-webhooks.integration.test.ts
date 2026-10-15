@@ -43,8 +43,8 @@ describe.skipIf(!databaseUrl)('durable audit webhook worker — migrated Postgre
       [ACCOUNT],
     );
     await client.query(
-      `INSERT INTO kortix.credit_accounts(account_id, demo_enterprise)
-       VALUES ($1, true)`,
+      `INSERT INTO kortix.credit_accounts(account_id, tier)
+       VALUES ($1, 'enterprise')`,
       [ACCOUNT],
     );
     await client.query(

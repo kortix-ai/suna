@@ -134,7 +134,7 @@ async function seedWorld(label: string) {
   const team = project.account_id;
   await seedUsers([owner, member, peer]);
   // SCIM needs the Enterprise `scim` entitlement.
-  await db.insert(creditAccounts).values({ accountId: team, demoEnterprise: true });
+  await db.insert(creditAccounts).values({ accountId: team, tier: 'enterprise' });
   await insertIntoView(db, accountMembers, [
     { accountId: team, userId: owner, accountRole: 'owner' },
     { accountId: team, userId: member, accountRole: 'member' },

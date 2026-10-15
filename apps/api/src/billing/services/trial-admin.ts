@@ -62,7 +62,9 @@ export function trialPlanFor(tierKey: string): TrialPlan | null {
 export function validateGrantTrialInput(
   input: Pick<GrantTrialInput, 'tierKey' | 'durationDays' | 'creditGrant'>,
 ): string | null {
-  if (!trialPlanFor(input.tierKey)) {
+  // Exactly the two plan keys: a retired key ('team', 'tier_2_20') is not a plan
+  // to grant, even though a stored one still resolves (trialPlanFor).
+  if (input.tierKey !== 'credits' && input.tierKey !== 'enterprise') {
     return `tier_key must be 'credits' or 'enterprise', got "${input.tierKey}"`;
   }
   if (

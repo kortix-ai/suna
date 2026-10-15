@@ -111,7 +111,7 @@ async function pendingInvites(address: string): Promise<number> {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'email-autoconfirm-trust' });
   // SCIM needs the Enterprise `scim` entitlement.
-  await db.insert(creditAccounts).values({ accountId: ACCOUNT, demoEnterprise: true });
+  await db.insert(creditAccounts).values({ accountId: ACCOUNT, tier: 'enterprise' });
   await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${ANCHOR_OWNER}::uuid, ${email('anchor')})`);
   await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: ANCHOR_OWNER });
   // The account's own IdP, with its domain NOT verified: inside its own account

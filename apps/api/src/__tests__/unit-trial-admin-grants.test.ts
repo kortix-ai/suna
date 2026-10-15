@@ -94,9 +94,9 @@ describe('grantTrial', () => {
     expect(new Date(storedRow!.trialEndsAt as string).getTime()).toBeGreaterThan(new Date(firstEnd).getTime());
   });
 
-  test('only credits and enterprise are trial plans; legacy keys resolve', () => {
+  test('only credits and enterprise are trial plans; a retired key is refused', () => {
     expect(validateGrantTrialInput({ tierKey: 'free', durationDays: 30 })).toMatch(/'credits' or 'enterprise'/);
-    expect(validateGrantTrialInput({ tierKey: 'team', durationDays: 30 })).toBeNull();
+    expect(validateGrantTrialInput({ tierKey: 'team', durationDays: 30 })).toMatch(/'credits' or 'enterprise'/);
     expect(validateGrantTrialInput({ tierKey: 'enterprise', durationDays: 0 })).toMatch(/duration_days/);
     expect(validateGrantTrialInput({ tierKey: 'enterprise', durationDays: 30, creditGrant: -1 })).toMatch(/credit_grant/);
   });

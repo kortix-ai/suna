@@ -9,6 +9,7 @@
  * Kortix sales (`DEMO_LEAD_NOTIFY_EMAIL`), once: a claim row in
  * `chat_event_dedup` makes it once-only across replicas and sweeps.
  */
+import { logger } from '../../lib/logger';
 import { chatEventDedup, creditAccounts, enterpriseContracts } from '@kortix/db';
 import { and, eq, gt, isNotNull, lte } from 'drizzle-orm';
 import { config } from '../../config';
@@ -82,7 +83,7 @@ async function send(accountId: string, category: string, notice: (accountName: s
         body: `<p style="${S.p}">Account <span style="${S.strong}">${escapeHtml(accountLabel)}</span> (${escapeHtml(accountId)}).</p>${n.paragraphs.map((p) => `<p style="${S.p}">${escapeHtml(p)}</p>`).join('')}`,
       }),
       text: renderText({ title: n.title, paragraphs: [`Account ${accountLabel} (${accountId}).`, ...n.paragraphs] }),
-    }).catch((err) => console.warn('[access-notices] ops email failed:', (err as Error).message));
+    }).catch((err) => logger.warn('[access-notices] ops email failed', { error: (err as Error).message }));
   }
   return sent;
 }
@@ -160,7 +161,7 @@ export async function runAccessSweep(now: Date = new Date()): Promise<{
     if (!row.trialEndsAt) continue;
     if (await claimOnce(`billing:trial-ended:${row.accountId}:${new Date(row.trialEndsAt).getTime()}`)) {
       await notifyTrialEnded(row.accountId, row.trialTier, row.trialEndsAt).catch((err) =>
-        console.warn('[access-notices] trial-ended notice failed:', (err as Error).message),
+        logger.warn('[access-notices] trial-ended notice failed', { error: (err as Error).message }),
       );
     }
   }
@@ -186,7 +187,7 @@ export async function runAccessSweep(now: Date = new Date()): Promise<{
     if (!(await claimOnce(`billing:trial-ending:${trial.accountId}:${new Date(trial.trialEndsAt).getTime()}:${threshold}`))) continue;
     await notifyTrialEnding(trial.accountId, trial.trialTier, trial.trialEndsAt, left)
       .then(() => warningsSent++)
-      .catch((err) => console.warn('[access-notices] trial warning failed:', (err as Error).message));
+      .catch((err) => logger.warn('[access-notices] trial warning failed', { error: (err as Error).message }));
   }
 
   const contracts = await db
@@ -209,7 +210,7 @@ export async function runAccessSweep(now: Date = new Date()): Promise<{
     if (!(await claimOnce(`billing:contract-ending:${contract.id}:${new Date(contract.endsAt).getTime()}:${threshold}`))) continue;
     await notifyContractEnding(contract.accountId, contract.endsAt, left)
       .then(() => warningsSent++)
-      .catch((err) => console.warn('[access-notices] contract warning failed:', (err as Error).message));
+      .catch((err) => logger.warn('[access-notices] contract warning failed', { error: (err as Error).message }));
   }
 
   return { trialsExpired: expired.length, contractsEnded, warningsSent };

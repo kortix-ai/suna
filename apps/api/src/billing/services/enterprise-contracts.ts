@@ -10,6 +10,7 @@
  * plan assignment, and it writes through `applyAdminOverride`: a contract is
  * operator intent, even when Stripe delivers the payment that activates it.
  */
+import { logger } from '../../lib/logger';
 import { enterpriseContracts } from '@kortix/db';
 import { and, desc, eq, isNotNull, lte } from 'drizzle-orm';
 import Stripe from 'stripe';
@@ -331,7 +332,7 @@ export async function withdrawOffer(accountId: string, actorUserId: string | nul
     .set({ status: 'withdrawn', updatedAt: new Date().toISOString() })
     .where(and(eq(enterpriseContracts.id, offer.id), eq(enterpriseContracts.status, 'offered')))
     .returning();
-  console.log(`[enterprise-contracts] offer ${offer.id} on ${accountId} withdrawn by ${actorUserId ?? 'system'}`);
+  logger.info(`[enterprise-contracts] offer ${offer.id} on ${accountId} withdrawn by ${actorUserId ?? 'system'}`);
   return row ?? offer;
 }
 
@@ -381,7 +382,7 @@ export async function activateContract(
   await stopCreditsSubscription(contract.accountId);
   if (active.collection === 'manual') await grantContractPool(active, term.startsAt, term.endsAt);
   invalidateCaches(contract.accountId);
-  console.log(`[enterprise-contracts] contract ${contractId} active on ${contract.accountId} (${active.collection})`);
+  logger.info(`[enterprise-contracts] contract ${contractId} active on ${contract.accountId} (${active.collection})`);
   return active;
 }
 
@@ -443,7 +444,7 @@ export async function endContract(
   // account without one ends with no Stripe call (and no Stripe configured).
   if (reason === 'operator' && contract.stripeSubscriptionId) {
     await getStripe().subscriptions.cancel(contract.stripeSubscriptionId).catch((err) =>
-      console.warn(`[enterprise-contracts] could not cancel ${contract.stripeSubscriptionId}:`, (err as Error).message),
+      logger.warn(`[enterprise-contracts] could not cancel ${contract.stripeSubscriptionId}`, { error: (err as Error).message }),
     );
   }
 
@@ -468,7 +469,7 @@ export async function endContract(
   invalidateCaches(contract.accountId);
   const { notifyContractEnded } = await import('./access-notices');
   await notifyContractEnded(contract.accountId, graceEnds).catch((err) =>
-    console.warn('[enterprise-contracts] contract-ended notice failed:', (err as Error).message),
+    logger.warn('[enterprise-contracts] contract-ended notice failed', { error: (err as Error).message }),
   );
   return ended;
 }
@@ -563,7 +564,7 @@ export async function routeContractEvent(event: Stripe.Event): Promise<boolean> 
         contractIdOf(invoice.subscription_details?.metadata) ?? (await getContractBySubscription(subscriptionId))?.id ?? null;
       if (!contractId) return false;
       if (event.type === 'invoice.payment_failed') {
-        console.warn(`[enterprise-contracts] invoice ${invoice.id} for contract ${contractId} failed to pay`);
+        logger.warn(`[enterprise-contracts] invoice ${invoice.id} for contract ${contractId} failed to pay`);
         return true;
       }
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
