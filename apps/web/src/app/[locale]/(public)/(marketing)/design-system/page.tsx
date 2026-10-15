@@ -1786,15 +1786,13 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-button-group" className="mb-12">
-                  <ComponentLabel>
-                    {tI18nHardcoded.raw('i18nComplete.text7193a9579bbc')}
-                  </ComponentLabel>
+                  <ComponentLabel>{tI18nHardcoded.raw('i18nComplete.text7193a9579bbc')}</ComponentLabel>
                   <ComponentDesc>
-                    {tI18nHardcoded.rich('i18nComplete.text856f98cb4a26', {
-                      code: (chunks) => (
-                        <code className="bg-muted rounded-sm px-1 font-mono text-xs">{chunks}</code>
-                      ),
-                    })}
+                    {tI18nHardcoded.raw('i18nComplete.text07b547d6911c')}{' '}
+                    <code className="bg-muted rounded-sm px-1 font-mono text-xs">
+                      orientation=&quot;vertical&quot;
+                    </code>
+                    .
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
@@ -1827,25 +1825,13 @@ export default function BrandPage() {
                         <div className="flex flex-wrap items-center gap-4">
                           {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
                             <ButtonGroup key={variant}>
-                              <Button
-                                variant={variant}
-                                size="icon-sm"
-                                aria-label={tI18nHardcoded.raw('i18nComplete.text49c266baaaa7')}
-                              >
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.text49c266baaaa7')}>
                                 <Search />
                               </Button>
-                              <Button
-                                variant={variant}
-                                size="icon-sm"
-                                aria-label={tI18nHardcoded.raw('i18nComplete.texte21f935f11d7')}
-                              >
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.texte21f935f11d7')}>
                                 <Copy />
                               </Button>
-                              <Button
-                                variant={variant}
-                                size="icon-sm"
-                                aria-label={tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
-                              >
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}>
                                 <Trash2 />
                               </Button>
                             </ButtonGroup>
@@ -1854,11 +1840,7 @@ export default function BrandPage() {
                             <Button variant="secondary" size="sm">
                               <Plus /> {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
                             </Button>
-                            <Button
-                              variant="secondary"
-                              size="icon-sm"
-                              aria-label={tI18nHardcoded.raw('i18nComplete.textbc79cdffbaa8')}
-                            >
+                            <Button variant="secondary" size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.textbc79cdffbaa8')}>
                               <ChevronsUpDown />
                             </Button>
                           </ButtonGroup>

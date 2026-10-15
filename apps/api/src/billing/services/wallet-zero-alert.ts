@@ -13,7 +13,7 @@ import { db } from '../../shared/db';
 import { escapeHtml } from '../../shared/html';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { resolveAccountBilling } from './billing-cache';
-import { billingPaneUrl, emailAccountOwners } from './owner-alerts';
+import { billingPaneUrl, emailBillingManagers } from './owner-alerts';
 import { isPaidTier } from './tiers';
 
 // replica-local: accounts this process already handled today, so a drained
@@ -51,7 +51,7 @@ export async function alertWalletAtZero(accountId: string, balance: number): Pro
   const title = 'Out of credits';
   const stopped = 'Agents pause, and triggers stop starting sessions, until credits are added.';
   const note = 'Buy credits, or turn on auto top-up so the balance refills itself.';
-  return emailAccountOwners(accountId, (accountName) => ({
+  return emailBillingManagers(accountId, (accountName) => ({
     subject: `${accountName} is out of credits`,
     category: 'billing-wallet-zero',
     html: renderEmail({

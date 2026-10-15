@@ -1,5 +1,5 @@
 /**
- * PricingTierBadge — the plan name in a pill: "Free", "Team", "Enterprise",
+ * PricingTierBadge — the plan name in a pill: "Free", "Credits", "Enterprise",
  * the API's plan families (`plan.label`). The legacy Basic / Plus / Pro / Ultra
  * artwork is gone (Jay, 2026-09-23): no account shows those names any more.
  */
@@ -10,7 +10,7 @@ import { Text } from '@/components/ui/text';
 import { THEME } from '@/lib/utils/theme';
 
 interface PricingTierBadgeProps {
-  /** The plan family label: 'Free', 'Team' or 'Enterprise'. */
+  /** The plan family label: 'Free', 'Credits' or 'Enterprise'. */
   planName: string;
 }
 

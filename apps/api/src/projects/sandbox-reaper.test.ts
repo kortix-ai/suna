@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
-import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 import * as realProviders from '../platform/providers';
+import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
@@ -359,12 +359,9 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-// The reaper's cache invalidation lives on `sandbox-proxy/backend`; mocking the
-// index would leave the real `invalidateProviderCache` in place (production
-// imports it from the backend module), so intercept the backend module itself.
 mock.module('../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
-  invalidateProviderCache: (externalId: string) => {
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));

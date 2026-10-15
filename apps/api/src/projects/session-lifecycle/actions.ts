@@ -28,12 +28,7 @@ import {
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../session-open';
-import { invalidateProviderCache } from '../../sandbox-proxy/backend';
-// From './backend', not the sandbox-proxy index: backend does not import this
-// module, while the index closes the backend -> session-lifecycle -> index
-// cycle, and a static index import here TDZs the index's own route bindings
-// when the graph is entered from a deep sandbox-proxy module (a test that
-// imports routes/public-share first).
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -595,7 +590,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'before_stop'))) return;
   await provider.stop(externalId).catch(() => {});
   if (!(await ownsRestart(restart, 'after_stop'))) return;
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   await db
     .update(sessionSandboxes)
     .set({
@@ -629,7 +624,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'after_start'))) return;
   // Provider ingress credentials can change on every stop/start cycle.
   // Remove any link resolved while the sandbox was stopped.
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   // A provider may acknowledge start before discovering that the backing
   // runtime is gone. A confirmed `removed` status starts recovery.
   // `unknown` remains non-terminal because it does not prove runtime loss.

@@ -103,9 +103,6 @@ mock.module('../../../platform/providers', () => ({
 // the two calls `abortLiveTurnBeforeStop` makes before its own `fetch`.
 mock.module('../../../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
-  invalidateProviderCache: (externalId: string) => {
-    cacheInvalidations.push(externalId);
-  },
   resolveServiceKey: async (_externalId: string) => abortServiceKey,
   resolveSandboxIngress: async (_ref: string, _req: unknown) => ({
     url: 'https://daemon.example.test',
@@ -113,6 +110,9 @@ mock.module('../../../sandbox-proxy/backend', () => ({
     effectivePort: 8000,
     websocket: false,
   }),
+  invalidateSandbox: (externalId: string) => {
+    cacheInvalidations.push(externalId);
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that

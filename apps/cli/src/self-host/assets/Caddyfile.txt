@@ -47,6 +47,20 @@
 	# operator-owned domain we don't control the lifecycle of.
 	header Strict-Transport-Security "max-age=2592000"
 
+	# Kortix Capture: devices upload to the bundled store with SigV4, which signs
+	# the host and the path. The store is path-style, so its URL is
+	# https://api.<domain>/kortix-capture/<key>: this prefix goes to it with the
+	# Host header and path untouched (Caddy keeps the inbound Host by default).
+	# No other route uses the prefix. The store checks every signature. It is
+	# one instance; flush_interval -1 streams a chunk straight through, and Caddy
+	# sets no request timeout, so a slow uplink can finish a large chunk.
+	@capture path /kortix-capture /kortix-capture/*
+	handle @capture {
+		reverse_proxy capture-store:9000 {
+			flush_interval -1
+		}
+	}
+
 	@llm path /v1/llm*
 	handle @llm {
 		reverse_proxy {

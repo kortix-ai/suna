@@ -67,7 +67,9 @@ export type WebNotificationType =
   | 'permission'
   | 'shared'
   | 'automation_failed'
-  | 'automation_recovered';
+  | 'automation_recovered'
+  | 'capture_device_down'
+  | 'capture_device_recovered';
 
 export interface WebNotificationPayload {
   /** Which category this notification belongs to */
@@ -114,6 +116,8 @@ const TYPE_TO_KIND: Record<WebNotificationType, InboxNotificationKind> = {
   shared: 'shared',
   automation_failed: 'automation_failed',
   automation_recovered: 'automation_recovered',
+  capture_device_down: 'capture_device_down',
+  capture_device_recovered: 'capture_device_recovered',
 };
 
 /**
@@ -170,6 +174,8 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   shared: 'notification',
   automation_failed: 'error',
   automation_recovered: 'completion',
+  capture_device_down: 'error',
+  capture_device_recovered: 'completion',
 };
 
 // ============================================================================
@@ -459,6 +465,8 @@ const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
   shared: infoToast,
   automation_failed: errorToast,
   automation_recovered: successToast,
+  capture_device_down: errorToast,
+  capture_device_recovered: successToast,
 };
 
 /** Open what the notification is about: its session, or its `href`. */

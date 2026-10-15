@@ -419,14 +419,17 @@ const BILLING_GATE_EXPECTED_EVENTS = [
   // The other two billing-gate 402 reasons — same expected business state,
   // same leak paths, same fix (prevents the next noise pattern).
   'No credit account found. Complete account setup first.',
-  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
+  'Out of credits. Top up or raise your plan to keep your agents running.',
+  'Out of credits. Pick a plan or top up to continue.',
+  "Your last payment didn't go through and your wallet is empty. Update your payment method or top up to keep running.",
 ];
 
-// The seat price lives in apps/api and this filter matches the rendered string,
-// so the two drift silently: the API moved to $40, this list stayed at $20, and
-// an expected billing state paged as an error until someone read the Sentry
-// volume. A stale price must fail the suite, not the on-call rotation.
+// The gate messages live in apps/api and this filter matches the rendered
+// string, so the two drift silently: an old message stayed allow-listed while
+// the API sent a new one, and an expected billing state paged as an error. A
+// stale message must fail the suite, not the on-call rotation.
 const SUPERSEDED_BILLING_GATE_MESSAGES = [
+  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ];
 
@@ -440,14 +443,14 @@ test('classifies every billing-gate 402 message as an expected business state', 
   }
 });
 
-test('a superseded seat price is NOT still carried as an expected message', () => {
+test('a superseded billing-gate message is NOT still carried as an expected message', () => {
   // Keeping the old string "working" is what hides the drift: the filter looks
   // healthy while the message the API actually sends sails past it.
   for (const message of SUPERSEDED_BILLING_GATE_MESSAGES) {
     assert.equal(
       isExpectedBillingGateMessage(message),
       false,
-      `stale seat price still allow-listed: ${message}`,
+      `stale message still allow-listed: ${message}`,
     );
   }
 });

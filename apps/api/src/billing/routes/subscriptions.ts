@@ -1,20 +1,16 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import {
-  createInlineCheckout,
-  confirmInlineCheckout,
   createPortalSession,
   cancelSubscription,
   reactivateSubscription,
-  cancelScheduledChange,
   syncSubscription,
   getCheckoutSessionDetails,
-  getProrationPreview,
-  createPerSeatCheckoutSession,
+  parseMonthlyUsd,
+  setPlan,
 } from '../services/subscriptions';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { resolveBillingWriteAccountId } from '../http-require-billing-write';
-import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 
@@ -28,120 +24,65 @@ const OpaqueSchema = z.record(z.string(), z.any());
 // fields are forwarded to Stripe as-is.
 const AnyBody = z.record(z.string(), z.any());
 
-// Billing v2 — legacy → per-seat voluntary "claim". Runs the SAME migration as
-// the lazy sign-in path (create the $20/seat sub, cancel the legacy machine subs,
-// pre-pay the first seat period out of the unused machine value + return the
-// leftover as non-expiring credit, flip to per_seat) — but synchronously, so the
-// billing UI can show the result. Lets legacy users who weren't auto-migrated
-// (or where it silently skipped/failed) move themselves over with feedback.
+// The one plan change: any whole monthly amount on the credits plan. Starts a
+// hosted checkout for an account with no paid subscription, otherwise changes
+// the subscription in place (see setPlan).
 subscriptionsRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/claim-per-seat',
+    path: '/plan',
     tags: ['billing'],
-    summary: 'Voluntarily migrate a legacy account to per-seat pricing',
+    summary: 'Set the monthly credits plan amount',
     ...auth,
-    request: { body: { required: false, content: { 'application/json': { schema: AnyBody } } } },
+    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
     responses: {
-      200: json(OpaqueSchema, 'Migration result'),
+      200: json(OpaqueSchema, 'Plan change result'),
       ...errors(400),
     },
   }),
-  async (c: any) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const result = await maybeMigrateLegacyAccount(accountId);
-    if (result.status === 'failed') {
-      return c.json({ ok: false, status: result.status, error: result.reason ?? 'Migration failed' }, 400);
-    }
-    return c.json({
-      ok: true,
-      status: result.status, // 'migrated' | 'skipped:already_per_seat' | 'skipped:no_subs' | …
-      credited_usd: result.proratedCreditUsd,
-      first_seat_covered_usd: result.firstSeatCoveredUsd,
-      cancelled_subscriptions: result.cancelledSubIds.length,
-      reason: result.reason ?? null,
-    });
-  },
-);
-
-// Billing v2 — per-seat plan checkout. Quantity is derived from current
-// account_members count; Stripe handles proration on subsequent member changes.
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/create-per-seat-checkout',
-    tags: ['billing'],
-    summary: 'Create a per-seat plan checkout session',
-    ...auth,
-    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Checkout session result') },
-  }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
-
-    const result = await createPerSeatCheckoutSession({
+    const body = await readJsonObject(c);
+    const result = await setPlan({
       accountId,
-      email,
-      successUrl: body.success_url,
-      cancelUrl: body.cancel_url,
-      locale: body.locale,
+      email: c.get('userEmail'),
+      monthlyUsd: parseMonthlyUsd(body.monthly_usd),
+      successUrl: String(body.success_url ?? ''),
+      cancelUrl: String(body.cancel_url ?? ''),
+      locale: typeof body.locale === 'string' ? body.locale : undefined,
     });
-
     return c.json(result);
   },
 );
 
+// Accept an open Enterprise offer: a Stripe Checkout session for the contract
+// an operator offered (billing/services/enterprise-contracts.ts). A fresh
+// session per click: sessions expire within 24 h.
 subscriptionsRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/create-inline-checkout',
+    path: '/enterprise-offer/checkout',
     tags: ['billing'],
-    summary: 'Create an inline (no-redirect) checkout',
+    summary: 'Accept the Enterprise offer: start its Stripe Checkout',
     ...auth,
     request: { body: { content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Inline checkout result') },
+    responses: {
+      200: json(z.object({ checkout_url: z.string(), contract_id: z.string() }), 'Checkout to accept the offer'),
+      ...errors(400, 404, 409),
+    },
   }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
-
-    const result = await createInlineCheckout({
-      accountId,
-      email,
-      tierKey: body.tier_key,
-      billingPeriod: body.billing_period,
-      promoCode: body.promo_code,
-    });
-
-    return c.json(result);
-  },
-);
-
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/confirm-inline-checkout',
-    tags: ['billing'],
-    summary: 'Confirm an inline checkout',
-    ...auth,
-    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Inline checkout confirmation result') },
-  }),
-  async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = await c.req.json();
-
-    // `tier_key` in the body is ignored: the tier comes from the price of the
-    // caller's own subscription (confirmInlineCheckout).
-    const result = await confirmInlineCheckout({
-      accountId,
-      subscriptionId: body.subscription_id,
-    });
-
-    return c.json(result);
+    const body = await readJsonObject(c);
+    const { createOfferCheckout } = await import('../services/enterprise-contracts');
+    return c.json(
+      await createOfferCheckout({
+        accountId,
+        email: c.get('userEmail'),
+        successUrl: String(body.success_url ?? ''),
+        cancelUrl: String(body.cancel_url ?? ''),
+      }),
+    );
   },
 );
 
@@ -205,23 +146,6 @@ subscriptionsRouter.openapi(
 subscriptionsRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/cancel-scheduled-change',
-    tags: ['billing'],
-    summary: 'Cancel a scheduled subscription change',
-    ...auth,
-    request: { body: { required: false, content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Cancellation result') },
-  }),
-  async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const result = await cancelScheduledChange(accountId);
-    return c.json(result);
-  },
-);
-
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'post',
     path: '/sync-subscription',
     tags: ['billing'],
     summary: 'Sync subscription state from Stripe',
@@ -232,31 +156,6 @@ subscriptionsRouter.openapi(
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');
     const result = await syncSubscription(accountId);
-    return c.json(result);
-  },
-);
-
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/proration-preview',
-    tags: ['billing'],
-    summary: 'Preview proration for a price change',
-    ...auth,
-    request: {
-      query: z.object({ account_id: z.string().optional(), new_price_id: z.string().optional() }),
-    },
-    responses: {
-      200: json(OpaqueSchema, 'Proration preview'),
-      ...errors(400),
-    },
-  }),
-  async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
-    const newPriceId = c.req.query('new_price_id');
-    if (!newPriceId) return c.json({ error: 'new_price_id required' }, 400);
-
-    const result = await getProrationPreview(accountId, newPriceId);
     return c.json(result);
   },
 );

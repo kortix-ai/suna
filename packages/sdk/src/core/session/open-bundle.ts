@@ -76,12 +76,16 @@ export const OPEN_BUNDLE_TRANSCRIPT_LIMIT = 40;
  */
 export const SAVED_WINDOW_HOLD_MS = 5 * 60_000;
 
-// One slot per session, not one slot overall: a hold is written the moment a
-// connecting view's read lands, and a read for one session can land while
-// another session's connecting view is still on screen (a slow fetch, a stale
-// screen). A single slot would let the later hold erase the earlier one, and
-// the earlier session's open would then re-download the window it already
-// holds — the exact duplication KRTX-189 removed.
+/** How many sessions' holds live at once. A hold exists for the seconds
+ *  between a connecting view's read and that session's bind; a handful is
+ *  generous. The oldest hold gives its slot when the cap is hit, so the map
+ *  stays bounded. */
+const HELD_WINDOW_CAP = 16;
+
+// One hold per session, not one global slot: a late hold for session B (its
+// connecting view still settling) must not evict session A's hold and send
+// A's bind back to a full-window snapshot read — the window downloaded twice
+// per open, the exact thing KRTX-189 forbids.
 const heldWindows = new Map<string, { envelope: SessionTranscriptSyncEnvelope; atMs: number }>();
 
 /** Keep the saved window a host read before `useSession` binds the session. */
@@ -91,7 +95,14 @@ export function holdSavedWindow(
   envelope: SessionTranscriptSyncEnvelope,
   nowMs: number = Date.now(),
 ): void {
-  heldWindows.set(scopeKey(projectId, sessionId), { envelope, atMs: nowMs });
+  const key = scopeKey(projectId, sessionId);
+  heldWindows.delete(key);
+  heldWindows.set(key, { envelope, atMs: nowMs });
+  while (heldWindows.size > HELD_WINDOW_CAP) {
+    const oldest = heldWindows.keys().next().value;
+    if (oldest === undefined) break;
+    heldWindows.delete(oldest);
+  }
 }
 
 /** The held saved window of this session, or null when none is held or it is

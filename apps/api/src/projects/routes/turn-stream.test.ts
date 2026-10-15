@@ -16,10 +16,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
-// The real module namespace: `mock.module` replaces it WHOLESALE, so a stub that
-// lists exports by hand deletes every export it omits — the failure surfaces in
-// whatever unrelated file imports the missing name next, attributed to no test.
-import * as realLifecycle from '../session-lifecycle';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -165,7 +161,13 @@ mock.module('../session-turn-ledger', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
-  ...realLifecycle,
+  retireWarmProjectSessions: async () => { throw new Error('retireWarmProjectSessions: not used by the turn-stream routes'); },
+  continueSession: async () => { throw new Error('continueSession: not used by the turn-stream routes'); },
+  startSession: async () => { throw new Error('startSession: not used by the turn-stream routes'); },
+  buildContinueSessionCommandValues: async () => { throw new Error('buildContinueSessionCommandValues: not used by the turn-stream routes'); },
+  resolveProjectAutomationActor: async () => { throw new Error('resolveProjectAutomationActor: not used by the turn-stream routes'); },
+  enqueueContinueSessionCommand: async () => { throw new Error('enqueueContinueSessionCommand: not used by the turn-stream routes'); },
+  createSession: async () => { throw new Error('createSession: not used by the turn-stream routes'); },
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
   },
@@ -209,6 +211,11 @@ mock.module('../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
   },
+  // Other modules in this graph (sandbox-proxy/pre-prompt-env-sync, lib/session-create)
+  // import these; no prompt here carries text or a model.
+  extractPromptInfo: () => ({ text: null, model: null }),
+  TITLE_SOURCE_MAX_CHARS: 4000,
+  titleSourceForCreate: () => null,
 }));
 
 const triggerRunEnds: unknown[] = [];

@@ -60,6 +60,7 @@
     "./session/url": "./src/deprecated/session-url.ts",
     "./message-queue": "./src/core/session/message-queue.ts",
     "./wire-message-id": "./src/core/session/wire-message-id.ts",
+    "./capture-rules": "./src/core/capture/rules.ts",
     "./turns": "./src/deprecated/turns.ts",
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
@@ -158,6 +159,10 @@
       "./wire-message-id": {
         "types": "./dist/core/session/wire-message-id.d.ts",
         "import": "./dist/core/session/wire-message-id.js"
+      },
+      "./capture-rules": {
+        "types": "./dist/core/capture/rules.d.ts",
+        "import": "./dist/core/capture/rules.js"
       },
       "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
       "./sync-store": {

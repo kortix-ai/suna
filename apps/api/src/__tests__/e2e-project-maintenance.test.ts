@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 
 let sandboxCandidates: any[] = [];
 let branchCandidates: any[] = [];
@@ -14,7 +14,6 @@ let auditInserts: Array<Record<string, unknown>> = [];
 mock.module('../config', () => ({
   config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
   SANDBOX_VERSION: 'test',
-  KORTIX_MARKUP: 1,
   PLATFORM_FEE_MARKUP: 0,
   getToolCost: () => 0,
 }));
@@ -75,12 +74,9 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-// The cache invalidation lives on `sandbox-proxy/backend`; mocking the index
-// would leave the real `invalidateProviderCache` in place (production imports
-// it from the backend module), so intercept the backend module itself.
 mock.module('../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
-  invalidateProviderCache: (externalId: string) => {
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));

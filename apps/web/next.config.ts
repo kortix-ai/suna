@@ -549,6 +549,13 @@ const nextConfig = (): NextConfig => ({
         destination: '/presentations/platform',
         permanent: false,
       },
+      {
+        // The docs site prefixes every absolute link with /docs (Blume `base`);
+        // its download links (Kortix Capture installers) belong to the app.
+        source: '/docs/download/:path*',
+        destination: '/download/:path*',
+        permanent: false,
+      },
       // The canonical self-host doc is content/docs/host/index.mdx, served at
       // /docs/host. These two aliases previously pointed at
       // /docs/guides/self-hosting, a path that has never existed, so both
