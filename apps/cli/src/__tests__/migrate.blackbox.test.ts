@@ -208,3 +208,70 @@ describe('kortix migrate --write', () => {
     expect(result.stderr).toContain('kortix projects upgrade');
   });
 });
+
+describe('kortix migrate (a manifest split with imports)', () => {
+  const ROOT = `kortix_version: 2
+default_agent: lead
+imports:
+  - desk/kortix.yaml
+agents:
+  lead:
+    file: agents/lead.md
+    connectors: all
+`;
+  const DESK = `# The desk feature: its agent, connector and trigger.
+agents:
+  desk-worker:
+    file: desk/agents/desk-worker.md
+    connectors: [desk]
+connectors:
+  - slug: desk
+    provider: mcp
+    url: https://desk.example.test/mcp
+triggers:
+  - slug: desk-sweep
+    type: cron
+    agent: desk-worker
+    cron: "0 0 * * * *"
+    prompt: Sweep the desk.
+harnesses:
+  pi:
+    codemode: off
+`;
+
+  beforeEach(() => {
+    rmSync(join(cwd, 'kortix.yaml'));
+    write({
+      'kortix.yaml': ROOT,
+      'desk/kortix.yaml': DESK,
+      'desk/agents/desk-worker.md': '---\ndescription: Works the desk.\nmode: subagent\n---\nYou work the desk.\n',
+    });
+  });
+
+  test('--write keeps each entry in the file that declared it, and the project validates', () => {
+    const result = kortix('migrate', '--write');
+    expect(result.code).toBe(0);
+
+    const root = parseManifestText(read('kortix.yaml'), 'yaml');
+    expect(root.kortix_version).toBe(3);
+    expect(root.imports).toEqual(['desk/kortix.yaml']);
+    expect(Object.keys(root.agents as object)).toEqual(['lead']);
+    expect(root.connectors).toBeUndefined();
+
+    const desk = parseManifestText(read('desk/kortix.yaml'), 'yaml');
+    expect(Object.keys(desk).sort()).toEqual(['agents', 'connectors', 'triggers']);
+    expect(desk.agents).toMatchObject({ 'desk-worker': { description: 'Works the desk.', mode: 'subagent', prompt_file: 'desk/agents/desk-worker.md', connectors: ['desk'] } });
+    expect(read('desk/agents/desk-worker.md')).toBe('You work the desk.\n');
+    // `harnesses` cannot sit in an imported v3 file: it is reported, not kept.
+    expect(result.stdout).toContain('desk/kortix.yaml: harnesses');
+
+    const validate = kortix('validate');
+    expect(validate.code).toBe(0);
+  });
+
+  test('preview changes no file', () => {
+    expect(kortix('migrate').code).toBe(0);
+    expect(read('kortix.yaml')).toBe(ROOT);
+    expect(read('desk/kortix.yaml')).toBe(DESK);
+  });
+});

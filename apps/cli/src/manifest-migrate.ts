@@ -42,6 +42,8 @@ export interface MigrationChange {
 
 export interface MigrationPlan {
   manifest: string;
+  /** The v3 manifest as an object, before it is rendered (`renderManifest`). */
+  next: Table;
   changes: MigrationChange[];
   /** Things v3 has no place for, dropped with the reason. */
   dropped: string[];
@@ -143,7 +145,13 @@ function subagentsV3(task: unknown): unknown {
 
 const SCHEMA_LINE = '# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json';
 
-/** The schema line on top, a blank line between top-level sections and between agents. */
+/** A manifest object as v3 YAML. The root file carries the schema line; an imported file does not. */
+export function renderManifest(object: Table, root = true): string {
+  const yaml = spaced(serializeManifestObject(object, 'yaml'));
+  return root ? `${SCHEMA_LINE}\n${yaml}` : yaml;
+}
+
+/** A blank line between top-level sections and between agents. */
 function spaced(yaml: string): string {
   let section = '';
   const lines = yaml.split('\n').flatMap((line, index) => {
@@ -153,7 +161,7 @@ function spaced(yaml: string): string {
     const first = section === 'agents' && agent && /^agents:/.test(yaml.split('\n')[index - 1] ?? '');
     return (top && index > 0) || (agent && !first) ? ['', line] : [line];
   });
-  return `${SCHEMA_LINE}\n${lines.join('\n')}`;
+  return lines.join('\n');
 }
 
 export function planMigration(root: string, manifestPath: string, raw: Table): MigrationPlan {
@@ -310,9 +318,9 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     },
     TOP_LEVEL_ORDER,
   );
-  const manifest = spaced(serializeManifestObject(next, 'yaml'));
+  const manifest = renderManifest(next);
   changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 2 → 3: agents inline, registries, per-agent grants', content: manifest });
   const issues = validateManifest(manifest, 'yaml').issues;
-  return { manifest, changes, dropped, issues, valid: !issues.some((issue) => issue.severity === 'error') };
+  return { manifest, next, changes, dropped, issues, valid: !issues.some((issue) => issue.severity === 'error') };
 }
 
