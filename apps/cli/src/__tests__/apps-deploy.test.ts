@@ -486,12 +486,12 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stderr).toContain('Dockerfile deployments require --command and --port');
   });
 
-  test('--manifest-app with a kortix.yaml that is not kortix_version 2 is refused, never deployed as a static folder', async () => {
+  test('--manifest-app with a kortix.yaml that declares no kortix_version 2 or 3 is refused, never deployed as a static folder', async () => {
     writeFileSync(join(tmp, 'kortix.yaml'), 'apps:\n  db:\n    type: oci_image\n    image: busybox:1.36\n');
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'deploy', '--manifest-app', 'db', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('kortix_version: 2');
+    expect(r.stderr).toContain('kortix_version 2 or 3');
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
@@ -574,5 +574,18 @@ describe('kortix apps deploy (characterization)', () => {
     const r = await runCli(['apps', 'deploy', 'site', '--bogus', '--project', PROJECT], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Unknown deploy option --bogus');
+  });
+});
+
+describe('loadManifestApps reads kortix_version 3', () => {
+  test('a v3 manifest\'s apps blocks seed a deploy', async () => {
+    const { loadManifestApps } = await import('../commands/apps-deploy.ts');
+    const dir = mkdtempSync(join(tmpdir(), 'apps-v3-'));
+    try {
+      writeFileSync(join(dir, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: a\napps:\n  web:\n    path: web\nagents:\n  a: {}\n');
+      expect(loadManifestApps(dir)?.blocks).toEqual({ web: { path: 'web' } });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

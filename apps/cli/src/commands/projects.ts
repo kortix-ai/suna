@@ -758,15 +758,16 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
   return 2;
 }
 
-// ── Customize → Upgrades (manifest v1 → v2) ────────────────────────────────
+// ── Customize → Upgrades (manifest v1 → v2 → v3) ───────────────────────────
 
 const UPGRADE_HELP = help`Usage: kortix projects upgrade [<id>] [options]
 
-Start the agent session that migrates a v1 \`kortix.toml\` to a v2
-\`kortix.yaml\` — the dashboard's Customize → Upgrades → "Migrate manifest to
-v2". The project's default agent refreshes the marketplace baseline, rewrites
-the manifest, runs \`kortix validate\`, and opens a change request. It never
-merges: a human reviews the diff.
+Start the agent session that moves the project's manifest one version up:
+kortix_version 1 (\`kortix.toml\`) to 2 (\`kortix.yaml\`) — the dashboard's
+Customize → Upgrades → "Migrate manifest to v2" — or kortix_version 2 to 3
+with \`kortix migrate\`. The project's default agent rewrites the manifest,
+runs \`kortix validate\`, and opens a change request. It never merges: a
+human reviews the diff. A project on kortix_version 3 has nothing to upgrade.
 
 Options:
   --project <id>       Act on this project (default: linked/default).
@@ -774,8 +775,7 @@ Options:
   --json               Machine-readable output.
   -h, --help           Show this help.
 
-Requires project write (session create). Run \`kortix files cat kortix.yaml\`
-first — a project already on kortix_version 2 has nothing to migrate.
+Requires project write (session create).
 `;
 
 async function projectsUpgrade(argv: string[]): Promise<number> {
@@ -799,6 +799,20 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: id, hostArg });
   if (!ctx) return 1;
 
+  // The server's manifest verdict picks the step. Unknown (no read access, an
+  // older API) keeps the v1 → v2 session, the one that existed first.
+  const version = await ctx.client
+    .get<{ config?: { manifest_version?: { version?: number | null } } }>(`/projects/${ctx.projectId}/detail`)
+    .then((detail) => detail.config?.manifest_version?.version ?? null, () => null);
+  if (version === 3) {
+    if (json) emitJson({ project_id: ctx.projectId, upgrade_id: null, version: 3 });
+    else process.stdout.write(`${status.ok('kortix.yaml is on kortix_version 3 — nothing to upgrade.')}\n`);
+    return 0;
+  }
+  const upgrade = version === 2
+    ? { id: 'manifest-v3', name: 'Migrate manifest to v3', prompt: MIGRATE_TO_V3_PROMPT, label: 'kortix_version 2 → 3' }
+    : { id: 'manifest-v2', name: 'Migrate manifest to v2', prompt: MIGRATE_TO_V2_PROMPT, label: 'kortix.toml → kortix.yaml' };
+
   let session: { session_id: string };
   try {
     // The web stashes the prompt client-side (`pending_prompt`) because a
@@ -806,9 +820,9 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
     // prompt goes as `initial_prompt` — the server delivers it and the
     // session starts working on its own.
     session = await ctx.client.post<{ session_id: string }>(`/projects/${ctx.projectId}/sessions`, {
-      initial_prompt: MIGRATE_TO_V2_PROMPT,
-      name: 'Migrate manifest to v2',
-      metadata: { kind: 'project-upgrade', upgrade_id: 'manifest-v2' },
+      initial_prompt: upgrade.prompt,
+      name: upgrade.name,
+      metadata: { kind: 'project-upgrade', upgrade_id: upgrade.id },
     });
   } catch (err) {
     return surfaceApiError(err);
@@ -816,7 +830,7 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   const output = {
     session_id: session.session_id,
     project_id: ctx.projectId,
-    upgrade_id: 'manifest-v2',
+    upgrade_id: upgrade.id,
   };
   if (json) {
     emitJson(output);
@@ -825,12 +839,35 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   process.stdout.write(
     `${status.ok(`Started upgrade session ${C.bold}${session.session_id}${C.reset}`)}\n`,
   );
-  process.stdout.write(`  ${C.dim}upgrade   ${C.reset}manifest-v2 (kortix.toml → kortix.yaml)\n`);
+  process.stdout.write(`  ${C.dim}upgrade   ${C.reset}${upgrade.id} (${upgrade.label})\n`);
   process.stdout.write(
     `\n  ${C.dim}Watch it:${C.reset} ${C.cyan}kortix connect ${session.session_id}${C.reset}\n`,
   );
   return 0;
 }
+
+/**
+ * The seed prompt for the v2 → v3 manifest migration. `kortix migrate` does the
+ * conversion; the agent reviews it, validates, and lands it as a change request.
+ */
+const MIGRATE_TO_V3_PROMPT = `Migrate this project's kortix.yaml from kortix_version 2 to kortix_version 3, then land it as a change request — do not merge it yourself.
+
+kortix_version 3 defines each agent in one kortix.yaml block: the project registers skills, tools, commands and extensions, and each agent enables what it uses. No harness folder is read.
+
+1. Run \`kortix migrate\` and read the plan: every file it changes, the new kortix.yaml, and the "Not carried over" list.
+2. If the plan is right, run \`kortix migrate --write\`. If something in "Not carried over" mattered (a setting in opencode.jsonc, a pi config folder), carry it over by hand into the agent blocks or \`extensions\`.
+3. Check each agent kept its behavior: prompt (its \`prompt_file\`), model, permission, and its skills, subagents, commands, extensions, connectors and secrets grants.
+4. Run \`kortix validate\` until it reports no errors.
+5. Commit on a branch and open a change request:
+
+\`\`\`sh
+git checkout -b migrate-kortix-yaml-v3
+git add -A && git commit -m "Migrate kortix.yaml to kortix_version 3"
+git push origin HEAD
+kortix cr open --head migrate-kortix-yaml-v3 --title "Migrate kortix.yaml to kortix_version 3" --description "<what moved, what was not carried over and why>"
+\`\`\`
+
+Do **not** run \`kortix cr merge\`. A human reviews the diff.`;
 
 /**
  * The seed prompt for the v1 → v2 manifest migration.

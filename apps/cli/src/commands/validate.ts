@@ -55,9 +55,17 @@ Options:
 /** One line per agent: its assigned connectors + Kortix permissions. */
 function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
-  if (!Array.isArray(agents) || agents.length === 0) return '';
   const show = (v: unknown): string =>
     v === 'all' ? 'all' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
+  // kortix_version 3: what each agent enables. Every grant is deny-by-default.
+  if (Number(parsed?.kortix_version) === 3 && agents && typeof agents === 'object' && !Array.isArray(agents)) {
+    const keys = ['skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets'];
+    const lines = Object.entries(agents as Record<string, Record<string, unknown> | null>).map(
+      ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,
+    );
+    return `\n${C.dim}What each agent enables:${C.reset}\n${lines.join('\n')}\n`;
+  }
+  if (!Array.isArray(agents) || agents.length === 0) return '';
   const lines = agents.map((a: any) => {
     const name = typeof a?.name === 'string' ? a.name : '(unnamed)';
     // `env` omitted == 'all' (the parser's default), so render it that way rather
