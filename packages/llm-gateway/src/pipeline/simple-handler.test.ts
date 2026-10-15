@@ -1713,6 +1713,75 @@ describe('refused requests are traced', () => {
     expect(trace?.accountId).toBe('account');
   });
 
+  test('a model with no configured provider leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: { ...hooks(usage, traces), resolveUpstream: async () => [] },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('model_unavailable');
+    const trace = await firstTrace(traces);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(400);
+    expect(trace?.errorCode).toBe('model_unavailable');
+    expect(trace?.requestedModel).toBe('requested-model');
+    expect(trace?.resolvedModel).toBe('primary-model');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
+  test('a billing refusal (billing inactive) leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          assertBillingActive: async () => {
+            throw new Error('Billing inactive');
+          },
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(402);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('subscription_required');
+    const trace = await firstTrace(traces);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(402);
+    expect(trace?.errorCode).toBe('subscription_required');
+    expect(trace?.errorMessage).toBe('Billing inactive');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
+  test('an invalid JSON body leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      { hooks: hooks(usage, traces), logger },
+      { authorization: 'Bearer token', rawBody: 'not json' },
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('invalid_json');
+    const trace = await firstTrace(traces);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(400);
+    expect(trace?.errorCode).toBe('invalid_json');
+    expect(trace?.accountId).toBe('account');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
   test('an admission refusal without a principal (invalid token) leaves no trace', async () => {
     const traces: GatewayTrace[] = [];
     const response = await handleChatCompletions(
