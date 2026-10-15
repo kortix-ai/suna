@@ -1,5 +1,5 @@
 {
-  "source_hash": "28f2d91811a84611cf65dc95c91ad6451ee6d82e2c39d090bf71f02e738d0763",
+  "source_hash": "3708359b02c8a3e8efa9b30bc95f8c91ca5beac216332895a39a362982cbf38b",
   "diff_files": [
     "apps/api/src/__tests__/integration-feature-flag-toggle-http.test.ts",
     "apps/api/src/__tests__/unit-feature-flags.test.ts",
@@ -50,7 +50,10 @@
     "packages/sdk/src/react/use-feature-flag.test.ts",
     "packages/sdk/src/react/use-feature-flag.ts",
     "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/managed/skills/kortix-apps/SKILL.md",
     "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-system/references/kortix/apps.md",
+    "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-cli.md",
     "tests/spec/end-to-end.md",
     "tests/src/fixtures/feature-flags.ts",
     "tests/src/flows/agent-principals.flow.ts",
@@ -59,13 +62,13 @@
     "tests/src/flows/connectors.flow.ts",
     "tests/src/flows/experimental.flow.ts"
   ],
-  "diff_hash": "18192c0e0972f81937a56e6b4ae30d95b3aec08de42f5fe8fae998c14a1c96cc",
-  "head": "7efb77e342c189020370123873ce27ae26a96770",
+  "diff_hash": "7afb0d6d2ba86a8652469f3ad7a58a4041ecad1870953f0516809e2713d56eac",
+  "head": "bde0e346f261c694b20250059531ce9baf716aea",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T09:18:41.743Z"
+  "at": "2026-10-15T10:41:57.092Z"
 }
