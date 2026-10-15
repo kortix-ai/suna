@@ -531,7 +531,7 @@
         },
         "tokens": {
           "label": "个人访问密钥",
-          "description": "以您的身份操作的 API 密钥 — 用于 CLI、脚本或 CI 作业。"
+          "description": "以您的身份操作的 API 密钥和 MCP 客户端 — 用于 CLI、脚本、CI 作业或 Claude 和 Cursor。"
         },
         "credits": {
           "label": "点数",
@@ -1139,6 +1139,7 @@
     "connectedApps": {
       "title": "已连接的应用",
       "description": "你通过 Kortix 登录的应用，例如 MCP 客户端。在你撤销之前，每个应用都以你的身份操作。",
+      "connectMcp": "连接 MCP",
       "emptyTitle": "没有已连接的应用",
       "emptyDescription": "你通过「使用 Kortix 登录」批准的应用（例如通过 MCP 的 Claude、Cursor 或 Codex）会显示在这里。",
       "loadFailed": "无法加载已连接的应用",

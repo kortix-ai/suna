@@ -101,7 +101,8 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         // identity — as opposed to the account's service-account tokens on
         // the account page. The label says whose identity they carry.
         label: 'Personal access keys',
-        description: 'API keys that act as you — for the CLI, a script, or a CI job.',
+        description:
+          'API keys and MCP clients that act as you — for the CLI, a script, a CI job, or Claude and Cursor.',
         icon: Key,
       },
     ],

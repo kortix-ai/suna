@@ -384,7 +384,7 @@
         },
         "tokens": {
           "label": "Personal access keys",
-          "description": "API keys that act as you — for the CLI, a script, or a CI job."
+          "description": "API keys and MCP clients that act as you — for the CLI, a script, a CI job, or Claude and Cursor."
         },
         "credits": {
           "label": "Credits",
@@ -961,6 +961,7 @@
     "connectedApps": {
       "title": "Connected apps",
       "description": "Apps you signed in to with Kortix, such as MCP clients. Each acts as you until you revoke it.",
+      "connectMcp": "Connect MCP",
       "emptyTitle": "No connected apps",
       "emptyDescription": "Apps you approve with Sign in with Kortix, such as Claude, Cursor or Codex over MCP, show here.",
       "loadFailed": "Could not load connected apps",

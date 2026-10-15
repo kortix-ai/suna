@@ -39,6 +39,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isRailItemActive, railGroups } from './rail';
 import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from './rail-copy-context';
+import { SettingsConnectRows } from './settings-connect-rows';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import {
   accountRoleLabel,
@@ -510,6 +511,7 @@ export function SettingsPanelShell({
                 {closeButton}
               </header>
               <RailNav {...railProps} className="pt-2" onPick={() => setMobilePane(true)} />
+              <SettingsConnectRows projectId={projectId} />
             </div>
           )
         ) : (
@@ -526,6 +528,7 @@ export function SettingsPanelShell({
               </ModalClose>
             </div>
             <RailNav {...railProps} />
+            <SettingsConnectRows projectId={projectId} />
           </aside>
         )}
 

@@ -384,7 +384,7 @@
         },
         "tokens": {
           "label": "Лични приступни кључеви",
-          "description": "API кључеви који делују у ваше име — за CLI, скрипту или CI задатак."
+          "description": "API кључеви и MCP клијенти који делују у ваше име — за CLI, скрипту, CI задатак или Claude и Cursor."
         },
         "credits": {
           "label": "Кредити",
@@ -1139,6 +1139,7 @@
     "connectedApps": {
       "title": "Povezane aplikacije",
       "description": "Aplikacije u koje si se prijavio preko Kortixa, kao što su MCP klijenti. Svaka radi u tvoje ime dok je ne opozoveš.",
+      "connectMcp": "Повежи MCP",
       "emptyTitle": "Nema povezanih aplikacija",
       "emptyDescription": "Ovde se prikazuju aplikacije koje odobriš preko Prijave sa Kortixom, kao što su Claude, Cursor ili Codex preko MCP-a.",
       "loadFailed": "Povezane aplikacije nisu mogle da se učitaju",

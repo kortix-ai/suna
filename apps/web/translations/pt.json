@@ -531,7 +531,7 @@
         },
         "tokens": {
           "label": "Chaves de acesso pessoais",
-          "description": "Chaves de API que agem em seu nome — para a CLI, um script ou uma tarefa de CI."
+          "description": "Chaves de API e clientes MCP que agem em seu nome — para a CLI, um script, uma tarefa de CI ou Claude e Cursor."
         },
         "credits": {
           "label": "Créditos",
@@ -1139,6 +1139,7 @@
     "connectedApps": {
       "title": "Apps conectados",
       "description": "Apps em que você entrou com o Kortix, como clientes MCP. Cada um age em seu nome até você revogá-lo.",
+      "connectMcp": "Conectar MCP",
       "emptyTitle": "Nenhum app conectado",
       "emptyDescription": "Os apps que você aprova com Entrar com o Kortix, como Claude, Cursor ou Codex via MCP, aparecem aqui.",
       "loadFailed": "Não foi possível carregar os apps conectados",

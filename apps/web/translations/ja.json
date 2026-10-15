@@ -531,7 +531,7 @@
         },
         "tokens": {
           "label": "個人用アクセスキー",
-          "description": "あなたとして動作する API キー — CLI、スクリプト、CI ジョブ用。"
+          "description": "あなたとして動作する API キーと MCP クライアント — CLI、スクリプト、CI ジョブ、Claude や Cursor 用。"
         },
         "credits": {
           "label": "クレジット",
@@ -1139,6 +1139,7 @@
     "connectedApps": {
       "title": "連携アプリ",
       "description": "Kortix でサインインしたアプリ（MCP クライアントなど）。取り消すまで、各アプリはあなたとして動作します。",
+      "connectMcp": "MCP を接続",
       "emptyTitle": "連携アプリはありません",
       "emptyDescription": "「Kortix でサインイン」で承認したアプリ（MCP 経由の Claude、Cursor、Codex など）がここに表示されます。",
       "loadFailed": "連携アプリを読み込めませんでした",
