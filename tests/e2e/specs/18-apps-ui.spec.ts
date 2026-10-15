@@ -273,6 +273,38 @@ test.describe('18 — Kortix Apps UI', () => {
       await seededCard.click();
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
+      // App previews use the whole window, not an inset sheet. The shared
+      // Electron host adds only its native titlebar spacer inside this box.
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 720, height: 480 }]) {
+        await page.setViewportSize(viewport);
+        await expect.poll(async () => {
+          const box = await appModal.boundingBox();
+          return box && [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)];
+        }).toEqual([0, 0, viewport.width, viewport.height]);
+        await expect(appModal.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
+      }
+      // Host geometry is shared; emulate macOS's reserved control band.
+      // Native hit testing remains the desktop parity journey's responsibility.
+      await page.evaluate(() => {
+        document.documentElement.dataset.desktop = 'true';
+        document.documentElement.dataset.desktopPlatform = 'macos';
+      });
+      await expect.poll(async () => {
+        const spacer = await appModal.locator('.kx-titlebar-spacer').boundingBox();
+        const header = await appModal.locator('header').boundingBox();
+        return !!spacer && !!header && spacer.height > 0 && header.y >= spacer.height;
+      }).toBe(true);
+      await page.evaluate(() => {
+        delete document.documentElement.dataset.desktop;
+        delete document.documentElement.dataset.desktopPlatform;
+      });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.keyboard.press('Escape');
+      await expect(appModal).toBeHidden();
+      await expect(seededCard).toBeVisible();
+      await expect(compact).toHaveAttribute('aria-pressed', 'true');
+      await seededCard.click();
+      await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
       // Not deployed yet: there is no runtime to put to sleep, so no control.
       await expect(appModal.getByRole('button', { name: 'Put this App to sleep' })).toHaveCount(0);

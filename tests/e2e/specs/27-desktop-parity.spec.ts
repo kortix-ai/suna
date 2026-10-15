@@ -2727,6 +2727,32 @@ nativeBrowserTest?.(
         ).toBe("no-drag");
       }
 
+      // Apps share the web preview shell, including its native control inset.
+      await api(session.access_token, "PATCH", `/projects/${project.id}/features`, {
+        feature: "apps", enabled: true,
+      });
+      await api(session.access_token, "POST", `/projects/${project.id}/apps`, {
+        slug: `desktop-preview-${Date.now()}`, name: "Desktop Preview",
+      }, 201);
+      await main.goto(`${baseURL}/projects/${project.id}/apps`);
+      const previewCard = main.getByRole("button", { name: "Open Desktop Preview" });
+      await previewCard.click();
+      const preview = main.getByRole("dialog", { name: "Desktop Preview App" });
+      await expect(preview).toBeVisible();
+      const geometry = await preview.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const header = element.querySelector("header")!.getBoundingClientRect();
+        return { x: box.x, y: box.y, width: box.width, height: box.height,
+          viewportWidth: innerWidth, viewportHeight: innerHeight, headerTop: header.top };
+      });
+      expect(geometry.x).toBe(0);
+      expect(geometry.y).toBe(0);
+      expect(Math.abs(geometry.width - geometry.viewportWidth)).toBeLessThan(1);
+      expect(Math.abs(geometry.height - geometry.viewportHeight)).toBeLessThan(1);
+      expect(geometry.headerTop * await currentZoom()).toBeGreaterThanOrEqual(40);
+      await preview.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(previewCard).toBeVisible();
+
       await nativeWindow.evaluate(async (window) => {
         await new Promise<void>((resolve) => {
           window.once("enter-full-screen", resolve);
