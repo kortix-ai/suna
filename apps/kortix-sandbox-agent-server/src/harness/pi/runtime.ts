@@ -27,7 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
+import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
 import { loadTools } from '@/services/tools/host'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
@@ -40,7 +40,7 @@ import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
-import { foreignReasoningExtension, withoutForeignReasoning } from './reasoning'
+import { withoutForeignReasoning } from './reasoning'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
@@ -187,6 +187,8 @@ interface ChildSession {
   agentMessages: AgentMessage[]
   /** The session-log seq the next message of this child gets (session-log.ts, the seq rule). */
   nextSeq: number
+  /** The restored context record the child's next system prompt takes (`PiDump.contextId`). */
+  contextId?: string
   /** Set while a prompt runs in the child. */
   agent: Agent | null
   /** The child's turn adapter since its last prompt: names the reply it streams (`sessionLogSnapshot`). */
@@ -204,6 +206,8 @@ export interface PiChildDump {
   messageIds?: Array<string | null>
   /** The session-log seq of each agent message. Absent in dumps written before P2.5. */
   seqs?: number[]
+  /** As `PiDump.contextId`, for this child. */
+  contextId?: string
   /** The seq the child's next message gets: above every seq the thread ever held (a restore sets it from the API's `seq_max`). Absent before P6.2. */
   nextSeq?: number
   transcript: KortixMessage[]
@@ -249,6 +253,12 @@ export interface PiDump {
   messageIds?: Record<string, string>
   /** pi entry id → session-log seq of each entry a restore wrote (session-log.ts, the seq rule). Absent unless the store was restored (P6.2). */
   seqs?: Record<string, number>
+  /**
+   * The Kortix id of the last context record (system prompt) a restore did not write (P6.2). The first
+   * system prompt pi appends after the restore takes it, so each restore replaces that record instead
+   * of adding one. Cleared once taken.
+   */
+  contextId?: string
   transcript: KortixMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
   /** Absent in dumps written before child sessions existed. */
@@ -357,6 +367,8 @@ export class PiRuntime {
   private readonly entryIds = new Map<string, string>()
   /** pi entry id → seq of each entry a session-log restore wrote (`PiDump.seqs`). */
   private entrySeqs: Record<string, number> = {}
+  /** `PiDump.contextId` until pi appends its system prompt. */
+  private contextId: string | undefined
   /** The running turn's prompt reached pi: a later user message of the turn is steered or injected. */
   private turnPromptMapped = false
 
@@ -550,7 +562,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), foreignReasoningExtension(), subagents(this.kortixHost()), ...local, ...project.extensions],
+        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -670,6 +682,7 @@ export class PiRuntime {
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
     if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
     this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
+    this.dismissOpenQuestions()
     if (input.noReply) {
       // OpenCode `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
@@ -734,7 +747,19 @@ export class PiRuntime {
     }
     this.steered.push({ messageId, input, message })
     this.agent.steer(message)
+    this.dismissOpenQuestions()
     return 'steered'
+  }
+
+  /**
+   * A new user message answers no open question, so it dismisses them: the
+   * question tool resolves as dismissed, the blocked turn ends, and the new
+   * message runs. Without this, a session nobody answers (a keyed cron, a
+   * Slack thread) queues every later message behind the question forever
+   * (prod 2026-10-09: 5 days of Slack-triage fires).
+   */
+  private dismissOpenQuestions(): void {
+    if (this.questions?.list().length) this.questions.rejectAll()
   }
 
   /**
@@ -1762,8 +1787,22 @@ export class PiRuntime {
     for (const entry of this.pi?.session.sessionManager.getEntries() ?? []) {
       const id = entry.type === 'message' ? this.nativeIds.get(entry.message) : undefined
       if (id) this.entryIds.set(entry.id, id)
+      else if (this.contextId && entry.type === 'message' && entry.message.role === 'system' && !this.entryIds.has(entry.id)) {
+        this.entryIds.set(entry.id, this.contextId)
+        this.contextId = undefined
+      }
     }
     return Object.fromEntries(this.entryIds)
+  }
+
+  /** The Kortix id of each of the child's messages; its first system prompt after a restore takes `contextId`. */
+  private childIds(child: ChildSession, messages: AgentMessage[]): Array<string | null> {
+    const rebuilt = child.contextId ? messages.find((m) => m.role === 'system' && !this.nativeIds.has(m)) : undefined
+    if (rebuilt) {
+      this.nativeIds.set(rebuilt, child.contextId!)
+      child.contextId = undefined
+    }
+    return messages.map((m) => this.nativeIds.get(m) ?? null)
   }
 
   /** The seq of each of the child's messages; a message seen for the first time gets the next one, for good. */
@@ -1797,7 +1836,7 @@ export class PiRuntime {
           agentName: child.agentName,
           createdAt: child.createdAt,
           agentMessages,
-          messageIds: agentMessages.map((m) => this.nativeIds.get(m) ?? null),
+          messageIds: this.childIds(child, agentMessages),
           seqs: this.childSeqs(child),
           nextSeq: child.nextSeq,
           reply: replying(child.agent, child.turnEvents),
@@ -1831,6 +1870,7 @@ export class PiRuntime {
         ...(this.pi
           ? { entries: this.pi.session.sessionManager.getEntries(), header: this.pi.session.sessionManager.getHeader() ?? undefined, messageIds: this.entryMessageIds(), seqs: this.entrySeqs }
           : {}),
+        ...(this.contextId && { contextId: this.contextId }),
         transcript: this.transcript.all(),
         turns: [...this.completedTurns.entries()].map(([messageId, status]) => ({ messageId, status })),
         children: [...this.children.values()].map((child) => ({
@@ -1840,7 +1880,8 @@ export class PiRuntime {
           createdAt: child.createdAt,
           updatedAt: child.updatedAt,
           agentMessages: child.agent ? child.agent.state.messages : child.agentMessages,
-          messageIds: (child.agent ? child.agent.state.messages : child.agentMessages).map((m) => this.nativeIds.get(m) ?? null),
+          messageIds: this.childIds(child, child.agent ? child.agent.state.messages : child.agentMessages),
+          ...(child.contextId && { contextId: child.contextId }),
           seqs: this.childSeqs(child),
           nextSeq: child.nextSeq,
           transcript: child.transcript.all(),
@@ -1887,6 +1928,7 @@ export class PiRuntime {
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
       for (const [entryId, messageId] of Object.entries(dump.messageIds ?? {})) this.entryIds.set(entryId, messageId)
       this.entrySeqs = dump.seqs ?? {}
+      this.contextId = dump.contextId
       this.children.clear()
       for (const saved of dump.children ?? []) {
         const transcript = new TranscriptStore()

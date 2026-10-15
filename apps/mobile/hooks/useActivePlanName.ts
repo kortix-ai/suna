@@ -3,7 +3,7 @@ import { useAccountState } from '@/lib/billing/hooks';
 
 /**
  * The active account's plan: the API's trial-aware family label, "Free",
- * "Team" or "Enterprise" (`plan.label`). `undefined` until the account state
+ * "Credits" or "Enterprise" (`plan.label`). `undefined` until the account state
  * loads. Legacy tier names (`subscription.tier_display_name`) are not shown
  * (Jay, 2026-09-23).
  */

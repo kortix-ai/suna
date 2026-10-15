@@ -318,8 +318,7 @@ export async function middleware(request: NextRequest) {
   // read only picks the language of content that is identical for every
   // visitor; it never grants anything.
   const cookieLocale = (): Locale =>
-    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ??
-    defaultLocale;
+    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ?? defaultLocale;
 
   // Skip middleware for static files, API routes, and telemetry endpoints.
   // The auth route handlers (KRTX-2072) invoke the same server actions the
@@ -353,15 +352,16 @@ export async function middleware(request: NextRequest) {
     return finalizeEnvironmentAccess(NextResponse.next());
   }
 
-  // ── Terms of Service → public Drive file (permanent 308) ────────────────
-  // The Terms document moved to an externally-owned Google Drive file. Both
-  // the new stable path (`/legal/terms`) and the legacy tab query
-  // (`/legal?tab=terms`), including every supported locale prefix
-  // (`/de/legal/terms`, `/de/legal?tab=terms`, …), permanently redirect there
-  // so existing links/bookmarks keep resolving. Privacy and imprint stay local
-  // on `/legal`. This runs before auth/locale logic — the destination is an
-  // external URL that needs no session. See `lib/legal-terms-redirect.ts`.
-  const termsDestination = legalTermsRedirectUrl(pathname, request.nextUrl.searchParams);
+  // ── Terms of Service → the Terms tab of /legal (permanent 308) ─────────
+  // Every link points at the stable `/legal/terms`, in each locale prefix.
+  // It maps onto `<prefix>/legal?tab=terms`, where the Terms render. This runs
+  // before auth/locale logic: the legal page needs no session. See
+  // `lib/legal-terms-redirect.ts`.
+  const termsDestination = legalTermsRedirectUrl(
+    pathname,
+    request.nextUrl.searchParams,
+    request.nextUrl,
+  );
   if (termsDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
   }

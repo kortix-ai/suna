@@ -90,6 +90,8 @@ mock.module('../../channels/question-release', () => ({
   channelOfSessionMetadata: (metadata: Record<string, unknown>) =>
     metadata?.source === 'slack' ? 'slack' : null,
   releaseChannelQuestion: async () => releaseOutcome,
+  isUnattendedSessionMetadata: () => false,
+  unattendedQuestionSentinel: () => 'unattended',
 }));
 
 mock.module('../lib/notification-recipients', () => ({

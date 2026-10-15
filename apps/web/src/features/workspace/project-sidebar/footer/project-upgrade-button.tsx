@@ -45,15 +45,9 @@ function useSidebarUpgrade(accountId?: string) {
 
   const hasActiveSubscription = !!accountState.subscription?.subscription_id;
   // The RESOLVED plan family (free = the keys `free` and `none`), so an admin
-  // trial and a self-healed per-seat team both read as Team here, exactly as
-  // the server's gates read them.
+  // trial reads as paid here, exactly as the server's gates read it.
   const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
-  // Kept on top of that: a per-seat account with no live Stripe subscription
-  // does NOT self-heal, so the resolver still reports it free. It is never "on
-  // Free" from the customer's side — it gets the balance/top-up warning instead
-  // of an "Upgrade plan" pitch.
-  const isPerSeat = accountState.billing_model === 'per_seat';
-  const show = isFreeOrNoPlan && !hasActiveSubscription && !isPerSeat;
+  const show = isFreeOrNoPlan && !hasActiveSubscription;
 
   return { show, handleClick };
 }

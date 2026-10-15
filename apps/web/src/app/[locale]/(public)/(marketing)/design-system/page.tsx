@@ -59,6 +59,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Calendar } from '@/components/ui/calendar';
 import { CheckboxGroup, CheckboxGroupItem } from '@/components/ui/checkbox-group';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -492,6 +493,7 @@ const TOC_SECTIONS = [
     label: 'Components',
     children: [
       { id: 'comp-button', label: 'Button' },
+      { id: 'comp-button-group', label: 'Button Group' },
       { id: 'comp-badge', label: 'Badge' },
       { id: 'comp-card', label: 'Card' },
       { id: 'comp-input', label: 'Input' },
@@ -1777,6 +1779,95 @@ export default function BrandPage() {
                             <Loading className="size-4" />{' '}
                             {tI18nHardcoded.raw('i18nComplete.textdc380888c4e2')}
                           </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </DemoContainer>
+                </div>
+
+                <div id="comp-button-group" className="mb-12">
+                  <ComponentLabel>Button Group</ComponentLabel>
+                  <ComponentDesc>
+                    Members sit 1px apart. Outer corners keep the button radius; corners that face
+                    a neighbour shrink to 4px. Works with every Button variant, horizontal or{' '}
+                    <code className="bg-muted rounded-sm px-1 font-mono text-xs">
+                      orientation=&quot;vertical&quot;
+                    </code>
+                    .
+                  </ComponentDesc>
+                  <DemoContainer>
+                    <div className="space-y-6">
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          Horizontal
+                        </p>
+                        <div className="flex flex-wrap items-center gap-4">
+                          {(['secondary', 'muted', 'ghost', 'outline', 'default'] as const).map(
+                            (variant) => (
+                              <ButtonGroup key={variant}>
+                                <Button variant={variant} size="sm">
+                                  Day
+                                </Button>
+                                <Button variant={variant} size="sm">
+                                  Week
+                                </Button>
+                                <Button variant={variant} size="sm">
+                                  Month
+                                </Button>
+                              </ButtonGroup>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          Icons
+                        </p>
+                        <div className="flex flex-wrap items-center gap-4">
+                          {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
+                            <ButtonGroup key={variant}>
+                              <Button variant={variant} size="icon-sm" aria-label="Search">
+                                <Search />
+                              </Button>
+                              <Button variant={variant} size="icon-sm" aria-label="Copy">
+                                <Copy />
+                              </Button>
+                              <Button variant={variant} size="icon-sm" aria-label="Delete">
+                                <Trash2 />
+                              </Button>
+                            </ButtonGroup>
+                          ))}
+                          <ButtonGroup>
+                            <Button variant="secondary" size="sm">
+                              <Plus /> New
+                            </Button>
+                            <Button variant="secondary" size="icon-sm" aria-label="More options">
+                              <ChevronsUpDown />
+                            </Button>
+                          </ButtonGroup>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          Vertical
+                        </p>
+                        <div className="flex flex-wrap items-start gap-6">
+                          {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
+                            <ButtonGroup key={variant} orientation="vertical" className="w-60">
+                              <Button variant={variant} className="justify-start">
+                                <Mail /> Connect email
+                                <Badge variant="new" className="ml-auto">
+                                  New
+                                </Badge>
+                              </Button>
+                              <Button variant={variant} className="justify-start">
+                                <Users /> Invite members
+                              </Button>
+                              <Button variant={variant} className="justify-start">
+                                <Settings /> Settings
+                              </Button>
+                            </ButtonGroup>
+                          ))}
                         </div>
                       </div>
                     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,10 +74,12 @@ export function ToolActionBar({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <>
+        // Refresh and the secondary action are one secondary group; `primary`
+        // is a real primary, so it stands outside it.
+        <ButtonGroup>
           <Hint label={refreshLabel} side="top">
             <Button
-              variant="ghost"
+              variant="secondary"
               size="icon-sm"
               type="button"
               onClick={onRefresh}
@@ -88,7 +91,7 @@ export function ToolActionBar({
           </Hint>
           <Hint label={secondaryLabel} side="top">
             <Button
-              variant="ghost"
+              variant="secondary"
               size="icon-sm"
               type="button"
               onClick={onSecondary}
@@ -102,7 +105,7 @@ export function ToolActionBar({
               <SecondaryIcon className={secondaryIconClassName} />
             </Button>
           </Hint>
-        </>
+        </ButtonGroup>
       )}
       {primary}
     </div>

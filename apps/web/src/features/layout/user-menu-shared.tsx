@@ -38,12 +38,14 @@ import {
 import Loading from '@/components/ui/loading';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { openExternalRoute } from '@/lib/desktop';
+import { isInterfaceThemeId } from '@/lib/interface-themes';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   ArticleIcon,
   BookOpenIcon,
   LifebuoyIcon,
-  MonitorIcon,
   Moon,
+  PaintBrushIcon,
   PaperPlaneTiltIcon,
   QuestionIcon,
   ScrollIcon,
@@ -51,10 +53,10 @@ import {
   StorefrontIcon,
   Sun,
 } from '@phosphor-icons/react';
-import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import * as React from 'react';
 import { useState } from 'react';
+import { INTERFACE_THEME_OPTIONS, ThemeSwatch, useInterfaceTheme } from './interface-theme';
 
 export type MenuLink = {
   label: string;
@@ -94,19 +96,16 @@ export const LEGAL_LINKS: MenuLink[] = [
 ];
 
 /**
- * The three theme values `next-themes` accepts, in the order the rest of the
- * product lists them (see the Appearance tab in user settings — same words, same
- * icons, same order). A person who learns the control in one place should not
- * have to re-read it in the other.
- */
-export const THEME_OPTIONS = [
-  { value: 'light', label: 'Light', Icon: Sun },
-  { value: 'dark', label: 'Dark', Icon: Moon },
-  { value: 'system', label: 'System', Icon: MonitorIcon },
-] as const;
-
-/**
- * Theme as a submenu of three rows like any other.
+ * Theme as a submenu.
+ *
+ * `INTERFACE_THEME_OPTIONS` now carries 44 rows — System, four Kortix
+ * palettes, and 39 curated terminal themes — too many to list in a
+ * dropdown. This submenu shows the System row, the four Kortix rows, and (if
+ * the current selection is a terminal theme) that one extra row so the
+ * checked state is never silently hidden; "More themes…" opens the
+ * Appearance tab's Select, which lists every row grouped and scrollable. That
+ * Select is shared with this submenu — `INTERFACE_THEME_OPTIONS` — so a
+ * person who learns the control here meets the same rows there.
  *
  * It used to be a segmented control pinned below Log out — the one row in the
  * menu that was not a menu item, sitting under the one row that ends your
@@ -116,8 +115,14 @@ export const THEME_OPTIONS = [
  */
 export function ThemeSubmenu() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const themeOptions = useLocalizedUiCatalog(THEME_OPTIONS);
+  const t = useTranslations('settings.appearance');
+  const { selected, select, choice, resolvedTheme } = useInterfaceTheme();
+
+  const primaryOptions = INTERFACE_THEME_OPTIONS.filter((option) => option.kind === 'labelled');
+  const selectedOption = INTERFACE_THEME_OPTIONS.find((option) => option.value === selected);
+  const extraSelectedOption =
+    selectedOption && selectedOption.kind === 'named' ? selectedOption : undefined;
+
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
@@ -126,14 +131,37 @@ export function ThemeSubmenu() {
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
-          <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
-            {themeOptions.map(({ value, label, Icon }) => (
-              <DropdownMenuRadioItem key={value} value={value}>
-                <Icon />
-                {label}
+          <DropdownMenuRadioGroup
+            value={selected}
+            onValueChange={(value) => {
+              if (isInterfaceThemeId(value)) select(value);
+            }}
+          >
+            {primaryOptions.map((option) => (
+              <DropdownMenuRadioItem key={option.value} value={option.value}>
+                <ThemeSwatch value={option.value} choice={choice} />
+                {t(`themes.${option.labelKey}`)}
               </DropdownMenuRadioItem>
             ))}
+            {extraSelectedOption && (
+              <DropdownMenuRadioItem value={extraSelectedOption.value}>
+                <ThemeSwatch value={extraSelectedOption.value} choice={choice} />
+                {extraSelectedOption.name}
+              </DropdownMenuRadioItem>
+            )}
           </DropdownMenuRadioGroup>
+
+          <DropdownMenuSeparator />
+
+          {/* Opens the Appearance tab's own Select, which lists every terminal
+              theme grouped and scrollable — the submenu itself only ever
+              shows the six rows above. */}
+          <DropdownMenuItem
+            onSelect={() => useSettingsPanelStore.getState().openSettings('appearance')}
+          >
+            <PaintBrushIcon />
+            {t('moreThemes')}
+          </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>

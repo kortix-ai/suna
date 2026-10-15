@@ -65,8 +65,8 @@ describe('maxProjectsForAccount — plan → project cap', () => {
     expect(await maxProjectsForAccount(nextAccount())).toBe(FREE_TIER_PROJECT_LIMIT);
   });
 
-  test('per-seat (team) plan → MAX_PROJECTS_PER_ACCOUNT', async () => {
-    currentTier = 'per_seat';
+  test('credits plan → MAX_PROJECTS_PER_ACCOUNT', async () => {
+    currentTier = 'credits';
     expect(await maxProjectsForAccount(nextAccount())).toBe(MAX_PROJECTS_PER_ACCOUNT);
   });
 

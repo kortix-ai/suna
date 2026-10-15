@@ -157,25 +157,6 @@ mock.module('../billing/wallet', () => ({
   },
 }));
 
-mock.module('../billing/services/tiers', () => ({
-  MACHINE_CREDIT_BONUS: 5,
-  MINIMUM_CREDIT_FOR_RUN: 0.01,
-  getTier: (tierName: string) => ({
-    name: tierName,
-    monthlyCredits: tierName === 'tier_2_20' ? 20 : tierName === 'tier_6_50' ? 50 : 0,
-  }),
-  getTierByPriceId: (priceId: string) => {
-    if (priceId === 'price_paid_yearly') return { name: 'tier_2_20' };
-    if (priceId === 'price_paid_monthly') return { name: 'tier_6_50' };
-    if (priceId === 'price_free') return { name: 'free' };
-    return null;
-  },
-  getBillingPeriodByPriceId: (priceId: string) => {
-    if (priceId === 'price_paid_yearly') return 'yearly';
-    return 'monthly';
-  },
-}));
-
 mock.module('../shared/stripe', () => ({
   getStripe: () => ({
     customers: {
@@ -225,7 +206,7 @@ describe('resolveAccountId legacy billing sync', () => {
             data: [
               {
                 price: {
-                  id: 'price_paid_yearly',
+                  id: 'price_1ReHB5G6l1KZGqIrD70I1xqM', // a legacy $20 price, billed yearly
                   recurring: { interval: 'year' },
                 },
               },
@@ -246,7 +227,8 @@ describe('resolveAccountId legacy billing sync', () => {
         billingCycleAnchor: undefined,
         commitmentEndDate: null,
         commitmentType: null,
-        tier: 'tier_2_20',
+        tier: 'credits',
+        planMonthlyUsd: '20',
         provider: 'stripe',
         stripeSubscriptionId: 'sub_paid_123',
         stripeSubscriptionStatus: 'active',
@@ -263,7 +245,7 @@ describe('resolveAccountId legacy billing sync', () => {
     expect(walletResets).toContainEqual({
       accountId: 'acct_paid_123',
       amount: 20,
-      description: 'Recovered legacy Stripe subscription: 20 credits',
+      description: 'Recovered legacy Stripe subscription: 2000 credits',
       key: { event: 'legacy_sync:sub_paid_123' },
     });
   });

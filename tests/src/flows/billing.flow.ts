@@ -1,6 +1,7 @@
 /**
- * Billing — account state + the REAL subscribe flow (inline checkout confirmed
- * with a Stripe test card). Maps to spec §20 (BILL-1, BILL-3). Gated on `stripe`.
+ * Billing — account state + the REAL subscribe flow (the credits plan, a Stripe
+ * test-mode subscription adopted by our API). Maps to spec §20 (BILL-1, BILL-3).
+ * Gated on `stripe`.
  */
 import { createHmac, randomUUID } from 'node:crypto';
 import { flow } from '../core/flow';
@@ -19,11 +20,10 @@ flow(
       r.status(200);
     });
     await ctx.step('account state carries the resolved `plan` block', async () => {
-      // `plan` names the plan the account BEHAVES as (trial / per-seat self-heal
-      // applied); `subscription.tier_key` stays the STORED plan Stripe sold.
-      // A fresh owner has no trial and no seat subscription, so the two agree —
-      // that agreement is the invariant this pins, along with the block being
-      // present and fully populated.
+      // `plan` names the plan the account BEHAVES as (trial applied);
+      // `subscription.tier_key` stays the STORED plan Stripe sold. A fresh owner
+      // has no trial, so the two agree — that agreement is the invariant this
+      // pins, along with the block being present and fully populated.
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state');
       const state = r.status(200).json<{
         plan?: Record<string, unknown>;
@@ -37,23 +37,24 @@ flow(
         .exists('$.plan.label')
         .exists('$.plan.status')
         .exists('$.plan.shape')
-        .exists('$.plan.is_grandfathered')
+        .has('$.billing_model', undefined)
+        .has('$.seats', undefined)
+        .has('$.member_count', undefined)
         .has('$.plan.key', state.subscription.tier_key)
         .has('$.tier.name', state.subscription.tier_key);
       if (typeof state.plan?.rank !== 'number') {
         throw new Error(`plan.rank must be a number, got ${JSON.stringify(state.plan?.rank)}`);
       }
-      // `is_grandfathered` is resolved from the account's stored
-      // is_grandfathered_free column, so on a shared long-lived fixture account
-      // it is legitimately data-dependent — pin the TYPE, not a fixed value.
-      // (A fixed `false` here flaked the release gate once the shared OWNER
-      // account was grandfathered upstream.)
-      if (typeof state.plan?.is_grandfathered !== 'boolean') {
-        throw new Error(
-          `plan.is_grandfathered must be a boolean, got ${JSON.stringify(state.plan?.is_grandfathered)}`,
-        );
+      // The shared OWNER may be free or paid on a long-lived target: pin the
+      // TYPE of the amount, not a value.
+      const monthly = state.plan?.monthly_usd;
+      if (monthly !== null && typeof monthly !== 'number') {
+        throw new Error(`plan.monthly_usd must be a number or null, got ${JSON.stringify(monthly)}`);
       }
-      if (!['free', 'team', 'enterprise'].includes(String(state.plan?.family))) {
+      if (!['none', 'free', 'credits', 'enterprise'].includes(String(state.plan?.key))) {
+        throw new Error(`plan.key must be one of the four plan keys, got ${String(state.plan?.key)}`);
+      }
+      if (!['free', 'credits', 'enterprise'].includes(String(state.plan?.family))) {
         throw new Error(`plan.family must be a public family, got ${String(state.plan?.family)}`);
       }
     });
@@ -157,22 +158,41 @@ flow(
     serial: true,
     timeoutMs: 120_000,
     routes: [
-      'POST /v1/billing/create-inline-checkout',
-      'POST /v1/billing/confirm-inline-checkout',
+      'POST /v1/billing/plan',
+      'POST /v1/billing/sync-subscription',
       'GET /v1/billing/account-state',
     ],
   },
   async (ctx) => {
     // Subscribe a fresh team account the real way → credits granted.
     const team = await ctx.fixtures.team();
-    await ctx.step('inline checkout + confirm with test card → active', async () => {
-      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id, 'pro');
+    await ctx.step('credits plan at $50/month in Stripe test mode → active', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id, 50);
     });
-    await ctx.step('account-state reflects an active paid subscription', async () => {
+    await ctx.step('account-state reports the credits plan at $50/month, no seats', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/billing/account-state', { query: { account_id: team.id } });
-      r.status(200);
+      r.status(200)
+        .body()
+        .has('$.subscription.tier_key', 'credits')
+        .has('$.plan.key', 'credits')
+        .has('$.plan.monthly_usd', 50)
+        .has('$.tier.monthly_credits', 50)
+        .has('$.seats', undefined);
+    });
+    await ctx.step('raising the plan to $100 charges the test card and reports $100', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/billing/plan', {
+        account_id: team.id,
+        monthly_usd: 100,
+        success_url: 'https://example.com/ok',
+        cancel_url: 'https://example.com/cancel',
+      });
+      r.status(200).body().has('$.status', 'updated').has('$.monthly_usd', 100);
+      const state = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/billing/account-state', { query: { account_id: team.id } });
+      state.status(200).body().has('$.plan.monthly_usd', 100);
     });
   },
 );
@@ -192,9 +212,7 @@ flow(
     routes: [
       'POST /v1/billing/cancel-subscription',
       'POST /v1/billing/reactivate-subscription',
-      'POST /v1/billing/cancel-scheduled-change',
       'POST /v1/billing/sync-subscription',
-      'GET /v1/billing/proration-preview',
     ],
   },
   async (ctx) => {
@@ -209,25 +227,9 @@ flow(
       const r = await owner.post('/v1/billing/reactivate-subscription', { account_id: team.id });
       r.status([400, 404, 409]);
     });
-    await ctx.step('cancel-scheduled-change with nothing scheduled → rejected', async () => {
-      const r = await owner.post('/v1/billing/cancel-scheduled-change', { account_id: team.id });
-      r.status([200, 400, 404, 409]);
-    });
     await ctx.step('sync-subscription reconciles (no-op) → ok or no-sub', async () => {
       const r = await owner.post('/v1/billing/sync-subscription', { account_id: team.id });
       r.status([200, 400, 404, 409]);
-    });
-    await ctx.step('proration-preview requires new_price_id → 400', async () => {
-      const r = await owner.get('/v1/billing/proration-preview', {
-        query: { account_id: team.id },
-      });
-      r.status(400);
-    });
-    await ctx.step('proration-preview with a price but no active sub → rejected', async () => {
-      const r = await owner.get('/v1/billing/proration-preview', {
-        query: { account_id: team.id, new_price_id: 'price_nonexistent' },
-      });
-      r.status([400, 404, 409]);
     });
   },
 );
@@ -268,7 +270,7 @@ flow(
   {
     domain: 'billing',
     routes: [
-      'POST /v1/billing/create-per-seat-checkout',
+      'POST /v1/billing/plan',
       'POST /v1/billing/cancel-subscription',
       'POST /v1/billing/purchase-credits',
       'POST /v1/billing/sync-subscription',
@@ -279,9 +281,10 @@ flow(
     const member = await team.addMember('member');
     const asMember = ctx.client.as(member);
 
-    await ctx.step('MEMBER cannot start a team subscription checkout → 403', async () => {
-      const r = await asMember.post('/v1/billing/create-per-seat-checkout', {
+    await ctx.step('MEMBER cannot change the credits plan → 403', async () => {
+      const r = await asMember.post('/v1/billing/plan', {
         account_id: team.id,
+        monthly_usd: 100,
         success_url: 'https://example.com/ok',
         cancel_url: 'https://example.com/cancel',
       });
@@ -302,9 +305,10 @@ flow(
       const r = await asMember.post('/v1/billing/sync-subscription', { account_id: team.id });
       r.status(403);
     });
-    await ctx.step('ANON cannot start a team subscription checkout → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/create-per-seat-checkout', {
+    await ctx.step('ANON cannot change the credits plan → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/plan', {
         account_id: team.id,
+        monthly_usd: 100,
         success_url: 'https://example.com/ok',
         cancel_url: 'https://example.com/cancel',
       });
@@ -314,23 +318,29 @@ flow(
 );
 
 /**
- * BILL-10 — per-seat (billing v2) claim on an unfunded team. `claim-per-seat` runs
- * the legacy → per-seat migration synchronously; a fresh team has no legacy machine
- * subs, so it returns ok with a "skipped:*" status (or 400 on failure). It fakes no sub.
+ * BILL-10 — the plan amount is validated before any Stripe call: whole dollars
+ * from 50 to 10,000. No `stripe` requirement — the 400 fires first.
  */
 flow(
   'BILL-10',
   {
     domain: 'billing',
-    routes: ['POST /v1/billing/claim-per-seat'],
+    routes: ['POST /v1/billing/plan'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await ctx.step('claim-per-seat on a non-legacy account → skipped', async () => {
-      const r = await owner.post('/v1/billing/claim-per-seat', { account_id: team.id });
-      r.status([200, 400]);
-    });
+    for (const monthly_usd of [20, 49, 10_001, 75.5, 'fifty']) {
+      await ctx.step(`monthly_usd ${JSON.stringify(monthly_usd)} → 400`, async () => {
+        const r = await owner.post('/v1/billing/plan', {
+          account_id: team.id,
+          monthly_usd,
+          success_url: 'https://example.com/ok',
+          cancel_url: 'https://example.com/cancel',
+        });
+        r.status(400);
+      });
+    }
   },
 );
 
@@ -349,20 +359,21 @@ flow(
     requires: ['stripe'],
     timeoutMs: 60_000,
     routes: [
-      'POST /v1/billing/create-per-seat-checkout',
+      'POST /v1/billing/plan',
       'POST /v1/billing/create-portal-session',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await ctx.step('create-per-seat-checkout → Stripe URL or rejection', async () => {
-      const r = await owner.post('/v1/billing/create-per-seat-checkout', {
+    await ctx.step('plan on a free team → hosted Checkout URL', async () => {
+      const r = await owner.post('/v1/billing/plan', {
         account_id: team.id,
+        monthly_usd: 100,
         success_url: 'https://example.com/ok',
         cancel_url: 'https://example.com/cancel',
       });
-      r.status([200, 400, 500]);
+      r.status(200).body().has('$.status', 'checkout_created').has('$.monthly_usd', 100).exists('$.checkout_url');
     });
     await ctx.step('create-portal-session → Stripe portal URL or rejection', async () => {
       const r = await owner.post('/v1/billing/create-portal-session', {
@@ -567,40 +578,6 @@ flow(
       const failedSession = `cs_ke2e_${randomUUID().replaceAll('-', '')}`;
       (await deliver('checkout.session.async_payment_failed', 'unpaid', undefined, failedSession)).status(200);
       if ((await purchaseRows()).length !== 1) throw new Error('a failed payment granted credit');
-    });
-  },
-);
-
-/**
- * BILL-19 — `confirm-inline-checkout` decides nothing from the request body.
- * The subscription must exist and be billed to the caller's own Stripe
- * customer; the tier comes from the subscription's price. A body without a
- * subscription id is a 400; an id that is not the caller's is a 404 on any
- * target that talks to Stripe.
- */
-flow(
-  'BILL-19',
-  {
-    domain: 'billing',
-    routes: ['POST /v1/billing/confirm-inline-checkout'],
-  },
-  async (ctx) => {
-    const owner = ctx.client.as(ctx.P.OWNER);
-    const team = await ctx.fixtures.team();
-
-    await ctx.step('OWNER confirms with no subscription_id → 400', async () => {
-      const r = await owner.post('/v1/billing/confirm-inline-checkout', { account_id: team.id, tier_key: 'pro' });
-      r.status(400);
-    });
-
-    await ctx.step('OWNER confirms a subscription id that is not billed to the team → 404', async () => {
-      if (!ctx.env.capabilities.stripe) return;
-      const r = await owner.post('/v1/billing/confirm-inline-checkout', {
-        account_id: team.id,
-        subscription_id: `sub_ke2e${randomUUID().replaceAll('-', '').slice(0, 14)}`,
-        tier_key: 'pro',
-      });
-      r.status(404);
     });
   },
 );

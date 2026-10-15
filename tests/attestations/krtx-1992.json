@@ -1,10 +1,11 @@
 {
-  "source_hash": "5bd33bf7348b7676c058ea5088953e989001358ee64adb5c601df6dd3ba140b2",
+  "source_hash": "352453f40167f6da08f00d353064e3fb4832674da0af44bb1b7fe9d753773f02",
   "diff_files": [
     "apps/web/src/app/[locale]/presentations/decks/security-diagram-content.ts",
     "apps/web/src/app/[locale]/presentations/decks/security-localization.test.tsx",
     "apps/web/src/app/[locale]/presentations/decks/security.tsx",
     "apps/web/src/app/[locale]/presentations/engine/diagram.tsx",
+    "apps/web/src/components/iam/access-projects-tab.tsx",
     "apps/web/src/components/projects/project-shell-prefetch.test.ts",
     "apps/web/src/components/projects/project-shell-prefetch.ts",
     "apps/web/src/components/projects/schedule-view.tsx",
@@ -85,6 +86,7 @@
     "apps/web/src/features/workspace/project-sidebar/project-settings-nav-contract.test.ts",
     "apps/web/src/features/workspace/project-sidebar/project-settings-nav.tsx",
     "apps/web/src/features/workspace/project-sidebar/project-sidebar-polling.test.ts",
+    "apps/web/src/features/workspace/project-sidebar/session-filter-menu.test.ts",
     "apps/web/src/features/workspace/project-sidebar/session-filter-menu.tsx",
     "apps/web/src/features/workspace/project-sidebar/session-grouping.ts",
     "apps/web/src/features/workspace/project-sidebar/session-menu-trigger.test.ts",
@@ -101,7 +103,6 @@
     "apps/web/src/features/workspace/settings/settings-tabs.test.ts",
     "apps/web/src/features/workspace/settings/settings-tabs.ts",
     "apps/web/src/features/workspace/settings/tabs/account-memberships.tsx",
-    "apps/web/src/features/workspace/settings/tabs/appearance-tab.tsx",
     "apps/web/src/features/workspace/settings/tabs/connected-tab.tsx",
     "apps/web/src/features/workspace/settings/tabs/experimental-tab.tsx",
     "apps/web/src/features/workspace/settings/tabs/fact-cell.tsx",
@@ -119,7 +120,6 @@
     "apps/web/src/features/workspace/settings/tabs/tokens-tab.tsx",
     "apps/web/src/lib/relative-time.test.ts",
     "apps/web/src/lib/relative-time.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -129,6 +129,7 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
+    "apps/web/true",
     "packages/sdk/src/core/rest/projects-client/access.ts",
     "packages/sdk/src/react/connector-setup.ts",
     "packages/sdk/src/react/human-presence.ts",
@@ -138,13 +139,13 @@
     "packages/sdk/src/react/use-project-name.test.ts",
     "packages/sdk/src/react/use-project-name.ts"
   ],
-  "diff_hash": "34502a152033d785ff2c8cc4b67c04f392ca6c4d15f4ae23732d2b6c541bef85",
-  "head": "2e1921fcb391bc4f5985562b0ae8b5ef2ae5c01d",
+  "diff_hash": "3eecce8a18a8a1a7dc1bd623ea8d83a240cb282dce846f6e753208dc15931f10",
+  "head": "b1d137710c271755fc82924baf95fb55fcd22577",
   "passed": false,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T22:03:53.501Z"
+  "at": "2026-10-15T01:43:33.100Z"
 }

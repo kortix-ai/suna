@@ -46,7 +46,7 @@ const PI_NATIVE: CapabilityFeatures = {
 };
 export const PI_CAPABILITIES: AdapterCapabilities = {
   harness: 'pi',
-  harness_versions: '1.0.3',
+  harness_versions: '1.0.3 || 1.2.0',
   schema_minors: [1],
   dialects: ['openai-chat'],
   native: PI_NATIVE,

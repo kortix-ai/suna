@@ -260,6 +260,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/billing/cron/yearly-rotation': { action: 'billing.cron.yearly_credit.rotate', title: 'Ran yearly credit rotation' },
   'POST /v1/billing/deduct': { action: 'billing.credit.llm_usage.deduct', title: 'Deducted credits for LLM usage' },
   'POST /v1/billing/deduct-usage': { action: 'billing.credit.agent_usage.deduct', title: 'Deducted credits for agent run' },
+  'POST /v1/billing/plan': { action: 'billing.plan.set', title: 'Changed the credits plan' },
   'GET /v1/billing/proration-preview': { action: 'billing.proration.preview', title: 'Previewed plan change proration' },
   'POST /v1/billing/purchase-credits': { action: 'billing.credit_purchase.start', title: 'Started credit purchase checkout' },
   'POST /v1/billing/reactivate-subscription': { action: 'billing.subscription.reactivate', title: 'Reactivated subscription' },

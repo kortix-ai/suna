@@ -231,7 +231,11 @@ export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
 /** Back to the shell's own scale, not the browser's 100%. */
 export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
-export async function setDesktopNativeTheme(theme: string | undefined): Promise<void> {
+/** `palettes` picks the launch background (the chosen light and dark theme's canvas). */
+export async function setDesktopNativeTheme(
+  theme: string | undefined,
+  palettes?: { light: string; dark: string },
+): Promise<void> {
   if (typeof window === 'undefined' || !theme) return;
   const selected = theme === 'light' || theme === 'dark' ? theme : 'system';
   const t = (
@@ -241,7 +245,7 @@ export async function setDesktopNativeTheme(theme: string | undefined): Promise<
   ).__TAURI__;
   if (!t?.core?.invoke) return;
   try {
-    await t.core.invoke('set_native_theme', { theme: selected });
+    await t.core.invoke('set_native_theme', { theme: selected, palettes });
   } catch {
     /* older desktop shell */
   }

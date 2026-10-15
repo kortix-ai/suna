@@ -3,6 +3,7 @@
 import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
 import type { UiTranslator } from '@/i18n/translator';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { formatWholeUsd } from '@/features/billing/compute-pricing';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import {
   ArrowDownRightIcon as ArrowDownRight,
@@ -125,28 +126,15 @@ const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 // key and stamp its own suffix onto it, which is exactly how this file's plan
 // vocabulary drifted away from the server's.
 //
-// `grandfathered` groups the keys that were sold once and are still honored
-// exactly as sold; the price disambiguates the repeated product names (there
-// are two "Pro"s at different prices). Order and prices follow PLAN_CATALOG in
-// apps/api/src/billing/services/plan-catalog.ts.
-type TierFilterOption = { value: string; label: string; grandfathered?: boolean };
+// There is one paid plan, `credits`, so the list is the four plan keys. A key
+// that an older row may still carry (a retired per-seat or tier key) is read as
+// `credits` by the API, and its row shows up under Credits.
+type TierFilterOption = { value: string; label: string };
 const TIER_OPTIONS: TierFilterOption[] = [
   { value: 'none', label: 'No plan' },
   { value: 'free', label: 'Free' },
-  { value: 'starter', label: 'Starter' },
-  { value: 'team', label: 'Team' },
-  { value: 'scale', label: 'Scale' },
+  { value: 'credits', label: 'Credits' },
   { value: 'enterprise', label: 'Enterprise' },
-  { value: 'pro', label: 'Pro · $20/mo', grandfathered: true },
-  { value: 'tier_2_20', label: 'Plus · $20/mo', grandfathered: true },
-  { value: 'per_seat', label: 'Team · $40/seat/mo', grandfathered: true },
-  { value: 'tier_6_50', label: 'Pro · $50/mo', grandfathered: true },
-  { value: 'tier_12_100', label: 'Business · $100/mo', grandfathered: true },
-  { value: 'tier_25_200', label: 'Ultra · $200/mo', grandfathered: true },
-  { value: 'tier_50_400', label: 'Enterprise · $400/mo', grandfathered: true },
-  { value: 'tier_125_800', label: 'Scale · $800/mo', grandfathered: true },
-  { value: 'tier_200_1000', label: 'Max · $1,000/mo', grandfathered: true },
-  { value: 'tier_150_1200', label: 'Enterprise Max · $1,200/mo', grandfathered: true },
 ];
 
 const TIER_LABELS: Record<string, string> = Object.fromEntries(
@@ -284,7 +272,7 @@ function tierKeyLabel(
 
 /**
  * The plan the account BEHAVES as, straight off the API's resolved `plan`
- * block: an active admin trial and the per-seat self-heal overlay the stored
+ * block: an active admin trial overlays the stored
  * `tier` column, and the resolver applies the same precedence every gate does.
  * The stored key stays available as `account.tier` for the filter.
  *
@@ -295,7 +283,7 @@ function planLabel(account: AdminAccount, options?: readonly TierFilterOption[])
 }
 
 function planBadgeVariant(account: AdminAccount): React.ComponentProps<typeof Badge>['variant'] {
-  const family = account.plan?.family ?? (isUnpaidTierKey(account.tier) ? 'free' : 'team');
+  const family = account.plan?.family ?? (isUnpaidTierKey(account.tier) ? 'free' : 'credits');
   return family === 'free' ? 'muted' : 'info';
 }
 
@@ -306,8 +294,9 @@ function isUnpaidTierKey(tier: string | null): boolean {
 }
 
 /**
- * Plan name plus its qualifier — e.g. "Team · $40/seat/mo · grandfathered".
- * The qualifier is the server's, not a claim this page invents from the key.
+ * Plan name plus its qualifier — e.g. "Credits · $100/mo". The qualifier is
+ * the server's `sublabel` or its `monthlyUsd`, not a claim this page invents
+ * from the key.
  */
 function PlanBadge({
   account,
@@ -319,7 +308,9 @@ function PlanBadge({
   className?: string;
 }) {
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
-  const sublabel = account.plan?.sublabel;
+  const monthlyUsd = account.plan?.monthlyUsd;
+  const sublabel =
+    monthlyUsd != null ? `${formatWholeUsd(monthlyUsd, 'en-US')}/mo` : account.plan?.sublabel;
   return (
     <Badge variant={planBadgeVariant(account)} size={size} className={className}>
       {planLabel(account, tierOptions)}
@@ -331,10 +322,9 @@ function PlanBadge({
 /**
  * What Stripe ACTUALLY charges, next to the plan badge.
  *
- * The badge describes the STORED tier: a grandfathered `pro` row renders
- * "Team · $20/mo · grandfathered" even when the live subscription is a $40/mo
- * "Kortix Computer" machine sub. An operator reading only the badge mis-priced
- * the customer. Renders nothing while loading, and nothing when the account has
+ * The badge describes the plan the account resolves to. Stripe is the record of
+ * what is actually charged, so an operator reads this line before quoting a
+ * price. Renders nothing while loading, and nothing when the account has
  * no subscription on file — the badge alone is correct in that case.
  */
 function LiveSubscriptionLine({ accountId }: { accountId: string }) {
@@ -387,12 +377,11 @@ function LiveSubscriptionLine({ accountId }: { accountId: string }) {
  * `free`/`none` are rejected server-side.
  */
 const TRIAL_TIER_OPTIONS: { value: string; label: string; hint: string }[] = [
-  { value: 'team', label: 'Team', hint: 'Standard paid plan — recommended' },
+  { value: 'credits', label: 'Credits', hint: 'Standard paid plan — recommended' },
   { value: 'enterprise', label: 'Enterprise', hint: 'Adds SSO, SCIM, RBAC, audit log' },
 ];
 
 const TRIAL_DURATION_PRESETS = [14, 30, 60, 90];
-const MAX_TRIAL_SEATS = 100; // MAX_SEATS_PER_ACCOUNT in billing/services/tiers.ts
 const MAX_TRIAL_DURATION_DAYS = 365; // MAX_TRIAL_DURATION_DAYS in billing/services/trial-admin.ts
 const MAX_TRIAL_CREDIT_GRANT = 10_000;
 
@@ -930,15 +919,8 @@ function FiltersPanel({
           )}
         </div>
         <div className="space-y-1">
-          {tierOptions.map((t, i) => (
+          {tierOptions.map((t) => (
             <div key={t.value}>
-              {/* One heading, before the first grandfathered key — these are
-                  still-honored plans no account can be moved onto today. */}
-              {t.grandfathered && !tierOptions[i - 1]?.grandfathered && (
-                <div className="text-muted-foreground px-1.5 pt-2 pb-1 text-xs">
-                  {tI18nComplete.raw('text9d5adef979f7')}
-                </div>
-              )}
               <label className="hover:bg-hover flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
                 <Checkbox
                   checked={filters.tier.includes(t.value)}
@@ -1570,8 +1552,8 @@ function CreditsTab({ account }: { account: AdminAccount }) {
           FLAG, not a tier write: the flag survives Stripe subscription sync,
           while a `tier='enterprise'` write is reverted by the next
           customer.subscription.updated event (the bug this replaced). The
-          plan shown is the RESOLVED one the API reports — an active trial and
-          the per-seat self-heal overlay the stored tier, and the entitlement
+          plan shown is the RESOLVED one the API reports — an active trial
+          overlays the stored tier, and the entitlement
           writes below act on the account, not on that plan. */}
       <div className="border-border bg-popover mb-4 space-y-3 rounded-md border p-4">
         <div className="flex items-center justify-between gap-2">
@@ -1609,7 +1591,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             </Button>
           )}
         </div>
-        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texte65c84be34f9')}</p>
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text2f1d17f50af8')}</p>
       </div>
 
       <div className="border-border bg-popover space-y-4 rounded-md border p-4">
@@ -1952,6 +1934,8 @@ function OverridesCard({ account }: { account: AdminAccount }) {
 function EntitlementsTab({ account }: { account: AdminAccount }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
+  const tPlan = useI18nTranslations('billing.credits.admin');
+  const tBillingPlan = useI18nTranslations('billing.plan');
   const trialTierOptions = useLocalizedUiCatalog(TRIAL_TIER_OPTIONS);
   const grantTrial = useAdminGrantTrial();
   const revokeTrial = useAdminRevokeTrial();
@@ -1962,18 +1946,14 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
   const trial = account.trial;
   const isActive = trialIsActive(trial);
 
-  const [tierKey, setTierKey] = useState('team');
-  const [seats, setSeats] = useState('5');
+  const [tierKey, setTierKey] = useState('credits');
   const [durationDays, setDurationDays] = useState('30');
   const [creditGrant, setCreditGrant] = useState('25');
   const [note, setNote] = useState('');
   const [confirmRevoke, setConfirmRevoke] = useState(false);
 
-  const parsedSeats = Number(seats);
   const parsedDuration = Number(durationDays);
   const parsedCredit = Number(creditGrant);
-  const seatsValid =
-    Number.isInteger(parsedSeats) && parsedSeats >= 1 && parsedSeats <= MAX_TRIAL_SEATS;
   const durationValid =
     Number.isInteger(parsedDuration) &&
     parsedDuration >= 1 &&
@@ -1981,7 +1961,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
   const creditValid =
     creditGrant.trim() === '' ||
     (Number.isFinite(parsedCredit) && parsedCredit >= 0 && parsedCredit <= MAX_TRIAL_CREDIT_GRANT);
-  const formValid = seatsValid && durationValid && creditValid;
+  const formValid = durationValid && creditValid;
 
   const accountLabel = accountLabelFor(account);
 
@@ -1991,7 +1971,6 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       await grantTrial.mutateAsync({
         accountId: account.accountId,
         tierKey,
-        seats: parsedSeats,
         durationDays: parsedDuration,
         creditGrant: creditGrant.trim() === '' ? undefined : parsedCredit,
         note: note.trim() === '' ? undefined : note.trim(),
@@ -2108,11 +2087,12 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               </div>
               <div className="mt-0.5 text-sm font-medium">
                 {trial.tier ? tierKeyLabel(trial.tier, tierOptions) : '—'}
-                {trial.seats != null && (
+                {trial.monthlyUsd != null && (
                   <span className="text-muted-foreground font-normal">
-                    {' '}
-                    · {trial.seats} {tI18nComplete.raw('text5d2c13d6f9fa')}
-                    {trial.seats === 1 ? '' : 's'}
+                    {' · '}
+                    {tBillingPlan('perMonth', {
+                      amount: formatWholeUsd(trial.monthlyUsd, 'en-US'),
+                    })}
                   </span>
                 )}
               </div>
@@ -2156,7 +2136,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               ? tI18nComplete.raw('text57579cf783f3')
               : tI18nComplete.raw('text8529ff665870')}
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-muted-foreground text-xs">
                 {tI18nComplete.raw('textcb9e8664edea')}
@@ -2177,20 +2157,6 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               <p className="text-muted-foreground text-xs">
                 {tI18nComplete.raw('textf37a3ea11c91')}
               </p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('textf3b81325942e')}
-              </label>
-              <Input
-                type="number"
-                min={1}
-                max={MAX_TRIAL_SEATS}
-                step={1}
-                value={seats}
-                onChange={(e) => setSeats(e.target.value)}
-                aria-invalid={!seatsValid}
-              />
             </div>
             <div className="space-y-1">
               <label className="text-muted-foreground text-xs">
@@ -2267,7 +2233,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               </Button>
             )}
           </div>
-          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text0a2ea173ab93')}</p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text517105fd13ce')}</p>
         </div>
       </div>
 
@@ -2312,7 +2278,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         <div className="border-border border-t pt-4">
           <EntitlementRow
             title={tI18nComplete.raw('texta7d1ea80d81f')}
-            description={tI18nComplete.raw('text458cde86effb')}
+            description={tI18nComplete.raw('text146aaf3c71fa')}
           >
             <Switch
               checked={account.enterpriseEntitled}
@@ -2332,16 +2298,16 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       {/* Read-only context the operator needs before issuing a trial. */}
       <div className="border-border bg-popover divide-border grid grid-cols-2 divide-x rounded-md border text-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <span className="text-muted-foreground text-xs">
-            {tI18nComplete.raw('text266240ec402c')}
-          </span>
-          <span className="text-right font-medium">{account.billingModel || '—'}</span>
+          <span className="text-muted-foreground text-xs">{tPlan('plan')}</span>
+          <span className="text-right font-medium">{planLabel(account, tierOptions)}</span>
         </div>
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <span className="text-muted-foreground text-xs">
-            {tI18nComplete.raw('textf3b81325942e')}
+          <span className="text-muted-foreground text-xs">{tPlan('monthlyAmount')}</span>
+          <span className="text-right font-medium">
+            {account.plan?.monthlyUsd != null
+              ? formatWholeUsd(account.plan.monthlyUsd, 'en-US')
+              : '—'}
           </span>
-          <span className="text-right font-medium">{account.seatCount ?? '—'}</span>
         </div>
       </div>
 

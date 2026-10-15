@@ -209,7 +209,7 @@ agents:
 ```
 
 - `project_repository: true` (the default): the session checks out the project repository on its own session branch.
-- `project_repository: false`: the session gets no checkout, no git variables, and no repository API access (`403`).
+- `project_repository: false`: the session gets no checkout, no git variables, and no repository API access (`403`). Its [project tools](/docs/project/tools#agents-without-the-project-repository) still load: the sandbox receives only the modules of the tools the agent may call.
 - A running session keeps the value it started with. A change applies to new sessions.
 - Any other key under `workspace` is an error. A typo does not fall back to the default: Kortix withholds the repository from that agent until the block is fixed.
 

@@ -47,6 +47,7 @@ import {
   upsertCreditAccount,
 } from '../repositories/credit-accounts';
 import { invalidateAccountBilling } from './billing-cache';
+import { enterpriseEntitledFromRow } from './resolve-billing';
 
 export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 
@@ -60,9 +61,7 @@ export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
  */
 export const STRIPE_OWNED_FIELDS = [
   'tier',
-  'billingModel',
-  'seatCount',
-  'seatSubscriptionItemId',
+  'planMonthlyUsd',
   'stripeSubscriptionId',
   'stripeSubscriptionStatus',
   'billingCycleAnchor',
@@ -107,7 +106,7 @@ export const ADMIN_OWNED_FIELDS = [
   'entitlementOverrides',
   'trialStatus',
   'trialTier',
-  'trialSeats',
+  'trialMonthlyUsd',
   'trialStartedAt',
   'trialEndsAt',
   'trialNote',
@@ -117,13 +116,14 @@ export const ADMIN_OWNED_FIELDS = [
 /**
  * Provider-owned columns an admin MAY still write.
  *
- * Exactly one: `tier`. Support reassigns a plan by hand often enough
+ * The plan: `tier` (including 'enterprise', the custom plan) and its monthly
+ * amount. Support reassigns a plan by hand often enough
  * (comped account, botched migration, refund) that removing the ability would
  * just push operators to raw SQL, which no cache invalidation or audit trail
- * observes. It is still never `'enterprise'` — that is an entitlement flag,
- * not a tier (see `assertTierIsNotEnterprise`).
+ * observes. Only an operator may write `'enterprise'`; the provider writer is
+ * refused (`assertTierIsNotEnterprise`).
  */
-export const ADMIN_ASSIGNABLE_FIELDS = ['tier'] as const;
+export const ADMIN_ASSIGNABLE_FIELDS = ['tier', 'planMonthlyUsd'] as const;
 
 const STRIPE_OWNED: ReadonlySet<string> = new Set(STRIPE_OWNED_FIELDS);
 const ADMIN_OWNED: ReadonlySet<string> = new Set(ADMIN_OWNED_FIELDS);
@@ -144,6 +144,7 @@ export class AccountWriteOwnershipError extends Error {
 export type PinnableAccount = {
   tier?: string | null;
   enterpriseEntitled?: boolean | null;
+  entitlementOverrides?: unknown;
 } | null;
 
 /**
@@ -156,14 +157,14 @@ export type PinnableAccount = {
  *     refuses to create new ones (400), but existing rows still carry it and
  *     must not be downgraded by a webhook.
  *
- * A pinned account still reconciles every other provider fact —
- * `billing_model`, `seat_count`, subscription status, seat grants. Only `tier`
- * is off-limits, which is exactly the split a deal that is BOTH Enterprise
- * (entitlements) AND per-seat (billing) needs.
+ * A pinned account still reconciles every other provider fact — the monthly
+ * amount, subscription status, grants. Only `tier` is off-limits, which is
+ * exactly the split a deal that is BOTH Enterprise (entitlements) AND a credits
+ * subscription (billing) needs.
  */
-export function accountIsAdminPinned(account: PinnableAccount): boolean {
+export function accountIsAdminPinned(account: PinnableAccount, nowMs: number = Date.now()): boolean {
   if (!account) return false;
-  return account.enterpriseEntitled === true || account.tier === 'enterprise';
+  return account.tier === 'enterprise' || enterpriseEntitledFromRow(account, nowMs);
 }
 
 export interface StripeSyncContext {
@@ -275,7 +276,9 @@ export async function applyAdminOverride(
       foreign,
     );
   }
-  assertTierIsNotEnterprise(patch, 'applyAdminOverride');
+  // An operator MAY assign `tier='enterprise'`: that is how a custom plan is
+  // made. The provider writer still may not (assertTierIsNotEnterprise in
+  // applyStripeSync), and the pin below keeps a later Stripe sync off it.
 
   if (Object.keys(patch).length === 0) return;
 

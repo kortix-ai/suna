@@ -8,6 +8,7 @@ import {
   foreignKey,
   index,
   integer,
+  json,
   jsonb,
   numeric,
   pgSchema,
@@ -2656,6 +2657,12 @@ export const sessionLogMessages = kortixSchema.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     // The whole Message record.
     record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    // The key order of each tool_call input in `record` (jsonb sorts keys), by
+    // block index: the input with every leaf as 0, `null` for other blocks. A
+    // restore puts the keys back in this order, so the next model request is
+    // byte-equal and keeps the provider prompt cache. `json` keeps its text as
+    // written. Null: no tool_call input, or a row written before this column.
+    toolInputOrder: json('tool_input_order').$type<unknown[]>(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -4223,10 +4230,13 @@ export const creditAccounts = kortixSchema.table(
       withTimezone: true,
       mode: 'string',
     }),
-    // Billing v2 — per-seat model. Existing rows default to 'legacy' so legacy
-    // customers are untouched; new signups use 'per_seat'. The wallet is a
-    // single fungible balance; usage breakdown by category comes from
-    // aggregating credit_ledger entries by `type` (compute_debit / llm_debit).
+    // Credits-only billing (2026-10-14): the monthly credit allowance, in USD,
+    // of the account's paid plan. Written from the subscription by the Stripe
+    // and RevenueCat webhooks. Null for free/enterprise and for rows not yet
+    // backfilled (`planMonthlyUsd()` in tiers.ts falls back for those).
+    planMonthlyUsd: numeric('plan_monthly_usd', { precision: 12, scale: 2 }),
+    // Retired by credits-only billing; no code reads them. Dropped by the
+    // contract migration once every replica runs code that ignores them.
     billingModel: text('billing_model').default('legacy').notNull(),
     seatCount: integer('seat_count').default(1).notNull(),
     seatSubscriptionItemId: text('seat_subscription_item_id'),
@@ -4270,7 +4280,12 @@ export const creditAccounts = kortixSchema.table(
     trialTier: varchar('trial_tier', { length: 50 }),
     // Seat allowance while the trial is active. Enforced on member add/invite
     // for non-per_seat accounts (per-seat accounts meter seats via Stripe).
+    // Retired with seats (2026-10-14); read only as the re-grant fallback of a
+    // trial issued before `trial_monthly_usd` existed.
     trialSeats: integer('trial_seats'),
+    // Credits (USD) an active trial grants every 30 days. Null = issued before
+    // credits-only billing (falls back to $25 × trial_seats).
+    trialMonthlyUsd: numeric('trial_monthly_usd', { precision: 12, scale: 2 }),
     trialNote: text('trial_note'),
     trialGrantedBy: uuid('trial_granted_by'),
     // Operator-set managed-models override. NULL (default) = the effective
