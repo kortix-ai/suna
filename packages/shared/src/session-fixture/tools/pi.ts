@@ -9,6 +9,10 @@
  *   `details: { diff, patch, firstChangedLine }` — `patch` is a unified diff,
  *   `diff` is pi's own numbered format;
  * - `question` returns `details: { answers }`.
+ * - `codemode` runs a script that calls other tools; `details.calls` lists the
+ *   nested calls (live: `args` as a JSON string and `status: running`; at rest
+ *   the harness `codemodeDetails` rewrite names them `call_id`/`kind` and maps
+ *   the status to `complete`).
  * A tool's `details` is the part's `state.metadata`. Renderers read these
  * through the SDK's `inputPath` and `toToolView`, so the rows must name the
  * file, draw the patch, and show the answers exactly as they do for OpenCode.
@@ -33,7 +37,8 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
   key: 'pi',
   prompt: 'On the pi runtime: switch formatCurrency to compact notation and write down why.',
   reasoning: 'I will read the helper, ask which notation the card should use, edit it, and record the decision in `docs/currency.md`.',
-  summary: '`formatCurrency` now uses compact USD notation, as chosen. The decision is in `docs/currency.md`.',
+  summary:
+    '`formatCurrency` now uses compact USD notation, as chosen. The decision is in `docs/currency.md`. A codemode script checked the typecheck and the unit tests; both pass.',
   specs: [
     {
       renderer: 'read-tool.tsx',
@@ -99,6 +104,77 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
       error: 'Could not write file: docs/currency.md. Error code: EACCES.',
       states: ['completed'],
       note: 'pi names the file `path`.',
+    },
+    {
+      renderer: 'codemode-tool.tsx',
+      tool: 'codemode',
+      input: {
+        code: [
+          '// Verify the edit: typecheck and the unit tests in one script.',
+          'const [typecheck, tests] = await Promise.all([',
+          "  tools.bash({ command: 'bun run typecheck' }),",
+          "  tools.bash({ command: 'bun test src/lib' }),",
+          ']);',
+          "if (!typecheck.includes('0 errors')) throw new Error('typecheck still fails');",
+          'return { typecheck, tests };',
+        ].join('\n'),
+      },
+      runningMetadata: {
+        calls: [
+          {
+            id: 'call_FixtureParity0001/1',
+            name: 'bash',
+            args: '{"command":"bun run typecheck"}',
+            status: 'running',
+          },
+          {
+            id: 'call_FixtureParity0001/2',
+            name: 'bash',
+            args: '{"command":"bun test src/lib"}',
+            status: 'running',
+          },
+        ],
+        output: '',
+      },
+      metadata: {
+        calls: [
+          {
+            call_id: 'call_FixtureParity0001/1',
+            name: 'bash',
+            kind: 'shell',
+            status: 'complete',
+            input: { command: 'bun run typecheck' },
+            duration_ms: 2_130,
+          },
+          {
+            call_id: 'call_FixtureParity0001/2',
+            name: 'bash',
+            kind: 'shell',
+            status: 'complete',
+            input: { command: 'bun test src/lib' },
+            duration_ms: 970,
+          },
+        ],
+        complete: true,
+      },
+      output: [
+        'Script completed',
+        'Wall time 3.1 seconds',
+        'Output:',
+        '{"typecheck":"0 errors","tests":"4 pass, 0 fail"}',
+      ].join('\n'),
+      error: [
+        'Script failed',
+        'Wall time 0.1 seconds',
+        'Output:',
+        'Script error:',
+        'Error: typecheck still fails',
+        '    at <anonymous> (codemode.js:6:48)',
+        '',
+        'Tool calls made before the failure (they are not undone): bash (ok), bash (ok)',
+      ].join('\n'),
+      durationMs: 3_150,
+      note: "Live, pi sends `details.calls` with `args` as a JSON string and `status: running`; at rest the harness `codemodeDetails` writes `call_id`, `kind`, `status: complete` and `duration_ms`. The renderer strips pi's `Script completed/failed` header from `output` and `error`. Nested ids carry the codemode call id plus `/<n>`.",
     },
   ],
 };
