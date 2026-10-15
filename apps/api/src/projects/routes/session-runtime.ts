@@ -10,7 +10,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '../lib/app';
@@ -25,6 +25,7 @@ import { recoverLostSession } from '../session-lifecycle/recover-lost-session';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
+import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
 export function registerSessionRuntimeRoutes(): void {
@@ -347,6 +348,8 @@ export function registerSessionRuntimeRoutes(): void {
         sessionId,
         accountId: loaded.row.accountId,
         userId: loaded.userId,
+        // The person the stopped turn names; an agent credential names nobody.
+        stoppedBy: isProjectSessionPrincipal(c) ? null : loaded.userId,
       });
       return c.json(result.body, result.status as any);
     },
@@ -423,7 +426,17 @@ export function registerSessionRuntimeRoutes(): void {
       // SAME projection instead of a second copy — two projections of one
       // lifecycle authority is how a client ends up holding two disagreeing
       // answers to "is this session working?".
-      return c.json(await readSessionTurnState(sessionId));
+      //
+      // `can_stop`: may THIS caller stop the running turn (its prompter, the
+      // session owner or a project manager; true when nothing runs). Clients
+      // show Stop from it instead of guessing (`turn-stop-authority.ts`).
+      const state = await readSessionTurnState(sessionId);
+      const canStop = await canStopTurns(state, {
+        sessionId,
+        callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+        canManageLifecycle: visible.canManageLifecycle,
+      });
+      return c.json({ ...state, can_stop: canStop });
     },
   );
 }

@@ -1674,6 +1674,12 @@ export const SessionTurnStatusSchema = z.object({
   recent_failures: z.array(SessionTurnFailureSchema).optional(),
   /** Present on the session stream's `kortix.control.turn` frame. */
   working: SessionWorkingSchema.optional(),
+  /**
+   * May THIS caller stop the running turn: its prompter, the session owner or
+   * a project manager. True when nothing runs. Present on `GET .../turn` and
+   * the snapshot's turn leg; absent on the stream frame, which is not per caller.
+   */
+  can_stop: z.boolean().optional(),
 });
 export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 

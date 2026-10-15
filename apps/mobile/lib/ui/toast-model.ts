@@ -8,11 +8,24 @@
  * rules cannot drift into the component.
  */
 
+import type { AppIcon } from '@/lib/icons';
+
 export type ToastType = 'success' | 'error' | 'info' | 'warning' | 'loading';
 
 export interface ToastAction {
   label: string;
   onPress: () => void;
+  /**
+   * `link` (default): a blue ghost button, like web's toast actions.
+   * `undo`: the neutral filled key web's undo toast carries.
+   */
+  kind?: 'link' | 'undo';
+}
+
+/** The thing a toast is about: its icon leads the toast, badged with the status. */
+export interface ToastEntity {
+  icon: AppIcon;
+  label: string;
 }
 
 export interface ToastOptions {
@@ -24,6 +37,17 @@ export interface ToastOptions {
   duration?: number;
   /** One button under the text. A press runs `onPress`, then dismisses. */
   action?: ToastAction;
+  /** A schedule, a session…: its icon leads (status badged on it), its name is the second line. */
+  entity?: ToastEntity;
+}
+
+/**
+ * The toast's second line. With an entity, its name comes first and the
+ * description follows on the next line (web: title, then subject, then detail).
+ */
+export function toastDescription(options?: Pick<ToastOptions, 'entity' | 'description'>): string | undefined {
+  const lines = [options?.entity?.label, options?.description].filter((line): line is string => !!line);
+  return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
 // ── Timing ──
