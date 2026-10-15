@@ -1,8 +1,7 @@
 {
-  "source_hash": "290650cb3aaaf8fb0bacec15a873c08f7c20e4d36bfdd7a91580cc63c22c084d",
+  "source_hash": "5b956f6d3009363e8cb2ae62512e0334c3ae9909ebe0994143ef27d52a6cc271",
   "diff_files": [
     "apps/mobile/components/icons/teams-icon.tsx",
-    "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/features/apps/app-releases.tsx",
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
     "apps/web/src/features/session/action-panel/easy/step-icon.tsx",
@@ -27,13 +26,13 @@
     "packages/sdk/src/core/turns/tool-kind.ts",
     "packages/sdk/src/core/turns/tool-registry.ts"
   ],
-  "diff_hash": "68751264e49c522358eb95692b370eeedeb292cb811de4219117a310028f4461",
-  "head": "f9666587ec39fae67c560e54537035320eb99135",
+  "diff_hash": "3f513fec43e6383309ac92f2297107bb8b3a1b96ed9abaef499e79b112153db9",
+  "head": "f92ebbc93b2a75bfaada332069fc132245d2e797",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T22:39:50.050Z"
+  "at": "2026-10-15T23:11:05.926Z"
 }
