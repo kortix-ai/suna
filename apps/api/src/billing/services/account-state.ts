@@ -29,7 +29,12 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // cached across requests: this endpoint gates real spending, so it must
   // always read the live balance.
   let account = await getCreditAccount(accountId);
-  if (!account) {
+  // The $2 welcome grant is a WALLET write — a charging action. It must stay
+  // behind the same charging gate as every debit, or a billing-disabled
+  // deployment (self-hosted, dev) mints free_tier_grant ledger rows on every
+  // billing-state read of a row-less account (KRTX-1832). With charging off
+  // the row stays absent and the response falls through to the free defaults.
+  if (!account && config.KORTIX_BILLING_INTERNAL_ENABLED) {
     await initializeFreeTierAccount(accountId);
     account = await getCreditAccount(accountId);
   }
