@@ -241,6 +241,38 @@ export function SecretsSection({ draft, set, options }: GrantSectionProps) {
   );
 }
 
+/**
+ * A kortix_version 3 grant over a project registry: the declared subagents
+ * this agent may start, the registered commands it may run, the registered
+ * extensions a session of it loads. One card, the same All · Pick · None
+ * control as Skills.
+ */
+export function RegistryGrantSection({
+  grant,
+  draft,
+  set,
+  options,
+}: GrantSectionProps & { grant: 'subagents' | 'commands' | 'extensions' }) {
+  const t = useI18nTranslations('agents.grants');
+  return (
+    <EditorSection
+      title={t(`${grant}.title`)}
+      description={t(`${grant}.description`)}
+      trailing={<GrantChip value={draft[grant]} />}
+    >
+      <div className="py-4">
+        <GrantSetField
+          value={draft[grant]}
+          onChange={(v: AgentGrantSetV2) => set(grant, v)}
+          options={options}
+          allLabel={t(`${grant}.all`)}
+          emptyLabel={t(`${grant}.empty`)}
+        />
+      </div>
+    </EditorSection>
+  );
+}
+
 /** Kortix permissions (`kortix_permissions` in kortix.yaml): which project
  *  operations the agent may perform, through any surface. A block read from a
  *  pre-rename server may still carry `kortix_cli`; an edit writes the canonical
