@@ -340,7 +340,8 @@
       "groups": {
         "workspace": "Project",
         "personal": "Personal",
-        "account": "Account"
+        "account": "Account",
+        "connect": "Connect"
       },
       "items": {
         "workspace": {
@@ -393,6 +394,14 @@
         "plan": {
           "label": "Plan",
           "description": "Your plan, credits, and billing for this account."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Use Kortix from Claude, Claude Code, Cursor, Codex, or any MCP client. You sign in once. Nothing to install."
+        },
+        "computer": {
+          "label": "Computer",
+          "description": "Let Kortix agents work with the files, terminal, and apps on your computer."
         }
       }
     },
@@ -1381,6 +1390,19 @@
     "connectors": {
       "opening": "Opening Connectors",
       "redirecting": "Redirecting to Connectors page..."
+    },
+    "mcp": {
+      "serverTitle": "Server",
+      "serverDescription": "One URL for every project you can open. Your client signs in with Kortix the first time it connects.",
+      "urlLabel": "Server URL",
+      "clientsTitle": "Clients",
+      "clientsDescription": "Add Kortix to the client you use."
+    },
+    "computer": {
+      "oneClickDescription": "The desktop app connects this computer in one click.",
+      "desktopLabel": "Desktop app",
+      "download": "Download",
+      "cliLabel": "Command line"
     }
   },
   "triggers": {
@@ -2068,6 +2090,7 @@
     "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "queuedCount": "{count} Queued",
     "editingQueued": "Editing",
+    "queuedActions": "Message actions",
     "steerNextStep": "Read at next step",
     "queuedByAnotherMember": "Sent by another member. Only they can edit or send it.",
     "steerFallbackUnsupported": "Waits for this turn. This session cannot take messages mid-turn.",
