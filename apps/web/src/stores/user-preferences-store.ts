@@ -9,6 +9,10 @@ import {
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { create } from 'zustand';
+
+// A literal here for the persisted-store registry (persisted-store-coverage.test.ts reads
+// it from this file); the type pins it to the key the pre-paint theme script reads.
+const USER_PREFERENCES_STORE_NAME = 'kortix-user-preferences' satisfies typeof USER_PREFERENCES_STORAGE_KEY;
 import { persist } from 'zustand/middleware';
 
 // The disk key. `interface-themes.ts` interpolates the same literal into the
@@ -163,7 +167,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       },
     }),
     {
-      name: USER_PREFERENCES_STORAGE_KEY,
+      name: USER_PREFERENCES_STORE_NAME,
       storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,

@@ -14,7 +14,6 @@ let auditInserts: Array<Record<string, unknown>> = [];
 mock.module('../config', () => ({
   config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
   SANDBOX_VERSION: 'test',
-  KORTIX_MARKUP: 1,
   PLATFORM_FEE_MARKUP: 0,
   getToolCost: () => 0,
 }));

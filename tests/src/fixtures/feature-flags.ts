@@ -6,7 +6,7 @@
  */
 import type { FeatureFlagKey } from "@kortix/api-contract";
 import type { FlowContext } from "../core/types";
-import { asPlatformAdmin } from "./enterprise-demo";
+import { asPlatformAdmin } from "./enterprise-access";
 
 
 /** Sets (`true`/`false`) or clears (`null`) a flag as the platform operator. Asserts 200. */

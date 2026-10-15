@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kortix Capture
+Comment=Screen recording timeline
+Exec=/usr/bin/kortix-capture app
+Icon=kortix-capture
+Categories=Utility;
+Terminal=false

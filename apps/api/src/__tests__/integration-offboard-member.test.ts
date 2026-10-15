@@ -16,7 +16,7 @@
  * route, and reads the rows back. Rows of other people and of another account
  * the member stays in must not change.
  */
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
   accountMembers,
   auditEvents,
@@ -27,27 +27,13 @@ import {
   tunnelConnections,
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import * as realSeats from '../billing/services/seat-management';
 import { insertSessionReminder, newReminderId, reminderSpec } from '../projects/lib/session-reminders';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 import { seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 
-// The seat sync calls Stripe, and the Stripe client sets no timeout. A case
-// closes the gate to hold the sync open and see which reply waits for it.
-const realOnMemberRemoved = realSeats.onMemberRemoved;
-const seatSyncsStarted: string[] = [];
-let seatGate: Promise<void> = Promise.resolve();
-mock.module('../billing/services/seat-management', () => ({
-  ...realSeats,
-  onMemberRemoved: async (accountId: string, userId: string) => {
-    seatSyncsStarted.push(userId);
-    await seatGate;
-    return realOnMemberRemoved(accountId, userId);
-  },
-}));
-
 const { app } = await import('../index');
+const { attributeYoloToken, mintYoloTokenForMember } = await import('../billing/services/yolo-tokens');
 const { attachComputerConnection } = await import('../connectors/computers');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { createScimToken } = await import('../repositories/scim');
@@ -148,7 +134,7 @@ async function seedWorld(label: string) {
   const team = project.account_id;
   await seedUsers([owner, member, peer]);
   // SCIM needs the Enterprise `scim` entitlement.
-  await db.insert(creditAccounts).values({ accountId: team, demoEnterprise: true });
+  await db.insert(creditAccounts).values({ accountId: team, tier: 'enterprise' });
   await insertIntoView(db, accountMembers, [
     { accountId: team, userId: owner, accountRole: 'owner' },
     { accountId: team, userId: member, accountRole: 'member' },
@@ -295,72 +281,33 @@ async function scimDeactivate(world: World): Promise<Response> {
   });
 }
 
-/** Closes the seat-sync gate. Call the returned function to open it. */
-function holdSeatSync(): () => void {
-  let open!: () => void;
-  seatGate = new Promise<void>((resolve) => (open = resolve));
-  return () => {
-    open();
-    seatGate = Promise.resolve();
-  };
-}
+// The member's legacy gateway (YOLO) token is a credential their sessions
+// spend under. Every exit revokes it before it answers.
+describe('the YOLO token ends with the membership', () => {
+  test('remove, leave and SCIM deactivation each revoke it', async () => {
+    const world = await seedWorld('offboard-yolo');
+    const removedToken = await mintYoloTokenForMember(world.member, world.team);
+    const leftToken = await mintYoloTokenForMember(world.peer, world.team);
+    expect(await attributeYoloToken(removedToken)).toEqual({ userId: world.member, accountId: world.team });
 
-/** The reply's status, or 'waiting' when it has not come within `ms`. */
-const replyWithin = (reply: Response | Promise<Response>, ms: number) =>
-  Promise.race([Promise.resolve(reply).then((res) => res.status), Bun.sleep(ms).then(() => 'waiting' as const)]);
+    const removed = await app.request(`/v1/accounts/${world.team}/members/${world.member}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${await bearer(world.team, world.owner)}` },
+    });
+    expect(removed.status).toBe(200);
+    expect(await attributeYoloToken(removedToken)).toBeNull();
 
-/** Resolves once `userId`'s seat sync has started, bounded by `ms`. */
-const syncStarted = (userId: string, ms: number) => (async () => {
-  const deadline = performance.now() + ms;
-  while (!seatSyncsStarted.includes(userId) && performance.now() < deadline) await Bun.sleep(10);
-  if (!seatSyncsStarted.includes(userId)) {
-    throw new Error(`the ${userId} seat sync never started within ${ms}ms`);
-  }
-})();
+    const left = await app.request(`/v1/accounts/${world.team}/leave`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await bearer(world.team, world.peer)}` },
+    });
+    expect(left.status).toBe(200);
+    expect(await attributeYoloToken(leftToken)).toBeNull();
 
-// A non-streaming request has 25 s (middleware/request-deadline.ts), and a
-// stalled Stripe call can take 80 s (stripe-node's default timeout). A person
-// who removes or leaves must not get a 503 for a removal that already happened.
-describe('the seat sync and the reply', () => {
-  test('remove and leave answer while the seat sync is still running', async () => {
-    const world = await seedWorld('offboard-seat-stall');
-    const open = holdSeatSync();
-    try {
-      const removed = app.request(`/v1/accounts/${world.team}/members/${world.member}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${await bearer(world.team, world.owner)}` },
-      });
-      // Bound the reply from the moment its seat sync provably started, not
-      // from the request: under a loaded lane the seed and the handler can
-      // legitimately need seconds before the sync begins, and a bound from
-      // the request would blame the reply for that cold-start time.
-      await syncStarted(world.member, 20_000);
-      expect(await replyWithin(removed, 2_000)).toBe(200);
-      const left = app.request(`/v1/accounts/${world.team}/leave`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${await bearer(world.team, world.peer)}` },
-      });
-      await syncStarted(world.peer, 20_000);
-      expect(await replyWithin(left, 2_000)).toBe(200);
-      // Both syncs started: the seat is released, only not before the reply.
-      expect(seatSyncsStarted).toEqual(expect.arrayContaining([world.member, world.peer]));
-    } finally {
-      open();
-    }
-  });
-
-  test('SCIM deactivation answers after the seat sync settles', async () => {
-    const world = await seedWorld('offboard-seat-scim');
-    const open = holdSeatSync();
-    try {
-      const reply = scimDeactivate(world);
-      while (!seatSyncsStarted.includes(world.member)) await Bun.sleep(10);
-      expect(await replyWithin(reply, 200)).toBe('waiting');
-      open();
-      expect((await reply).status).toBe(200);
-    } finally {
-      open();
-    }
+    const scimWorld = await seedWorld('offboard-yolo-scim');
+    const scimToken = await mintYoloTokenForMember(scimWorld.member, scimWorld.team);
+    expect((await scimDeactivate(scimWorld)).status).toBe(200);
+    expect(await attributeYoloToken(scimToken)).toBeNull();
   });
 });
 

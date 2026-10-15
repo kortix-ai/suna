@@ -1,9 +1,10 @@
 'use client';
 
-import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
+import { formatWholeUsd } from '@/features/billing/compute-pricing';
 import type { UiTranslator } from '@/i18n/translator';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
 import {
   ArrowDownRightIcon as ArrowDownRight,
   ArrowUpRightIcon as ArrowUpRight,
@@ -77,9 +78,6 @@ import {
   useAdminGrantTrial,
   useAdminImpersonate,
   useAdminRevokeTrial,
-  useAdminSetEnterpriseDemo,
-  useAdminSetEnterpriseEntitled,
-  useAdminSetManagedModels,
   useAdminSetMemberRole,
   useAdminSetOverrides,
   type AdminAccount,
@@ -96,9 +94,9 @@ import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-sh
 import { AdminEmptyFrame, AdminTableFrame } from '../_components/admin-panel';
 import { AdminPagination, AdminSearch, AdminSortHeader } from '../_components/admin-table';
 import { StatGrid, StatTile } from '../_components/stat-tile';
+import { AccountPlanState, EnterpriseContractCard } from './enterprise-contract-card';
 import { adminLedgerRows } from './ledger-rows';
 import {
-  MAX_COMPUTE_RATE_MULTIPLIER,
   describeOverridePatch,
   draftFromOverrides,
   isEmptyPatch,
@@ -125,28 +123,15 @@ const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 // key and stamp its own suffix onto it, which is exactly how this file's plan
 // vocabulary drifted away from the server's.
 //
-// `grandfathered` groups the keys that were sold once and are still honored
-// exactly as sold; the price disambiguates the repeated product names (there
-// are two "Pro"s at different prices). Order and prices follow PLAN_CATALOG in
-// apps/api/src/billing/services/plan-catalog.ts.
-type TierFilterOption = { value: string; label: string; grandfathered?: boolean };
+// There is one paid plan, `credits`, so the list is the four plan keys. A key
+// that an older row may still carry (a retired per-seat or tier key) is read as
+// `credits` by the API, and its row shows up under Credits.
+type TierFilterOption = { value: string; label: string };
 const TIER_OPTIONS: TierFilterOption[] = [
   { value: 'none', label: 'No plan' },
   { value: 'free', label: 'Free' },
-  { value: 'starter', label: 'Starter' },
-  { value: 'team', label: 'Team' },
-  { value: 'scale', label: 'Scale' },
+  { value: 'credits', label: 'Credits' },
   { value: 'enterprise', label: 'Enterprise' },
-  { value: 'pro', label: 'Pro · $20/mo', grandfathered: true },
-  { value: 'tier_2_20', label: 'Plus · $20/mo', grandfathered: true },
-  { value: 'per_seat', label: 'Team · $40/seat/mo', grandfathered: true },
-  { value: 'tier_6_50', label: 'Pro · $50/mo', grandfathered: true },
-  { value: 'tier_12_100', label: 'Business · $100/mo', grandfathered: true },
-  { value: 'tier_25_200', label: 'Ultra · $200/mo', grandfathered: true },
-  { value: 'tier_50_400', label: 'Enterprise · $400/mo', grandfathered: true },
-  { value: 'tier_125_800', label: 'Scale · $800/mo', grandfathered: true },
-  { value: 'tier_200_1000', label: 'Max · $1,000/mo', grandfathered: true },
-  { value: 'tier_150_1200', label: 'Enterprise Max · $1,200/mo', grandfathered: true },
 ];
 
 const TIER_LABELS: Record<string, string> = Object.fromEntries(
@@ -284,7 +269,7 @@ function tierKeyLabel(
 
 /**
  * The plan the account BEHAVES as, straight off the API's resolved `plan`
- * block: an active admin trial and the per-seat self-heal overlay the stored
+ * block: an active admin trial overlays the stored
  * `tier` column, and the resolver applies the same precedence every gate does.
  * The stored key stays available as `account.tier` for the filter.
  *
@@ -295,7 +280,7 @@ function planLabel(account: AdminAccount, options?: readonly TierFilterOption[])
 }
 
 function planBadgeVariant(account: AdminAccount): React.ComponentProps<typeof Badge>['variant'] {
-  const family = account.plan?.family ?? (isUnpaidTierKey(account.tier) ? 'free' : 'team');
+  const family = account.plan?.family ?? (isUnpaidTierKey(account.tier) ? 'free' : 'credits');
   return family === 'free' ? 'muted' : 'info';
 }
 
@@ -306,8 +291,9 @@ function isUnpaidTierKey(tier: string | null): boolean {
 }
 
 /**
- * Plan name plus its qualifier — e.g. "Team · $40/seat/mo · grandfathered".
- * The qualifier is the server's, not a claim this page invents from the key.
+ * Plan name plus its qualifier — e.g. "Credits · $100/mo". The qualifier is
+ * the server's `sublabel` or its `monthlyUsd`, not a claim this page invents
+ * from the key.
  */
 function PlanBadge({
   account,
@@ -319,7 +305,9 @@ function PlanBadge({
   className?: string;
 }) {
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
-  const sublabel = account.plan?.sublabel;
+  const monthlyUsd = account.plan?.monthlyUsd;
+  const sublabel =
+    monthlyUsd != null ? `${formatWholeUsd(monthlyUsd, 'en-US')}/mo` : account.plan?.sublabel;
   return (
     <Badge variant={planBadgeVariant(account)} size={size} className={className}>
       {planLabel(account, tierOptions)}
@@ -331,10 +319,9 @@ function PlanBadge({
 /**
  * What Stripe ACTUALLY charges, next to the plan badge.
  *
- * The badge describes the STORED tier: a grandfathered `pro` row renders
- * "Team · $20/mo · grandfathered" even when the live subscription is a $40/mo
- * "Kortix Computer" machine sub. An operator reading only the badge mis-priced
- * the customer. Renders nothing while loading, and nothing when the account has
+ * The badge describes the plan the account resolves to. Stripe is the record of
+ * what is actually charged, so an operator reads this line before quoting a
+ * price. Renders nothing while loading, and nothing when the account has
  * no subscription on file — the badge alone is correct in that case.
  */
 function LiveSubscriptionLine({ accountId }: { accountId: string }) {
@@ -380,19 +367,17 @@ function LiveSubscriptionLine({ accountId }: { accountId: string }) {
 // history the row keeps for audit, so they render greyed rather than hidden.
 
 /**
- * Trial tiers offered in the grant form. Deliberately TWO, not the whole
- * catalog: model access is the independent "Managed models" switch below (not
- * a tier property), so the only real choice is whether the trial carries the
- * enterprise identity surface. The API accepts any paid tier for edge cases;
- * `free`/`none` are rejected server-side.
+ * Trial plans offered in the grant form. The API accepts exactly these two
+ * `tier_key` values.
  */
 const TRIAL_TIER_OPTIONS: { value: string; label: string; hint: string }[] = [
-  { value: 'team', label: 'Team', hint: 'Standard paid plan — recommended' },
-  { value: 'enterprise', label: 'Enterprise', hint: 'Adds SSO, SCIM, RBAC, audit log' },
+  { value: 'enterprise', label: 'Enterprise', hint: 'SSO, SCIM, RBAC, audit export, branding' },
+  { value: 'credits', label: 'Credits', hint: 'Managed models and credit purchases' },
 ];
+/** Server default for an Enterprise trial's credit grant, USD. Credits trials default to 0. */
+const DEFAULT_ENTERPRISE_TRIAL_CREDIT = 500;
 
 const TRIAL_DURATION_PRESETS = [14, 30, 60, 90];
-const MAX_TRIAL_SEATS = 100; // MAX_SEATS_PER_ACCOUNT in billing/services/tiers.ts
 const MAX_TRIAL_DURATION_DAYS = 365; // MAX_TRIAL_DURATION_DAYS in billing/services/trial-admin.ts
 const MAX_TRIAL_CREDIT_GRANT = 10_000;
 
@@ -692,6 +677,7 @@ export default function AdminAccountsPage() {
                   </TableCell>
                   <TableCell>
                     <PlanBadge account={account} />
+                    <AccountPlanState account={account} />
                   </TableCell>
                   <TableCell className="text-right">
                     <span
@@ -930,15 +916,8 @@ function FiltersPanel({
           )}
         </div>
         <div className="space-y-1">
-          {tierOptions.map((t, i) => (
+          {tierOptions.map((t) => (
             <div key={t.value}>
-              {/* One heading, before the first grandfathered key — these are
-                  still-honored plans no account can be moved onto today. */}
-              {t.grandfathered && !tierOptions[i - 1]?.grandfathered && (
-                <div className="text-muted-foreground px-1.5 pt-2 pb-1 text-xs">
-                  {tI18nComplete.raw('text9d5adef979f7')}
-                </div>
-              )}
               <label className="hover:bg-hover flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
                 <Checkbox
                   checked={filters.tier.includes(t.value)}
@@ -1345,6 +1324,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 </Badge>
               )}
             </div>
+            <AccountPlanState account={account} />
           </div>
           <OpenAsAccountButton account={account} />
         </div>
@@ -1481,10 +1461,8 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 
 function CreditsTab({ account }: { account: AdminAccount }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
-  const setEnterpriseEntitled = useAdminSetEnterpriseEntitled();
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('Reimbursement');
   const [isExpiring, setIsExpiring] = useState(false);
@@ -1543,75 +1521,8 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     }
   }
 
-  async function handleSetEnterprise(enabled: boolean) {
-    try {
-      await setEnterpriseEntitled.mutateAsync({ accountId: account.accountId, enabled });
-      successToast(
-        enabled ? tI18nComplete.raw('text4046f33a6c82') : tI18nComplete.raw('text7c0adcef1126'),
-        {
-          description: tI18nComplete('textb18320256e28', {
-            value0: accountLabelFor(account),
-            value1: enabled ? 'now has' : 'no longer has',
-          }),
-        },
-      );
-    } catch (error) {
-      errorToast(tI18nComplete.raw('text3f3d54f50e6f'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  const isEnterprise = account.enterpriseEntitled;
-
   return (
     <>
-      {/* Plan / Enterprise activation. Enterprise is the `enterprise_entitled`
-          FLAG, not a tier write: the flag survives Stripe subscription sync,
-          while a `tier='enterprise'` write is reverted by the next
-          customer.subscription.updated event (the bug this replaced). The
-          plan shown is the RESOLVED one the API reports — an active trial and
-          the per-seat self-heal overlay the stored tier, and the entitlement
-          writes below act on the account, not on that plan. */}
-      <div className="border-border bg-popover mb-4 space-y-3 rounded-md border p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-foreground text-sm font-medium">
-              {tI18nComplete.raw('textfa8ed0bdabdd')}
-            </div>
-            <div className="text-muted-foreground text-xs">
-              {tI18nComplete.raw('textc09f632874c2')}
-              <span className="text-foreground font-medium">{planLabel(account, tierOptions)}</span>
-              {account.plan?.sublabel ? ` · ${account.plan.sublabel}` : ''}
-              {isEnterprise && tI18nComplete.raw('text70541b9b587b')}
-            </div>
-          </div>
-          <PlanBadge account={account} size="default" />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={() => handleSetEnterprise(true)}
-            disabled={setEnterpriseEntitled.isPending || isEnterprise}
-            className="gap-1.5"
-          >
-            {setEnterpriseEntitled.isPending && <Loading className="h-3.5 w-3.5" />}
-            {isEnterprise
-              ? tI18nComplete.raw('text2fe3e60fadc0')
-              : tI18nComplete.raw('text991aa74eea34')}
-          </Button>
-          {isEnterprise && (
-            <Button
-              variant="outline"
-              onClick={() => handleSetEnterprise(false)}
-              disabled={setEnterpriseEntitled.isPending}
-            >
-              {tI18nComplete.raw('textbe99d500e83c')}
-            </Button>
-          )}
-        </div>
-        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texte65c84be34f9')}</p>
-      </div>
-
       <div className="border-border bg-popover space-y-4 rounded-md border p-4">
         <div className="flex flex-wrap gap-1.5">
           {REIMBURSEMENT_PRESETS.map((n) => (
@@ -1730,9 +1641,9 @@ function EntitlementRow({
 }
 
 /**
- * The per-entitlement override rows. These apply AFTER the enterprise
- * expansion, which is what makes them useful: one capability can be switched
- * off for an account whose plan (or Enterprise flag) grants all of them.
+ * The per-entitlement override rows, one per `ADMIN_ENTITLEMENT_OVERRIDE_KEYS`
+ * entry. They apply AFTER the plan, so one capability can be switched off for an
+ * account whose plan grants all of them.
  */
 const OVERRIDE_ENTITLEMENT_ROWS: {
   key: BooleanOverrideKey;
@@ -1759,8 +1670,7 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
   {
     key: 'managedModels',
     title: 'Managed models entitlement',
-    description:
-      'Applied after the switch above, so it can withdraw managed models from an otherwise entitled account.',
+    description: 'Managed model access. Forcing it off withdraws it from a plan that includes it.',
   },
 ];
 
@@ -1844,8 +1754,6 @@ function OverridesCard({ account }: { account: AdminAccount }) {
     }
   }
 
-  const effectiveMultiplier = account.computeRateMultiplier;
-
   return (
     <div className="border-border bg-popover space-y-4 rounded-md border p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1891,37 +1799,6 @@ function OverridesCard({ account }: { account: AdminAccount }) {
             </EntitlementRow>
           </div>
         ))}
-
-        <div className="px-4 py-3">
-          <EntitlementRow
-            title={tI18nComplete.raw('text7349c7d2f496')}
-            description={tI18nComplete.raw('texte077517dd17a')}
-            titleSuffix={
-              <OverrideExpiryChip expiresAt={overrideExpiresAt(stored, 'computeRateMultiplier')} />
-            }
-          >
-            <Input
-              type="number"
-              min={0}
-              max={MAX_COMPUTE_RATE_MULTIPLIER}
-              step={0.05}
-              inputMode="decimal"
-              placeholder="1"
-              className="h-8 w-[140px] tabular-nums"
-              aria-label={tI18nComplete.raw('texta6b6d1454df0')}
-              value={draft.computeRateMultiplier}
-              disabled={setOverrides.isPending}
-              onChange={(e) => setRow('computeRateMultiplier', e.target.value)}
-            />
-          </EntitlementRow>
-          {effectiveMultiplier !== undefined && (
-            <p className="text-muted-foreground mt-2 text-xs">
-              {tI18nComplete.raw('text888f1dba5133')}{' '}
-              <span className="text-foreground tabular-nums">{effectiveMultiplier}×</span>{' '}
-              {tI18nComplete.raw('text01b8c5ddf23f')}
-            </p>
-          )}
-        </div>
       </div>
 
       {!result.ok && <p className="text-kortix-red text-xs">{result.error}</p>}
@@ -1952,28 +1829,22 @@ function OverridesCard({ account }: { account: AdminAccount }) {
 function EntitlementsTab({ account }: { account: AdminAccount }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
+  const tPlan = useI18nTranslations('billing.credits.admin');
   const trialTierOptions = useLocalizedUiCatalog(TRIAL_TIER_OPTIONS);
   const grantTrial = useAdminGrantTrial();
   const revokeTrial = useAdminRevokeTrial();
-  const setManagedModels = useAdminSetManagedModels();
-  const setEnterpriseDemo = useAdminSetEnterpriseDemo();
-  const setEnterpriseEntitled = useAdminSetEnterpriseEntitled();
 
   const trial = account.trial;
   const isActive = trialIsActive(trial);
 
-  const [tierKey, setTierKey] = useState('team');
-  const [seats, setSeats] = useState('5');
+  const [tierKey, setTierKey] = useState('enterprise');
   const [durationDays, setDurationDays] = useState('30');
-  const [creditGrant, setCreditGrant] = useState('25');
+  const [creditGrant, setCreditGrant] = useState('');
   const [note, setNote] = useState('');
   const [confirmRevoke, setConfirmRevoke] = useState(false);
 
-  const parsedSeats = Number(seats);
   const parsedDuration = Number(durationDays);
   const parsedCredit = Number(creditGrant);
-  const seatsValid =
-    Number.isInteger(parsedSeats) && parsedSeats >= 1 && parsedSeats <= MAX_TRIAL_SEATS;
   const durationValid =
     Number.isInteger(parsedDuration) &&
     parsedDuration >= 1 &&
@@ -1981,9 +1852,11 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
   const creditValid =
     creditGrant.trim() === '' ||
     (Number.isFinite(parsedCredit) && parsedCredit >= 0 && parsedCredit <= MAX_TRIAL_CREDIT_GRANT);
-  const formValid = seatsValid && durationValid && creditValid;
+  const formValid = durationValid && creditValid;
 
   const accountLabel = accountLabelFor(account);
+  const extending = isActive && trial?.tier === tierKey;
+  const defaultCreditGrant = tierKey === 'enterprise' ? DEFAULT_ENTERPRISE_TRIAL_CREDIT : 0;
 
   async function handleGrantTrial() {
     if (!formValid) return;
@@ -1991,13 +1864,12 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       await grantTrial.mutateAsync({
         accountId: account.accountId,
         tierKey,
-        seats: parsedSeats,
         durationDays: parsedDuration,
         creditGrant: creditGrant.trim() === '' ? undefined : parsedCredit,
         note: note.trim() === '' ? undefined : note.trim(),
       });
       successToast(
-        isActive ? tI18nComplete.raw('textb4c65ea8ef96') : tI18nComplete.raw('text98b6c1f78029'),
+        extending ? tI18nComplete.raw('textac8710553475') : tI18nComplete.raw('text98b6c1f78029'),
         {
           description: tI18nComplete('text6db974c8b732', {
             value0: accountLabel,
@@ -2029,61 +1901,14 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
     }
   }
 
-  async function handleManagedModels(override: boolean | null) {
-    try {
-      await setManagedModels.mutateAsync({ accountId: account.accountId, override });
-      successToast(tI18nComplete.raw('text13811c334c6d'), {
-        description:
-          override === null
-            ? 'The effective tier decides again.'
-            : override
-              ? 'Managed models forced on.'
-              : 'Restricted to BYOK keys.',
-      });
-    } catch (error) {
-      errorToast(tI18nComplete.raw('text278179d861e0'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  async function handleEnterpriseDemo(enabled: boolean) {
-    try {
-      await setEnterpriseDemo.mutateAsync({ accountId: account.accountId, enabled });
-      successToast(
-        enabled ? tI18nComplete.raw('texta2225f18a62a') : tI18nComplete.raw('texta4007c748290'),
-      );
-    } catch (error) {
-      errorToast(tI18nComplete.raw('textcb7d3df7dd59'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  async function handleEnterpriseEntitled(enabled: boolean) {
-    try {
-      await setEnterpriseEntitled.mutateAsync({ accountId: account.accountId, enabled });
-      successToast(
-        enabled ? tI18nComplete.raw('text9bfe30eaa67e') : tI18nComplete.raw('text0d26dc67cdfe'),
-      );
-    } catch (error) {
-      errorToast(tI18nComplete.raw('texte913f584c3bc'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  const managedModelsChoices: { value: boolean | null; label: string }[] = [
-    { value: null, label: tI18nComplete.raw('textb885c730262c') },
-    { value: true, label: tI18nComplete.raw('textbde131e31c9e') },
-    { value: false, label: tI18nComplete.raw('textf4fcd871d62d') },
-  ];
-
   return (
     <div className="space-y-4">
-      {/* Trial — an admin-issued overlay: the account BEHAVES as the trial tier
-          until it ends, without touching credit_accounts.tier (Stripe owns
-          that). Re-granting overwrites the window: extend = re-grant. */}
+      {/* Enterprise contract — the only way onto Enterprise. */}
+      <EnterpriseContractCard account={account} />
+
+      {/* Trial — a dated grant of a plan on top of the plan the account pays
+          for. When it ends the account returns to that plan. Re-granting the
+          same plan extends it. */}
       <div className="border-border bg-popover space-y-4 rounded-md border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -2091,8 +1916,10 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               {tI18nComplete.raw('text98a66e9745c9')}
             </div>
             <p className="text-muted-foreground mt-0.5 text-xs">
-              {tI18nComplete.raw('text92a15b76467d')}{' '}
-              <span className="text-foreground">{tierKeyLabel(account.tier, tierOptions)}</span>.
+              {tI18nComplete.rich('text05700b032dac', {
+                plan: planLabel(account, tierOptions),
+                tier: (chunks) => <span className="text-foreground">{chunks}</span>,
+              })}
             </p>
           </div>
           <Badge variant={trialBadgeVariant(trial?.status ?? null)} size="sm">
@@ -2108,13 +1935,6 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               </div>
               <div className="mt-0.5 text-sm font-medium">
                 {trial.tier ? tierKeyLabel(trial.tier, tierOptions) : '—'}
-                {trial.seats != null && (
-                  <span className="text-muted-foreground font-normal">
-                    {' '}
-                    · {trial.seats} {tI18nComplete.raw('text5d2c13d6f9fa')}
-                    {trial.seats === 1 ? '' : 's'}
-                  </span>
-                )}
               </div>
             </div>
             {/* A revoked or converted trial keeps its original window for audit,
@@ -2122,7 +1942,9 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
                 only meaningful while the trial is active. */}
             <div className="px-3 py-2.5">
               <div className="text-muted-foreground text-xs">
-                {isActive ? 'Ends' : tI18nComplete.raw('text108bff86a0eb')}
+                {isActive
+                  ? tI18nComplete.raw('text0bad4daa3f0d')
+                  : tI18nComplete.raw('text108bff86a0eb')}
               </div>
               <div className="mt-0.5 text-sm font-medium">
                 {isActive ? formatCountdown(trial.endsAt) : formatDateTime(trial.endsAt)}
@@ -2152,11 +1974,13 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         {/* Grant / replace form */}
         <div className="border-border space-y-3 border-t pt-4">
           <div className="text-foreground text-sm font-medium">
-            {isActive
-              ? tI18nComplete.raw('text57579cf783f3')
-              : tI18nComplete.raw('text8529ff665870')}
+            {extending
+              ? tI18nComplete.raw('text5f2d23caa972')
+              : isActive
+                ? tI18nComplete.raw('text57579cf783f3')
+                : tI18nComplete.raw('text8529ff665870')}
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-muted-foreground text-xs">
                 {tI18nComplete.raw('textcb9e8664edea')}
@@ -2175,22 +1999,8 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
                 </SelectContent>
               </Select>
               <p className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('textf37a3ea11c91')}
+                {tI18nComplete.raw('texta88fdf3e2772')}
               </p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('textf3b81325942e')}
-              </label>
-              <Input
-                type="number"
-                min={1}
-                max={MAX_TRIAL_SEATS}
-                step={1}
-                value={seats}
-                onChange={(e) => setSeats(e.target.value)}
-                aria-invalid={!seatsValid}
-              />
             </div>
             <div className="space-y-1">
               <label className="text-muted-foreground text-xs">
@@ -2201,6 +2011,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
                 min={0}
                 max={MAX_TRIAL_CREDIT_GRANT}
                 step="0.01"
+                placeholder={`${defaultCreditGrant} (default)`}
                 value={creditGrant}
                 onChange={(e) => setCreditGrant(e.target.value)}
                 aria-invalid={!creditValid}
@@ -2253,9 +2064,11 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               className="gap-1.5"
             >
               {grantTrial.isPending && <Loading className="h-3.5 w-3.5" />}
-              {isActive
-                ? tI18nComplete.raw('text57579cf783f3')
-                : tI18nComplete.raw('text8529ff665870')}
+              {extending
+                ? 'Extend'
+                : isActive
+                  ? tI18nComplete.raw('text57579cf783f3')
+                  : tI18nComplete.raw('text8529ff665870')}
             </Button>
             {isActive && (
               <Button
@@ -2267,81 +2080,29 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               </Button>
             )}
           </div>
-          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text0a2ea173ab93')}</p>
+          <p className="text-muted-foreground text-xs">
+            {tI18nComplete('textfdd57ee91bdc', { amount: DEFAULT_ENTERPRISE_TRIAL_CREDIT })}
+          </p>
         </div>
       </div>
 
-      {/* Managed models override — tri-state, null restores tier control. */}
-      <div className="border-border bg-popover space-y-3 rounded-md border p-4">
-        <EntitlementRow
-          title={tI18nComplete.raw('text92cd11d7f50e')}
-          description={tI18nComplete.raw('textb89ec7e4cd95')}
-        >
-          <div className="flex flex-wrap gap-1.5">
-            {managedModelsChoices.map((choice) => (
-              <Button
-                key={String(choice.value)}
-                type="button"
-                size="sm"
-                variant={account.managedModelsOverride === choice.value ? 'default' : 'outline'}
-                className="h-7"
-                disabled={setManagedModels.isPending}
-                onClick={() => handleManagedModels(choice.value)}
-              >
-                {choice.label}
-              </Button>
-            ))}
-          </div>
-        </EntitlementRow>
-      </div>
-
-      {/* Enterprise flags. Demo = evaluation preview; entitled = signed contract. */}
-      <div className="border-border bg-popover space-y-4 rounded-md border p-4">
-        <EntitlementRow
-          title={tI18nComplete.raw('textfdccb896a3a1')}
-          description={tI18nComplete.raw('textc6f417d32fe6')}
-        >
-          <Switch
-            checked={account.demoEnterprise}
-            disabled={setEnterpriseDemo.isPending}
-            onCheckedChange={handleEnterpriseDemo}
-            aria-label={tI18nComplete.raw('text8c02ce3010aa')}
-          />
-        </EntitlementRow>
-
-        <div className="border-border border-t pt-4">
-          <EntitlementRow
-            title={tI18nComplete.raw('texta7d1ea80d81f')}
-            description={tI18nComplete.raw('text458cde86effb')}
-          >
-            <Switch
-              checked={account.enterpriseEntitled}
-              disabled={setEnterpriseEntitled.isPending}
-              onCheckedChange={handleEnterpriseEntitled}
-              aria-label={tI18nComplete.raw('text33cf107ab219')}
-            />
-          </EntitlementRow>
-        </div>
-      </div>
-
-      {/* Every remaining override, on one merge-patch save. Sits last because
-          the resolver applies these last: plan → enterprise expansion →
-          managed-models switch → these. */}
+      {/* Per-key overrides, on one merge-patch save. The resolver applies them
+          after the plan. */}
       <OverridesCard account={account} />
 
       {/* Read-only context the operator needs before issuing a trial. */}
       <div className="border-border bg-popover divide-border grid grid-cols-2 divide-x rounded-md border text-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <span className="text-muted-foreground text-xs">
-            {tI18nComplete.raw('text266240ec402c')}
-          </span>
-          <span className="text-right font-medium">{account.billingModel || '—'}</span>
+          <span className="text-muted-foreground text-xs">{tPlan('plan')}</span>
+          <span className="text-right font-medium">{planLabel(account, tierOptions)}</span>
         </div>
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <span className="text-muted-foreground text-xs">
-            {tI18nComplete.raw('textf3b81325942e')}
+          <span className="text-muted-foreground text-xs">{tPlan('monthlyAmount')}</span>
+          <span className="text-right font-medium">
+            {account.plan?.monthlyUsd != null
+              ? formatWholeUsd(account.plan.monthlyUsd, 'en-US')
+              : '—'}
           </span>
-          <span className="text-right font-medium">{account.seatCount ?? '—'}</span>
         </div>
       </div>
 

@@ -39,6 +39,12 @@ export interface CreateSandboxOpts {
   serverType?: string;
   location?: string;
   /**
+   * True ⇒ the box runs in `location` or not at all. False/absent ⇒ Platinum
+   * boots it in its home region when `location` cannot hold the image and no
+   * copy is running (platinum.ts). Set for warm (speculative) session boxes.
+   */
+  locationRequired?: boolean;
+  /**
    * Override the provider's default snapshot/image with one built
    * specifically for this project. The snapshot builder
    * (apps/api/src/snapshots/builder.ts) populates this when a session

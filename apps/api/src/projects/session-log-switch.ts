@@ -72,8 +72,8 @@ export async function sessionLogSwitchPreflight(input: {
           role: sessionLogMessages.role,
           deleted: sql<boolean>`${sessionLogMessages.deletedAt} IS NOT NULL`,
           slim: sql<Partial<SessionLogMessage>>`jsonb_strip_nulls(jsonb_build_object(
-            'in_context', ${sessionLogMessages.record}->'in_context', 'hidden_reason', ${sessionLogMessages.record}->'hidden_reason',
-            'origin', ${sessionLogMessages.record}->'origin', 'model', ${sessionLogMessages.record}->'model', 'blocks', ${SLIM_BLOCKS}))`,
+            'in_context', ${qualifiedColumn(sessionLogMessages.record)}->'in_context', 'hidden_reason', ${qualifiedColumn(sessionLogMessages.record)}->'hidden_reason',
+            'origin', ${qualifiedColumn(sessionLogMessages.record)}->'origin', 'model', ${qualifiedColumn(sessionLogMessages.record)}->'model', 'blocks', ${SLIM_BLOCKS}))`,
         })
         .from(sessionLogMessages)
         .where(eq(sessionLogMessages.sessionId, input.sessionId))

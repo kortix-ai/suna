@@ -619,6 +619,19 @@ function selfHostDoctor(flags: GlobalFlags): number {
       detail: result.error?.message ?? (result.stderr.trim() || 'valid'),
     });
   }
+  if (existsSync(composePath(flags.instance))) {
+    // Kortix Capture devices upload to the bundled store. A compose file
+    // rendered by an older CLI has none, so every device gets 503
+    // capture_credentials_unavailable until `update` re-renders it.
+    const hasStore = readFileSync(composePath(flags.instance), 'utf8').includes('\n  capture-store:\n');
+    checks.push({
+      name: 'capture-store',
+      ok: hasStore,
+      detail: hasStore
+        ? 'bundled Kortix Capture store present'
+        : 'this instance has no Kortix Capture store, so Capture devices cannot sync — run: kortix self-host update',
+    });
+  }
   if (existsSync(envPath(flags.instance))) {
     // KORTIX_INSTANCE_DIR is recomputed on every writeEnv() (see
     // normalizeFullSupabaseEnv), so this can only be stale between writes —
@@ -777,6 +790,15 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
     );
     return rollout;
   }
+
+  // Converge kortix-api onto the rendered environment. The rollout above only
+  // rolls a service whose IMAGE changed, and `up --no-recreate` never touches
+  // an existing container, so an instance rendered by an older CLI keeps an
+  // API without the Kortix Capture store wiring (every device gets 503) until
+  // its container is recreated. Without `--force-recreate`, compose recreates
+  // it only when its rendered configuration differs: a no-op on every later run.
+  const converge = compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
+  if (converge !== 0) return converge;
 
   // The rollout recreates only the app services whose image moved. A flag this
   // run changed reaches its readers through the same restart `env set` does:
@@ -1606,6 +1628,7 @@ function freshTokenFor(key: string): string {
     case 'DASHBOARD_PASSWORD':
       return token(24);
     case 'S3_PROTOCOL_ACCESS_KEY_SECRET':
+    case 'CAPTURE_STORE_ROOT_PASSWORD':
     case 'GATEWAY_INTERNAL_TOKEN':
     case 'INTERNAL_SERVICE_KEY':
     case 'TUNNEL_SIGNING_SECRET':
@@ -1629,6 +1652,7 @@ const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
   LOGFLARE_PRIVATE_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
   SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
   SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
+  CAPTURE_STORE_ROOT_USER: 'not a rotation target — rotate CAPTURE_STORE_ROOT_PASSWORD instead.',
   DASHBOARD_USERNAME: 'not a rotation target — use `env set DASHBOARD_USERNAME=<value>` to change it.',
   API_KEY_SECRET:
     'the encryption key of every stored secret, connector and OAuth credential and GitHub token, and the pepper of every API key, PAT and session token hash. A new value leaves all of them undecryptable, and the old value is not kept. There is no data-key rotation yet (KRTX-1719).',
@@ -2481,6 +2505,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     LOGFLARE_PRIVATE_ACCESS_TOKEN: token(24),
     S3_PROTOCOL_ACCESS_KEY_ID: token(16),
     S3_PROTOCOL_ACCESS_KEY_SECRET: token(32),
+    // Kortix Capture's bundled object store (the `capture-store` service). The
+    // API holds this pair to issue per-device credentials; devices never see it.
+    CAPTURE_STORE_ROOT_USER: token(8),
+    CAPTURE_STORE_ROOT_PASSWORD: token(32),
     PGRST_DB_SCHEMAS: 'public',
     PGRST_DB_MAX_ROWS: '1000',
     PGRST_DB_EXTRA_SEARCH_PATH: 'public',

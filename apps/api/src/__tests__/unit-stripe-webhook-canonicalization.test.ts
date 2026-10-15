@@ -69,11 +69,6 @@ mock.module('../billing/wallet', () => ({
   },
 }));
 
-mock.module('../billing/services/machine-bonus', () => ({
-  grantMachineBonusOnce: async () => null,
-  getStripeMachineBonusKey: (subscriptionId: string) => `machine_bonus:${subscriptionId}`,
-}));
-
 mock.module('../billing/services/subscriptions', () => ({
   cancelFreeSubscriptionForUpgrade: async () => null,
 }));
@@ -162,11 +157,12 @@ describe('Stripe webhook canonicalization', () => {
 
     expect(state.upsertCreditAccountCalls).toHaveLength(1);
     expect(state.upsertCreditAccountCalls[0].accountId).toBe('acc_canonical_123');
-    expect(state.upsertCreditAccountCalls[0].data.tier).toBe('tier_2_20');
+    expect(state.upsertCreditAccountCalls[0].data.tier).toBe('credits');
+    expect(state.upsertCreditAccountCalls[0].data.planMonthlyUsd).toBe('20');
     expect(state.walletResets).toContainEqual({
       accountId: 'acc_canonical_123',
       amount: 20,
-      description: 'Recovered Stripe subscription: 20 credits',
+      description: 'Recovered Stripe subscription: 2000 credits',
       key: { event: 'subscription_activation:sub_legacy_123' },
     });
     expect(state.stripeUpdateCalls).toHaveLength(1);
