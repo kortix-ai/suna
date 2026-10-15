@@ -42,7 +42,8 @@
  * has not collected yet. On the first `message.updated` of a message and on
  * each `message.part.updated` of a new part, it publishes a `log.message` put
  * of that message on the v2 bus only (never the dirty set); so does an update
- * of a tool part that changes its status or its metadata keys (P4.7): `fromV1` of the
+ * of a tool part that changes its status, its metadata keys (P4.7) or the status of
+ * a call in its `metadata.calls` (a codemode script's calls): `fromV1` of the
  * frames so far (`liveMessageFromV1`: `status: 'streaming'`, open calls stay
  * open and keep their v1 residual, so a running task keeps its `sessionId`),
  * with the seq (and `created_at`) the adapter's `live` names. It
@@ -538,7 +539,10 @@ function toolShape(part: Record<string, any>): string {
   if (part.type !== 'tool') return ''
   const meta = part.state?.metadata ?? {}
   // The keys the wire carries: pi's bash ends with `truncation: undefined`, which JSON drops.
-  return `${part.state?.status}:${Object.keys(meta).filter((k) => meta[k] !== undefined).join()}`
+  const keys = Object.keys(meta).filter((k) => meta[k] !== undefined).join()
+  // A codemode script's calls (pi `details.calls`): a put per call start and end, at most 2 per call.
+  const calls = Array.isArray(meta.calls) ? `:${meta.calls.map((c: { status?: unknown }) => String(c?.status)).join()}` : ''
+  return `${part.state?.status}:${keys}${calls}`
 }
 
 function parseJson(text: string): unknown {
