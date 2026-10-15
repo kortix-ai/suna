@@ -34,6 +34,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalSt
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -833,12 +834,11 @@ function ImportForm({
       </div>
 
       <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={autoCreate}
-          onChange={(e) => setAutoCreate(e.target.checked)}
-          className="border-border accent-primary mt-0.5 size-3.5 shrink-0 rounded"
+          onCheckedChange={(v) => setAutoCreate(v === true)}
           disabled={mutation.isPending}
+          className="mt-0.5"
         />
         <span>
           <span className="font-medium">{tI18nComplete.raw('text33e17e895ebc')}</span>
@@ -848,12 +848,11 @@ function ImportForm({
         </span>
       </label>
       <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={autoProvision}
-          onChange={(e) => setAutoProvision(e.target.checked)}
-          className="border-border accent-primary mt-0.5 size-3.5 shrink-0 rounded"
+          onCheckedChange={(v) => setAutoProvision(v === true)}
           disabled={mutation.isPending}
+          className="mt-0.5"
         />
         <span>
           <span className="font-medium">{tI18nComplete.raw('text459ff8f45278')}</span>

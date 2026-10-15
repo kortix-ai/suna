@@ -2200,7 +2200,8 @@
         "updateAction": "Passa a {amount} / mese",
         "chooseAction": "Aggiorna piano",
         "ownerOnly": "Solo i proprietari e gli amministratori dell'account possono modificare il piano.",
-        "enterpriseNote": "I piani Enterprise sono gestiti con il tuo team di riferimento."
+        "enterpriseNote": "I piani Enterprise sono gestiti con il tuo team di riferimento.",
+        "keepEnterprise": "Per restare su Enterprise dopo la prova, parla con le vendite."
       },
       "modal": {
         "title": "Scegli il tuo livello di crediti",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "Quanto pago ogni mese?",
-          "answer": "Scegli un livello da 50 $ al mese (5.000 crediti) a 10.000 $ al mese (1.000.000 di crediti). 200 $ al mese (20.000 crediti) è il più popolare. Ogni livello offre crediti alla stessa tariffa: 100 crediti per dollaro. Per più di 10.000 $ al mese contatta il reparto vendite."
+          "answer": "Scegli un livello da 50 $ al mese (5.000 crediti) a 10.000 $ al mese (1.000.000 di crediti). Ogni livello offre crediti alla stessa tariffa: 100 crediti per dollaro. Per più di 10.000 $ al mese contatta il reparto vendite."
         },
         "members": {
           "question": "Pago per i membri?",
@@ -2535,7 +2536,7 @@
       "credits": "Crediti",
       "trialTitle": "Prova {plan} · {days, plural, =0 {termina oggi} one {# giorno rimasto} other {# giorni rimasti}}",
       "trialBody": "Questo account è in prova {plan} fino al {date}. Poi torna al piano che paga. Passa a un piano superiore in qualsiasi momento per mantenerlo.",
-      "trialBodyEnterprise": "Questo account è in prova Enterprise fino al {date}: SSO, SCIM, ruoli avanzati e log di audit sono attivi. Poi torna al piano che paga, e SSO e SCIM restano attivi per altri 14 giorni. Passa a un piano superiore in qualsiasi momento.",
+      "trialBodyEnterprise": "Questo account è in prova Enterprise fino al {date}: SSO, SCIM, ruoli avanzati e log di audit sono attivi. Poi torna al piano che paga, e SSO e SCIM restano attivi per altri 14 giorni. Per mantenere Enterprise, parla con le vendite.",
       "upgrade": "Passa a un piano superiore",
       "talkToSales": "Parla con le vendite",
       "askManager": "Chiedi a un proprietario o a un amministratore dell'account di passare a un piano superiore.",
@@ -18847,6 +18848,20 @@
       "text843ed3b90b42": "Comprimi questo file con un color.png 192×192 e un outline.png trasparente 32×32.",
       "text5c71673648a2": "In Teams vai su Apps → Manage your apps → Upload an app e carica lo zip.",
       "text91b9932411cc": "Aggiungi l'app a una chat o a un canale, poi menzionala per avviare una sessione.",
+      "textfd326bb01b61": "Incolla i tre valori del bot che hai appena creato.",
+      "text39864856b1bc": "Nel portale di Azure",
+      "text14bb4b708203": "In Microsoft Teams",
+      "textbda0f959cde0": "Tieni a portata di mano il valore del segreto. Lo incollerai nel passaggio successivo.",
+      "text9bd6f94da702": "Manifesto dell’app Teams per questo bot",
+      "text7fd0fd8f2405": "Usa il tuo bot Azure, poi menzionalo in qualsiasi chat o canale di Teams.",
+      "text776fd1de4147": "Chiedi a un amministratore dello spazio di lavoro di collegare Microsoft Teams.",
+      "text89e9e20668f3": "Porta il tuo agente su Slack",
+      "textc1bd5ca19f5f": "Porta il tuo agente su Teams",
+      "texta15b754f2e91": "Menzionalo in qualsiasi chat o canale e lavora lì, senza dashboard né cambi di contesto.",
+      "text675d4a4174ba": "riassumi questo thread",
+      "textbd52d3eb5ed1": "Tre decisioni finora, una domanda aperta per Leo.",
+      "text5df6373cf99f": "cosa manca prima di venerdì?",
+      "textf4d1a9671f2f": "Ci penso io. Sto leggendo la checklist del lancio e i tre ticket aperti.",
       "textd208e2f1260f": "Apri l'interfaccia di amministrazione di Teams",
       "text98722a5463cb": "Impossibile collegare Teams",
       "text53e5f96332d9": "Concedi il consenso amministratore perché il bot Kortix possa funzionare nel tuo tenant.",

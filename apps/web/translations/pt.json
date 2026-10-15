@@ -2200,7 +2200,8 @@
         "updateAction": "Alterar para {amount} / mês",
         "chooseAction": "Atualizar plano",
         "ownerOnly": "Somente os proprietários e administradores da conta podem alterar o plano.",
-        "enterpriseNote": "Os planos Enterprise são gerenciados com a sua equipe de conta."
+        "enterpriseNote": "Os planos Enterprise são gerenciados com a sua equipe de conta.",
+        "keepEnterprise": "Para continuar no Enterprise depois do teste, fale com vendas."
       },
       "modal": {
         "title": "Escolha seu nível de créditos",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "Quanto pago por mês?",
-          "answer": "Escolha um nível de US$ 50 por mês (5.000 créditos) a US$ 10.000 por mês (1.000.000 de créditos). US$ 200 por mês (20.000 créditos) é o mais popular. Todo nível dá créditos pela mesma taxa: 100 créditos por dólar. Para mais de US$ 10.000 por mês, fale com vendas."
+          "answer": "Escolha um nível de US$ 50 por mês (5.000 créditos) a US$ 10.000 por mês (1.000.000 de créditos). Todo nível dá créditos pela mesma taxa: 100 créditos por dólar. Para mais de US$ 10.000 por mês, fale com vendas."
         },
         "members": {
           "question": "Pago pelos membros?",
@@ -2535,7 +2536,7 @@
       "credits": "Créditos",
       "trialTitle": "Teste de {plan} · {days, plural, =0 {termina hoje} one {falta # dia} other {faltam # dias}}",
       "trialBody": "Esta conta está em um teste de {plan} até {date}. Depois volta ao plano que ela paga. Faça upgrade a qualquer momento para mantê-lo.",
-      "trialBodyEnterprise": "Esta conta está em um teste Enterprise até {date}: SSO, SCIM, funções avançadas e logs de auditoria estão ativos. Depois volta ao plano que ela paga, e o SSO e o SCIM continuam ativos por mais 14 dias. Faça upgrade a qualquer momento.",
+      "trialBodyEnterprise": "Esta conta está em um teste Enterprise até {date}: SSO, SCIM, funções avançadas e logs de auditoria estão ativos. Depois volta ao plano que ela paga, e o SSO e o SCIM continuam ativos por mais 14 dias. Para manter o Enterprise, fale com vendas.",
       "upgrade": "Fazer upgrade",
       "talkToSales": "Falar com vendas",
       "askManager": "Peça a um proprietário ou administrador da conta que faça o upgrade.",
@@ -18847,6 +18848,20 @@
       "text843ed3b90b42": "Compacte este ficheiro com um color.png de 192×192 e um outline.png transparente de 32×32.",
       "text5c71673648a2": "No Teams, vá a Apps → Manage your apps → Upload an app e carregue o zip.",
       "text91b9932411cc": "Adicione a aplicação a um chat ou canal e mencione-a para iniciar uma sessão.",
+      "textfd326bb01b61": "Cole os três valores do bot que você acabou de criar.",
+      "text39864856b1bc": "No portal do Azure",
+      "text14bb4b708203": "No Microsoft Teams",
+      "textbda0f959cde0": "Mantenha o valor do segredo à mão. Você o colará na próxima etapa.",
+      "text9bd6f94da702": "Manifesto do aplicativo do Teams para este bot",
+      "text7fd0fd8f2405": "Use seu próprio bot do Azure e mencione-o em qualquer chat ou canal do Teams.",
+      "text776fd1de4147": "Peça a um administrador do espaço de trabalho para conectar o Microsoft Teams.",
+      "text89e9e20668f3": "Leve seu agente para o Slack",
+      "textc1bd5ca19f5f": "Leve seu agente para o Teams",
+      "texta15b754f2e91": "Mencione-o em qualquer chat ou canal e ele faz o trabalho ali mesmo, sem painel e sem troca de contexto.",
+      "text675d4a4174ba": "resuma esta conversa",
+      "textbd52d3eb5ed1": "Três decisões até agora, uma pergunta em aberto para o Leo.",
+      "text5df6373cf99f": "o que falta até sexta?",
+      "textf4d1a9671f2f": "Já estou nisso. Lendo a checklist do lançamento e os três tickets abertos.",
       "textd208e2f1260f": "Abrir o centro de administração do Teams",
       "text98722a5463cb": "Não foi possível ligar o Teams",
       "text53e5f96332d9": "Conceda o consentimento de administrador para que o bot do Kortix possa funcionar no seu inquilino.",

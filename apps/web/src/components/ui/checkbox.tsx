@@ -1,47 +1,61 @@
 'use client';
 
-import { CheckIcon, MinusIcon } from '@phosphor-icons/react';
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
+type CheckboxVariant = 'blue' | 'black';
+
 type CheckboxProps = React.ComponentProps<typeof CheckboxPrimitive.Root> & {
   label?: React.ReactNode;
+  /** Fill of the checked box. `black` is the foreground ink, so it inverts in dark mode. */
+  variant?: CheckboxVariant;
 };
 
+// One size everywhere: an 18px box, 6px corners, a round-capped check.
 const checkboxControlClassName = cn(
-  'peer flex aspect-square size-[18px] shrink-0 items-center justify-center rounded-sm border border-muted-foreground/60 bg-transparent',
-  'transition-[color,box-shadow,border-color,background-color]',
+  'peer flex size-[18px] shrink-0 items-center justify-center rounded-sm border-[1.5px] border-muted-foreground/60 bg-transparent text-background',
+  'transition-[border-color,background-color]',
   'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-  'disabled:opacity-50',
-  'data-[state=checked]:border-foreground data-[state=checked]:bg-kortix-blue data-[state=checked]:border-kortix-blue data-[state=checked]:border',
-  'data-[state=checked]:text-background data-[state=checked]:[&_svg]:size-3',
-  // Indeterminate (some of a group): the checked fill, with a dash for the mark.
-  'data-[state=indeterminate]:bg-kortix-blue data-[state=indeterminate]:border-kortix-blue data-[state=indeterminate]:text-background data-[state=indeterminate]:[&_svg]:size-3',
+  'disabled:cursor-default disabled:opacity-50',
   'aria-invalid:border-destructive',
 );
 
-function Checkbox({ className, label, id, ...props }: CheckboxProps) {
+const checkboxVariantClassName: Record<CheckboxVariant, string> = {
+  blue: 'data-[state=checked]:border-kortix-blue data-[state=checked]:bg-kortix-blue data-[state=indeterminate]:border-kortix-blue data-[state=indeterminate]:bg-kortix-blue',
+  black:
+    'data-[state=checked]:border-foreground data-[state=checked]:bg-foreground data-[state=indeterminate]:border-foreground data-[state=indeterminate]:bg-foreground',
+};
+
+function CheckMark({ indeterminate }: { indeterminate: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className="size-3">
+      <path
+        d={indeterminate ? 'M4 8h8' : 'M3.5 8.5l3 3 6-7'}
+        stroke="currentColor"
+        strokeWidth={2.25}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function Checkbox({ className, label, id, variant = 'blue', ...props }: CheckboxProps) {
   const generatedId = React.useId();
   const itemId = id ?? generatedId;
 
   const control = (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
+      data-variant={variant}
       id={itemId}
-      className={cn(checkboxControlClassName, !label && className)}
+      className={cn(checkboxControlClassName, checkboxVariantClassName[variant], !label && className)}
       {...props}
     >
-      <CheckboxPrimitive.Indicator
-        data-slot="checkbox-indicator"
-        className="flex items-center justify-center text-current"
-      >
-        {props.checked === 'indeterminate' ? (
-          <MinusIcon weight="bold" className="size-2.5" />
-        ) : (
-          <CheckIcon className="size-2.5" />
-        )}
+      <CheckboxPrimitive.Indicator data-slot="checkbox-indicator" className="flex items-center justify-center">
+        <CheckMark indeterminate={props.checked === 'indeterminate'} />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );
@@ -80,4 +94,4 @@ function Checkbox({ className, label, id, ...props }: CheckboxProps) {
 Checkbox.displayName = CheckboxPrimitive.Root.displayName;
 
 export { Checkbox };
-export type { CheckboxProps };
+export type { CheckboxProps, CheckboxVariant };

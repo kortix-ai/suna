@@ -72,11 +72,11 @@ describe('pricing copy', () => {
     expect(english.billing.pricing.faq.credit.answer).toContain('1 credit is $0.01');
   });
 
-  test('the FAQ states the tier range, the most popular tier and the one rate', () => {
+  test('the FAQ states the tier range and the one rate, and names no tier most popular', () => {
     const answer = english.billing.pricing.faq.amounts.answer;
     expect(answer).toContain('$50 a month (5,000 credits)');
     expect(answer).toContain('$10,000 a month (1,000,000 credits)');
-    expect(answer).toContain('$200 a month (20,000 credits) is the most popular');
+    expect(answer).not.toContain('most popular');
     expect(answer).toContain('100 credits per dollar');
   });
 
