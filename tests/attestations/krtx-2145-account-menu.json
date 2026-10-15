@@ -1,5 +1,5 @@
 {
-  "source_hash": "6586379c61dcda8a7746d98cad44034108783ec8554389ec14436f7cb1eab285",
+  "source_hash": "20d8ca759fec6f8a8e0f1e86a9b654c2e185a1e7d6a35105002dce359a033e41",
   "diff_files": [
     "apps/web/src/app/[locale]/(app)/checkout/page.tsx",
     "apps/web/src/app/[locale]/(app)/connections/page.tsx",
@@ -23,13 +23,13 @@
     "tests/e2e/specs/09-admin-console.spec.ts",
     "tests/e2e/specs/52-account-chip-ui.spec.ts"
   ],
-  "diff_hash": "b069058fb419eb13165e14b7c836469a1e4f3713e3e128e167815cabd3dc1fbd",
-  "head": "98394801681e15caa2549b85fa9067be89fdd49b",
+  "diff_hash": "b229e25a1d919a11936210660307421f45cebef2c7b647e8ac6e9d549912f636",
+  "head": "2f239b3a3558ca3c3f9d9f00734cd9a80bb77e78",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T12:39:45.747Z"
+  "at": "2026-10-15T13:08:37.997Z"
 }
