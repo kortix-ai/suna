@@ -2856,7 +2856,14 @@
     "failedToCopyFileContent": "Dateiinhalt konnte nicht kopiert werden",
     "noContentAvailable": "Kein Inhalt verfügbar",
     "noContentDescription": "Diese Tool-Ausführung hat keinen Eingabe- oder Ausgabeinhalt zum Anzeigen erzeugt.",
-    "tool": "Tool"
+    "tool": "Tool",
+    "codemode": {
+      "ranScript": "Skript ausgeführt",
+      "runningScript": "Skript läuft",
+      "scriptFailed": "Skript fehlgeschlagen",
+      "calls": "{count, plural, one {# Tool-Aufruf} other {# Tool-Aufrufe}}",
+      "noOutput": "Keine Ausgabe"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Verstanden",

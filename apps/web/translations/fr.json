@@ -2856,7 +2856,14 @@
     "failedToCopyFileContent": "Échec de la copie du contenu du fichier",
     "noContentAvailable": "Aucun contenu disponible",
     "noContentDescription": "Cette exécution d'outil n'a produit aucun contenu d'entrée ou de sortie à afficher.",
-    "tool": "Outil"
+    "tool": "Outil",
+    "codemode": {
+      "ranScript": "Script exécuté",
+      "runningScript": "Exécution du script",
+      "scriptFailed": "Échec du script",
+      "calls": "{count, plural, one {# appel d’outil} other {# appels d’outils}}",
+      "noOutput": "Aucune sortie"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Compris",

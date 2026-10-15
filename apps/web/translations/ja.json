@@ -2856,7 +2856,14 @@
     "failedToCopyFileContent": "ファイル内容のコピーに失敗しました",
     "noContentAvailable": "コンテンツがありません",
     "noContentDescription": "このツール実行では、表示する入力または出力コンテンツが生成されませんでした。",
-    "tool": "ツール"
+    "tool": "ツール",
+    "codemode": {
+      "ranScript": "スクリプトを実行しました",
+      "runningScript": "スクリプトを実行中",
+      "scriptFailed": "スクリプトが失敗しました",
+      "calls": "{count, plural, other {# 件のツール呼び出し}}",
+      "noOutput": "出力なし"
+    }
   },
   "agentRunLimit": {
     "gotIt": "了解",

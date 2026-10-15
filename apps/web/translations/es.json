@@ -2856,7 +2856,14 @@
     "failedToCopyFileContent": "Error al copiar contenido del archivo",
     "noContentAvailable": "No hay contenido disponible",
     "noContentDescription": "Esta ejecución de herramienta no produjo ningún contenido de entrada o salida para mostrar.",
-    "tool": "Herramienta"
+    "tool": "Herramienta",
+    "codemode": {
+      "ranScript": "Script ejecutado",
+      "runningScript": "Ejecutando script",
+      "scriptFailed": "Error en el script",
+      "calls": "{count, plural, one {# llamada a herramienta} other {# llamadas a herramientas}}",
+      "noOutput": "Sin salida"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Entendido",
