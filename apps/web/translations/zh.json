@@ -7547,6 +7547,7 @@
       "treeMessages": "条消息",
       "subAgentsLoaded": "已加载 {loaded}/{total} 个子代理",
       "loadAll": "全部加载",
+      "subAgentLoadFailed": "无法加载",
       "detailInput": "输入令牌",
       "detailOutput": "输出令牌",
       "detailReasoning": "推理令牌",
