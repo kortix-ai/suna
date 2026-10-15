@@ -16,10 +16,12 @@ export function bindCommerce() {
       get: P.getSessionCostRecord,
     },
     tierConfigurations: P.getBillingTierConfigurations,
+    /** Subscribe to, or change, the credits plan (`POST /billing/plan`). */
+    setPlan: P.setBillingPlan,
 
     /**
      * @deprecated The API retired these routes. Both reject with
-     * `ENDPOINT_RETIRED`. Use `createPerSeatCheckout`. Removed in the next major.
+     * `ENDPOINT_RETIRED`. Use `setPlan`. Removed in the next major.
      */
     checkout: {
       createSession: (input: Parameters<typeof P.createCheckoutSession>[0]) =>
@@ -37,7 +39,9 @@ export function bindCommerce() {
       /** @deprecated Rejects with `ENDPOINT_RETIRED`. Use `createPortalSession`. Removed in the next major. */
       scheduleDowngrade: (targetTierKey: string, commitmentType?: string, accountId?: string) =>
         P.scheduleDowngrade(targetTierKey, commitmentType, accountId),
+      /** @deprecated Rejects with `ENDPOINT_RETIRED`. Use `setPlan`. Removed in the next major. */
       cancelScheduledChange: (accountId?: string) => P.cancelScheduledChange(accountId),
+      /** @deprecated Rejects with `ENDPOINT_RETIRED`. Removed in the next major. */
       prorationPreview: (newPriceId: string, accountId?: string) =>
         P.getProrationPreview(newPriceId, accountId),
     },

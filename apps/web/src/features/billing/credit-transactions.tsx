@@ -24,6 +24,7 @@ interface Props {
 
 export default function CreditTransactions({ accountId }: Props) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tTopup = useTranslations('billing.topup');
   const [offset, setOffset] = useState(0);
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const limit = 50;
@@ -108,6 +109,7 @@ export default function CreditTransactions({ accountId }: Props) {
             <SelectItem value="auto_topup">
               {tHardcodedUi.raw('componentsBillingCreditTransactions.line165JsxTextAutoTopUp')}
             </SelectItem>
+            <SelectItem value="topup_bonus">{tTopup('ledgerBonus')}</SelectItem>
             <SelectItem value="machine_bonus">
               {tHardcodedUi.raw('componentsBillingCreditTransactions.line166JsxTextMachineBonus')}
             </SelectItem>
@@ -158,7 +160,7 @@ export default function CreditTransactions({ accountId }: Props) {
               createdAt: tx.created_at,
               type: tx.type,
               description: tx.description ?? null,
-              isExpiring: tx.is_expiring,
+              isExpiring: tx.is_expiring ?? undefined,
               amount: tx.amount,
               balanceAfter: tx.balance_after,
             }))}

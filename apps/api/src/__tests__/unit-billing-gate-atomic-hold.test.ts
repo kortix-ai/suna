@@ -10,14 +10,14 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * the real deduction uses) on the pure-wallet path, returning `holdUsd` so the
  * caller (llm-gateway hooks.recordGatewayUsage) reconciles it to the real
  * cost at settle. This file covers: the hold IS taken on the wallet path, is
- * NOT taken for an active per-seat subscription or a self-host/billing-off
+ * NOT taken for an active credits subscription or a self-host/billing-off
  * deploy, and a failed hold (insufficient credits) surfaces as
  * `insufficient_credits` — the same denial the old read-only check produced.
  */
 
 let creditAccount: {
   balance: number;
-  billingModel: string | null;
+  tier?: string | null;
   stripeSubscriptionId: string | null;
   stripeSubscriptionStatus: string | null;
 } | null = null;
@@ -70,7 +70,7 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     deductShouldFail = false;
     creditAccount = {
       balance: 5,
-      billingModel: 'wallet',
+      tier: 'free',
       stripeSubscriptionId: null,
       stripeSubscriptionStatus: null,
     };
@@ -103,12 +103,12 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     expect(debitCalls).toHaveLength(0);
   });
 
-  test('an active per-seat subscription at $0 is REFUSED — nothing bypasses the floor', async () => {
+  test('an active credits subscription at $0 is REFUSED — nothing bypasses the floor', async () => {
     // Was: admitted, no hold, no deduct. That exemption is removed; the whole
     // point of the atomic hold is that it applies to every admitted request.
     creditAccount = {
       balance: 0,
-      billingModel: 'per_seat',
+      tier: 'credits',
       stripeSubscriptionId: 'sub_123',
       stripeSubscriptionStatus: 'active',
     };
@@ -116,10 +116,10 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     expect(result.ok).toBe(false);
   });
 
-  test('an active per-seat subscription WITH credit takes the atomic hold', async () => {
+  test('an active credits subscription WITH credit takes the atomic hold', async () => {
     creditAccount = {
       balance: 25,
-      billingModel: 'per_seat',
+      tier: 'credits',
       stripeSubscriptionId: 'sub_123',
       stripeSubscriptionStatus: 'active',
     };
@@ -129,16 +129,19 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     expect(debitCalls).toHaveLength(1);
   });
 
-  test('a per-seat account with no active subscription falls back to the wallet-floor check (no hold — subscription_required, not insufficient_credits)', async () => {
+  test('an account with no active subscription and a drained wallet falls back to the wallet-floor check (no hold — insufficient_credits, billingState says no_subscription)', async () => {
     creditAccount = {
       balance: 0,
-      billingModel: 'per_seat',
+      tier: 'free',
       stripeSubscriptionId: null,
       stripeSubscriptionStatus: null,
     };
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('subscription_required');
+    if (!result.ok) {
+      expect(result.reason).toBe('insufficient_credits');
+      expect(result.billingState).toBe('no_subscription');
+    }
     expect(debitCalls).toHaveLength(0);
   });
 

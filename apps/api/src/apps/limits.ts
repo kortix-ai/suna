@@ -110,7 +110,6 @@ export async function assertAppAccountFunded(accountId: string): Promise<void> {
   if (gate.ok) return;
   throw new AppAccountUnfundedError(accountId, gate.message, gate.reason, {
     balance: gate.balance,
-    billing_model: gate.billingModel,
     has_subscription: gate.hasSubscription,
     billing_state: gate.billingState,
     account_id: accountId,

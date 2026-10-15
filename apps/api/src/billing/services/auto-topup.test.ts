@@ -119,7 +119,7 @@ const {
 function creditAccount(overrides: Record<string, unknown> = {}) {
   return {
     accountId: 'acct-1',
-    tier: 'per_seat',
+    tier: 'credits',
     balance: '0.01',
     autoTopupEnabled: true,
     autoTopupThreshold: '5',

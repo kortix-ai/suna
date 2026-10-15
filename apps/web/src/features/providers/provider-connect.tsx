@@ -46,6 +46,7 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import { LLM_PROVIDERS, type LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
+import { PLATFORM_FEE_PERCENT } from '@/features/billing/compute-pricing';
 import { getProjectDetail } from '@kortix/sdk';
 import {
   qk,
@@ -382,7 +383,7 @@ export function useManagedProvider(projectId: string | null): LlmProviderEntry {
       helpUrl: null,
       apiHost: null,
       hint: managedProviderHint(managedModels, {
-        managedDescription: tAccess('managedDescription'),
+        managedDescription: tAccess('managedDescription', { fee: PLATFORM_FEE_PERCENT }),
         managedUpgradeHint: tAccess('managedUpgradeHint'),
       }),
       models: managedModels,

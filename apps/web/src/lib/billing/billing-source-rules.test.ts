@@ -117,7 +117,7 @@ describe('no component writes its own billing prose', () => {
     'Out of credits',
     'Low balance',
     'Payment issue on your plan',
-    'seats are unaffected',
+    'plan is unaffected',
   ];
 
   test('the strings billingModalCopy/walletAlertCopy own appear nowhere else', () => {
@@ -129,8 +129,8 @@ describe('no component writes its own billing prose', () => {
     }
 
     // A component that writes its own billing copy is a component that can
-    // contradict the server — which is how a modal came to say "your Team plan
-    // and seats are unaffected" to accounts with no seats, and "Out of credits"
+    // contradict the server — which is how a modal came to say "your plan is
+    // unaffected" to accounts that had none, and "Out of credits"
     // to accounts with money. Import the copy instead.
     expect(offenders).toEqual([]);
   });
@@ -145,19 +145,20 @@ describe('the wallet-floor bypass stays deleted', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the client fallback does not resurrect the per-seat exemption', () => {
-    // The removed line was:
-    //   if (accountHasLiveSubscription(state) && billing_model === 'per_seat')
-    //     return 'active';
-    // A rolling deploy is exactly when it would have mattered: an old API sends
-    // no `billing_state`, the fallback runs, and a drained Team account renders
-    // as runnable against a server that has already started 402ing it.
+  test('the client fallback does not resurrect a subscription exemption', () => {
+    // The removed line returned 'active' for a live subscription on a billing
+    // model that bypassed the wallet floor. A rolling deploy is exactly when it
+    // would have mattered: an old API sends no `billing_state`, the fallback
+    // runs, and a drained paid account renders as runnable against a server
+    // that has already started 402ing it. There is no billing model to branch
+    // on any more, and the fallback must not grow one back.
     const source = readFileSync(join(WEB_SRC, 'lib', 'billing', 'billing-gate-state.ts'), 'utf8');
     const fallback = source.slice(
       source.indexOf('Fallback derivation'),
       source.indexOf("return 'no_subscription';"),
     );
-    expect(fallback).not.toMatch(/billing_model\s*===\s*'per_seat'[\s\S]{0,40}return 'active'/);
+    expect(fallback).not.toMatch(/billing_model/);
+    expect(fallback).not.toMatch(/accountHasLiveSubscription\(state\)[\s\S]{0,60}return 'active'/);
   });
 });
 

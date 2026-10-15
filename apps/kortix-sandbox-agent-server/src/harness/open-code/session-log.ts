@@ -379,11 +379,12 @@ export function createOpenCodeSessionLogPort(options: {
  * (`shared/session-log-boot.ts`, which restores into `opencode.db` when the store is
  * missing or behind the log), then the journal at the generation it returns, before the
  * event loop and the first prompt so the first turn's end flushes it. `target` is the
- * binary and the directory OpenCode serves: `opencode import` runs there. True when it
+ * binary and the directory OpenCode serves (`opencode import` runs there), and the
+ * running OpenCode's URL (its version). True when it
  * restored. Throws when the reconcile fails: no journal starts. A box without a control
  * plane journals nothing.
  */
-export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd'>): Promise<boolean> {
+export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd' | 'url'>): Promise<boolean> {
   const sessionId = readControlPlaneEnv().sessionId
   if (!sessionId) return false
   const dbPath = opencodeDbPath(OPENCODE_HOME)

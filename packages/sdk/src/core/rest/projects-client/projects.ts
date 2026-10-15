@@ -324,7 +324,9 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Customer USD per million tokens for each eligible managed route. */
+  /** Kortix's platform fee on managed model usage, in percent of the base prices below. */
+  platformFeePercent?: number;
+  /** Base provider USD per million tokens, before `platformFeePercent`. */
   managedPricingRoutes?: Record<string, Array<{
     route: string;
     role: 'preferred' | 'eligible';

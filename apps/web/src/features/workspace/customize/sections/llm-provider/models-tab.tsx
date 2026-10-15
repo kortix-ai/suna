@@ -101,6 +101,8 @@ export function ModelsTab({
   const models = useProjectModels(projectId);
   const pickerCatalog = useProjectModelPickerCatalog(projectId);
   const enablement = useModelEnablement(projectId);
+  // Prices below are the provider's base price; the fee is added when the call bills.
+  const platformFee = pickerCatalog?.platformFeePercent;
   const access = useModelAccess(projectId);
   // Setting the project default from here is what makes the locked row
   // actionable: the only way to turn the default off is to make something else
@@ -236,6 +238,11 @@ export function ModelsTab({
                     {/* One quiet line, not a green panel: both facts are
                         reassurance, and the detail lives one hover away.
                         `tabIndex` keeps each hint reachable by keyboard. */}
+                    {group.providerID === 'kortix' && platformFee !== undefined ? (
+                      <p className="text-muted-foreground text-xs">
+                        {tList('platformFee', { fee: platformFee })}
+                      </p>
+                    ) : null}
                     {dataClaim ? (
                       <p className="text-muted-foreground text-xs">
                         <Hint label={tAccess('zdrDescription')} side="top" className="max-w-xs">

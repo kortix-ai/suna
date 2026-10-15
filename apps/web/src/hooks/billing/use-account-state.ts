@@ -13,17 +13,13 @@ import { useTranslations } from '@/i18n/use-translations';
  * Replaces: useSubscription, useCreditBalance, useBillingStatus, useScheduledChanges
  */
 
-import { errorToast, infoToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { shouldQueryAccountState } from '@/hooks/billing/account-state-gating';
 import { useBillingAccountId, useBillingAccountResolved } from '@/stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { SEAT_GRANT_USD } from '@/features/billing/compute-pricing';
 import {
-  cancelScheduledChange,
   cancelSubscription,
-  claimPerSeatBilling,
-  createPerSeatCheckout,
   createPortalSession,
   getAccountState,
   purchaseCredits,
@@ -212,100 +208,9 @@ export function useAccountState(options?: UseAccountStateOptions) {
 // MUTATION HOOKS - All invalidate account state after success
 // =============================================================================
 
-// Billing v2 — start the per-seat subscription flow. If a card is on file,
-// the API creates the subscription directly and returns { status: 'subscription_created' };
-// otherwise it returns { status: 'checkout_created', checkout_url } and we redirect.
-export function useCreatePerSeatCheckout() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (args: { success_url: string; cancel_url: string; locale?: string }) =>
-      createPerSeatCheckout({
-        accountId,
-        successUrl: args.success_url,
-        cancelUrl: args.cancel_url,
-        locale: args.locale,
-      }),
-    onSuccess: async (data) => {
-      if (data.status === 'subscription_created') {
-        // Direct sub creation (Stripe found a saved payment method on the customer
-        // and skipped Checkout). Without explicit feedback the dialog appears to
-        // hang — the request settles but nothing visibly changes. Close the
-        // dialog, toast, and refresh account state so the new tier + wallet
-        // grant land in the UI.
-        const { useUpgradeDialogStore } = await import('@/stores/upgrade-dialog-store');
-        useUpgradeDialogStore.getState().closeUpgradeDialog();
-        await invalidateAccountState(queryClient, true, true, accountId);
-        successToast(tI18nComplete.raw('textd83849820d67'), {
-          description: tI18nComplete('text8559d8fd97d1', {
-            count: data.seat_count,
-            credit: SEAT_GRANT_USD * data.seat_count,
-          }),
-        });
-        return;
-      }
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-        return;
-      }
-      // Shouldn't happen — API always returns one of the two shapes. Fail loud
-      // instead of silently leaving the dialog spinning.
-      errorToast(tI18nComplete.raw('text415dcc179975'), {
-        description: tI18nComplete.raw('text2a45a1c6797d'),
-      });
-    },
-    onError: (err: any) => {
-      errorToast(tI18nComplete.raw('textaf6d91f7d902'), {
-        description: err?.message || tI18nComplete.raw('textee34153806cb'),
-      });
-    },
-  });
-}
-
-// Billing v2 — legacy → per-seat voluntary claim. Runs the migration synchronously
-// (the lazy sign-in path can silently skip/fail, leaving legacy users stuck with
-// no way to switch), then refreshes account state so the new plan + wallet credit
-// show immediately.
-export function useClaimPerSeat() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-  return useMutation({
-    mutationFn: () => claimPerSeatBilling(accountId),
-    onSuccess: async (data) => {
-      await invalidateAccountState(queryClient, true, true, accountId);
-      if (data.status === 'migrated') {
-        const parts: string[] = [];
-        if (data.first_seat_covered_usd > 0)
-          parts.push(`$${data.first_seat_covered_usd.toFixed(2)} covered your first seat`);
-        if (data.credited_usd > 0)
-          parts.push(`$${data.credited_usd.toFixed(2)} added as non-expiring credit`);
-        successToast(tI18nComplete.raw('texte0478c3e271b'), {
-          description: parts.join(' · ') || undefined,
-        });
-      } else if (data.status === 'skipped:already_per_seat' || data.status === 'skipped:no_subs') {
-        // no_subs flips the flag with no Stripe work — they're now on per-seat.
-        successToast(tI18nComplete.raw('texte0478c3e271b'));
-      } else if (data.status === 'skipped:yearly_commitment') {
-        infoToast(tI18nComplete.raw('text214466a0fee4'), {
-          description: data.reason || tI18nComplete.raw('text37abd3a24009'),
-        });
-      } else {
-        // skipped:no_legacy_machine — nothing to move off of.
-        infoToast(tI18nComplete.raw('textecdf558f080d'), {
-          description: tI18nComplete.raw('textbf5d8eb5292b'),
-        });
-      }
-    },
-    onError: (err: any) => {
-      errorToast(tI18nComplete.raw('text465814995485'), {
-        description: err?.message || tI18nComplete.raw('textee34153806cb'),
-      });
-    },
-  });
-}
+// A paid plan is chosen and changed through `useChangeCreditPlan`
+// (`features/billing/use-change-credit-plan.ts`), which wraps the SDK's
+// `useSetBillingPlan`. There is no seat checkout and no claim flow.
 
 export function useCreatePortalSession() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -381,10 +286,6 @@ export function usePurchaseCredits() {
       }
     },
   });
-}
-
-export function useCancelScheduledChange() {
-  return useBillingAction((accountId) => cancelScheduledChange(accountId), 'text9118f944fba6');
 }
 
 export function useSyncSubscription() {

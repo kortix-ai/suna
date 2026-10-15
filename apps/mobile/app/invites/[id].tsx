@@ -42,7 +42,7 @@ import { projectKeys } from '@/lib/projects/hooks';
 import { listAccounts, listProjectsForAccount } from '@/lib/projects/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
-/** The API's own sentence for a refused request (expired, used, no seat), else `fallback`. */
+/** The API's own sentence for a refused request (expired, used), else `fallback`. */
 function refusal(err: unknown, fallback: string): string {
   const { status, message } = (err ?? {}) as { status?: unknown; message?: unknown };
   return typeof status === 'number' && status >= 400 && status < 500 && typeof message === 'string' && message

@@ -199,9 +199,12 @@ describe('audited rate limits', () => {
     expect(otherProject.status).toBe(200);
   });
 
-  test('scales session LLM router policy by tier', () => {
+  test('session LLM router policy: free budget, or paid x12 for any credits-plan key', () => {
     expect(sessionLlmPolicyForTier('free').limit).toBe(1);
-    expect(sessionLlmPolicyForTier('pro').limit).toBe(2);
-    expect(sessionLlmPolicyForTier('tier_12_100').limit).toBe(6);
+    // Every paid plan is x12 the paid budget (2/min here), whatever its key:
+    // legacy keys resolve to `credits`.
+    expect(sessionLlmPolicyForTier('credits').limit).toBe(24);
+    expect(sessionLlmPolicyForTier('pro').limit).toBe(24);
+    expect(sessionLlmPolicyForTier('tier_12_100').limit).toBe(24);
   });
 });

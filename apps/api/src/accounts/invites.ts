@@ -14,7 +14,6 @@ import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../middleware/rate-limit';
-import { onMemberAdded } from '../billing/services/seat-management';
 import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
@@ -22,7 +21,6 @@ import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assi
 import { trustedEmailForUser } from '../iam/email-trust';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
-import { withAccountSeatLock } from './seat-lock';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -486,46 +484,23 @@ accountInvitesRouter.openapi(
     return c.json({ error: 'This invite has expired. Ask the owner to send a new one.' }, 410);
   }
 
-  // Trial seat gate — authoritative check at the moment membership is actually
-  // written. Only blocks a NEW member: a re-entering existing member must
-  // still pass to heal grants below.
   const existingMembership = await getMembership(userId, invite.accountId);
   // An accepted invite only heals grants for a CURRENT member. After removal or
   // leave it must not re-create the membership: the owner sends a new invite.
   if (alreadyAccepted && !existingMembership) {
     return c.json({ error: 'This invite was already used. Ask the owner to send a new one.' }, 410);
   }
-  // Seat check and identity insert run under one per-account lock, so concurrent
-  // accepts cannot all pass the check. `onConflictDoNothing` on the (user,
-  // account) primary key keeps the identity half idempotent on re-entry.
-  //
-  // `SYSTEM_ACTOR` below: the writer is the INVITEE, who by definition holds no
-  // permission in this account yet — the invitation is the authorization.
-  const seatBlock = await withAccountSeatLock(invite.accountId, async () => {
-    if (!existingMembership) {
-      const { trialSeatLimitBlocksNewMember } = await import('../billing/services/seat-management');
-      const block = await trialSeatLimitBlocksNewMember(invite.accountId);
-      if (block) return block;
-    }
-    await db
-      .insert(accountMemberships)
-      .values({ userId, accountId: invite.accountId })
-      .onConflictDoNothing({
-        target: [accountMemberships.userId, accountMemberships.accountId],
-      });
-    return null;
-  });
-  if (seatBlock) {
-    return c.json(
-      {
-        error: `This team's trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Ask the owner to contact the Kortix team.`,
-        code: 'trial_seat_limit_reached',
-        limit: seatBlock.limit,
-        members: seatBlock.members,
-      },
-      403,
-    );
-  }
+  // `onConflictDoNothing` on the (user, account) primary key keeps the identity
+  // insert idempotent on re-entry. Members are unlimited and free: there is no
+  // seat check. `SYSTEM_ACTOR` below: the writer is the INVITEE, who by
+  // definition holds no permission in this account yet — the invitation is the
+  // authorization.
+  await db
+    .insert(accountMemberships)
+    .values({ userId, accountId: invite.accountId })
+    .onConflictDoNothing({
+      target: [accountMemberships.userId, accountMemberships.accountId],
+    });
   // Re-entry of a current member never rewrites their role (an admin demotion sticks).
   if (!alreadyAccepted) {
     await assignRole(SYSTEM_ACTOR, invite.accountId, {
@@ -551,15 +526,6 @@ accountInvitesRouter.openapi(
         ),
       );
   }
-
-  // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
-  // legacy accounts (guarded inside the service). Idempotent on re-accept.
-  // Fire-and-forget so Stripe hiccups don't block invite acceptance.
-  void onMemberAdded(invite.accountId, userId).catch((err) =>
-        // No seat reconciler exists: a failure here leaves the Stripe seat count
-        // (and the member's YOLO token) wrong until the next member change.
-        logger.error('[billing] seat sync FAILED after member added', { accountId: invite.accountId, userId: userId, error: err instanceof Error ? err.message : String(err) }),
-      );
 
   // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
   // self-healing. Previously grants ran only on the first accept, AFTER

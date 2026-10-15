@@ -1567,14 +1567,6 @@ export const config = {
   },
 };
 
-// ─── Billing Markup Constants ────────────────────────────────────────────────
-//
-// Kortix-managed inference uses 1.2x provider cost (20% markup).
-// BYOK inference always has a zero Kortix charge.
-
-/** Markup when Kortix provides the API key. */
-export const KORTIX_MARKUP = 1.2;
-
 // ─── Tool Pricing (Router) ──────────────────────────────────────────────────
 
 interface ToolPricing {

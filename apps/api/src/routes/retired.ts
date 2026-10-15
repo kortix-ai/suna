@@ -41,6 +41,14 @@ export const RETIRED_ROUTES: ReadonlyArray<readonly [method: string, path: strin
   ['POST', '/v1/billing/create-checkout-session'],
   ['POST', '/v1/billing/confirm-checkout-session'],
   ['POST', '/v1/billing/schedule-downgrade'],
+  // Credits-only billing (2026-10-14) replaced seats and the tier ladder with
+  // POST /v1/billing/plan.
+  ['POST', '/v1/billing/claim-per-seat'],
+  ['POST', '/v1/billing/create-per-seat-checkout'],
+  ['POST', '/v1/billing/create-inline-checkout'],
+  ['POST', '/v1/billing/confirm-inline-checkout'],
+  ['POST', '/v1/billing/cancel-scheduled-change'],
+  ['GET', '/v1/billing/proration-preview'],
   // OpenRouter-parity generation lookup and the no-op prewarm.
   ['GET', '/v1/generation'],
   ['POST', '/v1/prewarm'],

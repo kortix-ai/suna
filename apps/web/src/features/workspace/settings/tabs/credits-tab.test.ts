@@ -3,8 +3,6 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   creditBuckets,
-  describeDailyRefresh,
-  formatCountdown,
   formatPeriod,
   planGrantMeter,
 } from './credits-tab';
@@ -14,7 +12,7 @@ import {
  *
  * Every function under test is pure and exported for exactly this reason: the
  * shapes that matter — a spent grant, a topped-up grant, a negative balance,
- * an account with no daily refresh — cannot be produced against a local stack
+ * a zero balance — cannot be produced against a local stack
  * without provisioning several accounts and a Stripe subscription. The pane's
  * arithmetic is where a wrong number would come from, so the arithmetic is
  * what is pinned.
@@ -30,11 +28,9 @@ function stateWith(patch: {
   return {
     credits: {
       total: 0,
-      daily: 0,
       monthly: 0,
       extra: 0,
       can_run: true,
-      daily_refresh: null,
       ...patch.credits,
     },
     tier: { monthly_credits: patch.tierMonthlyCredits ?? 0 },
@@ -46,35 +42,32 @@ describe('creditBuckets', () => {
     expect(
       creditBuckets(stateWith({}), {
         monthly: { label: 'Кредити плана', hint: 'Истичу на крају периода' },
-        daily: { label: 'Дневни кредити', hint: 'Допуњују се по распореду' },
         extra: { label: 'Купљени', hint: 'Никада не истичу' },
       }).map(({ label, hint }) => [label, hint]),
     ).toEqual([
       ['Кредити плана', 'Истичу на крају периода'],
-      ['Дневни кредити', 'Допуњују се по распореду'],
       ['Купљени', 'Никада не истичу'],
     ]);
   });
 
-  test('splits the balance into the three buckets that sum to it', () => {
+  test('splits the balance into the two buckets that sum to it', () => {
     const buckets = creditBuckets(
-      stateWith({ credits: { total: 16, monthly: 10, daily: 2, extra: 4 } }),
+      stateWith({ credits: { total: 16, monthly: 10, extra: 4 } }),
     );
     expect(buckets.map((b) => [b.id, b.credits])).toEqual([
       ['monthly', 1000],
-      ['daily', 200],
       ['extra', 400],
     ]);
     // The strip's arithmetic is visible on screen, so it has to hold: the
-    // three columns add up to the headline credit figure above them.
-    expect(buckets.reduce((sum, b) => sum + b.credits, 0)).toBe(1600);
+    // two columns add up to the headline credit figure above them.
+    expect(buckets.reduce((sum, b) => sum + b.credits, 0)).toBe(1400);
   });
 
-  test('always returns three columns, including at zero', () => {
+  test('always returns two columns, including at zero', () => {
     // A strip whose column count depends on the data reflows between accounts
     // and between refreshes — and "0 purchased" is itself the answer to a
     // question someone opened this pane to ask.
-    expect(creditBuckets(stateWith({})).map((b) => b.credits)).toEqual([0, 0, 0]);
+    expect(creditBuckets(stateWith({})).map((b) => b.credits)).toEqual([0, 0]);
   });
 });
 
@@ -90,7 +83,7 @@ describe('planGrantMeter', () => {
     });
   });
 
-  test('is null when the plan grants nothing — Free and per-seat Team', () => {
+  test('is null when the plan grants nothing', () => {
     // A "0 of 0 used" bar is a bar that can never move.
     expect(planGrantMeter(stateWith({ tierMonthlyCredits: 0 }))).toBeNull();
   });
@@ -113,91 +106,6 @@ describe('planGrantMeter', () => {
     expect(
       planGrantMeter(stateWith({ credits: { monthly: 10 }, tierMonthlyCredits: 20 }))?.tone,
     ).toBe('ok');
-  });
-});
-
-describe('describeDailyRefresh', () => {
-  test('uses locale-aware amount and countdown formatters', () => {
-    const state = stateWith({
-      credits: {
-        daily_refresh: {
-          enabled: true,
-          daily_amount: 4,
-          refresh_interval_hours: 24,
-          seconds_until_refresh: 15120,
-        },
-      },
-    });
-    expect(
-      describeDailyRefresh(state, {
-        amount: (credits, hours) => `+${credits} кредита на сваких ${hours} ч`,
-        countdown: () => 'за приближно 4 ч 12 мин',
-      }),
-    ).toEqual({
-      amountLine: '+400 кредита на сваких 24 ч',
-      countdown: 'за приближно 4 ч 12 мин',
-    });
-  });
-
-  test('reads the amount and the interval the API computed', () => {
-    expect(
-      describeDailyRefresh(
-        stateWith({
-          credits: {
-            daily_refresh: {
-              enabled: true,
-              daily_amount: 4,
-              refresh_interval_hours: 24,
-              seconds_until_refresh: 15120,
-            },
-          },
-        }),
-      ),
-    ).toEqual({ amountLine: '+400 credits every 24h', countdown: 'in ~4h 12m' });
-  });
-
-  test('is null when the account has no daily refresh, or a zero one', () => {
-    expect(describeDailyRefresh(stateWith({}))).toBeNull();
-    expect(
-      describeDailyRefresh(
-        stateWith({
-          credits: {
-            daily_refresh: { enabled: true, daily_amount: 0, refresh_interval_hours: 24 },
-          },
-        }),
-      ),
-    ).toBeNull();
-  });
-});
-
-describe('formatCountdown', () => {
-  test('supports localized countdown copy', () => {
-    const copy = {
-      anyMoment: 'Сваког тренутка',
-      minutes: (minutes: number) => `за приближно ${minutes} мин`,
-      hours: (hours: number) => `за приближно ${hours} ч`,
-      hoursMinutes: (hours: number, minutes: number) => `за приближно ${hours} ч ${minutes} мин`,
-    };
-    expect(formatCountdown(15120, copy)).toBe('за приближно 4 ч 12 мин');
-    expect(formatCountdown(45, copy)).toBe('Сваког тренутка');
-  });
-
-  test('drops a zero minutes component rather than printing "4h 0m"', () => {
-    expect(formatCountdown(14400)).toBe('in ~4h');
-  });
-
-  test('omits the hours component under an hour', () => {
-    expect(formatCountdown(750)).toBe('in ~12m');
-  });
-
-  test('never prints "in ~0m" — a due-or-overdue refresh says so in words', () => {
-    // The API clamps `seconds_until_refresh` at 0 and `useAccountState` holds
-    // its data for two minutes, so the last minute of the countdown is inside
-    // the query's own staleness. It is not a number worth printing.
-    expect(formatCountdown(0)).toBe('Any moment now');
-    expect(formatCountdown(45)).toBe('Any moment now');
-    expect(formatCountdown(null)).toBe('Any moment now');
-    expect(formatCountdown(undefined)).toBe('Any moment now');
   });
 });
 

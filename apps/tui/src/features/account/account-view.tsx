@@ -74,10 +74,9 @@ export interface RoleInput {
 export interface BillingInput {
   credits?: { total?: number; daily?: number; monthly?: number; extra?: number; can_run?: boolean };
   billing_state?: string;
-  plan?: { label?: string; sublabel?: string | null };
+  plan?: { label?: string; family?: string; monthly_usd?: number | null };
   subscription?: { tier_display_name?: string; can_purchase_credits?: boolean };
   tier?: { name?: string; display_name?: string; monthly_credits?: number };
-  seats?: { count?: number };
 }
 
 // ─── View models (pure) ─────────────────────────────────────────────────────
@@ -124,7 +123,8 @@ export function roleRows(roles: RoleInput[]): Row[] {
 
 export interface BillingViewModel {
   planLabel: string;
-  planSublabel: string | null;
+  /** Monthly credits of a paid Credits plan (USD x 100); null for Free and Enterprise. */
+  monthlyCredits: number | null;
   /** The API's own `billing_state`, or the state derivable from `can_run`. */
   state: string;
   /** True when the API will refuse to start a session. Renders the banner. */
@@ -132,7 +132,6 @@ export interface BillingViewModel {
   blockedReason: string | null;
   credits: { total: number; daily: number; monthly: number; extra: number };
   tierName: string;
-  seats: number | null;
   canPurchaseCredits: boolean;
 }
 
@@ -169,7 +168,10 @@ export function billingView(state: BillingInput | null | undefined): BillingView
       state?.tier?.display_name ||
       state?.subscription?.tier_display_name ||
       'No plan',
-    planSublabel: state?.plan?.sublabel ?? null,
+    monthlyCredits:
+      state?.plan?.family === 'credits' && typeof state.plan.monthly_usd === 'number'
+        ? Math.round(state.plan.monthly_usd * 100)
+        : null,
     state: billingState,
     blocked,
     blockedReason: blocked
@@ -178,7 +180,6 @@ export function billingView(state: BillingInput | null | undefined): BillingView
       : null,
     credits,
     tierName: state?.tier?.name ?? state?.subscription?.tier_display_name ?? 'none',
-    seats: state?.seats?.count ?? null,
     canPurchaseCredits: state?.subscription?.can_purchase_credits === true,
   };
 }
@@ -416,7 +417,7 @@ export function AccountView({
           ) : null}
           <text fg={theme.fg}>
             {layoutRow(
-              `Plan  ${billingModel.planLabel}${billingModel.planSublabel ? ` · ${billingModel.planSublabel}` : ''}`,
+              `Plan  ${billingModel.planLabel}${billingModel.monthlyCredits == null ? '' : ` · ${billingModel.monthlyCredits.toLocaleString('en-US')} credits/month`}`,
               billingModel.state,
               bodyWidth,
             )}
@@ -431,7 +432,7 @@ export function AccountView({
           <text fg={theme.dim}>
             {layoutRow(
               `Tier  ${billingModel.tierName}`,
-              billingModel.seats == null ? '' : `${billingModel.seats} seats`,
+              '',
               bodyWidth,
             )}
           </text>

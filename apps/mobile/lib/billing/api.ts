@@ -13,18 +13,14 @@ export interface AccountState {
    * that predate it; read it through `getPlanFamily` (lib/billing/plan-action).
    */
   plan?: {
-    family: 'free' | 'team' | 'enterprise';
+    key?: string;
+    family: 'free' | 'credits' | 'enterprise';
     label: string;
     sublabel?: string | null;
-    is_grandfathered?: boolean;
+    /** The paid plan's monthly amount in USD; null for free and enterprise. */
+    monthly_usd?: number | null;
   } | null;
-  /** Team-plan checkout metadata (mirrors the web account-state contract). */
   can_manage_billing?: boolean;
-  member_count?: number;
-  seats?: {
-    count?: number;
-    price_per_seat_usd?: number;
-  };
   credits: {
     total: number;
     daily: number;

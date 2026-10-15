@@ -40,10 +40,11 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 const {
-  getAllTiers,
+  LEGACY_PAID_PLAN_KEYS,
+  PLAN_KEYS,
+  canonicalTier,
   getTier,
   getTierEntitlements,
-  getTierOrder,
   isValidTier,
   tierGrantsAllModels,
 } = await import('../billing/services/tiers');
@@ -59,15 +60,26 @@ function observedLlmMultiplier(tier: string): number {
   return limit === FREE_REQS_PER_MIN ? 0 : limit / PAID_REQS_PER_MIN;
 }
 
-const TIER_KEYS = getAllTiers().map((t) => t.name);
+const TIER_KEYS: string[] = [...PLAN_KEYS];
 
 describe('plan catalog covers exactly the tier vocabulary', () => {
   test('every TIERS key has a record, and the catalog adds none of its own', () => {
     expect([...TIER_KEYS].sort()).toEqual(Object.keys(PLAN_CATALOG).sort());
-    // 16 keys: none, free, pro, per_seat, starter, team, scale, enterprise, and
-    // the 8 legacy tier_N_M plans. Pinned so adding a tier without a plan record
+    // 4 keys: none, free, credits, enterprise. Every other stored key is a
+    // legacy alias of `credits`. Pinned so adding a tier without a plan record
     // (or the reverse) fails here rather than silently resolving to `none`.
-    expect(TIER_KEYS).toHaveLength(16);
+    expect(TIER_KEYS).toEqual(['none', 'free', 'credits', 'enterprise']);
+    expect(TIER_KEYS).toHaveLength(4);
+  });
+
+  test('every legacy plan key resolves to the credits record, tier and entitlements', () => {
+    for (const key of LEGACY_PAID_PLAN_KEYS) {
+      expect(canonicalTier(key)).toBe('credits');
+      expect(getPlanRecord(key)).toBe(PLAN_CATALOG.credits as NonNullable<typeof PLAN_CATALOG.credits>);
+      expect(resolvePlanRecord(key).key).toBe('credits');
+      expect(getTier(key).name).toBe('credits');
+      expect(observedLlmMultiplier(key)).toBe(12);
+    }
   });
 
   test('catalog membership is the same predicate as isValidTier', () => {
@@ -93,14 +105,6 @@ for (const key of TIER_KEYS) {
 
     test('displayName is exactly today’s displayName', () => {
       expect(record.displayName).toBe(tier.displayName);
-    });
-
-    test('price matches TierConfig.monthlyPrice', () => {
-      expect(record.price.amountUsd).toBe(tier.monthlyPrice);
-    });
-
-    test('grant matches TierConfig.monthlyCredits', () => {
-      expect(record.grant.includedCreditsUsd).toBe(tier.monthlyCredits);
     });
 
     test('canPurchaseCredits matches TierConfig.canPurchaseCredits', () => {
@@ -130,14 +134,8 @@ for (const key of TIER_KEYS) {
       expect(record.limits.llmRateMultiplier).toBe(observedLlmMultiplier(key));
     });
 
-    test('metersCompute is true only for the seat shape', () => {
-      // accountMetersCompute() is billing_model-driven ('per_seat' | 'credit'),
-      // so on a RECORD the only structurally implied case is shape 'seat'.
-      expect(record.entitlements.metersCompute).toBe(record.shape === 'seat');
-    });
-
-    test('family is one of the three public families; compute multiplier is 1.0', () => {
-      expect(['free', 'team', 'enterprise']).toContain(record.family);
+    test('family is one of the public families; compute multiplier is 1.0', () => {
+      expect(['free', 'credits', 'enterprise']).toContain(record.family);
       expect(record.compute.rateMultiplier).toBe(1.0);
     });
   });
@@ -156,45 +154,21 @@ describe('rank is a strict ladder', () => {
     expect(PLAN_CATALOG.enterprise?.rank).toBe(maxRank);
   });
 
-  test('rank strictly increases over getTierOrder’s known order', () => {
-    // The exact order array in tiers.ts getTierOrder().
-    const known = [
-      'none',
-      'free',
-      'pro',
-      'tier_2_20',
-      'tier_6_50',
-      'tier_12_100',
-      'tier_25_200',
-      'tier_50_400',
-      'tier_125_800',
-      'tier_200_1000',
-      'tier_150_1200',
-      'enterprise',
-    ];
-    // Guard the list itself against drift in getTierOrder.
-    expect(known.map((k) => getTierOrder(k))).toEqual(known.map((_, i) => i));
-
+  test('rank strictly increases over none, free, credits, enterprise', () => {
+    const known = ['none', 'free', 'credits', 'enterprise'];
     for (let i = 1; i < known.length; i++) {
       const prev = PLAN_CATALOG[known[i - 1] as string] as { rank: number };
       const curr = PLAN_CATALOG[known[i] as string] as { rank: number };
       expect(curr.rank).toBeGreaterThan(prev.rank);
     }
   });
-
-  test('rank ascends with monthly price above free (enterprise excepted)', () => {
-    const ladder = Object.values(PLAN_CATALOG).sort((a, b) => a.rank - b.rank).filter((r) => r.key !== 'none' && r.key !== 'enterprise');
-    for (let i = 1; i < ladder.length; i++) {
-      const prev = ladder[i - 1] as { price: { amountUsd: number } };
-      const curr = ladder[i] as { price: { amountUsd: number } };
-      expect(curr.price.amountUsd).toBeGreaterThanOrEqual(prev.price.amountUsd);
-    }
-  });
 });
 
 describe('lookup helpers are total and fail-safe', () => {
   test('getPlanRecord returns the record for a known key', () => {
-    expect(getPlanRecord('per_seat')?.key).toBe('per_seat');
+    expect(getPlanRecord('credits')?.key).toBe('credits');
+    // A legacy key resolves to the credits record.
+    expect(getPlanRecord('per_seat')?.key).toBe('credits');
   });
 
   test('getPlanRecord returns null for unknown / empty / null keys', () => {

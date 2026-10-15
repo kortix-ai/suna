@@ -192,9 +192,10 @@ export function registerModelsRoutes(): void {
         principalUserId: loaded.userId,
         personalUserId: await requestPersonalOwner(c, loaded),
       });
+      // Base provider prices: the platform fee is stated once, beside them.
       const quotes = await cachedManagedPricingRoutes(
         config.MORPH_MANAGED_MODELS,
-        llmPriceMarkup(),
+        1,
         Boolean(config.MORPH_API_KEY),
         { baseUrl: config.OPENROUTER_API_URL, apiKey: config.OPENROUTER_API_KEY ?? '' },
       );
@@ -203,6 +204,7 @@ export function registerModelsRoutes(): void {
         managedPricingRoutes: Object.fromEntries(
           Object.entries(quotes).filter(([id]) => id in catalog.models),
         ),
+        platformFeePercent: Math.round((llmPriceMarkup() - 1) * 1000) / 10,
       });
     },
   );

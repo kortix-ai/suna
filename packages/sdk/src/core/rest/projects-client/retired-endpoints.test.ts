@@ -15,6 +15,10 @@ import {
   listReferrals,
   refreshReferralCode,
   scheduleDowngrade,
+  cancelScheduledChange,
+  claimPerSeatBilling,
+  createPerSeatCheckout,
+  getProrationPreview,
   sendReferralEmails,
   updateTemplateWarmPool,
   validateReferralCode,
@@ -47,7 +51,8 @@ const retired = (name: string, instead?: string) =>
   `${name}() is retired: the Kortix API no longer serves this endpoint.${instead ? ` ${instead}` : ''}`;
 
 const SLIDES_INSTEAD = 'Export the deck as PDF or PPTX with convertRuntimePresentation().';
-const CHECKOUT_INSTEAD = 'Use createPerSeatCheckout().';
+const CHECKOUT_INSTEAD = 'Use setBillingPlan().';
+const PORTAL_INSTEAD = 'Change the plan with setBillingPlan(); manage the card in the Stripe customer portal (createPortalSession()).';
 const DOWNGRADE_INSTEAD = 'Change the plan in the Stripe customer portal (createPortalSession()).';
 
 /** `[name, call, message]` for every export that rejects with
@@ -103,6 +108,27 @@ const RETIRED: Array<[name: string, call: () => Promise<unknown>, message: strin
     'scheduleDowngrade',
     () => scheduleDowngrade('starter', 'monthly', 'acc-1'),
     retired('scheduleDowngrade', DOWNGRADE_INSTEAD),
+  ],
+  [
+    'createPerSeatCheckout',
+    () =>
+      createPerSeatCheckout({ successUrl: 'https://app.test/s', cancelUrl: 'https://app.test/c' }),
+    retired('createPerSeatCheckout', CHECKOUT_INSTEAD),
+  ],
+  [
+    'claimPerSeatBilling',
+    () => claimPerSeatBilling('acc-1'),
+    retired('claimPerSeatBilling', CHECKOUT_INSTEAD),
+  ],
+  [
+    'cancelScheduledChange',
+    () => cancelScheduledChange('acc-1'),
+    retired('cancelScheduledChange', PORTAL_INSTEAD),
+  ],
+  [
+    'getProrationPreview',
+    () => getProrationPreview('price_1', 'acc-1'),
+    retired('getProrationPreview', PORTAL_INSTEAD),
   ],
 ];
 
