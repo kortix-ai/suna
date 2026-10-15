@@ -1,5 +1,10 @@
 import { readFileSync } from '@/i18n/test-source';
-import { expect, test } from 'bun:test';
+import { afterEach, expect, mock, test } from 'bun:test';
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { Window } from 'happy-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { qk } from '../../../../../packages/sdk/src/react/query-keys';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
@@ -9,48 +14,76 @@ const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-shared.tsx', '
   .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
   .join('\n');
 
-test('no Apps surface gates on a feature flag — Apps is generally available', () => {
-  const nav = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
-    'utf8',
-  );
-  const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
-  const view = appsSource();
-  const meta = readFileSync(resolve(root, 'features/workspace/project-sidebar/nav-row-meta.tsx'), 'utf8');
-  const pool = readFileSync(resolve(root, 'features/apps/app-preview-pool-loader.tsx'), 'utf8');
+// Mount the production components. Only routing, shell context and permission
+// probes are substituted; inventory and flag reads use real SDK hooks/cache data.
+const win = new Window();
+Object.assign(globalThis, { window: win, document: win.document, navigator: win.navigator });
+Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
+const projectId = 'project-apps-ga';
+mock.module('next/navigation', () => ({
+  useParams: () => ({ id: projectId }),
+  usePathname: () => `/projects/${projectId}/apps`,
+  useSearchParams: () => new URLSearchParams(),
+}));
+mock.module('next/link', () => ({
+  default: ({ href, children, prefetch: _prefetch, ...props }: React.PropsWithChildren<{ href: string; prefetch?: boolean }>) =>
+    React.createElement('a', { href, ...props }, children),
+}));
+mock.module('@/hooks/utils', () => ({ useIsMobile: () => false }));
+mock.module('@/components/ui/sidebar', () => ({
+  useSidebar: () => ({ setOpenMobile: () => {} }),
+  useOptionalSidebar: () => null,
+  SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),
+  SidebarMenuButton: ({ children }: React.PropsWithChildren) => children,
+}));
+mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
+mock.module('@/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
 
-  // Apps went GA (2026-10-14): there is no `apps` feature flag, so no Apps
-  // surface may gate on one — no flag read, no registry condition, no gate
-  // screen. A flag must not come back silently on one surface.
-  for (const [name, source] of [
-    ['project-apps-nav', nav],
-    ['menu-registry', menu],
-    ['apps views', view],
-    ['nav-row-meta', meta],
-    ['app-preview-pool-loader', pool],
-  ] as const) {
-    expect(source, name).not.toContain("useFeatureFlag(projectId, 'apps')");
-    expect(source, name).not.toContain("requiresFlag: 'apps'");
-  }
-  expect(view).not.toContain('<FeatureGateScreen');
-  expect(nav).not.toContain('useAppsFeatureEnabled');
-  expect(view).not.toContain('useAppsFeatureEnabled');
+// The detail modal is outside the empty-inventory path under test.
+mock.module('./app-detail', () => ({ AppDetailModal: () => null }));
+
+const navModule = await import('../workspace/project-sidebar/footer/project-apps-nav');
+const viewModule = await import('./apps-view');
+let mounted: Root | undefined;
+let client: QueryClient | undefined;
+afterEach(() => {
+  act(() => mounted?.unmount());
+  mounted = undefined;
+  client?.clear();
+  win.document.body.replaceChildren();
 });
 
-test('Apps is an ordinary product — nothing calls it experimental', () => {
-  // Apps shipped labelled Experimental on every surface, then shipped as a
-  // STABLE flag. It is now generally available and carries no badge anywhere:
-  // the sidebar entry and the page header have none, and there is no Settings
-  // row to badge.
-  const nav = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
-    'utf8',
-  );
-  const view = appsSource();
-
-  expect(nav).not.toContain('Experimental');
-  expect(view).not.toContain('Experimental');
-});
+for (const [name, experimental] of [
+  ['flagless', {}],
+  ['stored apps:false', { apps: false }],
+] as const) {
+  test(`${name} project renders the real Apps link and product empty state without a gate or switch`, async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client = queryClient;
+    queryClient.setQueryData(qk.project.detail(projectId), { project: { project_id: projectId, experimental } });
+    queryClient.setQueryData(qk.project.apps(projectId), []);
+    const host = win.document.createElement('div');
+    win.document.body.append(host);
+    const root = createRoot(host);
+    mounted = root;
+    await act(async () => {
+      root.render(React.createElement(QueryClientProvider, { client: queryClient },
+        React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem)),
+        React.createElement(viewModule.AppsView, { projectId }),
+      ));
+    });
+    const link = host.querySelector('[data-testid="sidebar"] a');
+    expect(link?.getAttribute('href')).toBe(`/projects/${projectId}/apps`);
+    expect(link?.textContent).toBe('Apps');
+    expect(host.querySelector('h1')?.textContent).toBe('Apps');
+    expect(host.textContent).toContain('Apps you publish will show up here');
+    expect(host.textContent).toContain('Ask an agent to build one.');
+    expect(host.querySelector('a[href="/docs/apps"]')).not.toBeNull();
+    expect(host.querySelector('[role="switch"], input[type="checkbox"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/Enable Apps|Feature flags|Experimental/);
+    expect(host.querySelector('a[href*="settings"]')).toBeNull();
+  });
+}
 
 test('Apps sits with Customize in the sidebar, not in the bottom alert group', () => {
   const sidebar = readFileSync(
@@ -71,16 +104,6 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
   expect(appsAt).toBeGreaterThan(customizeAt);
   expect(appsAt).toBeLessThan(filesAt);
   expect(sidebar.indexOf('<ProjectNavItems')).toBeLessThan(sidebar.indexOf('<ProjectSessionList'));
-});
-
-test('the Apps page never offers its own switch — Apps has no off state to configure', () => {
-  const view = appsSource();
-
-  // The page renders the gallery and its controls; it has no mutation that
-  // flips a feature on or off (Apps itself has no flag any more).
-  expect(view).not.toContain('updateExperimentalFeature');
-  expect(view).not.toContain('updateFeatureFlag');
-  expect(view).not.toContain('Enable Apps');
 });
 
 test('Apps UI is operational only and has no creation action or modal', () => {

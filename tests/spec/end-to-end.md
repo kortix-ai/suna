@@ -1263,7 +1263,10 @@ Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
 back an unknown deployment, or starting/stopping an undeployed App → 409/400 as
 specified by each route. `APP-2` exercises these boundaries through the real
-HTTP API, then deletes the test App.
+HTTP API on a project seeded with persisted `metadata.experimental.apps: false`:
+Apps list → 200, create → 201, and a matching OCI deployment → 202 queued
+(version 1), readable by ID. It then deletes the test App. `APP-1` retains the
+separate no-override CRUD coverage.
 
 `APP-3` Machine limits — an App machine answers to the same ceiling a session
 sandbox does (`SANDBOX_SPEC_LIMITS`: 32 CPU, 128 GB memory, 500 GB disk). The

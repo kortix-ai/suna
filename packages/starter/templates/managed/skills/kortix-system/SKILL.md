@@ -383,9 +383,8 @@ type. `labels` (for example `backend`) only group and filter Apps.
   an admins-only dashboard (`backend-dashboard`). Its code lives in
   `apps/backend/convex/` and ships with `npx convex deploy`.
 
-Apps is off by default and enabled per project by Kortix (it is not listed in
-Project Settings → Feature flags; the user contacts Kortix). The CLI labels
-Apps as experimental.
+Apps are generally available in every project. Use Apps directly; no feature
+flag or enablement request is required.
 
 New Apps are private. Use `kortix apps access <app>` to select creator-only,
 whole-project, restricted member/group, public, or password access. Never store
@@ -417,8 +416,7 @@ A server App supports HTTP services (each on its own host), HTTP streaming,
 SSE and WebSockets. Apps do not support TCP or UDP services, private
 networking between Apps, private registries, or custom domains yet.
 
-**Build a product: what to create.** Check the flag first:
-`kortix projects info --json` → `experimental.apps`.
+**Build a product: what to create.**
 
 | The user wants | Build |
 | --- | --- |

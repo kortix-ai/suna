@@ -36,9 +36,8 @@ flow(
 
     await ctx.step("a project with no flag override reaches Apps: list answers 200", async () => {
       // Apps went GA (2026-10-14, spec §28): there is no `apps` flag, so a
-      // project that never opted in — and one carrying a leftover stored
-      // `apps: false` — lists, creates and deploys Apps. Regression gate for
-      // the old 403 `feature_disabled`.
+      // project that never opted in can list and create Apps. APP-2 covers
+      // persisted `apps: false`, including an accepted deployment.
       const response = await owner.get("/v1/projects/:projectId/apps", {
         params: projectParams,
       });
@@ -218,7 +217,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PUT /v1/admin/api/projects/:id/features",
+      "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "DELETE /v1/projects/:projectId/apps/:appId",
       "POST /v1/projects/:projectId/apps/artifacts",
@@ -239,6 +238,24 @@ flow(
     const project = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
+
+    await ctx.step("persist legacy apps:false directly; Apps still lists with 200", async () => {
+      await withDb(ctx, async (db) => {
+        const seeded = await db.query(
+          `UPDATE kortix.projects
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+             'experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"apps":false}'::jsonb)
+           WHERE project_id = $1
+           RETURNING metadata->'experimental'->'apps' AS apps`,
+          [project.id],
+        );
+        if (seeded.rows.length !== 1 || seeded.rows[0].apps !== false) {
+          throw new Error("legacy apps:false was not persisted");
+        }
+      });
+      (await owner.get("/v1/projects/:projectId/apps", { params: projectParams }))
+        .status(200).body().has("$.apps", []);
+    });
 
     const slug = ctx.fixtures
       .name("deploy")
@@ -383,6 +400,32 @@ flow(
         stop.status(409);
       },
     );
+
+    await ctx.step("legacy apps:false permits an immutable OCI deployment: 202 queued, version 1, readable by ID", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        {
+          artifact_id: artifactId,
+          source: {
+            kind: "oci_image",
+            image: "docker.io/library/nginx:alpine",
+            command: ["nginx", "-g", "daemon off;"],
+            port: 80,
+          },
+        },
+        { params: appParams },
+      );
+      response.status(202).body().has("$.status", "queued").has("$.version", 1).exists("$.deployment_id");
+      const deploymentBody = response.json<unknown>();
+      if (typeof deploymentBody !== "object" || deploymentBody === null ||
+          !("deployment_id" in deploymentBody) || typeof deploymentBody.deployment_id !== "string") {
+        throw new Error("accepted deployment did not return a deployment ID");
+      }
+      const deploymentId = deploymentBody.deployment_id;
+      (await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId", {
+        params: { ...appParams, deploymentId },
+      })).status(200).body().has("$.deployment.deployment_id", deploymentId);
+    });
 
     await ctx.step("delete the test App after the boundary checks", async () => {
       const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
