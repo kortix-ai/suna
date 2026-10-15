@@ -15,7 +15,8 @@ describe('prompt', () => {
     expect(prompt).toContain('Never invent them');
     expect(prompt).not.toContain('Query(');
     expect(prompt).not.toContain('Mutation(');
-    expect(prompt).not.toContain('$');
+    // No openui $state variables. The one `$` is the quoted bash variable in the geocoding loop.
+    expect(prompt.replace('"q=$q"', '')).not.toContain('$');
   });
   test('teaches positional arguments, component children, and argument order', () => {
     expect(prompt).toContain('Arguments are positional only');
@@ -39,8 +40,11 @@ describe('prompt', () => {
     expect(prompt).toContain('look them all up in ONE bash call');
     expect(prompt).toContain('https://nominatim.openstreetmap.org/search -d format=jsonv2 -d limit=1 --data-urlencode');
     expect(prompt).toContain('give links instead of a Map');
-    // tr + xargs -0: a quote in a place name (Saint Mark's) does not end xargs' input.
-    expect(prompt).toContain('| tr "\\n" "\\0" | xargs -0 -I{}');
+    // read -r into a quoted "$q": a quote (Saint Mark's) or $(...) in a place name stays data, never shell code.
+    expect(prompt).toContain('| while IFS= read -r q; do curl -sG');
+    expect(prompt).toContain('--data-urlencode "q=$q"; echo; sleep 1; done');
+    expect(prompt).not.toContain('sh -c');
+    expect(prompt).not.toContain('xargs');
   });
   test('maps content to blocks and forbids markdown tables for data', () => {
     expect(prompt).toContain('Never write a markdown table for data');
