@@ -426,10 +426,6 @@ networking between Apps, private registries, or custom domains yet.
 | A call to an external system from an App | The connector gateway (`kortix-connectors`) |
 | Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` |
 
-When `apps` is off, build with the project's own storage and code (the
-project's web-app skills, `webapp`, `web-publishing-and-deployments`), and tell
-the user once that Kortix can enable it.
-
 Load the `kortix-apps` system skill before you deploy or operate an App, and
 before you write Convex code.
 **Full reference:** `references/kortix/apps.md` — workload selection, manifest
