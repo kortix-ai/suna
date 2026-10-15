@@ -1,0 +1,30 @@
+{
+  "source_hash": "d0727cfcd938de29e6bf47a59763873b8eb187240303d2a56223cfcc1373331b",
+  "diff_files": [
+    ".agents/skills/billing/references/plans-and-access.md",
+    "apps/api/src/__tests__/unit-byok-fee.test.ts",
+    "apps/api/src/__tests__/unit-entitlement-overrides.test.ts",
+    "apps/api/src/__tests__/unit-resolve-billing.test.ts",
+    "apps/api/src/billing/services/byok-fee.ts",
+    "apps/api/src/billing/services/entitlement-overrides.ts",
+    "apps/api/src/billing/services/plan-catalog.ts",
+    "apps/api/src/llm-gateway/hooks.ts",
+    "apps/api/src/llm-gateway/usage-settlement.integration.test.ts",
+    "apps/web/content/docs/credits.mdx",
+    "apps/web/src/app/[locale]/admin/accounts/entitlements.test.ts",
+    "apps/web/src/app/[locale]/admin/accounts/overrides-form.test.ts",
+    "apps/web/src/app/[locale]/admin/accounts/page.tsx",
+    "packages/sdk/CHANGELOG.md",
+    "packages/sdk/src/react/use-admin-accounts.test.ts",
+    "packages/sdk/src/react/use-admin-accounts.ts"
+  ],
+  "diff_hash": "f222201c24d72e3db6721f6c4d9168188790af27be45a92636b53aa044d2edfe",
+  "head": "ec5febfd527ce76badaf145cf07718c1e4c82c82",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T18:49:47.042Z"
+}
