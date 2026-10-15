@@ -444,10 +444,12 @@ export function selectedKortixTools(tools: unknown): string[] {
 export const REGISTRY_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export const REGISTRY_NAME_MAX = 64;
 /**
- * The Kortix skills (packages/starter/templates/managed/skills). Every v3
- * project has them without a `skills` entry; an agent grants them by name.
+ * The Kortix skills (`KORTIX_MANAGED_SKILL_NAMES` in @kortix/starter: the
+ * `kortix-cli` front door plus templates/managed/skills). Every v3 project has
+ * them without a `skills` entry; an agent grants them by name.
  */
 export const KORTIX_SKILL_NAMES = [
+  'kortix-cli',
   'kortix-apps',
   'kortix-computer',
   'kortix-connectors',

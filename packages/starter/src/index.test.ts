@@ -254,20 +254,20 @@ describe('getStarterFiles', () => {
     ].sort());
   });
 
-  test('minimal starter includes the runtime plugin but no tool copies or optional marketplace skills', () => {
+  test('minimal starter includes the pty extension but no tool copies or optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
     // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
-    expect([...paths].filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
+    expect([...paths].filter((path) => path.startsWith('tools/'))).toEqual([]);
     // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
     // `kortix-*` family lives in `templates/managed/` and is injected at boot.
     expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(true);
     expect(paths.has('skills/kortix-system/SKILL.md')).toBe(false);
     expect(paths.has('skills/agent-browser/SKILL.md')).toBe(false);
-    expect(paths.has('harnesses/opencode/plugins/pty.ts')).toBe(true);
-    expect(paths.has('harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
-    expect(paths.has('harnesses/opencode/plugins/lib/tool.ts')).toBe(true);
+    expect(paths.has('extensions/pty/pty.ts')).toBe(true);
+    expect(paths.has('extensions/pty/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
+    expect(paths.has('extensions/pty/lib/tool.ts')).toBe(true);
   });
 
   test('marketplace source contains optional first-party skills only', () => {

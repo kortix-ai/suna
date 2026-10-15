@@ -1,0 +1,8 @@
+{
+  "name": "kortix-extension-pty",
+  "private": true,
+  "//": "The pty extension's runtime dependency: zod, for the tool argument schemas. kortix.yaml registers this extension under `extensions.pty`.",
+  "dependencies": {
+    "zod": "4.1.8"
+  }
+}
