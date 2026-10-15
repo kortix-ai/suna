@@ -87,7 +87,7 @@ describe('BillingTab — plan pane without a paid subscription', () => {
   test('a member who may not change billing sees who to ask, not the picker', () => {
     accountStateData = freeState({ can_manage_billing: false });
     const html = renderPlan();
-    expect(html).toContain('Only account owners can change the plan.');
+    expect(html).toContain('Only account owners and admins can change the plan.');
     expect(html).not.toContain('Subscribe for');
   });
 

@@ -29,7 +29,7 @@ function render(canManageBilling: boolean | undefined): string {
 describe('the out-of-credits card', () => {
   test('a member is told who can add credits, with no buy or auto top-up link', () => {
     const markup = render(false);
-    expect(markup).toContain('Only an account owner can add credits');
+    expect(markup).toContain('Only an account owner or admin can add credits');
     expect(markup).not.toContain('Buy credits');
     expect(markup).not.toContain('Enable auto top-up');
   });
@@ -39,13 +39,13 @@ describe('the out-of-credits card', () => {
     expect(markup).toContain('You ran out of credits');
     expect(markup).not.toContain('Buy credits');
     expect(markup).not.toContain('Enable auto top-up');
-    expect(markup).not.toContain('Only an account owner can add credits');
+    expect(markup).not.toContain('Only an account owner or admin can add credits');
   });
 
   test('a billing manager keeps both links', () => {
     const markup = render(true);
     expect(markup).toContain('Buy credits');
     expect(markup).toContain('Enable auto top-up');
-    expect(markup).not.toContain('Only an account owner can add credits');
+    expect(markup).not.toContain('Only an account owner or admin can add credits');
   });
 });

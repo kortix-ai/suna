@@ -40,21 +40,24 @@ function useSidebarUpgrade(accountId?: string) {
   );
 
   if (!isBillingEnabled() || !accountState) {
-    return { show: false as const, handleClick };
+    return { show: false as const, trial: null, handleClick };
   }
 
+  // A trial is always visible, with the upgrade one click away: the account
+  // must never learn it was on a trial when the trial ends.
+  const trial = accountState.trial ?? null;
   const hasActiveSubscription = !!accountState.subscription?.subscription_id;
   // The RESOLVED plan family (free = the keys `free` and `none`), so an admin
   // trial reads as paid here, exactly as the server's gates read it.
   const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
-  const show = isFreeOrNoPlan && !hasActiveSubscription;
+  const show = !!trial || (isFreeOrNoPlan && !hasActiveSubscription);
 
-  return { show, handleClick };
+  return { show, trial, handleClick };
 }
 
 export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeButtonProps) {
   const t = useTranslations('sidebar');
-  const { show, handleClick } = useSidebarUpgrade(accountId);
+  const { show, trial, handleClick } = useSidebarUpgrade(accountId);
 
   if (!show) return null;
 
@@ -66,7 +69,12 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
         className={cn(className)}
         onClick={handleClick}
       >
-        {t('upgradePlan')}
+        {trial
+          ? t('trialBadge', {
+              plan: trial.plan === 'enterprise' ? t('trialPlanEnterprise') : t('trialPlanCredits'),
+              days: trial.days_left,
+            })
+          : t('upgradePlan')}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

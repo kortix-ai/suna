@@ -124,6 +124,7 @@ export {
   kortixApiKeysRelations,
   // Billing / Credits (moved from public → kortix schema)
   billingCustomers,
+  enterpriseContracts,
   creditAccounts,
   creditLedger,
   creditUsage,
