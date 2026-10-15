@@ -1198,10 +1198,13 @@
     "undo": "撤销",
     "pinnedSection": "已置顶",
     "archivedView": "已归档",
-    "archivedEmpty": "你归档的会话将显示在这里。"
+    "archivedEmpty": "你归档的会话将显示在这里。",
+    "stoppedBy": "由 {{name}} 停止",
+    "stopNotAllowed": "只有发起此次运行的成员、会话所有者或项目管理者可以停止它。"
   },
   "genui": {
     "chartTapHint": "点按查看数值",
+    "checklistReady": "已完成 {{done}}/{{total}}",
     "map": "地图",
     "mapUnavailable": "地图不可用",
     "openImage": "打开图片",

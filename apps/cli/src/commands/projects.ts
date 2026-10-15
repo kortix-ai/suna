@@ -237,8 +237,8 @@ export async function runProjects(argv: string[]): Promise<number> {
 const FEATURES_HELP = help`Usage: kortix projects features [ls | enable | disable | reset] [<flag>]
 
 Per-project feature flags — the same switches as Settings → Feature flags.
-A flag is a stable key (e.g. apps, voice, llm_gateway). State is stored on
-the project row, never in kortix.yaml.
+A flag is a stable key (e.g. monitors, event_triggers, llm_gateway). State is
+stored on the project row, never in kortix.yaml.
 
 Subcommands:
   ls                    List every flag: key, state, origin. (--json)
@@ -254,9 +254,9 @@ Options:
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 
-Internal-only flags (apps) are listed only while they are on, with
-origin "kortix". Only Kortix changes them: enable, disable and reset answer
-feature_operator_only. Contact Kortix to change one.
+Internal-only flags (session_log, session_log_restore) are listed only while
+they are on, with origin "kortix". Only Kortix changes them: enable, disable
+and reset answer feature_operator_only. Contact Kortix to change one.
 `;
 
 interface FeatureFlagRow {

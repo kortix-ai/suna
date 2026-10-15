@@ -1255,6 +1255,15 @@
                         }
                       ]
                     }
+                  },
+                  "codemode": {
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "on",
+                      "only"
+                    ],
+                    "description": "pi's codemode tool: the model writes a script that calls the other tools. on (default) keeps the other tools declared, only gives the model codemode alone, off removes it. An agent's value replaces the top-level one."
                   }
                 },
                 "additionalProperties": false
@@ -1831,6 +1840,15 @@
                               }
                             ]
                           }
+                        },
+                        "codemode": {
+                          "type": "string",
+                          "enum": [
+                            "off",
+                            "on",
+                            "only"
+                          ],
+                          "description": "pi's codemode tool: the model writes a script that calls the other tools. on (default) keeps the other tools declared, only gives the model codemode alone, off removes it. An agent's value replaces the top-level one."
                         },
                         "exclude": {
                           "type": "array",
@@ -3583,6 +3601,15 @@
                         }
                       ]
                     }
+                  },
+                  "codemode": {
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "on",
+                      "only"
+                    ],
+                    "description": "pi's codemode tool: the model writes a script that calls the other tools. on (default) keeps the other tools declared, only gives the model codemode alone, off removes it. An agent's value replaces the top-level one."
                   }
                 },
                 "additionalProperties": false
@@ -4154,6 +4181,15 @@
                               }
                             ]
                           }
+                        },
+                        "codemode": {
+                          "type": "string",
+                          "enum": [
+                            "off",
+                            "on",
+                            "only"
+                          ],
+                          "description": "pi's codemode tool: the model writes a script that calls the other tools. on (default) keeps the other tools declared, only gives the model codemode alone, off removes it. An agent's value replaces the top-level one."
                         },
                         "exclude": {
                           "type": "array",

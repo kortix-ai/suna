@@ -61,6 +61,7 @@ const {
   agentMarkdownPath,
   compileAgentConfig,
   compileSelectedAgentConfig,
+  manifestPiCodemode,
   manifestPiPackageLists,
   manifestPiPackages,
   manifestRuntime,
@@ -623,6 +624,26 @@ describe('manifestPiPackages — the project pi packages a manifest declares', (
   });
 });
 
+describe('manifestPiCodemode — harnesses.pi.codemode for the session agent', () => {
+  const RAW = parseYaml(
+    'kortix_version: 2\ndefault_agent: builder\nharnesses:\n  pi:\n    codemode: only\nagents:\n  builder: {}\n  quiet:\n    harnesses:\n      pi:\n        codemode: off\n',
+  );
+
+  test('an agent value replaces the top-level one; no agent named means the default agent', () => {
+    expect(manifestPiCodemode(RAW, 'quiet')).toBe('off');
+    expect(manifestPiCodemode(RAW, 'builder')).toBe('only');
+    expect(manifestPiCodemode(RAW)).toBe('only');
+    expect(manifestPiCodemode(RAW, 'default')).toBe('only');
+  });
+
+  test('null when nothing sets it, for a v1 manifest, or for a value outside off, on, only', () => {
+    expect(manifestPiCodemode(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toBeNull();
+    expect(manifestPiCodemode(parseYaml('harnesses:\n  pi:\n    codemode: off\n'))).toBeNull();
+    expect(manifestPiCodemode(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    codemode: yes\n'))).toBeNull();
+    expect(manifestPiCodemode(null)).toBeNull();
+  });
+});
+
 // ─── resolveCompiledAgentConfigForSession (I/O half) ───────────────────────
 
 const PROJECT = {
@@ -916,6 +937,33 @@ agents:
     expect(selected.agent.reader?.prompt).toBe('Read only.');
     expect(() => compileAgentConfig(manifest, 'opencode')).toThrow('prompt_file');
     expect(() => compileAgentConfig({ ...manifest, agents: { writer: { prompt_file: '../secret.md' } } }, 'opencode', { '../secret.md': 'wrong' })).toThrow('prompt_file');
+  });
+});
+
+// Prod 2026-10-14: a project whose declared agents held ~270 KB of prompts never
+// booted (one env string over 128 KiB). A v3 project declares them in kortix.yaml.
+describe('a compiled config over 128 KiB', () => {
+  test('17 declared agents with ~300 KB of prompts reach the sandbox env, every string within the exec limit', async () => {
+    const { buildSessionRuntimeEnv } = await import('./session-runtime-env');
+    const { MAX_ENV_STRING_BYTES, envStringBytes, readCompiledAgentConfigEnv } = await import('@kortix/api-contract/compiled-agent-config-env');
+    const words = 'read the evidence pack then cite each page and the quoted line before any claim about the class'.split(' ');
+    const prose = (seed: number) => Array.from({ length: 3_600 }, (_, i) => words[(seed * 7 + i * i) % words.length]).join(' ');
+    const agents: Record<string, unknown> = { lead: { mode: 'primary', prompt: 'Lead.' }, admin: { mode: 'primary', prompt: 'Admin.' } };
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 15; i++) {
+      agents[`worker-${i}`] = { mode: 'subagent', model: 'kortix/test-model', variant: 'high', permission: 'allow', prompt_file: `agents/worker-${i}.md` };
+      files[`agents/worker-${i}.md`] = prose(i);
+    }
+    const compiled = JSON.stringify(compileAgentConfig({ kortix_version: 3, default_agent: 'lead', agents }, 'opencode', files));
+    expect(Buffer.byteLength(compiled)).toBeGreaterThan(280_000);
+
+    const env = buildSessionRuntimeEnv({ projectId: 'p', sessionId: 's', compiledAgentConfig: compiled } as Parameters<typeof buildSessionRuntimeEnv>[0]);
+    for (const [name, value] of Object.entries(env)) {
+      if (value !== undefined) expect({ name, fits: envStringBytes(name, value) <= MAX_ENV_STRING_BYTES }).toEqual({ name, fits: true });
+    }
+    const delivered = JSON.parse(readCompiledAgentConfigEnv(env)!);
+    expect(Object.keys(delivered.agent)).toHaveLength(17);
+    expect(delivered.agent['worker-14']).toMatchObject({ mode: 'subagent', model: 'kortix/test-model', variant: 'high', prompt: prose(14), permission: 'allow' });
   });
 });
 

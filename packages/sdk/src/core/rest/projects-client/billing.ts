@@ -106,10 +106,12 @@ export interface AccountState {
    * The plan the account BEHAVES as, named the way the product names plans.
    *
    * Distinct from `subscription` on purpose. `subscription.tier_key` is the
-   * STORED plan (legacy keys read as `'credits'`). This block is the RESOLVED
-   * plan: an active admin-issued trial overlays it, so it reports the plan the
-   * server's gates actually enforce. Read it through {@link resolvedPlan},
-   * which also covers responses from an API too old to send it.
+   * STORED plan (legacy keys read as `'credits'`). This block is the BILLING
+   * plan: what the account pays for. A Credits trial overlays it; an
+   * Enterprise trial does not, because it lends the Enterprise features only
+   * (see `trial`, and `tier.entitlements` for what the gates enforce). Read it
+   * through {@link resolvedPlan}, which also covers responses from an API too
+   * old to send it.
    */
   plan?: {
     /** Plan key — 'none' | 'free' | 'credits' | 'enterprise'. */
@@ -132,6 +134,9 @@ export interface AccountState {
   subscription: {
     tier_key: string;
     tier_display_name: string;
+    /** The credits plan's monthly amount the account PAYS, in USD, or null
+     *  when it pays none. Kept during a trial, while `plan.monthly_usd` is null. */
+    monthly_usd?: number | null;
     status: string;
     billing_period: 'monthly' | 'yearly' | 'yearly_commitment' | null;
     provider: 'stripe' | 'revenuecat' | 'local';
@@ -302,6 +307,7 @@ export function getDefaultAccountState(): AccountState {
     subscription: {
       tier_key: 'none',
       tier_display_name: 'No Plan',
+      monthly_usd: null,
       status: 'no_subscription',
       billing_period: null,
       provider: 'stripe',

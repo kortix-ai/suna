@@ -1198,10 +1198,13 @@
     "undo": "Annulla",
     "pinnedSection": "Fissate",
     "archivedView": "Archiviate",
-    "archivedEmpty": "Le sessioni che archivi verranno mostrate qui."
+    "archivedEmpty": "Le sessioni che archivi verranno mostrate qui.",
+    "stoppedBy": "Interrotto da {{name}}",
+    "stopNotAllowed": "Solo il membro che ha avviato questa esecuzione, il proprietario della sessione o un gestore del progetto può interromperla."
   },
   "genui": {
     "chartTapHint": "Tocca per leggere un valore",
+    "checklistReady": "{{done}}/{{total}} pronti",
     "map": "Mappa",
     "mapUnavailable": "Mappa non disponibile",
     "openImage": "Apri immagine",

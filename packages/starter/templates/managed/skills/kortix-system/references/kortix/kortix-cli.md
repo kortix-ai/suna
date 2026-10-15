@@ -138,11 +138,8 @@ an on-demand App only while awake. Apps have no budget. Every App lists its `cap
 subcommand for a capability the App lacks exits `1` with
 `App <slug> does not support <capability>.`
 
-Apps is internal-only: Kortix enables it per project on request, and only
-Kortix can change it. When it is on, `kortix projects features` lists
-`apps on kortix` and `kortix projects info --json` has `experimental.apps: true`.
-When it is off, every `kortix apps` command answers `feature_disabled`
-("Contact Kortix to enable it.").
+Apps are generally available in every project. Use `kortix apps` directly;
+no feature flag or enablement request is required.
 
 | Command | Effect |
 | --- | --- |

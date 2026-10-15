@@ -1713,8 +1713,8 @@ function SelectCell({ select }: { select?: MemberSelect }) {
           onClick={(event) => event.stopPropagation()}
           aria-label={select.label}
           className={cn(
-            // A 14px box with a 32px hit area: the pseudo-element takes the clicks.
-            "relative size-3.5 rounded after:absolute after:-inset-2.5 after:content-['']",
+            // A 32px hit area: the pseudo-element takes the clicks.
+            "relative after:absolute after:-inset-2 after:content-['']",
             !select.visible &&
               'opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100',
           )}
@@ -1912,20 +1912,17 @@ function PendingInvitesSection({
         // admin the link directly so they can share it manually.
         warningToast(tI18nComplete.raw('text146fd497badf'), {
           duration: 8_000,
-          button: (
-            <Button
-              size="sm"
-              onClick={() =>
+          actions: [
+            {
+              label: tI18nComplete.raw('text9adff6870471'),
+              onClick: () =>
                 copyInviteLink(
                   res.invite_url,
                   tI18nComplete.raw('text0dc2f4c75de6'),
                   tI18nComplete.raw('textfa6453683837'),
-                )
-              }
-            >
-              {tI18nComplete.raw('text9adff6870471')}
-            </Button>
-          ),
+                ),
+            },
+          ],
         });
       }
       invalidate();

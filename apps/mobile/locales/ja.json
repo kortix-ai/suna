@@ -1198,10 +1198,13 @@
     "undo": "元に戻す",
     "pinnedSection": "ピン留め",
     "archivedView": "アーカイブ済み",
-    "archivedEmpty": "アーカイブしたセッションはここに表示されます。"
+    "archivedEmpty": "アーカイブしたセッションはここに表示されます。",
+    "stoppedBy": "{{name}} が停止しました",
+    "stopNotAllowed": "この実行を停止できるのは、開始したメンバー、セッションのオーナー、またはプロジェクトのマネージャーのみです。"
   },
   "genui": {
     "chartTapHint": "タップして値を表示",
+    "checklistReady": "{{done}}/{{total}} 完了",
     "map": "地図",
     "mapUnavailable": "地図を表示できません",
     "openImage": "画像を開く",

@@ -201,4 +201,20 @@ describe('attachment bytes (P6.3)', () => {
     // Wrong bytes for the digest: none.
     expect((await attachmentBytes(log, async () => Buffer.from('tampered'))).get(ref(0))).toBeNull()
   })
+
+  test('P2.13: attachments are read 4 at a time', async () => {
+    const log = restoreAnswer().log as SessionLog
+    for (let i = 0; i < 10; i++) log.threads[0]!.messages[0]!.blocks.push({ type: 'attachment', id: `a${i}`, mime: 'image/png', ref: ref(i), bytes: 1 })
+    let inFlight = 0
+    let most = 0
+    const out = await attachmentBytes(log, async () => {
+      most = Math.max(most, ++inFlight)
+      await Bun.sleep(20)
+      inFlight--
+      return Buffer.from('x')
+    })
+    expect(most).toBe(4)
+    expect([...out.values()].every((b) => b?.toString() === 'x')).toBe(true)
+    expect(out.size).toBe(10)
+  })
 })

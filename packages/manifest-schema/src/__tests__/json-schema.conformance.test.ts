@@ -1042,6 +1042,18 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - ../outside.ts\n',
   },
   {
+    name: 'v2: harnesses.pi.codemode at the top level and on an agent accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nharnesses:\n  pi:\n    codemode: only\nagents:\n  w:\n    harnesses:\n      pi:\n        codemode: off\n',
+  },
+  {
+    name: 'v2: harnesses.pi.codemode outside off, on, only rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    codemode: yes\n',
+  },
+  {
     name: 'v2: an unknown harness rejected',
     format: 'yaml',
     valid: false,

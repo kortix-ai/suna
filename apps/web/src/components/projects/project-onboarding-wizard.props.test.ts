@@ -43,9 +43,17 @@ describe('ProjectOnboardingWizard: completion wiring', () => {
   // swaps, or it uncovers the "Creating …" loader. On the project shell (no
   // callbacks) it still disappears in place.
   test('an exit that navigates keeps the wizard up until the route swaps', () => {
-    expect(code).toContain('if (onSkip) setLeaving(true);');
     expect(code).toContain('if (onCompleted) setLeaving(true);');
     expect(code).toContain('if (!isPending && !leaving) return null;');
+  });
+
+  // The project shell passes `onSkip` only to render the control and does not
+  // navigate, so a skip that set `leaving` left the wizard on screen until a
+  // reload (KRTX-2378). Skip closes it in place through the optimistic stamp.
+  test('skip closes the wizard in place', () => {
+    const skip = code.slice(code.indexOf('const skip = useCallback'), code.indexOf('const openProject'));
+    expect(skip).not.toContain('setLeaving');
+    expect(skip).toContain('completeThenNotify(() => onboarding.complete(), onSkip)');
   });
 
   // `/new` has no effects by contract, so the wizard prefetches the project

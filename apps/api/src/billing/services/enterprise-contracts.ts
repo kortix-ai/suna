@@ -1,3 +1,4 @@
+import { createHostedCheckout } from './hosted-checkout';
 /**
  * Enterprise contracts: an annual license plus a prepaid credit pool
  * (.agents/skills/billing/references/plans-and-access.md, "Enterprise contracts").
@@ -296,7 +297,7 @@ export async function createOfferCheckout(params: {
     params.email || (await billingEmailFor(params.accountId)),
   );
   const metadata = contractMetadata(offer);
-  const session = await getStripe().checkout.sessions.create({
+  const session = await createHostedCheckout(getStripe(), {
     customer,
     mode: 'subscription',
     line_items: (await contractLineItems(offer)).map((item) => ({

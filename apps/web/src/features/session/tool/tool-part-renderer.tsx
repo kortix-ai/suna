@@ -172,8 +172,11 @@ function ToolPartRendererImpl({
   const errorStr = partError(call);
   const childBearingTaskError =
     errorStr !== undefined && toolKind(call.name) === 'task' && Boolean(getChildSessionId(call));
+  // A failed codemode script keeps its partial output and the calls it made before
+  // the failure: its own row draws them, with the error.
+  const drawsOwnError = childBearingTaskError || call.name === 'codemode';
 
-  if (errorStr !== undefined && !childBearingTaskError) {
+  if (errorStr !== undefined && !drawsOwnError) {
     const { display, server } = (() => {
       const slashIdx = call.name.lastIndexOf('/');
       const s = slashIdx > 0 ? call.name.slice(0, slashIdx) : null;

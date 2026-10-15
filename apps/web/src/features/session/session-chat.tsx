@@ -57,7 +57,9 @@ import {
   missingAuthorKey,
   resolveTranscriptAuthors,
   showAuthorName,
+  stoppedByName,
 } from './turn/message-author';
+import { stopRefusalMessage } from './stop-refusal';
 import { useAuth } from '@/features/providers/auth-provider';
 import { QueuedPromptList } from './composer/queued-prompt-list';
 import { runtimePermissionLocksComposer } from './composer/send-blockers';
@@ -145,7 +147,7 @@ import { sessionTurnSpan } from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
+import { dismissToast, errorToast, infoToast, undoToast } from '@/components/ui/toast';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
@@ -264,10 +266,9 @@ import {
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
-import { useComputerAwakeLine } from './composer/computer-awake-bar';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import { downloadBlob } from '@/lib/utils/download';
-import { RestoreNotice, hasOutOfContext, harnessName, type FullTextState } from './session-history';
+import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
 
 import {
   TranscriptTurnRow,
@@ -687,10 +688,14 @@ export function SessionChat({
     [messages],
   );
   const newestUserMessageId = userMessageIds.at(-1) ?? '';
+  // What the control plane recorded about how this session's turns ended.
+  const turnOutcome = useSessionTurnOutcome(projectId ?? '', projectSessionId ?? '');
+  // A stop adds no message but does add a name ("Stopped by"): the turn that
+  // ended keys the read too, so the stopper shows when that turn ends.
   const { data: messageAuthors, refetch: refetchMessageAuthors } = useSessionMessageAuthors(
     projectId,
     projectSessionId,
-    newestUserMessageId,
+    `${newestUserMessageId}|${turnOutcome.last_ended?.turn_token ?? ''}`,
   );
   const transcriptAuthors = useMemo(
     () => resolveTranscriptAuthors(userMessageIds, messageAuthors),
@@ -777,7 +782,9 @@ export function SessionChat({
     void settlement.then((result) => {
       useSessionWorkingStore.getState().settleAbortReceipt(projectSessionId ?? '', Date.now(), result.status);
       if (result.status === 'timed-out' || result.status === 'failed') {
-        errorToast(tQueue('stopUnconfirmed'));
+        // A refused stop says who may stop it; anything else is unconfirmed.
+        const refusal = result.status === 'failed' ? stopRefusalMessage(result.error) : null;
+        errorToast(refusal ?? tQueue('stopUnconfirmed'));
       }
     });
     return settlement;
@@ -1071,7 +1078,10 @@ export function SessionChat({
     runtimeSessionId: sessionId,
   });
   const isServerBusy = working.state === 'working';
-  const turnOutcome = useSessionTurnOutcome(projectId ?? '', projectSessionId ?? '');
+  // In a shared session only the member who started the run, the session owner
+  // or a project manager may stop it. Without it: no Stop, no Esc×3, no "Stop
+  // and send" — a send queues behind the turn.
+  const canStop = sessionState?.canStop ?? true;
 
   // The one transcript-derived gate that survives, and the only one that
   // carries proof: during a provider 429 OpenCode stamps `info.error` with
@@ -1167,12 +1177,6 @@ export function SessionChat({
     [modelUsage, local.model.list],
   );
   const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
-
-  // KRTX-1729: the computer stays on while this person is here, up to a cap.
-  // `presenceAwake` is the server's answer to this tab's presence lease. The
-  // clock runs only while there is a window, and the line keeps its identity
-  // until its text changes: the composer is memo-wrapped.
-  const computerAwake = useComputerAwakeLine(sessionState?.presenceAwake ?? null, effectiveBusy);
 
   // WHICH INBOX ROWS ARE ALREADY ON SCREEN — the queued list above the composer
   // (`projectQueueRows`, `QueuedPromptList`) lists only the rest.
@@ -1414,30 +1418,23 @@ export function SessionChat({
       // gating every removal behind a modal would make it unusable, and the
       // thing being removed is a draft, not data. Reversible beats guarded.
       const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
-      infoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
+      undoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
         id: undoToastId,
         duration: 5000,
-        button: (
-          <Button
-            size="sm"
-            variant="outline"
-            // The SAME `clientMessageId`, so an undo re-creates ONE row and a
+        undoLabel: tHardcodedUi.raw('i18nComplete.texta737e54996f8'),
+        // The SAME `clientMessageId`, so an undo re-creates ONE row and a
             // double-click cannot create two. A FRESH wire id, because
             // OpenCode orders by id and the original one was minted before the
             // turn that has been writing higher ids since. The parts and
             // overrides are the ORIGINALS, straight from the delete's own
             // response — see `createQueueUndoAction`.
-            onClick={createQueueUndoAction({
-              removed,
-              mintMessageId: () => mintSessionWireMessageId(sessionId),
-              enqueue: promptInbox.enqueue,
-              dismiss: () => dismissToast(undoToastId),
-              onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
-            })}
-          >
-            {tHardcodedUi.raw('i18nComplete.texta737e54996f8')}
-          </Button>
-        ),
+        onUndo: createQueueUndoAction({
+          removed,
+          mintMessageId: () => mintSessionWireMessageId(sessionId),
+          enqueue: promptInbox.enqueue,
+          dismiss: () => dismissToast(undoToastId),
+          onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
+        }),
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1464,7 +1461,9 @@ export function SessionChat({
   // ends after its running tool, then this row runs.
   const handleStopAndSendQueuedMessage = useCallback(
     (id: string) => {
-      void promptInbox.interrupt(id).catch(() => errorToast(tQueue('stopAndSendFailed')));
+      void promptInbox
+        .interrupt(id)
+        .catch((error) => errorToast(stopRefusalMessage(error) ?? tQueue('stopAndSendFailed')));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [promptInbox.interrupt],
@@ -3111,8 +3110,14 @@ export function SessionChat({
     // running, still calling tools and still spending tokens under a UI that
     // says it stopped. Past the bound the abort goes out anyway and the hold
     // finishes on its own — the ordering is a preference, the abort is not.
+    let refusal = null as string | null;
     await Promise.race([
       promptInbox.hold(true).catch((error) => {
+        // The server refused the stop: this viewer did not start the run and
+        // does not own or manage the session. The abort would be refused for
+        // the same reason, so none goes out; the run goes on.
+        refusal = stopRefusalMessage(error);
+        if (refusal) return;
         // Caught, never rethrown: a failed hold must not also cost the user
         // their abort. The cost of that path is the one this ordering removes —
         // a stopped prompt can still come back a reaper pass later.
@@ -3130,6 +3135,11 @@ export function SessionChat({
       new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
     ]);
 
+    if (refusal) {
+      errorToast(refusal);
+      setIsBusy(isBusyRef.current);
+      return;
+    }
     issueSessionCancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, abortSession, issueSessionCancel, promptInbox.hold]);
@@ -3213,7 +3223,7 @@ export function SessionChat({
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !isBusy) return;
+      if (e.key !== 'Escape' || !isBusy || !canStop) return;
 
       // ESC-to-stop is a page-wide shortcut: it must fire whether or not the
       // composer is focused, because users watch the agent run with focus
@@ -3287,7 +3297,7 @@ export function SessionChat({
       window.removeEventListener('keydown', onKeyDownCapture, true);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [isActiveSessionTab, readOnly, isBusy, handleStop, clearEscHint, escCount]);
+  }, [isActiveSessionTab, readOnly, isBusy, canStop, handleStop, clearEscHint, escCount]);
 
   // Reset when session goes idle
   useEffect(() => {
@@ -3657,7 +3667,7 @@ export function SessionChat({
         }}
         onRemove={(id) => void handleRemoveQueuedMessage(id)}
         onRetry={handleRetryQueuedMessage}
-        onStopAndSend={effectiveBusy ? handleStopAndSendQueuedMessage : undefined}
+        onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
         editing={queueEdit.editing}
         onCancelEdit={queueEdit.cancel}
       />
@@ -3673,6 +3683,7 @@ export function SessionChat({
       handleRetryQueuedMessage,
       handleStopAndSendQueuedMessage,
       effectiveBusy,
+      canStop,
     ],
   );
 
@@ -4338,6 +4349,7 @@ export function SessionChat({
                               turn={turn}
                               author={turnAuthor}
                               showAuthor={showAuthorName(turnAuthor, groupChat, viewer?.id)}
+                              stoppedBy={stoppedByName(messageAuthors, turn.id, viewer?.id)}
                               servedModel={servedModelOfTurn(modelUsage, turn.id)}
                               turnOutcome={turnOutcome}
                               isLast={turn.id === lastUserMessageId}
@@ -4625,6 +4637,7 @@ export function SessionChat({
                 runtimeReady={runtimeReady}
                 rewind={composerRewind}
                 onStop={handleStop}
+                canStop={canStop}
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
@@ -4671,7 +4684,6 @@ export function SessionChat({
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
                 servedModel={servedNotice}
-                computerAwake={computerAwake}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.

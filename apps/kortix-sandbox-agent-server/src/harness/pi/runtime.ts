@@ -22,17 +22,19 @@ import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeTo
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
 import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
-import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
+import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
 import { loadTools } from '@/services/tools/host'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
+import { CODEMODE_TOOL } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
@@ -468,20 +470,21 @@ export class PiRuntime {
       this.bindRoot()
     }
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, prebuiltRoot] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, { codemodeExtensions }, prebuiltRoot] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
         import('@earendil-works/pi-coding-agent'),
         import('./extensions/host'),
         import('./extensions/subagents'),
+        import('./codemode'),
         // Started in the constructor: by now it has run beside the repo clone.
         this.prefetchProjectBundle(),
       ])
       this.core = core
       this.coding = coding
       const { convertToLlm } = coding
-      this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
+      this.compiled = parseCompiledAgentConfig(compiledAgentConfigFromEnv(this.env))
       this.sessionAgentName = this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
         env: this.env,
@@ -562,7 +565,8 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...local, ...project.extensions],
+        // The nested-call gate is first: pi runs `tool_call` handlers in load order and stops at the first block.
+        extensions: [this.nestedCallGate(), this.turnExtension(), subagents(this.kortixHost()), ...codemodeExtensions(this.cfg.piCodemode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -571,7 +575,7 @@ export class PiRuntime {
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
       // The session installed the extension tool hooks; the permission policy runs first.
-      agent.beforeToolCall = this.toolGate((tool, args) => (toolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'), true, agent.beforeToolCall)
+      agent.beforeToolCall = this.toolGate((tool, args) => this.rootRule(tool, args), true, agent.beforeToolCall)
       agent.subscribe((event) => this.onAgentEvent(event))
       this.pi.session.subscribe((event) => this.onSessionEvent(event))
       this.state = 'ok'
@@ -620,7 +624,7 @@ export class PiRuntime {
     if (!this.agent || !this.models) return { changed: false }
     const { createPiModels } = await import('./model')
     const before = `${this.selected?.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
-    this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
+    this.compiled = parseCompiledAgentConfig(compiledAgentConfigFromEnv(this.env))
     this.sessionAgentName = this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
       env: this.env,
@@ -1166,21 +1170,49 @@ export class PiRuntime {
     if (event.type === 'tool_execution_end') this.checkAbortAfterTool()
   }
 
+  /** The root agent's rule for a call: its tool access, then the permission policy. */
+  private rootRule(tool: string, args: unknown): PermissionRule {
+    return toolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'
+  }
+
   /** Permission policy first, then extension `tool_call` handlers (`next`). Root and child agents share it. */
   private toolGate(rule: (tool: string, args: unknown) => PermissionRule, attachToPart: boolean, next: Agent['beforeToolCall']) {
     return async (context: BeforeToolCallContext, signal?: AbortSignal): Promise<BeforeToolCallResult | undefined> => {
       const tool = context.toolCall.name
-      const decided = rule(tool, context.args)
-      if (decided === 'deny') return { block: true, reason: `The project policy denies this ${tool} call.` }
-      if (decided === 'ask') {
-        const reply = await this.permissions.ask({
-          tool,
-          args: context.args,
-          ...(attachToPart ? { ref: this.adapter?.toolRef(context.toolCall.id, { name: tool, args: context.args }) } : {}),
+      const ref = attachToPart ? () => this.adapter?.toolRef(context.toolCall.id, { name: tool, args: context.args }) : undefined
+      return (await this.decide(rule(tool, context.args), tool, context.args, ref)) ?? next?.(context, signal)
+    }
+  }
+
+  /** A block for `deny` or a rejected `ask`; undefined lets the call run. `ref` names the part an ask attaches to. */
+  private async decide(decided: PermissionRule, tool: string, args: unknown, ref?: () => RuntimeToolRef | undefined): Promise<BeforeToolCallResult | undefined> {
+    if (decided === 'deny') return { block: true, reason: `The project policy denies this ${tool} call.` }
+    if (decided !== 'ask') return undefined
+    const reply = await this.permissions.ask({ tool, args, ...(ref ? { ref: ref() } : {}) })
+    return reply === 'reject' ? { block: true, reason: 'The user rejected this tool call.' } : undefined
+  }
+
+  /**
+   * The root's rule for a call a tool made (`parentToolCallId`: a codemode script's
+   * `tools.<name>()`). pi runs nested calls through extension `tool_call` handlers only,
+   * never `agent.beforeToolCall`, so without this the policy would not see them. A direct
+   * call has no parent: `toolGate` already decided it. An ask attaches to the calling part.
+   */
+  private nestedCallGate(): InlineExtension {
+    return {
+      name: 'kortix-nested-calls',
+      hidden: true,
+      factory: (pi) => {
+        pi.on('tool_call', (event) => {
+          const parent = event.parentToolCallId
+          if (!parent) return undefined
+          // A subagent thread links to its root `task` call, and a question renders on its own part.
+          if (event.toolName === 'task' || event.toolName === 'question') {
+            return { block: true, reason: `Call ${event.toolName} directly, not from a script.` }
+          }
+          return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(parent))
         })
-        if (reply === 'reject') return { block: true, reason: 'The user rejected this tool call.' }
-      }
-      return next?.(context, signal)
+      },
     }
   }
 
@@ -1232,7 +1264,8 @@ export class PiRuntime {
     if (!session) return
     const allowed = (name: string) => toolAllowed(this.compiledAgent()?.tools, name)
     // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
-    const builtIn = this.baseTools.map((tool) => tool.name)
+    // pi registers codemode inactive: it is a built-in here, switched like the rest.
+    const builtIn = [...this.baseTools.map((tool) => tool.name), ...(this.cfg.piCodemode === 'off' ? [] : [CODEMODE_TOOL])]
     const others = [...new Set([...session.getActiveToolNames(), ...this.hiddenTools])].filter((name) => !builtIn.includes(name))
     this.hiddenTools = new Set(others.filter((name) => !allowed(name)))
     session.setActiveToolsByName([...builtIn, ...others].filter(allowed))
@@ -1614,6 +1647,12 @@ export class PiRuntime {
         '## Runtime capabilities',
         `Registered tools: ${(child?.tools ?? this.agent?.state.tools ?? this.baseTools).map((t) => t.name).join(', ')}.`,
         'Call tools normally; the runtime asks the user for permission when the project policy requires it.',
+        // pi's own codemode guideline; Kortix builds the prompt itself, so pi's prompt builder never adds it.
+        ...(!child && this.agent?.state.tools.some((t) => t.name === CODEMODE_TOOL)
+          ? [this.cfg.piCodemode === 'only'
+              ? 'Every tool runs from a codemode script: `await tools.<name>(args)`.'
+              : 'Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.']
+          : []),
         ...(child ? [] : ['Use question to collect answers through the interactive question UI.']),
       ].join('\n'),
     )

@@ -5,7 +5,8 @@
  *   GENUI_EVAL_TOKEN=<kortix token> bun .agents/skills/genui/scripts/eval.ts
  *
  * Env: GENUI_EVAL_API_URL (default http://localhost:8008), GENUI_EVAL_MODELS (comma list),
- * GENUI_EVAL_CONCURRENCY (default 4). Each finished model is written at once to
+ * GENUI_EVAL_CONCURRENCY (default 4), GENUI_EVAL_EFFORT (sends reasoning_effort; unset sends none),
+ * GENUI_EVAL_CASES (comma list of case ids; unset runs all). Each finished model is written at once to
  * output/genui-eval/ (gitignored). A failed model gets an ERROR row and the run continues.
  */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -20,12 +21,16 @@ const MODELS = (
   process.env.GENUI_EVAL_MODELS ?? 'deepseek/deepseek-v4-pro,openai/gpt-5.5,openai/gpt-6-sol,openai/gpt-6-astra'
 ).split(',');
 const CONCURRENCY = Number(process.env.GENUI_EVAL_CONCURRENCY ?? 4);
+const EFFORT = process.env.GENUI_EVAL_EFFORT;
+const CASE_IDS = process.env.GENUI_EVAL_CASES?.split(',');
 const ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const SYSTEM = `You are Kortix, a helpful agent. Answer the user directly.\n\n${buildGenuiPrompt()}`;
 
 if (!TOKEN) throw new Error('Set GENUI_EVAL_TOKEN to a Kortix API key or access token');
 
-const cases: EvalCase[] = JSON.parse(readFileSync(join(import.meta.dir, 'eval-prompts.json'), 'utf8'));
+const cases: EvalCase[] = (JSON.parse(readFileSync(join(import.meta.dir, 'eval-prompts.json'), 'utf8')) as EvalCase[]).filter(
+  (c) => !CASE_IDS || CASE_IDS.includes(c.id),
+);
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** One chat call. Network errors, 429 and 5xx retry (3 attempts); other 4xx fail at once. */
@@ -44,6 +49,7 @@ async function ask(model: string, testCase: EvalCase): Promise<{ text: string; t
             { role: 'system', content: SYSTEM },
             { role: 'user', content: user },
           ],
+          ...(EFFORT ? { reasoning_effort: EFFORT } : {}),
         }),
       });
     } catch (error) {
@@ -131,19 +137,19 @@ const row = (outcome: Outcome): string => {
   if (!('run' in outcome)) {
     // Table cells cannot hold a pipe or a newline.
     const message = outcome.error.replace(/\|/g, '/').replace(/\s+/g, ' ').slice(0, 120);
-    return `| \`${outcome.model}\` | ERROR: ${message} | — | — | — | — | — | — | — | NO |`;
+    return `| \`${outcome.model}\` | ERROR: ${message} | — | — | — | — | — | — | — | — | — | NO |`;
   }
   const s = outcome.run.summary;
-  return `| \`${s.model}\` | ${s.cases} | ${s.blocks} | ${pct(s.validRate)} | ${pct(s.overuseRate)} | ${pct(s.underuseRate)} | ${s.forbiddenCount} | ${s.medianCompletionTokens} | ${s.errorCount} | ${s.go ? 'YES' : 'NO'} |`;
+  return `| \`${s.model}\` | ${s.cases} | ${s.blocks} | ${pct(s.validRate)} | ${pct(s.overuseRate)} | ${pct(s.underuseRate)} | ${s.forbiddenCount} | ${pct(s.thinRate)} | ${s.foreignImageCount} | ${s.medianCompletionTokens} | ${s.errorCount} | ${s.go ? 'YES' : 'NO'} |`;
 };
 
 const lines = [
   `\n## Run ${stamp} — prompt ${GENUI_PROMPT_VERSION}`,
   '',
-  `Gate: valid ≥ ${pct(GATE.validRate)}, overuse ≤ ${pct(GATE.overuseRate)}, underuse ≤ ${pct(GATE.underuseRate)}, forbidden ≤ ${GATE.forbiddenCount}, errors = 0.`,
+  `Gate: valid ≥ ${pct(GATE.validRate)}, overuse ≤ ${pct(GATE.overuseRate)}, underuse ≤ ${pct(GATE.underuseRate)}, forbidden ≤ ${GATE.forbiddenCount}, thin ≤ ${pct(GATE.thinRate)}, foreign images ≤ ${GATE.foreignImageCount}, errors = 0.`,
   '',
-  '| Model | Cases | Blocks | Valid | Overuse | Underuse | Forbidden | Median completion tokens | Errors | Go |',
-  '|---|---|---|---|---|---|---|---|---|---|',
+  '| Model | Cases | Blocks | Valid | Overuse | Underuse | Forbidden | Thin | Foreign images | Median completion tokens | Errors | Go |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|',
   ...outcomes.map(row),
   '',
   'Failing cases (issue codes only):',
@@ -151,8 +157,8 @@ const lines = [
   ...outcomes.flatMap((outcome) =>
     'run' in outcome
       ? outcome.run.scores
-          .filter((s) => s.error || s.overuse || s.underuse || s.forbidden.length > 0 || s.validBlocks < s.blocks)
-          .map((s) => `- \`${outcome.model}\` ${s.id}: ${[s.error, s.overuse && 'overuse', s.underuse && 'underuse', ...s.forbidden.map((f) => `forbidden ${f}`), ...s.issues].filter(Boolean).join(', ')}`)
+          .filter((s) => s.error || s.overuse || s.underuse || s.thin || s.longProse > 0 || s.foreignImages > 0 || s.forbidden.length > 0 || s.validBlocks < s.blocks)
+          .map((s) => `- \`${outcome.model}\` ${s.id}: ${[s.error, s.overuse && 'overuse', s.underuse && 'underuse', s.thin && 'thin', s.longProse > 0 && `${s.longProse} long prose sections`, s.foreignImages > 0 && `${s.foreignImages} foreign images`, ...s.forbidden.map((f) => `forbidden ${f}`), ...s.issues].filter(Boolean).join(', ')}`)
       : [],
   ),
 ];

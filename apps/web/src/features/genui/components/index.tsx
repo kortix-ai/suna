@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 
 import type { GenuiComponentMap, GenuiComponentProps } from '../sdk';
-import { GenuiCompare, GenuiRankedList, GenuiStat, GenuiStatRow, GenuiTable } from './data';
+import { GenuiChecklist, GenuiCompare, GenuiRankedList, GenuiStat, GenuiStatRow, GenuiSteps, GenuiTable } from './data';
 import { GenuiBadge, GenuiCallout, GenuiImage, GenuiLink } from './inline';
 import { GenuiAccordion, GenuiCard, GenuiStack, GenuiTabs } from './layout';
 import { GenuiPending } from './pending';
@@ -42,6 +42,8 @@ export const webGenuiComponents: GenuiComponentMap = {
   LineChart: GenuiChart,
   PieChart: GenuiChart,
   Map: GenuiMap,
+  Steps: GenuiSteps,
+  Checklist: GenuiChecklist,
   Badge: GenuiBadge,
   Callout: GenuiCallout,
   Image: GenuiImage,

@@ -122,13 +122,20 @@ mock.module('../session-lifecycle/inbox-rows', () => ({
 mock.module('./session-prompt-view', () => ({
   serializePrompt: (row: Record<string, unknown>) => row,
 }));
+const prompterReads: Array<{ sessionId: string; messageId: string | null | undefined }> = [];
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  turnPrompterOf: async (sessionId: string, messageId: string | null | undefined) => {
+    prompterReads.push({ sessionId, messageId });
+    return messageId === 'msg-a' ? 'user-a' : null;
+  },
+}));
 mock.module('../session-lifecycle/runtime-wake-fence', () => ({
   runtimeWakeInProgress: (metadata: Record<string, unknown> | null | undefined) =>
     Boolean(metadata?.runtimeWakeId),
 }));
 
 import type { ControlEvent } from './session-control-events';
-const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState } =
+const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState, TURN_FRAME_STOP_PROMPTER } =
   await import('./session-control-events');
 const {
   acquireControlReconciler,
@@ -692,6 +699,20 @@ describe('R5.2: the server owns session state', () => {
       turn_token: 't1',
       pending_delivery: false,
     });
+    handle.release();
+  });
+
+  // The stream turns this into each viewer's own `can_stop`; read once per turn.
+  test('the turn frame carries the running turn\'s prompter, read once per turn', async () => {
+    prompterReads.length = 0;
+    turnState = { turns: [{ ...liveTurn, message_id: 'msg-a' }] };
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    pokeControlReconciler(SESSION);
+    await Bun.sleep(20);
+    const frame = handle.snapshot().find((event) => event.type === 'kortix.control.turn');
+    expect((frame!.payload as Record<string, unknown>)[TURN_FRAME_STOP_PROMPTER]).toBe('user-a');
+    expect(prompterReads).toEqual([{ sessionId: SESSION, messageId: 'msg-a' }]);
     handle.release();
   });
 
