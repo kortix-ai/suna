@@ -80,6 +80,8 @@ test('52 — a person pins a session to the top and archives one out of the list
     const pinId = await seed(PIN_TITLE);
     const archiveId = await seed(ARCHIVE_TITLE);
 
+    // The welcome card sits where the toasts appear.
+    await page.addInitScript(() => localStorage.setItem('kortix:marko-welcome-dismissed', '1'));
     await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
     await selectAccountForUi(page, accountId);
     await dismissOnboarding(page);

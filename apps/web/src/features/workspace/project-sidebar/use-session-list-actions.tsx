@@ -5,6 +5,7 @@ import { dismissToast, errorToast, successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionListState } from '@kortix/sdk/react';
 import { useMemo } from 'react';
+import { UNDO_TOAST_MS } from './modal/session-delete-modal';
 
 /**
  * Pin or archive a session in the viewer's own list (KRTX-2418), with the
@@ -40,6 +41,8 @@ export function useSessionListActions(projectId: string) {
       const toastId = `session-archive-undo-${sessionId}`;
       successToast(t('archived'), {
         id: toastId,
+        // As long as delete's Undo: the row has already left the list.
+        duration: UNDO_TOAST_MS,
         button: (
           <Button
             size="sm"
