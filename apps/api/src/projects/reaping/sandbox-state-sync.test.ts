@@ -9,6 +9,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // status" order was carried by a comment repeated in each copy.
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../billing/services/compute-metering';
+// The real module namespace, so the backend mock below spreads it and keeps
+// every export the proxy's other importers use (mock.module replaces wholesale).
+import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 import { RUNTIME_WAKE_LEASE_MS } from '../session-lifecycle/runtime-wake-fence';
 import { mockConfigModule } from './test-support/mock-config';
 
@@ -83,7 +86,8 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-mock.module('../../sandbox-proxy', () => ({
+mock.module('../../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },

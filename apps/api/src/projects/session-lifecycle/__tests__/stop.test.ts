@@ -103,6 +103,9 @@ mock.module('../../../platform/providers', () => ({
 // the two calls `abortLiveTurnBeforeStop` makes before its own `fetch`.
 mock.module('../../../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
+  invalidateProviderCache: (externalId: string) => {
+    cacheInvalidations.push(externalId);
+  },
   resolveServiceKey: async (_externalId: string) => abortServiceKey,
   resolveSandboxIngress: async (_ref: string, _req: unknown) => ({
     url: 'https://daemon.example.test',
@@ -122,12 +125,6 @@ mock.module('../../../billing/services/compute-metering', () => ({
     pausedCompute.push(sandboxId);
   },
   endComputeSession: async () => {},
-}));
-
-mock.module('../../../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
-    cacheInvalidations.push(externalId);
-  },
 }));
 
 mock.module('../../lib/session-transcript-capture', () => ({

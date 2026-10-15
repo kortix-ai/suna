@@ -28,7 +28,12 @@ import {
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../session-open';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateProviderCache } from '../../sandbox-proxy/backend';
+// From './backend', not the sandbox-proxy index: backend does not import this
+// module, while the index closes the backend -> session-lifecycle -> index
+// cycle, and a static index import here TDZs the index's own route bindings
+// when the graph is entered from a deep sandbox-proxy module (a test that
+// imports routes/public-share first).
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,

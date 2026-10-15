@@ -12,6 +12,10 @@
 // `bun test <file>` invocation (as CI does), same caveat as
 // ../sandbox-reaper.test.ts.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+// The real module namespace: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+import * as realLifecycle from '../session-lifecycle';
 
 let reusableRows: Array<{ sessionId: string }> = [];
 let sessionRows: Array<{ status: string; metadata: Record<string, unknown> }> = [];
@@ -51,6 +55,7 @@ mock.module('../../shared/db', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
+  ...realLifecycle,
   createSession: async (command: Record<string, unknown>) => {
     createCalls.push(command);
     return {

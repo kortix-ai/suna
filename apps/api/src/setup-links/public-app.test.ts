@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
+// The real module namespace: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+import * as realLifecycle from '../projects/session-lifecycle';
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
@@ -71,6 +75,7 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
 
 const enqueued: Array<Record<string, unknown>> = [];
 mock.module('../projects/session-lifecycle', () => ({
+  ...realLifecycle,
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     enqueued.push(input);
   },

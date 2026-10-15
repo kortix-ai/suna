@@ -12,9 +12,10 @@
 //
 // `mock.module` is process-global in bun, so this lives in its own file.
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realRequestContext from '../../lib/request-context';
-import * as realKortixUserContext from '../../shared/kortix-user-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
+// The real module namespaces: `mock.module` replaces a module WHOLESALE, so a
+// stub that lists exports by hand deletes every export it omits — the failure
+// lands in whatever unrelated file imports the missing name next, as
+// `SyntaxError: Export named '…' not found`, attributed to no test at all.
 
 const ACTIVE_RECORD = {
   sandboxId: 'sb-1',
@@ -41,12 +42,29 @@ let turnAbandonError: Error | null = null;
 
 let upstreamPort = 3000;
 
+// The real module namespaces, captured the way this file captures its other real
+// modules (top-level await): `mock.module` does not override a module that a
+// static import already evaluated, so these MUST stay dynamic — a static import
+// here silently turns every mock below into a dead no-op. The spreads keep each
+// stub wholesale-complete: an omitted export deletes the name for every later
+// importer in this worker and the failure lands elsewhere, attributed to no test.
+const realRequestContext = await import('../../lib/request-context');
+const realConfig = await import('../../config');
+const realSharedDb = await import('../../shared/db');
+const realProxyBackend = await import('../backend');
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
+const realSessionTokenGrant = await import('../../projects/lib/session-token-grant');
+const realSessionActivity = await import('../../projects/session-activity');
+const realKortixUserContext = await import('../../shared/kortix-user-context');
+const realPreviewOwnership = await import('../../shared/preview-ownership');
 mock.module('../../config', () => ({
+  ...realConfig,
   config: {},
 }));
 // Importing the real lifecycle export surface must not initialize the actual
 // database module. The route under test replaces every lifecycle write below.
 mock.module('../../shared/db', () => ({
+  ...realSharedDb,
   db: { execute: async () => [] },
 }));
 mock.module('../../lib/request-context', () => ({
@@ -68,19 +86,50 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessSandboxSession: async () => true,
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  ...realSandboxEnvSync,
+  // Env sync is silenced wholesale in this suite (it talks to the database and
+  // to sandboxes; the deadline flow under test must not depend on it): every
+  // push/propagate entry point is an explicit no-op, not an omitted export.
   syncSandboxEnvForPrompt: async () => {},
+  propagateProjectSecretsToActiveSandboxes: async () => {},
+  syncSessionSecretsToSandbox: async () => {},
+  propagateLlmGatewayModeToActiveSandboxes: async () => {},
+  pushSessionAgentConfigToSandbox: async () => {},
+  pushSessionModelToSandbox: async () => {},
+  pushSessionScopeToSandbox: async () => {},
+  daemonHasConfigReleases: async () => false,
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
+  ...realSessionTokenGrant,
   // The proxy's declared-agent guard; these suites exercise other behavior.
   agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
 mock.module('../../projects/session-activity', () => ({
+  ...realSessionActivity,
   recordSessionActivity: async () => {},
 }));
+// `session-open` is imported LAST, after every other mock above is registered:
+// its module graph evaluates `forward/turn-start.ts`, whose deps object captures
+// `syncSandboxEnvForPrompt` and the token-grant remint at evaluation time — an
+// early import here would freeze the REAL collaborators into the route's deps
+// and silently bypass the mocks below.
+const realSessionOpen = await import('../../projects/session-open');
 mock.module('../../projects/session-open', () => ({
+  ...realSessionOpen,
+  // The sandbox under test is already live (`backend.loadSandbox` returns the
+  // active record): every runtime-opening path below is an explicit no-op —
+  // the real functions read the database, which this suite stubs away
+  // wholesale (their omitted exports would otherwise break unrelated files).
+  openSession: async () => undefined,
+  resumeStoppedSandbox: async () => undefined,
   resumeStoppedSandboxByExternalId: async () => true,
+  retryTransientProvisionFailure: async () => undefined,
+  replaceRefusedRuntimeOnOpen: async () => undefined,
+  preserveEstablishedRuntimeOnOpen: async () => undefined,
+  markRuntimeWakeStarted: async () => undefined,
+  markRuntimeReadyWaitStarted: async () => undefined,
 }));
 // The deadline module is stubbed only where it TALKS TO THE DATABASE. The
 // classifiers (isTurnStartRequest / isPreviewUseObservation / isSandboxAuthored)
@@ -120,6 +169,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
 }));
 
 mock.module('../backend', () => ({
+  ...realProxyBackend,
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: () => ({ effectivePort: upstreamPort }),
   resolveSandboxIngress: async () => ({

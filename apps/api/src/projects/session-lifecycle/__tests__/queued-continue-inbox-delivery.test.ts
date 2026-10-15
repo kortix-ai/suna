@@ -21,6 +21,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
+// The real module namespace: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+import * as realSessionTitle from '../../session-title-generate';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';
@@ -192,6 +196,7 @@ mock.module('../../../shared/db', () => ({
 }));
 
 mock.module('../../session-title-generate', () => ({
+  ...realSessionTitle,
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 

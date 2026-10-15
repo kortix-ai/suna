@@ -12,7 +12,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateProviderCache } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { retryOnDeadlock } from '../../shared/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';

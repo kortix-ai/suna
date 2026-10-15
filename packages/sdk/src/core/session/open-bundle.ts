@@ -76,9 +76,13 @@ export const OPEN_BUNDLE_TRANSCRIPT_LIMIT = 40;
  */
 export const SAVED_WINDOW_HOLD_MS = 5 * 60_000;
 
-// ponytail: one slot, the one session a connecting view shows. A map when a
-// host connects several sessions at once.
-let heldWindow: { key: string; envelope: SessionTranscriptSyncEnvelope; atMs: number } | null = null;
+// One slot per session, not one slot overall: a hold is written the moment a
+// connecting view's read lands, and a read for one session can land while
+// another session's connecting view is still on screen (a slow fetch, a stale
+// screen). A single slot would let the later hold erase the earlier one, and
+// the earlier session's open would then re-download the window it already
+// holds — the exact duplication KRTX-189 removed.
+const heldWindows = new Map<string, { envelope: SessionTranscriptSyncEnvelope; atMs: number }>();
 
 /** Keep the saved window a host read before `useSession` binds the session. */
 export function holdSavedWindow(
@@ -87,7 +91,7 @@ export function holdSavedWindow(
   envelope: SessionTranscriptSyncEnvelope,
   nowMs: number = Date.now(),
 ): void {
-  heldWindow = { key: scopeKey(projectId, sessionId), envelope, atMs: nowMs };
+  heldWindows.set(scopeKey(projectId, sessionId), { envelope, atMs: nowMs });
 }
 
 /** The held saved window of this session, or null when none is held or it is
@@ -97,12 +101,13 @@ export function heldSavedWindow(
   sessionId: string,
   nowMs: number = Date.now(),
 ): SessionTranscriptSyncEnvelope | null {
-  if (!heldWindow || heldWindow.key !== scopeKey(projectId, sessionId)) return null;
-  if (nowMs - heldWindow.atMs > SAVED_WINDOW_HOLD_MS) {
-    heldWindow = null;
+  const held = heldWindows.get(scopeKey(projectId, sessionId));
+  if (!held) return null;
+  if (nowMs - held.atMs > SAVED_WINDOW_HOLD_MS) {
+    heldWindows.delete(scopeKey(projectId, sessionId));
     return null;
   }
-  return heldWindow.envelope;
+  return held.envelope;
 }
 
 interface BundleEntry {
@@ -127,7 +132,7 @@ function scopeKey(projectId: string, sessionId: string): string {
  *  the one before it. */
 export function resetSessionOpenBundles(): void {
   entries.clear();
-  heldWindow = null;
+  heldWindows.clear();
 }
 
 export interface OpenSessionBundleOptions {

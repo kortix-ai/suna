@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+// The real module namespace: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+import * as realProxyBackend from '../sandbox-proxy/backend';
 
 const configState: Record<string, unknown> = {
   KORTIX_URL: 'https://api.acme.com',
@@ -8,6 +12,7 @@ const configState: Record<string, unknown> = {
 };
 mock.module('../config', () => ({ config: configState }));
 mock.module('../sandbox-proxy/backend', () => ({
+  ...realProxyBackend,
   resolveExternalIdFromHostLabel: async () => null,
   // Backend hosts reach their machine through the sandbox ingress; no test here proxies.
   resolveSandboxIngress: async () => {

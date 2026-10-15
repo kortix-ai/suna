@@ -100,10 +100,12 @@ export async function resolveProvider(externalId: string): Promise<ResolvedProvi
   }
 }
 
-/** Drop cached backend state for a sandbox (called on lifecycle transitions). */
-export function invalidateProviderCache(externalId: string): void {
-  invalidateSandbox(externalId);
-}
+// Lifecycle callers import `invalidateProviderCache` from './backend' directly:
+// defining it here made this index the cycle-closing module (backend →
+// session-lifecycle → here), so any test entering the graph from a deep
+// sandbox-proxy module evaluated this index mid-cycle and TDZ'd on its own
+// route bindings. The re-export keeps the index's public surface unchanged.
+export { invalidateProviderCache } from './backend';
 
 // Every sandbox serves from a per-sandbox URL — the preview handler reads it
 // from the row (`baseUrl`) or fetches it from Daytona's SDK. No per-provider
