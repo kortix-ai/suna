@@ -8,12 +8,12 @@
     "apps/web/src/features/workspace/capabilities/connectors/detail/app-page.tsx"
   ],
   "diff_hash": "312930adb6090a14b44c19db54508360ba83b5138525919bc5d0865103aa397e",
-  "head": "61f7ef48bdd721cd318a7c5c3db9f9bcf868bbfd",
+  "head": "212ffedabb5c4a040cfb6de8cacc418613aee1b0",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T04:05:36.282Z"
+  "at": "2026-10-15T05:27:44.999Z"
 }
