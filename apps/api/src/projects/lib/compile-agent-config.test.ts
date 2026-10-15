@@ -61,6 +61,7 @@ const {
   agentMarkdownPath,
   compileAgentConfig,
   compileSelectedAgentConfig,
+  manifestPiCodemode,
   manifestPiPackageLists,
   manifestPiPackages,
   manifestRuntime,
@@ -620,6 +621,26 @@ describe('manifestPiPackages — the project pi packages a manifest declares', (
     expect(manifestPiPackages(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toEqual([]);
     expect(manifestPiPackages(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    packages: npm:a@1.0.0\n'))).toEqual([]);
     expect(manifestPiPackages(null)).toEqual([]);
+  });
+});
+
+describe('manifestPiCodemode — harnesses.pi.codemode for the session agent', () => {
+  const RAW = parseYaml(
+    'kortix_version: 2\ndefault_agent: builder\nharnesses:\n  pi:\n    codemode: only\nagents:\n  builder: {}\n  quiet:\n    harnesses:\n      pi:\n        codemode: off\n',
+  );
+
+  test('an agent value replaces the top-level one; no agent named means the default agent', () => {
+    expect(manifestPiCodemode(RAW, 'quiet')).toBe('off');
+    expect(manifestPiCodemode(RAW, 'builder')).toBe('only');
+    expect(manifestPiCodemode(RAW)).toBe('only');
+    expect(manifestPiCodemode(RAW, 'default')).toBe('only');
+  });
+
+  test('null when nothing sets it, for a v1 manifest, or for a value outside off, on, only', () => {
+    expect(manifestPiCodemode(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toBeNull();
+    expect(manifestPiCodemode(parseYaml('harnesses:\n  pi:\n    codemode: off\n'))).toBeNull();
+    expect(manifestPiCodemode(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    codemode: yes\n'))).toBeNull();
+    expect(manifestPiCodemode(null)).toBeNull();
   });
 });
 

@@ -442,6 +442,8 @@ The optional features are capabilities:
 
 A pi session answers a request for a feature it does not serve with `501` and `code: "feature_not_supported"`, and `/global/config` with `404`. pi also refuses message part edits with `501`. [Connectors](/docs/connect/connectors) work on both harnesses through the `kortix connectors` CLI. pi subagents are `general`, `explore` (read-only) and every agent with `mode: subagent` or `all`. A pi subagent cannot start another subagent.
 
+pi has one tool OpenCode does not: `codemode`. The model writes a script that calls the other tools, and only the script's output returns to it, so one step can run several calls and filter their output. It is on by default; [`harnesses.pi.codemode`](/docs/project/manifest#harnesses-opencode-and-pi) turns it off or makes it the only tool. The session view shows a script as its calls, its code and its output. A subagent does not get `codemode`.
+
 ### Harness-only files
 
 Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here. A v3 project declares its default `permission` and its slash `commands` in `kortix.yaml` and needs no directory here (see [Versions](/docs/project/manifest#versions)).

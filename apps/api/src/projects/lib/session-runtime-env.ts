@@ -59,6 +59,8 @@ export interface SessionRuntimeEnvInput {
    * byte-for-byte unchanged. The daemon's `resolveHarness` rejects any other id.
    */
   harness?: 'opencode' | 'pi';
+  /** kortix.yaml `harnesses.pi.codemode`; sent as `KORTIX_PI_CODEMODE` to a pi session only. Null: the daemon default (`on`). */
+  piCodemode?: 'off' | 'on' | 'only' | null;
   /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
   piPackages?: unknown[];
   /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
@@ -161,6 +163,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // Which harness kortixd boots. Absent = OpenCode (the daemon default).
     ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
     ...(input.harness === 'pi' && input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
+    ...(input.harness === 'pi' && input.piCodemode ? { KORTIX_PI_CODEMODE: input.piCodemode } : {}),
     ...(input.harness === 'pi' && input.piPackagesBundle
       ? {
           KORTIX_PI_PACKAGES_BUNDLE_URL: input.piPackagesBundle.url,

@@ -56,6 +56,7 @@ provider, so neither service imports the other.
 | `src/lib/kortix-api/` | shared | Control-plane contracts: relay context, `X-Kortix-User-Context` verification, the dead-token breaker. |
 | `src/lib/shutdown-state.ts` | shared | The process-wide "shutting down" flag. |
 | `src/types/` | shared | Types two modules need that may not import each other: `control-plane.ts` (`InitialTurnClaim`), `config-release.ts` (`ConfigReleaseReport`). Type declarations only. |
+| `src/extensions/codemode/worker.ts` | none (own lint layer) | The codemode sandbox worker: a second `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports `@earendil-works/pi-codemode/worker` only. |
 | `src/__tests__/` | none | Tests. They may import anything they exercise. |
 
 ## Import rules

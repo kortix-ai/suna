@@ -3,7 +3,7 @@ import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
@@ -477,7 +477,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_READ,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // Captured BEFORE the read: an answer is only as fresh as the moment it
       // was asked. Clients rank queue snapshots on this server clock (JAY-728).
@@ -534,7 +534,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // The session AND inbox scopes are in the DELETE's own predicate, so
       // neither a prompt id from another session nor an automation's
@@ -647,7 +647,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const body = await readJsonObject(c);
       if (body.delivery !== undefined && body.delivery !== 'interrupt') {
@@ -732,7 +732,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // ONE primitive for "retry" and for "send now": both are the user pointing
       // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
@@ -801,7 +801,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const body = await readJsonObject(c);
       if (typeof body.held !== 'boolean') {

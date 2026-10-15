@@ -815,6 +815,11 @@ function harnessesSchema(scope: 'project' | 'agent'): JsonSchemaFragment {
               ],
             },
           },
+          codemode: {
+            type: 'string',
+            enum: ['off', 'on', 'only'],
+            description: "pi's codemode tool: the model writes a script that calls the other tools. on (default) keeps the other tools declared, only gives the model codemode alone, off removes it. An agent's value replaces the top-level one.",
+          },
           ...(scope === 'agent'
             ? { exclude: { type: 'array', items: { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NAME_RE.source }, { pattern: PI_PACKAGE_PATH_RE.source }] } } }
             : {}),

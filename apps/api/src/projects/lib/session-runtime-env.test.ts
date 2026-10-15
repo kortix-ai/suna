@@ -104,6 +104,15 @@ describe('buildSessionRuntimeEnv — KORTIX_PI_PACKAGES', () => {
   });
 });
 
+describe('buildSessionRuntimeEnv — KORTIX_PI_CODEMODE', () => {
+  test('a pi session carries the manifest value; none leaves the daemon default', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'only' }).KORTIX_PI_CODEMODE).toBe('only');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'off' }).KORTIX_PI_CODEMODE).toBe('off');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: null })).not.toHaveProperty('KORTIX_PI_CODEMODE');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piCodemode: 'only' })).not.toHaveProperty('KORTIX_PI_CODEMODE');
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);

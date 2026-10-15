@@ -661,7 +661,7 @@ export function manifestRuntime(raw: unknown): RuntimeV2 {
   return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
 }
 
-type PiHarness = { pi?: { packages?: unknown; exclude?: unknown } } | undefined;
+type PiHarness = { pi?: { packages?: unknown; exclude?: unknown; codemode?: unknown } } | undefined;
 
 function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
   const value = harnesses?.pi?.[key];
@@ -676,6 +676,16 @@ function piPackageKey(entry: unknown): string | null {
   return npm ? npm[1]! : source;
 }
 
+/** A v2/v3 manifest and the agent a session runs: `default` (or none) means `default_agent`. Null for anything else. */
+function manifestAgentHarnesses(raw: unknown, agentName?: string | null): { manifest: Record<string, unknown>; agent: { harnesses?: PiHarness } | undefined } | null {
+  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return null;
+  const manifest = raw as Record<string, unknown>;
+  const requested = agentName?.trim();
+  // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
+  const name = requested && requested !== 'default' ? requested : typeof manifest.default_agent === 'string' ? manifest.default_agent : '';
+  return { manifest, agent: (manifest.agents as Record<string, { harnesses?: PiHarness } | undefined> | undefined)?.[name] };
+}
+
 /**
  * An agent's pi packages, entries as written (pi's own settings shape): the
  * top-level `harnesses.pi.packages` minus the agent's `exclude`, then the
@@ -684,12 +694,9 @@ function piPackageKey(entry: unknown): string | null {
  * The manifest validator gated every entry at merge; anything else reads as none.
  */
 export function manifestPiPackages(raw: unknown, agentName?: string | null): unknown[] {
-  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return [];
-  const manifest = raw as Record<string, unknown>;
-  const requested = agentName?.trim();
-  // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
-  const name = requested && requested !== 'default' ? requested : typeof manifest.default_agent === 'string' ? manifest.default_agent : '';
-  const agent = (manifest.agents as Record<string, { harnesses?: PiHarness } | undefined> | undefined)?.[name];
+  const resolved = manifestAgentHarnesses(raw, agentName);
+  if (!resolved) return [];
+  const { manifest, agent } = resolved;
   const excluded = new Set(piList(agent?.harnesses, 'exclude'));
   const own = new Map(piList(agent?.harnesses, 'packages').map((entry) => [piPackageKey(entry), entry]));
   const merged = piList(manifest.harnesses as PiHarness, 'packages')
@@ -702,6 +709,13 @@ export function manifestPiPackages(raw: unknown, agentName?: string | null): unk
       return replacement;
     });
   return [...merged, ...own.values()];
+}
+
+/** The agent's `harnesses.pi.codemode`, else the top-level one; null when neither sets it (the daemon's default, `on`). */
+export function manifestPiCodemode(raw: unknown, agentName?: string | null): 'off' | 'on' | 'only' | null {
+  const resolved = manifestAgentHarnesses(raw, agentName);
+  const value = resolved?.agent?.harnesses?.pi?.codemode ?? (resolved?.manifest.harnesses as PiHarness)?.pi?.codemode;
+  return value === 'off' || value === 'on' || value === 'only' ? value : null;
 }
 
 /** Every distinct non-empty package list the manifest's agents resolve to: what a merge builds. */

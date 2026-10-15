@@ -9,12 +9,15 @@ export function fakeSessionStorage() {
   const uploads: string[] = [];
   /** The next `failDownloads.next` downloads answer a 500. */
   const failDownloads = { next: 0 };
+  /** Each upload waits `slowUploads.ms` first (a slow Storage). */
+  const slowUploads = { ms: 0 };
   const storage = {
     from(bucket: string) {
       if (bucket !== 'session-attachments') throw new Error(`unexpected bucket ${bucket}`);
       return {
         async upload(key: string, bytes: Uint8Array, options: { contentType: string }) {
           uploads.push(key);
+          if (slowUploads.ms > 0) await Bun.sleep(slowUploads.ms);
           if (objects.has(key)) return { data: null, error: { statusCode: '409', message: 'The resource already exists' } };
           objects.set(key, new Blob([Uint8Array.from(bytes)], { type: options.contentType }));
           return { data: { path: key }, error: null };
@@ -38,5 +41,5 @@ export function fakeSessionStorage() {
       };
     },
   };
-  return { objects, uploads, failDownloads, storage };
+  return { objects, uploads, failDownloads, slowUploads, storage };
 }

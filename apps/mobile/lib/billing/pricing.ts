@@ -26,7 +26,6 @@ export interface PricingPlan {
   unit?: string;
   note: string;
   highlight?: boolean;
-  badge?: string;
   features: string[];
   icon?: any; // mobile-only: React component for the card icon
 }
@@ -52,7 +51,6 @@ export const PRICING_PLANS: PricingPlan[] = [
     unit: '/ month and up',
     note: 'From $50 a month. Pick the credits your team needs.',
     highlight: true,
-    badge: 'Most popular',
     icon: Users,
     features: [
       'Everything in Free',
