@@ -1,8 +1,9 @@
 {
-  "source_hash": "8fc8655ad1a87c5f3affa287563fe26dfa192bfcaf78383821f93994bd8b3850",
+  "source_hash": "9c39bce345de9156d8a473b885cf9570c284dc1ba5ba7dd55e75445925a07da1",
   "diff_files": [
     "apps/web/src/app/[locale]/(app)/checkout/page.tsx",
     "apps/web/src/app/[locale]/(app)/connections/page.tsx",
+    "apps/web/src/app/[locale]/admin/_components/admin-shell.tsx",
     "apps/web/src/app/globals.css",
     "apps/web/src/features/session/header/session-site-header.tsx",
     "apps/web/src/features/workspace/account-menu-button.test.tsx",
@@ -18,15 +19,16 @@
     "apps/web/src/features/workspace/project-selector/project-selector.tsx",
     "apps/web/src/lib/auth/sign-out-navigation.test.ts",
     "tests/e2e/shard-durations.json",
+    "tests/e2e/specs/09-admin-console.spec.ts",
     "tests/e2e/specs/52-account-chip-ui.spec.ts"
   ],
-  "diff_hash": "4dbaa570f82a4518ef1ae5192b2957e8fe7a025dc5bd7f1c2e3f43275e854905",
-  "head": "049b3cb7ddb46900a3c13d59fbf650d11f21ec24",
+  "diff_hash": "8a9163d610ad6ca068549d48552af2e459c86eff3f46c14fbb5e7ae608528b5f",
+  "head": "fe6e5fa9fa10f2db7a76fe32abed92c313c47edc",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T02:47:39.367Z"
+  "at": "2026-10-15T04:37:54.483Z"
 }
