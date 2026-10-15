@@ -1213,6 +1213,11 @@ flow(
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId/message-authors',
+      'GET /v1/projects/:projectId/sessions/:sessionId/model-usage',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/config',
       'POST /v1/projects/:projectId/sessions/:sessionId/attachments',
       'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId',
     ],
@@ -1303,6 +1308,21 @@ flow(
       if (await listed()) throw new Error('the session list still shows a deleted session');
       (await owner.get(sessionRoute, { params })).status(404);
       (await owner.get(download, { params: { ...params, attachmentId } })).status(404);
+    });
+
+    await ctx.step('its content reads → 404 for the owner and a member, as the read of it (KRTX-2275); a prompt → 409 Session is deleted', async () => {
+      for (const who of [owner, ctx.client.as(member)]) {
+        (await who.get(`${sessionRoute}/transcript`, { params, query: { shape: 'sync', history: 'true' } })).status(404);
+        (await who.get(`${sessionRoute}/message-authors`, { params })).status(404);
+        (await who.get(`${sessionRoute}/model-usage`, { params })).status(404);
+        (await who.get(`${sessionRoute}/prompts`, { params })).status(404);
+        (await who.get(`${sessionRoute}/config`, { params })).status(404);
+      }
+      (await owner.post(
+        `${sessionRoute}/prompts`,
+        { client_message_id: `sess-51-${crypto.randomUUID()}`, parts: [{ type: 'text', text: 'into a deleted session' }] },
+        { params },
+      )).status(409).body().has('$.error', 'Session is deleted');
     });
 
     await ctx.step('a project member who did not start the session cannot restore it → 403, it stays deleted', async () => {

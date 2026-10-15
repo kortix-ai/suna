@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "每月 {credits} 个积分",
         "credits": "{credits} 个积分",
         "price": "{amount} / 月",
-        "popular": "最受欢迎",
         "current": "当前",
         "choose": "选择档位",
         "chooseHint": "档位起价为每月 {min}。",
@@ -2853,7 +2852,14 @@
     "failedToCopyFileContent": "复制文件内容失败",
     "noContentAvailable": "无可用内容",
     "noContentDescription": "此工具执行未产生任何输入或输出内容可显示。",
-    "tool": "工具"
+    "tool": "工具",
+    "codemode": {
+      "ranScript": "已运行脚本",
+      "runningScript": "正在运行脚本",
+      "scriptFailed": "脚本运行失败",
+      "calls": "{count, plural, other {# 次工具调用}}",
+      "noOutput": "无输出"
+    }
   },
   "agentRunLimit": {
     "gotIt": "知道了",

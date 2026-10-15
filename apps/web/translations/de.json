@@ -2220,7 +2220,6 @@
         "creditsPerMonth": "{credits} Credits / Monat",
         "credits": "{credits} Credits",
         "price": "{amount} / Mo.",
-        "popular": "Am beliebtesten",
         "current": "Aktuell",
         "choose": "Wähle eine Stufe",
         "chooseHint": "Die Stufen beginnen bei {min} pro Monat.",
@@ -2853,7 +2852,14 @@
     "failedToCopyFileContent": "Dateiinhalt konnte nicht kopiert werden",
     "noContentAvailable": "Kein Inhalt verfügbar",
     "noContentDescription": "Diese Tool-Ausführung hat keinen Eingabe- oder Ausgabeinhalt zum Anzeigen erzeugt.",
-    "tool": "Tool"
+    "tool": "Tool",
+    "codemode": {
+      "ranScript": "Skript ausgeführt",
+      "runningScript": "Skript läuft",
+      "scriptFailed": "Skript fehlgeschlagen",
+      "calls": "{count, plural, one {# Tool-Aufruf} other {# Tool-Aufrufe}}",
+      "noOutput": "Keine Ausgabe"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Verstanden",
