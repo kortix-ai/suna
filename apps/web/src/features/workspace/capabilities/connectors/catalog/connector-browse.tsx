@@ -2,7 +2,7 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import { GlobeIcon, MonitorIcon } from '@phosphor-icons/react';
-import { memo } from 'react';
+import { memo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,7 +88,8 @@ function CatalogAffordance({
 }
 
 /**
- * A catalog favicon, or a neutral glyph tile when the record has none.
+ * A catalog favicon, or a neutral glyph tile when the record has none or its
+ * URL fails to load.
  *
  * A plain `<img>`, not `next/image`. These are third-party favicons on
  * arbitrary hosts, so the loader was already bypassed with `unoptimized` — which
@@ -98,9 +99,26 @@ function CatalogAffordance({
  *
  * `width`/`height` are set so the box is reserved before the image arrives and
  * the grid never reflows around a late favicon.
+ *
+ * The broken-image state is the fallback the null case already had: a logo
+ * URL that 404s used to render the browser's broken-image glyph inside the
+ * tile, which is worse than no imagery at all. `onError` swaps to the same
+ * glyph tile — the same fallback a record with no icon gets, so "missing" and
+ * "unavailable" look identical. Mirrors `ConnectorAppIcon`'s broken state.
+ *
+ * The latch is per URL: the card's call site keys this component on the icon
+ * URL, so a reused virtualizer slot or a late-arriving logo gets a fresh try
+ * and a URL that once failed stays failed.
  */
-function ConnectorIcon({ icon, computer = false }: { icon: string | null; computer?: boolean }) {
-  if (!icon) {
+export function ConnectorIcon({
+  icon,
+  computer = false,
+}: {
+  icon: string | null;
+  computer?: boolean;
+}) {
+  const [broken, setBroken] = useState(false);
+  if (!icon || broken) {
     return (
       <span className="bg-card flex size-9 shrink-0 items-center justify-center rounded-sm">
         {computer ? <MonitorIcon className="size-5" /> : <GlobeIcon className="size-5" />}
@@ -120,6 +138,7 @@ function ConnectorIcon({ icon, computer = false }: { icon: string | null; comput
         decoding="async"
         referrerPolicy="no-referrer"
         className="size-9 object-contain"
+        onError={() => setBroken(true)}
       />
     </span>
   );

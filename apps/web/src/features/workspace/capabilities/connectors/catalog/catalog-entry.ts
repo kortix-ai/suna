@@ -1,6 +1,8 @@
 import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
+import { faviconUrlForHostname } from '@/lib/favicon';
+
 import { POPULAR_SECTION } from './connector-categories';
 
 /**
@@ -62,6 +64,25 @@ export function computersCatalogEntry(tI18nComplete: UiTranslator): CatalogEntry
   };
 }
 
+/**
+ * The icon URL a Discover record's card loads.
+ *
+ * A share of the catalogue's records carry a `domain` and no `icon` — the
+ * upstream feed only holds a logo for entries it could scrape one for. The
+ * card for such a record used to fall straight to a generic globe glyph, which
+ * is exactly the "inconsistent or missing imagery" a connector catalogue
+ * should not show when the app's own favicon is one well-known URL away. The
+ * same favicon service the marketing connectors page and `FaviconAvatar`
+ * already use resolves it; where the domain is a pseudo-host (`*.local`, the
+ * apis.guru feed's placeholders) it answers the generic globe image, which
+ * reads the same as the glyph it replaced.
+ */
+export function discoverEntryIcon(
+  connector: Pick<DiscoverConnector, 'icon' | 'domain'>,
+): string | null {
+  return connector.icon ?? faviconUrlForHostname(connector.domain);
+}
+
 export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogEntry {
   return {
     source: 'discover',
@@ -70,7 +91,7 @@ export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogE
     slug: connector.slug,
     name: connector.name,
     description: connector.description,
-    icon: connector.icon,
+    icon: discoverEntryIcon(connector),
     categories: connector.categories,
     popularity: connector.popularity,
   };

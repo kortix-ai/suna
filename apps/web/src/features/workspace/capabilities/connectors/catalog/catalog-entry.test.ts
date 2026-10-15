@@ -75,6 +75,22 @@ describe('normalising the two catalogues', () => {
     if (entry.source === 'discover') expect(entry.connector.id).toBe('int_1');
   });
 
+  test('a Discover icon the feed scraped is used as-is', () => {
+    const entry = catalogEntryFromDiscover(
+      connector({ icon: 'https://integrations.sh/logo/linear.app' }),
+    );
+    expect(entry.icon).toBe('https://integrations.sh/logo/linear.app');
+  });
+
+  // The feed holds no logo for these records. The card still shows the app's
+  // own mark — resolved from the domain the record carries, through the same
+  // favicon service the marketing connectors page already uses — instead of a
+  // generic globe glyph.
+  test('a Discover record without an icon falls back to its domain favicon', () => {
+    const entry = catalogEntryFromDiscover(connector());
+    expect(entry.icon).toBe('https://www.google.com/s2/favicons?domain=linear.app&sz=128');
+  });
+
   // Pipedream publishes no ranking. `null` keeps these out of the Popular
   // section entirely rather than sorting them to the bottom of it.
   test('an Easy Connect entry is unranked and maps imgSrc to icon', () => {
