@@ -594,7 +594,7 @@ function GeneralWorkspaceCard({
           disabled={!canManage || effortMutation.isPending}
         >
           <SelectTrigger aria-label={t('defaultEffort')} className="h-8 w-40 shrink-0">
-            <SelectValue />
+            <SelectValue placeholder={t('defaultEffortAutomatic')} />
           </SelectTrigger>
           <SelectContent align="end">
             <SelectItem value={DEFAULT_EFFORT_AUTOMATIC}>{t('defaultEffortAutomatic')}</SelectItem>

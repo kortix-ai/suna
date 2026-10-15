@@ -60,7 +60,7 @@ mock.module('@/components/ui/select', () => ({
   SelectContent: Passthrough,
   SelectItem: EffortItem,
   SelectTrigger: Passthrough,
-  SelectValue: Passthrough,
+  SelectValue: (props: Record<string, unknown>) => createElement('effort-value', props),
 }));
 
 const { GeneralTab } = await import('./general-tab');
@@ -167,6 +167,7 @@ describe('GeneralTab default reasoning effort', () => {
       '', 'none', 'low', 'medium', 'high', 'xhigh', 'max',
     ]);
     expect(options[0].props.children).toBe('Automatic');
+    expect(renderer.root.findByType('effort-value').props.placeholder).toBe('Automatic');
     expect(calls).toEqual([]);
   });
 
