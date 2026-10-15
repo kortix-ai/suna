@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "プロジェクト",
         "personal": "個人",
-        "account": "アカウント"
+        "account": "アカウント",
+        "connect": "接続"
       },
       "items": {
         "workspace": {
@@ -531,7 +532,7 @@
         },
         "tokens": {
           "label": "個人用アクセスキー",
-          "description": "あなたとして動作する API キーと MCP クライアント — CLI、スクリプト、CI ジョブ、Claude や Cursor 用。"
+          "description": "あなたとして動作する API キー — CLI、スクリプト、CI ジョブ用。"
         },
         "credits": {
           "label": "クレジット",
@@ -540,6 +541,14 @@
         "plan": {
           "label": "プラン",
           "description": "このアカウントのプラン、クレジット、請求。"
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Claude、Claude Code、Cursor、Codex、または任意の MCP クライアントから Kortix を使えます。サインインは一度だけ。インストールは不要です。"
+        },
+        "computer": {
+          "label": "コンピューター",
+          "description": "Kortix のエージェントが、あなたのコンピューターのファイル、ターミナル、アプリを使えるようにします。"
         }
       }
     },
@@ -1139,7 +1148,6 @@
     "connectedApps": {
       "title": "連携アプリ",
       "description": "Kortix でサインインしたアプリ（MCP クライアントなど）。取り消すまで、各アプリはあなたとして動作します。",
-      "connectMcp": "MCP を接続",
       "emptyTitle": "連携アプリはありません",
       "emptyDescription": "「Kortix でサインイン」で承認したアプリ（MCP 経由の Claude、Cursor、Codex など）がここに表示されます。",
       "loadFailed": "連携アプリを読み込めませんでした",
@@ -1382,6 +1390,19 @@
       "adminOnly": "このアカウントの所有者または管理者だけが GitHub を接続できます。",
       "disconnectedToast": "GitHub の接続を解除しました",
       "disconnectFailed": "GitHub の接続を解除できませんでした"
+    },
+    "mcp": {
+      "serverTitle": "サーバー",
+      "serverDescription": "開けるすべてのプロジェクトに使える 1 つの URL です。クライアントは最初の接続時に Kortix でサインインします。",
+      "urlLabel": "サーバー URL",
+      "clientsTitle": "クライアント",
+      "clientsDescription": "使用しているクライアントに Kortix を追加します。"
+    },
+    "computer": {
+      "oneClickDescription": "デスクトップアプリはワンクリックでこのコンピューターを接続します。",
+      "desktopLabel": "デスクトップアプリ",
+      "download": "ダウンロード",
+      "cliLabel": "コマンドライン"
     }
   },
   "triggers": {

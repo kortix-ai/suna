@@ -340,7 +340,8 @@
       "groups": {
         "workspace": "Пројекат",
         "personal": "Лично",
-        "account": "Налог"
+        "account": "Налог",
+        "connect": "Повезивање"
       },
       "items": {
         "workspace": {
@@ -384,7 +385,7 @@
         },
         "tokens": {
           "label": "Лични приступни кључеви",
-          "description": "API кључеви и MCP клијенти који делују у ваше име — за CLI, скрипту, CI задатак или Claude и Cursor."
+          "description": "API кључеви који делују у ваше име — за CLI, скрипту или CI задатак."
         },
         "credits": {
           "label": "Кредити",
@@ -393,6 +394,14 @@
         "plan": {
           "label": "План",
           "description": "План, кредити и обрачун за овај налог."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Koristite Kortix iz Claude, Claude Code, Cursor, Codex ili bilo kog MCP klijenta. Prijavljujete se jednom. Ništa ne morate da instalirate."
+        },
+        "computer": {
+          "label": "Рачунар",
+          "description": "Дозволите Kortix агентима да раде са датотекама, терминалом и апликацијама на вашем рачунару."
         }
       }
     },
@@ -1139,7 +1148,6 @@
     "connectedApps": {
       "title": "Povezane aplikacije",
       "description": "Aplikacije u koje si se prijavio preko Kortixa, kao što su MCP klijenti. Svaka radi u tvoje ime dok je ne opozoveš.",
-      "connectMcp": "Повежи MCP",
       "emptyTitle": "Nema povezanih aplikacija",
       "emptyDescription": "Ovde se prikazuju aplikacije koje odobriš preko Prijave sa Kortixom, kao što su Claude, Cursor ili Codex preko MCP-a.",
       "loadFailed": "Povezane aplikacije nisu mogle da se učitaju",
@@ -1382,6 +1390,19 @@
       "adminOnly": "Само власник или администратор може да повеже GitHub за овај налог.",
       "disconnectedToast": "GitHub веза је прекинута",
       "disconnectFailed": "Прекид GitHub везе није успео"
+    },
+    "mcp": {
+      "serverTitle": "Сервер",
+      "serverDescription": "Један URL за сваки пројекат који можете да отворите. Ваш клијент се пријављује преко Kortix-а при првом повезивању.",
+      "urlLabel": "URL сервера",
+      "clientsTitle": "Клијенти",
+      "clientsDescription": "Додајте Kortix у клијент који користите."
+    },
+    "computer": {
+      "oneClickDescription": "Десктоп апликација повезује овај рачунар једним кликом.",
+      "desktopLabel": "Десктоп апликација",
+      "download": "Преузми",
+      "cliLabel": "Командна линија"
     }
   },
   "triggers": {

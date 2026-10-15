@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Projekt",
         "personal": "Persönlich",
-        "account": "Konto"
+        "account": "Konto",
+        "connect": "Verbinden"
       },
       "items": {
         "workspace": {
@@ -531,7 +532,7 @@
         },
         "tokens": {
           "label": "Persönliche Zugriffsschlüssel",
-          "description": "API-Schlüssel und MCP-Clients, die in Ihrem Namen handeln – für die CLI, ein Skript, einen CI-Auftrag oder Claude und Cursor."
+          "description": "API-Schlüssel, die in Ihrem Namen handeln – für die CLI, ein Skript oder einen CI-Auftrag."
         },
         "credits": {
           "label": "Credits",
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Tarif",
           "description": "Dein Plan, deine Credits und die Abrechnung für dieses Konto."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Nutze Kortix in Claude, Claude Code, Cursor, Codex oder jedem MCP-Client. Du meldest dich einmal an. Keine Installation nötig."
+        },
+        "computer": {
+          "label": "Computer",
+          "description": "Lass Kortix-Agenten mit den Dateien, dem Terminal und den Apps auf deinem Computer arbeiten."
         }
       }
     },
@@ -1139,7 +1148,6 @@
     "connectedApps": {
       "title": "Verbundene Apps",
       "description": "Apps, bei denen du dich mit Kortix angemeldet hast, zum Beispiel MCP-Clients. Jede handelt in deinem Namen, bis du sie widerrufst.",
-      "connectMcp": "MCP verbinden",
       "emptyTitle": "Keine verbundenen Apps",
       "emptyDescription": "Apps, die du mit „Mit Kortix anmelden“ freigibst, etwa Claude, Cursor oder Codex über MCP, erscheinen hier.",
       "loadFailed": "Verbundene Apps konnten nicht geladen werden",
@@ -1382,6 +1390,19 @@
       "adminOnly": "Nur Kontoinhaber oder Administratoren können GitHub für dieses Konto verbinden.",
       "disconnectedToast": "GitHub-Verbindung getrennt",
       "disconnectFailed": "GitHub-Verbindung konnte nicht getrennt werden"
+    },
+    "mcp": {
+      "serverTitle": "Server",
+      "serverDescription": "Eine URL für jedes Projekt, das Sie öffnen können. Ihr Client meldet sich bei der ersten Verbindung mit Kortix an.",
+      "urlLabel": "Server-URL",
+      "clientsTitle": "Clients",
+      "clientsDescription": "Fügen Sie Kortix zu dem Client hinzu, den Sie verwenden."
+    },
+    "computer": {
+      "oneClickDescription": "Die Desktop-App verbindet diesen Computer mit einem Klick.",
+      "desktopLabel": "Desktop-App",
+      "download": "Herunterladen",
+      "cliLabel": "Befehlszeile"
     }
   },
   "triggers": {

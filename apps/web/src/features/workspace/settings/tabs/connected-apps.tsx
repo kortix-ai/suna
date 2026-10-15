@@ -10,10 +10,6 @@
  * Revoke deletes the consent (the app must ask again) and revokes every live
  * token the app holds for this person; they stop working on their next
  * request (`DELETE /v1/oauth/grants/:clientId`).
- *
- * "Connect MCP" opens `ConnectMcpModal`, the way an MCP client gets onto this
- * list. Its other entry point is a dismissible sidebar promo, so this is the
- * one that stays (KRTX-1997).
  */
 
 import { useState } from 'react';
@@ -22,12 +18,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Mcp } from '@/features/icon/icons/mcp';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { AccessList, AccessRow } from '@/features/workspace/shared/access';
@@ -66,7 +60,6 @@ export function ConnectedApps({ relativeTime }: { relativeTime: (iso: string) =>
   const t = useTranslations('settings.connectedApps');
   const queryClient = useQueryClient();
   const [revokeTarget, setRevokeTarget] = useState<OAuthGrant | null>(null);
-  const [connectOpen, setConnectOpen] = useState(false);
 
   const grantsQuery = useQuery({
     queryKey: CONNECTED_APPS_KEY,
@@ -88,15 +81,7 @@ export function ConnectedApps({ relativeTime }: { relativeTime: (iso: string) =>
 
   return (
     <section className="space-y-3 pt-4">
-      <SettingsSectionHeader
-        title={t('title')}
-        action={
-          <Button variant="secondary" size="sm" onClick={() => setConnectOpen(true)}>
-            <Mcp className="size-4 shrink-0" />
-            {t('connectMcp')}
-          </Button>
-        }
-      />
+      <SettingsSectionHeader title={t('title')} />
       {grantsQuery.isLoading ? (
         <Skeleton className="h-14 rounded-md" />
       ) : grantsQuery.isError ? (
@@ -155,8 +140,6 @@ export function ConnectedApps({ relativeTime }: { relativeTime: (iso: string) =>
           ))}
         </AccessList>
       )}
-
-      <ConnectMcpModal open={connectOpen} onOpenChange={setConnectOpen} />
 
       <ConfirmDialog
         open={!!revokeTarget}

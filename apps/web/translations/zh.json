@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "项目",
         "personal": "个人",
-        "account": "账户"
+        "account": "账户",
+        "connect": "连接"
       },
       "items": {
         "workspace": {
@@ -531,7 +532,7 @@
         },
         "tokens": {
           "label": "个人访问密钥",
-          "description": "以您的身份操作的 API 密钥和 MCP 客户端 — 用于 CLI、脚本、CI 作业或 Claude 和 Cursor。"
+          "description": "以您的身份操作的 API 密钥 — 用于 CLI、脚本或 CI 作业。"
         },
         "credits": {
           "label": "点数",
@@ -540,6 +541,14 @@
         "plan": {
           "label": "套餐",
           "description": "此账户的套餐、积分和账单。"
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "在 Claude、Claude Code、Cursor、Codex 或任何 MCP 客户端中使用 Kortix。只需登录一次，无需安装。"
+        },
+        "computer": {
+          "label": "电脑",
+          "description": "让 Kortix 智能体使用你电脑上的文件、终端和应用。"
         }
       }
     },
@@ -1139,7 +1148,6 @@
     "connectedApps": {
       "title": "已连接的应用",
       "description": "你通过 Kortix 登录的应用，例如 MCP 客户端。在你撤销之前，每个应用都以你的身份操作。",
-      "connectMcp": "连接 MCP",
       "emptyTitle": "没有已连接的应用",
       "emptyDescription": "你通过「使用 Kortix 登录」批准的应用（例如通过 MCP 的 Claude、Cursor 或 Codex）会显示在这里。",
       "loadFailed": "无法加载已连接的应用",
@@ -1382,6 +1390,19 @@
       "adminOnly": "只有帐户所有者或管理员才能为此帐户连接 GitHub。",
       "disconnectedToast": "已断开 GitHub 连接",
       "disconnectFailed": "无法断开 GitHub 连接"
+    },
+    "mcp": {
+      "serverTitle": "服务器",
+      "serverDescription": "一个 URL 适用于您可以打开的每个项目。您的客户端首次连接时会通过 Kortix 登录。",
+      "urlLabel": "服务器 URL",
+      "clientsTitle": "客户端",
+      "clientsDescription": "将 Kortix 添加到您使用的客户端。"
+    },
+    "computer": {
+      "oneClickDescription": "桌面应用一键连接这台电脑。",
+      "desktopLabel": "桌面应用",
+      "download": "下载",
+      "cliLabel": "命令行"
     }
   },
   "triggers": {

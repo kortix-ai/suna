@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Projeto",
         "personal": "Pessoal",
-        "account": "Conta"
+        "account": "Conta",
+        "connect": "Conectar"
       },
       "items": {
         "workspace": {
@@ -531,7 +532,7 @@
         },
         "tokens": {
           "label": "Chaves de acesso pessoais",
-          "description": "Chaves de API e clientes MCP que agem em seu nome — para a CLI, um script, uma tarefa de CI ou Claude e Cursor."
+          "description": "Chaves de API que agem em seu nome — para a CLI, um script ou uma tarefa de CI."
         },
         "credits": {
           "label": "Créditos",
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Plano",
           "description": "Seu plano, seus créditos e o faturamento desta conta."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Use o Kortix no Claude, Claude Code, Cursor, Codex ou qualquer cliente MCP. Você entra uma vez. Nada para instalar."
+        },
+        "computer": {
+          "label": "Computador",
+          "description": "Deixe os agentes do Kortix trabalharem com os arquivos, o terminal e os apps do seu computador."
         }
       }
     },
@@ -1139,7 +1148,6 @@
     "connectedApps": {
       "title": "Apps conectados",
       "description": "Apps em que você entrou com o Kortix, como clientes MCP. Cada um age em seu nome até você revogá-lo.",
-      "connectMcp": "Conectar MCP",
       "emptyTitle": "Nenhum app conectado",
       "emptyDescription": "Os apps que você aprova com Entrar com o Kortix, como Claude, Cursor ou Codex via MCP, aparecem aqui.",
       "loadFailed": "Não foi possível carregar os apps conectados",
@@ -1382,6 +1390,19 @@
       "adminOnly": "Somente o proprietário ou um administrador pode conectar o GitHub nesta conta.",
       "disconnectedToast": "GitHub desconectado",
       "disconnectFailed": "Não foi possível desconectar o GitHub"
+    },
+    "mcp": {
+      "serverTitle": "Servidor",
+      "serverDescription": "Uma URL para cada projeto que você pode abrir. Seu cliente entra com o Kortix na primeira conexão.",
+      "urlLabel": "URL do servidor",
+      "clientsTitle": "Clientes",
+      "clientsDescription": "Adicione o Kortix ao cliente que você usa."
+    },
+    "computer": {
+      "oneClickDescription": "O aplicativo para desktop conecta este computador com um clique.",
+      "desktopLabel": "Aplicativo para desktop",
+      "download": "Baixar",
+      "cliLabel": "Linha de comando"
     }
   },
   "triggers": {
