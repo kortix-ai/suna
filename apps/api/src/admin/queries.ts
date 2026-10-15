@@ -112,11 +112,6 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       planMonthlyUsd: creditAccounts.planMonthlyUsd,
       // Read only by planMonthlyUsd()'s fallback for a per-seat row not yet backfilled.
       seatCount: creditAccounts.seatCount,
-      trialStatus: creditAccounts.trialStatus,
-      trialTier: creditAccounts.trialTier,
-      trialStartedAt: creditAccounts.trialStartedAt,
-      trialEndsAt: creditAccounts.trialEndsAt,
-      trialNote: creditAccounts.trialNote,
       // The resolver applies the per-feature overrides; a projection without
       // them would report a different answer than the gates enforce.
       entitlementOverrides: creditAccounts.entitlementOverrides,

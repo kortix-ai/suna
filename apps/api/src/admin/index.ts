@@ -210,13 +210,6 @@ adminApp.openapi(
         stripeSubscriptionId: r.stripeSubscriptionId ?? null,
         // The Enterprise feature layer: off, demo (self-serve) or licensed.
         enterprise: resolved.enterprise,
-        trial: {
-          status: r.trialStatus ?? 'none',
-          tier: r.trialTier ?? null,
-          startedAt: isoValue(r.trialStartedAt),
-          endsAt: isoValue(r.trialEndsAt),
-          note: r.trialNote ?? null,
-        },
         // The active Enterprise contract. Null on every other account; an
         // Enterprise account with null here has no contract on file.
         contract: r.contractId

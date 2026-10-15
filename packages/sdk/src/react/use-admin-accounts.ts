@@ -5,7 +5,7 @@ import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 /**
  * Lifecycle of an admin-issued trial. `active` is the only status that grants
  * the trial tier; every other value is history the row keeps for audit.
- * Mirrors `TRIAL_STATUS` in `apps/api/src/billing/services/effective-tier.ts`.
+ * @deprecated Trials are removed; the admin list no longer sends them.
  */
 export type AdminTrialStatus = 'none' | 'active' | 'expired' | 'revoked' | 'converted';
 
@@ -154,19 +154,20 @@ export interface AdminAccount {
   billingCustomerId: string | null;
   billingCustomerEmail: string | null;
   createdAt: string | null;
-  trial: AdminAccountTrial;
+  /** @deprecated No longer sent: trials are removed. Read {@link AdminAccount.enterprise}. */
+  trial?: AdminAccountTrial;
   /** The active Enterprise contract. Null on every other account; an Enterprise
    *  account with null has no contract on file. Optional: absent on an older API. */
   contract?: AdminAccountContract | null;
-  /** Set while SSO/SCIM stay on after an Enterprise trial ended. Optional:
+  /** Set while SSO/SCIM stay on after an Enterprise license ended. Optional:
    *  absent on an older API. */
   graceEndsAt?: string | null;
   /** @deprecated No longer sent: the managed-models override is the
    *  `managedModels` key of {@link AdminAccount.entitlementOverrides}. */
   managedModelsOverride?: boolean | null;
-  /** @deprecated No longer sent: the Enterprise preview became an Enterprise trial. */
+  /** @deprecated No longer sent: read `enterprise === 'demo'`. */
   demoEnterprise?: boolean;
-  /** @deprecated No longer sent: read `plan.family === 'enterprise'` and {@link AdminAccount.contract}. */
+  /** @deprecated No longer sent: read `enterprise === 'licensed'`. */
   enterpriseEntitled?: boolean;
   /**
    * The STORED override map, exactly as the account row carries it — expiry is

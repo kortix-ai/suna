@@ -119,15 +119,15 @@ billingApp.openapi(
   },
 );
 
-// Access sweep cron endpoint: expires trials (the overlay already stopped
-// granting lazily at trial_ends_at), ends manual contracts whose term is over,
-// and sends the warnings that are due (services/access-notices.ts).
+// Access sweep cron endpoint: ends manual license contracts whose term is over
+// and sends the warnings that are due (services/access-notices.ts). The path
+// keeps its old name because the scheduler calls it.
 billingApp.openapi(
   createRoute({
     method: 'post',
     path: '/cron/trial-expiry',
     tags: ['billing'],
-    summary: 'Sweep trials and contracts: expire, end, warn (cron)',
+    summary: 'Sweep Enterprise licenses: end and warn (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Sweep result'),
       ...errors(401),

@@ -33,8 +33,8 @@ export interface BillingRow {
   entitlementOverrides?: unknown;
 }
 
-/** Where the billing plan came from. ('trial' is retired: trials are removed.) */
-export type BillingPlanSource = 'no_account' | 'trial' | 'stored';
+/** Where the billing plan came from. */
+export type BillingPlanSource = 'no_account' | 'stored';
 
 /** The Enterprise feature layer. */
 export type EnterpriseState = 'off' | 'demo' | 'licensed';
@@ -63,11 +63,6 @@ export interface ResolvedBilling {
 
 /** SSO and SCIM stay on this long after an Enterprise license ends. */
 export const ACCESS_GRACE_DAYS = 14;
-
-/** Trials are removed. Kept so an old import resolves; never active. */
-export function trialIsActive(_row: BillingRow, _nowMs: number): boolean {
-  return false;
-}
 
 function displayFor(plan: PlanRecord): { label: string; sublabel: string | null } {
   return { label: PLAN_FAMILY_LABELS[plan.family], sublabel: null };
