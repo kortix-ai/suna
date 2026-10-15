@@ -81,6 +81,26 @@ function readSidebarOpenCookie(): boolean | undefined {
   return parseSidebarStateCookie(document.cookie);
 }
 
+/**
+ * The account corner (KRTX-2145): who you are, profile settings and log out,
+ * top-right of every project view that does not carry its own chip. Capability
+ * headers and the session header render `<AccountMenuButton embedded>` in
+ * their own rows, and the `:has([data-kx-account-owner])` rule in globals.css
+ * hides this corner on those views — exactly one account control either way.
+ * No bell here: the project sidebar already owns the bell inside a project.
+ * The chip is deliberately NOT embedded: a corner chip that stamped
+ * `data-kx-account-owner` would hide itself forever. Painted after the page
+ * content in the shell so nothing can cover it, and beneath the shell's
+ * dialogs (z-50).
+ */
+export function ProjectAccountCorner() {
+  return (
+    <div className="kx-app-account-corner absolute right-0 top-3 z-30 pr-4 sm:top-4 sm:pr-6">
+      <AccountMenuButton />
+    </div>
+  );
+}
+
 export function ProjectShell({ projectId, initialSidebarOpen, children }: ProjectShellProps) {
   const resolvedSidebarOpen = initialSidebarOpen ?? readSidebarOpenCookie();
   const router = useRouter();
@@ -341,18 +361,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
       {/* Page headers can share z-50 with this fixed control. Paint the
           control after them so their macOS drag regions cannot take its click. */}
       {children}
-      {/* The account corner (KRTX-2145): who you are, profile settings and log
-          out, top-right of every project view that does not carry its own
-          chip. Capability headers and the session header render
-          `<AccountMenuButton embedded>` in their own rows, and the
-          `:has([data-kx-account-owner])` rule in globals.css hides this corner
-          on those views — exactly one account control either way. No bell
-          here: the project sidebar already owns the bell inside a project.
-          Painted after `{children}` so page content cannot cover it, and
-          beneath the shell's dialogs (z-50). */}
-      <div className="kx-app-account-corner absolute right-0 top-3 z-30 pr-4 sm:top-4 sm:pr-6">
-        <AccountMenuButton />
-      </div>
+      <ProjectAccountCorner />
       {desktopShell && !isExpanded && (
         <Hint
           label={

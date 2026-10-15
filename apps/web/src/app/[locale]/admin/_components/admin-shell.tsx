@@ -150,7 +150,7 @@ function AdminContent({ children }: { children: React.ReactNode }) {
  * needed) and the `Admin / <page>` breadcrumb. The header is `shrink-0`; the
  * page content below it (`AdminPageShell`) is the scroll container.
  */
-function AdminHeader() {
+export function AdminHeader() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const { state, isMobile } = useSidebar();

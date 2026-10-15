@@ -1,10 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
+import { createDatabaseProject, createDatabaseSession, deleteDatabaseProject } from '../../src/fixtures/database-project';
 import { loadEnv } from '../../src/core/env';
 import { createApiJsonClient } from '../helpers/http';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
-import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../helpers/ui';
 
 /**
  * The project page's "Kortix, now on your phone" promo dialog covers the whole
@@ -76,7 +76,13 @@ test.describe('52 — account chip on every authenticated page', () => {
         'GET',
         '/accounts',
       );
-      const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0])!.account_id;
+      const account = accounts.find((a) => a.personal_account) ?? accounts[0];
+      // Check the selected account explicitly: a non-null assertion would turn
+      // an empty accounts response into a bare TypeError far from its cause.
+      if (!account?.account_id) {
+        throw new Error(`the accounts endpoint returned no usable account: ${JSON.stringify(accounts).slice(0, 200)}`);
+      }
+      const accountId = account.account_id;
       const project = await createDatabaseProject(env, {
         accountId,
         userId: user.id,
@@ -128,6 +134,40 @@ test.describe('52 — account chip on every authenticated page', () => {
       await page.goto('/new', { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toHaveCount(1);
       await expect(page.locator('.kx-app-account-corner')).toHaveCount(0);
+
+      // A session view carries exactly one account control. In boot state the
+      // session header has not mounted yet and the shell's floating corner
+      // serves; once the session boots the header embeds the chip and the
+      // corner stands down. Either way the page shows exactly one.
+      const sessionId = await createDatabaseSession(env, {
+        projectId,
+        accountId,
+        userId: user.id,
+        visibility: 'project',
+      });
+      const sessionStart = new RegExp(`^/v1/projects/${projectId}/sessions/[^/]+/start$`);
+      await page.route('**/*', async (route) => {
+        if (sessionStart.test(new URL(route.request().url()).pathname)) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              stage: 'provisioning',
+              agent_name: 'kortix',
+              retriable: true,
+              sandbox: null,
+              opencode_session_id: null,
+              failure: null,
+            }),
+          });
+          return;
+        }
+        await route.continue();
+      });
+      await page.goto(`/projects/${projectId}/sessions/${sessionId}`, { waitUntil: 'domcontentloaded' });
+      await dismissWelcomeCard(page);
+      await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toBeVisible();
+      await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toHaveCount(1);
 
       expect(pageErrors).toEqual([]);
     } finally {
