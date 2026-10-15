@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Projet",
         "personal": "Personnel",
-        "account": "Compte"
+        "account": "Compte",
+        "connect": "Connecter"
       },
       "items": {
         "workspace": {
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Forfait",
           "description": "Votre forfait, vos crédits et la facturation de ce compte."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Utilisez Kortix depuis Claude, Claude Code, Cursor, Codex ou tout client MCP. Vous vous connectez une seule fois. Rien à installer."
+        },
+        "computer": {
+          "label": "Ordinateur",
+          "description": "Laissez les agents Kortix utiliser les fichiers, le terminal et les apps de votre ordinateur."
         }
       }
     },
@@ -1381,6 +1390,19 @@
       "adminOnly": "Seul le propriétaire ou un administrateur peut connecter GitHub pour ce compte.",
       "disconnectedToast": "GitHub déconnecté",
       "disconnectFailed": "Impossible de déconnecter GitHub"
+    },
+    "mcp": {
+      "serverTitle": "Serveur",
+      "serverDescription": "Une URL pour chaque projet que vous pouvez ouvrir. Votre client se connecte avec Kortix lors de la première connexion.",
+      "urlLabel": "URL du serveur",
+      "clientsTitle": "Clients",
+      "clientsDescription": "Ajoutez Kortix au client que vous utilisez."
+    },
+    "computer": {
+      "oneClickDescription": "L'application de bureau connecte cet ordinateur en un clic.",
+      "desktopLabel": "Application de bureau",
+      "download": "Télécharger",
+      "cliLabel": "Ligne de commande"
     }
   },
   "triggers": {
@@ -2091,6 +2113,7 @@
     "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}",
     "queuedCount": "{count} en file",
     "editingQueued": "En cours de modification",
+    "queuedActions": "Actions du message",
     "steerNextStep": "Lu à la prochaine étape",
     "queuedByAnotherMember": "Envoyé par un autre membre. Seule cette personne peut le modifier ou l'envoyer.",
     "steerFallbackUnsupported": "Attend ce tour. Cette session n'accepte pas de messages pendant un tour.",
