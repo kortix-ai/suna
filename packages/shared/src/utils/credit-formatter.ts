@@ -51,6 +51,26 @@ export function formatUsdAsCredits(
 }
 
 /**
+ * The balance an insufficient-credits (402) message names, in USD. Reads both
+ * shapes: `Balance: 1,250 credits` (current) and `Balance: $12.5000` (servers
+ * before credits), so a client parses either side of a deploy. No balance → null.
+ */
+export function parseBalanceUsd(text: string): number | null {
+  const credits = text.match(/balance:\s*(-?)(<?)(\d[\d,]*(?:\.\d+)?)\s*credits?\b/i);
+  if (credits) {
+    const magnitude = parseFloat(credits[3]!.replace(/,/g, ""));
+    if (Number.isNaN(magnitude)) return null;
+    // `<0.01 credits` keeps reading as under 0.01 credits.
+    const value = (credits[2] ? magnitude / 2 : magnitude) / CREDITS_PER_DOLLAR;
+    return credits[1] ? -value : value;
+  }
+  const usd = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
+  if (!usd) return null;
+  const value = parseFloat(usd[1]!);
+  return Number.isNaN(value) ? null : value;
+}
+
+/**
  * Format credits for display with thousand separators
  * @param credits - The credit amount to format
  * @param options - Formatting options
