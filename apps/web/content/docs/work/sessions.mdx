@@ -284,6 +284,31 @@ kortix sessions ls --label needs-review
 
 `kortix sessions update` also takes `--clear-labels` and `--unmeta <key>`. Kortix refuses a metadata key it manages itself with `400`.
 
+### Pin and archive
+
+Pin a session to keep it at the top of your session list. Archive a session to take it out of your session list. A pin and an archive are yours alone: they change only your list, and other people see the session as before.
+
+- Archiving a pinned session unpins it. Pinning an archived session unarchives it.
+- Neither stops the session or changes its `updated_at`.
+- Only a person can pin or archive. A personal access token acts as you. An agent's session token, an API key and a service account get `403`.
+
+- **Web:** open the `⋯` menu of a session in the sidebar, on the Sessions page or in the session header, then choose **Pin session** or **Archive session**. Pinned sessions sit in the **Pinned** section at the top of the sidebar. The **Archived** tab of the Sessions page lists your archived sessions; **Archived sessions** in the sidebar's session menu opens it. On the Sessions page, **Select** archives several sessions at once. An archive toast offers **Undo**.
+- **Mobile:** the session actions sheet has **Pin** and **Archive**. Pinned sessions sit in the **Pinned** section of the project drawer. The Sessions page's filter sheet opens the **Archived** view.
+- **CLI:**
+
+```bash
+kortix sessions pin <session_id>...
+kortix sessions unpin <session_id>...
+kortix sessions archive <session_id>...
+kortix sessions unarchive <session_id>...
+kortix sessions ls --pinned      # only your pinned sessions
+kortix sessions ls --archived    # only your archived sessions
+```
+
+`kortix sessions ls` leaves out the sessions you archived and marks a pinned session `(pinned)`. A short ID from `ls --archived` resolves like any other short ID.
+
+- **API:** `PUT /v1/projects/<project_id>/sessions/<session_id>/pin` with `{"pinned": true}` or `false`, and `PUT …/archive` with `{"archived": true}` or `false`. Both answer `200` with `pinned_at` and `archived_at`, `null` when not set. `GET /v1/projects/<project_id>/sessions` leaves out your archived sessions; `?pinned=only` or `?archived=only` lists only those. Every row carries your `pinned_at` and `archived_at`.
+
 ## Who can open a session
 
 A session is private to the person who created it. The owner opens **Session access** and picks one option.

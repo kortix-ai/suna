@@ -183,7 +183,9 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | `new … --with-file <path>` | Upload a local file to `/workspace/incoming/<name>` before the prompt goes in. Repeatable. |
 | `new … --label <label>`, `--meta <key>=<value>` | Classify the session. Both are repeatable. |
 | `new … --connector <alias>=<connection-id>` | Bind a connection to the session. Repeatable. `--no-connectors` binds none. |
-| `ls` | List sessions with who started each. `--mine`, `--shared`, `--automated`, `--search <q>`, `--label <label>`, `--children <session_id>`. |
+| `ls` | List sessions with who started each. `--mine`, `--shared`, `--automated`, `--search <q>`, `--label <label>`, `--children <session_id>`. The list leaves out the sessions you archived and marks a pinned session `(pinned)`. `--pinned` lists only your pinned sessions, `--archived` only your archived ones. |
+| `pin <session_id>…`, `unpin <session_id>…` | Pin sessions in your own list, or unpin them. Only your list changes. |
+| `archive <session_id>…`, `unarchive <session_id>…` | Take sessions out of your own list, or put them back. Archiving unpins a session and does not stop it. |
 | `status` | One line per active session with what its agent is doing now. `--all` adds stopped sessions. |
 | `info <session_id>` | One session. |
 

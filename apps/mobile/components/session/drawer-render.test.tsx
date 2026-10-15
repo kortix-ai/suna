@@ -58,7 +58,10 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/lib/projects/hooks': {
     useProject: () => ({ data: { name: 'Project', account_id: 'a-1' } }),
     useAccounts: () => ({ data: [] }),
-    useProjectSessionsPaged: (_: string, options: { startedBy: string }) => paged[options.startedBy],
+    // The Pinned query is keyed by its view, the three sections by their
+    // starter. A test that sets no Pinned page gets an empty one.
+    useProjectSessionsPaged: (_: string, options: { startedBy?: string; view?: string }) =>
+      paged[options.view ?? options.startedBy ?? ''] ?? page([]),
   },
   '@/contexts': { useAuthContext: () => ({ user: { id: 'me' } }) },
   '@/hooks/useProfileEditor': { useProfileEditor: () => profile },
@@ -99,8 +102,8 @@ for (const [name, keys] of named) {
   for (const key of keys) if (!(key in values)) values[key] = Empty;
   mock.module(name, () => values);
 }
-// SessionSubsessionTree (real) imports these; the drawer does not.
-mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (_: string, o: any) => o.defaultValue_other }) }));
+// The drawer's Pinned title and SessionSubsessionTree (real): the key, or the plural default.
+mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, o?: any) => o?.defaultValue_other ?? key }) }));
 
 let Drawer: typeof import('./ProjectLeftDrawer');
 beforeAll(async () => {
@@ -130,6 +133,7 @@ beforeEach(() => {
     me: page([row('s-1'), row('s-2'), row('p-1', { child_count: 2 })]),
     others: page([row('o-1', { initiator: { type: 'member', id: 'u-2', label: 'Ana' } })]),
     automated: page([]),
+    pinned: page([]),
   };
 });
 afterEach(async () => {
@@ -354,5 +358,47 @@ describe('ProjectLeftDrawer past page one', () => {
     paged = { me: page([]), others: page([]), automated: page([]) };
     await mount();
     expect(emptyFlower()).toHaveLength(1);
+  });
+
+  // KRTX-2418: the viewer's pinned sessions, above the three sections.
+  test('a pinned session shows once, under Pinned at the top, not again under Sessions', async () => {
+    paged.pinned = page([row('s-2', { pinned_at: at, archived_at: null })]);
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    const labels: string[] = tree.root
+      .findAll((node: any) => node.type === 'Pressable' && typeof node.props.accessibilityLabel === 'string')
+      .map((node: any) => node.props.accessibilityLabel);
+    const pinnedHeader = labels.indexOf('sessions.pinnedSection, collapse');
+    const sessionsHeader = labels.indexOf('Sessions, collapse');
+    expect(pinnedHeader).toBeGreaterThanOrEqual(0);
+    expect(sessionsHeader).toBeGreaterThan(pinnedHeader);
+    const s2 = labels.filter((label) => label.startsWith('s-2, '));
+    expect(s2).toHaveLength(1);
+    expect(labels.indexOf(s2[0])).toBe(pinnedHeader + 1);
+    expect(labels.some((label) => label.startsWith('s-1, '))).toBe(true);
+  });
+
+  test('no pinned session: no Pinned header', async () => {
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    const labels = tree.root
+      .findAll((node: any) => node.type === 'Pressable' && typeof node.props.accessibilityLabel === 'string')
+      .map((node: any) => node.props.accessibilityLabel);
+    expect(labels.some((label: string) => label.startsWith('sessions.pinnedSection'))).toBe(false);
+  });
+
+  // A server without the feature ignores `pinned=only` and answers the whole list.
+  test('rows without a pin stamp never fill Pinned', async () => {
+    paged.pinned = page([row('s-1'), row('s-2')]);
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    const labels = tree.root
+      .findAll((node: any) => node.type === 'Pressable' && typeof node.props.accessibilityLabel === 'string')
+      .map((node: any) => node.props.accessibilityLabel);
+    expect(labels.some((label: string) => label.startsWith('sessions.pinnedSection'))).toBe(false);
+    expect(labels.filter((label: string) => label.startsWith('s-1, '))).toHaveLength(1);
   });
 });

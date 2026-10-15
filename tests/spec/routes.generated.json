@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 834,
+  "count": 836,
   "routes": [
     {
       "method": "GET",
@@ -2595,6 +2595,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/archive"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
     },
@@ -2713,6 +2717,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/pin"
     },
     {
       "method": "PUT",

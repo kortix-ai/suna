@@ -32,6 +32,7 @@ import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { accountGroupIds } from '../../iam/group-read';
 import { logger } from '../../lib/logger';
 import { deleteMemberNotificationData } from '../../notifications/cleanup';
+import { deleteMemberSessionStates } from '../../projects/surface';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
@@ -59,6 +60,8 @@ export async function offboardMember(
   );
   // KRTX-1742: their inbox and watcher rows here would keep naming sessions.
   await deleteMemberNotificationData(accountId, userId);
+  // KRTX-2418: and their pins and archive in the account's sessions.
+  await deleteMemberSessionStates(accountId, userId);
   await db
     .delete(accountMemberships)
     .where(and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)));
