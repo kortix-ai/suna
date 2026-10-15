@@ -222,6 +222,17 @@ const allowedLiteralValues = new Set([
   'Ruby on Rails',
   'Laravel',
   'Discover and read Kortix public API and documentation resources.',
+  // The Slack and Teams connect heroes (#9982) render a mock chat preview:
+  // the demo persona, her message timestamps, the channel name and the
+  // @Kortix handle are non-linguistic demo content, like the product names
+  // above — localizing a fake "10:42 AM" would be nonsense in every locale.
+  'Maya',
+  '10:42 AM',
+  '10:43 AM',
+  '@Kortix',
+  '# launch',
+  'Launch',
+  'Posts',
 ]);
 
 const ignoredAttributes = new Set([
