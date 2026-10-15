@@ -1,5 +1,5 @@
 {
-  "source_hash": "f2b77cee7e8a8765a818794a192a7b3a4b8e3f489c2ee07ea171c787bbb30103",
+  "source_hash": "cd4bc972fff6aeb123e3249b6a6e2fb08168e27cb8a011e8922bd04d0b2bfafa",
   "diff_files": [
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
@@ -29,13 +29,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "c3844f4fb054e13108e7f51aeacf91d1d26e392c115d82303abaad9ea8e73195",
-  "head": "4b0a25b3d5872c1e78ca68b3b60d62f8ec854af4",
-  "passed": true,
+  "diff_hash": "eb47f31842f4b3bfa693427d0aece2d30f4756bf55fde5cb6b61c61955646c95",
+  "head": "b6f2c6f237ea2329267cff6f4977e0597d79e744",
+  "passed": false,
   "lanes": {
-    "core": "pass",
+    "core": "fail",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T10:43:31.157Z"
+  "at": "2026-10-15T11:45:45.028Z"
 }
