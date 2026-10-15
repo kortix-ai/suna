@@ -47,7 +47,18 @@ export interface AccessGrace {
 }
 
 export interface ResolvedBilling {
+  /**
+   * The BILLING plan: what the account pays for, and how. A Credits trial lends
+   * it; an Enterprise trial does not, so a trialing account can still pick and
+   * pay for a plan.
+   */
   plan: PlanRecord;
+  /**
+   * The plan whose features and limits apply: the billing plan, or Enterprise
+   * during an Enterprise trial. Gates read this, display reads `plan`.
+   */
+  features: PlanRecord;
+  /** 'trial' while an active trial lends the plan or its features. */
   source: BillingPlanSource;
   /** Plan entitlements with the grace window and the per-feature overrides applied. */
   entitlements: PlanRecord['entitlements'];
@@ -102,7 +113,8 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  *
  * Plan precedence:
  *   1. no row                 → `none`     (fail-closed)
- *   2. active trial           → trial plan (overlay, never a tier write)
+ *   2. active trial that outranks the stored tier → its features; its plan too,
+ *      unless it is an Enterprise trial (never a tier write)
  *   3. stored tier (legacy keys resolve to `credits`)
  *
  * Entitlement layering:
@@ -115,15 +127,28 @@ export function resolveBillingFromRow(
 ): ResolvedBilling {
   if (!row) {
     const plan = resolvePlanRecord('none');
-    return { plan, source: 'no_account', entitlements: { ...plan.entitlements }, grace: null, display: displayFor(plan) };
+    return {
+      plan,
+      features: plan,
+      source: 'no_account',
+      entitlements: { ...plan.entitlements },
+      grace: null,
+      display: displayFor(plan),
+    };
   }
 
   const onTrial = trialIsActive(row, nowMs);
-  const source: BillingPlanSource = onTrial ? 'trial' : 'stored';
   // A row with no tier reads as 'none', not 'free'.
-  const plan = resolvePlanRecord(onTrial ? (row.trialTier as string) : (row.tier ?? 'none'));
+  const stored = resolvePlanRecord(row.tier ?? 'none');
+  // A trial never lowers what the stored plan grants.
+  const lent = onTrial ? resolvePlanRecord(row.trialTier as string) : null;
+  const trialWins = lent !== null && lent.rank > stored.rank;
+  const features = trialWins ? lent : stored;
+  // An Enterprise trial lends the features only; a Credits trial lends the plan.
+  const plan = trialWins && lent.family !== 'enterprise' ? lent : stored;
+  const source: BillingPlanSource = trialWins ? 'trial' : 'stored';
 
-  const entitlements: PlanRecord['entitlements'] = { ...plan.entitlements };
+  const entitlements: PlanRecord['entitlements'] = { ...features.entitlements };
   const grace = onTrial ? null : trialGrace(row, nowMs);
   if (grace) {
     entitlements.sso = true;
@@ -135,5 +160,5 @@ export function resolveBillingFromRow(
     if (value !== undefined) entitlements[key] = value;
   }
 
-  return { plan, source, entitlements, grace, display: displayFor(plan) };
+  return { plan, features, source, entitlements, grace, display: displayFor(plan) };
 }

@@ -2080,6 +2080,9 @@ harnessFlow(
 // fix is 50; a round costs one push plus one turn, so 50 needs the flow's own
 // timeout raised with it.
 const RACE_ROUNDS = Math.max(1, Number(process.env.KORTIX_CFG_RACE_ROUNDS ?? '5') || 5);
+/** Which layer said 503: kortixd's boot phase header and body, or the API's. */
+const describe503 = (r: { header(name: string): string | undefined; text(): string }) =>
+  `(phase=${r.header('x-kortix-boot-phase') ?? 'none'}): ${r.text().slice(0, 400)}`;
 /** Commit to `running_release_id === desired_release_id` on a box nobody is prompting. */
 const IDLE_CONVERGENCE_CEILING_MS = 65_000;
 
@@ -2161,7 +2164,7 @@ harnessFlow(
           const r = await box.send(prompt);
           // THE DEFECT: `503` here, because the swap killed the process that
           // had already accepted this prompt.
-          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503`);
+          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503 ${describe503(r)}`);
           r.status(200);
           const body = r.json<any>();
           if (body?.deduplicated) throw new Error(`round ${round}: the prompt was swallowed as a duplicate`);
@@ -2204,7 +2207,7 @@ harnessFlow(
         await new Promise((resolve) => setTimeout(resolve, 1_000));
 
         const r = await box.send(MARKER_PROMPT);
-        if (r.statusCode === 503) throw new Error('the send answered 503 while a convergence was parked');
+        if (r.statusCode === 503) throw new Error(`the send answered 503 while a convergence was parked ${describe503(r)}`);
         r.status(200);
         const body = r.json<any>();
         if (!body?.info || !Array.isArray(body?.parts)) {

@@ -72,15 +72,10 @@ describe('ChannelsSection chrome', () => {
     expect(code).not.toContain('CustomizeSectionWrapper');
   });
 
-  /**
-   * The Connectors shell is `max-w-5xl` for a 3-up card grid. This body is a
-   * hero card over a row list, and at 1024px the hero's `aspect-[3/1]` cover
-   * is ~341px of mostly-empty gradient. Capped, and capped LEFT — a centred
-   * column under the shell's left-aligned `<h1>` reads as a misalignment.
-   */
-  test('the body caps its own measure, flush left', () => {
-    expect(code).toContain('className="w-full max-w-3xl space-y-6"');
-    expect(code).not.toContain('mx-auto w-full max-w-3xl');
+  /** Full width, like the All and Connected scopes: no cap and no centring. */
+  test('the body takes the shell width, uncapped', () => {
+    expect(code).toContain('className="w-full space-y-6"');
+    expect(code).not.toMatch(/space-y-6"[^>]*max-w-|max-w-\w+ space-y-6/);
   });
 
   test('the Connectors page mounts it under the Channels scope', () => {

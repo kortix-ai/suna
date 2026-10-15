@@ -1,12 +1,11 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { ToastClose, toastIcon } from '@/components/ui/toast';
+import { ToastCard, ToastClose, toastIcon } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
 /**
  * The session notification cards drawn on the toast surface: a failed turn
- * (error glyph + error preview + Open) and the stack several finished turns
+ * ("Session error", the error sentence, Open) and the stack several finished turns
  * collapse into. A single finished turn uses the plain `ToastCard` with an
  * entity row. Board: Paper, Kortix file, the toasts page,
  * artboard 02.
@@ -15,47 +14,36 @@ import { cn } from '@/lib/utils';
 const CARD = 'bg-background text-foreground smooth-shadow-ring-sm rounded-xl';
 
 export function SessionFailedCard({
+  title,
   label,
-  meta,
-  preview,
+  detail,
   openLabel,
   onOpen,
   onDismiss,
 }: {
-  label: string;
-  meta: string;
-  preview?: string;
+  /** "Session error". */
+  title: string;
+  /** The session's name — only when it is not the one on screen. */
+  label?: string;
+  /** The sentence the transcript's error row shows. */
+  detail?: string;
   openLabel: string;
-  onOpen: () => void;
+  /** Absent for the session on screen: there is nowhere to go. */
+  onOpen?: () => void;
   onDismiss: () => void;
 }) {
   return (
-    <div className={cn(CARD, 'flex w-full flex-col gap-2.5 py-4 pr-3 pl-4 sm:w-[var(--width)]')}>
-      <div className="flex items-start gap-2.5">
-        <div className="flex h-5 w-4 shrink-0 items-center justify-center">{toastIcon('error')}</div>
-        <div className="flex min-w-0 grow flex-col">
-          <p className="truncate text-xs leading-5 font-medium">{label}</p>
-          <p className="text-muted-foreground text-xs leading-4">{meta}</p>
-        </div>
-        <ToastClose onDismiss={onDismiss} />
-      </div>
-      {preview && (
-        <p className="text-muted-foreground line-clamp-2 pr-1.5 pl-6.5 text-xs leading-5">
-          {preview}
-        </p>
-      )}
-      <div className="flex items-center gap-1.5 pl-6.5">
-        <Button
-          size="xs"
-          onClick={() => {
-            onDismiss();
-            onOpen();
-          }}
-        >
-          {openLabel}
-        </Button>
-      </div>
-    </div>
+    <ToastCard
+      message={title}
+      icon={toastIcon('error')}
+      variant="error"
+      options={{
+        entity: label ? { label } : undefined,
+        description: detail,
+        actions: onOpen ? [{ label: openLabel, onClick: onOpen }] : undefined,
+      }}
+      onDismiss={onDismiss}
+    />
   );
 }
 

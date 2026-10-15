@@ -1713,8 +1713,8 @@ function SelectCell({ select }: { select?: MemberSelect }) {
           onClick={(event) => event.stopPropagation()}
           aria-label={select.label}
           className={cn(
-            // A 14px box with a 32px hit area: the pseudo-element takes the clicks.
-            "relative size-3.5 rounded after:absolute after:-inset-2.5 after:content-['']",
+            // A 32px hit area: the pseudo-element takes the clicks.
+            "relative after:absolute after:-inset-2 after:content-['']",
             !select.visible &&
               'opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100',
           )}

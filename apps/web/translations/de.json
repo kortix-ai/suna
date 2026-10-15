@@ -2200,7 +2200,8 @@
         "updateAction": "Auf {amount} / Monat ändern",
         "chooseAction": "Plan aktualisieren",
         "ownerOnly": "Nur Inhaber und Administratoren des Kontos können den Plan ändern.",
-        "enterpriseNote": "Enterprise-Pläne werden mit deinem Account-Team verwaltet."
+        "enterpriseNote": "Enterprise-Pläne werden mit deinem Account-Team verwaltet.",
+        "keepEnterprise": "Um nach der Testphase bei Enterprise zu bleiben, kontaktieren Sie den Vertrieb."
       },
       "modal": {
         "title": "Wähle deine Credit-Stufe",
@@ -2432,11 +2433,11 @@
         },
         "credit": {
           "question": "Was bekomme ich für einen Credit?",
-          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer kostet nichts. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel oder ChatGPT-Abonnement werden keine Credits verbraucht."
+          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer kostet nichts. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel sind die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein ChatGPT-Abonnement verbraucht keine Credits."
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
-          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 10.000 $ pro Monat (1.000.000 Credits). 200 $ pro Monat (20.000 Credits) ist die beliebteste. Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
+          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 10.000 $ pro Monat (1.000.000 Credits). Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
         },
         "members": {
           "question": "Zahle ich für Mitglieder?",
@@ -2448,7 +2449,7 @@
         },
         "models": {
           "question": "Verbrauchen Modelle Credits?",
-          "answer": "Nur Kortix-Modelle. Sie kosten den Basispreis des Anbieters plus {fee} % Plattformgebühr, bezahlt mit Credits, und die App zeigt die Basispreise. Mit eigenem API-Schlüssel oder verbundenem ChatGPT-Abonnement geht die Modellnutzung an deinen Anbieter und verbraucht keine Credits. Dann bezahlen Credits nur den Agent-Computer."
+          "answer": "Kortix-Modelle, und eigene API-Schlüssel über 1.000 $ Modellnutzung pro Monat hinaus. Kortix-Modelle kosten den Basispreis des Anbieters plus {fee} % Plattformgebühr, bezahlt mit Credits, und die App zeigt die Basispreise. Mit eigenem API-Schlüssel geht die Modellnutzung an deinen Anbieter: Die ersten 1.000 $ pro Monat sind kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein verbundenes ChatGPT-Abonnement verbraucht keine Credits."
         },
         "topup": {
           "question": "Kann ich mitten im Monat Credits hinzufügen?",
@@ -2513,9 +2514,9 @@
         "title": "Modelle werden getrennt vom Agent-Computer abgerechnet",
         "description": "Credits bezahlen den Agent-Computer. Was ein Modellaufruf kostet, hängt davon ab, woher das Modell kommt.",
         "keys": {
-          "tag": "Keine Credits",
+          "tag": "Bis 1.000 $/Monat kostenlos",
           "title": "Deine eigenen API-Schlüssel",
-          "body": "Füge einen Schlüssel von Anthropic, OpenAI oder einem anderen Anbieter hinzu. Die Modellnutzung geht direkt an deinen Anbieter und verbraucht keine Credits."
+          "body": "Füge einen Schlüssel von Anthropic, OpenAI oder einem anderen Anbieter hinzu. Die Modellnutzung geht direkt an deinen Anbieter. Die ersten 1.000 $ pro Monat sind kostenlos, danach berechnet Kortix 5 %, bezahlt mit Credits."
         },
         "chatgpt": {
           "tag": "Keine Credits",
@@ -2527,7 +2528,7 @@
           "title": "Kortix-Modelle",
           "body": "Kein Schlüssel nötig. Jeder Aufruf kostet den Basispreis des Anbieters plus {fee} % Plattformgebühr, bezahlt mit Credits. Die App zeigt die Basispreise."
         },
-        "summary": "Mit deinen eigenen Schlüsseln bezahlen Credits nur den Agent-Computer."
+        "summary": "Mit deinen eigenen Schlüsseln bezahlen Credits den Agent-Computer und 5 % der Modellnutzung über 1.000 $ pro Monat."
       }
     },
     "access": {
@@ -2535,7 +2536,7 @@
       "credits": "Credits",
       "trialTitle": "{plan}-Testphase · {days, plural, =0 {endet heute} one {noch # Tag} other {noch # Tage}}",
       "trialBody": "Dieses Konto nutzt bis {date} eine {plan}-Testphase. Danach wechselt es zurück zum bezahlten Plan. Upgrade jederzeit, um sie zu behalten.",
-      "trialBodyEnterprise": "Dieses Konto nutzt bis {date} eine Enterprise-Testphase: SSO, SCIM, erweiterte Rollen und Audit-Logs sind aktiv. Danach wechselt es zurück zum bezahlten Plan, und SSO und SCIM bleiben noch 14 Tage aktiv. Upgrade jederzeit.",
+      "trialBodyEnterprise": "Dieses Konto nutzt bis {date} eine Enterprise-Testphase: SSO, SCIM, erweiterte Rollen und Audit-Logs sind aktiv. Danach wechselt es zurück zum bezahlten Plan, und SSO und SCIM bleiben noch 14 Tage aktiv. Um Enterprise zu behalten, kontaktieren Sie den Vertrieb.",
       "upgrade": "Upgrade",
       "talkToSales": "Vertrieb kontaktieren",
       "askManager": "Bitte einen Inhaber oder Administrator des Kontos um ein Upgrade.",
@@ -3346,7 +3347,7 @@
       "contactGeneral": "Allgemein",
       "contactSecurity": "Sicherheit",
       "faqWhatCreditsQuestion": "Was sind Credits und was kosten sie?",
-      "faqWhatCreditsAnswerBefore": "Credits bezahlen den Agent-Computer und Kortix-Modelle. 1 Credit kostet 0,01 $, und der Standard-Agent-Computer verbraucht etwa 11 Credits pro Stunde. Kortix-Modelle kosten den Basispreis des Anbieters plus 5,5 % Plattformgebühr. Dein eigener API-Schlüssel oder dein ChatGPT-Abo verbraucht keine Credits. Tarife, Aufladungen und wie ein Guthaben länger reicht, stehen unter",
+      "faqWhatCreditsAnswerBefore": "Credits bezahlen den Agent-Computer und Kortix-Modelle. 1 Credit kostet 0,01 $, und der Standard-Agent-Computer verbraucht etwa 11 Credits pro Stunde. Kortix-Modelle kosten den Basispreis des Anbieters plus 5,5 % Plattformgebühr. Dein eigener API-Schlüssel ist für die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach fallen 5 % an. Ein ChatGPT-Abo verbraucht keine Credits. Tarife, Aufladungen und wie ein Guthaben länger reicht, stehen unter",
       "faqWhatCreditsLink": "Credits & Nutzung",
       "faqWhatCreditsAnswerAfter": "."
     }
@@ -10067,7 +10068,7 @@
       "text0679d5053dda": "{value0} hat keine Tools gemeldet. Sobald es synchronisiert ist, erhält jeder hier seine eigene Standardsteuerung · Blockieren · Fragen · Zulassen.",
       "text067ed033e4a6": "Sechs Muster, die das System beeinträchtigen – jeweils mit der passenden Lösung daneben.",
       "text0686a22fbf7d": "Eine andere Sitzung – dasselbe Projekt, dasselbe Team oder ein anderer Kunde",
-      "text0690079160b0": "„{value0}“ gelöscht",
+      "text0690079160b0": "{value0} gelöscht",
       "text0690d70b6301": "Easy Connect deckt über die OAuth-Bildschirme der Anbieter mehr als 3.000 Apps ab und ist der richtige Weg für SaaS-Quellen am Rand eines Datenstacks. Für das Warehouse selbst sind direkte Konnektortypen meist die ehrlichere Antwort – die meisten Warehouses werden über einen Treiber oder eine API erreicht, nicht über einen OAuth-Katalogeintrag.",
       "text06993786f49e": "GitHub-Verbindung getrennt",
       "text06a6228ef85f": "wenn du ein Repository verbindest – und alle werden auf dieselbe Weise geschützt; keine davon kann hier ausgewählt oder geändert werden.",
@@ -18847,6 +18848,20 @@
       "text843ed3b90b42": "Packe diese Datei zusammen mit einer 192×192 color.png und einer transparenten 32×32 outline.png in ein ZIP.",
       "text5c71673648a2": "Gehe in Teams zu Apps → Manage your apps → Upload an app und lade das ZIP hoch.",
       "text91b9932411cc": "Füge die App einem Chat oder Kanal hinzu und erwähne sie, um eine Sitzung zu starten.",
+      "textfd326bb01b61": "Füge die drei Werte des Bots ein, den du gerade erstellt hast.",
+      "text39864856b1bc": "Im Azure-Portal",
+      "text14bb4b708203": "In Microsoft Teams",
+      "textbda0f959cde0": "Halte den geheimen Wert bereit. Du fügst ihn im nächsten Schritt ein.",
+      "text9bd6f94da702": "Teams-App-Manifest für diesen Bot",
+      "text7fd0fd8f2405": "Verwende deinen eigenen Azure-Bot und erwähne ihn dann in jedem Teams-Chat oder -Kanal.",
+      "text776fd1de4147": "Bitte einen Workspace-Admin, Microsoft Teams zu verbinden.",
+      "text89e9e20668f3": "Hol deinen Agenten in Slack",
+      "textc1bd5ca19f5f": "Hol deinen Agenten in Teams",
+      "texta15b754f2e91": "Erwähne ihn in einem beliebigen Chat oder Kanal, und er erledigt die Arbeit dort – ohne Dashboard, ohne Kontextwechsel.",
+      "text675d4a4174ba": "fass diesen Thread zusammen",
+      "textbd52d3eb5ed1": "Bisher drei Entscheidungen, eine offene Frage an Leo.",
+      "text5df6373cf99f": "was fehlt noch bis Freitag?",
+      "textf4d1a9671f2f": "Bin dran. Ich lese gerade die Launch-Checkliste und die drei offenen Tickets.",
       "textd208e2f1260f": "Teams Admin Center öffnen",
       "text98722a5463cb": "Teams konnte nicht verbunden werden",
       "text53e5f96332d9": "Erteile die Administratorzustimmung, damit der Kortix-Bot in deinem Mandanten laufen darf.",
@@ -19521,12 +19536,6 @@
       "servedModelInPlaceOf": "Anstelle von",
       "servedModelBadge": "Läuft auf {model}",
       "servedModelBarDescription": "{requested} hat die letzte Anfrage nicht beantwortet",
-      "computerAwakeStays": "Die Sandbox bleibt an, solange du hier bist · bis zu {duration}",
-      "computerAwakeStops": "Die Sandbox schaltet sich in {duration} ab. Sende eine Nachricht, damit sie anbleibt.",
-      "computerAwakeStopsSoon": "Die Sandbox schaltet sich bald ab. Sende eine Nachricht, damit sie anbleibt.",
-      "computerAwakeHoursMinutes": "{hours} Std. {minutes} Min.",
-      "computerAwakeHours": "{hours} Std.",
-      "computerAwakeMinutes": "{minutes} Min.",
       "text414cc580557b": "Sitzungsaufforderung in der Warteschlange bearbeitet",
       "text52867b778586": "Eine kortix.yaml.",
       "textd0dfd435b2f4": "Deine KI-Belegschaft als Code.",
@@ -21111,6 +21120,7 @@
     "zoomOut": "Verkleinern",
     "mapTwoFingers": "Verwende zwei Finger, um die Karte zu bewegen",
     "pick": "Empfehlung",
+    "checklistReady": "{done}/{total} erledigt",
     "convertFailed": "Das Transkript konnte nicht vorbereitet werden. Versuche es erneut."
   },
   "mobileAppPromo": {

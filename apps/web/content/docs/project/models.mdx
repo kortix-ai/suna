@@ -27,7 +27,7 @@ Every model request goes through the LLM gateway. The gateway finds the credenti
 | Shape | Example | Who supplies the credentials | Who bills |
 | --- | --- | --- | --- |
 | Bare managed id | `kimi-k3` | Kortix | Kortix credits |
-| `provider/model` | `anthropic/<model-id>` | Your provider API key | Your provider |
+| `provider/model` | `anthropic/<model-id>` | Your provider API key | Your provider; past $1,000 a month, a 5% Kortix fee in credits |
 | `codex/<id>` | `codex/gpt-5.6-sol` | Your ChatGPT Plus or Pro subscription | OpenAI, through your plan |
 
 Inside the sandbox, OpenCode shows every gateway model under the `kortix` provider, for example `kortix/kimi-k3`. The gateway removes the `kortix/` prefix. Use the bare id everywhere else.
@@ -95,7 +95,7 @@ In the web app, use **Connect ChatGPT** and **Connect OpenCode Go**. The OpenCod
 
 **A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL, a model id and a model name. The key is optional. Kortix saves the key as `CUSTOM_<ID>_API_KEY` and shows an OpenCode provider snippet. Commit the snippet to `opencode.jsonc` in the project's OpenCode config directory (`harnesses/opencode/` by default). A custom provider calls its endpoint directly, not through the gateway. Budgets, logs and routing do not apply to it, and only the OpenCode harness reads it.
 
-Kortix charges nothing for a request that runs on your own key or subscription. Your provider bills you. The one exception is a Kortix model that you put in your own fallback chain: see [Routing and fallback](#routing-and-fallback).
+Your provider bills a request that runs on your own key or subscription. Kortix charges nothing for the first $1,000 of key usage a month at list price, then 5% of each request's list price, from credits ([Credits](/docs/credits)). A ChatGPT subscription and OpenCode Go are never charged. The one other charge is a Kortix model that you put in your own fallback chain: see [Routing and fallback](#routing-and-fallback).
 
 ## How the default is chosen
 

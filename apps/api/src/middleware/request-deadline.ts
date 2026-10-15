@@ -163,13 +163,17 @@ export function isExempt(c: Context): boolean {
 // Cloudflare's 100 s proxy timeout: a 524 would make the SDK retry and download
 // the object again. The SDK's 120 s completion timeout is longer still.
 // Begin, chunk, and delete answer fast and keep the general deadline.
+// The session-log attachment upload (P2.13, `PUT …/log/blobs/<sha256>`) gets the
+// same deadline for the same reason: it reads up to 50 MiB from the box, hashes
+// it and writes it to Storage, and a 503 makes the daemon send it again.
 const ATTACHMENT_COMPLETE = /^\/v1\/projects\/[^/]+\/attachments\/[^/]+\/complete$/;
+const LOG_BLOB_UPLOAD = /^\/v1\/projects\/[^/]+\/sessions\/[^/]+\/log\/blobs\/[0-9a-f]{64}$/;
 const ATTACHMENT_COMPLETE_DEADLINE_MS = 95_000;
 
 /** This request's wall-clock deadline, or null when it is exempt or the guard is off. */
 export function requestDeadlineMs(c: Context): number | null {
   if (!ENABLED || isExempt(c)) return null;
-  if (c.req.method === 'POST' && ATTACHMENT_COMPLETE.test(c.req.path))
+  if ((c.req.method === 'POST' && ATTACHMENT_COMPLETE.test(c.req.path)) || (c.req.method === 'PUT' && LOG_BLOB_UPLOAD.test(c.req.path)))
     return Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS);
   return DEADLINE_MS;
 }

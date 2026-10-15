@@ -601,8 +601,11 @@ test.describe("23 — Composio managed connector", () => {
     const audience = dialog.getByTestId("share-audience");
     await expect(audience.getByText(`Everyone in ${projectName}`)).toBeVisible();
     await expect(dialog.getByTestId("share-result")).toContainText(`Everyone in ${projectName} can use`);
-    // Sharing an account is about people; the dialog says nothing about agents.
-    await expect(dialog).not.toContainText(/automation|agent/i);
+    // Agents are principals (#8635): a shared account's picker offers the
+    // project's agents beside people and groups, once their identities load.
+    await expect(dialog.getByText("Agents", { exact: true })).toBeVisible();
+    // A row reads "<agent name>" then its "Agent" badge, in one label.
+    await expect(dialog.getByRole("button").filter({ hasText: /kortix\s*Agent/ })).toBeVisible();
 
     await dialog.getByRole("button", { name: groupName }).click();
     await expect(dialog.getByTestId("share-result")).toContainText("Only the people you chose");

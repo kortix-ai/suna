@@ -155,6 +155,27 @@ export function updateCachedProjectSessions(
   );
 }
 
+/** The first cached session row of this project, in any list shape, that `match` accepts. */
+export function findCachedProjectSession(
+  queryClient: QueryClient,
+  projectId: string,
+  match: (session: ProjectSession) => boolean,
+): ProjectSession | undefined {
+  let found: ProjectSession | undefined;
+  const entries = queryClient.getQueriesData({
+    queryKey: qk.project.sessionsScope(projectId),
+    predicate: (query) => isSessionCacheKey(projectId, query),
+  });
+  for (const [, cached] of entries) {
+    applyToCachedSessionShape(cached, (rows) => {
+      found ??= rows.find(match);
+      return rows;
+    });
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /**
  * Insert a session at the top of the cached lists, or replace it where it is
  * already cached.
