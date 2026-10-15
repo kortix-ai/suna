@@ -23,12 +23,12 @@
     "tests/e2e/specs/52-account-chip-ui.spec.ts"
   ],
   "diff_hash": "8a9163d610ad6ca068549d48552af2e459c86eff3f46c14fbb5e7ae608528b5f",
-  "head": "fe6e5fa9fa10f2db7a76fe32abed92c313c47edc",
+  "head": "e5262056a978ebad408b4ae1b7ad7e7275e1f787",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-15T04:37:54.483Z"
+  "at": "2026-10-15T05:31:32.816Z"
 }
