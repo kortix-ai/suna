@@ -21,6 +21,7 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
+    "packages/db/migrations/20261015130500000_project_transfer_tenant_fks.sql",
     "packages/sdk/src/core/rest/projects-client/projects.test.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts",
     "packages/sdk/src/public-surface.snapshot.json",
@@ -29,13 +30,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "caa7964e2015a01aa1d13853791e41ce086f5fd760b3809a24d91f4719d0c11a",
-  "head": "a92ff795f3fe9d2b0e771d1fbf945648a3a07ce9",
-  "passed": true,
+  "diff_hash": "66957ad282d4e2c60188451e56aca4290383bd0e706eb8952b469b22eec173ec",
+  "head": "a359de38ce031c4bf22645d5867a23dcf5c3c8d4",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "fail",
+    "db-suites": "fail"
   },
-  "at": "2026-10-15T12:30:02.473Z"
+  "at": "2026-10-15T14:01:57.455Z"
 }
