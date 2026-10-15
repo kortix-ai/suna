@@ -1,3 +1,5 @@
+'use client';
+
 /** The Customize row's glyph, shared with the Customize sidebar modal. */
 export function CustomizeGlyph({ className }: { className?: string }) {
   return (
