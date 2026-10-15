@@ -90,16 +90,6 @@ async function getContract(id: string): Promise<ContractRow> {
   return row;
 }
 
-async function getContractBySubscription(subscriptionId: string): Promise<ContractRow | null> {
-  const [row] = await db
-    .select()
-    .from(enterpriseContracts)
-    .where(eq(enterpriseContracts.stripeSubscriptionId, subscriptionId))
-    .orderBy(desc(enterpriseContracts.createdAt))
-    .limit(1);
-  return row ?? null;
-}
-
 // ─── Validation ─────────────────────────────────────────────────────────────
 
 export type CreateContractInput = {
@@ -560,8 +550,10 @@ export async function routeContractEvent(event: Stripe.Event): Promise<boolean> 
       const invoice = event.data.object as Stripe.Invoice;
       const subscriptionId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
       if (!subscriptionId) return false;
-      const contractId =
-        contractIdOf(invoice.subscription_details?.metadata) ?? (await getContractBySubscription(subscriptionId))?.id ?? null;
+      // Stripe copies the subscription's metadata onto each of its invoices, so
+      // a contract invoice carries contract_id without a database lookup on
+      // every invoice event.
+      const contractId = contractIdOf(invoice.subscription_details?.metadata);
       if (!contractId) return false;
       if (event.type === 'invoice.payment_failed') {
         logger.warn(`[enterprise-contracts] invoice ${invoice.id} for contract ${contractId} failed to pay`);

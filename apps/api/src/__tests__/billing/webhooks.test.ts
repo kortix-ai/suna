@@ -382,12 +382,11 @@ describe('incomplete_expired revokes a never-paid tier', () => {
     expect(updateCreditAccountCalls[0].data.planMonthlyUsd).toBeNull();
   });
 
-  test('an enterprise-entitled account is NEVER reset', async () => {
+  test('an Enterprise account is NEVER reset', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         stripeSubscriptionId: 'sub_test_123',
-        tier: 'tier_6_50',
-        enterpriseEntitled: true,
+        tier: 'enterprise',
       });
 
     const sub = createMockStripeSubscription({ id: 'sub_test_123', status: 'incomplete_expired' });

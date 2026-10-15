@@ -145,6 +145,23 @@ async function handleSubscriptionCheckout(
   });
 }
 
+/**
+ * The Enterprise contract an event belongs to, from the metadata the contract
+ * put on its Checkout session and subscription (Stripe copies subscription
+ * metadata onto each invoice). Null for every other event.
+ */
+function contractIdOfEvent(event: Stripe.Event): string | null {
+  const object = event.data.object as {
+    metadata?: Stripe.Metadata | null;
+    subscription_details?: { metadata?: Stripe.Metadata | null } | null;
+  };
+  if (event.type.startsWith('invoice.')) return object.subscription_details?.metadata?.contract_id || null;
+  if (event.type.startsWith('checkout.session.') || event.type.startsWith('customer.subscription.')) {
+    return object.metadata?.contract_id || null;
+  }
+  return null;
+}
+
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
 
@@ -164,9 +181,11 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);
 
   // An Enterprise contract's events never reach the credits handlers below:
-  // they would refuse to write Enterprise (applyStripeSync).
-  const { routeContractEvent } = await import('./enterprise-contracts');
-  if (await routeContractEvent(event)) {
+  // they would refuse to write Enterprise (applyStripeSync). The contract
+  // module loads only for an event that carries a contract_id.
+  if (contractIdOfEvent(event)) {
+    const { routeContractEvent } = await import('./enterprise-contracts');
+    await routeContractEvent(event);
     await recordWebhookEvent(event.id, event.type);
     return { received: true, event_type: event.type };
   }

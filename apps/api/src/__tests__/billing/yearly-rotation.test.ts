@@ -45,7 +45,9 @@ const { processYearlyCreditRotation } = await import('../../billing/services/yea
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('processYearlyCreditRotation', () => {
-  test('an Enterprise contract is credited its monthly amount, labelled as a contract', async () => {
+  // Enterprise is credited by its annual contract pool (enterprise-contracts.ts),
+  // never by the monthly rotation: a monthly reset would wipe that pool.
+  test('an Enterprise account is not credited monthly: its contract pool covers it', async () => {
     yearlyAccountsDueResult = [
       createMockCreditAccount({
         accountId: 'acc_enterprise',
@@ -60,9 +62,7 @@ describe('processYearlyCreditRotation', () => {
     const result = await processYearlyCreditRotation();
 
     expect(result.processed).toBe(1);
-    expect(walletResets[0]).toMatchObject({ accountId: 'acc_enterprise', amount: 5000 });
-    expect(walletResets[0].description).toBe('Enterprise contract monthly credits: 500000 credits');
-    expect(updateCreditAccountCalls[0].data.nextCreditGrant).toBeDefined();
+    expect(walletResets).toEqual([]);
   });
 
   test('finds yearly accounts due for rotation and processes each', async () => {
