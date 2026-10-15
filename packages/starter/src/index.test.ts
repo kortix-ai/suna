@@ -243,8 +243,6 @@ describe('getStarterFiles', () => {
       'pdf',
       'presentations',
       'xlsx',
-      // Platform front door.
-      'kortix-cli',
       // Computer basics — driving a real browser.
       'agent-browser',
       // Web artifacts, and the skill that puts them on a public URL.
@@ -260,9 +258,10 @@ describe('getStarterFiles', () => {
 
     // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
     expect([...paths].filter((path) => path.startsWith('tools/'))).toEqual([]);
-    // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
-    // `kortix-*` family lives in `templates/managed/` and is injected at boot.
-    expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(true);
+    // The whole `kortix-*` family, kortix-cli included, lives in
+    // `templates/managed/` and is injected at boot: a v3 project cannot register
+    // a `kortix-*` skill of its own.
+    expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(false);
     expect(paths.has('skills/kortix-system/SKILL.md')).toBe(false);
     expect(paths.has('skills/agent-browser/SKILL.md')).toBe(false);
     expect(paths.has('extensions/pty/pty.ts')).toBe(true);
@@ -321,7 +320,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
    * `templates/marketplace/` for its entire life.
    *
    * `templates/managed/` now owns the family and `scripts/write-managed-skills.ts`
-   * walks it alongside the starter roots (which still carry `kortix-cli`), so the
+   * walks it alongside the starter roots, so the
    * gap is closed by construction. This test is the guard: adding a managed name
    * without putting its SKILL.md in a walked root fails here.
    */
@@ -344,10 +343,10 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   /**
    * The managed family is injected at boot (force-overwriting whatever the repo
    * holds), so committing a second copy into every new project bought nothing and
-   * padded the Skills UI with ~10 entries the user cannot meaningfully edit.
-   * `kortix-cli` is the deliberate exception — the visible front door to the rest.
+   * padded the Skills UI with ~10 entries the user cannot meaningfully edit. A
+   * v3 project cannot register a `kortix-*` skill at all.
    */
-  test('only kortix-cli is scaffolded into a new project', () => {
+  test('no managed skill is scaffolded into a new project', () => {
     const prefix = 'skills/';
     const scaffolded = new Set<string>();
     for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
@@ -355,7 +354,8 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       const name = f.path.slice(prefix.length).split('/')[0];
       if (name && isKortixManagedSkillName(name)) scaffolded.add(name);
     }
-    expect([...scaffolded]).toEqual(['kortix-cli']);
+    expect([...scaffolded]).toEqual([]);
+    expect(getManagedSkillFiles().some((f) => f.path === 'skills/kortix-cli/SKILL.md')).toBe(true);
   });
 });
 

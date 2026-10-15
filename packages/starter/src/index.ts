@@ -220,9 +220,9 @@ function registerStarterSkills(manifest: string, paths: string[]): string {
  * won — while padding every new project with ~10 files the user never asked
  * for and can't meaningfully edit.
  *
- * `kortix-cli` is the deliberate exception: it stays in `templates/base/` as
- * the visible front door to this family, so a fresh repo still shows the one
- * skill that explains how to reach all the others.
+ * `kortix-cli`, the front door to this family, is managed too: a
+ * kortix_version 3 project registers no `kortix-*` skill of its own, and every
+ * agent that enables `kortix-cli` gets the injected body.
  */
 export function getManagedSkillFiles(): StarterFile[] {
   return rawFilesForRoot('managed', MANAGED_TEMPLATE_DIR).sort((a, b) =>
