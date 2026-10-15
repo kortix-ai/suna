@@ -309,6 +309,12 @@ function holdSeatSync(): () => void {
 const replyWithin = (reply: Response | Promise<Response>, ms: number) =>
   Promise.race([Promise.resolve(reply).then((res) => res.status), Bun.sleep(ms).then(() => 'waiting' as const)]);
 
+/** Resolves once `userId`'s seat sync has started, bounded by `ms`. */
+const syncStarted = (userId: string, ms: number) => (async () => {
+  const deadline = performance.now() + ms;
+  while (!seatSyncsStarted.includes(userId) && performance.now() < deadline) await Bun.sleep(10);
+})();
+
 // A non-streaming request has 25 s (middleware/request-deadline.ts), and a
 // stalled Stripe call can take 80 s (stripe-node's default timeout). A person
 // who removes or leaves must not get a 503 for a removal that already happened.
@@ -321,11 +327,17 @@ describe('the seat sync and the reply', () => {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${await bearer(world.team, world.owner)}` },
       });
+      // Bound the reply from the moment its seat sync provably started, not
+      // from the request: under a loaded lane the seed and the handler can
+      // legitimately need seconds before the sync begins, and a bound from
+      // the request would blame the reply for that cold-start time.
+      await syncStarted(world.member, 20_000);
       expect(await replyWithin(removed, 2_000)).toBe(200);
       const left = app.request(`/v1/accounts/${world.team}/leave`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${await bearer(world.team, world.peer)}` },
       });
+      await syncStarted(world.peer, 20_000);
       expect(await replyWithin(left, 2_000)).toBe(200);
       // Both syncs started: the seat is released, only not before the reply.
       expect(seatSyncsStarted).toEqual(expect.arrayContaining([world.member, world.peer]));
