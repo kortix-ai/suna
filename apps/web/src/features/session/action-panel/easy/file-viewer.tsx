@@ -180,14 +180,16 @@ export function FileViewer({
           />
         </ViewerPathPill>
 
-        <ButtonGroup className="shrink-0">
+        {/* `*:size-8`: every member matches the `h-8` path pill beside it. The
+            shared buttons default to `size-7` for the shorter app and detail
+            headers. */}
+        <ButtonGroup className="shrink-0 *:size-8">
           {/* Download stays the raw `.md`; Save as PDF is the rendered page. */}
           {markdown && (
             <SaveAsPdfButton
               variant="secondary"
               fileName={fileName}
               content={content}
-              className="size-7"
               iconClassName="size-3.5"
             />
           )}
