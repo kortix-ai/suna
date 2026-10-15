@@ -1,49 +1,26 @@
 {
-  "source_hash": "a6e3665ab9a6ce10e9a8dea9acbe29509b79a661ce5f49dc07a78abf62b75ed8",
+  "source_hash": "437517f610ef387f84426522976a344d990b40d86cdc21f4ad2e1451bd46e719",
   "diff_files": [
-    "apps/api/src/__tests__/e2e-project-maintenance.test.ts",
     "apps/api/src/edge/tls-check.test.ts",
     "apps/api/src/projects/lib/triggers-fire-durable.test.ts",
-    "apps/api/src/projects/reaping/box-reaper.ts",
-    "apps/api/src/projects/reaping/sandbox-state-sync.test.ts",
-    "apps/api/src/projects/reaping/sandbox-state-sync.ts",
-    "apps/api/src/projects/routes/marketplace-install-session.test.ts",
-    "apps/api/src/projects/routes/turn-stream.test.ts",
-    "apps/api/src/projects/sandbox-reaper.test.ts",
     "apps/api/src/projects/session-lifecycle/__tests__/continue-session.test.ts",
     "apps/api/src/projects/session-lifecycle/__tests__/instance-scope-release.test.ts",
     "apps/api/src/projects/session-lifecycle/__tests__/postprompt-idempotency-key.test.ts",
     "apps/api/src/projects/session-lifecycle/__tests__/queued-continue-inbox-delivery.test.ts",
-    "apps/api/src/projects/session-lifecycle/__tests__/stop.test.ts",
-    "apps/api/src/projects/session-lifecycle/actions.ts",
-    "apps/api/src/sandbox-proxy/backend.ts",
-    "apps/api/src/sandbox-proxy/index.ts",
-    "apps/api/src/sandbox-proxy/routes/preview-deadline.test.ts",
     "apps/api/src/setup-links/connector-completion-watch.test.ts",
     "apps/api/src/setup-links/public-app.test.ts",
-    "apps/web/src/app/[locale]/(public)/(marketing)/design-system/page.tsx",
     "apps/web/src/app/[locale]/game-of-life/game-of-life.test.tsx",
     "apps/web/src/app/[locale]/game-of-life/game-of-life.tsx",
-    "apps/web/src/lib/code-theme.test.ts",
     "apps/web/src/stores/persisted-store-coverage.test.ts",
-    "apps/web/translations/de.json",
-    "apps/web/translations/en.json",
-    "apps/web/translations/es.json",
-    "apps/web/translations/fr.json",
-    "apps/web/translations/it.json",
-    "apps/web/translations/ja.json",
-    "apps/web/translations/pt.json",
-    "apps/web/translations/sr.json",
-    "apps/web/translations/zh.json",
-    "packages/sdk/src/core/session/open-bundle.ts"
+    "pnpm-lock.yaml"
   ],
-  "diff_hash": "ba3c804afc1404458df486381fb1cf4b8bcb0402b79ad86f3b0676edf5751493",
-  "head": "ea4e6e5ed3cb6e37dad0595516ca5e0ab9a476b3",
-  "passed": true,
+  "diff_hash": "4dd1164716f742de79fe3a14abf93635a2cd592130a3b9dc8f045781f030157d",
+  "head": "cc258f4a0214bb66d0ce1a78d1eeaa1a5eee26a6",
+  "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "fail"
   },
-  "at": "2026-10-15T02:56:59.654Z"
+  "at": "2026-10-15T07:51:49.744Z"
 }
