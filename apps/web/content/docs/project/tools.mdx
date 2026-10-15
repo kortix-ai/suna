@@ -173,7 +173,7 @@ agents:
 
 ### Agents without the project repository
 
-An agent with [`workspace: { project_repository: false }`](/docs/project/manifest#agent-workspace) has no checkout in `/workspace`. Its project tools still load. The sandbox receives only these files from the default branch:
+An agent with [`workspace: { project_repository: false }`](/docs/project/manifest#kortix-access) has no checkout in `/workspace`. Its project tools still load. The sandbox receives only these files from the default branch:
 
 - the module of each project tool the agent may call (`agents.<name>.tools`);
 - every file those modules import by a relative path (`./lib/client`, `../data/regions.json`), followed transitively.
