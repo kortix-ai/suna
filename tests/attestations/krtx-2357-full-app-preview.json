@@ -1,0 +1,17 @@
+{
+  "source_hash": "30dfc96918c702873725bd999c62a01c2426710b1886dd15c778abed488943fe",
+  "diff_files": [
+    "apps/web/src/features/apps/app-detail.tsx",
+    "tests/e2e/specs/18-apps-ui.spec.ts",
+    "tests/e2e/specs/27-desktop-parity.spec.ts"
+  ],
+  "diff_hash": "fb69ec860b77537e6ab090c9951c703c02a73fb003cfabfcbe5fa55f2d7cc086",
+  "head": "84a0d8a170a9008c5228d905e4d50e506da62871",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T13:24:37.255Z"
+}
