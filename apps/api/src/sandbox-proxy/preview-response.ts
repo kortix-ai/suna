@@ -89,7 +89,7 @@ export function clientResponseHeaders(upstreamHeaders: Headers, origin: string):
   }
   // The attribution headers are the PROXY's voice about which hop failed
   // (proxy-hop.ts). The request-log suppression keys on them
-  // (request-log-level.ts), so an upstream that shipped its own copy could
+  // (request-log-suppression.ts), so an upstream that shipped its own copy could
   // name a designed-answer hop and silence a real failure from the sweep. The
   // proxy re-sets both where it means to; a plain passthrough leaves them
   // absent.

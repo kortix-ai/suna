@@ -1,22 +1,19 @@
 'use client';
 
-import { toolCallBlock } from '@kortix/sdk';
-
 import { Button } from '@/components/ui/button';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { partInput, partStatus } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
+import {
+  SubAgentActivity,
+  SubAgentStatusBanner,
+  subAgentCalls,
+  useSubAgentThread,
+} from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import {
-  getChildSessionId,
-  getChildSessionToolParts,
-  getToolInfo,
-  type MessageWithParts,
-} from '@/ui';
-import { useRuntimeMessages } from '@kortix/sdk/react';
+import { getChildSessionId, getToolInfo } from '@/ui';
 import { capitalizeWords } from '@kortix/shared';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -37,12 +34,8 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
 
-  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
-
-  const childToolParts = useMemo(() => {
-    if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as MessageWithParts[]);
-  }, [childMessages]);
+  const childThread = useSubAgentThread(childSessionId);
+  const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
 
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -54,11 +47,11 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   );
 
   const lastActivity = useMemo(() => {
-    if (childToolParts.length === 0) return null;
-    const last = childToolParts[childToolParts.length - 1];
-    const info = getToolInfo(last.tool, partInput(toolCallBlock(last)) as Record<string, any>);
+    if (childCalls.length === 0) return null;
+    const last = childCalls[childCalls.length - 1];
+    const info = getToolInfo(last.name, partInput(last) as Record<string, any>);
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
-  }, [childToolParts]);
+  }, [childCalls]);
 
   // The fallback splits the ENTIRE spawn prompt into lines just to read the
   // first one. A spawn prompt is routinely kilobytes, and this sits in the
@@ -107,9 +100,9 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
           {isRunning && (
             <span className="ml-auto size-2 shrink-0 animate-pulse rounded-full bg-current opacity-50" />
           )}
-          {isCompleted && childToolParts.length > 0 && (
+          {isCompleted && childCalls.length > 0 && (
             <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-xs whitespace-nowrap">
-              {childToolParts.length} {tI18nComplete.raw('textb7595e2a8639')}
+              {childCalls.length} {tI18nComplete.raw('textb7595e2a8639')}
             </span>
           )}
         </button>
@@ -125,10 +118,10 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
           </Button>
         )}
       </div>
-      {forceOpen && childToolParts.length > 0 && (
-        <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+      {forceOpen && childCalls.length > 0 && (
+        <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
       )}
-      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+      <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}

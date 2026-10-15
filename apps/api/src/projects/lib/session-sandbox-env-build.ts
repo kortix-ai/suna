@@ -211,11 +211,15 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   return { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages };
 }
 
-/** The harness the daemon boots, from the project flags and the manifest runtime. */
+/**
+ * The harness the daemon boots, from the project flags and the manifest runtime, and
+ * whether the daemon restores its native store from the session log at boot
+ * (`session_log_restore`, kortixd `harness/shared/session-log-boot.ts`).
+ */
 async function resolveSessionHarness(
   input: SessionSandboxEnvInput,
   manifestHarness: 'opencode' | 'pi' | null,
-): Promise<'opencode' | 'pi'> {
+): Promise<{ harness: 'opencode' | 'pi'; sessionLogRestore: boolean }> {
   // One indexed read for the flag: the callers hold the project row in
   // different shapes (or not at all on the reload paths), and the flag must
   // apply on every provisioning path, not only create.
@@ -226,20 +230,21 @@ async function resolveSessionHarness(
     .limit(1);
   // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
   const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
+  const sessionLogRestore = resolveFeatureFlag(projectRow?.metadata, 'session_log_restore');
   if (input.platformMetaAgent) {
     // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
     // whenever the LLM gateway is on — pi has no other model path, so a
     // gateway-off project falls back to OpenCode. pi reads the SAME
     // KORTIX_COMPILED_AGENT_CONFIG the OpenCode path receives
     // (harness/pi/config.ts:19-22), so the compiled agent prompt is unchanged.
-    return llmGateway ? 'pi' : 'opencode';
-  } else {
-    return selectSessionHarness({
-      piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
-      runtime: manifestHarness,
-      llmGateway,
-    });
+    return { harness: llmGateway ? 'pi' : 'opencode', sessionLogRestore };
   }
+  const harness = selectSessionHarness({
+    piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
+    runtime: manifestHarness,
+    llmGateway,
+  });
+  return { harness, sessionLogRestore };
 }
 
 /** Read the session's runtime secrets and drop the ones the sandbox must never hold. */
@@ -317,7 +322,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // `secrets` grant, applied below by identifier).
   const { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages } =
     await resolveSessionAgentConfig(input);
-  const harness = await resolveSessionHarness(input, manifestHarness);
+  const { harness, sessionLogRestore } = await resolveSessionHarness(input, manifestHarness);
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
   const piPackagesBundle =
     harness === 'pi' && manifestPackages.length > 0
@@ -460,6 +465,8 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
     ...(input.platformMetaAgent
       ? { KORTIX_PROJECT_AUTO_CLONE: '0', KORTIX_META_AGENT: '1' }
       : {}),
+    // The project flag `session_log_restore`: no key while it is off, so the box keeps its native state.
+    ...(sessionLogRestore ? { KORTIX_SESSION_LOG_RESTORE: '1' } : {}),
   };
 }
 

@@ -575,7 +575,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
@@ -700,8 +700,8 @@ session-log types, and a test fails when the two differ. See the
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
 reads only when the runtime lists `session.log.v2`, the project flag
-`session_log` is on, and the API holds a log for an OpenCode session. Every
-other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+`session_log` is on, and the API holds a log for the session (OpenCode or pi).
+Every other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
@@ -718,8 +718,9 @@ still v1:
   the SDK major that removes the v1 rows.
 - `toolCallMetadata(call)`: the harness's display metadata of a tool call, the
   whole `state.metadata` of the v1 part it came from (bash `command`, read
-  `loaded`, task `sessionId`, edit `filediff`). It stays until the session-log
-  schema carries display metadata of its own.
+  `loaded`, task `sessionId`, edit `filediff`); for a record a harness wrote
+  natively (pi), its `details`. It stays until the session-log schema carries
+  display metadata of its own.
 - `sessionLogOfV1Rows(sessionId, runtimeSessionId, rows)`: the `fromV1` live view
   of one runtime session's v1 rows, the log `useSessionLogThread` returns on v1,
   for rows a host reads without a `useSession` (a sub-agent's chat). One message
@@ -753,7 +754,8 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   projection's turn), `held` (the prompts the inbox still holds, in queue
   order), `threads` (the session's threads, for `threads`), `pricing`. A turn
   keeps its identity while its messages and derived fields do. A message out
-  of context (a failed attempt) keeps its turn.
+  of context (a failed attempt) keeps its turn; `hideOutOfContext: true` leaves
+  out every message with `in_context: false` that is not streaming.
 - `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
   and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
   the settled-turn fold, and the rows of a burst.
@@ -786,6 +788,18 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   modal's overview and its sub-agent rows show.
 - A pending permission or question matches a call by `call.call_id`
   (`getPermissionForTool`, `getQuestionForTool`).
+- A session's history: `isSessionLogRestoreNote(message)` is the note a partial
+  restore leaves for the agent (render it as a notice, not a prompt);
+  `sessionLogRestoreNotice(session)` is what that restore could not bring back
+  (`{ generation, missing: [{ kind, count }] }`, null unless the grade is
+  `partial` and a restore wrote the record); `sessionLogHarnessSwitches(history, turns)`
+  maps each switch `harness.history` records to the turn it lands on.
+- Texts stored by reference: `sessionLogReferencedTexts(messages)` lists every
+  text the API kept as a 16 kB preview (`{ ref, bytes }`); read one with
+  `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`. `sessionLogFullTextAction(refs)` says
+  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`.
+- `useSessionLogRecord(session)` (`@kortix/sdk/react`) is the v2 session record without threads
+  (`restore_grade`, `grade_counts`, `harness`, `ext`); it keeps its identity through message puts.
 
 Both layers give one answer for a record converted from v1 (its `cost` too: a
 v1-derived reply is priced over its v1 parts): the SDK's test suite compares them

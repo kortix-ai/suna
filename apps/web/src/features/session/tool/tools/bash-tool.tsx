@@ -17,6 +17,7 @@ import {
   useToolOpen,
   partRawOutput,
 } from '@/features/session/tool/shared/infrastructure';
+import { GenericTool } from '@/features/session/tool/generic-tool';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,7 @@ import {
 } from '@/lib/utils/structured-output';
 import { shellExitCode, stripAnsi } from '@/ui';
 import { TerminalIcon } from '@phosphor-icons/react';
+import { toolKind } from '@kortix/sdk';
 import { useContext, useMemo } from 'react';
 import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
 import { channelSendText, parseChannelSendCommand } from './channel-send';
@@ -373,8 +375,11 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const indent = useToolIndent();
+  // Codex sends `cmd` (`exec_command`) or an argv array (`shell`).
   const rawCommand =
-    (input.command as string) ||
+    (typeof input.command === 'string' && input.command) ||
+    (Array.isArray(input.command) && input.command.join(' ')) ||
+    (input.cmd as string) ||
     (metadata.command as string) ||
     (streamingInput.command as string) ||
     '';
@@ -438,6 +443,13 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
     const lines = command.split('\n');
     return { commandPreview: lines[0] || '', extraLines: lines.length - 1 };
   }, [command]);
+
+  // A shell-kind call from another harness that carries no command (a Claude Code
+  // `BashOutput`, a Codex `write_stdin`) has nothing for this row to draw: the generic row
+  // shows its name, input and output.
+  if (!command && toolKind(call.name) !== 'bash') {
+    return <GenericTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={locked} />;
+  }
 
   return (
     <BasicTool

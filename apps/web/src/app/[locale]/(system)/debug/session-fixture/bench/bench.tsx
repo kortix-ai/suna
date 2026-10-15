@@ -1,17 +1,15 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { groupMessagesIntoTurns } from '@kortix/sdk';
-import { useRuntimeMessages, useSession, useSessionStateStore } from '@kortix/sdk/react';
-import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { sessionLogTurns } from '@kortix/sdk';
+import { useSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
+import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
 import { SessionChat } from '@/features/session/session-chat';
-import { stabilizeTurns } from './stable-turns';
+import { SessionTurn } from '@/features/session/session-chat/transcript';
 import { TurnViewport } from '@/features/session/turn/turn-viewport';
-import type { MessageWithParts, SessionStatus, Turn } from '@/ui';
-
-import { FixtureTurn } from '../fixture-turn';
+import type { SessionStatus } from '@/ui';
 
 const SESSION_ID = 'ses_FixtureBench';
 const DELTA_INTERVAL_MS = 16;
@@ -21,6 +19,11 @@ const IDLE: SessionStatus = { type: 'idle' } as SessionStatus;
 const NO_PERMISSIONS: never[] = [];
 const NO_QUESTIONS: never[] = [];
 const AGENT_NAMES = ['build'];
+const NO_OUTCOME = {};
+const NOOP = () => {};
+const NOOP_ASYNC = async () => {};
+/** The bench session's runtime rows, read as the session log (the v1 store view). */
+const SOURCE = { projectId: '', sessionId: '', runtimeSessionId: SESSION_ID };
 
 /** One settled assistant answer: prose, a list, a table, inline math, a code block. */
 function answerText(turn: number): string {
@@ -82,7 +85,7 @@ function assistant(id: string, parentID: string, created: number, completed: boo
 
 function seed(messageCount: number): { messageId: string; partId: string; userId: string } {
   const turns = Math.max(1, Math.floor(messageCount / 2));
-  const rows: MessageWithParts[] = [];
+  const rows: Parameters<ReturnType<typeof useSessionStateStore.getState>['hydrate']>[1] = [];
   let last = { messageId: '', partId: '', userId: '' };
   for (let t = 0; t < turns; t++) {
     const n = String(t).padStart(5, '0');
@@ -92,11 +95,11 @@ function seed(messageCount: number): { messageId: string; partId: string; userId
     rows.push({
       info: user(userId, t * 10),
       parts: [{ id: `prt_${userId}`, sessionID: SESSION_ID, messageID: userId, type: 'text', text: `Question ${t}: do the next step.` }],
-    } as unknown as MessageWithParts);
+    } as never);
     rows.push({
       info: assistant(assistantId, userId, t * 10 + 1, !streaming),
       parts: [{ id: `prt_${assistantId}`, sessionID: SESSION_ID, messageID: assistantId, type: 'text', text: streaming ? '' : answerText(t) }],
-    } as unknown as MessageWithParts);
+    } as never);
     last = { messageId: assistantId, partId: `prt_${assistantId}`, userId };
   }
   const store = useSessionStateStore.getState();
@@ -108,14 +111,14 @@ function seed(messageCount: number): { messageId: string; partId: string; userId
 /** Renders of turns other than the streaming one, while the replay runs. Target: 0. */
 const settledRenders = { active: false, count: 0, streamingTurnId: '' };
 
-type BenchTurnProps = Parameters<typeof FixtureTurn>[0];
+type BenchTurnProps = ComponentProps<typeof SessionTurn>;
 
 /** `SessionTurn`'s memo boundary: the turn itself. Counts its real renders. */
 const BenchTurn = memo(function BenchTurn(props: BenchTurnProps) {
-  if (settledRenders.active && props.turn.userMessage.info.id !== settledRenders.streamingTurnId) {
+  if (settledRenders.active && props.turn.id !== settledRenders.streamingTurnId) {
     settledRenders.count += 1;
   }
-  return <FixtureTurn {...props} />;
+  return <SessionTurn {...props} />;
 });
 
 /**
@@ -163,32 +166,35 @@ function heapMb(): number | null {
 }
 
 function Transcript({ streaming, memoRows }: { streaming: boolean; memoRows: boolean }) {
-  const { data } = useRuntimeMessages(SESSION_ID);
-  const stableRef = useRef<Turn[]>([]);
-  const turns = useMemo(
-    () => stabilizeTurns(groupMessagesIntoTurns(data ?? []) as Turn[], stableRef.current),
-    [data],
-  );
-  useEffect(() => {
-    stableRef.current = turns;
-  }, [turns]);
-  const lastId = turns[turns.length - 1]?.userMessage.info.id;
+  // `sessionLogTurns` keeps a settled turn's identity, as the transcript reads it.
+  const thread = useSessionLogThread(SOURCE);
+  const turns = useMemo(() => (thread ? sessionLogTurns(thread) : []), [thread]);
+  const lastId = turns[turns.length - 1]?.id;
   const status = streaming ? BUSY : IDLE;
   return (
     <div role="log" className={SESSION_TRANSCRIPT_CLASS}>
       <div className="flex min-w-0 flex-col">
         {turns.map((turn, index) => {
-          const id = turn.userMessage.info.id;
+          const id = turn.id;
           const turnProps: BenchTurnProps = {
             turn,
+            turnOutcome: NO_OUTCOME,
+            isLast: id === lastId,
+            ownsPlan: turn.plan,
+            isFirstTurn: index === 0,
             sessionId: SESSION_ID,
             sessionStatus: status,
             sessionWorking: streaming,
             isWorkingTurn: id === lastId,
-            queueState: null,
+            suppressBusyIndicator: false,
+            awaitingUser: false,
+            pending: false,
             permissions: NO_PERMISSIONS,
             questions: NO_QUESTIONS,
             agentNames: AGENT_NAMES,
+            onPermissionReply: NOOP_ASYNC,
+            onRewind: NOOP,
+            rewindDisabled: true,
           };
           const className = index === 0 ? '' : 'mt-12';
           return memoRows ? (

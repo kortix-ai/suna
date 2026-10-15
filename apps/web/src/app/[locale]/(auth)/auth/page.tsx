@@ -554,29 +554,19 @@ function AuthCardForm({
         // Work domain with no SAML provider → fall through to magic/password.
       }
 
-      // Magic link is the default path: Continue emails a link and lands the
-      // user on the link step (the link signs in existing accounts and
-      // registers new ones — no mode needed). One exception: an EXISTING
-      // account opens the password form directly — the link stays one
-      // explicit choice away ("Email me a link instead") and no auth email is
-      // sent until the customer asks for it. (Whether the account's password
-      // is one the visitor still knows is not observable server-side — GoTrue
-      // stores a random hash for passwordless users too — so the existence
-      // check is the signal we act on, and the password screen itself carries
-      // both escape hatches: "Forgot your password?" and the link.) New
-      // accounts and a degraded existence check keep the magic-link default
-      // (the link action re-checks closed/SSO server-side). Password-only
-      // deployments go through the existence check below, so the password
-      // step opens already knowing whether this is a sign-in or a
-      // registration.
-      if (magicLinkEnabled && passwordEnabled) {
-        const { mode: resolved } = await resolveAuthMode(trimmed);
-        if (resolved === 'signin') {
-          setCredMode('signin');
-          setStep('credentials');
-          return;
-        }
-      }
+      // The email link is the default path: Continue emails a link and lands
+      // the user on the link step — the link signs in existing accounts and
+      // registers new ones, so no password is needed anywhere on the default
+      // path. That includes accounts created passwordless: GoTrue stores a
+      // random hash for those too (supabase/gotrue discussion #5741), so
+      // "does the visitor still know a password for this address" is not
+      // observable server-side, and a password-first default dead-ends a
+      // passwordless account on a form no password can pass. The password
+      // form stays one explicit choice away ("Use a password instead" on the
+      // link step), and the link action re-checks closed signups and SSO
+      // server-side. Password-only deployments go through the existence check
+      // below, so the password step opens already knowing whether this is a
+      // sign-in or a registration.
       if (magicLinkEnabled) {
         // sendMagic re-acquires the in-flight guard itself; release here first
         // or the hand-off would deadlock (this function already holds it).
@@ -758,6 +748,7 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
+          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <Button
             type="button"
@@ -818,6 +809,7 @@ function AuthCardForm({
     return (
       <EmailLinkStep
         sentEmail={sentEmail}
+        errorMessage={errorMessage}
         info={info}
         resendIn={resendIn}
         pending={pending}
@@ -850,6 +842,7 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
+          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
             <div className="space-y-3">

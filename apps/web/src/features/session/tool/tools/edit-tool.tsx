@@ -56,9 +56,15 @@ export function EditTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
   const before =
-    file?.before ?? (input.oldString as string) ?? (streamingInput.oldString as string) ?? '';
+    file?.before ??
+    ((input.oldString ?? input.old_string) as string) ??
+    (streamingInput.oldString as string) ??
+    '';
   const after =
-    file?.after ?? (input.newString as string) ?? (streamingInput.newString as string) ?? '';
+    file?.after ??
+    ((input.newString ?? input.new_string) as string) ??
+    (streamingInput.newString as string) ??
+    '';
   const patch = file?.patch ?? '';
   const codeEdit = (input.code_edit as string) || (streamingInput.code_edit as string) || '';
   const morphInstructions =

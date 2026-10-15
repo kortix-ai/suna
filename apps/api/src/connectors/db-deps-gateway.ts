@@ -413,6 +413,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         actorUserId: principal.userId,
         name: connector.authSecret,
         consumer: 'connector',
+        throwWhenUndecryptable: true,
       });
       if (value !== null) return value;
       // A configured secret that resolved to nothing for this caller is one

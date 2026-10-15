@@ -1,4 +1,4 @@
-import { toolCallBlock } from '@kortix/sdk';
+import { sessionLogOfV1Rows, toolCallBlock } from '@kortix/sdk';
 import '@/features/session/tool/tools/register';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
@@ -38,8 +38,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
  * the real one renders nothing while closed.
  *
  * `mock.module` is process-wide in this workspace, so both mocks spread the real
- * module and the `useRuntimeMessages` stub answers only for THIS file's child
- * session id; every other session id falls through to `{ data: undefined }`.
+ * module and the `useSessionLogThread` stub answers only for THIS file's child
+ * thread: the `fromV1` view of `childMessages`, as the hook serves a v1 session.
+ * Every other thread falls through to the real hook.
  */
 
 const CHILD_SESSION_ID = 'ses_child1';
@@ -47,10 +48,14 @@ const CHILD_SESSION_ID = 'ses_child1';
 let childMessages: MessageWithParts[] | undefined;
 
 const realSdkReact = await import('@kortix/sdk/react');
+const { useSessionLogThread } = realSdkReact;
 await mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
-  useRuntimeMessages: (sessionId: string) =>
-    sessionId === CHILD_SESSION_ID ? { data: childMessages } : { data: undefined },
+  useSessionLogThread: (...args: Parameters<typeof useSessionLogThread>) => {
+    const real = useSessionLogThread(...args);
+    if (args[1] !== CHILD_SESSION_ID) return real;
+    return childMessages?.length ? sessionLogOfV1Rows('', CHILD_SESSION_ID, childMessages).threads[0] : null;
+  },
 }));
 
 const realSubSessionModal = await import('@/features/session/sub-session-modal');

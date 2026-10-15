@@ -14,6 +14,9 @@
  * not requireAdmin. Maps to ADM-*.
  */
 import { flow } from "../core/flow";
+import type { Principal } from "../core/types";
+import { withDb } from "../fixtures/chat";
+import { adminDeleteUser, ssoFixtureToken } from "../fixtures/supabase";
 
 // A syntactically-valid but non-existent account id for boundary probes (auth
 // fails before the id is ever resolved, so any uuid works).
@@ -1384,3 +1387,62 @@ flow("ADM-24", { domain: "admin", routes: ["GET /v1/admin/api/accounts/:id/subsc
     });
   }
 });
+
+// ADM-25 — KRTX-1715 path B. The self-host operator allowlist
+// (KORTIX_PLATFORM_ADMIN_EMAILS) makes a password identity platform admin and
+// the self-host operator, never an SSO one: any account admin can register an
+// IdP that asserts the allowlisted address. The local profile boots the API
+// with one synthetic allowlisted address (`env.platformAdminEmail`); a cloud
+// target has no allowlist and runs the boundary steps only. The password
+// identity's 200 is the control: without it, a missing allowlist would make
+// the SSO identity's 403 vacuous.
+flow(
+  "ADM-25",
+  {
+    domain: "admin",
+    routes: ["GET /v1/admin/api/impersonate/active", "GET /v1/projects/git/backend/repositories"],
+  },
+  async (ctx) => {
+    await ctx.step("ANON → 401", async () => {
+      (await ctx.client.as(ctx.P.ANON).get("/v1/admin/api/impersonate/active")).status(401);
+    });
+    await ctx.step("non-admin OWNER → 403", async () => {
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/admin/api/impersonate/active")).status(403);
+    });
+
+    const allowlisted = ctx.env.platformAdminEmail;
+    if (!allowlisted || !ctx.env.capabilities.database) return;
+
+    await ctx.step("an identity a previous attempt left on the allowlisted address is deleted first", async () => {
+      // A non-SSO email is unique in Auth, so a leftover would block the create below.
+      const left = await withDb(ctx, (db) =>
+        db.query("SELECT id::text AS id FROM auth.users WHERE lower(email) = $1", [allowlisted]),
+      );
+      for (const row of left.rows as Array<{ id: string }>) await adminDeleteUser(ctx.env, row.id);
+    });
+
+    let operator!: Principal;
+    await ctx.step("a password identity with the allowlisted email is platform admin and the operator", async () => {
+      operator = await ctx.fixtures.userWithEmail(allowlisted, { label: "ALLOWLISTED" });
+      const admin = await ctx.client.as(operator).get("/v1/admin/api/impersonate/active");
+      admin.status(200).body().exists("$.grants");
+      // Past the operator gate: no git backend (409) or the backend's own answer, never 403.
+      const backend = await ctx.client.as(operator).get("/v1/projects/git/backend/repositories");
+      if (backend.statusCode === 403) {
+        throw new Error(`the allowlisted password identity is not the operator: ${backend.text()}`);
+      }
+    });
+
+    await ctx.step("the same address as an SSO identity → 403 on the admin console and the operator gate", async () => {
+      const sso = ctx.client.withBearer(
+        await ssoFixtureToken(ctx.env, operator, crypto.randomUUID(), []),
+        "SSO-ALLOWLISTED",
+      );
+      (await sso.get("/v1/admin/api/impersonate/active")).status(403);
+      (await sso.get("/v1/projects/git/backend/repositories"))
+        .status(403)
+        .body()
+        .has("$.error", "The instance git backend is only browsable by a self-host operator");
+    });
+  },
+);

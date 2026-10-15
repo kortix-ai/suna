@@ -276,6 +276,7 @@ Durations look like `30m`, `24h` or `2d`. A session holds at most 20 active remi
 - The fire queues the text into the session after a header line: `[REMINDER <id> — … scheduled check-in on this session, not a new user message.]`. A recurring reminder's header adds the `kortix reminders rm <id>` command.
 - A parked session wakes with its full history and workspace.
 - If the session is deleted or failed, the reminder pauses itself and records `last_error`.
+- A reminder that a person set runs as that person. When the person leaves the account, is removed from it, or is deactivated through SCIM, their reminders in its projects pause at once. A fire that still finds its author gone pauses the reminder and records the reason in `last_error`. A reminder that a session's agent set keeps firing. See [When a person leaves](/docs/accounts#when-a-person-leaves).
 - Anyone who can prompt a session can set a reminder on it. An agent can set one only on its own session; another session answers `403`.
 - `kortix triggers pause` also stops reminders.
 - Each fire is a model turn. Remove a recurring reminder when its condition is met.

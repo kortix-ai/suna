@@ -28,7 +28,11 @@ import {
 import type { SessionLogChanges, SessionLogPort } from '@/harness/contract/session-log'
 import { loadConfig } from '@/harness/harness'
 import { OpencodeDb } from '@/harness/open-code/opencode-db'
-import { readOpenCodeSessionPin } from '@/harness/open-code/runtime-state'
+import { readOpenCodeSessionPin, writeOpenCodeSessionPin } from '@/harness/open-code/runtime-state'
+import { reconcileSessionLog } from '@/harness/shared/session-log-boot'
+import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
+import { Database } from 'bun:sqlite'
+import { fakeSessionLogApi } from './helpers/fake-session-log-api'
 import { createOpenCodeSessionLogPort, OPENCODE_CAPABILITIES, openCodeSessionLog } from '@/harness/open-code/session-log'
 import { requirePiConfig } from '@/harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
@@ -515,4 +519,113 @@ describe('a pi session restored into OpenCode (a harness switch)', () => {
     for (const m of after.messages) expect(log.threads.map((t) => t.thread_id)).toContain(m.message.thread_id)
     expect(after.tombstones).toEqual([])
   }, 120_000)
+})
+
+describe('the boot reconcile on OpenCode (P6.4)', () => {
+  const PROJECT = 'proj-oc-restore'
+  /** golden, its image stored by the API (a `kortix-attachment://` object the box reads). */
+  const storedImage = () => {
+    const log = load('golden')
+    const image = log.threads[0]!.messages.find((m) => m.message_id === 'msg_g04')!.blocks.find((b) => b.type === 'attachment') as { ref: string }
+    image.ref = `kortix-attachment://${PROJECT}/${log.session_id}/img-1`
+    return log
+  }
+  const objects = new Map([['img-1', FIXTURE_PNG]])
+  const restores = (api: ReturnType<typeof fakeSessionLogApi>) => api.calls.filter((c) => c === 'POST log/restore').length
+  const ids = (log: SessionLog) => log.threads.flatMap((t) => t.messages.map((m) => m.message_id))
+  afterEach(() => resetSessionLogJournalForTests())
+
+  test('held: null without a store, without the pinned root or without the seq map; a reverted message stays held', async () => {
+    const log = load('golden')
+    const b = box(log.session_id)
+    expect(await b.port.held()).toBeNull()
+    await b.port.restore(log)
+    const held = await b.port.held()
+    expect([...held!].sort()).toEqual(ids(log).sort())
+    // OpenCode deletes a reverted message; until the journal tombstones it, the store did hold it.
+    const db = new Database(b.dbPath)
+    db.run('PRAGMA foreign_keys = ON')
+    db.run("DELETE FROM message WHERE id = 'msg_g14'")
+    db.close()
+    expect((await b.port.held())!.has('msg_g14')).toBe(true)
+    writeOpenCodeSessionPin('ses_not_in_the_store')
+    expect(await b.port.held()).toBeNull()
+    writeOpenCodeSessionPin(log.threads[0]!.thread_id)
+    expect(await b.port.held()).not.toBeNull()
+    rmSync(b.statePath)
+    expect(await b.port.held()).toBeNull()
+  }, 60_000)
+
+  test('no native state: the box restores, the next request equals modelView; after a restart the store is current; a turn not yet journaled is kept', async () => {
+    const log = storedImage()
+    const rootId = log.threads[0]!.thread_id
+    const b = box(log.session_id)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(b.root, 'state'), objects })
+    try {
+      const boot = (await reconcileSessionLog(b.port, { retryMs: 1 }))!
+      expect(api.calls).toEqual(['GET log/manifest', 'POST log/restore', 'GET attachments/img-1'])
+      expect(boot.generation).toBe(1)
+      expect(boot.session).toBeUndefined()
+      startSessionLogJournal(b.port, boot)
+      expect(await flushSessionLogJournal()).toBe(true)
+      // The journal at the claimed generation sends nothing back: every restored record is skipped by hash.
+      expect(api.journal.flatMap((x) => x.puts)).toEqual([])
+      const server = await b.serve()
+      const [body] = await prompt(server, rootId, 'Anything else?', [{ text: 'UNSENT-ANSWER' }])
+      expect(oracle(log, rootId, 'Anything else?', body!).diffs).toEqual([])
+      expect(JSON.stringify(body)).toContain(FIXTURE_PNG.toString('base64'))
+      // The turn is in the store, not in the API (no flush ran): the store is ahead, never behind.
+      resetSessionLogJournalForTests()
+      expect(await reconcileSessionLog(b.port, { retryMs: 1 })).toEqual({ generation: 1, cursors: [] })
+      expect(restores(api)).toBe(1)
+      expect((await b.port.held())!.size).toBeGreaterThan(ids(log).length)
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
+  test('stale native state (a store from before the last turns) is restored', async () => {
+    const log = storedImage()
+    const rootId = log.threads[0]!.thread_id
+    const b = box(log.session_id)
+    const older = structuredClone(log)
+    older.threads[0]!.messages = older.threads[0]!.messages.slice(0, -2)
+    await b.port.restore(older)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(b.root, 'state'), objects })
+    try {
+      expect((await reconcileSessionLog(b.port, { retryMs: 1 }))?.generation).toBe(1)
+      expect(restores(api)).toBe(1)
+      const server = await b.serve()
+      const [body] = await prompt(server, rootId, 'Anything else?', [{ text: 'OK' }])
+      expect(oracle(log, rootId, 'Anything else?', body!).diffs).toEqual([])
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
+  test('a partial restore (D3): the agent gets a note in its next request and the log, the user a partial session patch', async () => {
+    // golden as stored: its image is a `blob:` the box cannot read through the API.
+    const log = load('golden')
+    const rootId = log.threads[0]!.thread_id
+    const b = box(log.session_id)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(b.root, 'state') })
+    try {
+      const boot = (await reconcileSessionLog(b.port, { retryMs: 1 }))!
+      expect(boot.session).toMatchObject({ restore_grade: 'partial', grade_counts: { tool_input: 0, cut_point: 0, attachment: 1 } })
+      startSessionLogJournal(b.port, boot)
+      expect(await flushSessionLogJournal()).toBe(true)
+      expect(api.journal.flatMap((x) => x.puts.map((p) => p.message.blocks[0]?.id))).toEqual(['prt_kortix_restore_g1'])
+      expect(api.journal[0]!.session).toMatchObject({ restore_grade: 'partial' })
+      expect(api.stored().threads[0]!.messages.at(-1)).toMatchObject({ role: 'user', origin: 'notification', in_context: true, seq: 15, blocks: [{ id: 'prt_kortix_restore_g1' }] })
+      const expected = structuredClone(api.stored())
+      const g04 = expected.threads[0]!.messages.find((m) => m.message_id === 'msg_g04')!
+      g04.blocks = g04.blocks.filter((x) => x.type !== 'attachment')
+      const server = await b.serve()
+      const [body] = await prompt(server, rootId, 'Anything else?', [{ text: 'OK' }])
+      expect(JSON.stringify(body)).toContain('Kortix: this session was restored from its saved session log. Some earlier content could not be restored: 1 attachment.')
+      expect(oracle(expected, rootId, 'Anything else?', body!).diffs).toEqual([])
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
 })

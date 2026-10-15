@@ -1,15 +1,18 @@
 /**
- * Sessions — create/list/get/delete + unified runtime start. Maps to spec §16 (SESS-*).
+ * Sessions — create/list/get/delete/restore + unified runtime start. Maps to spec §16 (SESS-*).
  * Session creation provisions a REAL Daytona sandbox (fire-and-forget), so these
  * assert the contract (201 provisioning, status transitions) without blocking on
- * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
- * the local profile against a database session with a saved transcript.
+ * a full boot. Gated on the `daytona` capability, except SESS-36 and SESS-51,
+ * which run on the local profile against a database session with a saved
+ * transcript.
  */
 import {
   CreateSessionPromptResultSchema,
   ProjectSessionSchema,
+  SessionDeleteResultSchema,
   SessionPromptListSchema,
   SessionStartResultSchema,
+  SessionTranscriptSyncEnvelopeSchema,
   SessionTurnStatusSchema,
   WarmProjectSessionResultSchema,
 } from '@kortix/api-contract';
@@ -1187,6 +1190,201 @@ flow(
         .status(404)
         .body()
         .has('$.error', 'Not found');
+    });
+  },
+);
+
+/**
+ * SESS-51 — a deleted session is restorable for 30 days (KRTX-1734). Runs on
+ * the local profile: the session is a database row with a saved transcript, a
+ * stored file and a stopped sandbox. The local provider is unreachable, so the
+ * delete's box removal stays unconfirmed until the step that records the
+ * confirmation the provider would send (`markRemoved` in
+ * reaping/archived-box-removal.ts).
+ */
+flow(
+  'SESS-51',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/restore',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/projects/:projectId/sessions/:sessionId/attachments',
+      'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const newSession = async () => {
+      // Shared with the project: the member can open it, but only its owner
+      // or a project manager may delete or restore it.
+      const id = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        userId: ctx.P.OWNER.userId!,
+        visibility: 'project',
+      });
+      ctx.track('session', id, { projectId: project.id });
+      await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: team.id, sessionId: id });
+      return id;
+    };
+    const sessionId = await newSession();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id, sessionId };
+    const sessionRoute = '/v1/projects/:projectId/sessions/:sessionId';
+    const restoreRoute = `${sessionRoute}/restore`;
+    const attachmentId = crypto.randomUUID();
+    const download = `${sessionRoute}/attachments/:attachmentId`;
+    const contents = 'Files come back with a restored session.';
+    const listed = async () =>
+      (await owner.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } }))
+        .status(200)
+        .json<Array<{ session_id: string }>>()
+        .some((row) => row.session_id === sessionId);
+    const sessionRows = async (id: string) => {
+      const db = await openFlowDb(ctx.env);
+      try {
+        const session = (
+          await db.query<{ status: string; branch_name: string; deleted_at: string | null }>(
+            `SELECT status::text AS status, branch_name, metadata->>'deletedAt' AS deleted_at FROM kortix.project_sessions WHERE session_id = $1`,
+            [id],
+          )
+        ).rows[0];
+        const sandbox = (
+          await db.query<{ status: string; external_id: string | null; metadata: Record<string, unknown> }>(
+            'SELECT status::text AS status, external_id, metadata FROM kortix.session_sandboxes WHERE session_id = $1',
+            [id],
+          )
+        ).rows[0];
+        return { session, sandbox };
+      } finally {
+        await db.end();
+      }
+    };
+
+    await ctx.step('the owner stores a file in the session → 201', async () => {
+      const body = new FormData();
+      body.append('attachment_id', attachmentId);
+      body.append('file', new Blob([contents], { type: 'text/plain' }), 'notes.txt');
+      (await owner.request('POST', `${sessionRoute}/attachments`, { params, body })).status(201);
+    });
+
+    await ctx.step('a project member who did not start the session cannot delete it → 403, it stays listed', async () => {
+      (await ctx.client.as(member).del(sessionRoute, { params }))
+        .status(403)
+        .body()
+        .has('$.error', 'Only the session owner or a project manager can stop this session');
+      if (!(await listed())) throw new Error('a refused delete hid the session');
+    });
+
+    let restoreUntil = '';
+    await ctx.step('the owner deletes the session → 200 with restore_until, 30 days after the delete', async () => {
+      const r = await owner.del(sessionRoute, { params });
+      r.status(200).body().has('$.ok', true).schema(SessionDeleteResultSchema);
+      restoreUntil = r.json<{ restore_until: string }>().restore_until;
+      const { session } = await sessionRows(sessionId);
+      if (!session?.deleted_at) throw new Error('the delete wrote no stamp');
+      const window = Date.parse(restoreUntil) - Date.parse(session.deleted_at);
+      if (window !== 30 * 86_400_000) throw new Error(`restore window is ${window} ms, not 30 days`);
+    });
+
+    await ctx.step('a repeated delete answers the same restore_until: the window does not move', async () => {
+      (await owner.del(sessionRoute, { params })).status(200).body().has('$.restore_until', restoreUntil);
+    });
+
+    await ctx.step('the deleted session is hidden: the list omits it, and a read of it or of its file → 404', async () => {
+      if (await listed()) throw new Error('the session list still shows a deleted session');
+      (await owner.get(sessionRoute, { params })).status(404);
+      (await owner.get(download, { params: { ...params, attachmentId } })).status(404);
+    });
+
+    await ctx.step('a project member who did not start the session cannot restore it → 403, it stays deleted', async () => {
+      (await ctx.client.as(member).post(restoreRoute, {}, { params }))
+        .status(403)
+        .body()
+        .has('$.error', 'Only the session owner or a project manager can restore this session');
+      if (await listed()) throw new Error('a refused restore listed the session');
+    });
+
+    await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
+      (await owner.post(restoreRoute, {}, { params }))
+        .status(409)
+        .body()
+        .has('$.code', 'session_sandbox_removal_pending');
+      const { session, sandbox } = await sessionRows(sessionId);
+      if (!session?.deleted_at || sandbox?.status !== 'archived' || sandbox.external_id !== sessionId) {
+        throw new Error(`a refused restore changed the rows: ${JSON.stringify({ session, sandbox })}`);
+      }
+    });
+
+    await ctx.step('the provider confirms the removal; restore → 200, the session is listed and readable again', async () => {
+      const db = await openFlowDb(ctx.env);
+      try {
+        await db.query(
+          `UPDATE kortix.session_sandboxes
+              SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
+                             || jsonb_build_object('providerRemovedAt', now()::text)
+            WHERE session_id = $1 AND status = 'archived'`,
+          [sessionId],
+        );
+      } finally {
+        await db.end();
+      }
+      (await owner.post(restoreRoute, {}, { params })).status(200).body().has('$.ok', true);
+      if (!(await listed())) throw new Error('the restored session is not listed');
+      (await owner.get(sessionRoute, { params })).status(200).body().has('$.status', 'stopped').has('$.deleted_at', null);
+    });
+
+    await ctx.step('the branch is kept, and the old box is gone: the next start boots a fresh one', async () => {
+      const { session, sandbox } = await sessionRows(sessionId);
+      if (session?.branch_name !== `session/${sessionId}` || session.deleted_at !== null) {
+        throw new Error(`restored session row: ${JSON.stringify(session)}`);
+      }
+      // A retired row: no external id, marked so the next open claims it and provisions.
+      if (sandbox?.status !== 'stopped' || sandbox.external_id !== null || sandbox.metadata.ephemeralRetiredExternalId !== sessionId) {
+        throw new Error(`restored sandbox row: ${JSON.stringify(sandbox)}`);
+      }
+    });
+
+    await ctx.step('the saved transcript and the stored file read back intact', async () => {
+      (await owner.get(`${sessionRoute}/transcript`, { params, query: { shape: 'sync', history: 'true' } }))
+        .status(200)
+        .body()
+        .has('$.source', 'mirror')
+        .has('$.message_count', 2)
+        .schema(SessionTranscriptSyncEnvelopeSchema);
+      const file = (await owner.get(download, { params: { ...params, attachmentId } })).status(200);
+      if (file.text() !== contents) throw new Error('the restored file bytes differ');
+    });
+
+    await ctx.step('a second restore → 409 session_not_deleted; an unknown session → 404; a non-uuid id → 400', async () => {
+      (await owner.post(restoreRoute, {}, { params })).status(409).body().has('$.code', 'session_not_deleted');
+      (await owner.post(restoreRoute, {}, { params: { projectId: project.id, sessionId: crypto.randomUUID() } })).status(404);
+      (await owner.post(restoreRoute, {}, { params: { projectId: project.id, sessionId: 'not-a-uuid' } })).status(400);
+    });
+
+    await ctx.step('a session deleted more than 30 days ago → 410 session_purged, and it stays deleted', async () => {
+      const lateId = await newSession();
+      const late = { projectId: project.id, sessionId: lateId };
+      (await owner.del(sessionRoute, { params: late })).status(200);
+      const db = await openFlowDb(ctx.env);
+      try {
+        await db.query(
+          `UPDATE kortix.project_sessions SET metadata = metadata || jsonb_build_object('deletedAt', $2::text) WHERE session_id = $1`,
+          [lateId, new Date(Date.now() - 31 * 86_400_000).toISOString()],
+        );
+      } finally {
+        await db.end();
+      }
+      (await owner.post(restoreRoute, {}, { params: late })).status(410).body().has('$.code', 'session_purged');
+      (await owner.get(sessionRoute, { params: late })).status(404);
     });
   },
 );

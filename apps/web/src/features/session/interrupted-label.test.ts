@@ -211,6 +211,16 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
     ).toEqual({ text: 'the daemon stopped this turn', isAbort: false, suggestion: undefined });
   });
 
+  test('a ledger cause that carries the gateway envelope shows its sentence and suggestion, not the JSON', () => {
+    // A failed turn whose transcript error is not on screen (its failed attempt hidden, P5.6)
+    // reads the turn ledger's text, which is the provider body as the daemon recorded it.
+    const message =
+      '400: {"message":"\\"m-x\\" is not a recognized model.","code":"model_not_found","suggestion":"Check the model id, or choose a different model."}';
+    expect(
+      deriveTurnErrorPresentation({ turnError: undefined, isAbort: false, notice: { kind: 'cause', name: 'APIError', message } }),
+    ).toEqual({ text: '"m-x" is not a recognized model.', isAbort: false, suggestion: 'Check the model id, or choose a different model.' });
+  });
+
   test('a turn that died unexplained still says it stopped', () => {
     expect(
       deriveTurnErrorPresentation({ turnError: undefined, isAbort: false, notice: { kind: 'unexplained' } }),

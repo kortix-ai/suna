@@ -33,7 +33,7 @@
  * tool/*.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { LoopMotionContext } from '@/components/kortix/text-shimmer';
 import { useColorScheme } from 'nativewind';
@@ -79,7 +79,6 @@ import {
   turnBodyLayout,
   turnResponse,
   turnWorkSplit,
-  workParts,
   withoutReasoning,
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
@@ -250,11 +249,9 @@ function SessionTurnImpl({
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
   const durationMs = useMemo(() => (workSplit ? turnDurationMs(turn) : null), [workSplit, turn]);
-  const workPartList = useMemo(() => (workSplit ? workParts(workSplit.work) : []), [workSplit]);
-  const workContext = useMemo(
-    () => ({ sessionId, turnLive: false, onOpenFile: onFileMention, toDisplayPath: displayPath, onPermissionReply }),
-    [sessionId, onFileMention, onPermissionReply],
-  );
+  // The opened "Worked for" row. Closed on every mount: a history turn paints folded.
+  const [workOpen, setWorkOpen] = useState(false);
+  const toggleWork = useCallback(() => setWorkOpen((open) => !open), []);
 
   // ── Errors, retry, status ──
   const turnError = useMemo(() => turnErrorText(bodyTurn), [bodyTurn]);
@@ -376,7 +373,7 @@ function SessionTurnImpl({
 
   // 2. Segments
   if (layout.segments && segments.length > 0) {
-    const renderSegment = (segment: (typeof segments)[number]) => {
+    const renderSegment = (segment: (typeof segments)[number], inFold = false) => {
       // Trailing is structural (`burstIsRunning` keeps the trailing burst
       // running between calls); only loop motion follows the viewport.
       // A running burst's "Working · N steps" always sweeps on screen
@@ -394,6 +391,7 @@ function SessionTurnImpl({
               onOpenFile={onFileMention}
               toDisplayPath={displayPath}
               onPermissionReply={onPermissionReply}
+              inFold={inFold}
             />
           </LoopMotionContext.Provider>
         );
@@ -424,22 +422,23 @@ function SessionTurnImpl({
         />
       );
     };
-    // Settled with work (KRTX-2113): the row, then the hoisted deliverables,
-    // then the final text. They stay keyed siblings in this one list, so the
-    // final text and the cards keep their instances at settle; the work leaves
-    // the list for the activity sheet the row opens. The inline and command
-    // layouts keep today's render.
+    // Settled with work (KRTX-2113): the row, the work while the row is open,
+    // then the hoisted deliverables, then the final text. They stay keyed
+    // siblings in this one list, so the final text and the cards keep their
+    // instances at settle and on every toggle. The inline and command layouts
+    // keep today's render.
     const split = layout.text === 'segments' ? workSplit : null;
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {split
             ? [
-                <WorkRow key="work" durationMs={durationMs} parts={workPartList} context={workContext} />,
-                ...split.hoisted.map(renderSegment),
-                ...split.final.map(renderSegment),
+                <WorkRow key="work" durationMs={durationMs} open={workOpen} onToggle={toggleWork} />,
+                ...(workOpen ? split.work.map((segment) => renderSegment(segment, true)) : []),
+                ...split.hoisted.map((segment) => renderSegment(segment)),
+                ...split.final.map((segment) => renderSegment(segment)),
               ]
-            : segments.map(renderSegment)}
+            : segments.map((segment) => renderSegment(segment))}
         </View>
       </TurnLiveContext.Provider>,
     );

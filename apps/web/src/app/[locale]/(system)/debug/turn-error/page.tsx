@@ -5,9 +5,9 @@
  * verdict.
  *
  * Each case is a synthetic stored error, in the shape OpenCode persists on an
- * assistant message. The page runs it through the same SDK calls the
- * transcript uses (`getTurnError`, `getTurnErrorDetails`,
- * `getTurnErrorRawText`), asks the banner which row that renders
+ * assistant message. The page converts it as the session log does
+ * (`sessionLogOfV1Rows`), reads the turn error the transcript renders
+ * (`sessionLogTurns(thread)[0].error`), asks the banner which row that renders
  * (`describeTurnErrorRow`), checks both against the expectation, and renders
  * the real `TurnErrorDisplay` beneath. No network, no session. Click a row to
  * open it, or use "Open all rows". Theme: the /debug toggle, or press `D`.
@@ -18,12 +18,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { describeTurnErrorRow, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { cn } from '@/lib/utils';
-import {
-  getTurnError,
-  getTurnErrorDetails,
-  getTurnErrorRawText,
-  type TurnLike,
-} from '@kortix/sdk';
+import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurnError } from '@kortix/sdk';
 import { CheckCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 
 function streamChunk(content: string) {
@@ -158,11 +153,13 @@ const CASES: DebugCase[] = [
   },
 ];
 
-function turnWithError(error: unknown): TurnLike {
-  return {
-    userMessage: { info: { id: 'msg_debug_user' }, parts: [] },
-    assistantMessages: [{ info: { id: 'msg_debug_assistant', error }, parts: [] }],
-  } as unknown as TurnLike;
+/** The turn error of a user prompt and one reply that stored `error`. */
+function turnErrorOf(error: unknown): SessionLogTurnError | null {
+  const rows = [
+    { info: { id: 'msg_debug_user', sessionID: 'ses_debug', role: 'user', time: { created: 1 } }, parts: [] },
+    { info: { id: 'msg_debug_assistant', sessionID: 'ses_debug', role: 'assistant', parentID: 'msg_debug_user', time: { created: 2 }, error }, parts: [] },
+  ];
+  return sessionLogTurns(sessionLogOfV1Rows('ses_debug', 'ses_debug', rows as never).threads[0]!)[0]!.error;
 }
 
 function rowLabel({
@@ -174,10 +171,10 @@ function rowLabel({
 }
 
 function evaluate(debugCase: DebugCase) {
-  const turn = turnWithError(debugCase.error);
-  const text = getTurnError(turn);
-  const details = getTurnErrorDetails(turn);
-  const raw = getTurnErrorRawText(turn);
+  const error = turnErrorOf(debugCase.error);
+  const text = error?.message;
+  const details = error?.details;
+  const raw = error?.raw;
   const row = text ? rowLabel(describeTurnErrorRow({ text, gateway: details, raw })) : undefined;
   const checks = [
     { label: 'Sentence', pass: text === debugCase.sentence, got: text ?? '(none)' },

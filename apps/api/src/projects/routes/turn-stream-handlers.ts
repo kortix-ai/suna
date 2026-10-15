@@ -114,10 +114,17 @@ export function claimInitialTurn(
   if (typeof messageId !== 'string' || !messageId.trim()) {
     return c.json({ ok: true, initial_turn: null, ...pin });
   }
+  // Harness context stored beside the prompt at create (e.g. the CLI's worker
+  // contract); an older daemon ignores the field and keeps its old shape.
+  const context =
+    typeof turnStreamMetadata.initial_context === 'string'
+      ? turnStreamMetadata.initial_context
+      : undefined;
   return c.json({
     ok: true,
     initial_turn: {
       prompt,
+      ...(context ? { context } : {}),
       turn_token: turnToken,
       message_id: messageId,
     },

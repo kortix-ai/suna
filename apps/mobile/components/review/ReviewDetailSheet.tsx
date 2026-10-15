@@ -35,7 +35,8 @@
  * native verdict need project.write + project.review.act. A built-in member
  * gets none of them, and an unresolved probe offers none. A connector call
  * shows Approve and Deny to the viewer the API lets decide it (a project
- * manager or the session's launcher; `previewAuthorized`). Resolve conflicts
+ * manager or the session's launcher; `canResolve`). Anyone else reads who
+ * decides it, under the Waiting segment (KRTX-1724). Resolve conflicts
  * takes Merge's place, so only a viewer who may merge gets it; a reviewer who
  * may not hands the conflicts back with Request changes.
  */
@@ -49,10 +50,12 @@ import {
 } from '@gorhom/bottom-sheet';
 import {
   REVIEW_CONTROL_ACTIONS,
+  reviewItemTarget,
   reviewVerdictAllowed,
   type ReviewItem,
   type ReviewVerdict,
 } from '@kortix/sdk';
+import { useTranslation } from 'react-i18next';
 import { useCans } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -97,6 +100,7 @@ import { planReviewVerdict, reviewVerdictsFor } from '@/lib/review/review-verdic
 import { useReviewVerdict } from '@/lib/review/use-review';
 import { openLink } from '@/lib/utils/open-link';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
+import { approvalWaitingWhoKey, approvalWaitsOnOthers } from '@/lib/session/connector-handoff';
 
 interface ReviewDetailSheetProps {
   projectId: string;
@@ -128,6 +132,7 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
     const isDark = colorScheme === 'dark';
     const background = useSheetBackground();
     const toast = useToast();
+    const { t } = useTranslation();
     const cans = useCans({ projectId }, REVIEW_CONTROL_ACTIONS);
     const verdictMutation = useReviewVerdict(projectId, {
       onSuccess: (input) => {
@@ -225,6 +230,15 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
     }, [onDismiss]);
 
     const actionable = item?.status === 'needs_you';
+    // A connector call this viewer may not decide: the sheet says who does.
+    const waitingCall =
+      item?.kind === 'approval' && reviewItemTarget(item.id).type === 'connector_call'
+        ? item.detail.actions[0]
+        : undefined;
+    const waitsOnOthers =
+      !!item &&
+      !!waitingCall &&
+      approvalWaitsOnOthers({ status: item.status, canResolve: waitingCall.canResolve });
     // A change's diff (its Files, +/− and each file's lines) and, while it is
     // open, its merge preview (conflicts) — both one request each, cached.
     const crId = item?.kind === 'change' ? (item.detail.crId ?? null) : null;
@@ -358,6 +372,11 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
                 <Text variant="large" className="px-2">
                   {item.title}
                 </Text>
+                {waitsOnOthers ? (
+                  <Text variant="muted" className="px-2">
+                    {t(approvalWaitingWhoKey(waitingCall?.resolvers))}
+                  </Text>
+                ) : null}
 
                 {/* Aligned label · value rows: agent, risk, or a change's
                     number, branch, size and merge state. */}

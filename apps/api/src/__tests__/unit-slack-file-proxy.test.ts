@@ -31,17 +31,29 @@ let sharedIn: string[] = ['C0MINE'];
 let body: Uint8Array = new Uint8Array(8);
 let lengthHeader = true;
 let fetches: string[] = [];
+/** What the mocked files host answers with, in order; the last repeats. Empty
+ * = the default 200 body below. Built fresh per fetch: a Response body reads
+ * once. */
+let fileResponses: Array<{ status: number; body?: BodyInit; headers?: Record<string, string> }> = [];
+let fetchThrows = false;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   sharedIn = ['C0MINE'];
   body = new Uint8Array(8);
   lengthHeader = true;
   fetches = [];
+  fileResponses = [];
+  fetchThrows = false;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
     fetches.push(url);
     if (url === 'https://slack.com/api/files.info') {
       return Response.json({ ok: true, file: { id: 'F0SYNTH01', channels: sharedIn, groups: [], ims: [] } });
+    }
+    if (fetchThrows) throw new Error('connection reset');
+    if (fileResponses.length > 0) {
+      const spec = fileResponses.length > 1 ? fileResponses.shift()! : fileResponses[0];
+      return new Response(spec.body ?? null, { status: spec.status, headers: spec.headers });
     }
     return new Response(
       new ReadableStream({
@@ -113,5 +125,60 @@ describe('downloadSlackFile size limit', () => {
     const r = await downloadSlackFile('proj-1', FILE_URL, ownership);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.status).toBe(413);
+  });
+});
+
+// 2026-10-05: 16 file downloads 502'd within 3 h while clean 200s ran between
+// the bursts — the files host degraded transiently, and the proxy flattened
+// every upstream answer into a bare 502 with no log line, so four root-cause
+// sessions had nothing to work from. A download is an idempotent GET: it now
+// retries what slackApiCall retries (429 per Retry-After ≤ 5 s, 5xx with the
+// same attempt × 400 ms backoff) and answers the upstream truth.
+describe('downloadSlackFile transient upstream failures', () => {
+  test('a 503 answered once downloads on the retry', async () => {
+    fileResponses = [{ status: 503, body: 'Service Unavailable' }, { status: 200, body: new Uint8Array(body) }];
+    const r = await downloadSlackFile('proj-1', FILE_URL, ownership);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.body.byteLength).toBe(8);
+    expect(fetches.filter((u) => u === FILE_URL)).toHaveLength(2);
+  });
+
+  test('a 429 with a short Retry-After retries and succeeds', async () => {
+    fileResponses = [{ status: 429, headers: { 'retry-after': '1' } }, { status: 200, body: new Uint8Array(body) }];
+    const r = await downloadSlackFile('proj-1', FILE_URL, ownership);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.body.byteLength).toBe(8);
+    expect(fetches.filter((u) => u === FILE_URL)).toHaveLength(2);
+  });
+
+  test('a 429 with a long Retry-After answers 429 without a second fetch', async () => {
+    fileResponses = [{ status: 429, body: 'ratelimited', headers: { 'retry-after': '120' } }];
+    const r = await downloadSlackFile('proj-1', FILE_URL, ownership);
+    expect(r).toMatchObject({ ok: false, status: 429 });
+    if (!r.ok) expect(r.error).toContain('upstream 429');
+    expect(fetches.filter((u) => u === FILE_URL)).toHaveLength(1);
+  });
+
+  test('a persistent 503 answers 502 carrying the upstream status and body', async () => {
+    fileResponses = [{ status: 503, body: 'Service Unavailable' }];
+    const r = await downloadSlackFile('proj-1', FILE_URL, ownership);
+    expect(r).toMatchObject({ ok: false, status: 502 });
+    if (!r.ok) expect(r.error).toContain('upstream 503: Service Unavailable');
+    expect(fetches.filter((u) => u === FILE_URL)).toHaveLength(2);
+  });
+
+  test('an upstream 403 answers 403, not 502', async () => {
+    fileResponses = [{ status: 403, body: 'forbidden' }];
+    const r = await downloadSlackFile('proj-1', FILE_URL, ownership);
+    expect(r).toMatchObject({ ok: false, status: 403 });
+    if (!r.ok) expect(r.error).toContain('upstream 403');
+  });
+
+  test('a failed fetch retries once and answers 502 instead of throwing', async () => {
+    fetchThrows = true;
+    const r = await downloadSlackFile('proj-1', FILE_URL, ownership);
+    expect(r).toMatchObject({ ok: false, status: 502 });
+    if (!r.ok) expect(r.error).toContain('unreachable');
+    expect(fetches.filter((u) => u === FILE_URL)).toHaveLength(2);
   });
 });

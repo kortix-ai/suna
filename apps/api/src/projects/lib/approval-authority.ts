@@ -74,6 +74,15 @@ export function mayResolveApproval(input: {
   return humanMayResolveApproval(input);
 }
 
+/** The caller half of `mayResolveApproval`'s input. Every surface that shows or
+ *  takes a decision reads it from the request through `approvalCallerOf`
+ *  (`http-approval-caller.ts`), so `can_resolve`, the resolve route's 403 and
+ *  the approval page's 403 come from the same facts. */
+export type ApprovalCaller = Omit<
+  Parameters<typeof mayResolveApproval>[0],
+  'targetSessionOrigin' | 'targetSessionCreatedBy'
+>;
+
 /**
  * The rule for a caller already known to be a human (a Supabase session, a
  * personal CLI PAT, or a chat identity a person linked by signing in): a
@@ -88,16 +97,30 @@ export function humanMayResolveApproval(input: {
   // A manager is a human with project authority; that stands.
   if (input.isManager) return { allowed: true };
 
-  // `created_by` only means "the launcher" for a session a single person
-  // actually started. For a wrapper-created session it is the wrapper, shared
-  // by every end-user, so it cannot confer launcher status.
-  const createdByIsMeaningful = input.targetSessionOrigin !== 'backend';
   const isLauncher =
-    createdByIsMeaningful &&
-    input.targetSessionCreatedBy !== null &&
+    approvalResolvers(input) === 'managers_and_launcher' &&
     input.targetSessionCreatedBy === input.callerUserId;
 
   return isLauncher ? { allowed: true } : { allowed: false, reason: 'not_launcher_or_manager' };
+}
+
+/** Who may decide a call on this session, as a class. Clients name it to a
+ *  viewer who may not decide (`resolvers`, KRTX-1724). */
+export type ApprovalResolvers = 'managers' | 'managers_and_launcher';
+
+/**
+ * The launcher half of the rule applies only to a session one person started.
+ * `created_by` of a backend-created session (`origin: 'backend'`: a CLI PAT, a
+ * service account, a user API key) is the wrapper, shared by every end-user,
+ * so it cannot confer launcher status: only managers decide there.
+ */
+export function approvalResolvers(target: {
+  targetSessionOrigin: string | null;
+  targetSessionCreatedBy: string | null;
+}): ApprovalResolvers {
+  return target.targetSessionOrigin !== 'backend' && target.targetSessionCreatedBy !== null
+    ? 'managers_and_launcher'
+    : 'managers';
 }
 
 /**

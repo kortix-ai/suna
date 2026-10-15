@@ -189,9 +189,29 @@ The transcript, `log`, `info`, `attachments`, and the events stream never wake a
 | Stop | `kortix sessions stop <id>` | The sandbox disk, the branch, the conversation | Running processes and memory. It ends the running turn. |
 | Start | `kortix sessions start <id> [--wait]` | Everything a stop keeps | Nothing. It resumes a stopped sandbox, or boots a missing one. |
 | Restart | `kortix sessions restart <id>` | Everything a stop keeps | Running processes and memory. It stops and starts the sandbox in place, or boots a new one when the sandbox is gone. |
-| Delete | `kortix sessions rm <id>...` | The pushed branch | The sandbox, the session's stored attachments, and its public links. The session leaves the list. |
+| Delete | `kortix sessions rm <id>...` | The pushed branch. For 30 days also the conversation and the stored files. | The sandbox and its public links. The session leaves the list. |
+| Restore | `kortix sessions restore <id>` | Everything a delete keeps | Nothing. The session returns to the list, stopped. |
 
-The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete.
+The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
+
+### Restore a deleted session
+
+A deleted session stays restorable for 30 days. The delete answers `restore_until`, the last moment a restore works. To restore it:
+
+- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**. A delete of several sessions from the Sessions page has no Undo: restore each session from the CLI or from code.
+- From the CLI, run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
+- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`.
+
+A restore needs the same permission as the delete: the session owner or a person who manages the project. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch. Public links the delete revoked stay revoked: create new ones.
+
+| Restore answer | Meaning |
+| --- | --- |
+| `200` | The session is back. |
+| `409` `session_not_deleted` | The session is not deleted. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the old sandbox is gone, or the session was deleted while its first sandbox was starting and that sandbox can still arrive (up to 10 minutes). Try again in a minute. |
+| `410` `session_purged` | More than 30 days passed. Its conversation and files are deleted; only the branch remains. |
+
+Kortix deletes a deleted session's conversation 30 days after the delete, and its stored files 7 days after that.
 
 A stopped session wakes when it gets:
 
@@ -201,6 +221,31 @@ A stopped session wakes when it gets:
 - a `kortix sessions files` or `kortix sessions cp` call.
 
 On Platinum with the account's **Volumes** switch on, an ephemeral session keeps its files and conversation on a volume when it stops, and a wake boots a new sandbox. See [Sandboxes & previews](/docs/work/runtime#persistent-and-ephemeral-machines).
+
+### When the sandbox stops during a turn
+
+The provider can stop a sandbox while a turn runs, and a runtime restart (for example, to apply a config change) ends the running turn. Nobody asked for either. After a provider stop the turn ends with the reason "The sandbox stopped unexpectedly while this turn was running." Kortix then gives the work back once:
+
+| What the turn did before the stop | What Kortix sends |
+| --- | --- |
+| The agent did not answer the message | The same message again. |
+| The agent started an answer and did not finish it | One continuation message: `[auto-recovery] The previous turn was interrupted at <time> UTC. <reason> Continue from where you left off. Do not repeat steps that already completed.` The original message is not sent again. |
+| The agent finished its answer | Nothing. |
+
+When it goes out:
+
+- **A session people use.** The message waits in the queue, held, so the stopped sandbox stays stopped. When the sandbox wakes, for example when someone opens the session, the message goes out. To send it before that, select **Resume** above the composer (web) or **Send now** on the message (mobile), or send any message. From the CLI: `kortix sessions queue <session_id> release`. A session's first turn has no queued message, so Kortix puts a held continuation in the queue of the person who created the session.
+- **A `trigger`, `schedule` or `system` session, or a worker session another session started.** At once. Each sandbox recovers at most 2 times per rolling hour. After that the message waits, held, until the sandbox wakes, and a session's first turn gets no continuation.
+- **A runtime restart on a sandbox that runs again.** At once.
+
+When the continuation reaches the sandbox, the turn's reason changes to "The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn." After a runtime restart it changes to "The runtime restarted during this turn. Kortix resumed it."
+
+Kortix never continues a turn that someone ended: the Stop button (also when the sandbox stopped before the Stop reached it), `kortix sessions stop`, a model change (`kortix sessions model` restarts the runtime and ends the turn in flight), or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry. A continuation counts as a message: when the sandbox stops during the continuation, Kortix continues it again.
+
+Limits:
+
+- A session on the pi harness keeps the running turn in memory until the turn ends. After a provider stop the cut-off answer is gone, so Kortix sends the original message again.
+- A sandbox that stops between two steps of a turn leaves a finished answer, so Kortix sends nothing. Send a message to continue.
 
 ## When a session sleeps
 

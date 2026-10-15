@@ -103,6 +103,8 @@ export interface SessionLogJournalOptions {
   generation: number
   /** Cursors `restore` returned; empty on a box that restored nothing. */
   cursors?: readonly ExportCursor[]
+  /** Set on every session patch this journal sends: a partial restore's notice (D3, `session-log-boot.ts`). */
+  session?: SessionLogSessionPatch
   /** Test seams. */
   maxBatchBytes?: number
   retryMs?: number
@@ -321,8 +323,9 @@ export class SessionLogJournal {
       threads.push(thread)
     }
     if (changes.session) {
-      this.session = { ...this.session, ...changes.session }
-      sessionLogEventBus().publish('log.state', { generation: this.options.generation, session: changes.session } satisfies SessionLogStateEvent)
+      const session = { ...changes.session, ...this.options.session }
+      this.session = { ...this.session, ...session }
+      sessionLogEventBus().publish('log.state', { generation: this.options.generation, session } satisfies SessionLogStateEvent)
     }
     for (const thread of threads) sessionLogEventBus().publish('log.thread', thread, thread.thread_id)
     for (const event of messages) sessionLogEventBus().publish('log.message', event, 'message' in event ? event.message.thread_id : undefined)

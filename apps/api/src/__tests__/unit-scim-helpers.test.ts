@@ -97,21 +97,24 @@ describe('buildInviteUser', () => {
  * use, kept paying for every departed employee indefinitely. Nothing reconciles
  * seats periodically, so it never self-healed.
  *
- * Asserted against the source: `deprovisionMember` is module-private, its two
- * collaborators are a DB delete and a Stripe round-trip, and the property that
- * matters is simply that the call is on the path at all.
+ * Asserted against the source: SCIM deprovisions through `offboardMember`
+ * (accounts/core/offboard-member.ts, shared with removal and leave), its
+ * collaborators are DB deletes and a Stripe round-trip, and the property that
+ * matters is that the call is on the path, after the identity row is gone.
+ * `integration-offboard-member.test.ts` drives the SCIM route end to end.
  */
 import { readFileSync as readScimSource } from 'node:fs';
 import { join as joinScimPath } from 'node:path';
 
-const SCIM_USERS_SRC = readScimSource(
-  joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'),
+const SCIM_USERS_SRC = readScimSource(joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'), 'utf8');
+const OFFBOARD_SRC = readScimSource(
+  joinScimPath(import.meta.dir, '..', 'accounts', 'core', 'offboard-member.ts'),
   'utf8',
 );
 
 describe('SCIM deprovision releases the seat', () => {
-  function deprovisionBody(): string {
-    const body = SCIM_USERS_SRC.split('async function deprovisionMember(')[1]?.split('\n}\n')[0];
+  function offboardBody(): string {
+    const body = OFFBOARD_SRC.split('export async function offboardMember(')[1]?.split('\n}\n')[0];
     expect(body).toBeTruthy();
     // Guard the extraction: if this stops covering the identity-row delete, every
     // assertion below passes vacuously.
@@ -119,23 +122,30 @@ describe('SCIM deprovision releases the seat', () => {
     return body as string;
   }
 
-  test('onMemberRemoved is called on the deprovision path', () => {
-    expect(deprovisionBody()).toContain('onMemberRemoved(accountId, userId)');
+  test('SCIM deactivation runs the shared offboarding', () => {
+    expect(SCIM_USERS_SRC).toContain("offboardMember(SYSTEM_ACTOR, user.accountId, userId, 'deprovisioned')");
+    expect(SCIM_USERS_SRC).toContain("from '../accounts/core/offboard-member'");
   });
 
-  test('it is awaited, so the seat release cannot race the SCIM reply', () => {
-    expect(deprovisionBody()).toContain('await onMemberRemoved(');
+  test('onMemberRemoved is called on the offboarding path', () => {
+    expect(offboardBody()).toContain('onMemberRemoved(accountId, userId)');
+  });
+
+  test('SCIM awaits it, so the seat release cannot race the SCIM reply', () => {
+    // Removal and leave do not wait: Stripe can outlast the request deadline.
+    // `integration-offboard-member.test.ts` holds the sync open to prove both.
+    expect(offboardBody()).toContain("if (reason === 'deprovisioned') await seatSync;");
   });
 
   test('the seat release happens after the member row is gone', () => {
     // Ordering matters: syncSeatQuantity counts remaining members, so releasing
     // before the delete would recount the leaving member and change nothing.
-    const body = deprovisionBody();
+    const body = offboardBody();
     expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(body.indexOf('onMemberRemoved('));
   });
 
   test('the module actually imports it', () => {
-    expect(SCIM_USERS_SRC).toContain("from '../billing/services/seat-management'");
+    expect(OFFBOARD_SRC).toContain("from '../../billing/services/seat-management'");
   });
 });
 

@@ -560,6 +560,116 @@ flow('GW-ACCESS-1', {
   });
 });
 
+// GW-BUDGET-1 — each budget carries the numbers its meter shows: the spend in
+// its own period, when that period started and when it resets (KRTX-1725). A
+// new project has no model traffic, so the spend is $0 here; the DB suite
+// integration-gateway-budget-meters-http.test.ts seeds spend across a day and a
+// month boundary and checks it against the gate.
+flow('GW-BUDGET-1', {
+  domain: 'llm-gateway',
+  routes: [
+    'GET /v1/projects/:projectId/gateway/budgets',
+    'PUT /v1/projects/:projectId/gateway/budgets',
+    'DELETE /v1/projects/:projectId/gateway/budgets/:budgetId',
+  ],
+}, async (ctx) => {
+  type Period = 'day' | 'week' | 'month';
+  interface Budget {
+    budget_id: string;
+    scope: 'project' | 'member';
+    subject_user_id: string | null;
+    subject_email: string | null;
+    limit_usd: number;
+    period: Period;
+    spent_usd: number;
+    period_start: string;
+    resets_at: string;
+  }
+  const team = await ctx.fixtures.team();
+  const member = await team.addMember('member');
+  const memberId = member.userId!;
+  const project = await team.project();
+  const params = { projectId: project.id };
+  const path = '/v1/projects/:projectId/gateway/budgets';
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const DAY = 86_400_000;
+
+  const read = async () => {
+    const r = await owner.get(path, { params });
+    r.status(200);
+    return r.json<{ project_spend: { cost: number }; budgets: Budget[]; members: unknown[] }>();
+  };
+  // The period is UTC: a day from 00:00, a week from Monday, a month from the 1st.
+  const expectPeriod = (b: Budget | undefined, period: Period, limit: number) => {
+    if (!b) throw new Error(`no ${period} budget in the response`);
+    const start = new Date(b.period_start);
+    const reset = new Date(b.resets_at);
+    const now = Date.now();
+    const problems = [
+      b.period !== period && `period ${b.period}`,
+      b.limit_usd !== limit && `limit_usd ${b.limit_usd}`,
+      b.spent_usd !== 0 && `spent_usd ${b.spent_usd} on a project with no traffic`,
+      !b.period_start.endsWith('T00:00:00.000Z') && `period_start ${b.period_start} is not 00:00 UTC`,
+      !(start.getTime() <= now && now < reset.getTime()) && `now is outside ${b.period_start}..${b.resets_at}`,
+      period === 'day' && reset.getTime() - start.getTime() !== DAY && 'a day is not 24 h',
+      period === 'week' && (start.getUTCDay() !== 1 || reset.getTime() - start.getTime() !== 7 * DAY) &&
+        'a week does not run Monday to Monday',
+      period === 'month' &&
+        (start.getUTCDate() !== 1 || reset.getUTCDate() !== 1 || reset.getUTCMonth() !== (start.getUTCMonth() + 1) % 12) &&
+        'a month does not run from the 1st to the next 1st',
+    ].filter(Boolean);
+    if (problems.length) throw new Error(`${period} budget ${JSON.stringify(b)}: ${problems.join('; ')}`);
+  };
+
+  await ctx.step('an anonymous caller cannot read the budgets', async () => {
+    (await ctx.client.as(ctx.P.ANON).get(path, { params })).status(401);
+  });
+  await ctx.step('a daily project budget reads $0 spent, a period from 00:00 UTC today, and a reset 24 h later', async () => {
+    (await owner.put(path, { scope: 'project', limit_usd: 20, period: 'day', action: 'block' }, { params })).status(200);
+    const body = await read();
+    expectPeriod(body.budgets.find((b) => b.scope === 'project'), 'day', 20);
+    if (body.project_spend.cost !== 0 || !Array.isArray(body.members)) {
+      throw new Error(`month-to-date fields changed shape: ${JSON.stringify(body)}`);
+    }
+  });
+  await ctx.step('changing the period to a week and to a month moves the period start and the reset', async () => {
+    for (const period of ['week', 'month'] as const) {
+      (await owner.put(path, { scope: 'project', limit_usd: 50, period, action: 'warn' }, { params })).status(200);
+      const rows = (await read()).budgets.filter((b) => b.scope === 'project');
+      if (rows.length !== 1) throw new Error(`expected one project budget, got ${rows.length}`);
+      expectPeriod(rows[0], period, 50);
+    }
+  });
+  let memberBudgetId = '';
+  await ctx.step('a member budget reads its own period and names its member, who has no spend this month, next to the project budget', async () => {
+    (await owner.put(path, {
+      scope: 'member', subject_user_id: memberId, limit_usd: 5, period: 'day', action: 'block',
+    }, { params })).status(200);
+    const body = await read();
+    const own = body.budgets.find((b) => b.scope === 'member' && b.subject_user_id === memberId);
+    expectPeriod(own, 'day', 5);
+    // The month-to-date `members` list has no row for a member who spent
+    // nothing, so only the budget's `subject_email` can name them.
+    if (own!.subject_email?.toLowerCase() !== member.email?.toLowerCase()) {
+      throw new Error(`member budget subject_email ${own!.subject_email}, expected ${member.email}`);
+    }
+    const projectBudget = body.budgets.find((b) => b.scope === 'project');
+    expectPeriod(projectBudget, 'month', 50);
+    if (projectBudget!.subject_email !== null) {
+      throw new Error(`project budget subject_email ${projectBudget!.subject_email}, expected null`);
+    }
+    memberBudgetId = own!.budget_id;
+  });
+  await ctx.step('removing the member budget removes its row and keeps the project budget', async () => {
+    (await owner.del('/v1/projects/:projectId/gateway/budgets/:budgetId', {
+      params: { ...params, budgetId: memberBudgetId },
+    })).status(200);
+    const budgets = (await read()).budgets;
+    if (budgets.some((b) => b.budget_id === memberBudgetId)) throw new Error('the removed member budget is still listed');
+    expectPeriod(budgets.find((b) => b.scope === 'project'), 'month', 50);
+  });
+});
+
 // A 64 × 64 red PNG. Every managed model reads it as "red" (verified
 // 2026-09-23 on each pinned endpoint).
 const RED_SQUARE_PNG =

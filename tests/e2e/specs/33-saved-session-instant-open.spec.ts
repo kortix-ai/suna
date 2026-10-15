@@ -187,7 +187,7 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
         userId: user.id,
       });
       if (options.saved) {
-        await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId });
+        await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId, log: { bearer: auth.access_token } });
       }
       await runDatabaseSql(
         "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
@@ -479,6 +479,7 @@ test('33 — a long run whose prompt is outside the saved window reads in order,
       accountId,
       sessionId,
       messages: longRunTranscript,
+      log: { bearer: auth.access_token },
     });
     await runDatabaseSql(
       "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",

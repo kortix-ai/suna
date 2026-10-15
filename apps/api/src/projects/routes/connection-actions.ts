@@ -18,6 +18,7 @@ import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
+import { SecretUndecryptableError } from '../../secrets/undecryptable';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
@@ -102,6 +103,18 @@ async function renameConnectionHandler(c: any) {
     throw error;
   }
   return c.json(serializeConnection({ ...connection, label }), 200);
+}
+
+/** The credential a catalog re-sync starts from. One the server cannot decrypt
+ *  seeds nothing: the sync resolves it again and records the error on the
+ *  connector, so the action itself still succeeds. */
+async function catalogCredentialOf(input: { connectorId: string; connectionId: string }) {
+  try {
+    return await resolveConnectionCredentialValue(input);
+  } catch (error) {
+    if (error instanceof SecretUndecryptableError) return null;
+    throw error;
+  }
 }
 
 export function registerConnectionActionsRoutes(): void {
@@ -383,7 +396,7 @@ export function registerConnectionActionsRoutes(): void {
               connection.providerType === 'mcp' &&
               connection.ownerType === 'project' &&
               isEffectiveDefault
-                ? await resolveConnectionCredentialValue({
+                ? await catalogCredentialOf({
                     connectorId: connection.connectorId,
                     connectionId,
                   })
@@ -420,7 +433,7 @@ export function registerConnectionActionsRoutes(): void {
             connectorId: connection.connectorId,
             credential:
               connection.providerType === 'mcp' && connection.ownerType === 'project'
-                ? await resolveConnectionCredentialValue({
+                ? await catalogCredentialOf({
                     connectorId: connection.connectorId,
                     connectionId,
                   })
@@ -430,7 +443,12 @@ export function registerConnectionActionsRoutes(): void {
           if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);
           await db
             .update(connectorConnections)
-            .set({ status: operation === 'revoke' ? 'revoked' : 'active', updatedAt: new Date() })
+            .set(
+              operation === 'revoke'
+                ? { status: 'revoked', updatedAt: new Date() }
+                : // Offboarding's revokedReason (connectors/computers.ts) no longer holds.
+                  { status: 'active', metadata: sql`${connectorConnections.metadata} - 'revokedReason'`, updatedAt: new Date() },
+            )
             .where(eq(connectorConnections.connectionId, connectionId));
         }
         // The default shared account may have changed: activate or park pending event triggers.

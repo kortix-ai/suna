@@ -979,6 +979,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'warm_sessions',
     'notification_center',
     'session_log',
+    'session_log_restore',
     'volumes',
     'stateless_sessions',
   ];

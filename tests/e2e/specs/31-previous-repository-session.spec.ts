@@ -94,6 +94,7 @@ test('31 — a previous-repository session opens and sends the update prompt', a
       accountId,
       sessionId,
       ensureSandbox: false,
+      log: { bearer: auth.access_token },
     });
 
     const route = `/projects/${project.id}/sessions/${sessionId}`;

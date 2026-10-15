@@ -305,7 +305,8 @@ async function handleUpstreamFailureStatus(
       // hop, not a hardcoded `daemon`: a user app on an ordinary port that
       // mimics the daemon's not-ready shape (the match is header/body text)
       // must not borrow the daemon's identity — as `upstream_port` its GET
-      // 503 stays logged (request-log-level.ts suppresses only `daemon`) and
+      // 503 stays logged (request-log-suppression.ts suppresses only the
+      // daemon-attributed shapes) and
       // the probe counts it, while the real boot-window answer on the
       // session-data ports (8000/4096/4097 — /lsp/diagnostics, /permission,
       // /vcs/diff, …) is suppressed instead of paging a route 5xx rise.

@@ -66,6 +66,7 @@ import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import { readSessionAuditActions } from '../lib/session-audit-read';
+import { sessionApprovalVerdict } from '../lib/http-approval-caller';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -226,6 +227,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           agentName: (visible.row.agentName as string | null) ?? null,
           audited,
           limit: AUDIT_ACTIONS_LIMIT,
+          // `can_resolve` + `resolvers`: the resolve route's verdict (KRTX-1724).
+          ...sessionApprovalVerdict(c, loaded, projectId, visible.row),
         });
       })(),
       // = `GET .../log`, the first page of the root thread, only with the

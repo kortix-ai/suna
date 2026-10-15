@@ -159,6 +159,12 @@ const envSchema = z.object({
   // set to '' = none.
   KORTIX_PUBLIC_AUTH_METHODS: z.string().optional(),
   KORTIX_PUBLIC_AUTH_PROVIDERS: z.string().optional(),
+  // Auth confirms every email sign-up without sending mail. The self-host CLI
+  // writes this to .env and GoTrue reads it as GOTRUE_MAILER_AUTOCONFIRM; the
+  // kortix-api service loads the same .env (env_file), so both read one value.
+  // `kortix self-host env set EMAIL_URL=…` turns it off. While it is on, a
+  // password email proves nothing (iam/email-trust.ts). Unset on cloud.
+  ENABLE_EMAIL_AUTOCONFIRM: optBoolFalse,
   // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
   // API checks an HS256 access token's signature and expiry locally instead of
   // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
@@ -1252,6 +1258,7 @@ export const config = {
   SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY,
   KORTIX_PUBLIC_AUTH_METHODS: env.KORTIX_PUBLIC_AUTH_METHODS,
   KORTIX_PUBLIC_AUTH_PROVIDERS: env.KORTIX_PUBLIC_AUTH_PROVIDERS,
+  ENABLE_EMAIL_AUTOCONFIRM: env.ENABLE_EMAIL_AUTOCONFIRM,
   SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
   SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,

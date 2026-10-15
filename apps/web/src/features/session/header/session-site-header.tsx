@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { sessionCanBeStopped } from '@/components/projects/session-label';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -45,6 +46,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
+import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import {
   type QuickView,
   useIsActionPanelOpen,
@@ -285,6 +287,13 @@ export function SessionSiteHeader({
   const isActionPanelOpen = useIsActionPanelOpen();
   const toggleActionPanel = useToggleActionPanel();
   const readyChip = useReadyChip();
+  // P5.6: show or hide the messages outside the agent's context (a failed attempt), per
+  // session. Listed only while the transcript on screen holds one: otherwise it changes nothing.
+  const historyKey = projectSessionId || sessionId;
+  const tHistory = useTranslations('sessionUi.history');
+  const outOfContextPresent = useSessionHistoryViewStore((s) => !!s.outOfContext[historyKey]);
+  const outOfContextHidden = useSessionHistoryViewStore((s) => s.hidden.includes(historyKey));
+  const setOutOfContextHidden = useSessionHistoryViewStore((s) => s.setHidden);
 
   // The desktop shell has no address bar, so the menu is the only way to
   // share a session: the ID for support and the CLI, the link for people.
@@ -410,6 +419,15 @@ export function SessionSiteHeader({
         </>
       )}
 
+      {outOfContextPresent && (
+        <DropdownMenuCheckboxItem
+          className="cursor-pointer"
+          checked={!outOfContextHidden}
+          onCheckedChange={(checked) => setOutOfContextHidden(historyKey, !checked)}
+        >
+          {tHistory('showOutOfContext')}
+        </DropdownMenuCheckboxItem>
+      )}
       <DropdownMenuItem
         className="cursor-pointer"
         onClick={() => setExportOpen(true)}

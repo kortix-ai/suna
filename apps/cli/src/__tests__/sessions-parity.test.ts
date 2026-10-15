@@ -334,7 +334,16 @@ function startServer(): string {
         return Response.json({ ok: true });
       }
       if (method === 'DELETE' && path === `${project}/sessions/${SESSION}`) {
+        return Response.json({ ok: true, restore_until: '2026-02-01T00:00:00.000Z' });
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION}/restore`) {
         return Response.json({ ok: true });
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_B}/restore`) {
+        return Response.json(
+          { error: 'This session is not deleted', code: 'session_not_deleted' },
+          { status: 409 },
+        );
       }
       if (method === 'DELETE' && path === `${project}/sessions/${SESSION_B}`) {
         return Response.json({ error: 'Only the session owner can delete this' }, { status: 403 });
@@ -1152,10 +1161,73 @@ describe('kortix sessions rm (multiple ids)', () => {
     expect(r.stderr).toContain('1 of 2 sessions could not be deleted');
   });
 
-  test('one id still works and exits 0', async () => {
+  test('one id still works, exits 0, and names the restore window', async () => {
     const r = await runCli(['sessions', 'rm', SESSION, ...P], config);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('Deleted');
+    expect(r.stdout).toContain('2026-02-01');
+    expect(r.stdout).toContain(`kortix sessions restore ${SESSION}`);
+  });
+
+  test('--json carries restore_until and the project for each deleted id', async () => {
+    const r = await runCli(['sessions', 'rm', SESSION, '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual([
+      { session_id: SESSION, project_id: PROJECT, deleted: true, restore_until: '2026-02-01T00:00:00.000Z' },
+    ]);
+  });
+
+  // `restore` cannot locate a deleted session (its read answers 404), so the
+  // printed command must name where `rm` found it.
+  test('the printed restore command names the project and the host, and works as printed', async () => {
+    const r = await runCli(['sessions', 'rm', SESSION, ...P, '--host', 'test'], config);
+    expect(r.code).toBe(0);
+    const printed = r.stdout.match(/kortix sessions restore .+/)?.[0]?.trim();
+    expect(printed).toBe(`kortix sessions restore ${SESSION} --project ${PROJECT} --host test`);
+
+    const restore = await runCli(printed!.split(/\s+/).slice(1), config);
+    expect(restore.code).toBe(0);
+    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/restore`)).toHaveLength(1);
+  });
+});
+
+describe('kortix sessions restore', () => {
+  test('POSTs the restore once and says what the next start does', async () => {
+    const r = await runCli(['sessions', 'restore', SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/restore`)).toEqual([
+      { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/restore`, body: {} },
+    ]);
+    expect(r.stdout).toContain('Restored');
+    expect(r.stdout).toContain('fresh sandbox');
+  });
+
+  test('--json prints the API answer', async () => {
+    const r = await runCli(['sessions', 'restore', SESSION, '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ ok: true, session_id: SESSION });
+  });
+
+  test('a refused restore exits 1 with the API reason', async () => {
+    const r = await runCli(['sessions', 'restore', SESSION_B, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('This session is not deleted');
+  });
+
+  test('a short id or no id exits 2 without a request', async () => {
+    const short = await runCli(['sessions', 'restore', SESSION.slice(0, 8), ...P], config);
+    expect(short.code).toBe(2);
+    expect(short.stderr).toContain('full session id');
+    const none = await runCli(['sessions', 'restore', ...P], config);
+    expect(none.code).toBe(2);
+    expect(none.stderr).toContain('Pass a session id');
+    expect(calls('POST', `/v1/projects/${PROJECT}/sessions`).filter((c) => c.path.endsWith('/restore'))).toEqual([]);
+  });
+
+  test('--help documents the window and what comes back', async () => {
+    const r = await runCli(['sessions', 'restore', '--help'], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('30 days');
   });
 
   test('no id exits 2', async () => {

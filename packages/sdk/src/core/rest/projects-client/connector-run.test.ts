@@ -236,6 +236,15 @@ test('403 credential_not_shared keeps its reason', async () => {
   expect(error.availableAccounts).toEqual([]);
 });
 
+test('403 credential_undecryptable keeps its reason and the message naming the connector', async () => {
+  const message =
+    "The credential of connector crm cannot be decrypted with this server's encryption key. Reconnect the account or enter the credential again.";
+  reply({ status: 403, body: { ok: false, status: 'denied', reason: 'credential_undecryptable', message } });
+  const error = await rejection(runConnector('p', 'crm', 'list'));
+  expect(error.code).toBe('credential_undecryptable');
+  expect(error.status).toBe(403);
+});
+
 test('429 reads upstream_status and retry_after_seconds', async () => {
   reply({
     status: 429,

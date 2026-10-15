@@ -93,7 +93,7 @@ test('98 — saved history is what you see while the computer starts', async ({
         accountId,
         userId: user.id,
       });
-      await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId });
+      await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId, log: { bearer: auth.access_token } });
       await runDatabaseSql(
         "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
         [sessionId],
@@ -161,7 +161,7 @@ test('98 — saved history is what you see while the computer starts', async ({
     const warm = await measure();
     // What an older server stored when a project turned saved history off.
     await runDatabaseSql(
-      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
+      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"session_transcript_history":false}'::jsonb) WHERE project_id = $1`,
       [project.id],
       env.databaseUrl,
     );

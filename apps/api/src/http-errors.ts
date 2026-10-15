@@ -13,6 +13,7 @@ import {
 } from './projects/git/mirror';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain } from './sandbox-proxy/preview-hosts';
+import { SecretUndecryptableError } from './secrets/undecryptable';
 import { deadCredentialLogDecision, deadCredentialLogKey, isDeadCredential } from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
@@ -370,6 +371,20 @@ function handleDatabaseOrUnknownError(err: Error, c: Context, errName: string, m
   );
 }
 
+function handleSecretUndecryptable(err: Error, c: Context, method: string, path: string): Response | null {
+  // A stored value this server cannot decrypt (API_KEY_SECRET changed, or the
+  // row is damaged) is a state a person fixes by entering the value again, not
+  // a server fault (KRTX-1719). Answer 409 with the message that names the
+  // value, and send no Sentry event.
+  if (!(err instanceof SecretUndecryptableError)) return null;
+  appLogger.warn(`${method} ${path} -> 409 [SecretUndecryptableError] ${err.message}`, {
+    method,
+    path,
+    errorType: 'SecretUndecryptableError',
+  });
+  return c.json({ error: err.message, code: 'SECRET_UNDECRYPTABLE' }, 409);
+}
+
 // The dispatcher keeps the original head of the onError callback; each branch
 // below it was extracted whole into the typed handler above it.
 function handleUnhandledError(err: Error, c: Context): Response {
@@ -388,6 +403,8 @@ function handleUnhandledError(err: Error, c: Context): Response {
   if (pushRejected) return pushRejected;
   const daytonaTransient = handleDaytonaTransientProviderError(err, c, method, path);
   if (daytonaTransient) return daytonaTransient;
+  const undecryptable = handleSecretUndecryptable(err, c, method, path);
+  if (undecryptable) return undecryptable;
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
       statusCode: err.statusCode,

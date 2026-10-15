@@ -244,11 +244,13 @@ EOF
 later dispatch **updates the branch in place** (pushes the new content, keeps
 the same PR). **It does not rewrite an already-open release PR's title or
 body** — if the version, title, or notes need to change after the PR exists,
-edit them by hand with `gh pr edit`. It then dispatches `tests-release.yml` on
-the release branch itself (`expected_sha` = the release source SHA). Do not
-approve the pull request run that GitHub holds for the bot-opened PR: the
-dispatched run already reports `full suite + quality gates` on the same head
-SHA, and approving the held run tests staging twice at once.
+edit them by hand with `gh pr edit`. GitHub holds the bot-opened PR's
+`tests-release.yml` run (`action_required`); `promote.yml` then approves it.
+Only that pull request run's `full suite + quality gates` counts for the `prod`
+ruleset. A dispatched run on the same SHA does not (v0.13.57: green dispatched
+gate, PR still `BLOCKED`), so never dispatch a second gate. If the Promote
+summary warns that approval failed, approve it yourself:
+`gh api -X POST repos/kortix-ai/suna/actions/runs/<run id>/approve`.
 
 ### Step 8 — release gate triage
 
@@ -260,7 +262,7 @@ release gate as **environmental**. Since 2026-10-06 both run in `eu-west-2`, so
 that cross-region reason no longer holds: confirm with the owner before you
 classify a timeout as environmental. Every other failure is fixed on
 `dev` and re-promoted through Steps 2–7 (a new staging SHA means the release
-PR must be re-dispatched too). A failed gate run reruns its failed jobs once by
+PR's new run must be approved too). A failed gate run reruns its failed jobs once by
 itself (`rerun-failed-once.yml`) and names them on the release PR. A job that
 fails twice is real. A job that passes on the rerun is a flake: fix it or
 quarantine it (the **testing** skill) in the same release cycle. A shard that

@@ -63,18 +63,21 @@ route, the body, the credential, the retries and the dead-token breaker.
 | `shared/boot-timeline-relay.ts` | `POST /platform/boot-timeline` |
 | `shared/session-log-journal.ts` | `POST /projects/:id/sessions/:id/log/journal`: the session log (`kortix.session/2`, `@kortix/api-contract/session-log`), see below |
 | `shared/session-log-restore.ts` | `GET /projects/:id/sessions/:id/attachments/:id`: the full text of each text a restore answer (P6.1) stores by reference (`sessionLogFromRestore`, `apiTextReader`), see "Restore" below |
+| `shared/session-log-boot.ts` | `GET /projects/:id/sessions/:id/log/manifest` and `POST …/log/restore`: the boot reconcile (P6.4), see "When the boot restores" below |
 
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 
-## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b, P6.2, P6.3)
+## Session log (P2.4, P2.5, P2.6, P4.3, P4.3b, P6.2, P6.3, P6.4, P6.5)
 
 An adapter implements `SessionLogPort` (`contract/session-log.ts`):
 `changes(cursors)` returns the messages, tombstones, thread upserts and session
 patch since one `ExportCursor` per thread; `restore(log)` writes a session log
 into the native store before the harness starts and returns the cursors of what
 it wrote and the counts of model-visible content it could not write
-(`SessionLogRestoreResult`); `fingerprint()` digests the native store for the boot reconcile;
+(`SessionLogRestoreResult`); `held()` names every message id the native store holds (and,
+on OpenCode, every id it held and deleted) for the boot reconcile, or null when the store is
+missing;
 `live(threadId, messageId)` names the seq (and pi's `created_at`) of a message
 of the live turn (see "The live turn" below); `capabilities` is the adapter's
 `AdapterCapabilities`. pi implements it
@@ -83,8 +86,8 @@ Both rebuild the whole log on each read and diff it against the cursors with
 `logChanges` (`shared/session-log-journal.ts`).
 
 The pi boot starts the journal once the runtime is ready and a session is
-bound, before the first turn, with generation 0: nothing mints a session
-generation before P6's restore. `lifecycle.stop()` stops it before the runtime
+bound, before the first turn, at the generation and with the cursors the boot
+reconcile returned (below). `lifecycle.stop()` stops it before the runtime
 stops. The adapter reads `PiRuntime.sessionLogSnapshot()`: the root's
 `SessionManager` branch and session header, each sub-agent child's agent
 messages, and the v1 transcript. pi entries carry pi's own ids, so the runtime
@@ -113,14 +116,14 @@ message in OpenCode's message order and persisted in
 `$KORTIX_RUNTIME_STATE_DIR/opencode-session-log.json`, so a restart keeps
 every seq and a revert never hands a deleted message's seq to the next one;
 the deleted messages reach the journal as tombstones. `startSessionRuntime`
-starts the journal (generation 0) before the event loop and the first prompt;
+runs the boot reconcile and starts the journal before the event loop and the first prompt;
 the service's host `lifecycle.stop()` stops it before OpenCode stops, and a
 restart (`this.stop()` inside the native lifecycle) leaves it running.
 
 ### Restore (P6.2 pi, P6.3 OpenCode)
 
-Nothing calls a restore yet: P6.4 decides when it runs, behind a flag. The steps
-the boot will run:
+The boot runs these steps when the native store is behind the log (P6.4, "When the
+boot restores" below):
 
 1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`.
    The claim raises the generation, and the ingest applies a put whose
@@ -183,6 +186,107 @@ the boot will run:
 4. `startSessionLogJournal(port, { generation, cursors })`: the export skips
    every restored message by hash (C13).
 
+### When the boot restores (P6.4)
+
+`reconcileSessionLog(port)` (`shared/session-log-boot.ts`) decides, restores, and
+returns what the journal starts with (`{ generation, cursors, session }`). pi
+runs it beside the workspace checkout (pi's dump needs no `/workspace`) and
+awaits it before `lifecycle.start()`; the runtime adopts the root the dump names
+at start, so a service built before the restore runs under the log's root.
+OpenCode runs it in `startSessionRuntime`, after the workspace (`opencode
+import` keys sessions to the served directory), before the event loop and the
+root resolution; a restore clears the seed marker
+(`clearSeedBakedMarker`), or the root resolution would rotate off the restored
+root. No turn runs at either point.
+
+- **The flag.** apps/api sets `KORTIX_SESSION_LOG_RESTORE=1` when the hidden
+  project flag `session_log_restore` is on (every provisioning path:
+  `buildSessionSandboxEnvVars`). Off: no manifest read, no restore; the box
+  keeps its native state and journals at its persisted generation (0 when it
+  never restored). The env is built when a box is provisioned, so a change of
+  the flag reaches the next new box of a session; a box that is already running
+  (or resumed in place) keeps the value it booted with.
+- **Behind.** `GET …/log/manifest` lists every stored message id (`deleted` for
+  a tombstone) and the session generation. The store is behind when the log
+  holds a live message and: `held()` is null (no store; OpenCode: no pinned
+  root in the store, or a lost `opencode-session-log.json` beside stored
+  messages, whose next export would issue seqs from 1), or the manifest
+  generation is above the one this box persisted (another box claimed the
+  session), or a live id is neither held nor one the last restore left
+  unwritten (a `context` record both harnesses rebuild).
+- **Flag off after state loss (as before P6.4).** A box whose native store is
+  gone starts empty: the agent does not know the history, and its first turn's
+  journal batch reuses seqs the log holds (422 `seq_conflict`, the batch is
+  dropped). The stored transcript still shows the whole history.
+- **Unsent work never reads as behind.** Only ids are compared, one way: a
+  message the store holds that the log lacks (a turn not yet journaled), a
+  newer version of a stored message, and a message OpenCode deleted after the
+  seq map issued it (a revert not yet tombstoned) leave the store current.
+  Content hashes are not compared: a store with unsent edits differs from the
+  log by design, and the journal sends the difference.
+- **The restore.** The claim, then the texts and the attachment bytes read at
+  the same time (each with its own 60 s budget), then `port.restore(log,
+  seq_max, read)`. After the write, `$KORTIX_RUNTIME_STATE_DIR/session-log-restore.json`
+  keeps the claimed generation, the ids the write left out, and the D3 notice:
+  a crash before it reads as behind at the next boot, and a daemon restart
+  journals at the claimed generation. A 404 (no stored log) or 503 (operator
+  switch off) claims nothing and restores nothing. Any other failure (5xx,
+  408, 429, network, a body that does not parse, a write that throws) is
+  retried, 3 attempts, each a new claim; then the boot fails
+  (`initialRuntimeSessionError`, the proxy answers
+  `initial_runtime_session_failed`) and no journal starts. The claim commits
+  before the answer leaves the API, so a box that kept its store after a failed
+  restore would post below the claimed generation (409: its journal stops for
+  the boot) and the next healthy boot would restore over that boot's turns.
+  The manifest is retried the same way, but no claim happens there: after its
+  retries a box with a store (`held()` not null) boots on it at its persisted
+  generation and logs one warning, and only a box with no store fails the
+  boot. A brand-new session (no store, the manifest lists no live message or
+  answers 404) boots empty, as before.
+- **D3, a partial restore** (the log's `restore_grade` is `partial`, the write
+  dropped model-visible content, or a text kept its preview). The agent: a
+  user message with one text block (`prt_kortix_restore_g<generation>`, naming
+  what is missing) after every seq the API holds, under a wire id
+  (`mintWireMessageIdAbove`, backdated as a client prompt is) above every id of
+  the thread, so hosts that order placed messages by id show it after the
+  restored history and before the next turn,
+  written into the native store with the log (the adapter writes twice), so
+  the next request carries it. Its cursor entry is dropped, so the journal
+  sends it as the store holds it: it is in modelView of the log. Neither
+  native store keeps an origin, so both exports give a user message with a
+  `prt_kortix_restore_g` block `origin: 'notification'`; the v1 transcript
+  has no such notion and shows it as a user message (P5.6 renders the origin).
+  A partial log that already holds an earlier note gets a new note only when
+  this restore dropped or truncated something itself. The user: the
+  session patch `restore_grade: 'partial'`, `grade_counts`, and
+  `ext.kortix.data.restore` (`generation`, `dropped` by kind, `truncated`
+  texts). The journal sets it on every session patch it sends, at every boot.
+  The stored log then keeps `restore_grade: 'partial'`, so every later restore
+  of the session is partial too (no new note unless it loses more); only a
+  restore of a log graded otherwise clears the notice. P5.6 shows it.
+- **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
+  all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
+  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the flag
+  is operator-only; the API holds the same answer in memory once per claim.
+  Before default-on, cap it (413 above a stored size, or paging).
+
+Default-on blockers (do not turn `session_log_restore` on by default before
+they are fixed): pi images and OpenCode attachment bytes live only in the
+native store (`ref: blob:<sha256>`) until the journal uploads them, so a fresh
+box drops them (`dropped.attachment`, a partial restore); the restore memory
+above has no cap.
+
+Known limits of the boot reconcile:
+- Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
+  after a restore reads as behind (the persisted generation falls to 0, or the
+  seq map is gone), and the next boot restores over any work the journal had
+  not sent. In practice the state file, pi's dump and `opencode.db` share the
+  box's home volume, so they are lost together.
+- Two boxes for one session (a stale box that wakes after a provider
+  replacement): the waking box reads the newer generation as behind, restores,
+  claims a newer generation and fences the box that was active (its journal
+  gets 409). The box that booted last owns the session.
+
 Proved in `pi-session-log-restore.test.ts` (real runtime, fake model, isolated
 home, dummy key): for the 7 golden fixtures and a pi session recorded in the
 test, the request pi sends next equals `modelView(log)` plus the prompt, for the
@@ -222,8 +326,49 @@ Known limits of the pi export:
 
 Known limits of the OpenCode export:
 - OpenCode 1.18.23's compaction part has no `tail_start_id` on a live box, so the compaction block's `first_kept_message_id` is `null` (what OpenCode stored; a restore into another harness counts it as a missing cut point).
-- A daemon restart sends every message again in its first batch: nothing gives the journal its cursors before P6.
+- A daemon restart sends every message again in its first batch: only a boot that restored gives the journal its cursors.
 - A lost or corrupt `opencode-session-log.json` issues seqs again from 1 (a corrupt one logs a warning) until a restore (P6.3) writes the seqs of the API's log.
+
+### Bumping a harness (P6.5)
+
+Each adapter declares in its capabilities what its oracle suites passed against:
+`PI_CAPABILITIES` (`pi/session-log.ts`) and `OPENCODE_CAPABILITIES`
+(`open-code/session-log.ts`), field `harness_versions` (a semver range, today
+`1.0.3` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
+by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
+reads them and fails when a pin leaves them:
+
+- pi: the four `@earendil-works/pi-*` deps in `package.json` (the daemon bundles
+  them) and `PI_HARNESS_VERSION` (`pi/version.ts`).
+- OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
+  installs it; `opencode-db.test.ts` also gates its minor line).
+- Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
+
+To bump a harness or the minor:
+
+1. Change the pin. pi: the four deps and `PI_HARNESS_VERSION`, then
+   `pnpm install`. OpenCode: `runtime-versions.json`; the oracle downloads the
+   npm platform package of the new version once into
+   `~/.kortix/opencode/<version>/` (60 MB, about 2 s).
+2. Run the oracle suites: `bun run test session-log` in this app (8 files, 145
+   tests, about 2 min on a laptop): both adapters' export and restore against
+   the real harness and the mock LLM (`helpers/fake-model.ts`, dummy key,
+   isolated home), the golden and recorded logs, the boot, the journal, the
+   guard.
+3. Fix the adapter until they pass. Then add the version to the adapter's
+   `harness_versions` (`1.18.23 || 1.18.24` while boxes on the old pin still
+   run) or the minor to `schema_minors`.
+
+The suites run in the `packages` lane (`tests/bin/package-quality.ts` runs
+`pnpm --filter kortixd test`) and in the diff-scoped `pnpm test` when this app,
+`packages/shared` or `packages/api-contract` changes. The negative controls
+prove the oracle can fail: OpenCode's golden test checks a log with one changed
+answer against the request and expects a difference, and pi's partial-log test
+expects exactly the one difference the restore dropped. A broken mapping fails
+the suites: dropping pi's reasoning fails 2 of 19 pi restore tests, writing
+OpenCode reasoning as text fails 1 of 26 OpenCode restore tests. Not covered:
+no fixture holds an assistant text with `model_text` (no harness exports one),
+so OpenCode's restore passes when it drops that field.
 
 ### The v2 stream (P4.3)
 
@@ -264,7 +409,8 @@ in `subscriberCount`. The journal's v1 listener is a tap too. The
 The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
 (the store is at rest: the stream gets the session and its threads before the
-first turn streams), at each turn end and at the daemon stop. The delta frames
+first turn streams), at each turn end, when pi stores a compaction between
+turns, and at the daemon stop. The delta frames
 come from the v1 bus: both harnesses stream text with the v1 session, message
 and part ids, which are the thread, message and block ids of the records.
 
@@ -359,7 +505,11 @@ them dirty until apps/api acknowledges `(message_id, rev)`.
 
 Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
 orphan path through `relayTurnEnd`, OpenCode's normal turn end through
-`relayTurnEndToApi`. The memory-guard turn end does not flush. The daemon
+`relayTurnEndToApi`. pi also flushes it when it stores a compaction between
+turns (`compact()`, `/session/:id/summarize`, P2.12): that compaction has no
+turn end, and it ends after the summarize request returns, so without this
+flush the log got it only at the next turn end. A compaction inside a turn
+(threshold, overflow) waits for the turn's end. The memory-guard turn end does not flush. The daemon
 shutdown (SIGTERM, SIGINT, the agent swap) flushes it before `harness.stop()`.
 Each flush waits at most 3 s, or until the first failed post; a batch not
 acknowledged by then keeps retrying in the background. A provider stop is not
@@ -724,6 +874,22 @@ fresh instance can therefore break every later turn on the box.
 Every daemon path that aborts an OpenCode turn calls
 `noteOpencodeStopRequested` first. A new abort path must do the same, or its
 stops read as victims.
+
+## OpenCode orphans (P2.9)
+
+OpenCode runs in its own process group, so a daemon that dies without its
+shutdown path (SIGKILL, the OOM killer, a panic) leaves it running on its
+port. The supervisor relaunches the daemon, and before the new lifecycle's
+first spawn `reapOrphanedOpencode` (`open-code/lifecycle.ts`) SIGKILLs the
+process group of every `… serve --port <internal|standby> --hostname
+127.0.0.1` that is not this daemon's child, its group, or a group its child
+leads, then waits (bind check, 5 s at most) for both ports. A `ps` that does
+not answer in 2 s is killed and the check is skipped (fail open), so a stuck
+`/proc` read cannot stall the boot. It runs once per lifecycle, so it never sees an
+OpenCode the current daemon owns. Each kill logs `[opencode] killing an
+OpenCode a previous daemon left on its port` with the group and its
+arguments. pi has no child process and needs none of this. Test:
+`opencode-lifecycle.e2e.test.ts` ("a daemon killed with SIGKILL").
 
 ## Native features remain available
 

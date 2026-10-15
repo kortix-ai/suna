@@ -104,7 +104,8 @@ const SUMMARY_SUFFIX = '\n</summary>'
 function piUsage(u: SessionLogMessage['usage']) {
   const x = u ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 }
   return {
-    input: x.input, output: x.output, cacheRead: x.cache_read, cacheWrite: x.cache_write, totalTokens: x.input + x.output + x.cache_read + x.cache_write,
+    input: x.input, output: x.output, cacheRead: x.cache_read, cacheWrite: x.cache_write, ...(x.reasoning !== undefined ? { reasoning: x.reasoning } : {}),
+    totalTokens: x.input + x.output + x.cache_read + x.cache_write,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: x.cost ?? 0 },
   }
 }

@@ -836,6 +836,7 @@ export function ReviewCenter({
     <ApprovalDecisionModal
       details={approval}
       previewAuthorized={approvalCall?.previewAuthorized !== false}
+      resolvers={approvalCall?.resolvers}
       busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
       onDecision={
         // Only the viewer the API lets decide this call gets the decision.

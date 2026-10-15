@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ConnectorSpec } from '../projects/connectors';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 import type { GitBackedProject } from '../projects/git';
 import {
   catalogPersistenceState,
@@ -349,5 +350,11 @@ describe('MCP catalog materialization', () => {
     expect(
       mcpCatalogCredentialError(new Error('secret catalog-access-token failed to decrypt')),
     ).toBe('MCP catalog credential resolution failed');
+  });
+
+  test('an undecryptable stored credential names its connector, never a value', () => {
+    const error = new SecretUndecryptableError('The credential of connector records');
+    expect(mcpCatalogCredentialError(error)).toBe(`MCP catalog credential resolution failed: ${error.message}`);
+    expect(mcpCatalogCredentialError(error)).toContain('connector records cannot be decrypted');
   });
 });

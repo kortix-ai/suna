@@ -8,7 +8,7 @@
 import type { Part, ToolPart } from '../../runtime/runtime-types';
 import { classifyTurn, toToolView, type ClassifiedTurn } from '../../turns/classify';
 import { isReasoningPart, isToolPart } from '../../turns/parts';
-import { burstSummary, type BurstSummary } from '../../turns/segments/burst-summary';
+import { burstSummary, burstWorkLabel, type BurstSummary } from '../../turns/segments/burst-summary';
 import { mergeBurstSteps, reasoningIsRunning, type BurstStep } from '../../turns/segments/merge-steps';
 import type { StepFamily } from '../../turns/segments/narration';
 import { segmentTurn, type SegmentTurnOptions } from '../../turns/segments/segment-turn';
@@ -104,6 +104,11 @@ export function sessionLogActivityText(turn: Pick<SessionLogTurn, 'blocks'>, chi
 /** How much work a burst holds (`burstSummary`): what its summary line says ("Completed 3 of 4 steps"). */
 export function sessionLogBurstSummary(blocks: ReadonlyArray<SessionLogBlock>): BurstSummary {
   return burstSummary(partsOf(blocks));
+}
+
+/** What a settled burst did (`burstWorkLabel`): "Ran 3 commands, read 2 files · 1 failed". */
+export function sessionLogBurstWorkLabel(blocks: ReadonlyArray<SessionLogBlock>): string {
+  return burstWorkLabel(partsOf(blocks));
 }
 
 /**

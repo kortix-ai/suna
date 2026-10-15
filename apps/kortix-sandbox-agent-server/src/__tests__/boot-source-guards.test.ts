@@ -127,7 +127,13 @@ describe('startSessionRuntime', () => {
 
   test('starts the session-log journal before the event loop and the first prompt', () => {
     // P2.6: the first turn's end flushes the journal only if it already runs.
-    expectOrder(runtime, ['startOpenCodeSessionLog()', 'harness.events.subscribe(cfg, eventHandlers)', 'await attemptInitialSession()'])
+    // P6.4: a restore runs before the root is resolved and retires the seed marker.
+    expectOrder(runtime, ['await bootOpenCodeSessionLog(', 'clearSeedBakedMarker()', 'harness.events.subscribe(cfg, eventHandlers)', 'await attemptInitialSession()'])
+  })
+
+  test('a failed session-log reconcile fails the boot: no event loop, no root, no prompt', () => {
+    const failure = runtime.slice(runtime.indexOf('await bootOpenCodeSessionLog('), runtime.indexOf('harness.events.subscribe(cfg, eventHandlers)'))
+    expectOrder(failure, ['catch (err)', 'bootState.initialRuntimeSessionError =', 'return'])
   })
 
   test('both runtime-ready exits run the one ready tail: boot projection push and config convergence', () => {

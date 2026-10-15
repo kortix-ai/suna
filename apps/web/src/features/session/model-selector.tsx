@@ -354,6 +354,8 @@ export interface ModelSelectorProps {
   disabled?: boolean;
   modelsLoading?: boolean;
   triggerLabelClassName?: string;
+  /** `secondary` for a page-level control; the composer keeps `ghost`. */
+  triggerVariant?: 'ghost' | 'secondary';
 
   projectId?: string;
 
@@ -394,6 +396,7 @@ export function ModelSelector({
   disabled = false,
   modelsLoading = false,
   triggerLabelClassName,
+  triggerVariant = 'ghost',
   offerChatGptAccounts = false,
   open: openProp,
   onOpenChange,
@@ -626,9 +629,9 @@ export function ModelSelector({
         <CommandPopoverTrigger>
           <Button
             type="button"
-            variant="ghost"
+            variant={triggerVariant}
             size="sm"
-            className="text-muted-foreground rounded-lg"
+            className={cn('rounded-lg', triggerVariant === 'ghost' && 'text-muted-foreground')}
           >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown

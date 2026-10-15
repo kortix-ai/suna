@@ -150,6 +150,13 @@ export interface QueuedContinueSessionPayload {
   /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
    *  `MAX_PROMPT_REDELIVERIES`. */
   redeliveries?: number;
+  /** The last requeue proved a runtime loss nobody asked for, so the drain
+   *  continues a turn it cut short (`findInterruptedTurn`). Written by every
+   *  `requeueAbandonedPrompt`. */
+  resumeIfInterrupted?: boolean;
+  /** The turn token this prompt continues. Its delivery marks that turn
+   *  resumed in the ledger (`markTurnResumed`). */
+  resumesTurn?: string;
   /** How many times this row has already been POSTed to OpenCode. Suffixes the
    *  delivery's idempotency key — see `withNextDeliveryAttempt`. */
   deliveryAttempt?: number;

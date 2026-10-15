@@ -468,6 +468,25 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'bundle carries a `log` leg (P4.2). The SDK v2 negotiation (P4.5, v2 only ' +
       'when health lists `session.log.v2` and the flag is on) will read it too.',
   },
+  {
+    key: 'session_log_restore',
+    name: 'Session log restore',
+    description:
+      'Rebuild a session from its saved session log when its computer lost the conversation. Off by default and not offered in Settings: Kortix enables it per project.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    // Internal-only (2026-10-13): not offered in Settings.
+    // A Kortix operator enables it per project.
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Session provisioning sets KORTIX_SESSION_LOG_RESTORE=1 in the box env ' +
+      '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
+      'from the session log at boot when the store is missing or behind the log ' +
+      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. Not default-on ' +
+      'before the journal uploads pi images and OpenCode attachment bytes.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

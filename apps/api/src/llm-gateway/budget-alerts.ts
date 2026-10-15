@@ -16,18 +16,10 @@ import { accountRoleMap, isAccountManagerRole, projectRoleGrants } from '../iam/
 import { actionButton, renderEmail, renderText, S } from '../lib/email/template';
 import { db } from '../shared/db';
 import { escapeHtml } from '../shared/html';
-import type { BudgetCrossing, Period } from './budgets';
+import { type BudgetCrossing, type Period, startOfBudgetPeriod } from './budgets';
 
 const PERIOD_DAYS: Record<Period, number> = { day: 1, week: 7, month: 31 };
 const PERIOD_WORD: Record<Period, string> = { day: 'daily', week: 'weekly', month: 'monthly' };
-
-/** The start of the budget's current period, as `date_trunc(period, now())` in UTC. */
-export function startOfBudgetPeriod(period: Period, now: Date = new Date()): Date {
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (period === 'week') start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
-  if (period === 'month') start.setUTCDate(1);
-  return start;
-}
 
 // replica-local: crossings this process already claimed or saw claimed, so a
 // busy project does not write the claim row on every request. The claim row

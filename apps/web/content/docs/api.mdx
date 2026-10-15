@@ -157,6 +157,9 @@ These are the codes clients branch on most. The linked page explains each fix.
 | `IDEMPOTENCY_KEY_CONFLICT`, `IDEMPOTENCY_*_CONFLICT` | `409` | The key is in use for another request, or for this one with different `connector_bindings`, `secrets`, `runtime_context`, or `provider_secret_pools`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_SESSION_DELETED` | `409` | The key belongs to a session that was deleted. | Use a new key. |
 | `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/sdk/sessions#session-errors) |
+| `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Sessions](/docs/work/sessions#restore-a-deleted-session) |
+| `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Sessions](/docs/work/sessions#restore-a-deleted-session) |
+| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages and files are gone. | [Sessions](/docs/work/sessions#restore-a-deleted-session) |
 | `project_archived` | `404` | The project was deleted. | [Projects](/docs/project#delete-a-project) |
 | `request_deadline` | `503` | A request ran past the API's 25-second processing limit. | Retry the read. Check the state before you repeat a write. |
 | `git_mirror_unavailable` | `503` | The project repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/git) |

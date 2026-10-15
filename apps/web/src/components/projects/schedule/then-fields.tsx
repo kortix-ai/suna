@@ -54,9 +54,11 @@ export function ThenFields({
     });
   }
 
-  // Same shape as the detail sheet: a full-width rounded-md panel, not the
-  // chat composer pill these selectors ship with.
-  const panel = 'bg-popover flex w-full items-center rounded-md border px-2 py-1.5';
+  // An input-height field around the chat selectors, so Agent and Model line
+  // up with every other field. The selector's own button fills it, label left,
+  // caret right, like a Select trigger.
+  const panel =
+    'bg-popover border-border flex h-9 w-full items-center rounded-md border px-0.5 [&_button]:h-8 [&_button]:w-full [&_button]:justify-between';
   return (
     <div className="space-y-3">
       <div className="space-y-2">
@@ -67,7 +69,7 @@ export function ThenFields({
           aria-label={tI18nComplete.raw('text112f3ccb1b36')}
           aria-invalid={error ? true : undefined}
           placeholder={tI18nComplete.raw('text2438ee64fbf9')}
-          rows={4}
+          rows={3}
           className="leading-relaxed"
         />
         <InlineError message={error} />

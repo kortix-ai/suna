@@ -1,16 +1,16 @@
 /**
  * Seeds the COR-91 parity fixture into the SDK session store, so the task /
  * agent_spawn / session_spawn renderers find their child transcripts through
- * `useRuntimeMessages` exactly as they do in a live session.
+ * `useSessionLogThread` exactly as they do in a live session.
  *
  * React-free and network-free: the store is a zustand store, and the fixture
  * ids (`ses_FixtureParity…`, `ses_FixtureChild…`) never reach a runtime.
  */
 
 import { SESSION_FIXTURE, type SessionFixture } from '@kortix/shared/session-fixture';
-import { groupMessagesIntoTurns } from '@kortix/sdk';
+import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurn, type SessionLogTurnsOptions } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
-import type { MessageWithParts, SessionStatus, Turn } from '@/ui';
+import type { SessionStatus } from '@/ui';
 
 export type FixtureStatusMode = 'busy' | 'retry';
 
@@ -51,9 +51,12 @@ export function seedSessionFixture(
   };
 }
 
-/** The root transcript as turns, grouped by the SDK as `SessionChat` does. */
-export function fixtureTurns(fixture: SessionFixture = SESSION_FIXTURE): Turn[] {
-  return groupMessagesIntoTurns(fixture.messages as MessageWithParts[]) as Turn[];
+/** The root transcript as the session-log turns `SessionChat` renders (the v1 rows converted, `sessionLogOfV1Rows`). */
+export function fixtureTurns(
+  options?: SessionLogTurnsOptions,
+  fixture: SessionFixture = SESSION_FIXTURE,
+): SessionLogTurn[] {
+  return sessionLogTurns(sessionLogOfV1Rows(fixture.sessionId, fixture.sessionId, fixture.messages as never).threads[0]!, options);
 }
 
 /** User message ids of the turns queued behind the working turn (`pendingTurnIds`). */

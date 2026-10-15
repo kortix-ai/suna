@@ -333,8 +333,11 @@ describe('native test-lane workflow', () => {
     const rerun = readFileSync(resolve(root, '.github/workflows/rerun-failed-once.yml'), 'utf8');
     expect(rerun).toContain("workflows: ['Tests - release', 'Tests']");
     expect(rerun).toContain("github.event.workflow_run.conclusion == 'failure'");
-    // Once: attempt 2 that fails again stays red.
-    expect(rerun).toContain('github.event.workflow_run.run_attempt == 1');
+    // Once: only the first attempt that ran jobs reruns. That is attempt 2
+    // when attempt 1 waited for approval; a rerun that fails again stays red.
+    expect(rerun).toContain('github.event.workflow_run.run_attempt <= 2');
+    expect(rerun).toContain('[ "$(gh api "$run/attempts/1" --jq .conclusion)" = action_required ]');
+    expect(rerun).toContain('if [ "$attempt" != "$first" ]; then');
     // Never a run on `dev`: it would take the pending slot of a newer SHA.
     expect(rerun).toContain("github.event.workflow_run.pull_requests[0].base.ref == 'staging'");
     expect(rerun).toContain('gh run rerun "$RUN_ID" --repo "$REPO" --failed');
@@ -343,19 +346,20 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toMatch(/^name: Tests$/m);
   });
 
-  test('a gate that promote.yml dispatched asks for its own rerun', () => {
-    // GITHUB_TOKEN started that run, so GitHub sends no workflow_run for it
-    // (v0.13.57: the rerun never fired). The gate dispatches the rerun instead.
+  test('a gate the workflow token started or approved asks for its own rerun', () => {
+    // GitHub sends no workflow_run for such a run (v0.13.57: the rerun never
+    // fired). The gate dispatches the rerun instead.
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
     const job = release.slice(release.indexOf('\n  request-rerun:'));
-    expect(job).toContain("if: failure() && github.run_attempt == 1 && github.actor == 'github-actions[bot]'");
+    expect(job).toContain("if: failure() && github.run_attempt <= 2 && github.triggering_actor == 'github-actions[bot]'");
     expect(job).toContain('actions: write');
     expect(job).toContain('gh workflow run rerun-failed-once.yml --repo "$GITHUB_REPOSITORY" --ref dev -f run_id="$GITHUB_RUN_ID"');
     const rerun = readFileSync(resolve(root, '.github/workflows/rerun-failed-once.yml'), 'utf8');
     expect(rerun).toMatch(/workflow_dispatch:\n {4}inputs:\n {6}run_id:/);
     expect(rerun).toContain('RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}');
-    // The dispatched job reruns only a finished, failed attempt 1.
-    expect(rerun).toContain('[ "$(gh api "$run" --jq .run_attempt)" != 1 ]');
+    // The dispatched job reruns only a finished, failed first attempt.
+    expect(rerun).toContain('[ "$(gh api "$run" --jq .conclusion)" != failure ]');
+    expect(rerun).toContain('attempt="$(gh api "$run" --jq .run_attempt)"');
   });
 
   test('one release gate runs against staging at a time, across every ref', () => {
@@ -363,14 +367,18 @@ describe('native test-lane workflow', () => {
     expect(release).toMatch(/^concurrency:\n {2}group: tests-release-staging\n {2}cancel-in-progress: false$/m);
   });
 
-  test('Promote to Production dispatches the release gate itself', () => {
+  test("Promote to Production approves the release pull request's own gate run", () => {
     // A pull request opened with the workflow token runs its workflows only
-    // after a person approves them. A dispatch needs no approval and its
-    // `full suite + quality gates` check satisfies the `prod` ruleset.
+    // after approval. Only that run's `full suite + quality gates` check counts
+    // for the `prod` ruleset: v0.13.57's dispatched gate passed on the same SHA
+    // and the pull request stayed BLOCKED. Never dispatch a second gate.
     const promote = readFileSync(resolve(root, '.github/workflows/promote.yml'), 'utf8');
     expect(promote).toContain('actions: write');
-    expect(promote).toContain('gh workflow run tests-release.yml --ref "$RELBR" -f expected_sha="$SRC_SHA"');
-    expect(promote.indexOf('gh workflow run tests-release.yml')).toBeGreaterThan(promote.indexOf('gh pr create --base prod'));
+    expect(promote).not.toContain('gh workflow run tests-release.yml');
+    expect(promote).toContain('actions/workflows/tests-release.yml/runs?event=pull_request&head_sha=$HEAD_SHA');
+    expect(promote).toContain('select(.conclusion == "action_required")');
+    expect(promote).toContain('gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$held/approve"');
+    expect(promote.indexOf('/approve"')).toBeGreaterThan(promote.indexOf('gh pr create --base prod'));
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
     expect(release).toMatch(/^ {2}workflow_dispatch:\n {4}inputs:\n {6}expected_sha:/m);
     expect(release).toContain('name: full suite + quality gates');

@@ -94,7 +94,7 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
       throw new Error(`initial turn claim rejected: ${response.status} ${text.slice(0, 200)}`)
     }
     const body = (await response.json()) as {
-      initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
+      initial_turn?: { prompt?: unknown; context?: unknown; turn_token?: unknown; message_id?: unknown } | null
       runtime_session_id?: unknown
     }
     const pin = typeof body.runtime_session_id === 'string' ? body.runtime_session_id.trim() : ''
@@ -103,7 +103,12 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
     if (!turn || typeof turn.prompt !== 'string' || typeof turn.turn_token !== 'string' || typeof turn.message_id !== 'string') {
       return null
     }
-    claimedInitialTurn = { prompt: turn.prompt, turnToken: turn.turn_token, messageId: turn.message_id }
+    claimedInitialTurn = {
+      prompt: turn.prompt,
+      ...(typeof turn.context === 'string' && turn.context ? { context: turn.context } : {}),
+      turnToken: turn.turn_token,
+      messageId: turn.message_id,
+    }
     return claimedInitialTurn
   })().finally(() => {
     claimInFlight = null

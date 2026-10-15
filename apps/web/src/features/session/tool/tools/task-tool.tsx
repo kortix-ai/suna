@@ -1,7 +1,5 @@
 'use client';
 
-import { toolCallBlock } from '@kortix/sdk';
-
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -11,18 +9,17 @@ import {
   partError,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
+import {
+  SubAgentActivity,
+  SubAgentStatusBanner,
+  subAgentCalls,
+  useSubAgentThread,
+} from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import {
-  getChildSessionId,
-  getChildSessionToolParts,
-  getToolInfo,
-  type MessageWithParts,
-} from '@/ui';
-import { useRuntimeMessages } from '@kortix/sdk/react';
+import { getChildSessionId, getToolInfo } from '@/ui';
 import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -116,18 +113,16 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
     () =>
       (input.description as string) ||
       firstMeaningfulLine(input.prompt) ||
+      // Codex `spawn_agent`.
+      firstMeaningfulLine(input.message) ||
       firstMeaningfulLine(input.title, 80),
     [input],
   );
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
 
-  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
-
-  const childToolParts = useMemo(() => {
-    if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as MessageWithParts[]);
-  }, [childMessages]);
+  const childThread = useSubAgentThread(childSessionId);
+  const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const openModal = useCallback(() => setModalOpen(true), []);
@@ -142,11 +137,11 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const errorText = partError(call);
 
   const lastActivity = useMemo(() => {
-    if (childToolParts.length === 0) return null;
-    const last = childToolParts[childToolParts.length - 1];
-    const info = getToolInfo(last.tool, partInput(toolCallBlock(last)) as Record<string, any>);
+    if (childCalls.length === 0) return null;
+    const last = childCalls[childCalls.length - 1];
+    const info = getToolInfo(last.name, partInput(last) as Record<string, any>);
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
-  }, [childToolParts]);
+  }, [childCalls]);
 
   const subtitle = isRunning ? (lastActivity ?? description) : description || undefined;
 
@@ -162,7 +157,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
    * memory and the first two gone — which is exactly the "clicking the row does
    * nothing" report: two of the three rows had no body to open.
    */
-  const hasInlineSteps = Boolean(childSessionId) && childToolParts.length > 0;
+  const hasInlineSteps = Boolean(childSessionId) && childCalls.length > 0;
 
   return (
     <>
@@ -176,7 +171,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
         forceOpen={forceOpen}
         locked={locked}
         badge={
-          isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
+          isCompleted && childCalls.length > 0 ? `${childCalls.length} steps` : undefined
         }
         triggerAction={childSessionId ? <FullViewAction onOpen={openModal} /> : undefined}
         // A click on an agent row always leads somewhere. With steps in hand
@@ -195,12 +190,12 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
           <>
             {errorText ? <ToolError error={errorText} toolName={call.name} /> : undefined}
             {hasInlineSteps ? (
-              <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+              <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
             ) : undefined}
           </>
         ) : undefined}
       </BasicTool>
-      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+      <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}

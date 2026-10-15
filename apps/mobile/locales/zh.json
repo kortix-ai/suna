@@ -1233,5 +1233,10 @@
     "wrongAccountBody": "此邀请发给的是另一个账户。你当前以 {{email}} 登录。",
     "signOutAndContinue": "退出并继续",
     "backToProjects": "返回项目"
+  },
+  "approvals": {
+    "waitingManagers": "管理此项目的人可以批准或拒绝此次调用。",
+    "waitingTitle": "等待批准",
+    "waitingWho": "启动此会话的人或管理此项目的人可以批准或拒绝此次调用。"
   }
 }

@@ -21,10 +21,10 @@ export type SessionInvocationSource =
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
-  /** Unattended-session recovery after a provider-originated `runtime_gone`
-   *  (see `unattended-runtime-recovery.ts`), when the turn that died was the
-   *  session's own initial prompt — there is no `continue_session` inbox row
-   *  to release, so a synthetic continue prompt is enqueued instead. */
+  /** The continuation of a turn a provider-originated `runtime_gone` cut short
+   *  when no `continue_session` row took the turn over — the session's own
+   *  initial prompt, or an unattended session's row that could not be requeued
+   *  (`sandbox-state-sync.ts` `enqueueTurnContinuation`). */
   | 'system:auto-recovery'
   | 'admin';
 

@@ -10,6 +10,7 @@
 
 import type { changeRequests, connectorCalls } from '@kortix/db';
 import type { serializeReviewItem } from './review-items';
+import type { ApprovalResolvers } from './lib/approval-authority';
 
 type ReviewItemDTO = ReturnType<typeof serializeReviewItem>;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
@@ -39,12 +40,19 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
 /**
  * A pending-approval connector tool call, presented as an `approval` review item.
  * (Only `pending_approval` executions are adapted; the rest are terminal audit.)
+ *
+ * `canResolve` is the caller's verdict from the resolve route's rule
+ * (`mayResolveApproval`). It decides three things for that caller: whether the
+ * arguments are shown, `can_resolve`, and the status. A caller who may resolve
+ * finds the call under Needs you; anyone else finds it under Waiting, because
+ * the decision is someone else's (KRTX-1724). Absent means false (fail closed).
+ * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
 export function connectorCallToReviewItem(
   ex: ConnectorCallRow,
-  options: { includeArgsPreview?: boolean } = {},
-): ReviewItemDTO {
-  const includeArgsPreview = options.includeArgsPreview === true;
+  options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
+): ReviewItemDTO & { can_resolve: boolean; resolvers: ApprovalResolvers | null } {
+  const includeArgsPreview = options.canResolve === true;
   const summary =
     ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
       ? ex.resultSummary
@@ -61,7 +69,9 @@ export function connectorCallToReviewItem(
     project_id: ex.projectId,
     origin_session_id: ex.sessionId ?? null,
     kind: 'approval',
-    status: 'needs_you',
+    status: includeArgsPreview ? 'needs_you' : 'waiting',
+    can_resolve: includeArgsPreview,
+    resolvers: options.resolvers ?? null,
     risk: ex.risk ? CALL_RISK[ex.risk] : 'medium',
     source: 'agent',
     title: `Approve: ${ex.actionPath}`,

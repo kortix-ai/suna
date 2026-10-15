@@ -45,7 +45,8 @@ export function sessionRuntimeUrlPath(externalId: string): string {
   return `/p/${externalId}/8000`;
 }
 
-const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
+/** A first provisioning with no box after this long has no live create behind it. */
+export const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
 const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
 const STALE_RUNTIME_WAKE_MS = RUNTIME_WAKE_GRACE_MS;
 

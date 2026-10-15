@@ -1233,5 +1233,10 @@
     "wrongAccountBody": "この招待は別のアカウント宛てです。現在 {{email}} でログインしています。",
     "signOutAndContinue": "ログアウトして続行",
     "backToProjects": "プロジェクトに戻る"
+  },
+  "approvals": {
+    "waitingManagers": "このプロジェクトを管理する人が、この呼び出しを承認または拒否できます。",
+    "waitingTitle": "承認待ち",
+    "waitingWho": "このセッションを開始した人、またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否できます。"
   }
 }

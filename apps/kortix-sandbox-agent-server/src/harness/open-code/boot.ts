@@ -1,5 +1,5 @@
 import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
-import { retryUntilInitialSessionEstablished, maybeCreateInitialOpencodeSession, finalizeOrphanedTurn, unrequestedAbortCause, finalizeInitialSession, markSeedBakedSession } from './initial-session'
+import { retryUntilInitialSessionEstablished, maybeCreateInitialOpencodeSession, finalizeOrphanedTurn, unrequestedAbortCause, finalizeInitialSession, markSeedBakedSession, clearSeedBakedMarker } from './initial-session'
 import { reconcileInitialTurnAcceptanceToApi, createInitialOpenCodeSession, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
 export { initialSessionRetryDelayMs, finalizeInitialSession, retryUntilInitialSessionEstablished, publishInitialOpenCodeSessionAfterPrompt, finalizeOrphanedTurn, waitForOpencodeRootReadiness, resolveExistingRoot, reusedRootAlreadyDelivered, unrequestedAbortCause } from './initial-session'
 export type { ExistingRootResult } from './initial-session'
@@ -32,6 +32,7 @@ import {
   startManagedModelsPrefetch,
   writeManagedOverlayCatalogFile,
   waitForOpencodeReady,
+  resolveOpencodeCwd,
   type Opencode,
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
@@ -96,7 +97,7 @@ import {
 } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
-import { startOpenCodeSessionLog } from './session-log'
+import { bootOpenCodeSessionLog } from './session-log'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
@@ -649,11 +650,20 @@ async function startSessionRuntime(
   // restart here strands nothing, and the first turn must run on a provider map
   // that has every managed model the picker offers.
   await reconcileManagedModels(opencode, cfg, bootMark)
+  // The session log (P2.6, P6.4), before the event loop and the first prompt,
+  // so the first turn's end flushes it. A restore runs here: after the workspace
+  // (`opencode import` keys sessions to the served directory), before the root
+  // is resolved. It pins the log's root, so the seed's marker must go, or the
+  // root resolution would rotate off the restored root.
+  try {
+    if (await bootOpenCodeSessionLog({ bin: opencode.getBinaryPath() ?? 'opencode', cwd: await resolveOpencodeCwd(cfg) })) clearSeedBakedMarker()
+  } catch (err) {
+    bootState.initialRuntimeSessionError = `session log restore failed: ${err instanceof Error ? err.message : String(err)}`
+    logger.error('[boot] session log restore failed; the session does not start', { err: bootState.initialRuntimeSessionError })
+    return
+  }
   // One relay for every harness (shared/audit-relay.ts). A spool an older
   // daemon left behind is renamed first, or loading it would fail the runtime.
-  // The session log (P2.6), before the event loop and the first prompt, so the
-  // first turn's end flushes it.
-  startOpenCodeSessionLog()
   const auditSpoolPath = resolveOpenCodeAuditSpoolPath(process.env)
   try {
     migratePreW3AuditSpool(auditSpoolPath)

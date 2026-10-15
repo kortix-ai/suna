@@ -52,19 +52,33 @@ export function isPendingApproval(row: PendingApprovalRow): boolean {
   return row.status === 'pending_approval' && !row.approvedBy && !row.resolvedAt;
 }
 
+export interface ApprovalTarget {
+  createdBy: string | null;
+  origin: string | null;
+}
+
 /** `created_by` + origin of the session a gated call belongs to — the inputs
- *  of the launcher half of the authority rule. */
+ *  of the launcher half of the authority rule. A call with no session belongs
+ *  to the user it ran as. `session` is the call's session row, if it exists. */
+export function approvalTargetOf(
+  row: Pick<PendingApprovalRow, 'sessionId' | 'actingUserId'>,
+  session: { createdBy: string | null; origin: string | null } | undefined,
+): ApprovalTarget {
+  if (!row.sessionId) return { createdBy: row.actingUserId, origin: 'user' };
+  return { createdBy: session?.createdBy ?? null, origin: session?.origin ?? null };
+}
+
 export async function approvalTargetSession(
   projectId: string,
-  row: PendingApprovalRow,
-): Promise<{ createdBy: string | null; origin: string | null }> {
-  if (!row.sessionId) return { createdBy: row.actingUserId, origin: 'user' };
+  row: Pick<PendingApprovalRow, 'sessionId' | 'actingUserId'>,
+): Promise<ApprovalTarget> {
+  if (!row.sessionId) return approvalTargetOf(row, undefined);
   const [session] = await db
     .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
     .from(projectSessions)
     .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
     .limit(1);
-  return { createdBy: session?.createdBy ?? null, origin: session?.origin ?? null };
+  return approvalTargetOf(row, session);
 }
 
 /** The prompt that tells the agent what the human decided — and what they said. */

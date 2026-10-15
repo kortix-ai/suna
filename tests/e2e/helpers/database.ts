@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createCipheriv, hkdfSync, randomBytes, randomUUID } from "node:crypto";
 import { Client, type QueryResultRow } from "pg";
 
+import { LOCAL_FLOW_API_KEY_SECRET } from "../../src/core/local-profile";
 import { requireEnvValue } from "./env";
 
 function escapeSql(value: string): string {
@@ -13,6 +14,21 @@ interface SeedProjectOptions {
   name: string;
   repoUrl?: string;
   projectRole?: "manager" | "member";
+}
+
+/**
+ * An `account_secret_resources.value_enc` the local stack's API can decrypt:
+ * the envelope of `apps/api/src/secrets/account-resource.ts` under the local
+ * profile's synthetic API_KEY_SECRET. A placeholder such as `v1:not:a:login`
+ * reads as `status: 'undecryptable'` since KRTX-1719.
+ */
+export function localAccountSecretEnvelope(accountId: string, value: string): string {
+  const key = Buffer.from(hkdfSync("sha256", Buffer.from(LOCAL_FLOW_API_KEY_SECRET), Buffer.from(accountId),
+    Buffer.from("kortix-account-secret-resource-v1"), 32));
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  return ["v1", iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(":");
 }
 
 export async function runDatabaseSql(

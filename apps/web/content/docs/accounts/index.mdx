@@ -114,6 +114,8 @@ What happens next depends on the address:
 - **The address has a Kortix login.** Kortix adds the person at once, with the project roles you picked.
 - **The address has no login.** Kortix emails an invite link. The invite is valid for 14 days. The project roles apply when the person accepts.
 
+A self-hosted instance with no email provider confirms sign-ups without an email, so a password login does not prove its address there. Kortix adds such a login at once only when it is already a member of the account. Otherwise it creates an invite, and the login with that address accepts it from the project chooser or the **Switch Project** menu. That login is whoever signed up first with the address. See [Unconfirmed email addresses](/docs/host#unconfirmed-email-addresses).
+
 Project roles in an invite apply to `member` invites only. Kortix ignores them on an `admin` invite, because an admin already reaches every project. To make someone owner, invite them as admin or member, then change their role.
 
 ### Accept an invite
@@ -133,7 +135,20 @@ In the mobile app, the project switcher lists pending invites under **Invites**.
 
 - **Pending invites** show on **Members**. Resending one sends the email again and starts a new 14-day window. Cancelling one revokes the link.
 - **Edit access** in a member's row menu changes their account role. To change several members at once, select their rows and select **Change role**.
-- **Remove from account** removes the person's role, project grants and group memberships. It revokes their personal access keys and the tokens of their running sessions at once.
+- **Remove from account** removes the person's role, project grants and group memberships. It revokes their personal access keys and the tokens of their running sessions at once. See [When a person leaves](#when-a-person-leaves).
+
+### When a person leaves
+
+Removal, [Leave](#leave) and SCIM deactivation (`active: false` or `DELETE`, see [SCIM provisioning](/docs/accounts/identity#scim-provisioning)) end the same things in the account, at once:
+
+- the person's roles, project grants and group memberships;
+- their personal access keys and the tokens of their running sessions;
+- their notifications and follows in the account's projects;
+- every computer account in the account that reaches a machine they own. This covers a computer they shared with a project and a computer they paired for themselves. The account becomes `revoked`, with `metadata.revokedReason: owner_left`. The computer stays theirs and keeps working in their other Kortix accounts;
+- every reminder they set in the account's projects. The reminder becomes `paused`. A reminder that a session's agent set keeps firing;
+- their seat on a per-seat plan. Their personal drive folders pass to an owner.
+
+The audit log records one `member.offboarded` event, titled **Offboarded a member**, per departure. Its `metadata` holds `reason` (`removed`, `left` or `deprovisioned`), `computers_revoked` and `reminders_disabled`. A count is `0` when the person had nothing of that kind, and `null` when that step failed.
 
 ### Errors
 
@@ -600,7 +615,7 @@ Every project permission can go in a custom role.
 
 ### Leave
 
-Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. The last owner cannot leave (`409`): make another member owner first.
+Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. Your computers stop serving the account, and your reminders in its projects pause. See [When a person leaves](#when-a-person-leaves). The last owner cannot leave (`409`): make another member owner first.
 
 ### Delete
 

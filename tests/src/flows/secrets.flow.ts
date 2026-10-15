@@ -1027,6 +1027,140 @@ flow("SEC-3A", {
   });
 });
 
+// SEC-10 — a stored value the API cannot decrypt reads as `undecryptable`,
+// never as set or missing (KRTX-1719). A changed API_KEY_SECRET and a damaged
+// row fail the same AES-GCM check, so the flow damages the stored ciphertext.
+flow("SEC-10", {
+  domain: "secrets",
+  requires: ["database"],
+  routes: [
+    "POST /v1/projects/:projectId/secrets",
+    "GET /v1/projects/:projectId/secrets",
+    "DELETE /v1/projects/:projectId/secrets/:name",
+    "PUT /v1/projects/:projectId/secrets/:name/personal",
+    "DELETE /v1/projects/:projectId/secrets/:name/personal",
+    "POST /v1/accounts/:accountId/secret-resources",
+    "GET /v1/accounts/:accountId/secret-resources",
+    "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
+    "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
+  ],
+}, async (ctx) => {
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const project = await ctx.fixtures.project();
+  const team = await ctx.fixtures.team();
+  const projectParams = { projectId: project.id };
+  const accountPath = "/v1/accounts/:accountId/secret-resources";
+  const accountParams = { accountId: team.id };
+  const NAME = "KE2E_UNDECRYPTABLE";
+  const plaintext = `ke2e-plain-${crypto.randomUUID()}`;
+  let accountSecretId = "";
+
+  /** Flip one character of the stored ciphertext: the GCM tag no longer matches. */
+  const damage = async (table: "project_secrets" | "account_secret_resources", where: string, values: string[]) => {
+    const { Client } = await import("pg");
+    const databaseUrl = ctx.env.databaseUrl!;
+    const db = new Client({ connectionString: databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await db.connect();
+    try {
+      const updated = await db.query(
+        `UPDATE kortix.${table}
+            SET value_enc = split_part(value_enc, ':', 1) || ':' || split_part(value_enc, ':', 2) || ':' ||
+                split_part(value_enc, ':', 3) || ':' ||
+                (CASE WHEN left(split_part(value_enc, ':', 4), 1) = 'A' THEN 'B' ELSE 'A' END) ||
+                substr(split_part(value_enc, ':', 4), 2)
+          WHERE ${where}`,
+        values,
+      );
+      if (updated.rowCount !== 1) throw new Error(`damaged ${updated.rowCount} ${table} rows, expected 1`);
+    } finally {
+      await db.end();
+    }
+  };
+  const listedProjectSecret = async () => {
+    const listed = await owner.get("/v1/projects/:projectId/secrets", { params: projectParams });
+    listed.status(200);
+    if (listed.text().includes(plaintext)) throw new Error("the secrets list leaked the value");
+    const item = listed.json<{ items: Array<Record<string, unknown>> }>().items.find((i) => i.name === NAME);
+    if (!item || "value" in item || "value_enc" in item) throw new Error(`list leaked or missed ${NAME}: ${JSON.stringify(item)}`);
+    return item;
+  };
+  const listedAccountSecret = async () => {
+    const listed = await owner.get(accountPath, { params: accountParams });
+    listed.status(200);
+    const item = listed.json<{ secrets: Array<Record<string, unknown>> }>().secrets.find((s) => s.secret_id === accountSecretId);
+    if (!item || "value" in item || "value_enc" in item) throw new Error(`list leaked or missed ${accountSecretId}: ${JSON.stringify(item)}`);
+    return item;
+  };
+
+  await ctx.step("a project secret the API can decrypt lists with status ok", async () => {
+    (await owner.post("/v1/projects/:projectId/secrets", { name: NAME, value: plaintext }, { params: projectParams }))
+      .status(200)
+      .body()
+      .has("$.status", "ok");
+    const item = await listedProjectSecret();
+    if (item.status !== "ok") throw new Error(`expected status ok, got ${JSON.stringify(item)}`);
+  });
+
+  await ctx.step("a damaged stored value lists as configured with status undecryptable and no value", async () => {
+    await damage("project_secrets", "project_id = $1::uuid AND identifier = $2 AND owner_user_id IS NULL", [project.id, NAME]);
+    const item = await listedProjectSecret();
+    if (item.status !== "undecryptable" || item.configured !== true) {
+      throw new Error(`expected configured + undecryptable, got ${JSON.stringify(item)}`);
+    }
+  });
+
+  await ctx.step("entering the value again lists the secret with status ok", async () => {
+    (await owner.post("/v1/projects/:projectId/secrets", { name: NAME, value: `${plaintext}-again` }, { params: projectParams }))
+      .status(200)
+      .body()
+      .has("$.status", "ok");
+    const item = await listedProjectSecret();
+    if (item.status !== "ok") throw new Error(`expected status ok after re-entry, got ${JSON.stringify(item)}`);
+  });
+
+  await ctx.step("a damaged personal override lists on mine.status while the shared value stays ok; deleting it restores the shared value", async () => {
+    const personalParams = { params: { ...projectParams, name: NAME } };
+    (await owner.put("/v1/projects/:projectId/secrets/:name/personal", { value: `${plaintext}-mine` }, personalParams))
+      .status(200)
+      .body()
+      .has("$.mine.status", "ok");
+    await damage("project_secrets", "project_id = $1::uuid AND identifier = $2 AND owner_user_id IS NOT NULL", [project.id, NAME]);
+    const item = await listedProjectSecret();
+    const mine = item.mine as { active?: boolean; status?: string } | null;
+    if (item.status !== "ok" || item.effective_source !== "mine" || mine?.status !== "undecryptable") {
+      throw new Error(`expected shared ok + mine undecryptable, got ${JSON.stringify(item)}`);
+    }
+    (await owner.del("/v1/projects/:projectId/secrets/:name/personal", personalParams)).status(200);
+    const after = await listedProjectSecret();
+    if (after.mine !== null || after.effective_source !== "shared" || after.status !== "ok") {
+      throw new Error(`expected the shared value back, got ${JSON.stringify(after)}`);
+    }
+    (await owner.del("/v1/projects/:projectId/secrets/:name", personalParams)).status(200);
+  });
+
+  await ctx.step("an account secret: ok when created, undecryptable once damaged, ok after a new value", async () => {
+    const created = await owner.post(accountPath, {
+      label: "Undecryptable probe", provider_id: "anthropic", name: "ANTHROPIC_API_KEY",
+      value: plaintext, consumer: "llm_gateway", strategy: "broker",
+    }, { params: accountParams });
+    created.status(201).body().has("$.status", "ok");
+    accountSecretId = created.json<{ secret_id: string }>().secret_id;
+    try {
+      await damage("account_secret_resources", "secret_id = $1::uuid", [accountSecretId]);
+      const item = await listedAccountSecret();
+      if (item.status !== "undecryptable") throw new Error(`expected undecryptable, got ${JSON.stringify(item)}`);
+      (await owner.put(`${accountPath}/:secretId/value`, { value: `${plaintext}-again` }, { params: { ...accountParams, secretId: accountSecretId } }))
+        .status(200)
+        .body()
+        .has("$.status", "ok");
+      const after = await listedAccountSecret();
+      if (after.status !== "ok") throw new Error(`expected ok after a new value, got ${JSON.stringify(after)}`);
+    } finally {
+      (await owner.del(`${accountPath}/:secretId`, { params: { ...accountParams, secretId: accountSecretId } })).status(200);
+    }
+  });
+});
+
 flow(
   "SEC-6",
   { domain: "secrets", routes: ["POST /v1/projects/:projectId/secrets"] },

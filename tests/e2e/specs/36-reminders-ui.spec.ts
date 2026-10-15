@@ -120,6 +120,7 @@ test.describe('36 — Reminders UI', () => {
             ],
           },
         ],
+        log: { bearer: session.access_token },
       });
       await page.route(`**/sessions/${sessionId}/start*`, () => new Promise(() => {}));
       await page.goto(`/projects/${projectId}/sessions/${sessionId}`, { waitUntil: 'domcontentloaded' });

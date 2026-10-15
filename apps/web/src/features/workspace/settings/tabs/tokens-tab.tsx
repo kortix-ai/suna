@@ -168,7 +168,7 @@ export function apiKeyMetaParts(
   return parts;
 }
 
-function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
+export function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
   const then = typeof input === 'string' ? new Date(input).getTime() : input;
   if (!Number.isFinite(then)) return '';
   const elapsedMinutes = Math.max(0, Math.floor((now - then) / 60_000));
@@ -437,7 +437,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   );
 }
 
-function formatShortDate(iso: string, locale: string): string {
+export function formatShortDate(iso: string, locale: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return '';
   return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });

@@ -34,258 +34,269 @@ const authOptions = {
   password: 'TranscriptHistory123!',
 };
 
-test('30 — saved session history paints while sandbox start and the open bundle are pending', async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(240_000);
-  const env = loadEnv();
-  const email = `transcript-history-${Date.now()}@example.test`;
-  const user = await createAuthUser(email, authOptions);
-  const auth = await signIn(email, authOptions);
-  let projectId = '';
-  let sessionId = '';
-  let disposeProject = async () => {};
-  let releaseReads = () => {};
-  let releaseSend = () => {};
-  try {
-    const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
-      auth.access_token,
-      'GET',
-      '/accounts',
-    );
-    const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
-    await fundAccount(env.databaseUrl!, accountId);
-    const project = await createManifestProject({
-      api,
-      accessToken: auth.access_token,
-      databaseUrl: env.databaseUrl!,
-      accountId,
-      userId: user.id,
-      name: 'Transcript history verification',
-    });
-    projectId = project.id;
-    disposeProject = project.dispose;
-    sessionId = await createDatabaseSession(env, {
-      projectId,
-      accountId,
-      userId: user.id,
-    });
-    await seedSessionTranscript(env, { projectId, accountId, sessionId });
-    await runDatabaseSql(
-      "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
-      [sessionId],
-      env.databaseUrl,
-    );
-    if (!isDeployedTarget()) {
-      // Since #9244 the composer's model gate holds during boot: with no
-      // selectable model, Send is refused before the prompt is queued. The
-      // deterministic local profile has no live managed model catalog, so hand
-      // the picker its real server-resolved default, as journeys 28 and 39 do.
-      // A deployed target keeps its real catalog.
-      const defaults = await api<{ resolvedForCaller: string | null }>(
-        auth.access_token,
-        'GET',
-        `/projects/${projectId}/model-defaults`,
-      );
-      const modelId = defaults.resolvedForCaller ?? '';
-      expect(modelId).not.toBe('');
-      const picker = await api<Record<string, unknown>>(
-        auth.access_token,
-        'GET',
-        `/projects/${projectId}/model-picker`,
-      );
-      const enabledPicker = {
-        ...picker,
-        models: {
-          [modelId]: {
-            id: modelId,
-            name: 'E2E managed model',
-            provider: 'openai',
-            enabled: true,
-            tool_call: true,
-            attachment: true,
-            limit: { context: 128_000, output: 8_000 },
-          },
-        },
-        defaultModel: modelId,
-      };
-      await page.route(`**/projects/${projectId}/model-picker`, (route) =>
-        route.request().method() === 'GET' ? route.fulfill({ json: enabledPicker }) : route.continue(),
-      );
-    }
-    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
-    await selectAccountForUi(page, accountId);
-    await dismissOnboarding(page);
-    await page.goto(`/projects/${projectId}/settings/feature-flags`, {
-      waitUntil: 'domcontentloaded',
-    });
-    await expect(page.getByRole('heading', { name: 'Feature flags', exact: true })).toBeVisible();
-    // Saved history has no switch: every session keeps it. The list renders
-    // (Marketplace is always offered) and names no saved-history flag.
-    await expect(
-      featureFlagRow(page.locator('body'), page, 'Marketplace').getByRole('switch'),
-    ).toBeVisible();
-    await expect(page.getByText('Session Transcript History', { exact: true })).toHaveCount(0);
+/**
+ * Both saved-history journeys run twice: on the session log (written through the journal,
+ * the project's `session_log` flag on) and on the v1 mirror, what every project reads today.
+ */
+const STORES = [
+  { name: 'session log', log: true },
+  { name: 'v1 mirror', log: false },
+] as const;
 
-    const held = new Promise<void>((resolve) => {
-      releaseReads = resolve;
-    });
-    let startRequested = false;
-    let startResponded = false;
-    let snapshotRequested = false;
-    page.on('response', (response) => {
-      if (response.url().includes(`/sessions/${sessionId}/start`)) startResponded = true;
-    });
-    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
-      startRequested = true;
-      await held;
-      await route.continue().catch(() => {});
-    });
-    await page.route(`**/sessions/${sessionId}/snapshot*`, async (route) => {
-      snapshotRequested = true;
-      await held;
-      await route.continue().catch(() => {});
-    });
-    const history = page.waitForResponse(
-      (r) =>
-        r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
-    );
-    await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
-      waitUntil: 'domcontentloaded',
-    });
-    const response = await history;
-    expect(response.status()).toBe(200);
-    const body = await response.json();
-    expect(body.source).toBe('mirror');
-    expect(body.message_count).toBe(2);
-    await expect(
-      page.getByText('This reply is stored in the database.', { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText('Show my saved conversation.', { exact: true })).toBeVisible();
-    await expect.poll(() => startRequested).toBe(true);
-    await expect.poll(() => snapshotRequested).toBe(true);
-    expect(startResponded).toBe(false);
-    await dismissWelcomeCard(page);
-    for (const close of await page.getByRole('button', { name: 'Close notification' }).all())
-      await close.click();
-    await page.screenshot({
-      animations: 'disabled',
-      path: testInfo.outputPath('history-before-sandbox-ready.png'),
-      fullPage: true,
-    });
-    const pendingSend = new Promise<void>((resolve) => {
-      releaseSend = resolve;
-    });
-    await page.route(`**/sessions/${sessionId}/prompts`, async (route) => {
-      if (route.request().method() === 'POST') await pendingSend;
-      await route.continue().catch(() => {});
-    });
-    const editor = page.locator('[contenteditable="true"]').first();
-    await page
-      .locator('input[type="file"]')
-      .last()
-      .setInputFiles([
-        imageFixture,
-        {
-          name: 'wake-notes.txt',
-          mimeType: 'text/plain',
-          buffer: Buffer.from('Saved before sandbox startup.'),
-        },
-      ]);
-    await editor.fill('Continue while the computer starts.');
-    const send = page.getByRole('button', {
-      name: 'Send message',
-      exact: true,
-    });
-    await expect(send).toBeEnabled();
-    const submitted = page.waitForRequest(
-      (r) => r.url().endsWith(`/sessions/${sessionId}/prompts`) && r.method() === 'POST',
-    );
-    await send.click();
-    const request = await submitted;
-    const promptParts = request.postDataJSON().parts;
-    expect(promptParts).toHaveLength(3);
-    expect(promptParts[0]).toEqual({
-      type: 'text',
-      text: 'Continue while the computer starts.',
-    });
-    for (const part of promptParts.slice(1)) {
-      expect(part.attachment_id).toMatch(/^[0-9a-f-]{36}$/);
-    }
-    expect(promptParts.slice(1).every((part: { url?: string }) => !part.url)).toBe(true);
-    const preview = page.getByRole('img', {
-      name: 'wake-image.png',
-      exact: true,
-    });
-    await expect(preview).toBeVisible();
-    await expect
-      .poll(() => preview.evaluate((node) => (node as HTMLImageElement).naturalWidth))
-      .toBe(1);
-    const downloaded = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'wake-notes.txt', exact: false }).click();
-    const file = await downloaded;
-    expect(file.suggestedFilename()).toBe('wake-notes.txt');
-    const stream = await file.createReadStream();
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
-    expect(Buffer.concat(chunks).toString()).toBe('Saved before sandbox startup.');
-    await expect(
-      page.getByText('Continue while the computer starts.', { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByTestId('session-busy-indicator')).toBeVisible();
-    await expect(page.getByTestId('session-busy-indicator')).toContainText('Thinking');
-    await expect(
-      // The SDK's `SESSION_NOTICE.starting`: one wording on web and mobile.
-      page.getByText("Starting this session's computer. Your message sends automatically.", {
+for (const store of STORES) {
+  test(`30 — saved session history paints while sandbox start and the open bundle are pending (${store.name})`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(240_000);
+    const env = loadEnv();
+    const email = `transcript-history-${Date.now()}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const auth = await signIn(email, authOptions);
+    let projectId = '';
+    let sessionId = '';
+    let disposeProject = async () => {};
+    let releaseReads = () => {};
+    let releaseSend = () => {};
+    try {
+      const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
+        auth.access_token,
+        'GET',
+        '/accounts',
+      );
+      const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
+      await fundAccount(env.databaseUrl!, accountId);
+      const project = await createManifestProject({
+        api,
+        accessToken: auth.access_token,
+        databaseUrl: env.databaseUrl!,
+        accountId,
+        userId: user.id,
+        name: 'Transcript history verification',
+      });
+      projectId = project.id;
+      disposeProject = project.dispose;
+      sessionId = await createDatabaseSession(env, {
+        projectId,
+        accountId,
+        userId: user.id,
+      });
+      await seedSessionTranscript(env, { projectId, accountId, sessionId, ...(store.log && { log: { bearer: auth.access_token } }) });
+      await runDatabaseSql(
+        "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
+        [sessionId],
+        env.databaseUrl,
+      );
+      if (!isDeployedTarget()) {
+        // Since #9244 the composer's model gate holds during boot: with no
+        // selectable model, Send is refused before the prompt is queued. The
+        // deterministic local profile has no live managed model catalog, so hand
+        // the picker its real server-resolved default, as journeys 28 and 39 do.
+        // A deployed target keeps its real catalog.
+        const defaults = await api<{ resolvedForCaller: string | null }>(
+          auth.access_token,
+          'GET',
+          `/projects/${projectId}/model-defaults`,
+        );
+        const modelId = defaults.resolvedForCaller ?? '';
+        expect(modelId).not.toBe('');
+        const picker = await api<Record<string, unknown>>(
+          auth.access_token,
+          'GET',
+          `/projects/${projectId}/model-picker`,
+        );
+        const enabledPicker = {
+          ...picker,
+          models: {
+            [modelId]: {
+              id: modelId,
+              name: 'E2E managed model',
+              provider: 'openai',
+              enabled: true,
+              tool_call: true,
+              attachment: true,
+              limit: { context: 128_000, output: 8_000 },
+            },
+          },
+          defaultModel: modelId,
+        };
+        await page.route(`**/projects/${projectId}/model-picker`, (route) =>
+          route.request().method() === 'GET' ? route.fulfill({ json: enabledPicker }) : route.continue(),
+        );
+      }
+      await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await dismissOnboarding(page);
+      await page.goto(`/projects/${projectId}/settings/feature-flags`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await expect(page.getByRole('heading', { name: 'Feature flags', exact: true })).toBeVisible();
+      // Saved history has no switch: every session keeps it. The list renders
+      // (Marketplace is always offered) and names no saved-history flag.
+      await expect(
+        featureFlagRow(page.locator('body'), page, 'Marketplace').getByRole('switch'),
+      ).toBeVisible();
+      await expect(page.getByText('Session Transcript History', { exact: true })).toHaveCount(0);
+
+      const held = new Promise<void>((resolve) => {
+        releaseReads = resolve;
+      });
+      let startRequested = false;
+      let startResponded = false;
+      let snapshotRequested = false;
+      page.on('response', (response) => {
+        if (response.url().includes(`/sessions/${sessionId}/start`)) startResponded = true;
+      });
+      await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+        startRequested = true;
+        await held;
+        await route.continue().catch(() => {});
+      });
+      await page.route(`**/sessions/${sessionId}/snapshot*`, async (route) => {
+        snapshotRequested = true;
+        await held;
+        await route.continue().catch(() => {});
+      });
+      const history = page.waitForResponse(
+        (r) =>
+          r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
+      );
+      await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      const response = await history;
+      expect(response.status()).toBe(200);
+      const body = await response.json();
+      expect(body.source).toBe('mirror');
+      expect(body.message_count).toBe(2);
+      await expect(
+        page.getByText('This reply is stored in the database.', { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText('Show my saved conversation.', { exact: true })).toBeVisible();
+      await expect.poll(() => startRequested).toBe(true);
+      await expect.poll(() => snapshotRequested).toBe(true);
+      expect(startResponded).toBe(false);
+      await dismissWelcomeCard(page);
+      for (const close of await page.getByRole('button', { name: 'Close notification' }).all())
+        await close.click();
+      await page.screenshot({
+        animations: 'disabled',
+        path: testInfo.outputPath('history-before-sandbox-ready.png'),
+        fullPage: true,
+      });
+      const pendingSend = new Promise<void>((resolve) => {
+        releaseSend = resolve;
+      });
+      await page.route(`**/sessions/${sessionId}/prompts`, async (route) => {
+        if (route.request().method() === 'POST') await pendingSend;
+        await route.continue().catch(() => {});
+      });
+      const editor = page.locator('[contenteditable="true"]').first();
+      await page
+        .locator('input[type="file"]')
+        .last()
+        .setInputFiles([
+          imageFixture,
+          {
+            name: 'wake-notes.txt',
+            mimeType: 'text/plain',
+            buffer: Buffer.from('Saved before sandbox startup.'),
+          },
+        ]);
+      await editor.fill('Continue while the computer starts.');
+      const send = page.getByRole('button', {
+        name: 'Send message',
         exact: true,
-      }),
-    ).toBeVisible();
-    await expect(editor).toHaveText('');
-    expect(startResponded).toBe(false);
-    await page.screenshot({
-      path: testInfo.outputPath('send-before-sandbox-ready.png'),
-      fullPage: true,
-    });
-    const accepted = page.waitForResponse(
-      (r) => r.url().endsWith(`/sessions/${sessionId}/prompts`) && r.request().method() === 'POST',
-    );
-    releaseSend();
-    expect((await accepted).status()).toBe(202);
-    const inbox = await api<{ prompts: Array<{ text: string }> }>(
-      auth.access_token,
-      'GET',
-      `/projects/${projectId}/sessions/${sessionId}/prompts`,
-    );
-    expect(inbox.prompts.some((p) => p.text === 'Continue while the computer starts.')).toBe(true);
-    releaseReads();
-    await expect(
-      page.getByText('This reply is stored in the database.', { exact: true }),
-    ).toHaveCount(1);
-  } finally {
-    releaseReads();
-    releaseSend();
-    await page.unrouteAll({ behavior: 'ignoreErrors' });
-    if (projectId) {
-      if (sessionId)
-        await api(auth.access_token, 'DELETE', `/projects/${projectId}/sessions/${sessionId}`);
-      await runDatabaseSql(
-        "UPDATE kortix.project_sessions SET metadata = metadata || jsonb_build_object('deletedAt', now()::text) WHERE project_id = $1",
-        [projectId],
-        env.databaseUrl,
+      });
+      await expect(send).toBeEnabled();
+      const submitted = page.waitForRequest(
+        (r) => r.url().endsWith(`/sessions/${sessionId}/prompts`) && r.method() === 'POST',
       );
-      await runDatabaseSql(
-        'DELETE FROM kortix.session_sandboxes WHERE project_id = $1',
-        [projectId],
-        env.databaseUrl,
+      await send.click();
+      const request = await submitted;
+      const promptParts = request.postDataJSON().parts;
+      expect(promptParts).toHaveLength(3);
+      expect(promptParts[0]).toEqual({
+        type: 'text',
+        text: 'Continue while the computer starts.',
+      });
+      for (const part of promptParts.slice(1)) {
+        expect(part.attachment_id).toMatch(/^[0-9a-f-]{36}$/);
+      }
+      expect(promptParts.slice(1).every((part: { url?: string }) => !part.url)).toBe(true);
+      const preview = page.getByRole('img', {
+        name: 'wake-image.png',
+        exact: true,
+      });
+      await expect(preview).toBeVisible();
+      await expect
+        .poll(() => preview.evaluate((node) => (node as HTMLImageElement).naturalWidth))
+        .toBe(1);
+      const downloaded = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'wake-notes.txt', exact: false }).click();
+      const file = await downloaded;
+      expect(file.suggestedFilename()).toBe('wake-notes.txt');
+      const stream = await file.createReadStream();
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe('Saved before sandbox startup.');
+      await expect(
+        page.getByText('Continue while the computer starts.', { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByTestId('session-busy-indicator')).toBeVisible();
+      await expect(page.getByTestId('session-busy-indicator')).toContainText('Thinking');
+      await expect(
+        // The SDK's `SESSION_NOTICE.starting`: one wording on web and mobile.
+        page.getByText("Starting this session's computer. Your message sends automatically.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(editor).toHaveText('');
+      expect(startResponded).toBe(false);
+      await page.screenshot({
+        path: testInfo.outputPath('send-before-sandbox-ready.png'),
+        fullPage: true,
+      });
+      const accepted = page.waitForResponse(
+        (r) => r.url().endsWith(`/sessions/${sessionId}/prompts`) && r.request().method() === 'POST',
       );
-      await disposeProject();
+      releaseSend();
+      expect((await accepted).status()).toBe(202);
+      const inbox = await api<{ prompts: Array<{ text: string }> }>(
+        auth.access_token,
+        'GET',
+        `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      );
+      expect(inbox.prompts.some((p) => p.text === 'Continue while the computer starts.')).toBe(true);
+      releaseReads();
+      await expect(
+        page.getByText('This reply is stored in the database.', { exact: true }),
+      ).toHaveCount(1);
+    } finally {
+      releaseReads();
+      releaseSend();
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+      if (projectId) {
+        if (sessionId)
+          await api(auth.access_token, 'DELETE', `/projects/${projectId}/sessions/${sessionId}`);
+        await runDatabaseSql(
+          "UPDATE kortix.project_sessions SET metadata = metadata || jsonb_build_object('deletedAt', now()::text) WHERE project_id = $1",
+          [projectId],
+          env.databaseUrl,
+        );
+        await runDatabaseSql(
+          'DELETE FROM kortix.session_sandboxes WHERE project_id = $1',
+          [projectId],
+          env.databaseUrl,
+        );
+        await disposeProject();
+      }
+      await deleteAuthUser(user.id, {
+        supabaseUrl: authOptions.supabaseUrl,
+        envFiles: ['apps/api/.env', 'apps/web/.env'],
+      });
     }
-    await deleteAuthUser(user.id, {
-      supabaseUrl: authOptions.supabaseUrl,
-      envFiles: ['apps/api/.env', 'apps/web/.env'],
-    });
-  }
-});
+  });
+}
 
 /**
  * The first model the project picker offers that accepts attachments, in the
@@ -307,154 +318,157 @@ function firstAttachmentModel(
   return match[0];
 }
 
-test('30 — a file the agent showed renders from saved history while the sandbox is down', async ({
-  page,
-}, testInfo) => {
-  // Saved history keeps a completed `show` card (its input used to be
-  // stripped, which dropped the card) and a stored copy of the file it points
-  // at, recorded as `attachment`. With `/start` and `/snapshot` held the
-  // sandbox can never answer, so the image can only come from the platform's
-  // private store — and the sandbox's `/file/raw` must never be asked.
-  test.setTimeout(240_000);
-  const env = loadEnv();
-  const email = `shown-file-${Date.now()}@example.test`;
-  const user = await createAuthUser(email, authOptions);
-  const auth = await signIn(email, authOptions);
-  let disposeProject = async () => {};
-  let releaseReads = () => {};
-  try {
-    const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
-      auth.access_token,
-      'GET',
-      '/accounts',
-    );
-    const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
-    await fundAccount(env.databaseUrl!, accountId);
-    const project = await createManifestProject({
-      api,
-      accessToken: auth.access_token,
-      databaseUrl: env.databaseUrl!,
-      accountId,
-      userId: user.id,
-      name: 'Shown file from saved history',
-    });
-    disposeProject = project.dispose;
-    const sessionId = await createDatabaseSession(env, {
-      projectId: project.id,
-      accountId,
-      userId: user.id,
-    });
-    const seeded = await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId });
-    await runDatabaseSql(
-      "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
-      [sessionId],
-      env.databaseUrl,
-    );
+for (const store of STORES) {
+  test(`30 — a file the agent showed renders from saved history while the sandbox is down (${store.name})`, async ({
+    page,
+  }, testInfo) => {
+    // Saved history keeps a completed `show` card (its input used to be
+    // stripped, which dropped the card) and a stored copy of the file it points
+    // at, recorded as `attachment`. With `/start` and `/snapshot` held the
+    // sandbox can never answer, so the image can only come from the platform's
+    // private store — and the sandbox's `/file/raw` must never be asked.
+    test.setTimeout(240_000);
+    const env = loadEnv();
+    const email = `shown-file-${Date.now()}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const auth = await signIn(email, authOptions);
+    let disposeProject = async () => {};
+    let releaseReads = () => {};
+    try {
+      const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
+        auth.access_token,
+        'GET',
+        '/accounts',
+      );
+      const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
+      await fundAccount(env.databaseUrl!, accountId);
+      const project = await createManifestProject({
+        api,
+        accessToken: auth.access_token,
+        databaseUrl: env.databaseUrl!,
+        accountId,
+        userId: user.id,
+        name: 'Shown file from saved history',
+      });
+      disposeProject = project.dispose;
+      const sessionId = await createDatabaseSession(env, {
+        projectId: project.id,
+        accountId,
+        userId: user.id,
+      });
+      // The stored copy capture would have made while the box was up.
+      const attachmentId = crypto.randomUUID();
+      const body = new FormData();
+      body.append('attachment_id', attachmentId);
+      body.append('file', new Blob([imageFixture.buffer], { type: 'image/png' }), 'revenue.png');
+      const uploaded = await fetch(
+        `${process.env.E2E_API_URL}/projects/${project.id}/sessions/${sessionId}/attachments`,
+        { method: 'POST', headers: { Authorization: `Bearer ${auth.access_token}` }, body },
+      );
+      expect(uploaded.status).toBe(201);
+      const ref = ((await uploaded.json()) as { url: string }).url;
+      expect(ref).toBe(`kortix-attachment://${project.id}/${sessionId}/${attachmentId}`);
 
-    // The stored copy capture would have made while the box was up.
-    const attachmentId = crypto.randomUUID();
-    const body = new FormData();
-    body.append('attachment_id', attachmentId);
-    body.append('file', new Blob([imageFixture.buffer], { type: 'image/png' }), 'revenue.png');
-    const uploaded = await fetch(
-      `${process.env.E2E_API_URL}/projects/${project.id}/sessions/${sessionId}/attachments`,
-      { method: 'POST', headers: { Authorization: `Bearer ${auth.access_token}` }, body },
-    );
-    expect(uploaded.status).toBe(201);
-    const ref = ((await uploaded.json()) as { url: string }).url;
-    expect(ref).toBe(`kortix-attachment://${project.id}/${sessionId}/${attachmentId}`);
-
-    // The agent's turn: a completed show card carrying the stored copy.
-    const shownAt = Date.now() - 30_000;
-    const info = {
-      id: 'msg_000000000000000000000003',
-      sessionID: seeded.root,
-      parentID: 'msg_000000000000000000000001',
-      role: 'assistant',
-      time: { created: shownAt, completed: shownAt + 1 },
-      agent: 'kortix',
-      mode: 'build',
-      providerID: 'kortix',
-      modelID: 'openai/gpt-5.6-sol',
-      path: { cwd: '/workspace', root: '/workspace' },
-      cost: 0,
-      tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-      finish: 'stop',
-    };
-    const parts = [
-      {
-        id: 'prt_show_revenue',
-        sessionID: seeded.root,
-        messageID: info.id,
-        type: 'tool',
-        tool: 'show',
-        callID: 'call_show_revenue',
-        state: {
-          status: 'completed',
-          title: 'Revenue chart',
-          time: { start: shownAt, end: shownAt + 1 },
-          input: {
-            type: 'image',
+      // The agent's turn: a completed show card carrying the stored copy.
+      const shownAt = Date.now() - 30_000;
+      const root = `ses_${sessionId.replaceAll('-', '')}`;
+      const info = {
+        id: 'msg_000000000000000000000003',
+        sessionID: root,
+        parentID: 'msg_000000000000000000000001',
+        role: 'assistant',
+        time: { created: shownAt, completed: shownAt + 1 },
+        agent: 'kortix',
+        mode: 'build',
+        providerID: 'kortix',
+        modelID: 'openai/gpt-5.6-sol',
+        path: { cwd: '/workspace', root: '/workspace' },
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        finish: 'stop',
+      };
+      const parts = [
+        {
+          id: 'prt_show_revenue',
+          sessionID: root,
+          messageID: info.id,
+          type: 'tool',
+          tool: 'show',
+          callID: 'call_show_revenue',
+          state: {
+            status: 'completed',
             title: 'Revenue chart',
-            path: '/workspace/out/revenue.png',
-            attachment: ref,
+            time: { start: shownAt, end: shownAt + 1 },
+            input: {
+              type: 'image',
+              title: 'Revenue chart',
+              path: '/workspace/out/revenue.png',
+              attachment: ref,
+            },
           },
         },
-      },
-    ];
-    await runDatabaseSql(
-      'INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [sessionId, info.id, seeded.root, 'assistant', new Date(shownAt), JSON.stringify(info), JSON.stringify(parts)],
-      env.databaseUrl,
-    );
+      ];
+      await seedSessionTranscript(env, {
+        projectId: project.id,
+        accountId,
+        sessionId,
+        messages: (_root, defaults) => [...defaults, { info, parts }],
+        ...(store.log && { log: { bearer: auth.access_token } }),
+      });
+      await runDatabaseSql(
+        "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
+        [sessionId],
+        env.databaseUrl,
+      );
 
-    await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
-    await selectAccountForUi(page, accountId);
-    await dismissOnboarding(page);
+      await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await dismissOnboarding(page);
 
-    const held = new Promise<void>((resolve) => {
-      releaseReads = resolve;
-    });
-    for (const pattern of [`**/sessions/${sessionId}/start*`, `**/sessions/${sessionId}/snapshot*`]) {
-      await page.route(pattern, async (route) => {
-        await held;
-        await route.continue().catch(() => {});
+      const held = new Promise<void>((resolve) => {
+        releaseReads = resolve;
+      });
+      for (const pattern of [`**/sessions/${sessionId}/start*`, `**/sessions/${sessionId}/snapshot*`]) {
+        await page.route(pattern, async (route) => {
+          await held;
+          await route.continue().catch(() => {});
+        });
+      }
+      const storeReads: string[] = [];
+      const sandboxReads: string[] = [];
+      page.on('request', (request) => {
+        const url = request.url();
+        if (url.includes(`/sessions/${sessionId}/attachments/${attachmentId}`)) storeReads.push(url);
+        if (url.includes('/file/raw') || url.includes('revenue.png')) sandboxReads.push(url);
+      });
+
+      await page.goto(`/projects/${project.id}/sessions/${sessionId}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      const image = page.getByRole('img', { name: 'revenue.png', exact: true });
+      await expect(image).toBeVisible({ timeout: 60_000 });
+      await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBe(1);
+      expect(await image.getAttribute('src')).toMatch(/^blob:/);
+      await expect(page.getByText('Revenue chart').first()).toBeVisible();
+
+      // Where the bytes came from is the claim, not a detail.
+      expect(storeReads.length).toBeGreaterThan(0);
+      expect(sandboxReads).toEqual([]);
+      await page.screenshot({
+        animations: 'disabled',
+        path: testInfo.outputPath('shown-file-from-saved-history.png'),
+        fullPage: true,
+      });
+    } finally {
+      releaseReads();
+      await disposeProject();
+      await deleteAuthUser(user.id, {
+        supabaseUrl: authOptions.supabaseUrl,
+        envFiles: ['apps/api/.env', 'apps/web/.env'],
       });
     }
-    const storeReads: string[] = [];
-    const sandboxReads: string[] = [];
-    page.on('request', (request) => {
-      const url = request.url();
-      if (url.includes(`/sessions/${sessionId}/attachments/${attachmentId}`)) storeReads.push(url);
-      if (url.includes('/file/raw') || url.includes('revenue.png')) sandboxReads.push(url);
-    });
-
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, {
-      waitUntil: 'domcontentloaded',
-    });
-    const image = page.getByRole('img', { name: 'revenue.png', exact: true });
-    await expect(image).toBeVisible({ timeout: 60_000 });
-    await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBe(1);
-    expect(await image.getAttribute('src')).toMatch(/^blob:/);
-    await expect(page.getByText('Revenue chart').first()).toBeVisible();
-
-    // Where the bytes came from is the claim, not a detail.
-    expect(storeReads.length).toBeGreaterThan(0);
-    expect(sandboxReads).toEqual([]);
-    await page.screenshot({
-      animations: 'disabled',
-      path: testInfo.outputPath('shown-file-from-saved-history.png'),
-      fullPage: true,
-    });
-  } finally {
-    releaseReads();
-    await disposeProject();
-    await deleteAuthUser(user.id, {
-      supabaseUrl: authOptions.supabaseUrl,
-      envFiles: ['apps/api/.env', 'apps/web/.env'],
-    });
-  }
-});
+  });
+}
 
 interface SavedHistory {
   source: string;

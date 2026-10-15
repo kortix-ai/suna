@@ -28,7 +28,7 @@ function deps(lost: LostTurn[], overrides: Partial<RuntimeRestartRecoveryDeps> =
 }
 
 describe('recoverTurnsAfterRuntimeRestart (2026-08-25: wake under an open turn)', () => {
-  test('every open turn is settled and each prompt it carried is redelivered DUE on a wake', async () => {
+  test('every open turn is settled and each prompt it carried is redelivered DUE on a wake, marked resumable', async () => {
     const { d, requeued } = deps([
       { token: 't-active', messageId: 'msg_active', state: 'active' },
       { token: 't-delivering', messageId: 'msg_delivering', state: 'delivering' },
@@ -46,6 +46,7 @@ describe('recoverTurnsAfterRuntimeRestart (2026-08-25: wake under an open turn)'
         turnToken: 't-active',
         endReason: 'runtime_gone',
         hold: false,
+        resumable: true,
       },
       {
         sessionId: 'ses',
@@ -53,6 +54,7 @@ describe('recoverTurnsAfterRuntimeRestart (2026-08-25: wake under an open turn)'
         turnToken: 't-delivering',
         endReason: 'runtime_gone',
         hold: false,
+        resumable: true,
       },
       {
         sessionId: 'ses',
@@ -60,6 +62,7 @@ describe('recoverTurnsAfterRuntimeRestart (2026-08-25: wake under an open turn)'
         turnToken: 't-no-prompt',
         endReason: 'runtime_gone',
         hold: false,
+        resumable: true,
       },
     ]);
   });

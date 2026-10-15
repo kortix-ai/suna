@@ -94,8 +94,20 @@ function startServer(): string {
       }
       if (url.pathname === `${base}/budgets` && req.method === 'GET') {
         return Response.json({
-          project_spend: { requests: 4, cost: 1.23 },
-          budgets: [],
+          project_spend: { requests: 4, cost: 280 },
+          budgets: [
+            {
+              budget_id: 'budget_1',
+              scope: 'project',
+              subject_user_id: null,
+              limit_usd: 20,
+              period: 'day',
+              action: 'block',
+              spent_usd: 15,
+              period_start: '2026-10-13T00:00:00.000Z',
+              resets_at: '2026-10-14T00:00:00.000Z',
+            },
+          ],
           members: [],
         });
       }
@@ -245,6 +257,14 @@ describe('kortix gateway command', () => {
       defaultModel: 'openai/gpt-5.5',
       visionModel: 'claude-sonnet-4.6',
     });
+  }, 15_000);
+
+  test('budget ls: each budget shows the spend of its own period and its reset, not the month', async () => {
+    const cfg = writeConfig(startServer());
+    const r = await runCli(['gateway', 'budget', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('PROJECT SPEND (this month)  $280.00 · 4 req');
+    expect(r.stdout).toContain('$15.00 of $20.00/day project (block) resets 2026-10-14T00:00:00.000Z budget_1');
   }, 15_000);
 
   test('budget set: PUTs limit/scope with the expected shape', async () => {

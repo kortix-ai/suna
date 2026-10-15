@@ -48,6 +48,8 @@ const fakes: Record<string, Record<string, unknown>> = {
     },
   },
   '@/components/kortix/toast-provider': { useToast: () => ({ error() {}, success() {} }) },
+  // The key stands in for the string: the catalogs have their own key test.
+  'react-i18next': { useTranslation: () => ({ t: (key: string) => key }) },
   '@/components/ui/button': { Button: host('Button') },
   '@/components/ui/text': { Text: host('Text') },
   '@/components/review/ReviewItemBody': {
@@ -78,6 +80,7 @@ const real = new Set([
   '@/lib/review/review-verdict',
   '@/lib/review/review-meta',
   '@/lib/review/change-request-recovery',
+  '@/lib/session/connector-handoff',
 ]);
 const stubs: Record<string, Record<string, unknown>> = {};
 for (const [, names, name] of source.matchAll(/import\s+(?:type\s+)?(?:\w+\s*,\s*)?\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/gs)) {
@@ -202,6 +205,47 @@ describe('review sheet verdicts', () => {
     const withheld = { ...APPROVAL, detail: { actions: [{ id: 'exec-1', previewAuthorized: false }] } };
     renderAs(withheld, MANAGER);
     expect(footer()).toEqual([]);
+  });
+
+  // KRTX-1724: the API lists a call as `waiting` for a viewer it would refuse
+  // (only a project manager or the session's launcher decides). The sheet
+  // says who decides instead of offering a decision.
+  test('a connector approval waiting on someone else says who decides, with no Approve or Deny', () => {
+    const waiting = {
+      ...APPROVAL,
+      status: 'waiting',
+      detail: { actions: [{ id: 'exec-1', previewAuthorized: false, canResolve: false }] },
+    };
+    renderAs(waiting, MANAGER);
+    expect(footer()).toEqual([]);
+    const texts = tree.root.findAllByType('Text').map((t: any) => String(t.props.children));
+    expect(texts).toContain('approvals.waitingWho');
+  });
+
+  test('a call in a session started with an API token names managers only', () => {
+    const waiting = {
+      ...APPROVAL,
+      status: 'waiting',
+      detail: { actions: [{ id: 'exec-1', canResolve: false, resolvers: 'managers' }] },
+    };
+    renderAs(waiting, MEMBER);
+    expect(footer()).toEqual([]);
+    const texts = tree.root.findAllByType('Text').map((t: any) => String(t.props.children));
+    expect(texts).toContain('approvals.waitingManagers');
+    expect(texts).not.toContain('approvals.waitingWho');
+  });
+
+  test('an older API (needs_you, canResolve false) waits too; a resolver sees no waiting line', () => {
+    const older = { ...APPROVAL, detail: { actions: [{ id: 'exec-1', canResolve: false }] } };
+    renderAs(older, MANAGER);
+    expect(footer()).toEqual([]);
+    let texts = tree.root.findAllByType('Text').map((t: any) => String(t.props.children));
+    expect(texts).toContain('approvals.waitingWho');
+    act(() => tree.unmount());
+    renderAs({ ...APPROVAL, detail: { actions: [{ id: 'exec-1', canResolve: true }] } }, MEMBER);
+    expect(footer()).toEqual(['Approve', 'Deny']);
+    texts = tree.root.findAllByType('Text').map((t: any) => String(t.props.children));
+    expect(texts).not.toContain('approvals.waitingWho');
   });
 
   test('Resolve conflicts takes Merge’s place, so a reviewer who may not merge does not get it', () => {

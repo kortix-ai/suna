@@ -503,11 +503,19 @@ export const REAPER_TURN_CAUSES = {
     name: 'SandboxStoppedMidTurn',
     message: 'The sandbox stopped unexpectedly while this turn was running.',
   },
-  /** Same box-gone event, but an unattended session's turn is being resumed
-   *  automatically — see `session-lifecycle/unattended-runtime-recovery.ts`. */
+  /** Same box-gone event, after the turn's continuation reached the runtime.
+   *  Written by `markTurnResumed` on delivery, never at the stop: a stop
+   *  cannot know that the continuation will go out (KRTX-1732). */
   boxStoppedMidTurnRecovering: {
     name: 'SandboxStoppedMidTurnRecovering',
     message: 'The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn.',
+  },
+  /** A runtime restart ended the turn and the sandbox kept running (a config
+   *  swap, a wake that found the turn open), after its continuation reached
+   *  the runtime. The settle names no cause for a restart. */
+  runtimeRestartedMidTurnRecovering: {
+    name: 'RuntimeRestartedMidTurnRecovering',
+    message: 'The runtime restarted during this turn. Kortix resumed it.',
   },
   /** The turn waited on a person past `turnWaitingMaxMs`; the reaper ended it. */
   awaitingInput: {
@@ -516,6 +524,65 @@ export const REAPER_TURN_CAUSES = {
       'This turn stopped because the agent waited for an answer or an approval that did not come. Send a message to continue.',
   },
 } as const satisfies Record<string, SessionTurnEndErrorRecord>;
+
+/** The newest turn a prompt started, as the drain's continuation check reads it. */
+export interface PromptTurnRecord {
+  turnToken: string;
+  messageId: string;
+  state: string;
+  endReason: string | null;
+  endError: SessionTurnEndErrorRecord | null;
+  endedAt: Date | null;
+}
+
+/** The newest turn of `sessionId` started under any of `messageIds`, or null. */
+export async function readNewestPromptTurn(
+  sessionId: string,
+  messageIds: readonly string[],
+): Promise<PromptTurnRecord | null> {
+  if (messageIds.length === 0) return null;
+  const ids = sql.join(messageIds.map((id) => sql`${id}`), sql`, `);
+  const [row] =
+    normalizeRows(
+      await execute(sql`
+        SELECT turn_token, message_id, state, end_reason, end_error, ended_at
+          FROM kortix.session_turns
+         WHERE session_id = ${sessionId}
+           AND message_id IN (${ids})
+         ORDER BY started_at DESC, created_at DESC
+         LIMIT 1`),
+    ) ?? [];
+  if (!row) return null;
+  const endError = row.end_error as SessionTurnEndErrorRecord | null;
+  return {
+    turnToken: String(row.turn_token),
+    messageId: String(row.message_id),
+    state: String(row.state),
+    endReason: ledgerText(row.end_reason),
+    endError: endError && typeof endError === 'object' ? endError : null,
+    endedAt: row.ended_at ? new Date(row.ended_at as string) : null,
+  };
+}
+
+/**
+ * The continuation of a turn a runtime loss cut short reached the runtime:
+ * the turn now says Kortix resumed it. Only over the provider stop's generic
+ * cause, or over no cause (a runtime restart, which says so); a named cause
+ * stays.
+ */
+export async function markTurnResumed(turnToken: string): Promise<void> {
+  await recordTurnLedger(
+    sql`UPDATE kortix.session_turns
+           SET end_error = CASE WHEN end_error IS NULL
+                 THEN ${JSON.stringify(REAPER_TURN_CAUSES.runtimeRestartedMidTurnRecovering)}::jsonb
+                 ELSE ${JSON.stringify(REAPER_TURN_CAUSES.boxStoppedMidTurnRecovering)}::jsonb END,
+               updated_at = now()
+         WHERE turn_token = ${turnToken}
+           AND end_reason = 'runtime_gone'
+           AND (end_error IS NULL OR end_error->>'name' = ${REAPER_TURN_CAUSES.boxStoppedMidTurn.name})`,
+    `resumed ${turnToken}`,
+  );
+}
 
 /** How long after a bare abort a cause with no turn identity may still claim it. */
 export const UNIDENTIFIED_CAUSE_WINDOW_MS = 60_000;

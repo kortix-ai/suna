@@ -307,8 +307,10 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
  *
  * The address matched is the caller's TRUSTED email (iam/email-trust.ts), not
  * the token's claim: an SSO identity whose IdP account has not verified the
- * email's domain claims nothing. `email` is the address the caller expects;
- * a mismatch with the trusted one also claims nothing.
+ * email's domain claims nothing, and neither does a password identity while
+ * Auth auto-confirms sign-ups (the invitee accepts it explicitly instead).
+ * `email` is the address the caller expects; a mismatch with the trusted one
+ * also claims nothing.
  */
 export async function autoClaimPendingInvites(userId: string, email: string): Promise<number> {
   if (!email) return 0;
