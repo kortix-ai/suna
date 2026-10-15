@@ -6,7 +6,7 @@
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
   "diff_hash": "7b7c8efb9e907e33803dbc5055e58896db900d98461a0366c62285d8cfd7a50f",
-  "head": "1a855a10e286a23f48863f5f103e88c462f9f301",
+  "head": "6f57ea776d8d6ec2084981b8f8b7516cc5c7ed3a",
   "passed": false,
   "lanes": {
     "core": "pass",
@@ -14,5 +14,5 @@
     "db-suites": "pass",
     "browser": "fail"
   },
-  "at": "2026-10-15T06:39:56.928Z"
+  "at": "2026-10-15T06:49:29.011Z"
 }
