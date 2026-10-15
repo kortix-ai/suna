@@ -16,7 +16,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { clearComposerDraftIfSent } from '@/stores/composer-draft-store';
 import { draftKey } from '@/lib/session/composer-draft';
 import { getSandboxUrl, type SandboxProviderName } from '@/lib/platform/client';
-import { deleteProjectSession, startProjectSession, restartProjectSession, type ProjectSession, type SessionStartResult } from '@/lib/projects/projects-client';
+import { deleteProjectSession, recoverProjectSession, startProjectSession, restartProjectSession, type ProjectSession, type SessionStartResult } from '@/lib/projects/projects-client';
 import { connectStepFromRequestError, connectStepFromStart, shouldAwaitHealthProbe, startPollDelayMs } from '@/lib/session/connect-step';
 import { createSessionCommitted } from '@/lib/session/create-session';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
@@ -403,27 +403,38 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
 
   // Restart a session whose runtime failed to boot (web parity:
   // restartProjectSession). Tears down + re-provisions the sandbox, clears the
-  // error/guard, and re-drives the connect loop.
+  // error/guard, and re-drives the connect loop. A lost computer cannot
+  // restart: it continues on a new one from its saved conversation
+  // (recoverProjectSession, KRTX-2419), then the same loop boots it.
   const handleRestartSession = useCallback(async () => {
     const sid = connectingProjectSessionId;
     if (!sid || restartingSession) return;
+    const lost = connectError?.lost === true;
     haptics.tap();
     setRestartingSession(true);
     try {
-      await restartProjectSession(projectId, sid);
+      await (lost ? recoverProjectSession : restartProjectSession)(projectId, sid);
       erroredSessionRef.current = null;
       ensuringRef.current = null;
       setConnectError(null);
       void ensureAndOpen(sid);
     } catch (err: any) {
-      setConnectError({
-        title: 'Restart failed',
-        message: err?.message || 'Could not restart the session runtime. Please try again.',
-      });
+      setConnectError(
+        lost
+          ? {
+              title: 'Could not continue the session',
+              message: err?.message || 'Could not continue the session. Try again in a moment.',
+              lost: true,
+            }
+          : {
+              title: 'Restart failed',
+              message: err?.message || 'Could not restart the session runtime. Please try again.',
+            },
+      );
     } finally {
       setRestartingSession(false);
     }
-  }, [connectingProjectSessionId, restartingSession, projectId, ensureAndOpen]);
+  }, [connectingProjectSessionId, restartingSession, connectError, projectId, ensureAndOpen]);
   // The active tab's project-session row. The tab store's activeSessionId is a
   // RUNTIME session id — the root (connectToProjectSession navigates with
   // the row's `runtime_session_id`), or a sub-session of it (a drawer

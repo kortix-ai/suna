@@ -1843,7 +1843,9 @@
     },
     "lost": {
       "title": "L’ordinateur de cette session a été perdu",
-      "message": "Son environnement cloud a disparu du côté du fournisseur. Cette session ne peut donc pas être redémarrée ou récupérée. Il s’agit d’un problème de notre côté, pas d’une erreur de votre part — il a été signalé automatiquement. Tout ce qui a été validé et poussé depuis cette session est conservé dans le dépôt de votre projet."
+      "message": "Son environnement cloud a disparu du côté du fournisseur. Cette session ne peut donc pas être redémarrée ou récupérée. Il s’agit d’un problème de notre côté, pas d’une erreur de votre part — il a été signalé automatiquement. Tout ce qui a été validé et poussé depuis cette session est conservé dans le dépôt de votre projet.",
+      "continueMessage": "Son environnement cloud a disparu du côté du fournisseur. Il s’agit d’un problème de notre côté, et il a été signalé. Continuez la session sur un nouvel ordinateur : il part de la branche de la session et rétablit cette conversation. Le travail qui n’a pas été commité et poussé reste perdu.",
+      "continue": "Continuer la session"
     },
     "restart": {
       "label": "Redémarrer la session",
@@ -7538,6 +7540,7 @@
       "treeMessages": "messages",
       "subAgentsLoaded": "{loaded} sur {total} sous-agents chargés",
       "loadAll": "Tout charger",
+      "subAgentLoadFailed": "Chargement impossible",
       "detailInput": "Tokens d'entrée",
       "detailOutput": "Tokens de sortie",
       "detailReasoning": "Tokens de raisonnement",

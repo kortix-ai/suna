@@ -422,6 +422,17 @@ describe('relayTurnAnswer', () => {
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
   });
 
+  // Every reply opened with a "Task complete" header. The answer is the news;
+  // the header was noise on every message.
+  test('the answer card has no "Task complete" title: it opens with the answer', async () => {
+    dbResults = [[streamRow({ messageTs: 'act-1' })], [{ sessionId: 'sess-1' }], []];
+    expect(await relayTurnAnswer('sess-1', 'Doing well, thanks!')).toBe(true);
+    const card = cardOf(apiCalls.find((c) => c.fn === 'updateCard'));
+    expect(JSON.stringify(card)).not.toContain('Task complete');
+    expect((card.body as Array<{ text?: string; spacing?: string }>)[0]).toMatchObject({ text: 'Doing well, thanks!' });
+    expect((card.body as Array<{ spacing?: string }>)[0]!.spacing).toBeUndefined();
+  });
+
   test('loses the finalize race → no render', async () => {
     dbResults = [[streamRow({ messageTs: 'act-1' })], []];
     expect(await relayTurnAnswer('sess-1', 'x')).toBe(false);
@@ -452,6 +463,10 @@ describe('relayTurnEnd', () => {
     const ok = await relayTurnEnd('sess-1', 'idle');
     expect(ok).toBe(true);
     expect(apiCalls.map((c) => c.fn)).toEqual(['updateCard']);
+    // No title: the card opens with its ticked step.
+    const card = cardOf(apiCalls[0]);
+    expect(JSON.stringify(card)).not.toContain('Task complete');
+    expect((card.body as Array<{ text?: string }>)[0]!.text).toBe('✓ A');
   });
 
   // A stopped run read "Task complete" with its last step ticked: the aborted

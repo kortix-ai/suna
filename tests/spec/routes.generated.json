@@ -2788,6 +2788,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/recover"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/reload"
     },
     {
