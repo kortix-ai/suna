@@ -1,5 +1,5 @@
 {
-  "source_hash": "aff578b90b0c59b8f8a3b02bdc7effd39874b5c746b12e16dfdb2fd8bcdc6567",
+  "source_hash": "f82d19ad0b6f1a782dc054fa9b07eeec2e038b3995b799afb4d71462318e317f",
   "diff_files": [
     "apps/api/src/__tests__/integration-starter-provision-seed.test.ts",
     "apps/api/src/__tests__/unit-agent-config-v2.test.ts",
@@ -266,13 +266,13 @@
     "tests/src/flows/cli-local.flow.ts",
     "tests/src/flows/config-releases.flow.ts"
   ],
-  "diff_hash": "5dc2fe5c6b65bacfb033eb111e5d27cfa1c2162793e05b33ec75c2a199b4ab89",
-  "head": "0f0f1e2c1596434a40d557c51ba0c6fb6296014e",
+  "diff_hash": "4ad2d9286c3dc8c94e0ed9e1ea671c48be6fc4ee34fbe1ad739a7b487be7ac57",
+  "head": "09f3fe606b8648cad5155c5f56f2cbd2e7362c63",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T20:52:28.460Z"
+  "at": "2026-10-15T22:30:02.498Z"
 }
