@@ -1,0 +1,26 @@
+{
+  "source_hash": "49542fb63da1def541e26d589ace8a7e1c75c63ae25094ebc9ad2f40c45bd70e",
+  "diff_files": [
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/apps/access.test.ts",
+    "apps/api/src/projects/reaping/box-reaper.ts",
+    "apps/api/src/projects/reaping/sandbox-state-sync.test.ts",
+    "apps/api/src/projects/reaping/sandbox-state-sync.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/stop.test.ts",
+    "apps/api/src/projects/session-lifecycle/actions.ts",
+    "apps/api/src/sandbox-proxy/backend.ts",
+    "apps/api/src/sandbox-proxy/index.ts",
+    "apps/api/src/sandbox-proxy/routes/share.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/apps.flow.ts"
+  ],
+  "diff_hash": "fc9e4038bc32b81d90bf425b16e6489b8644f2fb451758838e834d09d38f150e",
+  "head": "9a5ed6179125e05f94da2223a3138cab7d867774",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T01:30:57.140Z"
+}

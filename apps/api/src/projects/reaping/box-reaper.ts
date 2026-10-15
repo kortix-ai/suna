@@ -35,7 +35,7 @@
 
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateProviderCache } from '../../sandbox-proxy/backend';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';

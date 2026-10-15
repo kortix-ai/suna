@@ -2855,11 +2855,6 @@
       "count": 1
     }
   },
-  "src/sandbox-proxy/index.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/sandbox-proxy/pre-prompt-env-sync.ts": {
     "kortix-api/projects-surface": {
       "count": 6
@@ -2898,7 +2893,7 @@
   },
   "src/sandbox-proxy/routes/share.ts": {
     "no-console": {
-      "count": 3
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 3

@@ -518,3 +518,8 @@ export function invalidateSandbox(externalId: string): void {
   serviceKeyCache.delete(externalId);
   dropIngress(`${externalId}:`);
 }
+
+/** Drop cached backend state for a sandbox (called on lifecycle transitions). */
+export function invalidateProviderCache(externalId: string): void {
+  invalidateSandbox(externalId);
+}
