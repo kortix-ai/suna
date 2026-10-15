@@ -1,0 +1,18 @@
+{
+  "source_hash": "a46fd4bf9dc77b07fadaaa860fdbce09ae3159525787c9a2521bc741c4edec7d",
+  "diff_files": [
+    "tests/e2e/specs/23-composio-connector.spec.ts",
+    "tests/e2e/specs/30-session-transcript-history.spec.ts",
+    "tests/e2e/specs/34-instant-session-loads.spec.ts",
+    "tests/e2e/specs/40-session-lifecycle-permissions.spec.ts"
+  ],
+  "diff_hash": "a6efdb492f13e3bf358a83e07a26baa69a885f10cabd3ab41d3b073be5e52577",
+  "head": "21919364a30c9c9028f9d660c051f041730aa90c",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T16:34:07.520Z"
+}
