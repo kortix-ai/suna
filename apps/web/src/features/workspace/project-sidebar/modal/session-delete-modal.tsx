@@ -12,7 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
 /** Days a deleted session stays restorable (`SESSION_DELETE_ROWS_DAYS` in the API). */
 export const RESTORE_DAYS = 30;
 /** How long the delete toast offers Undo. */
-const UNDO_TOAST_MS = 8000;
+export const UNDO_TOAST_MS = 8000;
 /**
  * The waits between restore attempts while the API answers 409
  * `session_sandbox_removal_pending`: the provider usually confirms the old

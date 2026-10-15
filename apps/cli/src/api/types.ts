@@ -179,6 +179,10 @@ export interface ProjectSession {
   child_count?: number;
   /** Present only with `q` + `parent=root`. */
   search_match?: 'self' | 'child';
+  /** When you pinned / archived the session in your own list; null when not.
+   *  Absent for an agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
 }
 
 export interface ProjectSessionInitiator {
