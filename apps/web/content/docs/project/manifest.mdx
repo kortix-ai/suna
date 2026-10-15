@@ -307,6 +307,30 @@ agents:
 - An agent loads the top-level list, minus its `exclude`, plus its own `packages`. `exclude` exists only on an agent.
 - The change request merge builds the packages. A session never runs `npm install`. A session that starts before the build exists boots without the project packages.
 
+**`harnesses.pi.codemode`** sets pi's codemode tool. The model writes one JavaScript script that calls the other tools (`await tools.bash({ command })`), and only the script's output reaches the model, so one call can batch, chain and filter several tool calls.
+
+```yaml
+harnesses:
+  pi:
+    codemode: on        # on (default) | only | off
+agents:
+  reviewer:
+    harnesses:
+      pi:
+        codemode: off   # this agent only
+```
+
+| Value | The model gets |
+| --- | --- |
+| `on` (default) | every tool, plus `codemode` |
+| `only` | `codemode` alone; every other tool runs from a script |
+| `off` | no `codemode` |
+
+- An agent's value replaces the top-level one. Read when the session starts.
+- A script's calls pass the same permission policy as direct calls: a `deny` rule blocks them, and an `ask` rule pauses the script until someone answers.
+- A script cannot start a subagent (`task`) or ask a question (`question`). The model calls those directly.
+- Scripts run in a sandboxed JavaScript VM (QuickJS) with no file system, network or timers. They reach the box only through the tools.
+
 **`harnesses.opencode.plugins`** (v2) lists the files in `<opencode config dir>/plugins/` that load, for example `audit.ts`. Without the key, every plugin file loads. An agent adds its own with `agents.<name>.harnesses.opencode.plugins` and drops top-level ones with `exclude`. A listed file that does not exist fails the config build.
 
 ## tools

@@ -3606,7 +3606,7 @@ describe('pi codemode', () => {
       calls: [{ call_id: expect.any(String), name: 'bash', kind: 'shell', status: 'complete', input: { command: 'echo logged' }, duration_ms: expect.any(Number) }],
       complete: true,
     })
-    expect(log.threads[0]!.ext?.pi?.data?.codemode_store).toEqual({ cursor: 7 })
+    expect((log.threads[0]!.ext?.pi?.data as { codemode_store?: unknown } | undefined)?.codemode_store).toEqual({ cursor: 7 })
 
     // A fresh box restored from the log: `load()` reads what the old box stored, and the export is unchanged.
     const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))

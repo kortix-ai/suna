@@ -1370,6 +1370,71 @@ harnessFlow(
   },
 );
 
+// ─── RUN-20: a codemode script runs its tool calls on pi ─────────────────────
+// pi only: codemode is a pi tool (kortix.yaml `harnesses.pi.codemode`, on by default).
+// The script's two bash calls write files, so the flow reads the effect back; the
+// runtime's own message list holds the nested calls the transcript flattens away.
+flow(
+  'RUN-20',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 780_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const session = await bootSession(ctx, 'pi');
+    const { projectId, sessionId } = session;
+    const nonce = `ke2e-run20-${Date.now()}`;
+    const done = `RUN20_DONE_${Date.now()}`;
+    const script = [
+      `await tools.bash({ command: "printf ${nonce}-a > ${nonce}-a.txt" });`,
+      `await tools.bash({ command: "printf ${nonce}-b > ${nonce}-b.txt" });`,
+      `return "wrote both";`,
+    ].join(' ');
+    await ctx.step('the agent runs one codemode script that makes two bash calls', async () => {
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Call the codemode tool exactly once with this code, unchanged: ${script} ` +
+          `Use no other tool. Then reply with exactly: ${done}`,
+      );
+      const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+      const tools = messages.flatMap((m) => m.tools ?? []);
+      if (!tools.some((t) => t.tool === 'codemode' && t.status === 'completed')) {
+        throw new Error(`no completed codemode call: ${JSON.stringify(tools)}`);
+      }
+      // The script's calls are not calls of their own in the conversation.
+      if (tools.some((t) => t.tool === 'bash')) throw new Error(`a bash call ran outside the script: ${JSON.stringify(tools)}`);
+    });
+    await ctx.step('the runtime records the script\'s two bash calls on the codemode part', async () => {
+      const root = await pinnedRoot(ctx, projectId, sessionId);
+      const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
+      const codemode = parts.find((p) => p.type === 'tool' && p.tool === 'codemode' && p.state?.status === 'completed');
+      const calls = (codemode?.state?.metadata?.calls ?? []) as Array<{ name?: string; status?: string }>;
+      const ran = calls.map((c) => `${c.name}:${c.status}`);
+      if (ran.length !== 2 || !ran.every((c) => c === 'bash:ok' || c === 'bash:complete')) {
+        throw new Error(`codemode metadata.calls is ${JSON.stringify(calls)}`);
+      }
+    });
+    await ctx.step('both files the script wrote exist with their content', async () => {
+      for (const suffix of ['a', 'b']) {
+        const file = await ctx.client
+          .as(ctx.P.OWNER)
+          .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${nonce}-${suffix}.txt`)}`));
+        file.status(200).body().matches('$.content', new RegExp(`^${nonce}-${suffix}$`));
+      }
+    });
+  },
+);
+
 // ─── RUN-15: a project tool runs on every harness ────────────────────────────
 // A harness-neutral module: a plain default export, no harness import. It
 // writes its proof to the workspace, so the flow reads the effect back instead
