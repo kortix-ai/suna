@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Projeto",
         "personal": "Pessoal",
-        "account": "Conta"
+        "account": "Conta",
+        "connect": "Conectar"
       },
       "items": {
         "workspace": {
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Plano",
           "description": "Seu plano, seus créditos e o faturamento desta conta."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Use o Kortix no Claude, Claude Code, Cursor, Codex ou qualquer cliente MCP. Você entra uma vez. Nada para instalar."
+        },
+        "computer": {
+          "label": "Computador",
+          "description": "Deixe os agentes do Kortix trabalharem com os arquivos, o terminal e os apps do seu computador."
         }
       }
     },
@@ -1382,6 +1391,19 @@
       "adminOnly": "Somente o proprietário ou um administrador pode conectar o GitHub nesta conta.",
       "disconnectedToast": "GitHub desconectado",
       "disconnectFailed": "Não foi possível desconectar o GitHub"
+    },
+    "mcp": {
+      "serverTitle": "Servidor",
+      "serverDescription": "Uma URL para cada projeto que você pode abrir. Seu cliente entra com o Kortix na primeira conexão.",
+      "urlLabel": "URL do servidor",
+      "clientsTitle": "Clientes",
+      "clientsDescription": "Adicione o Kortix ao cliente que você usa."
+    },
+    "computer": {
+      "oneClickDescription": "O aplicativo para desktop conecta este computador com um clique.",
+      "desktopLabel": "Aplicativo para desktop",
+      "download": "Baixar",
+      "cliLabel": "Linha de comando"
     }
   },
   "triggers": {
@@ -2112,6 +2134,7 @@
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",
     "editingQueued": "Editando",
+    "queuedActions": "Ações da mensagem",
     "steerNextStep": "Lido no próximo passo",
     "queuedByAnotherMember": "Enviada por outro membro. Só essa pessoa pode editá-la ou enviá-la.",
     "steerFallbackUnsupported": "Aguarda este turno. Esta sessão não aceita mensagens durante um turno.",

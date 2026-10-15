@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "プロジェクト",
         "personal": "個人",
-        "account": "アカウント"
+        "account": "アカウント",
+        "connect": "接続"
       },
       "items": {
         "workspace": {
@@ -540,6 +541,14 @@
         "plan": {
           "label": "プラン",
           "description": "このアカウントのプラン、クレジット、請求。"
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Claude、Claude Code、Cursor、Codex、または任意の MCP クライアントから Kortix を使えます。サインインは一度だけ。インストールは不要です。"
+        },
+        "computer": {
+          "label": "コンピューター",
+          "description": "Kortix のエージェントが、あなたのコンピューターのファイル、ターミナル、アプリを使えるようにします。"
         }
       }
     },
@@ -1382,6 +1391,19 @@
       "adminOnly": "このアカウントの所有者または管理者だけが GitHub を接続できます。",
       "disconnectedToast": "GitHub の接続を解除しました",
       "disconnectFailed": "GitHub の接続を解除できませんでした"
+    },
+    "mcp": {
+      "serverTitle": "サーバー",
+      "serverDescription": "開けるすべてのプロジェクトに使える 1 つの URL です。クライアントは最初の接続時に Kortix でサインインします。",
+      "urlLabel": "サーバー URL",
+      "clientsTitle": "クライアント",
+      "clientsDescription": "使用しているクライアントに Kortix を追加します。"
+    },
+    "computer": {
+      "oneClickDescription": "デスクトップアプリはワンクリックでこのコンピューターを接続します。",
+      "desktopLabel": "デスクトップアプリ",
+      "download": "ダウンロード",
+      "cliLabel": "コマンドライン"
     }
   },
   "triggers": {
@@ -2112,6 +2134,7 @@
     "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
     "queuedCount": "{count} 件キュー中",
     "editingQueued": "編集中",
+    "queuedActions": "メッセージの操作",
     "steerNextStep": "次のステップで読み取り",
     "queuedByAnotherMember": "別のメンバーが送信しました。編集や送信ができるのはそのメンバーのみです。",
     "steerFallbackUnsupported": "このターンの終了を待ちます。このセッションはターン中にメッセージを受け取れません。",

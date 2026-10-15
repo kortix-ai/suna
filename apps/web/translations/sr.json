@@ -340,7 +340,8 @@
       "groups": {
         "workspace": "Пројекат",
         "personal": "Лично",
-        "account": "Налог"
+        "account": "Налог",
+        "connect": "Повезивање"
       },
       "items": {
         "workspace": {
@@ -393,6 +394,14 @@
         "plan": {
           "label": "План",
           "description": "План, кредити и обрачун за овај налог."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Koristite Kortix iz Claude, Claude Code, Cursor, Codex ili bilo kog MCP klijenta. Prijavljujete se jednom. Ništa ne morate da instalirate."
+        },
+        "computer": {
+          "label": "Рачунар",
+          "description": "Дозволите Kortix агентима да раде са датотекама, терминалом и апликацијама на вашем рачунару."
         }
       }
     },
@@ -1382,6 +1391,19 @@
       "adminOnly": "Само власник или администратор може да повеже GitHub за овај налог.",
       "disconnectedToast": "GitHub веза је прекинута",
       "disconnectFailed": "Прекид GitHub везе није успео"
+    },
+    "mcp": {
+      "serverTitle": "Сервер",
+      "serverDescription": "Један URL за сваки пројекат који можете да отворите. Ваш клијент се пријављује преко Kortix-а при првом повезивању.",
+      "urlLabel": "URL сервера",
+      "clientsTitle": "Клијенти",
+      "clientsDescription": "Додајте Kortix у клијент који користите."
+    },
+    "computer": {
+      "oneClickDescription": "Десктоп апликација повезује овај рачунар једним кликом.",
+      "desktopLabel": "Десктоп апликација",
+      "download": "Преузми",
+      "cliLabel": "Командна линија"
     }
   },
   "triggers": {
@@ -2112,6 +2134,7 @@
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
     "queuedCount": "{count} u redu",
     "editingQueued": "Уређивање",
+    "queuedActions": "Радње поруке",
     "steerNextStep": "Чита се у следећем кораку",
     "queuedByAnotherMember": "Послао други члан. Само тај члан може да је измени или пошаље.",
     "steerFallbackUnsupported": "Чека овај потез. Ова сесија не прима поруке током потеза.",

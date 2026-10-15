@@ -71,9 +71,11 @@ const SRC_DIR = join(import.meta.dir, '..', '..', '..');
 /** Single-column settings. The design system's default container. */
 const FORM_TABS = [
   'appearance-tab.tsx',
+  'computer-tab.tsx',
   'connected-tab.tsx',
   'experimental-tab.tsx',
   'general-tab.tsx',
+  'mcp-tab.tsx',
   // Plan: `BillingTab`'s cards and rows, not a `<Table>` — the ledger with
   // the wide table is the account page's Usage tab, which is not mounted here.
   'credits-tab.tsx',

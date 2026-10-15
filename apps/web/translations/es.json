@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Proyecto",
         "personal": "Personal",
-        "account": "Cuenta"
+        "account": "Cuenta",
+        "connect": "Conectar"
       },
       "items": {
         "workspace": {
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Plan",
           "description": "Tu plan, tus créditos y la facturación de esta cuenta."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Usa Kortix desde Claude, Claude Code, Cursor, Codex o cualquier cliente MCP. Inicias sesión una vez. Sin instalar nada."
+        },
+        "computer": {
+          "label": "Ordenador",
+          "description": "Deja que los agentes de Kortix trabajen con los archivos, la terminal y las apps de tu ordenador."
         }
       }
     },
@@ -1382,6 +1391,19 @@
       "adminOnly": "Solo el propietario o un administrador puede conectar GitHub para esta cuenta.",
       "disconnectedToast": "GitHub desconectado",
       "disconnectFailed": "No se pudo desconectar GitHub"
+    },
+    "mcp": {
+      "serverTitle": "Servidor",
+      "serverDescription": "Una URL para cada proyecto que puede abrir. Su cliente inicia sesión con Kortix la primera vez que se conecta.",
+      "urlLabel": "URL del servidor",
+      "clientsTitle": "Clientes",
+      "clientsDescription": "Añada Kortix al cliente que usa."
+    },
+    "computer": {
+      "oneClickDescription": "La aplicación de escritorio conecta este ordenador con un clic.",
+      "desktopLabel": "Aplicación de escritorio",
+      "download": "Descargar",
+      "cliLabel": "Línea de comandos"
     }
   },
   "triggers": {
@@ -2112,6 +2134,7 @@
     "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}",
     "queuedCount": "{count} en cola",
     "editingQueued": "Editando",
+    "queuedActions": "Acciones del mensaje",
     "steerNextStep": "Se lee en el siguiente paso",
     "queuedByAnotherMember": "Enviado por otro miembro. Solo esa persona puede editarlo o enviarlo.",
     "steerFallbackUnsupported": "Espera a este turno. Esta sesión no acepta mensajes durante un turno.",
