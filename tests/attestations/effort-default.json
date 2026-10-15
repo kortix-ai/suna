@@ -1,5 +1,5 @@
 {
-  "source_hash": "d73eb377e4ec34d3635ec13d5106c69de6e00e87548274ef1b4ddd24cc4373fa",
+  "source_hash": "be017ca5d5b45a052847e12b009d367eb1646d653562308e10f7b996cc444090",
   "diff_files": [
     "apps/api/src/projects/lib/effort-default.test.ts",
     "apps/api/src/projects/lib/effort-default.ts",
@@ -30,6 +30,7 @@
     "packages/api-contract/src/index.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts",
     "packages/sdk/src/core/rest/projects-client/sessions.ts",
+    "packages/sdk/src/core/session/open-bundle.test.ts",
     "packages/sdk/src/core/session/project-session-read.test.ts",
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
@@ -38,13 +39,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/projects-misc.flow.ts"
   ],
-  "diff_hash": "de4ffad879549fa197fbba7bd46a28fcf67c7c94f138f0574d2db22b453a926f",
-  "head": "bfa5df809f9c469c739d9ee7d76c4a3d28e9195e",
+  "diff_hash": "19cb8b27b4f3c2bf397d272ae122ce4f00146471105587ae2f9901559a5e3e1e",
+  "head": "3f5994af15871dbef3a414e5996bc8e1fb5aab15",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T10:26:21.325Z"
+  "at": "2026-10-15T11:20:23.264Z"
 }
