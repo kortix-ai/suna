@@ -191,6 +191,7 @@ The transcript, `log`, `info`, `attachments`, and the events stream never wake a
 | Restart | `kortix sessions restart <id>` | Everything a stop keeps | Running processes and memory. It stops and starts the sandbox in place, or boots a new one when the sandbox is gone. |
 | Delete | `kortix sessions rm <id>...` | The pushed branch. For 30 days also the conversation and the stored files. | The sandbox and its public links. The session leaves the list. |
 | Restore | `kortix sessions restore <id>` | Everything a delete keeps | Nothing. The session returns to the list, stopped. |
+| Recover | `kortix sessions recover <id>` | The branch and the conversation of a lost session | Nothing more: the lost sandbox is already gone. The next start boots a new one. |
 
 The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
 
@@ -219,6 +220,26 @@ A stopped session wakes when it gets:
 - a new prompt;
 - a request to one of its preview ports;
 - a `kortix sessions files` or `kortix sessions cp` call.
+
+### Continue a lost session
+
+A session is lost when the provider removed its sandbox and Kortix could not bring it back in place. The session page then shows **This session's computer was lost**, and `kortix sessions start` exits 1 with `runtime_identity_unavailable`. The branch and the saved conversation remain. The sandbox disk is gone, and with it every change that was not committed and pushed.
+
+To continue a lost session on a new sandbox:
+
+- In the web app, select **Continue session** in the banner. The page boots the new sandbox.
+- From the CLI, run `kortix sessions recover <session_id>`, then `kortix sessions start <session_id> --wait`.
+- From code, call `s.recover()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/recover`.
+
+The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A continue needs the same permission as a delete: the session owner or a person who manages the project.
+
+| Continue answer | Meaning |
+| --- | --- |
+| `200` | The next start boots a new sandbox with the saved conversation. |
+| `409` `session_not_lost` | The session is not lost. Open it to resume it. |
+| `409` `session_transcript_missing` | The session has no saved conversation, so it cannot continue. Nothing changed. Delete it, or start a new session. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the lost sandbox is gone. Nothing changed. Try again in a minute. |
+| `503` `session_log_restore_off` | This deployment turned off the session log. |
 
 ### When the sandbox stops during a turn
 

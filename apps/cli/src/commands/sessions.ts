@@ -54,6 +54,7 @@ import {
 import {
   runSessionsCompact,
   runSessionsModel,
+  runSessionsRecover,
   runSessionsRestore,
   runSessionsStart,
   runSessionsStop,
@@ -265,6 +266,8 @@ Subcommands:
                                     is kept. --json.
   restore <session-id>              Restore a deleted session within 30 days.
                                     Pass the full id. --json.
+  recover <session-id>              Continue a lost session on a new computer
+                                    with its saved conversation. --json.
   open <session-id>                 Open the dashboard URL for a session.
 
 Global options:
@@ -365,6 +368,9 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'restore' || sub === 'undelete') {
     return runSessionsRestore(argv.slice(1));
+  }
+  if (sub === 'recover') {
+    return runSessionsRecover(argv.slice(1));
   }
   if (sub === 'warm') {
     return runSessionsWarm(argv.slice(1));
