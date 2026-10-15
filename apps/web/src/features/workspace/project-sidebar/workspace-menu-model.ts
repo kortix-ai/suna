@@ -3,7 +3,7 @@ import { workspaceAccountLabel } from '@/features/workspace/project-sidebar/work
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useTranslations } from '@/i18n/use-translations';
 import { listProjectsForAccount } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useCaptureWorkspace } from '@kortix/sdk/react';
 import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import {
@@ -113,6 +113,10 @@ export function useWorkspaceMenuModel(
     selectedAccountId,
   });
 
+  // Kortix Capture is an account feature: the menu links to it once the
+  // account has it on.
+  const captureOn = useCaptureWorkspace(switcherAccountId ?? null).data?.enabled ?? false;
+
   // A failed account never appears in `groups` (it has zero workspaces, and
   // `groupWorkspacesByAccount` drops those), so it must not count toward "empty"
   // either — that would show "No workspaces yet" over an account we simply failed
@@ -131,5 +135,6 @@ export function useWorkspaceMenuModel(
     visibleGroups,
     switcherAccountId,
     isEmpty,
+    captureOn,
   };
 }

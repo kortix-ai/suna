@@ -55,8 +55,6 @@ export interface PlanRecord {
      */
     llmRateMultiplier: number;
   };
-  /** Reserved for per-plan compute pricing. 1.0 everywhere today. */
-  compute: { rateMultiplier: number };
   /** EXACTLY `TierConfig.displayName`. */
   displayName: string;
 }
@@ -85,7 +83,6 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     rank: 0,
     entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false },
     limits: { llmRateMultiplier: 0 },
-    compute: { rateMultiplier: 1.0 },
     displayName: 'No Plan',
   },
 
@@ -99,7 +96,6 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     rank: 1,
     entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false },
     limits: { llmRateMultiplier: 0 },
-    compute: { rateMultiplier: 1.0 },
     displayName: 'Free',
   },
 
@@ -111,7 +107,6 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     rank: 2,
     entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true },
     limits: { llmRateMultiplier: 12 },
-    compute: { rateMultiplier: 1.0 },
     displayName: 'Credits',
   },
 
@@ -132,7 +127,6 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
     },
     limits: { llmRateMultiplier: 12 },
-    compute: { rateMultiplier: 1.0 },
     displayName: 'Enterprise',
   },
 };

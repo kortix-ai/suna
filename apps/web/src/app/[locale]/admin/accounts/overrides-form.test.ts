@@ -5,7 +5,6 @@
 // UI and both billing-affecting. This file is the whole diff contract.
 import { describe, expect, test } from 'bun:test';
 import {
-  MAX_COMPUTE_RATE_MULTIPLIER,
   describeOverridePatch,
   draftFromOverrides,
   isOverrideExpired,
@@ -21,7 +20,6 @@ const EMPTY: OverridesDraft = {
   auditAccess: 'inherit',
   branding: 'inherit',
   managedModels: 'inherit',
-  computeRateMultiplier: '',
 };
 
 describe('draftFromOverrides', () => {
@@ -36,11 +34,6 @@ describe('draftFromOverrides', () => {
     expect(draft.sso).toBe('on');
     expect(draft.managedModels).toBe('off');
     expect(draft.scim).toBe('inherit');
-  });
-
-  test('a stored number becomes the input string', () => {
-    const draft = draftFromOverrides({ computeRateMultiplier: { value: 0.5 } });
-    expect(draft.computeRateMultiplier).toBe('0.5');
   });
 
   test('an expired entry still shows its value — expiry is the server’s job, not the form’s', () => {
@@ -58,12 +51,10 @@ describe('draftFromOverrides', () => {
     const draft = draftFromOverrides({
       sso: { value: 'yes' },
       scim: { value: 1 },
-      computeRateMultiplier: { value: true },
       rbac: null as never,
     });
     expect(draft.sso).toBe('inherit');
     expect(draft.scim).toBe('inherit');
-    expect(draft.computeRateMultiplier).toBe('');
     expect(draft.rbac).toBe('inherit');
   });
 });
@@ -84,7 +75,10 @@ describe('overrideExpiresAt', () => {
 
 describe('overridesPatch — only what changed', () => {
   test('an untouched form sends nothing', () => {
-    const stored = { sso: { value: true }, computeRateMultiplier: { value: 0.5 } };
+    const stored = {
+      sso: { value: true },
+      scim: { value: false, expires_at: '2026-09-01T00:00:00.000Z' },
+    };
     const result = overridesPatch(draftFromOverrides(stored), stored);
     expect(result).toEqual({ ok: true, patch: {} });
   });
@@ -106,74 +100,34 @@ describe('overridesPatch — only what changed', () => {
     expect(result).toEqual({ ok: true, patch: { sso: null } });
   });
 
-  test('a number row sends its value, and an emptied one sends null', () => {
-    expect(overridesPatch({ ...EMPTY, computeRateMultiplier: '0.5' }, {})).toEqual({
-      ok: true,
-      patch: { computeRateMultiplier: { value: 0.5 } },
-    });
-    expect(overridesPatch({ ...EMPTY }, { computeRateMultiplier: { value: 0.5 } })).toEqual({
-      ok: true,
-      patch: { computeRateMultiplier: null },
-    });
-  });
-
-  test('0 is a real multiplier — free compute, not "empty"', () => {
-    expect(overridesPatch({ ...EMPTY, computeRateMultiplier: '0' }, {})).toEqual({
-      ok: true,
-      patch: { computeRateMultiplier: { value: 0 } },
-    });
-  });
-
-  test('re-typing the same number is not a change, so the expiry survives', () => {
+  test('re-sending an unchanged row is a no-op, so its expiry survives', () => {
     // The patch carries no `expires_at`, so ANY entry it sends makes the grant
     // permanent. Not sending an unchanged row is what keeps a timed grant timed.
-    const stored = {
-      computeRateMultiplier: { value: 0.5, expires_at: '2026-09-01T00:00:00.000Z' },
-    };
-    const result = overridesPatch({ ...EMPTY, computeRateMultiplier: '0.50' }, stored);
-    expect(result).toEqual({ ok: true, patch: {} });
+    const stored = { sso: { value: true, expires_at: '2026-09-01T00:00:00.000Z' } };
+    expect(overridesPatch({ ...EMPTY, sso: 'on' }, stored)).toEqual({ ok: true, patch: {} });
   });
 
   test('several rows at once ride one patch', () => {
     const stored = { sso: { value: true } };
-    const result = overridesPatch(
-      { ...EMPTY, managedModels: 'off', computeRateMultiplier: '0.5' },
-      stored,
-    );
+    const result = overridesPatch({ ...EMPTY, managedModels: 'off' }, stored);
     expect(result).toEqual({
       ok: true,
       patch: {
         sso: null,
         managedModels: { value: false },
-        computeRateMultiplier: { value: 0.5 },
       },
     });
   });
 });
 
-describe('overridesPatch — the ranges the server enforces', () => {
-  test('rejects a non-numeric entry before it becomes a 400', () => {
-    const result = overridesPatch({ ...EMPTY, computeRateMultiplier: 'half' }, {});
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.error).toContain('Compute rate multiplier');
-  });
-
-  test('compute rate multiplier is clamped to [0, 10] by validation, not by silence', () => {
-    expect(overridesPatch({ ...EMPTY, computeRateMultiplier: '-1' }, {}).ok).toBe(false);
-    expect(
-      overridesPatch(
-        { ...EMPTY, computeRateMultiplier: String(MAX_COMPUTE_RATE_MULTIPLIER + 0.5) },
-        {},
-      ).ok,
-    ).toBe(false);
-    expect(
-      overridesPatch({ ...EMPTY, computeRateMultiplier: String(MAX_COMPUTE_RATE_MULTIPLIER) }, {})
-        .ok,
-    ).toBe(true);
-  });
-
-  test('the ceiling matches the server constant it mirrors', () => {
-    expect(MAX_COMPUTE_RATE_MULTIPLIER).toBe(10);
+describe('override keys', () => {
+  test('the draft has exactly the six live keys, none numeric', () => {
+    expect(Object.keys(EMPTY).sort()).toEqual(
+      ['auditAccess', 'branding', 'managedModels', 'rbac', 'scim', 'sso'].sort(),
+    );
+    expect(Object.keys(draftFromOverrides({ retiredKey: { value: 2 } })).sort()).toEqual(
+      Object.keys(EMPTY).sort(),
+    );
   });
 });
 

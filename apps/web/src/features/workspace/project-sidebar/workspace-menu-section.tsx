@@ -1,8 +1,5 @@
 'use client';
 
-import { workspaceAccountLabel } from '@/features/workspace/project-sidebar/workspace-grouping';
-import { useWorkspaceMenuModel } from './workspace-menu-model';
-
 /**
  * The workspace-picker SUBMENU of the sidebar's account menu: search, the
  * current account's settings, every workspace in every account, and the create
@@ -49,8 +46,13 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { captureHref } from '@/features/capture/area/use-capture-area';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import {
+  filterWorkspaceGroups,
+  groupWorkspacesByAccount,
+  resolveSwitcherAccountId,
   resolveWorkspaceRowNavigation,
   type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
@@ -62,7 +64,7 @@ import {
   useProjectSwitchStore,
 } from '@/stores/project-switch-store';
 import { type KortixProject } from '@kortix/sdk';
-import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
+import { CheckCircleIcon as CheckCircleSolid, MonitorPlayIcon } from '@phosphor-icons/react';
 import { InvitationsMenuGroup } from './invitations-menu-group';
 
 export function WorkspaceMenuSection() {
@@ -74,6 +76,7 @@ export function WorkspaceMenuSection() {
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
   const switchingToProjectId = useProjectSwitchStore((s) => s.targetProjectId);
   const [query, setQuery] = useState('');
+  const tCapture = useTranslations('capture.account');
 
   const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
 
@@ -84,6 +87,7 @@ export function WorkspaceMenuSection() {
     visibleGroups,
     switcherAccountId,
     isEmpty,
+    captureOn,
   } = useWorkspaceMenuModel(activeProjectId, selectedAccountId, query);
 
   // No explicit close: these are `DropdownMenuItem`s, and Radix closes the menu
@@ -169,6 +173,14 @@ export function WorkspaceMenuSection() {
                 <span className="min-w-0 flex-1 truncate">{t('workspace.accountSettings')}</span>
               </HubLink>
             </DropdownMenuItem>
+            {captureOn ? (
+              <DropdownMenuItem asChild className="cursor-pointer px-1.5">
+                <Link href={captureHref(switcherAccountId, 'devices')}>
+                  <MonitorPlayIcon className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{tCapture('open')}</span>
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
           </div>
           <DropdownMenuSeparator />
         </>
@@ -317,7 +329,7 @@ export function WorkspaceMenuSection() {
             {failedAccounts.map(({ account, result }) => (
               <DropdownMenuGroup key={account.account_id}>
                 <DropdownMenuLabel>
-                  {workspaceAccountLabel(account.name, t('workspace.account'), false)}
+                  {account.name?.trim() || t('workspace.account')}
                 </DropdownMenuLabel>
                 <div className="text-muted-foreground flex w-full items-center gap-2 px-2.5 text-sm">
                   <span className="min-w-0 flex-1 truncate">{t('workspace.loadError')}</span>

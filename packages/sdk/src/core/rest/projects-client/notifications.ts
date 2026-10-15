@@ -62,12 +62,15 @@ export const INBOX_NOTIFICATION_KINDS = [
   'shared',
   'automation_failed',
   'automation_recovered',
+  'capture_device_down',
+  'capture_device_recovered',
 ] as const;
 
 /**
  * What a notification is about: a turn ended (`turn_done`, `turn_error`), the
  * agent asks (`question`, `permission`), a session was shared with you
- * (`shared`), or an automation fails or works again.
+ * (`shared`), an automation fails or works again, or a Capture computer stops
+ * recording or records again (`capture_device_down`, `capture_device_recovered`).
  */
 export type InboxNotificationKind = (typeof INBOX_NOTIFICATION_KINDS)[number];
 
@@ -163,6 +166,8 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences['kinds'] 
   shared: { push: true, email: true },
   automation_failed: { push: true, email: true },
   automation_recovered: { push: true, email: false },
+  capture_device_down: { push: true, email: true },
+  capture_device_recovered: { push: true, email: false },
 };
 
 /** The caller's effective preferences (the defaults with their saved choices applied). */

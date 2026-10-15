@@ -39,6 +39,7 @@ import type {
   WarmProjectSessionResult,
 } from './core/rest/projects-client/sessions';
 import type { ProjectTrigger, ProjectTriggerListing } from './core/rest/projects-client/triggers';
+import type { CaptureSearchHit, CaptureSearchResult, CaptureWorkspace } from './core/rest/platform-client/capture';
 
 declare function fits<Sdk>(contract: Sdk): void;
 /** A parsed JSON body: `readonly` in a server-side type does not reach the wire. */
@@ -100,6 +101,13 @@ export function contractDrift(): void {
 
   fits<KortixAccount>(wire<C.AccountSummary>());
   noPhantom<NoPhantom<KortixAccount, C.AccountSummary>>();
+
+  // Kortix Capture data API (`/accounts/:id/capture/*`).
+  fits<CaptureWorkspace>(wire<C.CaptureWorkspace>());
+  noPhantom<NoPhantom<CaptureWorkspace, C.CaptureWorkspace>>();
+  fits<CaptureSearchResult>(wire<C.CaptureSearchResult>());
+  noPhantom<NoPhantom<CaptureSearchResult, C.CaptureSearchResult>>();
+  noPhantom<NoPhantom<CaptureSearchHit, C.CaptureSearchHit>>();
 
   // GET .../log (P4.2). `SessionLogPage` is written out in the SDK (no zod). Its envelope is
   // checked both ways here; the records inside (`SessionLogMessage`, the thread and session
