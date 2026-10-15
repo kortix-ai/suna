@@ -516,6 +516,21 @@ describe('buildOpencodeConfigContent — kortix.yaml v3 (schema: 3)', () => {
     expect((await build()).skills.paths).toEqual([join(root, 'skills/research'), injected])
   })
 
+  test('a release injects the Kortix skills into its own skills/: each kortix-* folder is declared, an unregistered sibling is not', async () => {
+    // The live layout: the managed overlay lands in <release>/skills/kortix-*, and the boot-link skills dir does not exist.
+    for (const name of ['kortix-system', 'kortix-cli', 'ghost']) {
+      mkdirSync(join(root, 'skills', name), { recursive: true })
+      writeFileSync(join(root, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: x\n---\n`)
+    }
+    const config = JSON.parse(
+      (await buildOpencodeConfigContent(
+        { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(SET) },
+        { configRoot: root, injectedSkillsDir: join(root, 'no-such-boot-link', 'skills'), projectSkillsDir: join(root, 'skills') },
+      ))!,
+    )
+    expect(config.skills.paths).toEqual([join(root, 'skills/research'), join(root, 'skills/kortix-cli'), join(root, 'skills/kortix-system')])
+  })
+
   test("plugins: the session agent's OpenCode extensions as file:// specs; a missing file is skipped", async () => {
     const plugins: string[] = (await build()).plugin
     expect(plugins).toContain(`file://${join(root, 'ext/audit.ts')}`)

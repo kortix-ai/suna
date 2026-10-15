@@ -8,7 +8,7 @@
  * resolves. Nothing is written into the config root.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -72,6 +72,20 @@ describe('stageExtensionModule', () => {
     })
     expect(await load(spec!)).toBe('1.2.3')
     expect(readdirSync(configRoot, { recursive: true }).some((path) => String(path).includes('node_modules'))).toBe(false)
+  })
+
+  test('a sealed (read-only) release folder stages: the copy is writable and leaves no stage behind', async () => {
+    fakePackage(join(baked, 'node_modules'), 'kortix-fixture-dep', '1.2.3')
+    // A config release is sealed read-only; the copy keeps those modes unless made writable.
+    for (const dir of ['extensions/demo/lib', 'extensions/demo', 'extensions']) chmodSync(join(configRoot, dir), 0o555)
+    try {
+      const spec = await stageExtensionModule(configRoot, 'extensions/demo/plugin.ts', { cacheRoot: cache, bakedDir: baked })
+      expect(spec).not.toBeNull()
+      expect(await load(spec!)).toBe('1.2.3')
+      expect(readdirSync(cache).filter((name) => name.startsWith('.stage-'))).toEqual([])
+    } finally {
+      for (const dir of ['extensions', 'extensions/demo', 'extensions/demo/lib']) chmodSync(join(configRoot, dir), 0o755)
+    }
   })
 
   test('an unchanged extension reuses its staged copy; a changed one gets a new one', async () => {

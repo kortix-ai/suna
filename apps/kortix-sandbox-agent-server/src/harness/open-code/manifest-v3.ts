@@ -5,7 +5,7 @@
  * and `codemode`) into what OpenCode reads, and answers which agent may run a
  * command.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { compiledSetV3 } from '@/lib/config/manifest-v3'
@@ -83,7 +83,19 @@ export async function applyV3(
   // OpenCode scans `**/SKILL.md` under each path, the folder itself included:
   // a registered folder loads that skill and nothing beside it.
   const skillDirs = Object.entries(set.skills ?? {}).flatMap(([name, folder]) => existing(`skill "${name}"`, folder) ?? [])
-  if (skillDirs.length > 0) out.skills = { paths: skillDirs }
+  // A release takes the managed Kortix skills into its own `skills/`
+  // (`ensureInjectedManagedSkills`). They are always registered: declare each
+  // `kortix-*` folder by name, never the folder that holds them, so an
+  // unregistered project skill beside them stays invisible.
+  const releaseSkills = join(configRoot, 'skills')
+  const kortixSkillDirs = existsSync(releaseSkills)
+    ? readdirSync(releaseSkills, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith('kortix-'))
+        .map((entry) => join(releaseSkills, entry.name))
+        .sort()
+    : []
+  const paths = [...skillDirs, ...kortixSkillDirs.filter((dir) => !skillDirs.includes(dir))]
+  if (paths.length > 0) out.skills = { paths }
 
   const agent = sessionAgentName(set, env)
   const plugins: string[] = []

@@ -20,7 +20,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { cp, mkdir, readFile, readdir, rename, rm, symlink } from 'node:fs/promises'
+import { chmod, cp, mkdir, readFile, readdir, rename, rm, symlink } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { logger } from '@/lib/log/logger'
@@ -97,6 +97,9 @@ export async function stageExtensionModule(configRoot: string, module: string, o
     temp = join(cacheRoot, `.stage-${randomUUID()}`)
     await mkdir(cacheRoot, { recursive: true })
     await cp(folder, temp, { recursive: true, filter: (source) => !SKIPPED.has(source.split(sep).at(-1) ?? '') })
+    // A config release is sealed read-only and `cp` keeps its modes: the copy
+    // could take no node_modules, and the cleanup could not delete it.
+    await makeDirsWritable(temp)
     const bakedModules = join(bakedDir, 'node_modules')
     if (await satisfiedBy(bakedModules, temp)) {
       await symlink(bakedModules, join(temp, 'node_modules'))
@@ -117,5 +120,13 @@ export async function stageExtensionModule(configRoot: string, module: string, o
     return null
   } finally {
     if (temp) await rm(temp, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+/** Give the owner write access to `dir` and every directory below it. */
+async function makeDirsWritable(dir: string): Promise<void> {
+  await chmod(dir, 0o755)
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) await makeDirsWritable(join(dir, entry.name))
   }
 }
