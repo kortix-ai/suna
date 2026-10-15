@@ -584,10 +584,11 @@ function GeneralWorkspaceCard({
         />
       </SettingsRow>
       {/* The project-wide default effort. '' (= null on the wire) means
-          automatic — same sentinel the sandbox-provider pin uses for "follow
-          the default". Delivery injects the stored value only when a prompt
+          automatic. Delivery injects the stored value only when a prompt
           carries no variant of its own, so this can never fight an explicit
-          pick made in a session. */}
+          pick made in a session. (The sandbox-provider pin instead uses a
+          distinct '__auto__' sentinel; here the empty string maps 1:1 to the
+          wire's null, so no extra token is needed.) */}
       <SettingsRow label={t('defaultEffort')} description={t('defaultEffortDescription')}>
         <Select
           value={project.default_reasoning_effort ?? DEFAULT_EFFORT_AUTOMATIC}
