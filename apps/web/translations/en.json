@@ -7546,6 +7546,7 @@
       "treeMessages": "messages",
       "subAgentsLoaded": "{loaded} of {total} sub-agents loaded",
       "loadAll": "Load all",
+      "subAgentLoadFailed": "Could not load",
       "detailInput": "Input tokens",
       "detailOutput": "Output tokens",
       "detailReasoning": "Reasoning tokens",
