@@ -1606,7 +1606,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   if (!entitled) {
     return (
       <div className="mx-auto w-full max-w-xl">
-        <EnterpriseUpsell feature="identity" />
+        <EnterpriseUpsell feature="identity" accountId={accountId} />
       </div>
     );
   }

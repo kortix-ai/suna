@@ -5,6 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (Enterprise is a feature layer; trials removed)
+- `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.
+  Demo is self-serve (owners and admins); Licensed is a license contract.
+- `getEnterpriseDemo` / `setEnterpriseDemo` call `GET`/`PUT
+  /accounts/:id/iam/enterprise-demo` again (they rejected with
+  `ENDPOINT_RETIRED`). New hook `useSetEnterpriseDemo()`.
+- `contactEnterpriseSales(params)` (`POST /billing/enterprise/contact`),
+  `kortix.billing.contactSales`, `useContactSales()`: one-click "Talk to sales".
+- `AccountState.trial` is always null (`@deprecated`): trials are removed.
+- `AccountContract.credits_usd` / `AccountEnterpriseOffer.credits_usd` are
+  optional and `@deprecated`: a license carries no credits.
+
 ### Added (BYOK fee entitlement)
 - `ADMIN_OVERRIDE_KEYS` and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS` add `'byokFee'`
   (additive union member): the BYOK platform fee is an entitlement, on by

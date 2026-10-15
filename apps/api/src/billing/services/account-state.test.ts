@@ -270,91 +270,40 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
  *   subscription.tier_key  → STORED. What Stripe sold. Wire-compatible.
  *   plan.* / tier.*        → RESOLVED. What the account behaves as.
  */
-describe('buildMinimalAccountState — trialing account reports the trial plan', () => {
-  const TRIAL_TIER = 'credits';
-
-  function trialing(overrides: Record<string, unknown> = {}) {
-    return creditAccount({
-      tier: 'free',
-      trialStatus: 'active',
-      trialTier: TRIAL_TIER,
-      trialEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-      ...overrides,
-    });
-  }
-
-  test('tier.* and plan.* describe the TRIAL plan while subscription.tier_key keeps the stored one', async () => {
-    account = trialing();
-
+describe('buildMinimalAccountState — the Enterprise feature layer', () => {
+  test('off by default; trial is always null', async () => {
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '200' });
     const state = await buildMinimalAccountState('acct-1');
-
-    // Stored — unchanged wire value.
-    expect(state.subscription.tier_key).toBe('free');
-    expect(state.subscription.tier_display_name).toBe('Free');
-
-    // Resolved — what the gates enforce.
-    expect(state.tier.name).toBe(TRIAL_TIER);
-    expect(state.tier.display_name).toBe('Credits');
-    expect(state.plan?.key).toBe(TRIAL_TIER);
+    expect(state.enterprise).toEqual({ state: 'off' });
+    expect(state.trial).toBeNull();
     expect(state.plan?.family).toBe('credits');
-    expect(state.plan?.label).toBe('Credits');
-    expect(state.plan?.status).toBe('current');
-    expect(state.plan?.shape).toBe('credits');
-    expect(state.plan?.sublabel).toBeNull();
-    // A trial carries no self-serve monthly amount.
-    expect(state.plan?.monthly_usd).toBeNull();
   });
 
-  test('credit purchases follow the resolved plan — the same predicate the purchase route gates on', async () => {
-    account = trialing();
-
+  test('demo: Enterprise features on, the billing plan and its amount unchanged, plan limits', async () => {
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '200', demoEnterprise: true });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.tier.can_purchase_credits).toBe(true);
-    expect(state.subscription.can_purchase_credits).toBe(true);
+    expect(state.enterprise).toEqual({ state: 'demo' });
+    expect(state.plan?.family).toBe('credits');
+    expect(state.plan?.monthly_usd).toBe(200);
+    expect(state.subscription.monthly_usd).toBe(200);
+    expect(state.tier.name).toBe('credits');
+    expect(state.tier.entitlements?.sso).toBe(true);
   });
 
-  test('an Enterprise trial keeps the billing plan and its amount; the gates read Enterprise', async () => {
-    account = trialing({ tier: 'credits', planMonthlyUsd: '500', trialTier: 'enterprise' });
-
+  test('licensed: Enterprise limits at the gates, the billing plan unchanged', async () => {
+    account = creditAccount({ tier: 'free', enterpriseEntitled: true });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.plan?.family).toBe('credits');
-    expect(state.plan?.monthly_usd).toBe(500);
-    expect(state.subscription.monthly_usd).toBe(500);
+    expect(state.enterprise).toEqual({ state: 'licensed' });
+    expect(state.plan?.family).toBe('free');
     expect(state.tier.name).toBe('enterprise');
-    expect(state.trial?.plan).toBe('enterprise');
   });
 
-  test('a Credits trial on Free lends the plan: subscription.monthly_usd stays null', async () => {
-    account = trialing();
-
+  test('a stale active trial on the row grants nothing', async () => {
+    account = creditAccount({ tier: 'free', trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: new Date(Date.now() + 86_400_000).toISOString() });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.plan?.family).toBe('credits');
-    expect(state.plan?.monthly_usd).toBeNull();
-    expect(state.subscription.monthly_usd).toBeNull();
-  });
-
-  test('monthly_credits stays on the STORED plan — a trial grants no credits', async () => {
-    account = trialing();
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
-  });
-
-  test('trial dates are ISO 8601, not the Postgres text form Safari cannot parse', async () => {
-    const ends = new Date(Date.now() + 9 * 86_400_000);
-    // What the driver returns for a timestamptz column: "2026-10-24 02:01:50.962+00".
-    const pgText = `${ends.toISOString().replace('T', ' ').replace('Z', '')}+00`;
-    account = trialing({ trialEndsAt: pgText, trialStartedAt: pgText });
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.trial?.ends_at).toBe(ends.toISOString());
-    expect(state.trial?.started_at).toBe(ends.toISOString());
-    expect(state.trial?.days_left).toBe(9);
+    expect(state.enterprise).toEqual({ state: 'off' });
+    expect(state.trial).toBeNull();
+    expect(state.tier.entitlements?.sso).toBe(false);
   });
 });
 

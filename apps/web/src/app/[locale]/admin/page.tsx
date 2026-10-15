@@ -32,7 +32,7 @@ const DESTINATIONS: { href: string; label: string; description: string; icon: Ic
   {
     href: '/admin/accounts',
     label: 'Accounts',
-    description: 'Tiers, credits, trials, entitlements, members and billing state, per account.',
+    description: 'Plans, credits, Enterprise, entitlements, members and billing state, per account.',
     icon: UsersIcon,
   },
   {
