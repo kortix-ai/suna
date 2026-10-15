@@ -49,14 +49,56 @@ UPDATE kortix.credit_accounts
      )
    );--> statement-breakpoint
 
--- 3. The managed-models column override moves to its JSONB key, which is the
---    one override store. An existing JSONB entry wins.
+-- 3. The managed-models override moves to its JSONB key `managedModels`, the
+--    one override store. Same precedence as before: the JSONB
+--    `managedModelsOverride` entry first (with its expiry), then the column.
+--    An existing `managedModels` entry wins over both.
+UPDATE kortix.credit_accounts
+   SET entitlement_overrides = entitlement_overrides
+         || jsonb_build_object('managedModels', entitlement_overrides -> 'managedModelsOverride'),
+       updated_at = now()
+ WHERE jsonb_typeof(entitlement_overrides -> 'managedModelsOverride' -> 'value') = 'boolean'
+   AND NOT (entitlement_overrides ? 'managedModels');--> statement-breakpoint
+
 UPDATE kortix.credit_accounts
    SET entitlement_overrides = coalesce(entitlement_overrides, '{}'::jsonb)
          || jsonb_build_object('managedModels', jsonb_build_object('value', managed_models_override)),
        updated_at = now()
  WHERE managed_models_override IS NOT NULL
    AND NOT (coalesce(entitlement_overrides, '{}'::jsonb) ? 'managedModels');--> statement-breakpoint
+
+-- 3b. `enterprise_entitled` turned on SSO, SCIM, advanced roles, audit export
+--     and branding on any plan. An account off the Enterprise plan keeps
+--     exactly those five as per-key overrides: the unexpired JSONB entry with
+--     its expiry first, else the column, permanent. A key the account already
+--     overrides is left as it is. An Enterprise-plan account gets a contract
+--     record in step 4 instead.
+WITH entitled AS (
+  SELECT account_id,
+         CASE
+           WHEN jsonb_typeof(entitlement_overrides -> 'enterpriseEntitled' -> 'value') = 'boolean'
+            AND (entitlement_overrides -> 'enterpriseEntitled' ->> 'expires_at' IS NULL
+                 OR (entitlement_overrides -> 'enterpriseEntitled' ->> 'expires_at')::timestamptz > now())
+           THEN CASE WHEN (entitlement_overrides -> 'enterpriseEntitled' ->> 'value')::boolean
+                     THEN jsonb_strip_nulls(jsonb_build_object(
+                            'value', true,
+                            'expires_at', entitlement_overrides -> 'enterpriseEntitled' -> 'expires_at'))
+                END
+           WHEN enterprise_entitled = true THEN jsonb_build_object('value', true)
+         END AS entry
+    FROM kortix.credit_accounts
+   WHERE coalesce(tier, '') <> 'enterprise'
+)
+UPDATE kortix.credit_accounts ca
+   SET entitlement_overrides = coalesce(ca.entitlement_overrides, '{}'::jsonb) || coalesce((
+         SELECT jsonb_object_agg(k, e.entry)
+           FROM unnest(ARRAY['sso', 'scim', 'rbac', 'auditAccess', 'branding']) AS k
+          WHERE NOT (coalesce(ca.entitlement_overrides, '{}'::jsonb) ? k)
+       ), '{}'::jsonb),
+       updated_at = now()
+  FROM entitled e
+ WHERE e.account_id = ca.account_id
+   AND e.entry IS NOT NULL;--> statement-breakpoint
 
 -- 4. Every account on the Enterprise plan without a contract on file gets an
 --    open-ended manual contract record, so the admin console shows what it is

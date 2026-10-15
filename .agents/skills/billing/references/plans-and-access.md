@@ -126,8 +126,7 @@ A trial is a dated grant of a plan on the trial columns of `credit_accounts`:
 ## Overrides
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
-`auditAccess`, `branding`, `maxConcurrentSessions`. Each `{ value,
-expires_at? }`. Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+`auditAccess`, `branding`. Each `{ value: boolean, expires_at? }`. Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
 Removed keys: `demoEnterprise`, `enterpriseEntitled`, `managedModelsOverride`,
 `computeRateMultiplier`.
 
@@ -136,10 +135,13 @@ Removed keys: `demoEnterprise`, `enterpriseEntitled`, `managedModelsOverride`,
 - `demo_enterprise` (column, JSONB key, IAM and admin routes, the "Turn on the
   preview" card). Accounts with an unexpired demo become 14-day enterprise
   trials with no credit grant.
-- `enterprise_entitled` (column, JSONB key, admin route, admin switch). The
-  plan or per-key overrides replace it.
-- `managed_models_override` column. Its value moves to the `managedModels`
-  override key.
+- `enterprise_entitled` (column, JSONB key, admin route, admin switch). An
+  account off the Enterprise plan that had it keeps the five features it
+  granted (`sso`, `scim`, `rbac`, `auditAccess`, `branding`) as per-key
+  overrides, with the flag's expiry. An Enterprise-plan account gets a
+  contract record instead.
+- `managed_models_override` column and the `managedModelsOverride` JSONB key.
+  The value moves to the `managedModels` key; the JSONB entry wins, as before.
 - `computeRateMultiplier` override.
 - Trial seats and monthly trial re-grants.
 
