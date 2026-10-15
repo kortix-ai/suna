@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { buildOpencodeConfigContent, capabilityToolRules, denyBuiltinSkills } from '@/harness/open-code/lifecycle'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
+import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env'
 
 const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 
@@ -288,6 +289,26 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
       model: 'anthropic/claude-sonnet-5',
       prompt: 'Triage support tickets.',
     })
+  })
+
+  // Platinum prod, 2026-10-14: a create whose `KORTIX_COMPILED_AGENT_CONFIG=…\0` was over
+  // 131,072 bytes never booted. The API now sends such a config gzip-encoded in parts.
+  test('a compiled config over the exec limit arrives gzip-encoded and composes the same agents', async () => {
+    const prompt = `Triage support tickets. ${'Quote the order id and the refund policy section. '.repeat(5_500)}`
+    const compiled = JSON.stringify({ model: 'anthropic/claude-sonnet-5', agent: { support: { mode: 'primary', prompt } } })
+    const env = encodeCompiledAgentConfigEnv(compiled)
+    expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG')
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS).toBe('1')
+
+    const config = JSON.parse((await buildOpencodeConfigContent(env))!)
+    expect(config.model).toBe('anthropic/claude-sonnet-5')
+    expect(config.agent.support).toEqual({ mode: 'primary', prompt })
+  })
+
+  test('a damaged gzip form composes no compiled agents rather than failing the boot', async () => {
+    const env = { KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS: '2', KORTIX_COMPILED_AGENT_CONFIG_GZ_0: 'H4sI' }
+    const config = JSON.parse((await buildOpencodeConfigContent(env))!)
+    expect(config.agent).toBeUndefined()
   })
 
   // A Codex wire model keeps its whole ref as the Kortix model id.

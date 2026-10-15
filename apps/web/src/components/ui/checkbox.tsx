@@ -18,7 +18,7 @@ const checkboxControlClassName = cn(
   'peer flex size-[18px] shrink-0 items-center justify-center rounded-sm border-[1.5px] border-muted-foreground/60 bg-transparent text-background',
   'transition-[border-color,background-color]',
   'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-  'disabled:cursor-default disabled:opacity-50',
+  'disabled:cursor-default disabled:opacity-50', // cursor-default: a disabled checkbox takes no click
   'aria-invalid:border-destructive',
 );
 

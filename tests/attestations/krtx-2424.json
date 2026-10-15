@@ -1,0 +1,20 @@
+{
+  "source_hash": "e1aaa447e31a5ad75f83cf8c496ae4865a4e4b22c3ebef69b8bea0fc76ed4560",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-composio-transient.test.ts",
+    "apps/api/src/http-errors.ts",
+    "apps/api/src/index.ts",
+    "apps/api/src/shared/composio-transient.ts",
+    "packages/sdk/src/core/http/response-error.test.ts",
+    "packages/sdk/src/core/http/response-error.ts"
+  ],
+  "diff_hash": "75a62103b6a56b33fb62363896e65d3e2555a1e741fe1d70ba8c79e0638473b8",
+  "head": "ad301358d068a80a028f5b2d24f02e1af0f4d4c8",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T19:16:24.918Z"
+}
