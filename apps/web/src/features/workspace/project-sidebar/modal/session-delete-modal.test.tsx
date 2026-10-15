@@ -190,7 +190,7 @@ describe('SessionDeleteModal', () => {
     expect(toasts).toHaveLength(1);
     expect(toasts[0]).toMatchObject({
       kind: 'undo',
-      message: '"Fix the login bug" deleted',
+      message: 'Fix the login bug deleted',
       options: { id: 'session-delete-undo-S1', duration: 8000 },
     });
     expect(events).toEqual(['deleted', 'open:false']);
