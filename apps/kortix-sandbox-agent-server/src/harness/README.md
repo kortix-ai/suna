@@ -1053,8 +1053,20 @@ v1 and v2 sets keep the behavior above.
   skill.
 - **Extensions.** The session agent is `KORTIX_AGENT_NAME`, else
   `default_agent`. Each name in its `extensions` with an `opencode` path
-  becomes the plugin `file://<config root>/<path>`. A missing file is logged
-  and skipped. A mid-session agent switch keeps the plugins of the boot agent.
+  becomes a plugin. A missing file is logged and skipped. A mid-session
+  agent switch keeps the plugins of the boot agent.
+- **Extension dependencies.** A module with no `package.json` between it and
+  the config root loads as `file://<config root>/<path>`. Otherwise the
+  nearest such folder is copied to
+  `<runtime state dir>/opencode/extensions/<content hash>/` and the plugin
+  loads from there (`open-code/extension-deps.ts`). Its `node_modules` is a
+  link to the baked tree (`/opt/kortix/opencode-config-deps`) when every
+  declared dependency is there at a version the declared range accepts, else
+  an `ensureOpencodeConfigDeps` install (offline, then the declared ranges,
+  then the registry). The working tree and a sealed release never get a
+  `node_modules`. An unchanged folder reuses its copy. A failed install
+  skips that plugin and the boot goes on. The starter's pty extension pins
+  `zod 4.1.8`; the baked tree's top-level `zod` is 3.x, so it installs.
 - **Commands.** `compiled.commands` becomes OpenCode `command`
   (`template`, `description`). `GET /command` (proxy) and the `commands`
   section of `/kortix/runtime/state` list only the compiled commands, each
