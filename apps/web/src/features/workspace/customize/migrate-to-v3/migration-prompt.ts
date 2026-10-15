@@ -19,6 +19,8 @@
  */
 export const MIGRATE_TO_V3_PROMPT = `Upgrade this project's manifest to kortix_version 3 (kortix.yaml). The project is on kortix_version 1 (kortix.toml) or kortix_version 2 (kortix.yaml): check \`kortix_version\` at the top of the manifest first. Read everything first, then make the change, then land it as a change request — do not merge it yourself.
 
+On kortix_version 2, start with \`kortix migrate\`: it prints the v3 conversion and a "Not carried over" list, and \`kortix migrate --write\` writes it. Then check its result against every section below and carry over by hand what it lists. On kortix_version 1, convert by hand.
+
 ## 1. Read before you write
 
 - The current manifest: \`kortix.toml\` (v1) or \`kortix.yaml\` (v2), plus every file its \`imports:\` names.

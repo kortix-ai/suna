@@ -500,7 +500,7 @@ describe('kortix projects upgrade', () => {
     expect(r.stdout).toContain('never');
   });
 
-  test('creates a session seeded with the v1→v2 migration prompt', async () => {
+  test('creates a session seeded with the v3 migration prompt', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'upgrade', '--project', PROJECT], config);
     expect(r.code).toBe(0);
@@ -510,10 +510,10 @@ describe('kortix projects upgrade', () => {
       name: string;
       metadata: Record<string, unknown>;
     };
-    expect(body.name).toBe('Migrate manifest to v2');
-    expect(body.metadata).toEqual({ kind: 'project-upgrade', upgrade_id: 'manifest-v2' });
+    expect(body.name).toBe('Migrate manifest to v3');
+    expect(body.metadata).toEqual({ kind: 'project-upgrade', upgrade_id: 'manifest-v3' });
     expect(body.initial_prompt).toContain(
-      "Migrate this project's manifest from kortix_version 1",
+      "Upgrade this project's manifest to kortix_version 3",
     );
     // The landing contract is the load-bearing half of the prompt.
     expect(body.initial_prompt).toContain('kortix cr open');
@@ -532,14 +532,15 @@ describe('kortix projects upgrade', () => {
         'features',
         'workspace',
         'customize',
-        'migrate-to-v2',
+        'migrate-to-v3',
         'migration-prompt.ts',
       ),
       'utf8',
     );
-    const marker = 'export const MIGRATE_TO_V2_PROMPT = `';
+    const marker = 'export const MIGRATE_TO_V3_PROMPT = `';
     const start = webPrompt.indexOf(marker) + marker.length;
-    const end = webPrompt.lastIndexOf('`;');
+    // The first unescaped closing backtick: the prompt itself holds escaped ones.
+    const end = start + webPrompt.slice(start).search(/(?<!\\)`;/);
     // Unescape the template literal the same way the runtime does.
     const expected = webPrompt.slice(start, end).replaceAll('\\`', '`').replaceAll('\\$', '$');
 
@@ -559,7 +560,7 @@ describe('kortix projects upgrade', () => {
     expect(JSON.parse(r.stdout)).toEqual({
       session_id: 'sess_upgrade',
       project_id: PROJECT,
-      upgrade_id: 'manifest-v2',
+      upgrade_id: 'manifest-v3',
     });
   });
 });
