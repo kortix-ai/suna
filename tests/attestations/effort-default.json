@@ -1,5 +1,5 @@
 {
-  "source_hash": "be017ca5d5b45a052847e12b009d367eb1646d653562308e10f7b996cc444090",
+  "source_hash": "87c1f287ccd5141cbbd04d67b9d750999216e5c87a7a25eb3ca9a792651724ab",
   "diff_files": [
     "apps/api/src/projects/lib/effort-default.test.ts",
     "apps/api/src/projects/lib/effort-default.ts",
@@ -35,17 +35,18 @@
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
     "packages/shared/src/audit-route-labels.ts",
+    "tests/e2e/shard-durations.json",
     "tests/spec/end-to-end.md",
     "tests/spec/routes.generated.json",
     "tests/src/flows/projects-misc.flow.ts"
   ],
-  "diff_hash": "19cb8b27b4f3c2bf397d272ae122ce4f00146471105587ae2f9901559a5e3e1e",
-  "head": "3f5994af15871dbef3a414e5996bc8e1fb5aab15",
+  "diff_hash": "aef7c134de17c13bcd602b7f393d671e6946475e5c06b35eb89beb51f3b0efd8",
+  "head": "cc36ae65b7493332e682ab8bee7be672cd6f33c4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T11:20:23.264Z"
+  "at": "2026-10-15T12:47:36.397Z"
 }
