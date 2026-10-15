@@ -20,6 +20,9 @@ let readCalls = 0;
 let readDelayMs = 20;
 
 const realSessionReload = await import('../session-reload');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../session-reload', () => ({
   ...realSessionReload,
   readSandboxConfigState: async (_input: { sessionId: string }) => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 
 let sandboxCandidates: any[] = [];
 let branchCandidates: any[] = [];
@@ -73,8 +74,9 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-mock.module('../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
+mock.module('../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));

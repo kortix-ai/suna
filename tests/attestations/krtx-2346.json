@@ -1,0 +1,39 @@
+{
+  "source_hash": "f00b4c75a85330a952c892db487acfc8e463cf7689e813e9f775ab268671500b",
+  "diff_files": [
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/__tests__/e2e-project-maintenance.test.ts",
+    "apps/api/src/mcp/cli.test.ts",
+    "apps/api/src/projects/lib/__tests__/turn-start-convergence-probe-coalesce.test.ts",
+    "apps/api/src/projects/reaping/box-reaper.ts",
+    "apps/api/src/projects/reaping/sandbox-state-sync.test.ts",
+    "apps/api/src/projects/reaping/sandbox-state-sync.ts",
+    "apps/api/src/projects/routes/marketplace-install-session.test.ts",
+    "apps/api/src/projects/sandbox-reaper.test.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/stop.test.ts",
+    "apps/api/src/projects/session-lifecycle/actions.ts",
+    "apps/api/src/sandbox-proxy/index.ts",
+    "apps/api/src/sandbox-proxy/provider.ts",
+    "apps/api/src/sandbox-proxy/routes/preview-deadline.test.ts",
+    "apps/api/src/sandbox-proxy/routes/share.ts",
+    "apps/api/src/snapshots/provider-coverage.test.ts",
+    "apps/api/src/snapshots/provider-coverage.ts",
+    "apps/api/src/snapshots/sandbox-status.test.ts",
+    "apps/api/src/snapshots/sandbox-status.ts",
+    "apps/web/src/features/workspace/customize/sections/llm-provider/custom-provider-form.clipboard.test.tsx",
+    "apps/web/src/stores/user-preferences-store.ts",
+    "packages/sdk/src/core/session/open-bundle.test.ts",
+    "packages/sdk/src/core/session/open-bundle.ts",
+    "scripts/dev-local.sh",
+    "scripts/dev-local.test.mjs"
+  ],
+  "diff_hash": "33968ab09be3f2bc1b8606e5b3a96aa1a617838a49857ef180d994b2368456bc",
+  "head": "aff3c7caa10e7f1f74c8bb04770d2cba74fdac56",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T04:56:01.733Z"
+}
