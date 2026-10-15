@@ -1,5 +1,5 @@
 {
-  "source_hash": "f72ef851d3f51f1564a10410373f9a1dd27b11add6476363b5023670999d813a",
+  "source_hash": "6f653a9bf5fb50eb86bff4700b156b19c1bf0e851040020e3b85daf4417ac228",
   "diff_files": [
     "apps/api/src/__tests__/integration-feature-flag-toggle-http.test.ts",
     "apps/api/src/__tests__/unit-feature-flags.test.ts",
@@ -70,13 +70,13 @@
     "tests/src/flows/connectors.flow.ts",
     "tests/src/flows/experimental.flow.ts"
   ],
-  "diff_hash": "2555eff2ad08e0cfdc6f2297abbc53f5c194535cf2d880e4d33dfbfbb972b118",
-  "head": "40dbe18a9af8e3c9979dd5729338e94cfdda4d15",
+  "diff_hash": "f08a9494e31585333126b5c1a15df6254a4a72b1bff847a64bf86396ade57455",
+  "head": "cfb46ec8ca9e9808b7d90862d2bd287b359cca2a",
   "passed": false,
   "lanes": {
-    "core": "fail",
-    "packages": "pass",
-    "db-suites": "pass"
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "fail"
   },
-  "at": "2026-10-15T12:53:37.170Z"
+  "at": "2026-10-15T13:29:20.080Z"
 }
