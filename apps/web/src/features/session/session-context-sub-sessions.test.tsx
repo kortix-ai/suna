@@ -85,7 +85,7 @@ describe('SubSessionSection totals', () => {
   });
 });
 
-describe('SubSessionSection loads a sub-agent thread when its row is shown', () => {
+describe('SubSessionSection loads a sub-agent thread once its row scrolls into view', () => {
   const ROOT = 'ses_lazy_root', CHILD = 'ses_lazy_child', GRAND = 'ses_lazy_grand', GREAT = 'ses_lazy_great';
   const sessions = [
     { id: ROOT, title: 'Root' },
@@ -94,7 +94,7 @@ describe('SubSessionSection loads a sub-agent thread when its row is shown', () 
     { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
   ] as unknown as Session[];
 
-  test('a shown row reads its saved window; a row behind a closed caret reads nothing until it opens', async () => {
+  test('a row reads its saved window only once it is in view, once; a row behind a closed caret reads nothing', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const { configureKortix } = await import('@kortix/sdk');
     configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
@@ -104,35 +104,220 @@ describe('SubSessionSection loads a sub-agent thread when its row is shown', () 
       requests.push(String(url));
       return Response.json({ available: false, reason: 'test', messages: [] });
     }) as unknown as typeof fetch;
-    const children = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`child=${id}`)));
+    // A fake IntersectionObserver: `show(title)` reports the row with that title in view.
+    type Row = { title: string };
+    const observers = new Set<{ cb: IntersectionObserverCallback; rows: Set<Row> }>();
+    const originalObserver = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = class {
+      private o: { cb: IntersectionObserverCallback; rows: Set<Row> };
+      constructor(cb: IntersectionObserverCallback) { observers.add((this.o = { cb, rows: new Set() })); }
+      observe(row: Row) { this.o.rows.add(row); }
+      disconnect() { observers.delete(this.o); }
+    } as unknown as typeof IntersectionObserver;
+    const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    const show = async (title: string) => {
+      await act(async () => {
+        for (const o of [...observers]) for (const row of o.rows) if (row.title === title) o.cb([{ isIntersecting: true, target: row } as never], o as never);
+      });
+      await settle();
+    };
+    const loaded = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`child=${id}`)));
+    // Each row's button gets a node naming its title (react-test-renderer has no DOM).
+    type El = { type: unknown; props: { children?: unknown } };
+    const createNodeMock = (el: El) => {
+      const spans = Array.isArray(el.props.children) ? (el.props.children as Array<El | null>) : [];
+      return { title: String(spans.find((c) => c?.type === 'span')?.props.children ?? '') };
+    };
+    const tree = (
+      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <SubSessionSection
+          source={{ projectId: 'p_lazy', sessionId: 's_lazy', runtimeSessionId: ROOT }}
+          session={sessions[0]}
+          allSessions={sessions}
+          pricingLookup={() => null}
+          fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+        />
+      </NextIntlClientProvider>
+    );
     let renderer: ReturnType<typeof create>;
     try {
-      await act(async () => {
-        renderer = create(
-          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-            <SubSessionSection
-              source={{ projectId: 'p_lazy', sessionId: 's_lazy', runtimeSessionId: ROOT }}
-              session={sessions[0]}
-              allSessions={sessions}
-              pricingLookup={() => null}
-              fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
-            />
-          </NextIntlClientProvider>,
-        );
-      });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      // The child row and the grandchild row are drawn; the great-grandchild is behind a closed caret.
-      expect(children()).toEqual([CHILD, GRAND]);
+      await act(async () => { renderer = create(tree, { createNodeMock: createNodeMock as never }); });
+      await settle();
+      // The child row and the grandchild row are drawn, not yet in view: nothing loads.
+      expect(loaded()).toEqual([]);
 
+      await show('Child agent');
+      expect(loaded()).toEqual([CHILD]);
+      await show('Grandchild agent');
+      expect(loaded()).toEqual([CHILD, GRAND]);
+
+      // A re-render of the open modal keeps both loaded and reads nothing again.
+      const before = requests.length;
+      await act(async () => { renderer!.update(tree); });
+      await settle();
+      expect(requests.length).toBe(before);
+
+      // Opening the grandchild's caret draws the great-grandchild row; it loads once in view.
       type Node = { children: Array<Node | string> };
       const textOf = (n: Node | string): string => (typeof n === 'string' ? n : n.children.map(textOf).join(''));
       const caret = renderer!.root.findAll((n) => n.type === 'button' && textOf(n as unknown as Node).includes('Grandchild agent'))[0]!;
       await act(async () => { caret.props.onClick(); });
-      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-      expect(children()).toEqual([CHILD, GRAND, GREAT]);
+      await settle();
+      expect(loaded()).toEqual([CHILD, GRAND]);
+      await show('Great-grandchild agent');
+      expect(loaded()).toEqual([CHILD, GRAND, GREAT]);
     } finally {
       await act(async () => { renderer!.unmount(); });
       globalThis.fetch = originalFetch;
+      globalThis.IntersectionObserver = originalObserver;
+    }
+  });
+});
+
+describe('SubSessionSection with more sub-agents than the row memo holds', () => {
+  // 40 loaded sub-agent threads plus a subscribed root reader: past 20 sessions the
+  // store's row memo rebuilt the root's rows on every read, the subscribed root
+  // re-rendered, and React threw "Maximum update depth exceeded" (the session page
+  // showed "Something went wrong" when the context modal opened).
+  test('renders and settles after a store change', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const { useSessionSync } = await import('@kortix/sdk/react');
+    const ROOT = 'ses_many_root';
+    const reply = (sessionID: string, id: string) => ({
+      info: {
+        id, sessionID, role: 'assistant' as const, time: { created: 1_700_000_000_000 }, parentID: 'u',
+        modelID: 'm', providerID: 'synthetic', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' },
+        cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+      parts: [],
+    });
+    const ids = Array.from({ length: 40 }, (_, i) => `ses_many_${i}`);
+    const sessions = [{ id: ROOT, title: 'Root' }, ...ids.map((id) => ({ id, parentID: ROOT, title: id }))] as unknown as Session[];
+    const store = useSessionStateStore.getState();
+    store.hydrate(ROOT, [reply(ROOT, 'm_many_root')] as never);
+    for (const id of ids) store.hydrate(id, [reply(id, `m_${id}`)] as never);
+    function RootReader() {
+      useSessionSync(ROOT, { networkEnabled: false, mirror: null });
+      return null;
+    }
+    let renderer: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <RootReader />
+          <SubSessionSection
+            source={{ projectId: '', sessionId: '', runtimeSessionId: ROOT }}
+            session={sessions[0]}
+            allSessions={sessions}
+            pricingLookup={() => null}
+            fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+    await act(async () => { useSessionStateStore.getState().hydrate(ids[0]!, [reply(ids[0]!, 'm_a'), reply(ids[0]!, 'm_b')] as never); });
+    // Combined messages: the root's 1, 39 × 1, and the changed thread's 3 (its first plus 2 more).
+    expect(JSON.stringify(renderer!.toJSON())).toContain('"43"');
+    await act(async () => { renderer!.unmount(); });
+  });
+});
+
+describe('SubSessionSection totals while sub-agents load lazily', () => {
+  const ROOT = 'ses_all_root', CHILD = 'ses_all_child', GRAND = 'ses_all_grand', GREAT = 'ses_all_great';
+  const sessions = [
+    { id: ROOT, title: 'Root' },
+    { id: CHILD, parentID: ROOT, title: 'Child agent' },
+    { id: GRAND, parentID: CHILD, title: 'Grandchild agent' },
+    { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
+  ] as unknown as Session[];
+  const reply = (sessionID: string, id: string, input: number) => ({
+    info: {
+      id, sessionID, role: 'assistant' as const, time: { created: 1_700_000_000_000 }, parentID: 'u',
+      modelID: 'm', providerID: 'synthetic', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' },
+      cost: 0, tokens: { input, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+    parts: [],
+  });
+  const input: Record<string, number> = { [CHILD]: 13, [GRAND]: 100, [GREAT]: 1000 };
+
+  async function setup(observer: typeof IntersectionObserver | undefined) {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const { configureKortix } = await import('@kortix/sdk');
+    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+    useSessionStateStore.getState().hydrate(ROOT, [reply(ROOT, 'm_all_root', 2)] as never);
+    const loadedIds: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalObserver = globalThis.IntersectionObserver;
+    // A sub-agent's saved-window read lands its thread in the store.
+    globalThis.fetch = (async (url: unknown) => {
+      const child = /child=([^&]+)/.exec(String(url))?.[1];
+      if (child && input[child] !== undefined && !loadedIds.includes(child)) {
+        loadedIds.push(child);
+        useSessionStateStore.getState().hydrate(child, [reply(child, `m_${child}`, input[child]!)] as never);
+      }
+      return Response.json({ available: false, reason: 'test', messages: [] });
+    }) as unknown as typeof fetch;
+    (globalThis as { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver = observer;
+    let renderer: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <SubSessionSection
+            source={{ projectId: 'p_all', sessionId: 's_all', runtimeSessionId: ROOT }}
+            session={sessions[0]}
+            allSessions={sessions}
+            pricingLookup={() => null}
+            fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+          />
+        </NextIntlClientProvider>,
+        { createNodeMock: () => ({}) },
+      );
+    });
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    const text = () => JSON.stringify(renderer!.toJSON());
+    const cleanup = async () => {
+      await act(async () => { renderer!.unmount(); });
+      globalThis.fetch = originalFetch;
+      globalThis.IntersectionObserver = originalObserver;
+      for (const id of [ROOT, CHILD, GRAND, GREAT]) useSessionStateStore.getState().clearSession(id);
+    };
+    return { renderer: renderer!, text, loadedIds, cleanup };
+  }
+
+  test('before any row is in view the totals say they are partial; "Load all" loads every sub-agent and the totals become whole', async () => {
+    // An observer that never reports a row in view.
+    const quiet = class { observe() {} disconnect() {} } as unknown as typeof IntersectionObserver;
+    const { renderer, text, loadedIds, cleanup } = await setup(quiet);
+    try {
+      expect(text()).toContain('0 of 3 sub-agents loaded');
+      expect(loadedIds).toEqual([]);
+      // Combined: the root's 2 input tokens only, not the whole tree's 1115.
+      expect(text()).not.toContain('"1115"');
+
+      const button = renderer.root.findAll((n) => typeof n.props.onClick === 'function' && n.props.children === 'Load all')[0]!;
+      await act(async () => { button.props.onClick(); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+
+      // Every sub-agent loaded, the great-grandchild behind a closed caret too.
+      expect([...loadedIds].sort()).toEqual([CHILD, GRAND, GREAT].sort());
+      expect(text()).not.toContain('sub-agents loaded');
+      expect(text()).not.toContain('Load all');
+      // 4 messages; 2 + 13 + 100 + 1000 input tokens.
+      expect(text()).toContain('"4"');
+      expect(text()).toContain('"1115"');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('a host with no IntersectionObserver loads every drawn row at once', async () => {
+    const { text, loadedIds, cleanup } = await setup(undefined);
+    try {
+      // The child and grandchild rows are drawn; the great-grandchild is behind a closed caret.
+      expect([...loadedIds].sort()).toEqual([CHILD, GRAND].sort());
+      expect(text()).toContain('2 of 3 sub-agents loaded');
+    } finally {
+      await cleanup();
     }
   });
 });

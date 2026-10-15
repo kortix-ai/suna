@@ -760,6 +760,37 @@ flow(
         if (download.status !== 403) throw new Error(`restricted download: expected 403, got ${download.status}`);
       });
 
+      await ctx.step('a session without repository access receives only the modules of its agent\'s project tools, and downloads no other tree', async () => {
+        const manifest = MANIFEST.replace('agents:\n', 'tools:\n  lookup_order: tools/lookup_order.ts\n  hidden_tool: tools/hidden.ts\nagents:\n')
+          .replace('  reviewer:\n', '  reviewer:\n    tools:\n      exclude: [hidden_tool]\n');
+        await fixture.commit(
+          {
+            'kortix.yaml': manifest,
+            'tools/lookup_order.ts': "import { client } from './lib/client'\nexport default { description: 'Look up an order.', parameters: { type: 'object' }, execute: () => client() }\n",
+            'tools/lib/client.ts': 'export const client = () => "order"\n',
+            'tools/hidden.ts': "export default { description: 'Hidden.', parameters: { type: 'object' }, execute: () => 'x' }\n",
+          },
+          'project tools',
+        );
+        const restricted = await fixture.mint({ repositoryAccess: false, agentName: 'reviewer' });
+        const r = await fixture.descriptor(restricted.secret, restricted.sessionId, { accept: ['config-release-v3'] });
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const d = r.body as Descriptor & { snapshot?: unknown };
+        const paths = d.files?.map(([path]) => path).join(',');
+        if (paths !== 'tools/lib/client.ts,tools/lookup_order.ts') throw new Error(`restricted files: ${paths}`);
+        if (d.config_dir !== null || d.reason !== null) throw new Error(`config_dir ${d.config_dir}, reason ${d.reason}`);
+        if (d.snapshot) throw new Error('a tools-only release carried the whole-commit snapshot');
+        const query = d.archive!.url.slice(d.archive!.url.indexOf('?'));
+        if (query !== `?commit=${d.source_commit}&agent=reviewer`) throw new Error(`archive url ${d.archive!.url}`);
+        const download = await fixture.download(restricted.secret, d.config_tree_id!, query);
+        if (download.status !== 200) throw new Error(`tools download: expected 200, got ${download.status}`);
+        await assertArchiveMatches(d, download.bytes);
+        const whole = await fixture.download(restricted.secret, descriptor.config_tree_id!, query);
+        if (whole.status !== 403) throw new Error(`whole tree with the tools query: expected 403, got ${whole.status}`);
+        const otherAgent = await fixture.download(restricted.secret, d.config_tree_id!, `?commit=${d.source_commit}&agent=kortix`);
+        if (otherAgent.status !== 403) throw new Error(`another agent's query: expected 403, got ${otherAgent.status}`);
+      });
+
       await ctx.step('the release is the base commit\'s whole tree: a root skills/ folder and a file outside every config dir ship at their repository paths', async () => {
         const tip = await fixture.commit(
           {

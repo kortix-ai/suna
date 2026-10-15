@@ -23,12 +23,27 @@ const RETIRED: Array<[method: string, template: string]> = [
   ['POST', '/v1/billing/create-checkout-session'],
   ['POST', '/v1/billing/confirm-checkout-session'],
   ['POST', '/v1/billing/schedule-downgrade'],
+  ['POST', '/v1/billing/claim-per-seat'],
+  ['POST', '/v1/billing/create-per-seat-checkout'],
+  ['POST', '/v1/billing/create-inline-checkout'],
+  ['POST', '/v1/billing/confirm-inline-checkout'],
+  ['POST', '/v1/billing/cancel-scheduled-change'],
+  ['GET', '/v1/billing/proration-preview'],
   ['GET', '/v1/generation'],
   ['POST', '/v1/prewarm'],
   ['GET', '/v1/projects/suna-migration/eligibility'],
   ['GET', '/v1/projects/suna-migration/status'],
   ['POST', '/v1/projects/suna-migration/start'],
+  // One plan system (2026-10-15): the Enterprise preview became a dated trial,
+  // and Enterprise is set by a contract.
+  ['GET', '/v1/accounts/:accountId/iam/enterprise-demo'],
+  ['PUT', '/v1/accounts/:accountId/iam/enterprise-demo'],
+  ['POST', '/v1/admin/api/accounts/:id/enterprise-demo'],
+  ['POST', '/v1/admin/api/accounts/:id/enterprise-entitlement'],
+  ['POST', '/v1/admin/api/accounts/:id/managed-models'],
 ];
+
+const ANY_UUID = '00000000-0000-4000-a000-000000000000';
 
 flow(
   'RET-1',
@@ -40,7 +55,7 @@ flow(
     await ctx.step('every retired route answers ANON with 410 ENDPOINT_RETIRED', async () => {
       for (const [method, template] of RETIRED) {
         const r = await ctx.client.as(ctx.P.ANON).request(method, template, {
-          params: { model: 'any-model' },
+          params: { model: 'any-model', accountId: ANY_UUID, id: ANY_UUID },
           body: method === 'GET' || method === 'DELETE' ? undefined : {},
         });
         r.status(410).body().has('$.code', 'ENDPOINT_RETIRED');

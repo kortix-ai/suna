@@ -770,6 +770,22 @@ jobs:
           path: ${{ matrix.files }}
           if-no-files-found: error
 
+  # ── Build, sign and verify the prod Kortix Capture installers ───────────────
+  # Best-effort like build-desktop: no job gates on it. The reusable workflow
+  # installs each installer on its own OS runner before it passes.
+  build-capture:
+    name: Build prod Kortix Capture
+    needs: version
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
+    uses: ./.github/workflows/capture-build.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+      channel: stable
+      issuer_url: https://api.kortix.com
+      release_tag: ${{ needs.version.outputs.tag }}
+
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
   # HARD-GATED on the ECS backend deploy (deploy-ecs) and verify-live-version
   # proving the public endpoints serve exactly X.Y.Z.
@@ -939,6 +955,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Best-effort, after the release exists, like attach-desktop: a Capture
+  # problem can never block a release. Uploads the installers, SHA256SUMS and
+  # capture-update.json (the file the app polls for updates).
+  attach-capture:
+    name: Attach Kortix Capture installers
+    needs: [version, github-release, build-capture]
+    if: always() && needs.github-release.result == 'success'
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download the Capture installers
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: capture-installers
+          path: capture-installers/
+
+      - name: Upload the installers to the release (if any built)
+        run: |
+          set -euo pipefail
+          if [ ! -d capture-installers ] || [ -z "$(ls -A capture-installers 2>/dev/null)" ]; then
+            echo "::warning::No Capture installers built — release ships without Kortix Capture."
+            exit 0
+          fi
+          cd capture-installers
+          gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ── Apply DB migrations to prod BEFORE the API rolls ────────────────────────
   # Closes the gap that caused the 2026-06-21 /triggers 500: migrations used to be
   # applied by a manual step at promote that got missed, so new code shipped
@@ -1043,7 +1090,7 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","AUDIT_ARCHIVE_BUCKET":"kortix-prod-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CAPTURE_S3_BUCKET":"kortix-prod-capture-store","KORTIX_CAPTURE_S3_REGION":"eu-west-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.eu-west-2.amazonaws.com/935064898258/kortix-prod-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-prod-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-prod-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)

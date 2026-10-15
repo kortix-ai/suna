@@ -58,9 +58,8 @@ paymentsRouter.openapi(
     if (!amount || amount <= 0) throw new BillingError('Invalid amount');
 
     // Resolved plan, not the stored `credit_accounts.tier`: an account on an
-    // active admin trial of a paid plan, and a paying per-seat team whose
-    // stored tier is stale, both behave as paid everywhere else — reading the
-    // raw column here refused them a credit purchase they are entitled to.
+    // active admin trial of a paid plan behaves as paid everywhere else —
+    // reading the raw column here refused it a credit purchase it is entitled to.
     // Fresh read: an admin granting or revoking a trial must take effect on the
     // next request, and this route initiates a charge.
     const { entitlements } = await resolveAccountBilling(accountId, { fresh: true });

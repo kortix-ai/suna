@@ -377,7 +377,9 @@ async function reapRunningSandbox(
   // update itself; give it a supervisor and a current daemon from here.
   // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
   // one health probe per box per 6 h on a converged fleet, never under
-  // a busy OpenCode, bounded attempts per API build.
+  // a busy OpenCode, bounded attempts per API build. A box that installs its
+  // own pending update (`updatesItself`) is probed every pass, never
+  // relaunched, until it converges or ~6 h of ticks pass without it.
   dependencies.scheduleLegacyRuntimeBootstrap({
     sandboxId: row.sandboxId,
     sessionId: row.sessionId ?? null,
