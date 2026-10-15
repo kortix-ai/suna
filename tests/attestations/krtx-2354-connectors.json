@@ -1,5 +1,5 @@
 {
-  "source_hash": "f9f12e170557efbb9ced24cfe980bc35cd2a443a9ffc29fb4ad48b1a3f4fcac9",
+  "source_hash": "baefd839be2228b1910a427d0bda0c7ed5893cee4c3eafc4d224f6b8ba748dae",
   "diff_files": [
     "apps/api/src/projects/lib/compile-agent-config.test.ts",
     "apps/api/src/projects/lib/compile-agent-config.ts",
@@ -26,18 +26,20 @@
     "packages/manifest-schema/src/constants.ts",
     "packages/manifest-schema/src/index.v2.ts",
     "packages/manifest-schema/src/json-schema.ts",
+    "packages/starter/src/__tests__/embedded.test.ts",
     "packages/starter/src/embedded.generated.json",
     "packages/starter/templates/base/README.md",
+    "packages/starter/templates/base/kortix.yaml",
     "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-yaml.md",
     "packages/starter/templates/managed/skills/kortix-system/references/kortix/tools.md"
   ],
-  "diff_hash": "3e4a8b8c6fe9ee319d9e10274366cb5f07461e27fd7adde788f55ab1cd76e0c3",
-  "head": "77554f1d7c5ed218183eeee275550c7b157886e1",
+  "diff_hash": "751ab8533657f8d1e867879cf53b3752193d1a67157c85d92cd77cc5695d8995",
+  "head": "b11d5ba72dc4f45c24cf3897fedf771467bc3fcc",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T07:21:13.370Z"
+  "at": "2026-10-15T08:22:32.263Z"
 }
