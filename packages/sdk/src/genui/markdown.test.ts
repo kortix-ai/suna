@@ -52,6 +52,12 @@ describe('markdown fallback', () => {
     );
   });
 
+  test('an Image with text keeps the text under the picture', () => {
+    expect(
+      genuiToMarkdown('```openui\nroot = Image("https://example.com/photo.jpg", "A valid photo", null, "Plain light background, face forward.")\n```'),
+    ).toBe('![A valid photo](https://example.com/photo.jpg)\n\nPlain light background, face forward.');
+  });
+
   test('tabs and accordion expand every panel', () => {
     const md = genuiToMarkdown(
       '```openui\nroot = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [b1])\ny = Tab("Two", [b2])\nb1 = Badge("first")\nb2 = Badge("second")\n```',

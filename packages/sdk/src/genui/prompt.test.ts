@@ -46,19 +46,30 @@ describe('prompt', () => {
     expect(prompt).toContain('Never write a markdown table for data');
     for (const trigger of [
       'headline numbers → StatRow',
-      'a ranked "best of" list without photos → RankedList',
+      'Products, places, food, and parts the user will buy, visit, eat, or handle always show their photos.',
+      'a ranked list of things with no photo (ideas, strategies) → RankedList. A product or place shortlist is Cards, never a RankedList',
+      '2 to 8 options to choose between (routes, flights, products, cafés, hotels) → a Stack of Cards, each with its photo.',
       'a spec-by-spec table or pros and cons of 2 to 4 named options → Compare',
       'One number across items → BarChart',
       'A value over time → LineChart',
       'Shares of a whole or survey answers → PieChart',
       'leg by leg (home → station → airport) → Steps',
-      'things to bring, buy, prepare, or confirm → Checklist',
+      'things to pack or gather (a packing list, documents to collect) → Checklist',
+      'what a correct result looks like (a valid passport photo, the part to buy) → one Image with text beside it',
       'Choosing how to do something (taxi or train, which flight) is always Cards, never Compare',
       'named places the user goes to or picks from (stations, hotels, sights) → Map',
     ]) {
       expect(prompt).toContain(trigger);
     }
     expect(prompt).not.toContain('Prose stays the default');
+    expect(prompt).not.toContain('things to bring, buy, prepare, or confirm');
+  });
+  test('writes requirements as bold-label bullets, quotes what to say, and cites the official source', () => {
+    expect(prompt).toContain('Requirements, specs, and rules (size, format, deadline) are bullets with a bold label');
+    expect(prompt).toContain('never a Checklist. Words the user should say or send go in a \`>\` quote.');
+    expect(prompt).toContain('**Official source:** [page](url) when one exists');
+    expect(prompt).toContain('Image(src, alt, caption?, text?)');
+    expect(prompt).toMatch(/root = Image\("[^"]+", "[^"]+", null, "[^"]+"\)/);
     expect(prompt).toContain('a one-line opinion with no options to compare');
   });
   test('gets every photo in one image_search call and puts it on its own item', () => {

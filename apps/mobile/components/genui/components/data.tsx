@@ -219,19 +219,15 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
               </View>
             ) : null}
             <View className="flex-1 gap-0.5">
-              <View className="flex-row items-baseline justify-between gap-3">
-                <Text className={`shrink font-medium ${first ? 'text-lg leading-6' : 'leading-5'} ${href ? 'underline' : ''}`}>
-                  {String(item.props.title)}
+              <Text className={`font-medium ${first ? 'text-lg leading-6' : 'leading-5'} ${href ? 'underline' : ''}`}>
+                {String(item.props.title)}
+              </Text>
+              {/* The meta is its own line under the title, as a price or spec line: a side column squeezes a sentence. */}
+              {item.props.meta ? (
+                <Text variant="small" className="font-medium tabular-nums leading-5 text-foreground">
+                  {String(item.props.meta)}
                 </Text>
-                {item.props.meta ? (
-                  <Text
-                    variant={first ? 'small' : 'muted'}
-                    className={`max-w-[35%] text-right tabular-nums ${first ? 'leading-5 text-foreground' : ''}`}
-                  >
-                    {String(item.props.meta)}
-                  </Text>
-                ) : null}
-              </View>
+              ) : null}
               <Text variant="muted">{String(item.props.reason)}</Text>
             </View>
           </View>

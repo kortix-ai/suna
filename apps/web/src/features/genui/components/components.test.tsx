@@ -69,6 +69,12 @@ pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
     expect(html).not.toContain('data-fallback');
   });
 
+  test('an image with text is a figure: the picture beside the text, no caption chip', () => {
+    const html = render(`root = Image("https://example.com/photo.jpg", "A valid photo", null, "Plain light background, face forward.")`);
+    expect(html).toMatch(/<figure class="flex items-start gap-4">[\s\S]*A valid photo[\s\S]*<figcaption[^>]*>Plain light background, face forward.<\/figcaption>/);
+    expect(html).not.toContain('bg-terminal-surface');
+  });
+
   test('a table caption is the title above the table, outside its frame, and names the table', () => {
     const html = render(`root = Stack([t])\nt = Table(["Region", "Seats"], [["EU", 1]], "Seats by region")`);
     expect(html).toMatch(/<figure[^>]*><figcaption[^>]*>Seats by region<\/figcaption>[\s\S]*<table[^>]*aria-label="Seats by region"/);
@@ -99,6 +105,13 @@ y = CompareItem("Y", ["short"])`);
     expect(cell('a long note that should wrap inside the message column')).toContain('whitespace-normal');
     expect(cell('a long value that wraps')).toContain('whitespace-normal');
     expect(cell('1')).not.toContain('whitespace-normal');
+  });
+
+  test('a ranked item meta is its own line between the title and the reason, never a squeezed side column', () => {
+    const html = render(`root = RankedList([r1])\nr1 = RankedItem("Lenovo IdeaPad Slim 3", "A sensible alternative.", "Older review under 50k; price not checked today")`);
+    expect(html).toMatch(/>Lenovo IdeaPad Slim 3<\/span><span class="text-foreground text-sm font-medium tabular-nums">Older review under 50k; price not checked today<\/span><span class="text-muted-foreground[^"]*">A sensible alternative.<\/span>/);
+    expect(html).not.toContain('max-w-32');
+    expect(html).not.toContain('justify-between');
   });
 
   test('a 10-item ranked list keeps rank 10 on one line, right-aligned in a fixed rank lane; #1 leads', () => {
@@ -245,7 +258,7 @@ a = Card("Python", "General-purpose.", "Language", "https://example.com/python.p
 b = Card("Go", "Backend.", "Language", "https://example.com/go.png")`);
     expect(html).toContain('<ul class="divide-border flex flex-col divide-y">');
     expect(html.match(/<li data-card="[^"]+" class="flex gap-4 py-4/g)).toHaveLength(2);
-    expect(html.match(/bg-muted size-20 shrink-0/g)).toHaveLength(2);
+    expect(html.match(/bg-muted size-26 shrink-0/g)).toHaveLength(2);
     // Before an image loads its shape is unknown and counts as a photo: it fills the box, no inset.
     expect(html).toContain('[&amp;_img]:object-cover');
     expect(html).not.toContain('p-1.5 [&amp;_img]:object-contain');
@@ -287,14 +300,14 @@ s3 = Step("Airport One", "Check in and board.")`);
     expect(html).not.toContain('data-fallback');
     expect(html.match(/<li class="flex gap-4">/g)).toHaveLength(3);
     // One photo box; the default policy shows the click-to-load button for a remote host until the viewer asks.
-    expect(html.match(/bg-muted size-20 overflow-hidden rounded-lg/g)).toHaveLength(1);
+    expect(html.match(/bg-muted size-26 shrink-0 overflow-hidden rounded-lg/g)).toHaveLength(1);
     expect(html).toContain('Load image from example.com');
     // Rows 2 and 3 have no photo: in a list with photos, their number fills a photo-sized tile, so every row
     // has the same 80px thumbnail. The <ol> already reads "item 2 of 3": the tile is hidden from screen readers.
-    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*size-20[^"]*rounded-lg font-mono text-sm tabular-nums">2<\/span>/);
-    expect(html).toMatch(/size-20[^"]*rounded-lg font-mono text-sm tabular-nums">3<\/span>/);
+    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*size-26[^"]*rounded-lg font-mono text-sm tabular-nums">2<\/span>/);
+    expect(html).toMatch(/size-26[^"]*rounded-lg font-mono text-sm tabular-nums">3<\/span>/);
     expect(html).not.toContain('rounded-full font-mono');
-    expect(html.match(/flex shrink-0 flex-col items-center w-20/g)).toHaveLength(3);
+    expect(html.match(/flex shrink-0 flex-col items-center w-26/g)).toHaveLength(3);
     // A hairline joins each row to the next; the last row has none. min-h-5 keeps it visible on a row whose
     // text is shorter than its photo.
     expect(html.match(/bg-border my-1\.5 min-h-5 w-px flex-1/g)).toHaveLength(2);

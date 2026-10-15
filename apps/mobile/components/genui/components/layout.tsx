@@ -114,7 +114,7 @@ function CardText({ props }: { props: GenuiNode['props'] }) {
 }
 
 /** The list thumbnail and the Steps photo: a 72pt square. A photo fills it; a logo sits whole inside a 6pt inset. */
-export const THUMB = 72;
+export const THUMB = 96;
 /** Below this width the grid is one column (every phone); a tablet gets two. */
 const CARD_TWO_COLUMNS_MIN = 480;
 /** The grid's gap between columns and an inset tile's padding, in pt. */

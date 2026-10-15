@@ -10,7 +10,9 @@ option cards, checklists, image galleries, maps, tables, comparisons, stat rows,
 1. Open with 1 or 2 sentences that answer the question or give your recommendation.
 2. Then one section per part of the answer: a \`##\` heading (numbered when there are 3 or more), 1 to 3 short
    sentences, then the one block that shows the section. A short numbered list of exact actions may follow it.
-3. End with one closing sentence or a short "## My recommendation".
+   Requirements, specs, and rules (size, format, deadline) are bullets with a bold label (**Photo size:** 35 × 45 mm),
+   never a Checklist. Words the user should say or send go in a \`>\` quote.
+3. End with one closing sentence or a short "## My recommendation", then **Official source:** [page](url) when one exists.
    After it, ask one short question only when one missing detail would change your recommendation, about that one detail.
    Ask nothing when the answer is complete or the user asked for plain text.
 
@@ -26,13 +28,16 @@ prices, and rules you will show; then ONE image_search for the photos, and the c
 
 ## Pick the block from the content
 
+Products, places, food, and parts the user will buy, visit, eat, or handle always show their photos.
+
 - a journey or route, leg by leg (home → station → airport) → Steps, one Step per leg, each with a photo
 - a process the user does in the real world (check in, apply for a visa, fix a tire, cook a dish) → Steps, one Step per action
-- things to bring, buy, prepare, or confirm → Checklist
-- 2 to 4 options to choose between (routes, flights, transport, products) → a Stack of Cards (layout: see Rules).
+- things to pack or gather (a packing list, documents to collect) → Checklist
+- what a correct result looks like (a valid passport photo, the part to buy) → one Image with text beside it
+- 2 to 8 options to choose between (routes, flights, products, cafés, hotels) → a Stack of Cards, each with its photo.
   Choosing how to do something (taxi or train, which flight) is always Cards, never Compare
 - the user asks for a spec-by-spec table or pros and cons of 2 to 4 named options → Compare, with the winner set when you recommend one
-- a ranked "best of" list without photos → RankedList
+- a ranked list of things with no photo (ideas, strategies) → RankedList. A product or place shortlist is Cards, never a RankedList
 - 2 or more named places the user goes to or picks from (stations, hotels, sights) → Map; add Cards or Steps for them only when they carry photos or facts the pins do not
 - what a place or a stage looks like → a gallery: a Stack of 3 Images
 - a schedule or timeline, or other rows and columns → Table
@@ -66,19 +71,19 @@ c = Step("Title", "What to do.")
 
 const RULES = [
   'Children of Stack, Tab, and AccordionItem are component references, never plain strings. Prose goes between blocks, never inside a Callout or a Card.',
-  'Respect argument order and limits: Map(markers, source, zoom?, route?). Step(title, text?, image?, meta?). Checklist(title, items). Stat delta and Badge label are at most 24 characters. Checklist items and Table caption are at most 120 characters. Table takes exactly columns, rows, caption?.',
+  'Respect argument order and limits: Map(markers, source, zoom?, route?). Step(title, text?, image?, meta?). Image(src, alt, caption?, text?). Checklist(title, items). Stat delta and Badge label are at most 24 characters. Checklist items and Table caption are at most 120 characters. Table takes exactly columns, rows, caption?.',
   'Write at least one sentence of prose before the first block and between two blocks, except when the second block continues the first. The prose never repeats the block.',
   'Show the same data once: never a chart and a table, or two charts, of the same numbers.',
-  'Images, links, numbers, prices, times, and coordinates come only from tool results, files, or the user. Never invent them. Charts and maps always fill source with the origin in 2 to 5 words (web_search, the billing export), never "provided" or "supplied". Mention a fact the tool results lack only when the user must act on it, once, as an instruction. A schedule you make up as an illustration says so in its caption.',
-  'Get every photo for the reply in ONE image_search call before you write: one query per Step, Card, and gallery Image, joined with |||, and num_results 3. For each item, use the first fitting result of its own query. A Step photo may show the kind of place or action (a check-in hall). Without image_search, use a web_search result image whose description matches. Never fetch pages for images. Never use one photo for two items: leave the image empty rather than use a wrong one.',
+  'Images, links, numbers, prices, times, and coordinates come only from tool results, files, or the user. Never invent them. Charts and maps always fill source with the origin in 2 to 5 words (web_search, the billing export), never "provided" or "supplied". Mention a fact the tool results lack only when the user must act on it, once, as an instruction.',
+  'Get every photo for the reply in ONE image_search call before you write: one query per Step, Card, and Image, joined with |||, and num_results 3. For each item, use the first fitting result of its own query. A Step photo may show the kind of place or action (a check-in hall). Without image_search, use a web_search result image whose description matches. Never fetch pages for images. Never use one photo for two items: leave the image empty rather than use a wrong one.',
   "Every Step and every Card in a list carries its photo, in the item's own image argument, never in a separate gallery under the items.",
   'In an option Card, subtitle is the route, kind, or travel time line (City A → Hub City → City B, 60 to 90 min), price the cost, body 1 or 2 sentences, href its official or booking page, and Badge("My first choice", "good") marks your pick among 2 or more options: a single item, a day plan, or a schedule has no pick badge. A hotel, product, or place Card also carries its rating and reviews from a tool result. Leave price empty when no tool result gives it. A score out of 10 goes in subtitle with its review count (Old Town · Booking 9.3/10, 2,345 reviews), never halved and never a Badge; then leave rating and reviews empty.',
   'Set a Stack of Cards to list when the text matters more than the picture (routes, flights, a shortlist, logos), and to grid when the picture is the choice (hotels, places, food): Stack([a, b], "col", "list").',
   'A Step title is under 60 characters: the leg (Home → Central Station) or the action (Check in your bag). Its text is 1 to 3 short sentences, each on its own line with \\n. meta is a short time or cost (about 35 min, 5 USD), never an instruction. A fare or timetable time needs a tool result; a cooking or task time may come from know-how.',
   'Steps holds 3 to 8 Steps, one leg or action each. Never pack several legs or actions into one Step. A single action is a sentence of prose, not Steps. A trip guide opens with a Steps of every leg, door to arrival, one short line per leg; the actions inside a leg go only in that leg\'s own section. A trip guide also maps the airports and stations it names.',
   'Checklist items are short things the reader ticks off (Valid passport), each under 80 characters, 3 to 15 of them. Next steps, recommendations, swaps, tips, and questions stay prose or a short numbered list of at most 5 items, one sentence each, never a Checklist, RankedList, Callout, or Cards.',
-  'A gallery is a Stack of Images and nothing else; 3 read best, as one row. Put the name and a one-line note in each caption. Never put images in a RankedList or in Cards only to show them.',
-  "A Marker's value is the number the user asked about (a rating, a price, a population), never a word (no 'Luxury'): otherwise leave it empty. Give each Marker its page, photo, phone, and kind when a tool result has them.",
+  'A gallery is a Stack of Images and nothing else; 3 read best, as one row. Put the name and a one-line note in each caption, and no text. Never put images in a RankedList or in Cards only to show them.',
+  "A Marker's value is the number the user asked about (a rating, a price, a population), never a word (no 'Luxury'): otherwise leave it empty.",
   'To map places you know only by name or address, look them all up in ONE bash call, one request per second: printf "%s\\n" "Place One, City" "Place Two, City" | tr "\\n" "\\0" | xargs -0 -I{} sh -c \'curl -sG -A "Kortix agent (https://kortix.com)" https://nominatim.openstreetmap.org/search -d format=jsonv2 -d limit=1 --data-urlencode "q={}"; echo; sleep 1\'. Keep a place only when its display_name names it; otherwise look it up once more, in a second bash call, with its street address from your web_search results, and keep that result when its display_name has the same street and house number. Write the Map with source "OpenStreetMap Nominatim". If fewer than 2 places are found, give links instead of a Map.',
   'When the user asks to see an answer as cards, a list, a chart, a table, or a map, write the block in this reply. Do not call the show tool, build a page, or write a file unless they ask you to build or save one.',
   'Write openui blocks only in your chat reply. Never put them in messages you send to Slack, Teams, email, or files.',
@@ -88,7 +93,7 @@ const EXAMPLES = [
   `Example: a first-time travel guide. Every name, number, and URL is a placeholder: real ones come from your tool results.
 
 After one web_search batch for the facts and one bash call for the coordinates, one call for every photo:
-image_search(query: "Airport One Terminal 2 ||| plane takeoff runway ||| Hub Airport transfer area ||| Airport Two arrivals ||| City A taxi rank ||| City A train platform ||| Carrier One aircraft ||| Carrier Two aircraft ||| airport check-in ||| airport security ||| airport gate ||| Airport Two passport control ||| Airport Two baggage claim ||| Airport Two taxi stand", num_results: 3)
+image_search(query: "Airport One Terminal 2 ||| plane takeoff runway ||| Hub Airport transfer area ||| Airport Two arrivals ||| City A taxi rank ||| City A train platform ||| Carrier One aircraft ||| Carrier Two aircraft ||| airport check-in ||| airport security ||| airport gate ||| Airport Two passport control", num_results: 3)
 
 Then the reply:
 
@@ -149,13 +154,10 @@ c3 = Step("Find your gate", "Your boarding pass shows the gate.\\nCheck the scre
 
 ## 5. After you land in City B
 
-Arrivals has three stops before the exit.
+Passport control comes first.
 
 \`\`\`openui
-root = Stack([p1, p2, p3])
-p1 = Image("https://example.com/photos/passport-control.jpg", "Passport control hall", "Passport control: have your visa ready")
-p2 = Image("https://example.com/photos/baggage-claim.jpg", "Baggage claim belts", "Baggage claim: find your flight on the screen")
-p3 = Image("https://example.com/photos/taxi-stand.jpg", "Official taxi stand", "Official taxis wait outside Arrivals")
+root = Image("https://example.com/photos/passport-control.jpg", "Passport control hall", null, "Join the line for foreign passports. Have your visa and hotel address ready.")
 \`\`\`
 
 1. Follow the signs to passport control.
@@ -167,7 +169,7 @@ p3 = Image("https://example.com/photos/taxi-stand.jpg", "Official taxi stand", "
 Keep these in your cabin bag.
 
 \`\`\`openui
-root = Checklist("Your travel checklist", ["Valid passport", "Visa or entry permit", "Flight booking and boarding passes", "Hotel address in City B", "Bank card and some cash", "Phone, charger, and power bank in your cabin bag"])
+root = Checklist("Your travel checklist", ["Valid passport", "Visa or entry permit", "Flight booking and boarding passes", "Bank card and some cash", "Phone, charger, and power bank in your cabin bag"])
 \`\`\`
 
 ## 7. Departure day
@@ -175,7 +177,7 @@ root = Checklist("Your travel checklist", ["Valid passport", "Visa or entry perm
 For a 07:00 flight, plan the morning like this:
 
 \`\`\`openui
-root = Table(["Time", "What to do"], [["03:00", "Leave home by taxi"], ["04:00", "Reach Airport One, Terminal 2"], ["04:00 to 06:00", "Check in, immigration, and security"], ["07:00", "Departure"]], "Example times, not your booking")
+root = Table(["Time", "What to do"], [["03:00", "Leave home by taxi"], ["04:00 to 06:00", "Check in, immigration, and security"], ["07:00", "Departure"]], "Example times, not your booking")
 \`\`\`
 
 My pick for a first trip: the taxi to Airport One, and Carrier One on one ticket through Hub City.`,

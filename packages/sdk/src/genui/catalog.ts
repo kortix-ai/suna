@@ -173,11 +173,13 @@ component({
 
 component({
   name: 'Image',
-  description: 'A picture. Use only URLs from tool results or files',
-  fields: { src: url(), alt: text(200), caption: optText(200) },
+  description: 'A picture. Use only URLs from tool results or files. With text, the picture sits beside 1 to 3 sentences',
+  fields: { src: url(), alt: text(200), caption: optText(200), text: optText(400) },
   urls: { src: 'required' },
   toMarkdown: (p) =>
-    [`![${inline(p.alt)}](${target(p.src)})`, p.caption ? `*${inline(p.caption)}*` : ''].filter(Boolean).join('\n\n'),
+    [`![${inline(p.alt)}](${target(p.src)})`, p.caption ? `*${inline(p.caption)}*` : '', p.text ? inline(p.text) : '']
+      .filter(Boolean)
+      .join('\n\n'),
 });
 
 component({
@@ -414,8 +416,8 @@ component({
 component({
   name: 'Card',
   description:
-    'One item: a hotel, product, place, or person. body is plain text. subtitle is a short location or kind line. ' +
-    'rating is 0 to 5, reviews is how many, price is a short text. 2 or more Cards in a Stack show as a grid or a list (see Stack)',
+    'One item: a hotel, product, place, or person. subtitle is a short location or kind line. ' +
+    'rating is 0 to 5, reviews is how many, price is a short text. 2 or more Cards in a Stack show as a grid or a list',
   fields: {
     title: text(80),
     body: optText(600),
@@ -448,8 +450,7 @@ component({
 component({
   name: 'Step',
   description:
-    'One row inside Steps. title names the leg or action; text says what to do, one sentence per line; ' +
-    'image is a photo of that place or action; meta is a time or cost',
+    'One row inside Steps: a leg or action, what to do, its photo, and a time or cost',
   block: false,
   fields: { title: text(80), text: optText(500), image: url().optional(), meta: optText(40) },
   urls: { image: 'optional' },
@@ -465,7 +466,7 @@ component({
 
 component({
   name: 'Checklist',
-  description: 'Things to bring, buy, prepare, or confirm: a title and up to 20 items, each under 120 characters, the reader ticks off',
+  description: 'Things to pack or gather: a title and up to 20 items, each under 120 characters, the reader ticks off',
   fields: { title: text(80), items: z.array(text(120)).min(1).max(20) },
   toMarkdown: (p) => `**${inline(p.title)}**\n\n${(p.items as string[]).map((item) => `- [ ] ${inline(item)}`).join('\n')}`,
 });

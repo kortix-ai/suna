@@ -192,16 +192,11 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
               </span>
             ) : null}
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className={cn('text-foreground min-w-0 font-medium text-balance', first ? 'text-base leading-6' : 'text-sm leading-5')}>
-                  {item.props.href ? <MarkdownLink href={String(item.props.href)}>{title}</MarkdownLink> : title}
-                </span>
-                {item.props.meta ? (
-                  <span className={cn('max-w-32 shrink-0 text-right text-sm tabular-nums', first ? 'text-foreground font-medium' : 'text-muted-foreground')}>
-                    {String(item.props.meta)}
-                  </span>
-                ) : null}
-              </div>
+              <span className={cn('text-foreground min-w-0 font-medium text-balance', first ? 'text-base leading-6' : 'text-sm leading-5')}>
+                {item.props.href ? <MarkdownLink href={String(item.props.href)}>{title}</MarkdownLink> : title}
+              </span>
+              {/* The meta is its own line under the title, as a price or spec line: a side column squeezes a sentence. */}
+              {item.props.meta ? <span className="text-foreground text-sm font-medium tabular-nums">{String(item.props.meta)}</span> : null}
               <span className="text-muted-foreground text-sm text-pretty">{String(item.props.reason)}</span>
             </div>
           </li>
@@ -231,14 +226,14 @@ export function GenuiSteps({ props }: GenuiComponentProps) {
         const image = src && !failed.has(src) ? src : null;
         return (
           <li key={step.id} className="flex gap-4">
-            <div className={cn('flex shrink-0 flex-col items-center', photos ? 'w-20' : 'w-7')}>
+            <div className={cn('flex shrink-0 flex-col items-center', photos ? 'w-26' : 'w-7')}>
               {image ? (
-                <span className="bg-muted size-20 overflow-hidden rounded-lg [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-cover [&_img]:outline-0">
+                <span className="bg-muted size-26 shrink-0 overflow-hidden rounded-lg [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-cover [&_img]:outline-0">
                   <MarkdownImage src={image} alt="" flush compact onError={() => setFailed((known) => new Set(known).add(image))} />
                 </span>
               ) : photos ? (
                 // In a list with photos, a row without one keeps the same thumbnail size: its number on the well.
-                <span aria-hidden className="bg-muted text-muted-foreground flex size-20 shrink-0 items-center justify-center rounded-lg font-mono text-sm tabular-nums">
+                <span aria-hidden className="bg-muted text-muted-foreground flex size-26 shrink-0 items-center justify-center rounded-lg font-mono text-sm tabular-nums">
                   {index + 1}
                 </span>
               ) : (

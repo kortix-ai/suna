@@ -245,9 +245,15 @@ const Callout = ({ props }: GenuiComponentProps) => (
 );
 
 const Image = ({ props }: GenuiComponentProps) => (
-  <figure style={{ margin: 0 }}>
-    <img src={props.src} alt={props.alt} referrerPolicy="no-referrer" loading="lazy" style={{ maxWidth: '100%', borderRadius: 6 }} />
-    {props.caption ? <figcaption style={muted}>{props.caption}</figcaption> : null}
+  <figure style={{ margin: 0, display: props.text ? 'flex' : undefined, gap: 12, alignItems: 'flex-start' }}>
+    <img
+      src={props.src}
+      alt={props.alt}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      style={props.text ? { width: 140, flexShrink: 0, borderRadius: 6 } : { maxWidth: '100%', borderRadius: 6 }}
+    />
+    {props.text ? <figcaption>{props.text}</figcaption> : props.caption ? <figcaption style={muted}>{props.caption}</figcaption> : null}
   </figure>
 );
 

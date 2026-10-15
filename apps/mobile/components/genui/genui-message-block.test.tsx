@@ -372,6 +372,14 @@ pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
     expect(texts(root)).toContain('The north door');
   });
 
+  test('an image with text is a figure: a fixed-width picture beside the text, no letterbox well', () => {
+    const root = render(`root = Image("https://example.com/photo.jpg", "A valid photo", null, "Plain light background, face forward.")`);
+    expect(all(root, 'view').some((n) => className(n).includes('flex-row items-start'))).toBe(true);
+    expect(all(root, 'view').some((n) => flatten(n.props.style)?.width === 112)).toBe(true);
+    expect(all(root, 'view').some((n) => className(n).includes('bg-terminal-surface'))).toBe(false);
+    expect(texts(root)).toContain('Plain light background, face forward.');
+  });
+
   test('two or more images are a snap pager: one image per page at a fixed height, each with its caption, and a counter', () => {
     const img = (id: string) => `${id} = Image("https://example.com/${id}.png", "Photo ${id}", "Caption ${id}")`;
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
@@ -403,21 +411,21 @@ w = Badge("2 rooms left", "warn")`);
     expect(all(root, 'markdown-image')[0]!.props.fixedHeight).toBe(160);
   });
 
-  test('two or more cards without a hint are a list: a 72pt thumbnail beside the title, rating, location, body, and tag pills', () => {
+  test('two or more cards without a hint are a list: a 96pt thumbnail beside the title, rating, location, body, and tag pills', () => {
     const root = render(`root = Stack([a, b])
 a = Card("Python", "General-purpose.", "Language", "https://example.com/python.png", "https://python.org", [t, g], 4.7, 1200, "Free")
 b = Card("Go", "Backend.", "Language")
 t = Badge("Popular")
 g = Badge("Best for a first project", "good")`);
-    const thumbs = all(root, 'view').filter((n) => n.props.style?.width === 72);
+    const thumbs = all(root, 'view').filter((n) => n.props.style?.width === 96);
     expect(thumbs).toHaveLength(1);
     const image = () => all(thumbs[0]!, 'markdown-image')[0]!;
     // Before it loads, the thumbnail is a photo: it fills the square, cropped.
-    expect([image().props.fixedHeight, image().props.look.resizeMode, image().props.look.bare]).toEqual([72, 'cover', true]);
+    expect([image().props.fixedHeight, image().props.look.resizeMode, image().props.look.bare]).toEqual([96, 'cover', true]);
     expect(className(thumbs[0]!)).not.toContain('p-1.5');
     // A narrow logo (under 240 px) sits whole inside a 6pt inset.
     act(() => (image().props.look.onSize as (w: number, h: number) => void)(200, 200));
-    expect([image().props.fixedHeight, image().props.look.resizeMode]).toEqual([60, 'contain']);
+    expect([image().props.fixedHeight, image().props.look.resizeMode]).toEqual([84, 'contain']);
     expect(className(thumbs[0]!)).toContain('p-1.5');
     expect(texts(root)).toEqual(expect.arrayContaining(['Python', '4.7', '(1,200)', 'Free', 'Language', 'General-purpose.', 'Popular', 'Go']));
     // List tags are tone-dot pills on the secondary well, not a muted "A · B" line.
@@ -439,9 +447,9 @@ b = Card("Oberoi", null, null, "https://example.com/oberoi.jpg")`;
     const size = (w: number, h: number) =>
       act(() => all(root, 'markdown-image').forEach((n) => (n.props.look.onSize as (w: number, h: number) => void)(w, h)));
     size(200, 200);
-    expect(all(root, 'view').filter((n) => n.props.style?.width === 72)).toHaveLength(2);
+    expect(all(root, 'view').filter((n) => n.props.style?.width === 96)).toHaveLength(2);
     size(1920, 1080);
-    expect(all(root, 'view').filter((n) => n.props.style?.width === 72)).toHaveLength(0);
+    expect(all(root, 'view').filter((n) => n.props.style?.width === 96)).toHaveLength(0);
     const grid = all(root, 'view').find((n) => typeof n.props.onLayout === 'function')!;
     act(() => (grid.props.onLayout as (e: unknown) => void)({ nativeEvent: { layout: { width: 340 } } }));
     // One column on a phone; each photo fills a tile at its own shape (1920x1080 is 16:9 → 340 x 191).
@@ -582,7 +590,7 @@ b2 = Badge("second")`;
     expect(motion.timings).toEqual([]);
   });
 
-  test('steps are rows on a rail: a 72pt cropped photo, the title with its meta, the text lines, a hairline to the next row', () => {
+  test('steps are rows on a rail: a 96pt cropped photo, the title with its meta, the text lines, a hairline to the next row', () => {
     const root = render(`root = Steps([s1, s2, s3])
 s1 = Step("Home → Central Station", "Take a taxi or the bus.", "https://example.com/station.jpg", "about 20 min")
 s2 = Step("Central Station → Airport One", "Take the airport train.\\nTrains leave every 15 minutes.", "https://example.com/train.jpg")
@@ -591,16 +599,16 @@ s3 = Step("Airport One", "Check in and board.")`);
     expect(texts(root)).toEqual(
       expect.arrayContaining(['Home → Central Station', 'about 20 min', 'Take a taxi or the bus.', 'Take the airport train.\nTrains leave every 15 minutes.', 'Airport One']),
     );
-    const tiles = all(root, 'view').filter((n) => n.props.style?.width === 72 && n.props.style?.height === 72);
+    const tiles = all(root, 'view').filter((n) => n.props.style?.width === 96 && n.props.style?.height === 96);
     const photos = tiles.filter((n) => all(n, 'markdown-image').length > 0);
     expect(photos).toHaveLength(2);
-    // The row without a photo fills the same 72pt tile with its number, so every row has the same thumbnail.
+    // The row without a photo fills the same 96pt tile with its number, so every row has the same thumbnail.
     expect(tiles).toHaveLength(3);
     expect(texts(tiles[2]!)).toEqual(['3']);
-    expect(all(photos[0]!, 'markdown-image')[0]!.props).toMatchObject({ src: 'https://example.com/station.jpg', alt: '', fixedHeight: 72, look: { bare: true, resizeMode: 'cover' } });
-    // The row without a photo shows its number on the same 72pt rail.
+    expect(all(photos[0]!, 'markdown-image')[0]!.props).toMatchObject({ src: 'https://example.com/station.jpg', alt: '', fixedHeight: 96, look: { bare: true, resizeMode: 'cover' } });
+    // The row without a photo shows its number on the same 96pt rail.
     const rails = all(root, 'view').filter((n) => className(n) === 'items-center');
-    expect(rails.map((n) => n.props.style.width)).toEqual([72, 72, 72]);
+    expect(rails.map((n) => n.props.style.width)).toEqual([96, 96, 96]);
     expect(texts(rails[2]!)).toEqual(['3']);
     // A hairline joins each rail to the next row; the last row has none. min-h-4 keeps it visible on a row
     // whose text is shorter than its photo.
@@ -641,7 +649,7 @@ s1 = Step("One", "First.", "https://example.com/one.jpg")
 s2 = Step("Two", "Second.")
 s3 = Step("Three", "Third.")`);
     const rails = () => all(root, 'view').filter((n) => className(n) === 'items-center');
-    expect(rails().map((n) => n.props.style.width)).toEqual([72, 72, 72]);
+    expect(rails().map((n) => n.props.style.width)).toEqual([96, 96, 96]);
     act(() => all(root, 'markdown-image')[0]!.props.look.onError());
     expect(rails().map((n) => n.props.style.width)).toEqual([28, 28, 28]);
   });

@@ -227,7 +227,7 @@ function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' 
                 {image ? (
                   <div
                     className={cn(
-                      'bg-muted size-20 shrink-0 self-start overflow-hidden rounded-lg [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:outline-0',
+                      'bg-muted size-26 shrink-0 self-start overflow-hidden rounded-lg [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:outline-0',
                       shape.inset ? 'p-1.5 [&_img]:object-contain' : '[&_img]:object-cover',
                     )}
                   >
