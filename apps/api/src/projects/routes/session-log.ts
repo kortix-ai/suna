@@ -33,7 +33,6 @@ import { gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import { MAX_SESSION_ATTACHMENT_BYTES } from '@kortix/shared';
-import { bodyLimit } from 'hono/body-limit';
 import {
   SessionLogJournalConflictSchema,
   SessionLogJournalRequestSchema,
@@ -74,10 +73,45 @@ const TOO_LARGE = 'Session-log attachments must be 50 MiB or smaller';
 /**
  * Uploads one replica buffers at once. Each holds its body (up to 50 MiB) and Storage's copy, so 4 bound
  * a replica at about 400 MiB of a 4 GiB task, when every box of a fleet sends its history at the first boot
- * on a new daemon. Above it: 429, and the daemon tries the attachment again at its next collection.
+ * on a new daemon. One per session, so one box never holds more than one slot. Above either: 429, and the
+ * daemon tries the attachment again at its next collection. A body not read within
+ * `SESSION_LOG_BLOB_READ_MS` is cancelled (408), so a stalled client frees its slot.
  */
 const MAX_BLOB_UPLOADS = 4;
-let blobUploads = 0;
+// replica-local: the sessions with an upload in flight on this replica.
+const blobUploads = new Set<string>();
+
+/**
+ * The request body, read here and not by `bodyLimit` (which buffers a chunked body before the handler,
+ * with no deadline). 'late' when it was not read within `ms`, 'large' above 50 MiB; both cancel the read.
+ */
+async function readBlobBody(request: Request, ms: number): Promise<Buffer | 'late' | 'large'> {
+  if (Number(request.headers.get('content-length') ?? 0) > MAX_SESSION_ATTACHMENT_BYTES) return 'large';
+  const reader = request.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  let late = false;
+  const timer = setTimeout(() => {
+    late = true;
+    void reader.cancel().catch(() => {});
+  }, ms);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (let r = await reader.read(); !r.done; r = await reader.read()) {
+      size += r.value.byteLength;
+      if (size > MAX_SESSION_ATTACHMENT_BYTES) {
+        void reader.cancel().catch(() => {});
+        return 'large';
+      }
+      chunks.push(r.value);
+    }
+  } catch {
+    return 'late';
+  } finally {
+    clearTimeout(timer);
+  }
+  return late ? 'late' : Buffer.concat(chunks);
+}
 
 /** The calling box's scope, or null when the credential is not this session's sandbox credential. */
 function sandboxScope(c: Context<AppEnv>): SessionLogScope | null {
@@ -131,11 +165,6 @@ async function sessionReadGate(
 }
 
 export function registerSessionLogRoutes(): void {
-  projectsApp.use(
-    '/:projectId/sessions/:sessionId/log/blobs/:sha256',
-    bodyLimit({ maxSize: MAX_SESSION_ATTACHMENT_BYTES, onError: (c) => c.json({ error: TOO_LARGE }, 413) }),
-  );
-
   projectsApp.openapi(
     createRoute({
       method: 'get',
@@ -165,10 +194,11 @@ export function registerSessionLogRoutes(): void {
       description:
         'Body: the raw bytes, `Content-Type` = their MIME type, at most 50 MiB. Session sandbox credential only. ' +
         'The body sha256 must equal the path sha256 (else 400). Stored once per session and sha256; answers the object `{ ref }`. ' +
-        '429 when 4 uploads are already in flight on this replica. Request deadline 95 s.',
+        '429 when 4 uploads, or one of this session, are already in flight on this replica. 408 when the body is not received ' +
+        'within 60 s (`SESSION_LOG_BLOB_READ_MS`). Request deadline 95 s.',
       ...auth,
       request: { params: blobParams },
-      responses: { 200: json(BlobRefSchema.extend({ ref: z.string() }), 'The object ref'), ...errors(400, 403, 404, 413, 429, 503) },
+      responses: { 200: json(BlobRefSchema.extend({ ref: z.string() }), 'The object ref'), ...errors(400, 403, 404, 408, 413, 429, 503) },
     }),
     async (c) => {
       const scope = sandboxScope(c);
@@ -177,18 +207,20 @@ export function registerSessionLogRoutes(): void {
       const { sha256 } = c.req.valid('param');
       const mime = (c.req.header('content-type') || 'application/octet-stream').split(';')[0]!.trim().toLowerCase();
       if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mime)) return c.json({ error: 'Invalid Content-Type' }, 400);
-      if (blobUploads >= MAX_BLOB_UPLOADS) {
+      if (blobUploads.size >= MAX_BLOB_UPLOADS || blobUploads.has(scope.sessionId)) {
         c.header('Retry-After', '5');
         return c.json({ error: 'Too many session-log uploads in flight' }, 429);
       }
-      blobUploads++;
+      blobUploads.add(scope.sessionId);
       try {
-        const bytes = Buffer.from(await c.req.arrayBuffer());
+        const bytes = await readBlobBody(c.req.raw, config.SESSION_LOG_BLOB_READ_MS);
+        if (bytes === 'large') return c.json({ error: TOO_LARGE }, 413);
+        if (bytes === 'late') return c.json({ error: 'The body was not received in time' }, 408);
         if (createHash('sha256').update(bytes).digest('hex') !== sha256) return c.json({ error: 'The body sha256 does not match the path' }, 400);
         if (!(await sessionExists(scope))) return c.json({ error: 'Session not found' }, 404);
         return c.json({ ref: await storeSessionLogBlob(scope, sha256, mime, bytes) }, 200);
       } finally {
-        blobUploads--;
+        blobUploads.delete(scope.sessionId);
       }
     },
   );

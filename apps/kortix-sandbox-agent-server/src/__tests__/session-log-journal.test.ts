@@ -858,6 +858,7 @@ describe('attachment bytes (P2.13)', () => {
   const shaOf = (b: Buffer) => createHash('sha256').update(b).digest('hex')
   const PNG = randomBytes(64)
   const BIG = randomBytes(256)
+  const THIRD = randomBytes(128)
   const digest = shaOf(PNG)
   const own = (sha: string) => `kortix-attachment://project-1/session-1/obj-${sha}`
   /** A store with one message per image (`msg_0`, `msg_1`, …); `blob` serves their bytes. */
@@ -880,7 +881,7 @@ describe('attachment bytes (P2.13)', () => {
     return { ...base, port }
   }
   /** A fake API: the blob routes answer by `blob(method, sha256)` (a status, or 'store'), the journal acknowledges. */
-  function blobApi(blob: (method: string, sha256: string) => number | 'store') {
+  function blobApi(blob: (method: string, sha256: string) => number | 'store' | Promise<number | 'store'>) {
     const posted: SessionLogJournalRequest[] = []
     const calls: string[] = []
     const objects = new Map<string, Buffer>()
@@ -895,9 +896,9 @@ describe('attachment bytes (P2.13)', () => {
           return ack(body)
         }
         const sha256 = url.pathname.split('/').at(-1)!
-        const name = sha256 === digest ? 'PNG' : sha256 === shaOf(BIG) ? 'BIG' : sha256
+        const name = sha256 === digest ? 'PNG' : sha256 === shaOf(BIG) ? 'BIG' : sha256 === shaOf(THIRD) ? 'THIRD' : sha256
         calls.push(`${request.method} ${name}${request.method === 'PUT' ? ` ${request.headers.get('content-type')}` : ''}`)
-        const answer = blob(request.method, name)
+        const answer = await blob(request.method, name)
         if (answer !== 'store') return new Response('no', { status: answer })
         if (request.method === 'GET') return Response.json({ ref: objects.has(sha256) ? own(sha256) : null })
         const bytes = Buffer.from(await request.arrayBuffer())
@@ -975,6 +976,53 @@ describe('attachment bytes (P2.13)', () => {
     expect(await second.flush()).toBe(true)
     expect(await second.flush()).toBe(true)
     expect(old.calls).toEqual(['GET PNG'])
+  })
+
+  const puts = (api: ReturnType<typeof blobApi>) => api.calls.filter((c) => c.startsWith('PUT')).length
+  const allStored = (api: ReturnType<typeof blobApi>) => [lastRef(api, 'msg_0'), lastRef(api, 'msg_1'), lastRef(api, 'msg_2')]
+
+  test('a Storage outage (every upload 503) stops each collection after 2 uploads, counts none, and every sha256 uploads after recovery', async () => {
+    let down = true
+    const api = blobApi((method) => (method === 'PUT' && down ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG, THIRD]).port, { generation: 0 })
+    for (let i = 1; i <= 4; i++) {
+      expect(await journal.flush()).toBe(true)
+      expect(puts(api)).toBe(2 * i)
+    }
+    down = false
+    expect(await journal.flush()).toBe(true)
+    expect(allStored(api)).toEqual([own(shaOf(BIG)), own(digest), own(shaOf(THIRD))])
+  })
+
+  test('a 429 or 401 on an upload counts nothing: after 4 refused collections every sha256 still uploads', async () => {
+    let answer: number | 'store' = 429
+    const api = blobApi((method) => (method === 'PUT' ? answer : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG, THIRD]).port, { generation: 0 })
+    for (let i = 1; i <= 3; i++) {
+      expect(await journal.flush()).toBe(true)
+      expect(puts(api)).toBe(i)
+    }
+    answer = 401
+    expect(await journal.flush()).toBe(true)
+    expect(puts(api)).toBe(4)
+    answer = 'store'
+    expect(await journal.flush()).toBe(true)
+    expect(allStored(api)).toEqual([own(shaOf(BIG)), own(digest), own(shaOf(THIRD))])
+  })
+
+  test('a slow upload holds the records at most the budget; the pass goes on, and the next collection sends the stored ref without a second upload', async () => {
+    const api = blobApi(async (method) => (method === 'PUT' ? Bun.sleep(400).then(() => 'store' as const) : 'store'))
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0, blobBudgetMs: 50 })
+    const started = performance.now()
+    expect(await journal.flush()).toBe(true)
+    expect(performance.now() - started).toBeLessThan(350)
+    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`]])
+    // A collection while the pass still runs starts no second one.
+    expect(await journal.flush()).toBe(true)
+    await Bun.sleep(500)
+    expect(await journal.flush()).toBe(true)
+    expect(lastRef(api, 'msg_0')).toBe(own(digest))
+    expect(puts(api)).toBe(1)
   })
 
   test('the dump directory keeps blob: and asks nothing', async () => {

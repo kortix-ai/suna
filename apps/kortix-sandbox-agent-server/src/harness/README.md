@@ -98,25 +98,27 @@ Both rebuild the whole log on each read and diff it against the cursors with
 
 Attachment bytes (P2.13). Both exports write an image or file (a prompt's, or
 a tool result's) as `ref: blob:<sha256>` with `sha256` (and `bytes` on a
-block): the bytes are only in the native store. Before a collected message
-enters the dirty set, the journal asks `GET …/log/blobs/<sha256>` for the
-session's object and, when there is none, uploads `blob(sha256)` with
-`PUT …/log/blobs/<sha256>` (at most 50 MiB; the API checks the digest and
-stores one object per sha256 per session, in the session's attachments folder
-and the `session_log_blobs` index; 95 s request deadline, at most 4 uploads in
-flight per API replica, else 429). The `kortix-attachment://` ref both answer
-replaces `blob:` in the record: a record names only an object that exists, and
-`apiBytesReader` reads it back on a fresh box (4 reads at a time). The journal
-runs 4 sha256s at a time, and asks for a stored one once per boot. Nothing holds
-a message back: one whose attachment is not stored yet goes out with `blob:`, and
-the next collection exports it again and retries. A failed lookup, a 429 or a 401
-means the API cannot take uploads now: the collection stops and nothing is
-counted. A failed upload counts against its sha256 only; after 3 the sha256
-keeps `blob:` for the boot, and 2 failed uploads stop the collection. A 404 (an
-API without the route), a 400 or 413, a body over 50 MiB and bytes the store
-lost keep `blob:` for the boot at once. A boot re-sends every message, so a
-session journaled before P2.13 gets its objects at its next boot on a new
-daemon, while its box still holds the bytes.
+block): the bytes are only in the native store. A collection starts one
+attachment pass over the sha256s the boot has not settled and waits for it at
+most 10 s before its records enter the dirty set; the pass goes on in the
+background. The pass asks `GET …/log/blobs/<sha256>` for the session's object
+(4 at a time) and uploads `blob(sha256)` with `PUT …/log/blobs/<sha256>` for
+each one the API lacks, one at a time (at most 50 MiB; the API checks the
+digest, stores one object per sha256 per session in the session's attachments
+folder and the `session_log_blobs` index, gives the upload a 95 s request
+deadline and cancels a body not received in 60 s with 408, and takes at most
+one upload per session and 4 per replica, else 429). The
+`kortix-attachment://` ref both answer replaces `blob:` in the record: a record
+names only an object that exists, and `apiBytesReader` reads it back on a fresh
+box (4 reads at a time). A record whose attachment is not settled when the wait
+ends goes out with `blob:`, and the next collection exports it again with the
+ref or retries. A failed lookup, a 429 or a 401 stops the pass and counts
+nothing. One failed upload in a pass counts against its sha256 (after 3 it
+keeps `blob:` for the boot); a second stops the pass and counts none, because
+two are an outage. A 404 (an API without the route), a 400 or 413, a body over
+50 MiB and bytes the store lost keep `blob:` for the boot at once. A boot
+re-sends every message, so a session journaled before P2.13 gets its objects at
+its next boot on a new daemon, while its box still holds the bytes.
 
 The pi boot starts the journal once the runtime is ready and a session is
 bound, before the first turn, at the generation and with the cursors the boot

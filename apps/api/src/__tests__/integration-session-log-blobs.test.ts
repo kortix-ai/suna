@@ -257,13 +257,18 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
   let boxToken = '';
   const blob = (sha: string, init: RequestInit = {}, token = boxToken) =>
     app.request(`${base(box)}/log/blobs/${sha}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers as Record<string, string>) } });
-  const put = (bytes: Buffer, sha = createHash('sha256').update(bytes).digest('hex'), mime = 'image/png', token = boxToken) =>
-    blob(sha, { method: 'PUT', headers: { 'Content-Type': mime }, body: new Uint8Array(bytes) }, token);
+  const put = (bytes: Buffer, sha = createHash('sha256').update(bytes).digest('hex'), mime = 'image/png', token = boxToken, session = box) =>
+    app.request(`${base(session)}/log/blobs/${sha}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': mime }, body: new Uint8Array(bytes) });
+  /** Another session of the project with its box credential. */
+  const newBox = async () => {
+    const id = await seedSession(project, OWNER);
+    await db.insert(sessionSandboxes).values({ sandboxId: id, sessionId: id, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
+    const token = (await createAccountToken({ accountId: project.account_id, userId: OWNER, projectId: project.project_id, sessionId: id, name: 'session-log-blobs-attachments' })).secretKey;
+    return { id, token };
+  };
 
   beforeAll(async () => {
-    box = await seedSession(project, OWNER);
-    await db.insert(sessionSandboxes).values({ sandboxId: box, sessionId: box, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
-    boxToken = (await createAccountToken({ accountId: project.account_id, userId: OWNER, projectId: project.project_id, sessionId: box, name: 'session-log-blobs-attachments' })).secretKey;
+    ({ id: box, token: boxToken } = await newBox());
   });
 
   test('an unknown sha256 answers ref null; the upload stores the bytes once and answers the ref; the lookup then answers it', async () => {
@@ -328,17 +333,48 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
     expect(bucket.uploads.length).toBe(before);
   });
 
-  test('a fifth upload while 4 are in flight on the replica → 429 with Retry-After; the 4 store', async () => {
+  test('a fifth upload while 4 are in flight on the replica, or a second of one session → 429 with Retry-After; the 4 store', async () => {
     bucket.slowUploads.ms = 500;
     try {
-      const bodies = Array.from({ length: 5 }, (_, i) => Buffer.from(`synthetic concurrent upload ${i}`));
-      const answers = await Promise.all(bodies.map((b) => put(b, undefined, 'application/octet-stream')));
-      const statuses = answers.map((r) => r.status).sort();
-      expect(statuses).toEqual([200, 200, 200, 200, 429]);
+      const boxes = [{ id: box, token: boxToken }, ...(await Promise.all(Array.from({ length: 4 }, newBox)))];
+      const answers = await Promise.all(boxes.map((b, i) => put(Buffer.from(`synthetic concurrent upload ${i}`), undefined, 'application/octet-stream', b.token, b.id)));
+      expect(answers.map((r) => r.status).sort()).toEqual([200, 200, 200, 200, 429]);
       expect(answers.find((r) => r.status === 429)!.headers.get('retry-after')).toBe('5');
-      // The slot is free again.
+      const [first, second] = await Promise.all([put(Buffer.from('synthetic one of a session')), put(Buffer.from('synthetic two of a session'))].map(async (p) => (await p).status));
+      expect([first, second].sort()).toEqual([200, 429]);
+      // The slots are free again.
       expect((await put(Buffer.from('synthetic after the burst'), undefined, 'application/octet-stream')).status).toBe(200);
     } finally {
+      bucket.slowUploads.ms = 0;
+    }
+  });
+
+  test('a stalled body is cancelled at SESSION_LOG_BLOB_READ_MS with 408; its slot is freed and other sessions upload meanwhile', async () => {
+    const { config } = await import('../config');
+    const readMs = config.SESSION_LOG_BLOB_READ_MS;
+    config.SESSION_LOG_BLOB_READ_MS = 1_500;
+    try {
+      const other = await newBox();
+      // A client that sends one chunk and then stops.
+      const stalled = new ReadableStream<Uint8Array>({ start: (controller) => controller.enqueue(new Uint8Array([1, 2, 3])) });
+      const started = Date.now();
+      const hung = Promise.resolve(app.request(`${base(box)}/log/blobs/${'a'.repeat(64)}`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${boxToken}`, 'Content-Type': 'image/png' }, body: stalled, duplex: 'half',
+      } as RequestInit));
+      await Bun.sleep(400);
+      expect((await put(Buffer.from('synthetic same session while stalled'))).status).toBe(429);
+      expect((await put(Buffer.from('synthetic other session while stalled'), undefined, 'image/png', other.token, other.id)).status).toBe(200);
+      const answer = await hung;
+      expect(answer.status).toBe(408);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      // Released once: the session uploads again, and 4 sessions still fill exactly the 4 slots.
+      expect((await put(Buffer.from('synthetic same session after the stall'))).status).toBe(200);
+      bucket.slowUploads.ms = 300;
+      const boxes = [{ id: box, token: boxToken }, other, ...(await Promise.all(Array.from({ length: 3 }, newBox)))];
+      const statuses = await Promise.all(boxes.map(async (b, i) => (await put(Buffer.from(`synthetic slot check ${i}`), undefined, 'image/png', b.token, b.id)).status));
+      expect(statuses.sort()).toEqual([200, 200, 200, 200, 429]);
+    } finally {
+      config.SESSION_LOG_BLOB_READ_MS = readMs;
       bucket.slowUploads.ms = 0;
     }
   });
@@ -357,7 +393,7 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
   });
 
   test('session deletion removes the index rows (cascade) and account erasure the objects', async () => {
-    expect((await blobRows(box)).length).toBe(7);
+    expect((await blobRows(box)).length).toBeGreaterThan(0);
     await deleteAccountExternalStores(project.account_id);
     expect([...bucket.objects.keys()].filter((k) => k.startsWith(`${project.project_id}/${box}/`))).toEqual([]);
     await db.execute(sql`delete from kortix.project_sessions where session_id = ${box}`);

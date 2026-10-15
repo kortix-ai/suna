@@ -19,6 +19,7 @@
 import { createHash } from 'node:crypto'
 import type { CompactionBlock, SessionLog, SessionLogMessage, SessionLogRestore, SessionLogThread } from '@kortix/api-contract/session-log'
 import type { SandboxRelayContext } from '@/lib/kortix-api/relay-context'
+import { mapLimit } from '@/lib/map-limit'
 import { logger } from '@/lib/log/logger'
 
 export type TruncatedText = { message_id: string; block_id: string; ref: string; reason: 'not_listed' | 'unreadable' | 'sha256_mismatch' }
@@ -109,18 +110,13 @@ export async function attachmentBytes(log: SessionLog, read: BytesReader | undef
       if (b.type === 'tool_call') for (const c of [...(b.result?.content ?? []), ...(b.result?.model_content ?? [])]) if (c.type === 'attachment' && c.ref) refs.set(c.ref, c.sha256)
     }
   }
-  const out = new Map<string, Buffer | null>()
-  const queue = [...refs]
-  const worker = async () => {
-    for (let next = queue.shift(); next; next = queue.shift()) {
-      const [ref, digest] = next
-      const bytes = read && !budget.aborted ? await read(ref, budget).catch(() => null) : null
-      const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
-      out.set(ref, bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null)
-    }
-  }
-  await Promise.all(Array.from({ length: 4 }, worker))
-  return out
+  const entries = [...refs]
+  const got = await mapLimit(entries, 4, async ([ref, digest]) => {
+    const bytes = read && !budget.aborted ? await read(ref, budget).catch(() => null) : null
+    const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
+    return bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null
+  })
+  return new Map(entries.map(([ref], i) => [ref, got[i]!]))
 }
 
 /**
