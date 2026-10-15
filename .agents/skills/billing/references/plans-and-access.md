@@ -143,9 +143,13 @@ Kortix matches OpenRouter's model at a lower allowance
 - The first **$1,000 of list-price BYOK usage per calendar month (UTC)** is
   free. Past it, each request pays **5% of its list price**, from the wallet.
 - Never charged: a ChatGPT subscription (`openai-codex`) and OpenCode Go
-  (`opencode-go`), which are subscriptions, not metered keys. An Enterprise
-  contract (billing plan Enterprise) waives the fee; an Enterprise trial does
-  not. Billing off (self-host): no fee.
+  (`opencode-go`), which are subscriptions, not metered keys. Billing off
+  (self-host): no fee.
+- The fee is the `byokFee` ENTITLEMENT: on by default (Free, Credits), off on
+  Enterprise (a contract or an Enterprise trial, through `features`). An
+  operator switches it per account with the `byokFee` override
+  (`PUT /v1/admin/api/accounts/{id}/overrides`, admin console Overrides card),
+  optionally with an expiry.
 - Month-to-date usage is the sum of `gateway_request_logs.upstream_cost_precise`
   for the account's `billing_mode = 'none'` rows since the 1st (UTC), cached
   60 s per replica.
@@ -158,7 +162,7 @@ Kortix matches OpenRouter's model at a lower allowance
 ## Overrides
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
-`auditAccess`, `branding`. Each `{ value: boolean, expires_at? }`. Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+`auditAccess`, `branding`, `byokFee`. Each `{ value: boolean, expires_at? }`. Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
 Removed keys: `demoEnterprise`, `enterpriseEntitled`, `managedModelsOverride`,
 `computeRateMultiplier`.
 

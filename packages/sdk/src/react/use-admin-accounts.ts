@@ -84,6 +84,7 @@ export const ADMIN_OVERRIDE_KEYS = [
   'auditAccess',
   'branding',
   'managedModels',
+  'byokFee',
 ] as const;
 
 export type AdminOverrideKey = (typeof ADMIN_OVERRIDE_KEYS)[number];
@@ -102,6 +103,9 @@ export const ADMIN_ENTITLEMENT_OVERRIDE_KEYS = [
   'auditAccess',
   'branding',
   'managedModels',
+  // The BYOK platform fee (5% past the free monthly allowance). On by default
+  // for Free and Credits; set off to waive it for one account.
+  'byokFee',
 ] as const satisfies readonly AdminOverrideKey[];
 
 /**
