@@ -1,5 +1,5 @@
 {
-  "source_hash": "c3801899d72ab5623789ff6baa368870a546f99f8af908305d93e11780d29374",
+  "source_hash": "a40e990a242a245ad238e2c8f05d159fe560eb5174783efba7594050dc7d59f7",
   "diff_files": [
     ".agents/skills/kortix-brand/references/verbal/claims.md",
     ".agents/skills/kortix-brand/references/verbal/positioning.md",
@@ -48,6 +48,7 @@
     "apps/api/src/admin/index.ts",
     "apps/api/src/admin/queries.ts",
     "apps/api/src/apps/keep-alive.integration.test.ts",
+    "apps/api/src/apps/limits.test.ts",
     "apps/api/src/apps/limits.ts",
     "apps/api/src/billing/TESTING.md",
     "apps/api/src/billing/repositories/credit-accounts.ts",
@@ -105,6 +106,7 @@
     "apps/api/src/llm-gateway/hooks.ts",
     "apps/api/src/llm-gateway/models/managed-pricing-routes.ts",
     "apps/api/src/llm-gateway/usage-settlement.integration.test.ts",
+    "apps/api/src/platform/providers/compute-rates.ts",
     "apps/api/src/projects/lib/project-access-seat.test.ts",
     "apps/api/src/projects/lib/project-access.ts",
     "apps/api/src/projects/lib/session-create.ts",
@@ -243,15 +245,16 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
-    "packages/db/drizzle/meta/20261014130107_snapshot.json",
+    "packages/db/drizzle/meta/20261014234705_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261014130107914_credit_accounts_plan_monthly_usd.sql",
+    "packages/db/migrations/20261014234705689_credit_accounts_plan_monthly_usd.sql",
     "packages/db/src/schema/kortix.ts",
     "packages/sdk/API-MAP.md",
     "packages/sdk/CHANGELOG.md",
     "packages/sdk/README.md",
     "packages/sdk/src/core/client/facade-commerce.ts",
     "packages/sdk/src/core/client/kortix.test.ts",
+    "packages/sdk/src/core/rest/projects-client/apps.test.ts",
     "packages/sdk/src/core/rest/projects-client/billing.test.ts",
     "packages/sdk/src/core/rest/projects-client/billing.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts",
@@ -272,17 +275,18 @@
     "tests/spec/routes.generated.json",
     "tests/src/fixtures/billing.ts",
     "tests/src/flows/admin.flow.ts",
+    "tests/src/flows/apps.flow.ts",
     "tests/src/flows/billing-reads.flow.ts",
     "tests/src/flows/billing.flow.ts",
     "tests/src/flows/retired.flow.ts"
   ],
-  "diff_hash": "53c8bc5e7cd5ee7067d7fe08136d7859d905b08d1d2a0397ae43b70818082e18",
-  "head": "5bbda746f647c43b8b759e43fe2891eb3d1376b4",
-  "passed": true,
+  "diff_hash": "86abbf382d90bd356a813e69b037fe153a0e9cb5e07722789967f6e4dce0ae87",
+  "head": "1bcaffb4f0309f68a2db779c9c01957ce2f701a4",
+  "passed": false,
   "lanes": {
-    "core": "pass",
-    "packages": "pass",
+    "core": "fail",
+    "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-14T13:33:34.971Z"
+  "at": "2026-10-15T00:05:09.716Z"
 }
