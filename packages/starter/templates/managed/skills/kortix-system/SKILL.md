@@ -222,7 +222,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. Apps is Kortix-managed: listed as `on kortix` only while on; only Kortix changes it. |
+| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
 | "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |

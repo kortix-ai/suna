@@ -8,7 +8,6 @@
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
 import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
-import { setFeatureAsOperator } from "../fixtures/feature-flags";
 import { withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 
@@ -35,38 +34,31 @@ flow(
     const projectParams = { projectId: project.id };
     let appId = "";
 
-    await ctx.step("clear any apps flag override from a reused project (operator route)", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", null);
-    });
-
-    await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
+    await ctx.step("a project with no flag override reaches Apps: list answers 200", async () => {
+      // Apps went GA (2026-10-14, spec §28): there is no `apps` flag, so a
+      // project that never opted in — and one carrying a leftover stored
+      // `apps: false` — lists, creates and deploys Apps. Regression gate for
+      // the old 403 `feature_disabled`.
       const response = await owner.get("/v1/projects/:projectId/apps", {
         params: projectParams,
       });
-      response.status(403);
-      response.body().has("$.code", "feature_disabled");
-      response.body().has("$.feature", "apps");
+      response.status(200).body().has("$.apps", []);
     });
 
-    await ctx.step("owner cannot write the internal-only apps flag: /features → 403 feature_operator_only", async () => {
+    await ctx.step("the graduated apps key is unknown: /features → 400, no catalog row", async () => {
       const response = await owner.patch(
         "/v1/projects/:projectId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
-      response.status(403);
-      response.body().has("$.code", "feature_operator_only");
-      response.body().has("$.feature", "apps");
-    });
-
-    await ctx.step("a platform operator enables apps; the owner's catalog lists it read-only", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
+      response.status(400);
+      response.body().has("$.error", "Unknown feature flag 'apps'");
       const read = await owner.get("/v1/projects/:projectId", { params: projectParams });
       read.status(200);
-      const row = (read.json() as { experimental_features: Array<{ key: string; enabled: boolean; operator_only?: boolean }> })
-        .experimental_features.find((f) => f.key === "apps");
-      if (!row || row.enabled !== true || row.operator_only !== true) {
-        throw new Error(`apps catalog row is ${JSON.stringify(row)}; want enabled + operator_only`);
+      const rows = (read.json() as { experimental_features: Array<{ key: string }> })
+        .experimental_features;
+      if (rows.some((f) => f.key === "apps")) {
+        throw new Error(`the catalog still lists apps: ${JSON.stringify(rows)}`);
       }
     });
 
@@ -248,10 +240,6 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
 
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
-
     const slug = ctx.fixtures
       .name("deploy")
       .toLowerCase()
@@ -422,10 +410,6 @@ flow(
     const projectParams = { projectId: project.id };
     let appId = "";
 
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
-
     const slug = ctx.fixtures
       .name("limits")
       .toLowerCase()
@@ -526,10 +510,6 @@ flow(
     const editor = await team.addMember("member");
     await team.grantProjectRole(project.id, editor.userId!, "member");
     const teammate = ctx.client.as(editor);
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("scoped")
@@ -736,10 +716,6 @@ flow(
     let appId = "";
     let appHost = "";
 
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
-
     await ctx.step("create an App and take its public hostname", async () => {
       const slug = ctx.fixtures
         .name("edge")
@@ -874,8 +850,7 @@ flow(
     const asToken = (token: string) => ctx.client.withBearer(token, "app-viewer-token");
 
     try {
-      await ctx.step("enable Apps; create an App restricted to the viewer that acts as them (api scope)", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("create an App restricted to the viewer that acts as them (api scope)", async () => {
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e viewer token" },
           { params: projectParams });
         created.status(201);
@@ -1023,10 +998,6 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     const IN_PROGRESS = ["queued", "validating", "building", "provisioning", "checking"];
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("images")
@@ -1209,8 +1180,7 @@ flow(
     };
 
     try {
-      await ctx.step("enable Apps and sign the CLI in", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("sign the CLI in", async () => {
         const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app8") });
         const login = await cli.login(pat, { noProject: true, account: project.accountId });
         if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
@@ -1382,8 +1352,7 @@ flow(
     const machine = { projectId: project.id, appId: "", machineId: UNKNOWN_ID };
 
     try {
-      await ctx.step("enable Apps, create an App with no release, sign the CLI in", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("create an App with no release, sign the CLI in", async () => {
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e fleet App" }, { params: { projectId: project.id } });
         created.status(201);
         appId = created.json<any>().app_id;

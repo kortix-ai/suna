@@ -9,29 +9,39 @@ const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-shared.tsx', '
   .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
   .join('\n');
 
-test('every Apps discovery surface hides until the apps feature flag is on', () => {
+test('no Apps surface gates on a feature flag — Apps is generally available', () => {
   const nav = readFileSync(
     resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
     'utf8',
   );
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
   const view = appsSource();
+  const meta = readFileSync(resolve(root, 'features/workspace/project-sidebar/nav-row-meta.tsx'), 'utf8');
+  const pool = readFileSync(resolve(root, 'features/apps/app-preview-pool-loader.tsx'), 'utf8');
 
-  // ONE gating primitive everywhere — the SDK's `useFeatureFlag`, never a
-  // per-feature hook and never a hand-rolled `experimental?.apps` read.
-  expect(nav).toContain("useFeatureFlag(projectId, 'apps')");
-  expect(nav).toContain('if (!appsGate.enabled) return null;');
-  expect(menu).toContain("requiresFlag: 'apps'");
-  expect(view).toContain("useFeatureFlag(projectId, 'apps')");
+  // Apps went GA (2026-10-14): there is no `apps` feature flag, so no Apps
+  // surface may gate on one — no flag read, no registry condition, no gate
+  // screen. A flag must not come back silently on one surface.
+  for (const [name, source] of [
+    ['project-apps-nav', nav],
+    ['menu-registry', menu],
+    ['apps views', view],
+    ['nav-row-meta', meta],
+    ['app-preview-pool-loader', pool],
+  ] as const) {
+    expect(source, name).not.toContain("useFeatureFlag(projectId, 'apps')");
+    expect(source, name).not.toContain("requiresFlag: 'apps'");
+  }
+  expect(view).not.toContain('<FeatureGateScreen');
   expect(nav).not.toContain('useAppsFeatureEnabled');
   expect(view).not.toContain('useAppsFeatureEnabled');
 });
 
-test('Apps is an ordinary feature flag — nothing calls it experimental', () => {
-  // Apps shipped labelled Experimental on every surface. It is now a STABLE
-  // flag: still opt-in per project, but no badge on the sidebar entry and none
-  // on the page header. The stability badge in Settings → Feature flags is
-  // rendered from the registry's `stability`, so that list follows on its own.
+test('Apps is an ordinary product — nothing calls it experimental', () => {
+  // Apps shipped labelled Experimental on every surface, then shipped as a
+  // STABLE flag. It is now generally available and carries no badge anywhere:
+  // the sidebar entry and the page header have none, and there is no Settings
+  // row to badge.
   const nav = readFileSync(
     resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
     'utf8',
@@ -63,28 +73,14 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
   expect(sidebar.indexOf('<ProjectNavItems')).toBeLessThan(sidebar.indexOf('<ProjectSessionList'));
 });
 
-test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {
+test('the Apps page never offers its own switch — Apps has no off state to configure', () => {
   const view = appsSource();
-  const gate = readFileSync(resolve(root, 'features/workspace/feature-gate-screen.tsx'), 'utf8');
 
-  // A disabled feature never offers its own switch. The gate screen POINTS at
-  // Customize → Feature flags; it does not mutate anything.
-  expect(view).toContain('<FeatureGateScreen');
-  expect(view).toContain('featureName="Apps"');
+  // The page renders the gallery and its controls; it has no mutation that
+  // flips a feature on or off (Apps itself has no flag any more).
   expect(view).not.toContain('updateExperimentalFeature');
   expect(view).not.toContain('updateFeatureFlag');
   expect(view).not.toContain('Enable Apps');
-
-  // The shared screen links to the one place a flag can be flipped: the
-  // Customize bar's Settings tab, Feature flags section — through the shared
-  // href builder, so the route can move without this link going stale. A
-  // real link, not a store call.
-  expect(gate).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
-  expect(gate).not.toContain('useCustomizeStore');
-  expect(gate).not.toContain('useSettingsPanelStore');
-  expect(gate).toContain('Feature flags');
-  expect(gate).not.toContain('updateFeatureFlag');
-  expect(gate).not.toContain('useMutation');
 });
 
 test('Apps UI is operational only and has no creation action or modal', () => {
