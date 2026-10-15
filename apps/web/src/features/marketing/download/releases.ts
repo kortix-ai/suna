@@ -49,6 +49,16 @@ export function pickDesktopAsset(assets: ReleaseAsset[], os: DesktopOs): Release
   return matches.find((a) => a.name.toLowerCase().includes('universal')) ?? matches[0];
 }
 
+/**
+ * Kortix Capture ships in the same vX.Y.Z Release as Kortix (deploy-prod's
+ * attach-capture job): `KortixCapture-x64.msi`, `KortixCapture-universal.pkg`,
+ * `kortix-capture_amd64.deb`, each also under a versioned name.
+ */
+export function pickCaptureAsset(assets: ReleaseAsset[], os: DesktopOs): ReleaseAsset | undefined {
+  const pattern = { windows: /^kortixcapture.*\.msi$/, macos: /^kortixcapture.*\.pkg$/, linux: /^kortix-capture.*\.deb$/ }[os];
+  return pattern ? assets.find((a) => pattern.test(a.name.toLowerCase())) : undefined;
+}
+
 /** CLI binaries are named `kortix-<goos>-<arch>`. Windows publishes none. */
 export function pickCliAsset(
   assets: ReleaseAsset[],
@@ -94,6 +104,42 @@ export async function getLatestRelease(): Promise<Release | null> {
       .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
     if (!assets.length) return null;
     return { version: (data.tag_name ?? '').replace(/^v/, ''), assets };
+  } catch {
+    return null;
+  }
+}
+
+const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
+
+/**
+ * The newest published vX.Y.Z Release that carries Kortix Capture installers.
+ * attach-capture runs after the Release exists and is best-effort, so the newest
+ * Release can lack them for a while (or for good): this skips it rather than
+ * sending the visitor to the docs. Prereleases (capture-dev-latest) and drafts
+ * are never served. Null on any failure; callers degrade like getLatestRelease's.
+ */
+export async function getLatestCaptureRelease(): Promise<Release | null> {
+  try {
+    const res = await fetch(RELEASES_API, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-download' },
+      next: { revalidate: 600 },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as unknown;
+    if (!Array.isArray(data)) return null;
+    for (const r of data as Array<{ tag_name?: string; draft?: boolean; prerelease?: boolean; assets?: GithubAsset[] }>) {
+      if (r.draft || r.prerelease || !/^v\d+\.\d+\.\d+$/.test(r.tag_name ?? '')) continue;
+      const assets: ReleaseAsset[] = (r.assets ?? [])
+        .filter((a): a is GithubAsset & { name: string; browser_download_url: string } =>
+          Boolean(a.name && a.browser_download_url),
+        )
+        .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
+      if (assets.some((a) => pickCaptureAsset([a], 'windows') || pickCaptureAsset([a], 'macos') || pickCaptureAsset([a], 'linux'))) {
+        return { version: (r.tag_name ?? '').slice(1), assets };
+      }
+    }
+    return null;
   } catch {
     return null;
   }

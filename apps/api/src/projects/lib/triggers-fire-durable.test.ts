@@ -29,7 +29,6 @@ mock.module('../../config', () => ({
   config: { LLM_GATEWAY_ENABLED: true, LLM_GATEWAY_DEFAULT_ENABLED: false },
   SANDBOX_VERSION: 'test',
   KNOWN_PROVIDERS: ['daytona'],
-  KORTIX_MARKUP: 1.2,
   PLATFORM_FEE_MARKUP: 0.1,
   getToolCost: () => 0,
 }));

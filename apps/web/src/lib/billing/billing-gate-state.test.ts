@@ -14,7 +14,6 @@ import {
 
 function accountState(overrides: Partial<AccountStateLike> = {}): AccountStateLike {
   return {
-    billing_model: 'per_seat',
     credits: { can_run: true, total: 25 },
     subscription: { subscription_id: 'sub_live', status: 'active' },
     tier: { can_purchase_credits: true },
@@ -49,18 +48,17 @@ describe('resolveBillingState — the server state wins', () => {
 });
 
 describe('resolveBillingState — client fallback for an API without billing_state', () => {
-  test('Team account on an ACTIVE subscription with a drained wallet is blocked, never "no plan"', () => {
+  test('paid account on an ACTIVE subscription with a drained wallet is blocked, never "no plan"', () => {
     // The fallback used to return `active` here — its own copy of the removed
     // `subscriptionBypassesWalletFloor`. On a rolling deploy that is the worst
     // possible answer: an old API sends no `billing_state`, this fallback runs,
-    // and the UI renders a drained Team account as runnable while the new API
+    // and the UI renders a drained paid account as runnable while the new API
     // beside it is already 402ing every prompt.
     //
     // Note `can_run: false` — the server had ALREADY said no. The fallback's job
     // is to agree with it and explain it, never to overrule it.
     const state = resolveBillingState(
       accountState({
-        billing_model: 'per_seat',
         credits: { can_run: false, total: 0.0099614711 },
         subscription: { subscription_id: 'sub_live', status: 'active' },
       }),
@@ -70,10 +68,9 @@ describe('resolveBillingState — client fallback for an API without billing_sta
     expect(state).not.toBe('no_subscription');
   });
 
-  test('Team account on an ACTIVE subscription WITH credit is active', () => {
+  test('paid account on an ACTIVE subscription WITH credit is active', () => {
     const state = resolveBillingState(
       accountState({
-        billing_model: 'per_seat',
         credits: { can_run: true, total: 25 },
         subscription: { subscription_id: 'sub_live', status: 'active' },
       }),
@@ -82,10 +79,9 @@ describe('resolveBillingState — client fallback for an API without billing_sta
     expect(billingStateAllowsRun(state)).toBe(true);
   });
 
-  test('lapsed Team account with a drained wallet is out_of_credits, not no_subscription', () => {
+  test('lapsed paid account with a drained wallet is out_of_credits, not no_subscription', () => {
     const state = resolveBillingState(
       accountState({
-        billing_model: 'per_seat',
         credits: { can_run: false, total: 0 },
         subscription: { subscription_id: 'sub_gone', status: 'canceled' },
       }),
@@ -98,7 +94,6 @@ describe('resolveBillingState — client fallback for an API without billing_sta
     expect(
       resolveBillingState(
         accountState({
-          billing_model: 'legacy',
           credits: { can_run: false, total: 0 },
           subscription: { subscription_id: null, status: null },
           tier: { can_purchase_credits: false },
@@ -111,7 +106,6 @@ describe('resolveBillingState — client fallback for an API without billing_sta
     expect(
       resolveBillingState(
         accountState({
-          billing_model: 'legacy',
           credits: { can_run: false, total: 0 },
           subscription: { subscription_id: 'sub_dunning', status: 'past_due' },
         }),
@@ -155,7 +149,7 @@ describe('billingGateCopy — the gate never contradicts the modal it opens', ()
 
   test('no_subscription is the ONLY state that pitches subscribing', () => {
     const copy = billingGateCopy('no_subscription', testUiTranslator);
-    expect(copy.ctaLabel).toBe('Subscribe to Team plan');
+    expect(copy.ctaLabel).toBe('Choose a plan');
     expect(copy.dialogReason).toBe('subscription_required');
   });
 
@@ -167,7 +161,7 @@ describe('billingGateCopy — the gate never contradicts the modal it opens', ()
 });
 
 describe('billingDialogArgs', () => {
-  test('a drained subscribed Team account opens the top-up modal, not the subscribe pitch', () => {
+  test('a drained subscribed paid account opens the top-up modal, not the subscribe pitch', () => {
     const state = accountState({
       billing_state: 'out_of_credits',
       credits: { can_run: false, total: 0.01 },
@@ -176,7 +170,6 @@ describe('billingDialogArgs', () => {
     expect(billingDialogArgs('out_of_credits', state, 'acct-1', testUiTranslator)).toEqual({
       reason: 'insufficient_credits',
       accountId: 'acct-1',
-      billingModel: 'per_seat',
       hasSubscription: false,
       billingState: 'out_of_credits',
       balance: 0.01,
@@ -193,7 +186,6 @@ describe('billingDialogArgs', () => {
   test('a never-subscribed account opens the subscribe pitch', () => {
     const state = accountState({
       billing_state: 'no_subscription',
-      billing_model: 'legacy',
       credits: { can_run: false, total: 0 },
       subscription: { subscription_id: null, status: null },
     });
@@ -204,10 +196,9 @@ describe('billingDialogArgs', () => {
 });
 
 describe('the client fallback cannot contradict the server on who bypasses the floor', () => {
-  test('a PAST_DUE per-seat account with an empty wallet is payment_failed, not active', () => {
+  test('a PAST_DUE paid account with an empty wallet is payment_failed, not active', () => {
     const state = resolveBillingState(
       accountState({
-        billing_model: 'per_seat',
         has_active_subscription: true,
         credits: { can_run: false, total: 0 },
         subscription: { subscription_id: 'sub_dunning', status: 'past_due' },
@@ -218,11 +209,10 @@ describe('the client fallback cannot contradict the server on who bypasses the f
     expect(billingStateAllowsRun(state)).toBe(false);
   });
 
-  test('an INCOMPLETE_EXPIRED per-seat account is payment_failed, not active', () => {
+  test('an INCOMPLETE_EXPIRED paid account is payment_failed, not active', () => {
     expect(
       resolveBillingState(
         accountState({
-          billing_model: 'per_seat',
           has_active_subscription: true,
           credits: { can_run: false, total: 0 },
           subscription: { subscription_id: 'sub_never_paid', status: 'incomplete_expired' },
@@ -231,11 +221,10 @@ describe('the client fallback cannot contradict the server on who bypasses the f
     ).toBe('payment_failed');
   });
 
-  test('a past_due per-seat account whose server says it can run is still active', () => {
+  test('a past_due paid account whose server says it can run is still active', () => {
     expect(
       resolveBillingState(
         accountState({
-          billing_model: 'per_seat',
           has_active_subscription: true,
           credits: { can_run: true, total: 25 },
           subscription: { subscription_id: 'sub_dunning', status: 'past_due' },
@@ -249,7 +238,6 @@ describe('the client fallback cannot contradict the server on who bypasses the f
       resolveBillingState(
         accountState({
           billing_state: 'payment_failed',
-          billing_model: 'per_seat',
           has_active_subscription: true,
           credits: { can_run: false, total: 0 },
           subscription: { subscription_id: 'sub_dunning', status: 'past_due' },
@@ -318,25 +306,25 @@ describe('walletSeverity — the ONLY place a balance becomes an alert', () => {
 
 describe('billingModalCopy — no component writes billing prose', () => {
   test('a voluntary top-up on a healthy account is not an emergency', () => {
-    const copy = billingModalCopy('active', { isPerSeat: true }, testUiTranslator);
+    const copy = billingModalCopy('active', testUiTranslator);
     expect(copy.title).toBe('Add credits');
     expect(copy.title).not.toBe('Out of credits');
   });
 
   test('a drained account is told it is out of credits and that its plan survives', () => {
-    const copy = billingModalCopy('out_of_credits', { isPerSeat: true }, testUiTranslator);
+    const copy = billingModalCopy('out_of_credits', testUiTranslator);
     expect(copy.title).toBe('Out of credits');
-    expect(copy.description).toContain('your Team plan and seats are unaffected');
+    expect(copy.description).toContain('your plan is unaffected');
   });
 
-  test('a NON-per-seat account is never promised seats it does not have', () => {
-    const copy = billingModalCopy('out_of_credits', { isPerSeat: false }, testUiTranslator);
+  test('a NON-paid account is never promised seats it does not have', () => {
+    const copy = billingModalCopy('out_of_credits', testUiTranslator);
     expect(copy.description).not.toContain('seats');
     expect(copy.description).toContain('your plan is unaffected');
   });
 
   test('a failing payment is never told its plan is unaffected', () => {
-    const copy = billingModalCopy('payment_failed', { isPerSeat: true }, testUiTranslator);
+    const copy = billingModalCopy('payment_failed', testUiTranslator);
     expect(copy.title).toBe('Payment issue on your plan');
     expect(copy.description).not.toContain('unaffected');
   });
@@ -350,7 +338,7 @@ describe('billingModalCopy — no component writes billing prose', () => {
       'no_subscription',
       null,
     ] as const) {
-      const copy = billingModalCopy(state, undefined, testUiTranslator);
+      const copy = billingModalCopy(state, testUiTranslator);
       expect(copy.title.length).toBeGreaterThan(0);
       expect(copy.description.length).toBeGreaterThan(0);
     }

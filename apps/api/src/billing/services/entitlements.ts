@@ -7,7 +7,7 @@
 //
 // Every function here is now a thin projection of ONE answer:
 // `resolveAccountBilling` (billing-cache.ts) → `resolveBillingFromRow`
-// (resolve-billing.ts). The trial overlay, the per-seat self-heal, the
+// (resolve-billing.ts). The trial overlay, the
 // `enterprise_entitled` / `demo_enterprise` overlays, and the tri-state
 // `managed_models_override` are all applied there, once, so no two surfaces can
 // derive a different answer from the same row.
@@ -42,8 +42,8 @@ function enterpriseLicenseGates(): TierEntitlements {
 
 /**
  * Resolve the plan key backing an account ('none' if no billing row).
- * This is the EFFECTIVE plan: an active admin-issued trial and the per-seat
- * self-heal overlay the stored `credit_accounts.tier`. Uncached — callers that
+ * This is the EFFECTIVE plan: an active admin-issued trial overlays the stored
+ * `credit_accounts.tier`. Uncached — callers that
  * want the hot-path cache use `getCachedAccountTier`.
  *
  * A stored tier that is not in the catalog normalizes to 'none' (fail-closed),
@@ -113,8 +113,8 @@ export function invalidateCachedAccountTier(accountId?: string): void {
  *      assign 'enterprise' to). An ENV fact, not a row fact, so it stays here.
  *   2. `enterprise_entitled` — the real-contract flag an operator sets when an
  *      account signs an Enterprise agreement. Grants the full set regardless of
- *      `tier`, so a deal that is BOTH Enterprise (entitlements) AND per-seat
- *      (billing) holds both at once; without it the per-seat webhook
+ *      `tier`, so a deal that is BOTH Enterprise (entitlements) AND a credits
+ *      subscription (billing) holds both at once; without it the webhook
  *      reconciliation clobbers `tier` and strips entitlements on every ordinary
  *      subscription update.
  *   3. `demo_enterprise` — the self-serve demo of the enterprise surface. A

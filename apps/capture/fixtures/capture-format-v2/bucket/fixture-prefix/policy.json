@@ -1,0 +1,31 @@
+{
+  "layers": {
+    "actions": true,
+    "audio": false,
+    "screen": true
+  },
+  "notice": "Your organization records this computer's screen and actions for support.",
+  "privacy": {
+    "exclude_private_browsing": true,
+    "excluded_bundle_ids": [
+      "com.example.vault"
+    ],
+    "excluded_domains": [
+      "bank.example"
+    ],
+    "exclusion_groups": [
+      "password_managers"
+    ],
+    "redact_pii": false
+  },
+  "recording": {
+    "paused": false,
+    "paused_until_ms": null
+  },
+  "retention": {
+    "local_hours": 24,
+    "remote_days": 90
+  },
+  "schema": 2,
+  "updated_at_ms": 1790845200000
+}

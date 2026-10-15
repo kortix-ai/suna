@@ -69,27 +69,27 @@ describe('applyStripeSync ownership', () => {
   });
 
   test('pinned account (enterprise_entitled): tier is skipped, every other provider fact lands', async () => {
-    storedRow = { tier: 'per_seat', enterpriseEntitled: true };
-    await applyStripeSync(ACCT, { tier: 'per_seat', seatCount: 5, billingModel: 'per_seat' });
+    storedRow = { tier: 'credits', enterpriseEntitled: true };
+    await applyStripeSync(ACCT, { tier: 'credits', planMonthlyUsd: '100' });
     expect(writes).toHaveLength(1);
-    expect(writes[0]!.patch).toEqual({ seatCount: 5, billingModel: 'per_seat' });
+    expect(writes[0]!.patch).toEqual({ planMonthlyUsd: '100' });
     expect(invalidated).toEqual([ACCT]);
   });
 
   test("pinned via legacy tier='enterprise' row: same skip", async () => {
     storedRow = { tier: 'enterprise', enterpriseEntitled: false };
-    await applyStripeSync(ACCT, { tier: 'per_seat', stripeSubscriptionStatus: 'active' });
+    await applyStripeSync(ACCT, { tier: 'credits', stripeSubscriptionStatus: 'active' });
     expect(writes[0]!.patch).toEqual({ stripeSubscriptionStatus: 'active' });
   });
 
   test('unpinned account: the tier write goes through', async () => {
     storedRow = { tier: 'free', enterpriseEntitled: false };
-    await applyStripeSync(ACCT, { tier: 'per_seat' });
-    expect(writes[0]!.patch).toEqual({ tier: 'per_seat' });
+    await applyStripeSync(ACCT, { tier: 'credits' });
+    expect(writes[0]!.patch).toEqual({ tier: 'credits' });
   });
 
   test('pin rule leaving an empty patch skips the write entirely', async () => {
-    storedRow = { tier: 'per_seat', enterpriseEntitled: true };
+    storedRow = { tier: 'credits', enterpriseEntitled: true };
     await applyStripeSync(ACCT, { tier: 'free' });
     expect(writes).toHaveLength(0);
   });
@@ -102,10 +102,10 @@ describe('applyStripeSync ownership', () => {
   test('ctx.account skips the row lookup and still pins', async () => {
     await applyStripeSync(
       ACCT,
-      { tier: 'free', seatCount: 1 },
-      { account: { tier: 'per_seat', enterpriseEntitled: true } },
+      { tier: 'free', planMonthlyUsd: '20' },
+      { account: { tier: 'credits', enterpriseEntitled: true } },
     );
-    expect(writes[0]!.patch).toEqual({ seatCount: 1 });
+    expect(writes[0]!.patch).toEqual({ planMonthlyUsd: '20' });
   });
 });
 
@@ -117,16 +117,15 @@ describe('applyAdminOverride ownership', () => {
     expect(writes).toHaveLength(0);
   });
 
-  test('tier is the one admin-assignable provider field', async () => {
-    await applyAdminOverride(ACCT, { tier: 'per_seat' }, actor);
-    expect(writes[0]!.patch).toEqual({ tier: 'per_seat' });
+  test('tier and its monthly amount are the admin-assignable provider fields', async () => {
+    await applyAdminOverride(ACCT, { tier: 'credits', planMonthlyUsd: '100' }, actor);
+    expect(writes[0]!.patch).toEqual({ tier: 'credits', planMonthlyUsd: '100' });
     expect(invalidated).toEqual([ACCT]);
   });
 
-  test("but never tier='enterprise'", async () => {
-    await expect(applyAdminOverride(ACCT, { tier: 'enterprise' }, actor)).rejects.toThrow(
-      /entitlement.*not a tier/,
-    );
+  test("an operator may assign tier='enterprise' with a contract amount: the custom plan", async () => {
+    await applyAdminOverride(ACCT, { tier: 'enterprise', planMonthlyUsd: '5000' }, actor);
+    expect(writes[0]!.patch).toEqual({ tier: 'enterprise', planMonthlyUsd: '5000' });
   });
 
   test('admin-owned fields write through', async () => {
@@ -147,8 +146,22 @@ describe('accountIsAdminPinned', () => {
     expect(accountIsAdminPinned(null)).toBe(false);
   });
   test('enterprise_entitled pins; plain per_seat does not', () => {
-    expect(accountIsAdminPinned({ tier: 'per_seat', enterpriseEntitled: true })).toBe(true);
-    expect(accountIsAdminPinned({ tier: 'per_seat', enterpriseEntitled: false })).toBe(false);
+    expect(accountIsAdminPinned({ tier: 'credits', enterpriseEntitled: true })).toBe(true);
+    expect(accountIsAdminPinned({ tier: 'credits', enterpriseEntitled: false })).toBe(false);
     expect(accountIsAdminPinned({ tier: 'enterprise', enterpriseEntitled: false })).toBe(true);
+  });
+  test('the JSONB enterpriseEntitled override pins too, and an expired one does not', () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    expect(
+      accountIsAdminPinned({ tier: 'credits', entitlementOverrides: { enterpriseEntitled: { value: true, expires_at: future } } }),
+    ).toBe(true);
+    expect(
+      accountIsAdminPinned({ tier: 'credits', entitlementOverrides: { enterpriseEntitled: { value: true, expires_at: past } } }),
+    ).toBe(false);
+    // A JSONB `false` wins over a stale column `true`.
+    expect(
+      accountIsAdminPinned({ tier: 'credits', enterpriseEntitled: true, entitlementOverrides: { enterpriseEntitled: { value: false } } }),
+    ).toBe(false);
   });
 });

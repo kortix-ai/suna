@@ -14,7 +14,8 @@ export interface AdminAccountTrial {
   status: AdminTrialStatus | string;
   /** Paid tier the trial emulates (never 'free'/'none'). */
   tier: string | null;
-  seats: number | null;
+  /** Monthly USD amount of the trial's plan. Null when none. */
+  monthlyUsd: number | null;
   startedAt: string | null;
   endsAt: string | null;
   note: string | null;
@@ -25,22 +26,21 @@ export interface AdminAccountTrial {
  *
  * Distinct from `AdminAccount.tier`, which stays the STORED
  * `credit_accounts.tier` the tier filter matches on. An active admin trial and
- * the per-seat self-heal overlay that column, so the two disagree exactly when
+ * an active admin trial overlays that column, so the two disagree exactly when
  * it matters most — and the console must show the resolved one.
  */
 export interface AdminAccountPlan {
-  /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+  /** Plan key — 'none' | 'free' | 'credits' | 'enterprise'. */
   key: string;
   /** Public ladder position: there are exactly three families. */
-  family: 'free' | 'team' | 'enterprise';
-  /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+  family: 'free' | 'credits' | 'enterprise';
+  /** Customer-facing family name — 'Free' | 'Credits' | 'Enterprise'. */
   label: string;
-  /** Qualifier to render muted after the label, e.g.
-   *  '$40/seat/mo · grandfathered'. Null when the plan needs none. */
+  /** Qualifier to render muted after the label. Null when the plan needs none. */
   sublabel: string | null;
-  status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
-  /** Sold once, still honored exactly as sold, no longer offered. */
-  is_grandfathered: boolean;
+  status: 'current' | 'non_plan';
+  /** The paid plan's monthly amount in USD. Null for free, enterprise and trial. */
+  monthlyUsd: number | null;
 }
 
 /**
@@ -131,9 +131,6 @@ export interface AdminAccount {
   billingCustomerId: string | null;
   billingCustomerEmail: string | null;
   createdAt: string | null;
-  /** e.g. 'per_seat' — how the account is billed, independent of `tier`. */
-  billingModel: string | null;
-  seatCount: number | null;
   trial: AdminAccountTrial;
   /** null = the effective tier decides; true = force managed models; false = BYOK only. */
   managedModelsOverride: boolean | null;
@@ -383,9 +380,8 @@ export interface AdminGrantTrialVariables {
   accountId: string;
   /** An existing paid tier key — the server rejects 'free' and 'none'. */
   tierKey: string;
-  seats: number;
   durationDays: number;
-  /** USD wallet credits granted with the trial (sandbox compute always debits the wallet). */
+  /** USD wallet credits granted now AND every 30 days during the trial. */
   creditGrant?: number;
   note?: string;
 }
@@ -405,10 +401,9 @@ export interface AdminTrialMutationResult {
 export function useAdminGrantTrial() {
   const queryClient = useQueryClient();
   return useMutation<AdminTrialMutationResult, Error, AdminGrantTrialVariables>({
-    mutationFn: async ({ accountId, tierKey, seats, durationDays, creditGrant, note }) => {
+    mutationFn: async ({ accountId, tierKey, durationDays, creditGrant, note }) => {
       const body: Record<string, unknown> = {
         tier_key: tierKey,
-        seats,
         duration_days: durationDays,
       };
       if (creditGrant !== undefined) body.credit_grant = creditGrant;
@@ -489,7 +484,7 @@ export function useAdminSetEnterpriseDemo() {
 /**
  * Set the contracted-Enterprise entitlement flag. Independent of `tier`: it
  * keeps SSO/SCIM/RBAC/audit entitled for a signed Enterprise account that is
- * ALSO per-seat billed, which the Stripe webhook would otherwise reconcile away.
+ * ALSO on a paid credits plan, which the Stripe webhook would otherwise reconcile away.
  */
 export function useAdminSetEnterpriseEntitled() {
   const queryClient = useQueryClient();
@@ -629,7 +624,7 @@ export function useAdminAccountSandboxes(accountId: string | null) {
 /**
  * The account's live Stripe subscription, exactly as Stripe reports it — what
  * the customer is ACTUALLY charged. The resolved plan badge describes the
- * stored tier (a legacy 'pro' row reads "Team · $20/mo · grandfathered"); the
+ * stored tier (a legacy 'pro' row reads "Credits"); the
  * real subscription can be something else entirely (a $40/mo legacy machine
  * sub). The detail sheet renders both so the mismatch is visible.
  */

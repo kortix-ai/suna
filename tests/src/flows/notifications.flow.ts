@@ -455,6 +455,8 @@ flow(
           shared: { push: true, email: true },
           automation_failed: { push: true, email: true },
           automation_recovered: { push: true, email: false },
+          capture_device_down: { push: true, email: true },
+          capture_device_recovered: { push: true, email: false },
         };
         if (JSON.stringify(prefs.kinds) !== JSON.stringify(defaults)) throw new Error(`defaults ${JSON.stringify(prefs.kinds)}`);
         if (typeof prefs.email_available !== 'boolean') throw new Error(`email_available ${prefs.email_available}`);
