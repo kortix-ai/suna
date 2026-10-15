@@ -314,14 +314,26 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
     expect(state.subscription.can_purchase_credits).toBe(true);
   });
 
-  test('subscription.monthly_usd keeps what the account pays while the trial plan reports none', async () => {
+  test('an Enterprise trial keeps the billing plan and its amount; the gates read Enterprise', async () => {
     account = trialing({ tier: 'credits', planMonthlyUsd: '500', trialTier: 'enterprise' });
 
     const state = await buildMinimalAccountState('acct-1');
 
-    expect(state.plan?.family).toBe('enterprise');
-    expect(state.plan?.monthly_usd).toBeNull();
+    expect(state.plan?.family).toBe('credits');
+    expect(state.plan?.monthly_usd).toBe(500);
     expect(state.subscription.monthly_usd).toBe(500);
+    expect(state.tier.name).toBe('enterprise');
+    expect(state.trial?.plan).toBe('enterprise');
+  });
+
+  test('a Credits trial on Free lends the plan: subscription.monthly_usd stays null', async () => {
+    account = trialing();
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.plan?.family).toBe('credits');
+    expect(state.plan?.monthly_usd).toBeNull();
+    expect(state.subscription.monthly_usd).toBeNull();
   });
 
   test('monthly_credits stays on the STORED plan — a trial grants no credits', async () => {
