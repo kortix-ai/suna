@@ -20,19 +20,40 @@ function isChannelFor(e: Entry, platform: ChannelPlatform): boolean {
 
 /**
  * Slack is a first-class channel connector. When a project has BOTH the
- * platform-owned Slack channel (`kortix_slack`) AND a legacy user-defined
- * `slack` connector (e.g. a Pipedream Slack added before the picker hid it, like
- * older projects still carry), hide the legacy one so there's exactly one
- * "Slack". Native Slack actions already route to the channel (gateway
- * `resolveConnectorForCall`), so nothing is lost. Non-destructive — the row
- * stays; it's just not listed in the dashboard or offered to the agent.
+ * platform-owned Slack channel (`kortix_slack`) AND a user-defined Slack
+ * connector, hide the user one so there's exactly one "Slack". Two spellings of
+ * "user-defined" exist and both must collapse:
+ *   - the legacy literal slug `slack` (a Pipedream Slack added before the
+ *     picker hid it, like older projects still carry), and
+ *   - a managed profile the catalogue add flow created (Composio / Pipedream
+ *     OAuth), which lands under a GENERATED slug (`slack-<random>`) that no
+ *     slug check ever matched — the KRTX-2353 duplicate.
+ * Managed profiles are matched by APP identity (the toolkit/app slug persisted
+ * on the row's config), so the connection slug never matters. Native Slack
+ * actions already route to the channel (gateway `resolveConnectorForCall`), so
+ * nothing is lost. Non-destructive — the row, its grant and its credentials
+ * stay; it's just not listed in the dashboard or offered to the agent, and it
+ * reappears unchanged the moment the channel is disconnected.
  */
-export function hideSupersededSlack<T extends { slug: string; providerType: string }>(conns: T[]): T[] {
+const SLACK_MANAGED_APP_SLUGS = new Set(['slack', 'slack_v2']);
+
+function isManagedSlackApp(entry: { config?: unknown }): boolean {
+  const app = (entry.config as { app?: unknown } | null | undefined)?.app;
+  return typeof app === 'string' && SLACK_MANAGED_APP_SLUGS.has(app.toLowerCase());
+}
+
+export function hideSupersededSlack<T extends { slug: string; providerType: string }>(
+  conns: T[],
+): T[] {
   const hasChannelSlack = conns.some(
     (c) => c.providerType === 'channel' && c.slug === SLACK_RESERVED_SLUG,
   );
   if (!hasChannelSlack) return conns;
-  return conns.filter((c) => !(c.slug === 'slack' && c.providerType !== 'channel'));
+  return conns.filter(
+    (c) =>
+      c.providerType === 'channel' ||
+      !(c.slug === 'slack' || isManagedSlackApp(c as { config?: unknown })),
+  );
 }
 
 /**

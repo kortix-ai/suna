@@ -261,7 +261,12 @@ export async function completeTeamsOauthInstall(input: {
   await saveTeamsInstall({ projectId: state.projectId, tenantId }).catch((err) =>
     console.error('[teams-oauth] saveTeamsInstall failed', err),
   );
-  void reconcileChannelConnectors(state.projectId);
+  // Materialize the Teams channel connector before the redirect. Awaited, not
+  // fire-and-forget: the dashboard the redirect lands on immediately loads the
+  // connectors list, and a reconcile still in flight loses that race — the
+  // freshly connected Teams shows nothing (same report as Slack, KRTX-2353).
+  // Never throws — reconcileChannelConnectors is best-effort by contract.
+  await reconcileChannelConnectors(state.projectId);
 
   // The publish runs to completion regardless of the response; the browser
   // only waits a bounded time for it.

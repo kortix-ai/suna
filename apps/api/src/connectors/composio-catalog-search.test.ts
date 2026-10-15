@@ -411,7 +411,7 @@ test('the catalogue shows that toolkit once an enabled custom auth config exists
   ]);
   const search = await searchComposioCatalog({ q: 'tw', catalogClient });
   expect(search).toMatchObject({ total: 1, toolkits: [{ slug: 'twitter' }] });
-  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
+  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack']));
 });
 
 test('the catalogue hides custom-auth toolkits when auth config lookup fails', async () => {
@@ -479,7 +479,7 @@ test('an expired auth config list is served at once and refreshed once in the ba
   const start = Date.now();
   try {
     setSystemTime(new Date(start));
-    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack', 'twitter']));
 
     configs = [{ id: 'ac_twitter', status: 'ENABLED', is_composio_managed: false, toolkit: { slug: 'twitter' } }];
     gate = new Promise((resolve) => {
@@ -487,14 +487,14 @@ test('an expired auth config list is served at once and refreshed once in the ba
     });
     setSystemTime(new Date(start + 61_000));
     // The refresh is held open: a read that waited for it would never return.
-    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
-    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack', 'twitter']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack', 'twitter']));
     expect(lists).toBe(2);
 
     release();
     await new Promise((resolve) => setTimeout(resolve, 0));
     // The operator's new auth config shows on the next read.
-    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack']));
     expect(lists).toBe(2);
   } finally {
     setSystemTime();
@@ -521,12 +521,12 @@ test('a failed auth config refresh keeps the last list and is retried by the nex
   const start = Date.now();
   try {
     setSystemTime(new Date(start));
-    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack', 'twitter']));
     fail = true;
     setSystemTime(new Date(start + 61_000));
-    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack', 'twitter']));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack', 'twitter']));
     expect(lists).toBe(3);
   } finally {
     setSystemTime();
@@ -539,21 +539,40 @@ test('a failed auth config refresh keeps the last list and is retried by the nex
 test('Microsoft Teams is never listed: not in sections, not in search, always hidden', async () => {
   const catalogClient = catalogOf([
     toolkit('microsoft_teams', ['team-chat']),
-    toolkit('slack', ['team-chat']),
     toolkit('outlook', ['email']),
   ]);
   const sections = await composioCatalogSections({ perCategory: 10, maxCategories: 10, catalogClient });
   const listed = sections.sections.flatMap((section) => section.toolkits.map((item) => item.slug));
   expect(listed).not.toContain('microsoft_teams');
-  expect(listed).toContain('slack');
-  expect(sections.categories.find((c) => c.key === 'team-chat')?.count).toBe(1);
+  // Both team-chat toolkits in this fixture are native now, so the category
+  // itself disappears from the visible catalogue.
+  expect(sections.categories.find((c) => c.key === 'team-chat')).toBeUndefined();
 
   const searched = await searchComposioCatalog({ q: 'teams', catalogClient });
   expect(searched.toolkits.map((item) => item.slug)).not.toContain('microsoft_teams');
 
-  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
+  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack']));
   const broken: ComposioCatalogClient = { toolkits: { async list() { throw new Error('down'); } } };
-  expect(await composioHiddenToolkits(broken)).toEqual(new Set(['microsoft_teams']));
+  expect(await composioHiddenToolkits(broken)).toEqual(new Set(['microsoft_teams', 'slack']));
+});
+
+// Slack is a native Kortix channel the same way (Channels → Add to Slack). Its
+// Composio toolkit offered beside the channel install read as Slack being
+// "double added as a connector VIA Composio" (KRTX-2353) — and the pipedream
+// catalogue already drops its Slack apps, so this was the gap left.
+test('Slack is never listed: not in sections, not in search, always hidden', async () => {
+  const catalogClient = catalogOf([
+    toolkit('slack', ['team-chat']),
+    toolkit('gmail', ['email']),
+  ]);
+  const sections = await composioCatalogSections({ perCategory: 10, maxCategories: 10, catalogClient });
+  const listed = sections.sections.flatMap((section) => section.toolkits.map((item) => item.slug));
+  expect(listed).not.toContain('slack');
+
+  const searched = await searchComposioCatalog({ q: 'slack', catalogClient });
+  expect(searched.toolkits.map((item) => item.slug)).not.toContain('slack');
+
+  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'slack']));
 });
 
 test('catalogue hides custom-auth toolkits when the auth config API is absent', async () => {

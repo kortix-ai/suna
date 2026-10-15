@@ -77,9 +77,18 @@ mock.module('../channels/core/identity', () =>
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
+//
+// The reconcile is holdable: the completion step must WAIT for it (the redirect
+// races the dashboard's first connectors fetch), so a test can keep it pending
+// and prove the completion has not resolved under it.
+let holdReconcile: ((release: () => void) => void) | null = null;
+let reconcileCalls = 0;
 mock.module('../connectors/sync', () => ({
   ...realConnectorSync,
-  reconcileChannelConnectors: async () => undefined,
+  reconcileChannelConnectors: async () => {
+    reconcileCalls += 1;
+    if (holdReconcile) await new Promise<void>((resolve) => holdReconcile!(resolve));
+  },
 }));
 
 const realFetch = globalThis.fetch;
@@ -92,6 +101,8 @@ beforeEach(() => {
   linkCalls.length = 0;
   identityRow = null;
   fetchCalls = 0;
+  holdReconcile = null;
+  reconcileCalls = 0;
   slackResponse = {
     ok: true,
     access_token: 'xoxb-new-token',
@@ -211,6 +222,31 @@ describe('Slack OAuth completion', () => {
     const result = await complete({ state: 'not-a-state' });
     expect(result).toMatchObject({ ok: false, status: 400, code: 'CHANNEL_INSTALL_STATE_INVALID' });
     expect(fetchCalls).toBe(0);
+  });
+
+  // KRTX-2353: the redirect fires into the dashboard, which immediately loads
+  // the connectors list. A fire-and-forget reconcile loses that race and the
+  // freshly connected Slack shows nothing. The completion must wait for the
+  // channel connector to exist.
+  test('the completion waits for the channel connector reconcile before redirecting', async () => {
+    let release: () => void = () => {};
+    holdReconcile = (r) => {
+      release = r;
+    };
+    let settled = false;
+    const completion = complete().then((result: unknown) => {
+      settled = true;
+      return result;
+    });
+    // Poll until it settles (the bug does within a few ticks) or the poll
+    // window closes: a fixed tick count could false-pass before the buggy
+    // completion even resolved.
+    for (let i = 0; i < 50 && !settled; i++) await new Promise((r) => setTimeout(r, 1));
+    expect(settled).toBe(false);
+    release();
+    const result = (await completion) as { ok: boolean };
+    expect(result).toMatchObject({ ok: true });
+    expect(reconcileCalls).toBe(1);
   });
 
   test('a failed save lands on the project with the save error', async () => {
