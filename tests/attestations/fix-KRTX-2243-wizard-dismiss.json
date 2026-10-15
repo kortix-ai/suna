@@ -1,5 +1,5 @@
 {
-  "source_hash": "d1d90272b8b0e5b627eecf89c6b49461bfc0905358a4a310c746c43e82de8afe",
+  "source_hash": "44ecca3a29636da36dbba55a9bef3e5e07cb0050205435a3791f40831471924f",
   "diff_files": [
     "apps/web/src/components/projects/onboarding/wizard-permission-gate.test.ts",
     "apps/web/src/components/projects/project-onboarding-wizard.props.test.ts",
@@ -7,13 +7,13 @@
     "tests/e2e/shard-durations.json",
     "tests/e2e/specs/50-onboarding-wizard-exit-dismissal.spec.ts"
   ],
-  "diff_hash": "cb720faa429f1ceb56f26bd9ae5b36ab2fade8af9460682434603224daf6108d",
-  "head": "7155e1b97d0a86ffba8679f77370a5773dfe943b",
-  "passed": true,
+  "diff_hash": "0738d252a232a74fcff5f8b7fb670a5e8378866d09b91d98b1ed774451e126c0",
+  "head": "f8d4e0ad5873953cd43873d858335018d90035e8",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "packages": "fail",
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T12:47:15.813Z"
+  "at": "2026-10-15T13:54:57.047Z"
 }
