@@ -1,5 +1,5 @@
 {
-  "source_hash": "d0434e174bcbb4a753af1ee19db5fc152817f398c8d247c1618d2c00489f5458",
+  "source_hash": "d73eb377e4ec34d3635ec13d5106c69de6e00e87548274ef1b4ddd24cc4373fa",
   "diff_files": [
     "apps/api/src/projects/lib/effort-default.test.ts",
     "apps/api/src/projects/lib/effort-default.ts",
@@ -13,9 +13,10 @@
     "apps/api/src/projects/session-lifecycle/__tests__/continue-session-effort-default.test.ts",
     "apps/api/src/projects/session-lifecycle/continue-session.ts",
     "apps/web/content/docs/audit-actions.mdx",
+    "apps/web/src/components/iam/audit-http-routes.generated.ts",
+    "apps/web/src/features/workspace/settings/tabs/general-tab.autosave-loop.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.effort.test.ts",
     "apps/web/src/features/workspace/settings/tabs/general-tab.tsx",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -25,6 +26,7 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
+    "packages/api-contract/src/__tests__/schemas.test.ts",
     "packages/api-contract/src/index.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts",
     "packages/sdk/src/core/rest/projects-client/sessions.ts",
@@ -36,13 +38,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/projects-misc.flow.ts"
   ],
-  "diff_hash": "30cf889a017fd058980f4a27ecb5fee0ed92f5cae220428976b5b911f59b1439",
-  "head": "30089dee2a9e25512894299d6d40d5c216e13fc6",
-  "passed": false,
+  "diff_hash": "de4ffad879549fa197fbba7bd46a28fcf67c7c94f138f0574d2db22b453a926f",
+  "head": "bfa5df809f9c469c739d9ee7d76c4a3d28e9195e",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T02:18:53.082Z"
+  "at": "2026-10-15T10:26:21.325Z"
 }
