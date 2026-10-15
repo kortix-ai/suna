@@ -113,6 +113,48 @@ beforeEach(() => {
 });
 
 describe('Stripe webhook canonicalization', () => {
+  test.each(['free', 'enterprise'])(
+    'Enterprise metadata reconciles provider facts without replacing a stored %s plan incorrectly',
+    async (storedTier) => {
+      state.getCreditAccountResult = { tier: storedTier, stripeSubscriptionId: 'sub_enterprise_hint' };
+      state.getCustomerByStripeIdResult = { accountId: 'acc_synthetic' };
+      const subscription = {
+        id: 'sub_enterprise_hint',
+        customer: 'cus_synthetic',
+        status: 'active',
+        cancel_at_period_end: false,
+        billing_cycle_anchor: 1771849066,
+        current_period_end: 1803385066,
+        items: { data: [{ id: 'si_synthetic', quantity: 1, price: {
+          id: 'price_unknown', unit_amount: 2000, recurring: { interval: 'month' },
+        } }] },
+        metadata: { plan_key: 'enterprise' },
+      };
+      mockStripeClient.webhooks.constructEvent = () => ({
+        id: 'evt_enterprise_hint',
+        type: 'customer.subscription.updated',
+        data: { object: subscription },
+      });
+
+      await expect(processStripeWebhook('{}', 'sig')).resolves.toEqual({
+        received: true, event_type: 'customer.subscription.updated',
+      });
+
+      expect(state.updateCreditAccountCalls).toHaveLength(1);
+      const write = state.updateCreditAccountCalls[0];
+      expect(write.accountId).toBe('acc_synthetic');
+      expect(write.data).toMatchObject({
+        stripeSubscriptionId: 'sub_enterprise_hint',
+        stripeSubscriptionStatus: 'active',
+        planMonthlyUsd: '20',
+        paymentStatus: 'active',
+      });
+      if (storedTier === 'enterprise') expect(write.data).not.toHaveProperty('tier');
+      else expect(write.data.tier).toBe('credits');
+      expect(state.upsertCreditAccountCalls).toHaveLength(0);
+    },
+  );
+
   test('repairs legacy account_id metadata and restores canonical billing state', async () => {
     const subscription = {
       id: 'sub_legacy_123',

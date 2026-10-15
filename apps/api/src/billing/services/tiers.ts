@@ -326,14 +326,18 @@ type SubscriptionItemLike = Pick<Stripe.SubscriptionItem, 'quantity'> & {
 export function planForSubscription(subscription: {
   items: { data: SubscriptionItemLike[] };
   metadata?: Stripe.Metadata | null;
-}): 'free' | 'credits' | 'enterprise' | null {
+}): 'free' | 'credits' | null {
   for (const item of subscription.items.data) {
     const plan = planForPrice(item.price?.id);
     if (plan) return plan;
   }
+  // Metadata is a hint the provider owns. `enterprise` is not a provider plan:
+  // it is set by a contract or an operator (applyAdminOverride), so a metadata
+  // hint that canonicalizes to it is ignored, not applied (2026-10-15 dev:
+  // such a hint made the next subscription sync throw AccountWriteOwnershipError).
   const meta = subscription.metadata;
   const hint = canonicalTier(meta?.plan_key || meta?.tier_key || meta?.tier);
-  if (hint !== 'none') return hint;
+  if (hint === 'free' || hint === 'credits') return hint;
   return subscription.items.data.some((item) => (item.price?.unit_amount ?? 0) > 0) ? 'credits' : null;
 }
 
