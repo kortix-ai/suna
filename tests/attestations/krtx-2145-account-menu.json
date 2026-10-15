@@ -1,0 +1,33 @@
+{
+  "source_hash": "be72b8af49fb8d26de5ffba03c90f14d0edb95fc7a7812356383d143182b4041",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(app)/checkout/page.tsx",
+    "apps/web/src/app/[locale]/(app)/connections/page.tsx",
+    "apps/web/src/app/globals.css",
+    "apps/web/src/features/session/header/session-site-header.tsx",
+    "apps/web/src/features/workspace/account-menu-button.test.tsx",
+    "apps/web/src/features/workspace/account-menu-button.tsx",
+    "apps/web/src/features/workspace/account-top-bar.test.tsx",
+    "apps/web/src/features/workspace/account-top-bar.tsx",
+    "apps/web/src/features/workspace/new/new-workspace-page.test.ts",
+    "apps/web/src/features/workspace/new/new-workspace-page.tsx",
+    "apps/web/src/features/workspace/project-layout/project-page-header.test.tsx",
+    "apps/web/src/features/workspace/project-layout/project-page-header.tsx",
+    "apps/web/src/features/workspace/project-layout/project-shell.tsx",
+    "apps/web/src/features/workspace/project-selector/project-selector.test.tsx",
+    "apps/web/src/features/workspace/project-selector/project-selector.tsx",
+    "apps/web/src/lib/auth/sign-out-navigation.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/e2e/shard-durations.json",
+    "tests/e2e/specs/52-account-chip-ui.spec.ts"
+  ],
+  "diff_hash": "a11feeaf29d22d601f84f8336cc3de743191a849bb5d2dfc396b4f17d333c9f6",
+  "head": "b4f55b2381ab625b8118332735e485e48e4b0590",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T02:40:55.346Z"
+}
