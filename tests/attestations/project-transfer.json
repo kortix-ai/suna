@@ -1,6 +1,8 @@
 {
-  "source_hash": "ce35712d1c74dfc8d3aceb5062b56eb75668564f6ecab006b0ea46477dee7c85",
+  "source_hash": "0d6cd52cfa2bbb82c4cba18b9c4f4927093819fb54908bf9a1972d8a74211c11",
   "diff_files": [
+    "apps/api/src/__tests__/unit-trigger-fire-paths.test.ts",
+    "apps/api/src/projects/lib/access.test.ts",
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
     "apps/api/src/projects/routes/project-settings.ts",
@@ -30,13 +32,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "66957ad282d4e2c60188451e56aca4290383bd0e706eb8952b469b22eec173ec",
-  "head": "a359de38ce031c4bf22645d5867a23dcf5c3c8d4",
-  "passed": false,
+  "diff_hash": "a75481109f53384f4bb43e3f98b60870b6f77e585161e363668e40fd3e61d8ae",
+  "head": "45e9210df068b86dd601ebc093d3e7347c839c9c",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T14:01:57.455Z"
+  "at": "2026-10-15T15:32:36.432Z"
 }
