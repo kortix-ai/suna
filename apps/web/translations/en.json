@@ -2433,7 +2433,7 @@
         },
         "credit": {
           "question": "What does a credit buy?",
-          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: {vcpuRate} per vCPU-hour, {memoryRate} per GB of RAM per hour, {diskRate} per GB of storage per month. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key or ChatGPT subscription uses no credits."
+          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: {vcpuRate} per vCPU-hour, {memoryRate} per GB of RAM per hour, {diskRate} per GB of storage per month. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key is free for the first $1,000 of model usage a month, then 5% of the provider's price is paid from credits. A ChatGPT subscription uses no credits."
         },
         "amounts": {
           "question": "How much do I pay each month?",
@@ -2449,7 +2449,7 @@
         },
         "models": {
           "question": "Do models use credits?",
-          "answer": "Only Kortix models do. They cost the provider's base price plus a {fee}% platform fee, paid from credits, and the app shows the base prices. With your own API key or a connected ChatGPT subscription, model usage goes to your provider and uses no credits. Then credits pay only for the agent computer."
+          "answer": "Kortix models do, and your own API keys past $1,000 of model usage a month. Kortix models cost the provider's base price plus a {fee}% platform fee, paid from credits, and the app shows the base prices. With your own API key, model usage goes to your provider: the first $1,000 a month is free, then 5% of the provider's price is paid from credits. A connected ChatGPT subscription uses no credits."
         },
         "topup": {
           "question": "Can I add credits mid-month?",
@@ -2514,9 +2514,9 @@
         "title": "Models are billed separately from the agent computer",
         "description": "Credits pay for the agent computer. What a model call costs depends on where the model comes from.",
         "keys": {
-          "tag": "No credits",
+          "tag": "Free to $1,000/mo",
           "title": "Your own API keys",
-          "body": "Add a key from Anthropic, OpenAI or any other provider. Model usage goes straight to your provider and uses no credits."
+          "body": "Add a key from Anthropic, OpenAI or any other provider. Model usage goes straight to your provider. The first $1,000 a month is free, then Kortix adds 5%, paid from credits."
         },
         "chatgpt": {
           "tag": "No credits",
@@ -2528,7 +2528,7 @@
           "title": "Kortix models",
           "body": "No key to manage. Each call costs the provider's base price plus a {fee}% platform fee, paid from credits. The app shows base prices."
         },
-        "summary": "With your own keys, credits pay only for the agent computer."
+        "summary": "With your own keys, credits pay for the agent computer and 5% of model usage past $1,000 a month."
       }
     },
     "access": {
@@ -3358,7 +3358,7 @@
       "contactGeneral": "General",
       "contactSecurity": "Security",
       "faqWhatCreditsQuestion": "What are credits, and what do they cost?",
-      "faqWhatCreditsAnswerBefore": "Credits pay for the agent computer and for Kortix models. 1 credit is $0.01, and the default agent computer uses about 11 credits an hour. Kortix models cost the provider's base price plus a 5.5% platform fee. Your own API key or ChatGPT subscription uses no credits. Plans, top-ups and how to make a balance last are in",
+      "faqWhatCreditsAnswerBefore": "Credits pay for the agent computer and for Kortix models. 1 credit is $0.01, and the default agent computer uses about 11 credits an hour. Kortix models cost the provider's base price plus a 5.5% platform fee. Your own API key is free for the first $1,000 of model usage a month, then 5%. A ChatGPT subscription uses no credits. Plans, top-ups and how to make a balance last are in",
       "faqWhatCreditsLink": "Credits & usage",
       "faqWhatCreditsAnswerAfter": "."
     }

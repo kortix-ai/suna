@@ -37,6 +37,7 @@ A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNA
 | What | How Kortix meters it |
 | --- | --- |
 | Kortix-managed model calls | Input, output and cache tokens of each request, at the provider's base price plus a 5.5% platform fee. |
+| Model calls on your own provider key | Nothing for the first $1,000 of usage a month at the provider's list price. After that, 5% of each request's list price. A ChatGPT subscription and OpenCode Go are never charged. An Enterprise contract waives the fee. |
 | Sandbox compute | The reserved spec (`cpu`, `memory`, `disk`) multiplied by the seconds the sandbox is active. Session sandboxes, App machines and project monitors all count. |
 | Kortix-proxied tools | Each web search, image search or web scraping request that goes through Kortix. |
 
@@ -52,7 +53,7 @@ A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNA
   The default 2 vCPU / 4 GB / 20 GB sandbox costs about $0.11 an hour, about 11 credits.
 - A stopped or sleeping sandbox accrues nothing. See [Sessions](/docs/work/sessions#when-a-session-sleeps).
 - A running sandbox is billed every 5 minutes and again when it stops.
-- A model request on your own provider key or a ChatGPT subscription has no Kortix charge. Your provider bills you.
+- Your provider bills a request on your own provider key. Kortix charges only the 5% fee past the monthly $1,000 allowance, after the request completes: an empty wallet never blocks your own key.
 - Model prices in the app are the provider's base prices. The 5.5% fee is added when the request is charged.
 
 ## Credit buckets

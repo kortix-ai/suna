@@ -2433,7 +2433,7 @@
         },
         "credit": {
           "question": "Que permet d'acheter un crédit ?",
-          "answer": "1 crédit vaut 0,01 $. Les crédits paient l'ordinateur d'agent, facturé à la seconde et par ressource : {vcpuRate} par vCPU et par heure, {memoryRate} par Go de RAM et par heure, {diskRate} par Go de stockage et par mois. La machine par défaut de {spec} consomme environ {creditsPerHour} crédits par heure, soit environ {minutes} minutes par crédit. Un ordinateur à l'arrêt ne coûte rien. Les crédits paient aussi les modèles Kortix, au prix de base du fournisseur plus {fee} % de frais de plateforme. Votre propre clé d'API ou abonnement ChatGPT ne consomme aucun crédit."
+          "answer": "1 crédit vaut 0,01 $. Les crédits paient l'ordinateur d'agent, facturé à la seconde et par ressource : {vcpuRate} par vCPU et par heure, {memoryRate} par Go de RAM et par heure, {diskRate} par Go de stockage et par mois. La machine par défaut de {spec} consomme environ {creditsPerHour} crédits par heure, soit environ {minutes} minutes par crédit. Un ordinateur à l'arrêt ne coûte rien. Les crédits paient aussi les modèles Kortix, au prix de base du fournisseur plus {fee} % de frais de plateforme. Votre propre clé d'API est gratuite pour les premiers 1 000 $ d'usage de modèles par mois, puis 5 % du prix du fournisseur sont payés en crédits. Un abonnement ChatGPT ne consomme aucun crédit."
         },
         "amounts": {
           "question": "Combien dois-je payer chaque mois ?",
@@ -2449,7 +2449,7 @@
         },
         "models": {
           "question": "Les modèles consomment-ils des crédits ?",
-          "answer": "Seulement les modèles Kortix. Ils coûtent le prix de base du fournisseur plus {fee} % de frais de plateforme, payés en crédits, et l'application affiche les prix de base. Avec votre propre clé d'API ou un abonnement ChatGPT connecté, l'usage du modèle va à votre fournisseur et ne consomme aucun crédit. Les crédits paient alors uniquement l'ordinateur d'agent."
+          "answer": "Les modèles Kortix, et vos propres clés d'API au-delà de 1 000 $ d'usage de modèles par mois. Les modèles Kortix coûtent le prix de base du fournisseur plus {fee} % de frais de plateforme, payés en crédits, et l'application affiche les prix de base. Avec votre propre clé d'API, l'usage du modèle va à votre fournisseur : les premiers 1 000 $ par mois sont gratuits, puis 5 % du prix du fournisseur sont payés en crédits. Un abonnement ChatGPT connecté ne consomme aucun crédit."
         },
         "topup": {
           "question": "Puis-je ajouter des crédits en cours de mois ?",
@@ -2514,9 +2514,9 @@
         "title": "Les modèles sont facturés séparément de l'ordinateur d'agent",
         "description": "Les crédits paient l'ordinateur de l'agent. Le coût d'un appel de modèle dépend de l'origine du modèle.",
         "keys": {
-          "tag": "Aucun crédit",
+          "tag": "Gratuit jusqu'à 1 000 $/mois",
           "title": "Vos propres clés d'API",
-          "body": "Ajoutez une clé Anthropic, OpenAI ou de tout autre fournisseur. L'usage du modèle va directement à votre fournisseur et ne consomme aucun crédit."
+          "body": "Ajoutez une clé Anthropic, OpenAI ou de tout autre fournisseur. L'usage du modèle va directement à votre fournisseur. Les premiers 1 000 $ par mois sont gratuits, puis Kortix ajoute 5 %, payés en crédits."
         },
         "chatgpt": {
           "tag": "Aucun crédit",
@@ -2528,7 +2528,7 @@
           "title": "Modèles Kortix",
           "body": "Aucune clé à gérer. Chaque appel coûte le prix de base du fournisseur plus {fee} % de frais de plateforme, payés en crédits. L'application affiche les prix de base."
         },
-        "summary": "Avec vos propres clés, les crédits paient uniquement l'ordinateur d'agent."
+        "summary": "Avec vos propres clés, les crédits paient l'ordinateur d'agent et 5 % de l'usage des modèles au-delà de 1 000 $ par mois."
       }
     },
     "access": {
@@ -3347,7 +3347,7 @@
       "contactGeneral": "Général",
       "contactSecurity": "Sécurité",
       "faqWhatCreditsQuestion": "Que sont les crédits et combien coûtent-ils ?",
-      "faqWhatCreditsAnswerBefore": "Les crédits paient l'ordinateur de l'agent et les modèles Kortix. 1 crédit vaut 0,01 $, et l'ordinateur d'agent par défaut utilise environ 11 crédits par heure. Les modèles Kortix coûtent le prix de base du fournisseur plus des frais de plateforme de 5,5 %. Votre propre clé API ou votre abonnement ChatGPT n'utilise aucun crédit. Les offres, les recharges et comment faire durer un solde sont dans",
+      "faqWhatCreditsAnswerBefore": "Les crédits paient l'ordinateur de l'agent et les modèles Kortix. 1 crédit vaut 0,01 $, et l'ordinateur d'agent par défaut utilise environ 11 crédits par heure. Les modèles Kortix coûtent le prix de base du fournisseur plus des frais de plateforme de 5,5 %. Votre propre clé API est gratuite pour les premiers 1 000 $ d'usage de modèles par mois, puis coûte 5 %. Un abonnement ChatGPT n'utilise aucun crédit. Les offres, les recharges et comment faire durer un solde sont dans",
       "faqWhatCreditsLink": "Crédits et utilisation",
       "faqWhatCreditsAnswerAfter": "."
     }
