@@ -49,11 +49,12 @@ export const RETIRED_ROUTES: ReadonlyArray<readonly [method: string, path: strin
   ['POST', '/v1/billing/confirm-inline-checkout'],
   ['POST', '/v1/billing/cancel-scheduled-change'],
   ['GET', '/v1/billing/proration-preview'],
-  // One plan system (2026-10-15): the Enterprise preview became a dated trial,
-  // and Enterprise is set by a contract (POST /v1/admin/api/accounts/:id/enterprise-contract).
-  ['GET', '/v1/accounts/:accountId/iam/enterprise-demo'],
-  ['PUT', '/v1/accounts/:accountId/iam/enterprise-demo'],
+  // Enterprise is a feature layer (2026-10-15): a license contract
+  // (POST /v1/admin/api/accounts/:id/enterprise-contract) or the account's own
+  // demo toggle (PUT /v1/accounts/:accountId/iam/enterprise-demo). Trials are gone.
   ['POST', '/v1/admin/api/accounts/:id/enterprise-demo'],
+  ['POST', '/v1/admin/api/accounts/:id/trial'],
+  ['DELETE', '/v1/admin/api/accounts/:id/trial'],
   ['POST', '/v1/admin/api/accounts/:id/enterprise-entitlement'],
   ['POST', '/v1/admin/api/accounts/:id/managed-models'],
   // OpenRouter-parity generation lookup and the no-op prewarm.

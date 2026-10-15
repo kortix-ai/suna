@@ -56,7 +56,6 @@ mock.module('../wallet', () => ({
     balance: async () => ({ balance: expiringNow, expiring: expiringNow, nonExpiring: 0, daily: 0 }),
   },
 }));
-mock.module('./trial-admin', () => ({ markTrialConverted: async () => undefined }));
 mock.module('./subscriptions', () => ({ cancelFreeSubscriptionForUpgrade: async () => undefined }));
 mock.module('./refund-clawback', () => ({
   handleChargeRefunded: async () => undefined,

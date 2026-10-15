@@ -48,12 +48,12 @@ describe('resolveAccountBilling — the one billing cache', () => {
 
   test('set → invalidate → fresh read: invalidating one account re-reads it', async () => {
     expect((await resolveAccountBilling('acct-1')).plan.key).toBe('free');
-    row = { tier: 'enterprise' };
+    row = { tier: 'credits' };
     expect((await resolveAccountBilling('acct-1')).plan.key).toBe('free');
 
     invalidateAccountBilling('acct-1');
 
-    expect((await resolveAccountBilling('acct-1')).plan.key).toBe('enterprise');
+    expect((await resolveAccountBilling('acct-1')).plan.key).toBe('credits');
     expect(reads).toBe(2);
   });
 
@@ -105,18 +105,15 @@ describe('resolveAccountBilling — the one billing cache', () => {
     expect(reads).toBe(0);
   });
 
-  // The caller's clock reaches the resolver: at the real clock this trial
-  // (ending one day after `now`) would read as expired.
+  // The caller's clock reaches the resolver: at the real clock this override
+  // (expiring one day after `now`) would read as expired.
   test('the resolver reads the caller-supplied clock, not the wall clock', async () => {
     row = {
       tier: 'free',
-      trialStatus: 'active',
-      trialTier: 'tier_25_200',
-      trialEndsAt: new Date(10_000 + 86_400_000).toISOString(),
+      entitlementOverrides: { sso: { value: true, expires_at: new Date(10_000 + 86_400_000).toISOString() } },
     };
 
-    const resolved = await resolveAccountBilling('acct-trial', { now: 10_000 });
-    expect(resolved.plan.key).toBe('credits');
-    expect(resolved.source).toBe('trial');
+    const resolved = await resolveAccountBilling('acct-clock', { now: 10_000 });
+    expect(resolved.entitlements.sso).toBe(true);
   });
 });

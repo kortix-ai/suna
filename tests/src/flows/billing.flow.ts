@@ -836,3 +836,35 @@ flow(
     }
   },
 );
+
+/**
+ * BILL-19 — "Talk to sales" from inside the app is one click: the signed-in
+ * user and the account are known, so there is no form. Any member may ask
+ * (`billing.read`); ANON may not. `sent` is whether sales was emailed: false on
+ * a target with no `DEMO_LEAD_NOTIFY_EMAIL`, which is still a 200.
+ */
+flow(
+  'BILL-19',
+  {
+    domain: 'billing',
+    routes: ['POST /v1/billing/enterprise/contact'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/enterprise/contact', { account_id: team.id });
+      r.status(401);
+    });
+    await ctx.step('the OWNER asks → 200 with a boolean `sent`', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/billing/enterprise/contact', { account_id: team.id, note: 'SSO for 40 people' });
+      r.status(200);
+      if (typeof r.json<any>()?.sent !== 'boolean') throw new Error(`expected a boolean sent, got ${r.text()}`);
+    });
+    await ctx.step('a plain member may ask too → 200', async () => {
+      const r = await ctx.client.as(member).post('/v1/billing/enterprise/contact', { account_id: team.id });
+      r.status(200);
+    });
+  },
+);

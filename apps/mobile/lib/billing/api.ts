@@ -20,8 +20,10 @@ export interface AccountState {
     /** The paid plan's monthly amount in USD; null for free and enterprise. */
     monthly_usd?: number | null;
   } | null;
-  /** The active trial: a dated grant of a plan. Absent on older APIs. */
+  /** @deprecated Trials are removed: always null. */
   trial?: { plan: 'credits' | 'enterprise'; ends_at: string; days_left: number } | null;
+  /** The Enterprise feature layer. Absent on older APIs. */
+  enterprise?: { state: 'off' | 'demo' | 'licensed' };
   can_manage_billing?: boolean;
   credits: {
     total: number;

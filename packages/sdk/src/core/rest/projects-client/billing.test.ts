@@ -21,6 +21,7 @@ import {
   getDefaultAccountState,
   setBillingPlan,
   acceptEnterpriseOffer,
+  contactEnterpriseSales,
   purchaseCredits,
   reactivateSubscription,
   requestTopUp,
@@ -478,4 +479,14 @@ test('canOfferTopup offers nothing while the account state loads, or without a s
 // to mark the current tier while `plan.monthly_usd` describes the trial.
 test('subscription.monthly_usd: the default state carries it as null, never undefined', () => {
   expect(getDefaultAccountState().subscription.monthly_usd).toBeNull();
+});
+
+// "Talk to sales" is one click: no form, the account and the signed-in user
+// are known to the API (POST /billing/enterprise/contact).
+test('contactEnterpriseSales posts the account and an optional note, and returns whether sales was emailed', async () => {
+  nextResponse = { status: 200, body: { sent: true } };
+  expect(await contactEnterpriseSales({ accountId: 'acc-1', note: 'SSO for 40 people' })).toEqual({ sent: true });
+  expect(last().url).toContain('/billing/enterprise/contact');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ account_id: 'acc-1', note: 'SSO for 40 people' });
 });

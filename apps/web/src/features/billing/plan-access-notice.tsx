@@ -1,14 +1,13 @@
 'use client';
 
 /**
- * What the account is on beyond a self-serve plan, said where billing is
- * managed (.agents/skills/billing/references/plans-and-access.md):
+ * What the account has beyond its billing plan, said where billing is managed
+ * (.agents/skills/billing/references/plans-and-access.md):
  *
- *   - a trial: which plan, until when, and an upgrade at any time;
- *   - an open Enterprise offer: the terms, and Accept for a billing manager;
- *   - the grace after Enterprise access ended: until when SSO and SCIM stay on.
+ *   - an open Enterprise license offer: the terms, and Accept for a billing manager;
+ *   - the grace after a license ended: until when SSO and SCIM stay on.
  *
- * Renders nothing for an account with none of the three.
+ * Renders nothing for an account with neither.
  */
 
 import { Button } from '@/components/ui/button';
@@ -17,11 +16,10 @@ import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { formatWholeUsd } from '@/features/billing/compute-pricing';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { useTalkToSales } from '@/features/billing/use-enterprise-sales';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { isBillingEnabled } from '@/lib/config';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { canManageBilling, type AccountState } from '@kortix/sdk';
 import { useAcceptEnterpriseOffer } from '@kortix/sdk/react';
 
@@ -33,69 +31,26 @@ export function PlanAccessNotice({ state }: { state: AccountState }) {
   const t = useTranslations('billing.access');
   const locale = useLocale();
   const accountId = useBillingAccountId();
-  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
-  const openDemo = useRequestDemo();
+  const sales = useTalkToSales(accountId);
 
   if (!isBillingEnabled()) return null;
-  const manager = canManageBilling(state);
-  const { trial, enterprise_offer: offer, grace } = state;
-  const enterpriseTrial = trial?.plan === 'enterprise';
-  const planName = enterpriseTrial ? t('enterprise') : t('credits');
-
-  const upgrade = () => openUpgradeDialog({ reason: 'subscription_required', accountId: accountId ?? undefined });
-  const talkToSales = () => openDemo({ source: 'billing-access-notice' });
-
-  const salesButton = (
-    <Button size="sm" variant="outline" onClick={talkToSales}>
-      {t('talkToSales')}
-    </Button>
-  );
+  const { enterprise_offer: offer, grace } = state;
 
   return (
     <div className="space-y-3 empty:hidden">
-      {offer ? <OfferBanner offer={offer} manager={manager} /> : null}
-
-      {trial ? (
-        <InfoBanner
-          tone="info"
-          title={t('trialTitle', { plan: planName, days: trial.days_left })}
-          action={
-            // An Enterprise trial is sold by sales, not by an Upgrade button;
-            // a Credits trial converts to the plan the account picks.
-            enterpriseTrial ? (
-              salesButton
-            ) : manager ? (
-              <Button size="sm" onClick={upgrade}>
-                {t('upgrade')}
-              </Button>
-            ) : null
-          }
-        >
-          {enterpriseTrial
-            ? t('trialBodyEnterprise', { date: formatDay(trial.ends_at, locale) })
-            : t('trialBody', { date: formatDay(trial.ends_at, locale) })}{' '}
-          {manager || enterpriseTrial ? null : t('askManager')}
-        </InfoBanner>
-      ) : null}
+      {offer ? <OfferBanner offer={offer} manager={canManageBilling(state)} /> : null}
 
       {grace ? (
         <InfoBanner
           tone="warning"
           title={t('graceTitle')}
           action={
-            <span className="flex flex-wrap gap-2">
-              {salesButton}
-              {manager && grace.reason === 'trial_ended' ? (
-                <Button size="sm" onClick={upgrade}>
-                  {t('upgrade')}
-                </Button>
-              ) : null}
-            </span>
+            <Button size="sm" variant="outline" disabled={sales.isPending} onClick={sales.talk}>
+              {t('talkToSales')}
+            </Button>
           }
         >
-          {grace.reason === 'trial_ended'
-            ? t('graceBodyTrial', { date: formatDay(grace.ends_at, locale) })
-            : t('graceBodyContract', { date: formatDay(grace.ends_at, locale) })}
+          {t('graceBodyContract', { date: formatDay(grace.ends_at, locale) })}
         </InfoBanner>
       ) : null}
     </div>
@@ -141,12 +96,8 @@ function OfferBanner({ offer, manager }: { offer: NonNullable<AccountState['ente
         ) : null
       }
     >
-      {t('offerBody', {
-        license: formatWholeUsd(offer.license_usd, locale),
-        credits: formatWholeUsd(offer.credits_usd, locale),
-        months: offer.term_months,
-      })}{' '}
-      {offer.collection !== 'checkout' ? t('offerInvoiced') : manager ? null : t('askManager')}
+      {t('offerLicense', { license: formatWholeUsd(offer.license_usd, locale), months: offer.term_months })}{' '}
+      {offer.collection !== 'checkout' ? t('offerInvoiced') : manager ? null : t('offerAskManager')}
     </InfoBanner>
   );
 }
