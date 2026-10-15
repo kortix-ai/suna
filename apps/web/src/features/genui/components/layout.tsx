@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { MarkdownImage, MarkdownLink } from '@/components/markdown/unified-markdown';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 import { STATUS_DOT } from '@/components/ui/status';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -152,26 +153,39 @@ function CardRating({ rating, reviews, price }: { rating: unknown; reviews: unkn
 const CARD_TWO_COLUMNS_MIN = 480;
 
 /**
- * The text of a card in either layout: title link, rating, location line, the badges as tone pills (so a pick
- * such as "My first choice" reads at a glance), and the description.
+ * The text of a card in either layout: the title link with the badges top right (so a pick such as
+ * "My first choice" reads at a glance), rating, location line, and the description.
  */
 function CardText({ props }: { props: GenuiNode['props'] }) {
   const badges = kids(props.badges);
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1">
-      {/* The title link reads as the item's name: ink with an underline, not the link blue. */}
-      <span className="text-foreground [&_a]:text-foreground [&_a]:decoration-border hover:[&_a]:decoration-foreground text-base font-medium text-balance [&_a]:underline [&_a]:underline-offset-4">
-        {props.href ? <MarkdownLink href={String(props.href)}>{String(props.title)}</MarkdownLink> : String(props.title)}
-      </span>
+      {/* Baseline: the badge text sits on the title's first line, not above or below it. */}
+      <div className="flex items-baseline justify-between gap-3">
+        {/* The title link reads as the item's name: ink with an underline, not the link blue. */}
+        <span className="text-foreground [&_a]:text-foreground [&_a]:decoration-border hover:[&_a]:decoration-foreground min-w-0 text-base font-medium text-balance [&_a]:underline [&_a]:underline-offset-4">
+          {props.href ? <MarkdownLink href={String(props.href)}>{String(props.title)}</MarkdownLink> : String(props.title)}
+        </span>
+        {badges.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+            {badges.map((badge) => (
+              // A plain secondary pill; a good pick (the recommendation) leads with a gold star at the text size.
+              // Roobert's ascender (1018) is 4x its descender (246), so the cap center is 0.04em below the line
+              // center: the star moves down by that much to sit level with the letters.
+              <Badge
+                key={badge.id}
+                variant="secondary"
+                className="gap-1.5 px-2 py-0.5 font-sans text-xs ring-0 has-[>svg]:gap-1.5 [&>svg]:!size-[1em] [&>svg]:translate-y-[0.04em]"
+              >
+                {badge.props.tone === 'good' ? <StarIcon weight="fill" className="fill-kortix-yellow text-kortix-yellow" aria-hidden /> : null}
+                {String(badge.props.label)}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+      </div>
       <CardRating rating={props.rating} reviews={props.reviews} price={props.price} />
       {props.subtitle ? <span className="text-muted-foreground text-xs">{String(props.subtitle)}</span> : null}
-      {badges.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5 pt-0.5 [&>span]:bg-muted">
-          {badges.map((badge) => (
-            <CardBadge key={badge.id} badge={badge} />
-          ))}
-        </div>
-      ) : null}
       {props.body ? <p className="text-foreground text-sm text-pretty">{String(props.body)}</p> : null}
     </div>
   );

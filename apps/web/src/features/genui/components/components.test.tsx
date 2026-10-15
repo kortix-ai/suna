@@ -231,7 +231,8 @@ y = Badge("Heritage")`);
     expect(html).toContain('From 24,000 INR');
     expect(html).toContain('Colaba, South Mumbai');
     expect(html).not.toContain('Luxury · Heritage');
-    expect(html).toMatch(/aria-hidden="true"><\/span>Luxury<\/span>/);
+    expect(html).toMatch(/<span data-slot="badge" class="[^"]*ring-0[^"]*">Luxury<\/span>/);
+    expect(html).not.toContain('fill-kortix-yellow');
     // A card without a photo has no photo column and no rating row.
     expect(html.match(/aspect-ratio:/g)).toHaveLength(1);
   });
@@ -265,23 +266,36 @@ b = Card("Go", "Backend.", "Language", "https://example.com/go.png")`);
     expect(html).not.toContain('aspect-ratio:');
   });
 
-  test('a list-mode card shows its badges as tone pills under the subtitle, not as a muted A · B line, in both layouts', () => {
+  test('a card in a list shows its badges top right as borderless secondary ui Badges; a good pick leads with a gold star', () => {
     const list = render(`root = Stack([a, b], "col", "list")
 a = Card("Option A", "No changes.", "60 to 90 min", "https://example.com/a.jpg", "https://example.com/a", [pick, quiet], null, null, "about 40 USD")
 pick = Badge("Best for a first flight", "good")
 quiet = Badge("Quiet")
 b = Card("Option B", "Cheaper.", "70 to 100 min")`);
-    expect(list).toMatch(/<div class="flex flex-wrap gap-1\.5 pt-0\.5 \[&amp;&gt;span\]:bg-muted"><span[^>]*><span class="[^"]*bg-kortix-green[^"]*" aria-hidden="true"><\/span>Best for a first flight<\/span>/);
-    expect(list).toContain('Quiet</span>');
+    // The title row: the title on the left, the badges on the right, before the price line.
+    expect(list).toMatch(/<div class="flex items-baseline justify-between gap-3">[\s\S]*?Option A[\s\S]*?<div class="flex shrink-0 flex-wrap justify-end gap-1\.5"><span data-slot="badge" class="[^"]*"><svg[^]*?<\/svg>Best for a first flight<\/span><span data-slot="badge" class="[^"]*">Quiet<\/span><\/div><\/div>[\s\S]*?about 40 USD/);
     expect(list).not.toContain('Best for a first flight · Quiet');
-    expect(list).toContain('about 40 USD');
+    expect(list).not.toContain('pt-0.5 [&amp;&gt;span]:bg-muted');
+    // Secondary, normal case, sans, own padding, no ring; no tone tint, no square dot.
+    const badges = [...list.matchAll(/<span data-slot="badge" class="([^"]*)"/g)].map((m) => m[1]!.split(' '));
+    expect(badges).toHaveLength(2);
+    for (const cls of badges) {
+      expect(cls).toEqual(expect.arrayContaining(['bg-secondary/80', 'normal-case', 'font-sans', 'ring-0', 'px-2', 'py-0.5']));
+      expect(cls).not.toContain('uppercase');
+      expect(cls).not.toContain('font-mono');
+    }
+    expect(list).not.toContain('bg-kortix-green');
+    // Only the good pick has the star, filled gold.
+    expect(list.match(/fill-kortix-yellow/g)).toHaveLength(1);
+    // The star is the text size and level with the letters.
+    for (const cls of badges) expect(cls).toEqual(expect.arrayContaining(['[&amp;&gt;svg]:!size-[1em]', '[&amp;&gt;svg]:translate-y-[0.04em]']));
     const grid = render(`root = Stack([a, b], "col", "grid")
 a = Card("Option A", "No changes.", "60 to 90 min", null, null, [pick, quiet])
 pick = Badge("Best for a first flight", "good")
 quiet = Badge("Quiet")
 b = Card("Option B", "Cheaper.")`);
     expect(grid).not.toContain('Best for a first flight · Quiet');
-    expect(grid).toMatch(/bg-kortix-green[^"]*" aria-hidden="true"><\/span>Best for a first flight<\/span>/);
+    expect(grid).toMatch(/<span data-slot="badge" class="[^"]*bg-secondary\/80[^"]*"><svg[^]*?<\/svg>Best for a first flight<\/span>/);
   });
 
   test('three images and nothing else render as one row, each at its own shape', () => {
