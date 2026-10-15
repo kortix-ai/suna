@@ -141,7 +141,7 @@ export function AgentTriggersSection({
       } else if (res.status === 'queued') {
         successToast(tI18nComplete.raw('text661ff40a07e0'), {
           entity,
-          description: res.reason ?? 'Busy right now — it will retry',
+          description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
         });
       } else {
         errorToast(tI18nComplete.raw('textfc56800b00af'), { entity, description: res.error });

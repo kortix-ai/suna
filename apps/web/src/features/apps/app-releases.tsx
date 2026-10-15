@@ -162,7 +162,7 @@ export function AppReleasesPanel({
                         {t('textb1a7e40c2d08', { value0: item.deployments.length })}
                       </span>
                       <span className="text-muted-foreground/70 font-mono text-xs">
-                        {`v${oldest.version}`} – {`v${newest.version}`}
+                        v{oldest.version}{' – '}v{newest.version}
                       </span>
                     </span>
                     <span className="text-muted-foreground/70 w-15 shrink-0 text-right text-xs tabular-nums">
