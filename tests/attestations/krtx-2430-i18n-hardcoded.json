@@ -1,5 +1,5 @@
 {
-  "source_hash": "1cafb2c03f7a6395c90bb48d21c00aa85abcabce2f2a261446c7aa3339ceb6db",
+  "source_hash": "5195213b2079c324070fb3724ef18e9d7c63f6ef36f83b60c57bd447c4bec9e1",
   "diff_files": [
     "apps/web/src/features/apps/app-releases.tsx",
     "apps/web/src/features/workspace/capabilities/agents/agent-triggers-section.tsx",
@@ -14,12 +14,12 @@
     "apps/web/translations/zh.json"
   ],
   "diff_hash": "a97f377b6f1cb2e0e6f5bbd9514175fb3595fa8d16e7f2378515e9a92c0b63eb",
-  "head": "bb3e43cc11a947475d88e5676d8be14141453fd3",
+  "head": "c8e44f822cb05c8bf2340cd166e82eeacc65e3b8",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T16:16:01.979Z"
+  "at": "2026-10-15T16:32:37.938Z"
 }
