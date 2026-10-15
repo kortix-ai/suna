@@ -1,8 +1,11 @@
+import { useAccountPanelStore } from '@/stores/account-panel-store';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import type { KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
-import { QueryClient, type QueryKey } from '@tanstack/react-query';
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query';
+import { describe, expect, mock, test } from 'bun:test';
+import { createElement, type ReactNode } from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { accountCreated } from './account-created';
 
 const account = (id: string, name = id) => ({ account_id: id, name }) as KortixAccount;
@@ -60,19 +63,132 @@ describe('account creation handoff', () => {
     ]);
   });
 
-  test('sidebar pushes while hub forgets the modal entry before replacing', () => {
-    const sidebar = readFileSync(
-      `${import.meta.dir}/../workspace/project-sidebar/workspace-switcher.tsx`,
-      'utf8',
-    );
-    const hub = readFileSync(`${import.meta.dir}/hub/account-list-content.tsx`, 'utf8');
-    for (const source of [sidebar, hub]) {
-      expect(source).toContain(
-        'accountCreated(account, queryClient, accountsQueryKey, setSelectedAccountId',
+  for (const host of ['sidebar', 'hub'] as const) {
+    test(`${host} executes selection and modal cleanup before its navigation`, async () => {
+      const events: unknown[] = [];
+      const key = ['accounts', 'synthetic-host-reader'];
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      // Observe real store transitions, not replacement implementations of the handoff.
+      useCurrentAccountStore.setState({ selectedAccountId: null });
+      useAccountPanelStore.getState().setPushedEntry(true);
+      const stopSelection = useCurrentAccountStore.subscribe((state, previous) => {
+        if (state.selectedAccountId !== previous.selectedAccountId) {
+          events.push(['select', state.selectedAccountId]);
+        }
+      });
+      const stopPanel = useAccountPanelStore.subscribe((state, previous) => {
+        if (state.pushedEntry !== previous.pushedEntry) events.push(['modal', state.pushedEntry]);
+      });
+      const navigate = (method: string) => (path: string) => {
+        events.push([method, path]);
+        expect(client.getQueryData(key)).toEqual([account('created')]);
+        expect(useCurrentAccountStore.getState().selectedAccountId).toBe('created');
+        expect(useAccountPanelStore.getState().pushedEntry).toBe(host === 'sidebar');
+      };
+      mock.module('next/navigation', () => ({
+        useRouter: () => ({
+          push: navigate('push'),
+          replace: navigate('replace'),
+        }),
+      }));
+      mock.module('@/hooks/account/use-accounts-list', () => ({
+        useAccountsQueryKey: () => key,
+        useAccountsList: () => ({ data: [], isLoading: false, isError: false }),
+      }));
+      mock.module('@/hooks/account/use-ensure-selected-account', () => ({
+        useEnsureSelectedAccount() {},
+      }));
+      mock.module('@/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
+      mock.module('@/features/providers/auth-provider', () => ({
+        useAuth: () => ({ user: { id: 'synthetic-reader' }, isLoading: false }),
+      }));
+      mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect() {} }));
+      mock.module('@/lib/config', () => ({ isAccountCreationRestricted: () => false }));
+      mock.module('@/i18n/use-translations', () => ({
+        useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
+      }));
+      const children = ({ children }: { children?: ReactNode }) =>
+        createElement('div', null, children);
+      mock.module('@/components/ui/dropdown-menu', () =>
+        Object.fromEntries(
+          [
+            'DropdownMenu',
+            'DropdownMenuContent',
+            'DropdownMenuItem',
+            'DropdownMenuPortal',
+            'DropdownMenuSeparator',
+            'DropdownMenuShortcut',
+            'DropdownMenuSub',
+            'DropdownMenuSubContent',
+            'DropdownMenuSubTrigger',
+            'DropdownMenuTrigger',
+          ].map((name) => [name, children]),
+        ),
       );
-    }
-    expect(sidebar).toContain('router.push(path)');
-    expect(sidebar).not.toContain('forgetPushedEntry');
-    expect(hub).toMatch(/forgetPushedEntry\(\);\s*router.replace\(path\)/);
-  });
+      const { createContext } = await import('react');
+      mock.module('@/components/ui/sidebar', () => ({
+        SidebarContext: createContext(null),
+        SidebarMenu: children,
+        SidebarMenuButton: children,
+        SidebarMenuItem: children,
+      }));
+      mock.module('@/features/layout/user-menu-shared', () => ({
+        HelpSubmenu: () => null,
+        ThemeSubmenu: () => null,
+        useLogoutFlow: () => ({ openConfirm() {}, dialog: null }),
+      }));
+      mock.module('@/features/tunnel/computer-connect', () => ({
+        COMPUTER_SETUP_EVENT: 'synthetic-setup',
+      }));
+      mock.module('@/features/tunnel/local-computer-modal', () => ({
+        LocalComputerModal: () => null,
+      }));
+      mock.module('@/features/workspace/project-sidebar/workspace-menu-section', () => ({
+        WorkspaceMenuSection: () => null,
+      }));
+      mock.module('./hub/account-pane', () => ({ AccountPane: children }));
+      mock.module('./hub/account-hub-location', () => ({ HubLink: children }));
+      // The child is an external creation boundary. Execute the real host's callback.
+      function CreationBoundary(_props: { onCreated: (value: KortixAccount) => void }) {
+        return null;
+      }
+      mock.module('./create-account-modal', () => ({ CreateAccountModal: CreationBoundary }));
+      const originalWindow = globalThis.window;
+      globalThis.window = { addEventListener() {}, removeEventListener() {} } as unknown as Window &
+        typeof globalThis;
+      let renderer: ReactTestRenderer | undefined;
+      try {
+        const Host =
+          host === 'sidebar'
+            ? (await import('../workspace/project-sidebar/workspace-switcher')).WorkspaceSwitcher
+            : (await import('./hub/account-list-content')).AccountListContent;
+        await act(async () => {
+          renderer = create(
+            createElement(QueryClientProvider, { client }, createElement(Host, { projectId: '' })),
+          );
+        });
+        await act(async () => {
+          renderer!.root.findByType(CreationBoundary).props.onCreated(account('created'));
+        });
+        expect(events).toEqual(
+          host === 'sidebar'
+            ? [
+                ['select', 'created'],
+                ['push', '/new?account=created'],
+              ]
+            : [
+                ['select', 'created'],
+                ['modal', false],
+                ['replace', '/new?account=created'],
+              ],
+        );
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        globalThis.window = originalWindow;
+        stopSelection();
+        stopPanel();
+        client.clear();
+      }
+    });
+  }
 });
