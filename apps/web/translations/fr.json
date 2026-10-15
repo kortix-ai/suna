@@ -9891,6 +9891,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Impossible d’envoyer l’e-mail. Réessaie dans environ une heure.",
       "authRequestRateLimit": "Trop de demandes. Réessaie dans quelques minutes.",
+      "text03217276a5f1": "Solde {value0} crédits",
       "text0b6a47661327": "Propriétaire inconnu",
       "text1a9030082a20": "Créer la compétence",
       "text25ab55af92b1": "Téléversement de la pièce jointe démarré",

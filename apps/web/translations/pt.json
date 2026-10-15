@@ -9891,6 +9891,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",
       "authRequestRateLimit": "Muitas solicitações. Tente novamente em alguns minutos.",
+      "text03217276a5f1": "Saldo {value0} créditos",
       "text0b6a47661327": "Proprietário desconhecido",
       "text1a9030082a20": "Criar habilidade",
       "text25ab55af92b1": "Envio do anexo iniciado",

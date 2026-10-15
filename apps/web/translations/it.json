@@ -9891,6 +9891,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",
       "authRequestRateLimit": "Troppe richieste. Riprova tra qualche minuto.",
+      "text03217276a5f1": "Saldo {value0} crediti",
       "text0b6a47661327": "Proprietario sconosciuto",
       "text1a9030082a20": "Crea competenza",
       "text25ab55af92b1": "Caricamento allegato avviato",

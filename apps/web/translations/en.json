@@ -9902,6 +9902,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Could not send the email. Try again in about an hour.",
       "authRequestRateLimit": "Too many requests. Try again in a few minutes.",
+      "text03217276a5f1": "Balance {value0} credits",
       "text0b6a47661327": "Unknown owner",
       "text1a9030082a20": "Create skill",
       "text25ab55af92b1": "Started attachment upload",

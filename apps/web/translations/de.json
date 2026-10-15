@@ -9891,6 +9891,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Die E-Mail konnte nicht gesendet werden. Versuche es in etwa einer Stunde erneut.",
       "authRequestRateLimit": "Zu viele Anfragen. Versuche es in einigen Minuten erneut.",
+      "text03217276a5f1": "Guthaben {value0} Credits",
       "text0b6a47661327": "Unbekannter Eigentümer",
       "text1a9030082a20": "Skill erstellen",
       "text25ab55af92b1": "Anhang-Upload gestartet",
