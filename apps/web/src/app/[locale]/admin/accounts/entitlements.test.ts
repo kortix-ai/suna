@@ -216,7 +216,7 @@ describe('admin accounts — Enterprise contract card', () => {
     expect(contractSource).not.toContain('c.creditsUsd');
     expect(contractSource).not.toContain('contract.creditsUsd');
     expect(contractSource).toContain("useState<AdminContractCollection>('invoice')");
-    expect(contractSource).toContain('creditsUsd: 0,');
+    expect(contractSource).not.toContain('creditsUsd');
   });
 
   test('the list and sheet show the plan state line', () => {
