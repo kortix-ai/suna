@@ -27,16 +27,16 @@ describe('LATEST_MANIFEST_VERSION', () => {
   });
 });
 
-describe('resolveManifestVerdict — v2 stays supported without an automatic v3 migration', () => {
-  test('reports version 2 and offers no migration', () => {
+describe('resolveManifestVerdict — v2 is offered the kortix migrate upgrade to v3', () => {
+  test('reports version 2 and offers the v3 migration', () => {
     const verdict = resolveManifestVerdict({
       raw: V2_YAML,
       format: 'yaml',
       path: 'kortix.yaml',
     });
     expect(verdict.version).toBe(2);
-    expect(verdict.migration_offered).toBe(false);
-    expect(verdict.target_version).toBeNull();
+    expect(verdict.migration_offered).toBe(true);
+    expect(verdict.target_version).toBe(3);
     expect(verdict.unknown_reason).toBeNull();
     expect(verdict.path).toBe('kortix.yaml');
   });
@@ -88,8 +88,8 @@ describe('resolveManifestVerdict — v2 has no implemented upgrade path', () => 
     });
     expect(verdict.version).toBe(2);
     expect(verdict.latest_version).toBe(3);
-    expect(verdict.migration_offered).toBe(false);
-    expect(verdict.target_version).toBeNull();
+    expect(verdict.migration_offered).toBe(true);
+    expect(verdict.target_version).toBe(3);
   });
 });
 

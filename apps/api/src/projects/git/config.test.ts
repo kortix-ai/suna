@@ -177,8 +177,8 @@ opencode:
     expect(config.manifest_version).toEqual({
       version: 2,
       latest_version: 3,
-      migration_offered: false,
-      target_version: null,
+      migration_offered: true,
+      target_version: 3,
       unknown_reason: null,
       path: 'kortix.yaml',
     });
@@ -306,3 +306,63 @@ description: "Runs deploys: say \\"go\\""
     expect(skill?.description).toBe("Covers the don't path");
   });
 });
+
+describe('loadProjectConfig on kortix_version 3', () => {
+  test('agents come from the YAML blocks, skills from the registry plus the Kortix skills, commands from the registry', async () => {
+    await push(
+      {
+        'kortix.yaml': `kortix_version: 3
+default_agent: lead
+skills:
+  triage: support/skills/triage
+commands:
+  report:
+    description: Write the report.
+    prompt_file: commands/report.md
+  ping:
+    prompt: Say pong.
+agents:
+  lead:
+    description: Leads the work.
+    mode: primary
+    model: kortix/glm-5.3-flash
+    prompt_file: agents/lead.md
+    skills: all
+    commands: [report]
+  helper:
+    mode: subagent
+    enabled: false
+    prompt: Help.
+`,
+        'agents/lead.md': 'You lead.\n',
+        'commands/report.md': 'Report on $ARGUMENTS.\n',
+        'support/skills/triage/SKILL.md': '---\nname: triage\ndescription: Sort tickets.\n---\n',
+        // Not registered: a v3 project never lists it.
+        'skills/stray/SKILL.md': '---\nname: stray\n---\n',
+      },
+      'v3 manifest',
+    );
+
+    const config = await loadProjectConfig(project);
+
+    expect(config.default_agent).toBe('lead');
+    expect(config.open_code_raw).toBeNull();
+    expect(config.agent_discovery).toBe('declarative');
+    expect(config.agents.map((agent) => [agent.name, agent.path, agent.description, agent.mode, agent.model, agent.enabled])).toEqual([
+      ['helper', 'kortix.yaml#agents.helper', null, 'subagent', null, false],
+      ['lead', 'agents/lead.md', 'Leads the work.', 'primary', 'kortix/glm-5.3-flash', true],
+    ]);
+    expect(config.skills.find((skill) => skill.name === 'triage')).toEqual({
+      name: 'triage',
+      path: 'support/skills/triage/SKILL.md',
+      description: 'Sort tickets.',
+    });
+    expect(config.skills.some((skill) => skill.name === 'stray')).toBe(false);
+    expect(config.skills.some((skill) => skill.name === 'kortix-system')).toBe(true);
+    expect(config.commands).toEqual([
+      { name: 'ping', path: 'kortix.yaml#commands.ping', description: null },
+      { name: 'report', path: 'commands/report.md', description: 'Write the report.' },
+    ]);
+  });
+});
+

@@ -380,6 +380,7 @@ A `.kortix/link.json` for another project needs a stored login for that project'
 | Command | Effect |
 | --- | --- |
 | `kortix validate` | Check `kortix.yaml` against the schema, lint each `sandbox.templates` Dockerfile, and warn about large files in git. Exit `0` valid, `1` errors, `2` file not found. `--file <path>`, `--json`, `--no-dockerfile-lint`. `kortix ship` runs the same checks. |
+| `kortix migrate` | Read a `kortix_version: 2` project and print the `kortix_version: 3` manifest. `--write` writes it. See [Legacy manifests](/docs/project/legacy-manifests#migrate-v2-to-v3). |
 | `kortix schema` | Print the `kortix.yaml` JSON Schema. `--version 1\|2\|3` picks one version. `--url` prints the schema's URL instead, such as `https://kortix.com/schema/kortix.v3.schema.json` for version 3. |
 | `kortix doctor` | Check the login and project, then start a throwaway session, send `ping` and wait for a reply. `--no-session`, `--keep-session`, `--prompt "<text>"`, `--timeout <seconds>` (default 180). Exit `0` pass, `1` fail. |
 | `kortix system-skills list` | List the Kortix system skills. `kortix skills` is the same command. |
@@ -400,7 +401,7 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 | `login`, `logout`, `whoami`, `token`, `hosts` | Sign in and pick a host. | [Sign in](#sign-in) |
 | `sessions`, `chat`, `connect` | Start, talk to and manage sessions. | [Work with sessions from a terminal](#work-with-sessions-from-a-terminal) |
 | `tui` | The terminal app. | [TUI](/docs/tui) |
-| `validate`, `schema`, `doctor`, `system-skills` | Check the project and the setup. | [Check and validate](#check-and-validate) |
+| `validate`, `migrate`, `schema`, `doctor`, `system-skills` | Check the project, migrate its manifest, and check the setup. | [Check and validate](#check-and-validate) |
 | `version`, `update`, `uninstall`, `feedback` | Manage the CLI itself. | [Maintain the CLI](#maintain-the-cli) |
 
 ### Projects and git
@@ -419,7 +420,7 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 
 | Group | Purpose | Page |
 | --- | --- | --- |
-| `agents` | The default agent, model pins, scope and agent config. | [Agents & permissions](/docs/project/agents) |
+| `agents` | List agents, model pins; on a legacy v2 manifest also the default agent, scope and agent config. | [Agents & permissions](/docs/project/agents) |
 | `tools` | List the project's tools; `eject` a Kortix tool to change it. | [Tools](/docs/project/tools) |
 | `models` | The models the project offers and its default model. | [Models](/docs/project/models) |
 | `providers` | Connect model providers with an API key or OAuth. | [Models](/docs/project/models) |

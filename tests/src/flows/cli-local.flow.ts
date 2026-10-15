@@ -49,23 +49,19 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           sb.exists('init-one/kortix.yaml'),
         );
-        // The root project layout: harness-neutral folders at the root, the
-        // OpenCode-only files under harnesses/opencode, and no .kortix/ folder.
-        for (const path of [
-          'agents/kortix.md',
-          'skills/kortix-cli/SKILL.md',
-          'memory/MEMORY.md',
-          'harnesses/opencode/opencode.jsonc',
-        ]) {
+        // The kortix_version 3 layout: kortix.yaml defines every agent; no
+        // harness folder and no .kortix/ folder.
+        for (const path of ['agents/kortix.md', 'skills/pdf/SKILL.md', 'memory/MEMORY.md', 'extensions/pty/pty.ts']) {
           check(`${path} written`, sb.exists(`init-one/${path}`), true, sb.exists(`init-one/${path}`));
         }
         check('no .kortix/ folder', !sb.exists('init-one/.kortix'), false, sb.exists('init-one/.kortix'));
+        check('no harnesses/ folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
         const manifest = readFileSync(join(sb.cwd, 'init-one', 'kortix.yaml'), 'utf8');
         check(
-          'kortix.yaml names the agent file and the OpenCode dir',
-          manifest.includes('file: agents/kortix.md') && manifest.includes('config_dir: harnesses/opencode'),
+          'kortix.yaml is kortix_version 3 and names the agent prompt file',
+          manifest.includes('kortix_version: 3') && manifest.includes('prompt_file: agents/kortix.md'),
           true,
-          manifest.includes('file: agents/kortix.md'),
+          manifest.includes('prompt_file: agents/kortix.md'),
         );
         // codex is the default primary → AGENTS.md pointer is wired.
         check(
@@ -126,28 +122,20 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           '--no-git',
         ]);
         check('exit 0', r.exitCode === 0, 0, r.exitCode);
-        // Selected agents' native dirs are symlinks onto the OpenCode config dir;
-        // existsSync follows the link, so a resolving path proves it works.
-        check(
-          '.opencode → harnesses/opencode resolves',
-          sb.exists('wired/.opencode/opencode.jsonc'),
-          true,
-          sb.exists('wired/.opencode/opencode.jsonc'),
-        );
+        // A v3 project has no OpenCode config dir, so no `.opencode` link.
+        // existsSync follows a link, so a resolving path proves it works.
+        check('no .opencode link', !sb.exists('wired/.opencode'), false, sb.exists('wired/.opencode'));
         check(
           '.agents/skills → skills resolves (OpenCode reads it natively)',
-          sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
+          sb.exists('wired/.agents/skills/pdf/SKILL.md'),
           true,
-          sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
+          sb.exists('wired/.agents/skills/pdf/SKILL.md'),
         );
-        // kortix-cli is the canonical scaffolded skill (agents.ts CANONICAL_SKILL);
-        // the other kortix-* skills are injected at sandbox boot, not scaffolded
-        // (starter 10-skill floor, #5770).
         check(
           '.claude/skills → skills resolves to the shared skills',
-          sb.exists('wired/.claude/skills/kortix-cli/SKILL.md'),
+          sb.exists('wired/.claude/skills/pdf/SKILL.md'),
           true,
-          sb.exists('wired/.claude/skills/kortix-cli/SKILL.md'),
+          sb.exists('wired/.claude/skills/pdf/SKILL.md'),
         );
         // cursor was selected → AGENTS.md pointer (read natively); no .cursor rule file.
         check(

@@ -727,14 +727,14 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/harnesses/opencode/package.json.
+    // below) is duplicated in packages/starter/templates/base/extensions/pty/package.json (the pty extension).
     // Keep both in sync —
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the
     // verification RUN step right below, added after that incident).
     'RUN mkdir -p /opt/kortix/opencode-config-deps \\',
     '    && cd /opt/kortix/opencode-config-deps \\',
-    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
+    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
     '    && bun install',
     '',
     // Verify the baked tree is actually usable by OpenCode's own runtime
