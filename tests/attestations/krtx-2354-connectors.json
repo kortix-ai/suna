@@ -1,16 +1,8 @@
 {
-  "source_hash": "b4fb3ea192c4046f62f63c66e28dd1116b7de3e91f7759b0c7c37f345f541294",
+  "source_hash": "f9f12e170557efbb9ced24cfe980bc35cd2a443a9ffc29fb4ad48b1a3f4fcac9",
   "diff_files": [
     "apps/api/src/projects/lib/compile-agent-config.test.ts",
     "apps/api/src/projects/lib/compile-agent-config.ts",
-    "apps/api/src/projects/reaping/box-reaper.ts",
-    "apps/api/src/projects/reaping/sandbox-state-sync.ts",
-    "apps/api/src/projects/routes/marketplace-install-session.test.ts",
-    "apps/api/src/projects/routes/turn-stream.test.ts",
-    "apps/api/src/projects/session-lifecycle/actions.ts",
-    "apps/api/src/sandbox-proxy/module-graph.test.ts",
-    "apps/api/src/sandbox-proxy/routes/preview-deadline.test.ts",
-    "apps/api/src/sandbox-proxy/routes/share.ts",
     "apps/cli/src/__tests__/tools-command.blackbox.test.ts",
     "apps/cli/src/commands/tools.ts",
     "apps/cli/src/kortix-tools.generated.json",
@@ -23,23 +15,29 @@
     "apps/kortix-sandbox-agent-server/src/services/tools/host.ts",
     "apps/kortix-sandbox-agent-server/src/services/tools/kortix/kortix-connectors_call.ts",
     "apps/kortix-sandbox-agent-server/src/services/tools/kortix/kortix-connectors_describe.ts",
+    "apps/web/content/docs/project/index.mdx",
+    "apps/web/content/docs/project/manifest.mdx",
+    "apps/web/content/docs/project/tools.mdx",
     "apps/web/public/schema/kortix.schema.json",
     "apps/web/public/schema/kortix.v2.schema.json",
     "apps/web/public/schema/kortix.v3.schema.json",
-    "apps/web/src/stores/user-preferences-store.ts",
     "packages/manifest-schema/src/__tests__/json-schema.conformance.test.ts",
     "packages/manifest-schema/src/__tests__/validator.v2.test.ts",
     "packages/manifest-schema/src/constants.ts",
     "packages/manifest-schema/src/index.v2.ts",
-    "packages/manifest-schema/src/json-schema.ts"
+    "packages/manifest-schema/src/json-schema.ts",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/base/README.md",
+    "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-yaml.md",
+    "packages/starter/templates/managed/skills/kortix-system/references/kortix/tools.md"
   ],
-  "diff_hash": "6a9e0f0e3386123494281ca8df25f75bcacc94ef2f56bc5cc309cd07c9f810eb",
-  "head": "168c4b082630b88de6072eaca6509817af4f1d5d",
-  "passed": false,
+  "diff_hash": "3e4a8b8c6fe9ee319d9e10274366cb5f07461e27fd7adde788f55ab1cd76e0c3",
+  "head": "77554f1d7c5ed218183eeee275550c7b157886e1",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T00:58:51.113Z"
+  "at": "2026-10-15T07:21:13.370Z"
 }

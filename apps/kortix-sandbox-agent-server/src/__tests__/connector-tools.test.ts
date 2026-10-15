@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
+import * as toolHost from '@/services/tools/host'
 import { toolAllowed, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -124,8 +125,7 @@ for (const explicitSelection of [false, true]) {
       KORTIX_SESSION_ID: 'synthetic-session',
       KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled),
     }
-    const previous = { KORTIX_API_URL: process.env.KORTIX_API_URL, KORTIX_TOKEN: process.env.KORTIX_TOKEN }
-    Object.assign(process.env, { KORTIX_API_URL: server.url.origin, KORTIX_TOKEN: 'synthetic-token' })
+    const envFile = spyOn(toolHost, 'sessionEnv').mockImplementation(() => ({ KORTIX_API_URL: server.url.origin, KORTIX_TOKEN: 'synthetic-token' }))
     const app = new Hono()
     app.route('/kortix/tools', createToolsRouter(loadHostConfig({ KORTIX_PROJECT_TARGET: dir }), env))
     const daemon = Bun.serve({ port: 0, fetch: app.fetch })
@@ -171,12 +171,9 @@ for (const explicitSelection of [false, true]) {
       const result = await piCall.execute('synthetic-call', { connector: 'synthetic', action: 'items.read' }, new AbortController().signal)
       expect(result.content).toEqual([{ type: 'text', text: JSON.stringify({ ok: true, data: { items: ['synthetic'] } }, null, 2) }])
     } finally {
+      envFile.mockRestore()
       daemon.stop(true)
       rmSync(dir, { recursive: true, force: true })
-      for (const [key, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[key]
-        else process.env[key] = value
-      }
     }
   })
 }
