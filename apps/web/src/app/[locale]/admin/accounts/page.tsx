@@ -75,9 +75,7 @@ import {
   useAdminAccounts,
   useAdminDebitCredits,
   useAdminGrantCredits,
-  useAdminGrantTrial,
   useAdminImpersonate,
-  useAdminRevokeTrial,
   useAdminSetMemberRole,
   useAdminSetOverrides,
   type AdminAccount,
@@ -123,7 +121,8 @@ const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 // key and stamp its own suffix onto it, which is exactly how this file's plan
 // vocabulary drifted away from the server's.
 //
-// There is one paid plan, `credits`, so the list is the four plan keys. A key
+// There is one paid plan, `credits`, so the list is the three plan keys.
+// Enterprise is not a plan: it is a feature layer (demo or license). A key
 // that an older row may still carry (a retired per-seat or tier key) is read as
 // `credits` by the API, and its row shows up under Credits.
 type TierFilterOption = { value: string; label: string };
@@ -131,7 +130,6 @@ const TIER_OPTIONS: TierFilterOption[] = [
   { value: 'none', label: 'No plan' },
   { value: 'free', label: 'Free' },
   { value: 'credits', label: 'Credits' },
-  { value: 'enterprise', label: 'Enterprise' },
 ];
 
 const TIER_LABELS: Record<string, string> = Object.fromEntries(
@@ -253,8 +251,8 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 /**
- * Label for a raw tier KEY — filter chips, and the trial tiers, which are keys
- * an operator picked rather than a plan an account resolved to. Falls through
+ * Label for a raw tier KEY — the filter chips, which name a key rather than
+ * a plan an account resolved to. Falls through
  * to the key itself so an unknown key is visible instead of silently renamed.
  *
  * NOT for "what plan is this account on?" — that is `PlanBadge` / `planLabel`.
@@ -269,8 +267,7 @@ function tierKeyLabel(
 
 /**
  * The plan the account BEHAVES as, straight off the API's resolved `plan`
- * block: an active admin trial overlays the stored
- * `tier` column, and the resolver applies the same precedence every gate does.
+ * block, which applies the same precedence every gate does.
  * The stored key stays available as `account.tier` for the filter.
  *
  * The fallback covers a console pointed at an API older than the resolver.
@@ -360,65 +357,6 @@ function LiveSubscriptionLine({ accountId }: { accountId: string }) {
       </span>
     </span>
   );
-}
-
-// ── Trial helpers ────────────────────────────────────────────────────────────
-// `active` is the only status that grants the trial tier. The other four are
-// history the row keeps for audit, so they render greyed rather than hidden.
-
-/**
- * Trial plans offered in the grant form. The API accepts exactly these two
- * `tier_key` values.
- */
-const TRIAL_TIER_OPTIONS: { value: string; label: string; hint: string }[] = [
-  { value: 'enterprise', label: 'Enterprise', hint: 'SSO, SCIM, RBAC, audit export, branding' },
-  { value: 'credits', label: 'Credits', hint: 'Managed models and credit purchases' },
-];
-/** Server default for an Enterprise trial's credit grant, USD. Credits trials default to 0. */
-const DEFAULT_ENTERPRISE_TRIAL_CREDIT = 500;
-
-const TRIAL_DURATION_PRESETS = [14, 30, 60, 90];
-const MAX_TRIAL_DURATION_DAYS = 365; // MAX_TRIAL_DURATION_DAYS in billing/services/trial-admin.ts
-const MAX_TRIAL_CREDIT_GRANT = 10_000;
-
-function trialIsActive(trial: AdminAccount['trial'] | undefined): boolean {
-  return trial?.status === 'active';
-}
-
-function trialBadgeVariant(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
-  switch (status) {
-    case 'active':
-      return 'success';
-    case 'converted':
-      return 'info';
-    case 'revoked':
-      return 'destructive';
-    case 'expired':
-      return 'warning';
-    default:
-      return 'muted';
-  }
-}
-
-/**
- * Signed relative distance. `formatRelative` collapses any negative diff to
- * "just now", which would print an active trial's future end date as "just now".
- */
-function formatCountdown(value: string | null): string {
-  if (!value) return '—';
-  const ms = new Date(value).getTime() - Date.now();
-  if (!Number.isFinite(ms)) return '—';
-  const abs = Math.abs(ms);
-  // Round, don't floor: a 90-day window read a millisecond after it is issued
-  // is 89.999 days, and "in 89d" for a trial the operator just set to 90 reads
-  // as an off-by-one bug.
-  const unit =
-    abs < 3_600_000
-      ? `${Math.max(1, Math.round(abs / 60_000))}m`
-      : abs < 86_400_000
-        ? `${Math.round(abs / 3_600_000)}h`
-        : `${Math.round(abs / 86_400_000)}d`;
-  return ms < 0 ? `${unit} ago` : `in ${unit}`;
 }
 
 function paymentStatusBadge(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
@@ -1318,11 +1256,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                   {account.paymentStatus.replace(/_/g, ' ')}
                 </Badge>
               )}
-              {trialIsActive(account.trial) && (
-                <Badge variant="success" size="sm">
-                  {tI18nComplete.raw('text98a66e9745c9')}
-                </Badge>
-              )}
             </div>
             <AccountPlanState account={account} />
           </div>
@@ -1605,7 +1538,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Entitlements — trial + per-account overrides
+// Entitlements — Enterprise + per-account overrides
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** One labelled row inside an entitlement panel: text left, control right. */
@@ -1710,8 +1643,9 @@ function OverrideExpiryChip({ expiresAt }: { expiresAt: string | null }) {
  *
  * The form holds a draft and sends only the rows that changed — see
  * `overrides-form.ts` for why an untouched row must never be re-sent. It has no
- * expiry field on purpose: an expiring grant comes from the trial primitive
- * above, and this card is where an operator inspects or clears one.
+ * expiry field on purpose: an expiring grant comes from the server (the
+ * SSO/SCIM grace after a license ends), and this card is where an operator
+ * inspects or clears one.
  */
 function OverridesCard({ account }: { account: AdminAccount }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -1721,7 +1655,7 @@ function OverridesCard({ account }: { account: AdminAccount }) {
   const stored = account.entitlementOverrides ?? null;
 
   // Re-seed the draft whenever the account row changes underneath it (a save,
-  // a trial grant, another operator). Comparing the serialized map is the
+  // a license ending, another operator). Comparing the serialized map is the
   // documented "adjust state during render" pattern — no effect, no flash of
   // stale controls.
   const storedKey = JSON.stringify(stored ?? {});
@@ -1828,270 +1762,19 @@ function OverridesCard({ account }: { account: AdminAccount }) {
 }
 
 function EntitlementsTab({ account }: { account: AdminAccount }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
   const tPlan = useI18nTranslations('billing.credits.admin');
-  const trialTierOptions = useLocalizedUiCatalog(TRIAL_TIER_OPTIONS);
-  const grantTrial = useAdminGrantTrial();
-  const revokeTrial = useAdminRevokeTrial();
-
-  const trial = account.trial;
-  const isActive = trialIsActive(trial);
-
-  const [tierKey, setTierKey] = useState('enterprise');
-  const [durationDays, setDurationDays] = useState('30');
-  const [creditGrant, setCreditGrant] = useState('');
-  const [note, setNote] = useState('');
-  const [confirmRevoke, setConfirmRevoke] = useState(false);
-
-  const parsedDuration = Number(durationDays);
-  const parsedCredit = Number(creditGrant);
-  const durationValid =
-    Number.isInteger(parsedDuration) &&
-    parsedDuration >= 1 &&
-    parsedDuration <= MAX_TRIAL_DURATION_DAYS;
-  const creditValid =
-    creditGrant.trim() === '' ||
-    (Number.isFinite(parsedCredit) && parsedCredit >= 0 && parsedCredit <= MAX_TRIAL_CREDIT_GRANT);
-  const formValid = durationValid && creditValid;
-
-  const accountLabel = accountLabelFor(account);
-  const extending = isActive && trial?.tier === tierKey;
-  const defaultCreditGrant = tierKey === 'enterprise' ? DEFAULT_ENTERPRISE_TRIAL_CREDIT : 0;
-
-  async function handleGrantTrial() {
-    if (!formValid) return;
-    try {
-      await grantTrial.mutateAsync({
-        accountId: account.accountId,
-        tierKey,
-        durationDays: parsedDuration,
-        creditGrant: creditGrant.trim() === '' ? undefined : parsedCredit,
-        note: note.trim() === '' ? undefined : note.trim(),
-      });
-      successToast(
-        extending ? tI18nComplete.raw('textac8710553475') : tI18nComplete.raw('text98b6c1f78029'),
-        {
-          description: tI18nComplete('text6db974c8b732', {
-            value0: accountLabel,
-            value1: tierKeyLabel(tierKey, tierOptions),
-            value2: parsedDuration,
-          }),
-        },
-      );
-      setNote('');
-    } catch (error) {
-      errorToast(tI18nComplete.raw('texte8ea82789107'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  async function handleRevokeTrial() {
-    try {
-      await revokeTrial.mutateAsync({ accountId: account.accountId });
-      successToast(tI18nComplete.raw('text34a6992c659a'), {
-        description: tI18nComplete('text9e0449fd24b6', { value0: accountLabel }),
-      });
-    } catch (error) {
-      errorToast(tI18nComplete.raw('text05da7af7e394'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      });
-    } finally {
-      setConfirmRevoke(false);
-    }
-  }
 
   return (
     <div className="space-y-4">
-      {/* Enterprise contract — the only way onto Enterprise. */}
+      {/* Enterprise: the demo switch and the license contracts. */}
       <EnterpriseContractCard account={account} />
-
-      {/* Trial — a dated grant of a plan on top of the plan the account pays
-          for. When it ends the account returns to that plan. Re-granting the
-          same plan extends it. */}
-      <div className="border-border bg-popover space-y-4 rounded-md border p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-foreground text-sm font-medium">
-              {tI18nComplete.raw('text98a66e9745c9')}
-            </div>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {tI18nComplete.rich('text05700b032dac', {
-                plan: planLabel(account, tierOptions),
-                tier: (chunks) => <span className="text-foreground">{chunks}</span>,
-              })}
-            </p>
-          </div>
-          <Badge variant={trialBadgeVariant(trial?.status ?? null)} size="sm">
-            {trial?.status ?? 'none'}
-          </Badge>
-        </div>
-
-        {trial && trial.status !== 'none' ? (
-          <div className="border-border divide-border grid grid-cols-1 divide-y rounded-md border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            <div className="px-3 py-2.5">
-              <div className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('textcb9e8664edea')}
-              </div>
-              <div className="mt-0.5 text-sm font-medium">
-                {trial.tier ? tierKeyLabel(trial.tier, tierOptions) : '—'}
-              </div>
-            </div>
-            {/* A revoked or converted trial keeps its original window for audit,
-                and that window can still be in the future — so the countdown is
-                only meaningful while the trial is active. */}
-            <div className="px-3 py-2.5">
-              <div className="text-muted-foreground text-xs">
-                {isActive
-                  ? tI18nComplete.raw('text0bad4daa3f0d')
-                  : tI18nComplete.raw('text108bff86a0eb')}
-              </div>
-              <div className="mt-0.5 text-sm font-medium">
-                {isActive ? formatCountdown(trial.endsAt) : formatDateTime(trial.endsAt)}
-              </div>
-              {isActive && (
-                <div className="text-muted-foreground text-xs">{formatDateTime(trial.endsAt)}</div>
-              )}
-            </div>
-            <div className="px-3 py-2.5">
-              <div className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('textecbc89cd37a0')}
-              </div>
-              <div className="mt-0.5 text-sm font-medium">{formatRelative(trial.startedAt)}</div>
-              <div className="text-muted-foreground text-xs">{formatDateTime(trial.startedAt)}</div>
-            </div>
-          </div>
-        ) : (
-          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text1fd045f22dfd')}</p>
-        )}
-
-        {trial?.note && (
-          <p className="text-muted-foreground border-border border-l-2 pl-3 text-xs">
-            {trial.note}
-          </p>
-        )}
-
-        {/* Grant / replace form */}
-        <div className="border-border space-y-3 border-t pt-4">
-          <div className="text-foreground text-sm font-medium">
-            {extending
-              ? tI18nComplete.raw('text5f2d23caa972')
-              : isActive
-                ? tI18nComplete.raw('text57579cf783f3')
-                : tI18nComplete.raw('text8529ff665870')}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('textcb9e8664edea')}
-              </label>
-              <Select value={tierKey} onValueChange={setTierKey}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {trialTierOptions.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      <span>{t.label}</span>
-                      <span className="text-muted-foreground ml-1.5 text-xs">{t.hint}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('texta88fdf3e2772')}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('text1f1196332022')}
-              </label>
-              <Input
-                type="number"
-                min={0}
-                max={MAX_TRIAL_CREDIT_GRANT}
-                step="0.01"
-                placeholder={`${defaultCreditGrant} (default)`}
-                value={creditGrant}
-                onChange={(e) => setCreditGrant(e.target.value)}
-                aria-invalid={!creditValid}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-muted-foreground text-xs">
-              {tI18nComplete.raw('text4fc52a3c4c55')}
-            </label>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {TRIAL_DURATION_PRESETS.map((d) => (
-                <Button
-                  key={d}
-                  type="button"
-                  size="sm"
-                  variant={durationDays === String(d) ? 'default' : 'outline'}
-                  className="h-7"
-                  onClick={() => setDurationDays(String(d))}
-                >
-                  {d}d
-                </Button>
-              ))}
-              <Input
-                type="number"
-                min={1}
-                max={MAX_TRIAL_DURATION_DAYS}
-                step={1}
-                value={durationDays}
-                onChange={(e) => setDurationDays(e.target.value)}
-                aria-label={tI18nComplete.raw('textbcd80dd21f3c')}
-                aria-invalid={!durationValid}
-                className="h-7 w-24"
-              />
-            </div>
-          </div>
-
-          <Input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder={tI18nComplete.raw('text7147a36979c2')}
-            maxLength={2000}
-          />
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={handleGrantTrial}
-              disabled={!formValid || grantTrial.isPending || revokeTrial.isPending}
-              className="gap-1.5"
-            >
-              {grantTrial.isPending && <Loading className="h-3.5 w-3.5" />}
-              {extending
-                ? 'Extend'
-                : isActive
-                  ? tI18nComplete.raw('text57579cf783f3')
-                  : tI18nComplete.raw('text8529ff665870')}
-            </Button>
-            {isActive && (
-              <Button
-                variant="outline"
-                onClick={() => setConfirmRevoke(true)}
-                disabled={grantTrial.isPending || revokeTrial.isPending}
-              >
-                {tI18nComplete.raw('textd85abf75ffac')}
-              </Button>
-            )}
-          </div>
-          <p className="text-muted-foreground text-xs">
-            {tI18nComplete('textfdd57ee91bdc', { amount: DEFAULT_ENTERPRISE_TRIAL_CREDIT })}
-          </p>
-        </div>
-      </div>
 
       {/* Per-key overrides, on one merge-patch save. The resolver applies them
           after the plan. */}
       <OverridesCard account={account} />
 
-      {/* Read-only context the operator needs before issuing a trial. */}
+      {/* Read-only context: the billing plan, which Enterprise never changes. */}
       <div className="border-border bg-popover divide-border grid grid-cols-2 divide-x rounded-md border text-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <span className="text-muted-foreground text-xs">{tPlan('plan')}</span>
@@ -2106,28 +1789,6 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
           </span>
         </div>
       </div>
-
-      <ConfirmDialog
-        open={confirmRevoke}
-        onOpenChange={setConfirmRevoke}
-        title={tI18nComplete.raw('textd85abf75ffac')}
-        description={
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="font-medium">{accountLabel}</span>{' '}
-              {tI18nComplete.raw('textfd8beb3c3acc')}{' '}
-              <span className="text-foreground font-medium">
-                {tierKeyLabel(account.tier, tierOptions)}
-              </span>{' '}
-              {tI18nComplete.raw('textb94207703902')}
-            </p>
-            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text05643520119a')}</p>
-          </div>
-        }
-        confirmLabel={tI18nComplete.raw('textd85abf75ffac')}
-        onConfirm={handleRevokeTrial}
-        isPending={revokeTrial.isPending}
-      />
     </div>
   );
 }

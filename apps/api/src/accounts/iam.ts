@@ -41,6 +41,7 @@ import { registerIamOauthClientsRoutes } from './iam/oauth-clients'; // Sign in 
 import { registerIamSessionOversightRoutes } from './iam/session-oversight'; // owner/admin access to every session (owner-only toggle)
 import { registerIamCustomRolesRoutes } from './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
 import { registerIamAssignmentsRoutes } from './iam/assignments'; // canonical: role_assignments CRUD + the permission catalog
+import { registerIamEnterpriseDemoRoutes } from './iam/enterprise-demo'; // self-serve Enterprise demo (owners and admins)
 
 /**
  * Registers every IAM route on `iamRouter`. accounts/index.ts calls it once,
@@ -62,6 +63,7 @@ export function registerIamRoutes(): void {
   registerIamServiceAccountsRoutes();
   registerIamOauthClientsRoutes();
   registerIamSessionOversightRoutes();
+  registerIamEnterpriseDemoRoutes();
   registerIamAssignmentsRoutes();
 }
 

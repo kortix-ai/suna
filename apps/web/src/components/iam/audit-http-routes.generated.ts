@@ -262,6 +262,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|billing|deduct",
   "POST|v1|billing|deduct-usage",
   "POST|v1|billing|enterprise-offer|checkout",
+  "POST|v1|billing|enterprise|contact",
   "POST|v1|billing|plan",
   "GET|v1|billing|proration-preview",
   "POST|v1|billing|purchase-credits",

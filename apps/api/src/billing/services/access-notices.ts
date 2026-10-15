@@ -1,29 +1,26 @@
 /**
- * Notices before and after access ends (.agents/skills/billing/references/plans-and-access.md):
- * a trial or contract never ends silently.
+ * Notices before and after an Enterprise license ends
+ * (.agents/skills/billing/references/plans-and-access.md): a license never
+ * ends silently.
  *
- *   trial     7, 3 and 1 days before the end, and when it ends
- *   contract  30, 7 and 1 days before a term that does not renew, and when it ends
+ *   license  30, 7 and 1 days before a term that does not renew, and when it ends
  *
  * Each notice goes to the account's billing managers (owners and admins) and to
  * Kortix sales (`DEMO_LEAD_NOTIFY_EMAIL`), once: a claim row in
  * `chat_event_dedup` makes it once-only across replicas and sweeps.
  */
 import { logger } from '../../lib/logger';
-import { chatEventDedup, creditAccounts, enterpriseContracts } from '@kortix/db';
+import { chatEventDedup, enterpriseContracts } from '@kortix/db';
 import { and, eq, gt, isNotNull, lte } from 'drizzle-orm';
 import { config } from '../../config';
 import { actionButton, renderEmail, renderText, S } from '../../lib/email/template';
 import { db } from '../../shared/db';
 import { escapeHtml } from '../../shared/html';
-import { TRIAL_STATUS } from './effective-tier';
 import { endExpiredManualContracts } from './enterprise-contracts';
 import { billingPaneUrl, emailBillingManagers, sendAlertEmail } from './owner-alerts';
 import { ACCESS_GRACE_DAYS } from './resolve-billing';
-import { sweepExpiredTrials, trialPlanFor } from './trial-admin';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-export const TRIAL_WARNING_DAYS = [7, 3, 1] as const;
 export const CONTRACT_WARNING_DAYS = [30, 7, 1] as const;
 
 /** Whole days until `endsAt`, rounded up (0 once it has passed). */
@@ -88,47 +85,13 @@ async function send(accountId: string, category: string, notice: (accountName: s
   return sent;
 }
 
-const planName = (plan: string | null) => (trialPlanFor(plan ?? '') === 'enterprise' ? 'Enterprise' : 'Credits');
-
-export async function notifyTrialEnding(accountId: string, plan: string | null, endsAt: string, left: number) {
-  const name = planName(plan);
-  return send(accountId, 'billing-trial-ending', (accountName) => ({
-    subject: `${accountName}: your ${name} trial ends in ${left} day${left === 1 ? '' : 's'}`,
-    title: `Your ${name} trial ends ${formatDate(endsAt)}`,
-    paragraphs: [
-      `${accountName} is on a ${name} trial until ${formatDate(endsAt)}.`,
-      name === 'Enterprise'
-        ? `After that it returns to the plan it pays for. SSO and SCIM stay on for ${ACCESS_GRACE_DAYS} more days, so nobody is locked out.`
-        : 'After that it returns to the plan it pays for.',
-      'Upgrade now to keep everything, or reply to talk to us.',
-    ],
-    cta: 'Upgrade',
-  }));
-}
-
-export async function notifyTrialEnded(accountId: string, plan: string | null, endedAt: string) {
-  const name = planName(plan);
-  const enterprise = name === 'Enterprise';
-  const graceEnds = new Date(new Date(endedAt).getTime() + ACCESS_GRACE_DAYS * DAY_MS).toISOString();
-  return send(accountId, 'billing-trial-ended', (accountName) => ({
-    subject: `${accountName}: your ${name} trial has ended`,
-    title: `Your ${name} trial has ended`,
-    paragraphs: [
-      `The ${name} trial of ${accountName} ended on ${formatDate(endedAt)}. The account is back on the plan it pays for.`,
-      ...(enterprise ? [`SSO and SCIM stay on until ${formatDate(graceEnds)}.`] : []),
-      'Upgrade to get it back.',
-    ],
-    cta: 'Upgrade',
-  }));
-}
-
 export async function notifyContractEnding(accountId: string, endsAt: string, left: number) {
   return send(accountId, 'billing-contract-ending', (accountName) => ({
-    subject: `${accountName}: your Enterprise contract ends in ${left} day${left === 1 ? '' : 's'}`,
-    title: `Your Enterprise contract ends ${formatDate(endsAt)}`,
+    subject: `${accountName}: your Enterprise license ends in ${left} day${left === 1 ? '' : 's'}`,
+    title: `Your Enterprise license ends ${formatDate(endsAt)}`,
     paragraphs: [
-      `The Enterprise contract of ${accountName} ends on ${formatDate(endsAt)} and does not renew on its own.`,
-      `Contact us to renew. Without a renewal the account returns to the plan it pays for, and SSO and SCIM stay on for ${ACCESS_GRACE_DAYS} more days.`,
+      `The Enterprise license of ${accountName} ends on ${formatDate(endsAt)} and does not renew on its own.`,
+      `Contact us to renew. Without a renewal the Enterprise features turn off; SSO and SCIM stay on for ${ACCESS_GRACE_DAYS} more days. Credits and the plan are not affected.`,
     ],
     cta: 'Open billing',
   }));
@@ -136,10 +99,10 @@ export async function notifyContractEnding(accountId: string, endsAt: string, le
 
 export async function notifyContractEnded(accountId: string, graceEnds: string) {
   return send(accountId, 'billing-contract-ended', (accountName) => ({
-    subject: `${accountName}: your Enterprise contract has ended`,
-    title: 'Your Enterprise contract has ended',
+    subject: `${accountName}: your Enterprise license has ended`,
+    title: 'Your Enterprise license has ended',
     paragraphs: [
-      `The Enterprise contract of ${accountName} has ended. The account is back on the plan it pays for.`,
+      `The Enterprise license of ${accountName} has ended, so its Enterprise features are off. Credits and the plan are not affected.`,
       `SSO and SCIM stay on until ${formatDate(graceEnds)}. Contact us to renew.`,
     ],
     cta: 'Open billing',
@@ -147,48 +110,16 @@ export async function notifyContractEnded(accountId: string, graceEnds: string) 
 }
 
 /**
- * The hourly access sweep: expire trials (and tell people), end manual
- * contracts whose term is over, and send the warnings that are due.
+ * The hourly access sweep: end manual licenses whose term is over, and send the
+ * warnings that are due.
  */
 export async function runAccessSweep(now: Date = new Date()): Promise<{
-  trialsExpired: number;
   contractsEnded: number;
   warningsSent: number;
 }> {
   const nowMs = now.getTime();
-  const expired = await sweepExpiredTrials(now);
-  for (const row of expired) {
-    if (!row.trialEndsAt) continue;
-    if (await claimOnce(`billing:trial-ended:${row.accountId}:${new Date(row.trialEndsAt).getTime()}`)) {
-      await notifyTrialEnded(row.accountId, row.trialTier, row.trialEndsAt).catch((err) =>
-        logger.warn('[access-notices] trial-ended notice failed', { error: (err as Error).message }),
-      );
-    }
-  }
-
   const contractsEnded = await endExpiredManualContracts(now);
   let warningsSent = 0;
-
-  const trials = await db
-    .select({ accountId: creditAccounts.accountId, trialTier: creditAccounts.trialTier, trialEndsAt: creditAccounts.trialEndsAt })
-    .from(creditAccounts)
-    .where(
-      and(
-        eq(creditAccounts.trialStatus, TRIAL_STATUS.ACTIVE),
-        gt(creditAccounts.trialEndsAt, now.toISOString()),
-        lte(creditAccounts.trialEndsAt, new Date(nowMs + Math.max(...TRIAL_WARNING_DAYS) * DAY_MS).toISOString()),
-      ),
-    );
-  for (const trial of trials) {
-    if (!trial.trialEndsAt) continue;
-    const left = daysLeft(trial.trialEndsAt, nowMs);
-    const threshold = warningThreshold(left, TRIAL_WARNING_DAYS);
-    if (threshold === null) continue;
-    if (!(await claimOnce(`billing:trial-ending:${trial.accountId}:${new Date(trial.trialEndsAt).getTime()}:${threshold}`))) continue;
-    await notifyTrialEnding(trial.accountId, trial.trialTier, trial.trialEndsAt, left)
-      .then(() => warningsSent++)
-      .catch((err) => logger.warn('[access-notices] trial warning failed', { error: (err as Error).message }));
-  }
 
   const contracts = await db
     .select({ id: enterpriseContracts.id, accountId: enterpriseContracts.accountId, endsAt: enterpriseContracts.endsAt })
@@ -213,5 +144,5 @@ export async function runAccessSweep(now: Date = new Date()): Promise<{
       .catch((err) => logger.warn('[access-notices] contract warning failed', { error: (err as Error).message }));
   }
 
-  return { trialsExpired: expired.length, contractsEnded, warningsSent };
+  return { contractsEnded, warningsSent };
 }
