@@ -84,6 +84,10 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     watch: () => P.getSessionWatch(ctx.projectId, ctx.sessionId),
     /** Watch (`true`) or mute (`false`) this session for the caller. */
     setWatch: (watching: boolean) => P.setSessionWatch(ctx.projectId, ctx.sessionId, watching),
+    /** Pin (`true`) or unpin this session in the caller's own list. */
+    setPinned: (pinned: boolean) => P.setSessionPinned(ctx.projectId, ctx.sessionId, pinned),
+    /** Archive (`true`) or unarchive this session in the caller's own list. */
+    setArchived: (archived: boolean) => P.setSessionArchived(ctx.projectId, ctx.sessionId, archived),
     commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
       P.commitSessionChanges(ctx.projectId, ctx.sessionId, input),
     publicShares: {
