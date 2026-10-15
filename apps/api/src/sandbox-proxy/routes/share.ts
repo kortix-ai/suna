@@ -10,7 +10,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi'
 import type { Context } from 'hono'
-import { resolveProvider } from '../index'
+import { resolveProvider } from '../provider'
 import { combinedAuth } from '../../middleware/auth'
 import { canAccessPreviewSandbox } from '../../shared/preview-ownership'
 import { makeOpenApiApp, json, errors, auth } from '../../openapi'

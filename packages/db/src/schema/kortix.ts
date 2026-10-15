@@ -1515,6 +1515,34 @@ export const projectSessionGrants = kortixSchema.table(
   ],
 );
 
+/**
+ * One person's own list state for one session: pinned to the top of their
+ * list, or archived out of it. Per person, so a shared session can be pinned
+ * by one member and archived by another. Neither write moves the session's
+ * `updated_at`. Archiving clears the pin and pinning clears the archive.
+ * `user_id` has no FK to auth.users: account erasure and member offboarding
+ * delete the rows (`projects/lib/session-user-state.ts`).
+ */
+export const projectSessionUserStates = kortixSchema.table(
+  'project_session_user_states',
+  {
+    sessionId: text('session_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.userId] }),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_session_user_states_session_fk',
+    }).onDelete('cascade'),
+    index('idx_project_session_user_states_user').on(table.userId),
+  ],
+);
+
 export const projectSessionPublicShares = kortixSchema.table(
   'project_session_public_shares',
   {
@@ -4128,6 +4156,55 @@ export const billingCustomers = kortixSchema.table(
     provider: text(),
   },
   (table) => [index('idx_kortix_billing_customers_account_id').on(table.accountId)],
+);
+
+/**
+ * Enterprise contracts: an annual license plus a prepaid credit pool.
+ * Lifecycle and rules: .agents/skills/billing/references/plans-and-access.md.
+ * At most one `offered` and one `active` contract per account.
+ */
+export const enterpriseContracts = kortixSchema.table(
+  'enterprise_contracts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    /** offered | active | ended | withdrawn */
+    status: text().notNull(),
+    licenseUsd: numeric('license_usd', { precision: 12, scale: 2 }).notNull(),
+    creditsUsd: numeric('credits_usd', { precision: 12, scale: 2 }).notNull(),
+    termMonths: integer('term_months').default(12).notNull(),
+    /** checkout | invoice | manual */
+    collection: text().notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true, mode: 'string' }),
+    endsAt: timestamp('ends_at', { withTimezone: true, mode: 'string' }),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+    /** True while a Stripe subscription renews the term on its own. */
+    autoRenews: boolean('auto_renews').default(false).notNull(),
+    note: text(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('idx_enterprise_contracts_account').on(table.accountId),
+    uniqueIndex('uq_enterprise_contracts_one_active')
+      .on(table.accountId)
+      .where(sql`status = 'active'`),
+    uniqueIndex('uq_enterprise_contracts_one_offered')
+      .on(table.accountId)
+      .where(sql`status = 'offered'`),
+    index('idx_enterprise_contracts_stripe_subscription').on(table.stripeSubscriptionId),
+    check(
+      'enterprise_contracts_status_check',
+      sql`status IN ('offered', 'active', 'ended', 'withdrawn')`,
+    ),
+    check(
+      'enterprise_contracts_collection_check',
+      sql`collection IN ('checkout', 'invoice', 'manual')`,
+    ),
+  ],
 );
 
 export const creditAccounts = kortixSchema.table(

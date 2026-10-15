@@ -12543,3 +12543,112 @@ test('keeps reporting other JSON-RPC objects and any rejection with our frames',
     assert.equal(shouldIgnoreSentryBrowserNoise(walletRpcRejection({ code: -32603, message: 'Internal JSON-RPC error.' }, [{ filename }])), false, filename);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Safari masked-extension-source noise (`webkit-masked-url://hidden/`)
+// ---------------------------------------------------------------------------
+
+// Better Stack (Kortix Frontend prod, application_id 2346967), pattern
+// `dec0801de492cd7ebf0c42ade81b74596d0b3fdded276c4c82a966ff2bf3e56d`:
+// `Error: No Listener: tabs:outgoing.message.ready`, 2 occurrences / 0 users,
+// both 2026-10-07, routes `/fr` and `/projects/start`, Safari 26.6.2 /
+// macOS 10.15.7, mechanism `auto.browser.global_handlers.onunhandledrejection`.
+// The single stack frame is `webkit-masked-url://hidden/` (function `g`,
+// line 132 col 38491): WebKit masks the script URLs of Safari browser
+// extensions in `Error.stack` (WebKit Bug 246010, a WebKit engineer: "if this
+// is from a Safari Extension, Error.stack will mask the URLs"), so the throw
+// is in an extension's injected script — its internal pub/sub emitted a
+// message channel with no listener — never in first-party code. The same
+// masked call site carried the Eagle helper's
+// `eagle.i18n.words["dragSaver.drag"]` error (1 occurrence in 60 days): one
+// source scheme, many extension messages. `EXTENSION_PROTOCOL_PREFIXES`
+// therefore treats the scheme like `chrome-extension://` & co., which makes
+// the existing `extension-frame` (Sentry) and `extension-rejected-value`
+// (runtime) rules drop the class.
+const MASKED_EXTENSION_FRAME = {
+  function: 'g',
+  filename: 'webkit-masked-url://hidden/',
+  lineno: 132,
+  colno: 38491,
+};
+
+function maskedRejectionSentryEvent(requestUrl: string) {
+  return {
+    request: { url: requestUrl },
+    exception: {
+      values: [
+        {
+          type: 'Error',
+          value: 'No Listener: tabs:outgoing.message.ready',
+          mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+          stacktrace: { frames: [MASKED_EXTENSION_FRAME] },
+        },
+      ],
+    },
+  };
+}
+
+test('suppresses the Safari masked-extension unhandled rejection (exact prod shape)', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise(maskedRejectionSentryEvent('https://kortix.com/projects/start')),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise(maskedRejectionSentryEvent('https://kortix.com/fr')),
+    true,
+  );
+});
+
+test('classifies the WebKit masked-extension scheme as a browser-extension source', () => {
+  assert.equal(isExtensionSource('webkit-masked-url://hidden/'), true);
+  assert.equal(isExtensionSource('https://kortix.com/_next/static/chunks/main.js'), false);
+});
+
+test('suppresses a runtime rejection whose raw stack carries the masked extension URL', () => {
+  const reason = new Error('No Listener: tabs:outgoing.message.ready');
+  reason.stack =
+    'Error: No Listener: tabs:outgoing.message.ready\n    at g@webkit-masked-url://hidden/:132:38491';
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ reason }), true);
+  // The raw `@webkit-masked-url://…` stack form matches too (serialized
+  // rejections carry the `@` prefix).
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: 'Object captured as promise rejection with keys: code, message',
+      extra: {
+        __serialized__: {
+          code: -1,
+          message: 'No Listener: tabs:outgoing.message.ready',
+          stack: 'Error: No Listener: tabs:outgoing.message.ready\n    at g@webkit-masked-url://hidden/:132:38491',
+        },
+      },
+      frames: [],
+    }),
+    true,
+  );
+});
+
+test('keeps reporting first-party errors that carry no masked-extension frame', () => {
+  // The same message from one of our own bundle frames is actionable.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/start' },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'No Listener: tabs:outgoing.message.ready',
+            stacktrace: {
+              frames: [{ filename: 'app:///_next/static/chunks/main-app.js', function: 'g' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+  // A first-party runtime rejection with no extension frame keeps reporting.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: new Error('No Listener: tabs:outgoing.message.ready') }),
+    false,
+  );
+});

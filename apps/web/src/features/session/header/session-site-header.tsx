@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
+import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import { Button } from '@/components/ui/button';
@@ -64,6 +65,7 @@ import {
   useSessionWatch,
 } from '@kortix/sdk/react';
 import {
+  ArchiveIcon,
   ArrowsClockwiseIcon,
   BellIcon,
   BellSlashIcon,
@@ -77,6 +79,8 @@ import {
   GlobeSimpleIcon,
   StackIcon as Layers,
   PencilSimpleIcon,
+  PushPinIcon,
+  PushPinSlashIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SquareIcon as Square,
@@ -120,6 +124,7 @@ export function SessionSiteHeader({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tPalette = useTranslations('commandPalette');
   const tNotifications = useTranslations('notifications');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const devTools = useLocalizedUiCatalog(DEV_TOOLS);
   const router = useRouter();
   const pathname = usePathname();
@@ -195,6 +200,13 @@ export function SessionSiteHeader({
       )
       .catch(() => {});
   };
+  // Pin and archive: the viewer's own list (KRTX-2418). Absent `pinned_at` =
+  // no list state for this caller, and no items.
+  const listActions = useSessionListActions(projectId ?? '');
+  const listState =
+    projectSession && projectSessionId && projectSession.pinned_at !== undefined
+      ? { pinned: !!projectSession.pinned_at, archived: !!projectSession.archived_at }
+      : null;
   const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
   const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
   // The Share button's accessible name. A member who cannot change access
@@ -383,6 +395,24 @@ export function SessionSiteHeader({
               {watching ? <BellSlashIcon /> : <BellIcon />}
               {watching ? tNotifications('session.mute') : tNotifications('session.unmute')}
             </DropdownMenuItem>
+          )}
+          {listState && (
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => void listActions.setPinned(projectSessionId!, !listState.pinned)}
+              >
+                {listState.pinned ? <PushPinSlashIcon /> : <PushPinIcon />}
+                {tPinArchive(listState.pinned ? 'unpin' : 'pin')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => void listActions.setArchived(projectSessionId!, !listState.archived)}
+              >
+                <ArchiveIcon />
+                {tPinArchive(listState.archived ? 'unarchive' : 'archive')}
+              </DropdownMenuItem>
+            </>
           )}
           {canFork && (
             <DropdownMenuItem

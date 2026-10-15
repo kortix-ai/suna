@@ -180,6 +180,7 @@ function UpgradePlanCard({
   mayManageBilling: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tAccess = useTranslations('billing.access');
   const tCard = useTranslations('billing.credits.planCard');
   const tPlan = useTranslations('billing.plan');
   const locale = useLocale();
@@ -215,7 +216,7 @@ function UpgradePlanCard({
       action={
         ownerRequired ? (
           <Button type="button" variant="outline" className="w-full" disabled>
-            {tI18nHardcoded.raw('i18nComplete.text160ecadfebc2')}
+            {tAccess('managerRequired')}
           </Button>
         ) : (
           <Button

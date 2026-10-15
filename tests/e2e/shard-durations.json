@@ -36,7 +36,6 @@
     "e2e/specs/35-review-center-no-risk-label.spec.ts": 16.5,
     "e2e/specs/36-reminders-ui.spec.ts": 34.1,
     "e2e/specs/37-new-user-lands-on-projects.spec.ts": 28,
-
     "e2e/specs/38-capture-ui.spec.ts": 0,
     "e2e/specs/38-member-customize-read-only.spec.ts": 96,
     "e2e/specs/39-boot-shell-queued-edit.spec.ts": 27.7,
@@ -53,13 +52,13 @@
     "e2e/specs/49-audit-session-filter.spec.ts": 20,
     "e2e/specs/49-connector-connect-landing.spec.ts": 65,
     "e2e/specs/49-needs-you-open-question.spec.ts": 25,
-    "e2e/specs/50-settings-deep-links.spec.ts": 34.8,
-    "e2e/specs/51-account-settings-german.spec.ts": 34.8,
-    "e2e/specs/52-account-chip-ui.spec.ts": 0,
+    "e2e/specs/50-settings-deep-links.spec.ts": 0,
+    "e2e/specs/51-account-settings-german.spec.ts": 0,
+    "e2e/specs/52-session-pin-archive.spec.ts": 200.6,
+    "e2e/specs/53-lost-session-continue.spec.ts": 19.3,
     "e2e/specs/98-transcript-history-visible-contrast.spec.ts": 23.3,
     "e2e/specs/free-tier-pricing-onboarding.spec.ts": 6.9,
-    "e2e/specs/50-settings-deep-links.spec.ts": 0,
-    "e2e/specs/51-account-settings-german.spec.ts": 0
+    "e2e/specs/52-account-chip-ui.spec.ts": 0
   },
   "deployed": {
     "e2e/specs/00-accessibility.spec.ts": 4.8,
@@ -98,7 +97,6 @@
     "e2e/specs/35-review-center-no-risk-label.spec.ts": 7.3,
     "e2e/specs/36-reminders-ui.spec.ts": 23.5,
     "e2e/specs/37-new-user-lands-on-projects.spec.ts": 8.1,
-
     "e2e/specs/38-capture-ui.spec.ts": 0,
     "e2e/specs/38-member-customize-read-only.spec.ts": 44.8,
     "e2e/specs/39-boot-shell-queued-edit.spec.ts": 22,
@@ -115,12 +113,12 @@
     "e2e/specs/49-audit-session-filter.spec.ts": 0,
     "e2e/specs/49-connector-connect-landing.spec.ts": 65,
     "e2e/specs/49-needs-you-open-question.spec.ts": 0,
-    "e2e/specs/50-settings-deep-links.spec.ts": 28.2,
-    "e2e/specs/51-account-settings-german.spec.ts": 28.2,
-    "e2e/specs/52-account-chip-ui.spec.ts": 0,
+    "e2e/specs/50-settings-deep-links.spec.ts": 0,
+    "e2e/specs/51-account-settings-german.spec.ts": 0,
+    "e2e/specs/52-session-pin-archive.spec.ts": 0,
+    "e2e/specs/53-lost-session-continue.spec.ts": 0,
     "e2e/specs/98-transcript-history-visible-contrast.spec.ts": 33.8,
     "e2e/specs/free-tier-pricing-onboarding.spec.ts": 1.9,
-    "e2e/specs/50-settings-deep-links.spec.ts": 0,
-    "e2e/specs/51-account-settings-german.spec.ts": 0
+    "e2e/specs/52-account-chip-ui.spec.ts": 0
   }
 }

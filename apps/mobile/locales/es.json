@@ -1165,10 +1165,12 @@
     "current": "Actual",
     "currentPlan": "Plan actual",
     "includes": "{{plan}} incluye",
-    "askOwner": "Pide a un propietario de la cuenta que mejore el plan",
+    "askOwner": "Pide a una persona propietaria o administradora de la cuenta que la mejore",
     "contactSales": "Contactar con ventas",
     "upgradeTo": "Mejorar a {{plan}}",
-    "switchTo": "Cambiar a {{plan}}"
+    "switchTo": "Cambiar a {{plan}}",
+    "trialLabel_one": "Prueba de {{plan}} · queda {{count}} día",
+    "trialLabel_other": "Prueba de {{plan}} · quedan {{count}} días"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1180,7 +1182,23 @@
     "showMoreSubsessions_one": "Mostrar {{count}} más",
     "showMoreSubsessions_other": "Mostrar {{count}} más",
     "showMoreSubsessionsLabel_one": "Mostrar {{count}} subsesión más de {{title}}",
-    "showMoreSubsessionsLabel_other": "Mostrar {{count}} subsesiones más de {{title}}"
+    "showMoreSubsessionsLabel_other": "Mostrar {{count}} subsesiones más de {{title}}",
+    "pin": "Fijar",
+    "unpin": "Dejar de fijar",
+    "archive": "Archivar",
+    "unarchive": "Desarchivar",
+    "pinDone": "Sesión fijada",
+    "unpinDone": "Se dejó de fijar la sesión",
+    "archiveDone": "Sesión archivada",
+    "unarchiveDone": "Sesión desarchivada",
+    "pinFailed": "No se pudo fijar la sesión. Intenta de nuevo.",
+    "unpinFailed": "No se pudo dejar de fijar la sesión. Intenta de nuevo.",
+    "archiveFailed": "No se pudo archivar la sesión. Intenta de nuevo.",
+    "unarchiveFailed": "No se pudo desarchivar la sesión. Intenta de nuevo.",
+    "undo": "Deshacer",
+    "pinnedSection": "Fijadas",
+    "archivedView": "Archivadas",
+    "archivedEmpty": "Las sesiones que archives aparecerán aquí."
   },
   "genui": {
     "chartTapHint": "Toca para ver un valor",

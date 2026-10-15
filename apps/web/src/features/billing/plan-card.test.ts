@@ -163,3 +163,58 @@ describe('describePlanChange', () => {
     );
   });
 });
+
+// One plan system (2026-10-15): an account always sees what it is on and until
+// when. Before, an Enterprise account with no Stripe subscription read
+// "Enterprise · No subscription".
+describe('describePlanStatus for trials and contracts', () => {
+  const enterprise = { key: 'enterprise', family: 'enterprise', label: 'Enterprise', sublabel: null, monthly_usd: null };
+  const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  test('a trial names itself, its days left and its end date', () => {
+    const status = describePlanStatus(
+      stateWith({
+        plan: enterprise,
+        trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+      } as Partial<AccountState>),
+    );
+    expect(status).toMatchObject({ name: 'Enterprise', sublabel: 'Trial · 9 days left', detail: `Ends ${day('2026-11-14T00:00:00.000Z')}` });
+    expect(status.isActive).toBe(true);
+    expect(status.isWindingDown).toBe(true);
+  });
+
+  test('a trial on its last day says so', () => {
+    const status = describePlanStatus(
+      stateWith({
+        plan: enterprise,
+        trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 0 },
+      } as Partial<AccountState>),
+    );
+    expect(status.sublabel).toBe('Trial · ends today');
+  });
+
+  test('a renewing contract renews; a contract that does not renew ends', () => {
+    const contract = { id: 'c', license_usd: 25000, credits_usd: 15000, term_months: 12, collection: 'invoice', starts_at: null, ends_at: '2027-03-01T00:00:00.000Z', renews: true };
+    const renewing = describePlanStatus(stateWith({ plan: enterprise, contract } as Partial<AccountState>));
+    expect(renewing).toMatchObject({ sublabel: 'Annual contract', detail: `Renews ${day('2027-03-01T00:00:00.000Z')}`, isActive: true, isWindingDown: false });
+    const ending = describePlanStatus(stateWith({ plan: enterprise, contract: { ...contract, renews: false } } as Partial<AccountState>));
+    expect(ending.detail).toBe(`Ends ${day('2027-03-01T00:00:00.000Z')}`);
+    expect(ending.isWindingDown).toBe(true);
+  });
+
+  test('Enterprise without a contract on file never reads "No subscription"', () => {
+    const status = describePlanStatus(stateWith({ plan: enterprise } as Partial<AccountState>));
+    expect(status.detail).toBe('Annual contract');
+    expect(status.detail).not.toBe('No subscription');
+  });
+
+  test('after an Enterprise trial, the grace says until when SSO stays on', () => {
+    const status = describePlanStatus(
+      stateWith({
+        plan: { key: 'free', family: 'free', label: 'Free', sublabel: null, monthly_usd: null },
+        grace: { reason: 'trial_ended', ends_at: '2026-11-28T00:00:00.000Z' },
+      } as Partial<AccountState>),
+    );
+    expect(status.detail).toBe(`SSO stays on until ${day('2026-11-28T00:00:00.000Z')}`);
+  });
+});

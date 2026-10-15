@@ -14,7 +14,7 @@ import type { AdminProjectsListQuery } from './projects-query';
 /** One page of `GET /api/accounts` plus the filtered total. Throws the driver error as-is. */
 export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
   const { db } = await import('../shared/db');
-  const { accounts, creditAccounts } = await import('@kortix/db');
+  const { accounts, creditAccounts, enterpriseContracts } = await import('@kortix/db');
   const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
     await import('drizzle-orm');
   const { UNPAID_TIERS } = await import('./accounts-query');
@@ -101,23 +101,28 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       seatCount: creditAccounts.seatCount,
       trialStatus: creditAccounts.trialStatus,
       trialTier: creditAccounts.trialTier,
-      trialSeats: creditAccounts.trialSeats,
-      trialMonthlyUsd: creditAccounts.trialMonthlyUsd,
       trialStartedAt: creditAccounts.trialStartedAt,
       trialEndsAt: creditAccounts.trialEndsAt,
       trialNote: creditAccounts.trialNote,
-      managedModelsOverride: creditAccounts.managedModelsOverride,
-      demoEnterprise: creditAccounts.demoEnterprise,
-      enterpriseEntitled: creditAccounts.enterpriseEntitled,
-      // The resolver takes ONE row and reads the JSONB overrides FIRST,
-      // so a projection without them reports the legacy columns' answer
-      // for an account whose real answer expired.
+      // The resolver applies the per-feature overrides; a projection without
+      // them would report a different answer than the gates enforce.
       entitlementOverrides: creditAccounts.entitlementOverrides,
+      // The active Enterprise contract, if any (at most one per account).
+      contractId: enterpriseContracts.id,
+      contractLicenseUsd: enterpriseContracts.licenseUsd,
+      contractCreditsUsd: enterpriseContracts.creditsUsd,
+      contractCollection: enterpriseContracts.collection,
+      contractEndsAt: enterpriseContracts.endsAt,
+      contractAutoRenews: enterpriseContracts.autoRenews,
       ownerEmail,
       memberCount,
     })
     .from(accounts)
     .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+    .leftJoin(
+      enterpriseContracts,
+      and(eq(enterpriseContracts.accountId, accounts.accountId), eq(enterpriseContracts.status, 'active')),
+    )
     .where(where)
     .orderBy(dir(sortCol))
     .limit(limit)

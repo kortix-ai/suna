@@ -191,6 +191,7 @@ The transcript, `log`, `info`, `attachments`, and the events stream never wake a
 | Restart | `kortix sessions restart <id>` | Everything a stop keeps | Running processes and memory. It stops and starts the sandbox in place, or boots a new one when the sandbox is gone. |
 | Delete | `kortix sessions rm <id>...` | The pushed branch. For 30 days also the conversation and the stored files. | The sandbox and its public links. The session leaves the list. |
 | Restore | `kortix sessions restore <id>` | Everything a delete keeps | Nothing. The session returns to the list, stopped. |
+| Recover | `kortix sessions recover <id>` | The branch and the conversation of a lost session | Nothing more: the lost sandbox is already gone. The next start boots a new one. |
 
 The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
 
@@ -219,6 +220,26 @@ A stopped session wakes when it gets:
 - a new prompt;
 - a request to one of its preview ports;
 - a `kortix sessions files` or `kortix sessions cp` call.
+
+### Continue a lost session
+
+A session is lost when the provider removed its sandbox and Kortix could not bring it back in place. The session page then shows **This session's computer was lost**, and `kortix sessions start` exits 1 with `runtime_identity_unavailable`. The branch and the saved conversation remain. The sandbox disk is gone, and with it every change that was not committed and pushed.
+
+To continue a lost session on a new sandbox:
+
+- In the web app, select **Continue session** in the banner. The page boots the new sandbox.
+- From the CLI, run `kortix sessions recover <session_id>`, then `kortix sessions start <session_id> --wait`.
+- From code, call `s.recover()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/recover`.
+
+The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A continue needs the same permission as a delete: the session owner or a person who manages the project.
+
+| Continue answer | Meaning |
+| --- | --- |
+| `200` | The next start boots a new sandbox with the saved conversation. |
+| `409` `session_not_lost` | The session is not lost. Open it to resume it. |
+| `409` `session_transcript_missing` | The session has no saved conversation, so it cannot continue. Nothing changed. Delete it, or start a new session. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the lost sandbox is gone. Nothing changed. Try again in a minute. |
+| `503` `session_log_restore_off` | This deployment turned off the session log. |
 
 ### When the sandbox stops during a turn
 
@@ -283,6 +304,31 @@ kortix sessions ls --label needs-review
 ```
 
 `kortix sessions update` also takes `--clear-labels` and `--unmeta <key>`. Kortix refuses a metadata key it manages itself with `400`.
+
+### Pin and archive
+
+Pin a session to keep it at the top of your session list. Archive a session to take it out of your session list. A pin and an archive are yours alone: they change only your list, and other people see the session as before.
+
+- Archiving a pinned session unpins it. Pinning an archived session unarchives it.
+- Neither stops the session or changes its `updated_at`.
+- Only a person can pin or archive. A personal access token acts as you. An agent's session token, an API key and a service account get `403`.
+
+- **Web:** open the `⋯` menu of a session in the sidebar, on the Sessions page or in the session header, then choose **Pin session** or **Archive session**. Pinned sessions sit in the **Pinned** section at the top of the sidebar. The **Archived** tab of the Sessions page lists your archived sessions; **Archived sessions** in the sidebar's session menu opens it. On the Sessions page, **Select** archives several sessions at once. An archive toast offers **Undo**.
+- **Mobile:** the session actions sheet has **Pin** and **Archive**. Pinned sessions sit in the **Pinned** section of the project drawer. The Sessions page's filter sheet opens the **Archived** view.
+- **CLI:**
+
+```bash
+kortix sessions pin <session_id>...
+kortix sessions unpin <session_id>...
+kortix sessions archive <session_id>...
+kortix sessions unarchive <session_id>...
+kortix sessions ls --pinned      # only your pinned sessions
+kortix sessions ls --archived    # only your archived sessions
+```
+
+`kortix sessions ls` leaves out the sessions you archived and marks a pinned session `(pinned)`. A short ID from `ls --archived` resolves like any other short ID.
+
+- **API:** `PUT /v1/projects/<project_id>/sessions/<session_id>/pin` with `{"pinned": true}` or `false`, and `PUT …/archive` with `{"archived": true}` or `false`. Both answer `200` with `pinned_at` and `archived_at`, `null` when not set. `GET /v1/projects/<project_id>/sessions` leaves out your archived sessions; `?pinned=only` or `?archived=only` lists only those. Every row carries your `pinned_at` and `archived_at`.
 
 ## Who can open a session
 

@@ -24,6 +24,12 @@ describe('takeSessionListFlags', () => {
   test('--children excludes a starter filter', () => {
     expect(() => takeSessionListFlags(['--children', 'abc', '--mine'])).toThrow('cannot be combined');
   });
+  test('maps --pinned/--archived and rejects both', () => {
+    expect(takeSessionListFlags(['--pinned']).view).toBe('pinned');
+    expect(takeSessionListFlags(['--archived']).view).toBe('archived');
+    expect(takeSessionListFlags([]).view).toBeUndefined();
+    expect(() => takeSessionListFlags(['--pinned', '--archived'])).toThrow('only one of --pinned, --archived');
+  });
 });
 
 describe('sessionListQuery', () => {
@@ -36,6 +42,12 @@ describe('sessionListQuery', () => {
   test('filters + search', () => {
     expect(sessionListQuery(takeSessionListFlags(['--automated', '--search', 'a b']))).toBe(
       '?parent=root&started_by=automated&q=a+b',
+    );
+  });
+  test('--pinned / --archived ask for only those rows, with other filters', () => {
+    expect(sessionListQuery(takeSessionListFlags(['--pinned']))).toBe('?pinned=only');
+    expect(sessionListQuery(takeSessionListFlags(['--archived', '--mine']))).toBe(
+      '?parent=root&started_by=me&archived=only',
     );
   });
   test('children of one parent', () => {

@@ -55,6 +55,37 @@ subscriptionsRouter.openapi(
   },
 );
 
+// Accept an open Enterprise offer: a Stripe Checkout session for the contract
+// an operator offered (billing/services/enterprise-contracts.ts). A fresh
+// session per click: sessions expire within 24 h.
+subscriptionsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/enterprise-offer/checkout',
+    tags: ['billing'],
+    summary: 'Accept the Enterprise offer: start its Stripe Checkout',
+    ...auth,
+    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
+    responses: {
+      200: json(z.object({ checkout_url: z.string(), contract_id: z.string() }), 'Checkout to accept the offer'),
+      ...errors(400, 404, 409),
+    },
+  }),
+  async (c) => {
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
+    const body = await readJsonObject(c);
+    const { createOfferCheckout } = await import('../services/enterprise-contracts');
+    return c.json(
+      await createOfferCheckout({
+        accountId,
+        email: c.get('userEmail'),
+        successUrl: String(body.success_url ?? ''),
+        cancelUrl: String(body.cancel_url ?? ''),
+      }),
+    );
+  },
+);
+
 subscriptionsRouter.openapi(
   createRoute({
     method: 'post',

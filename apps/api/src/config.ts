@@ -329,8 +329,7 @@ const envSchema = z.object({
   // audit access) regardless of the account's billing tier — see
   // getAccountEntitlements()/accountHasEntitlement() in
   // billing/services/entitlements.ts. Off by default; billing is irrelevant
-  // for a self-host license check, unlike the `demoEnterprise` per-account
-  // preview toggle this mirrors.
+  // for a self-host license check.
   ENTERPRISE_LICENSE_AVAILABLE: optBoolFalse,
   // Self-host account-creation restriction: when true, POST /v1/accounts
   // (creating an ADDITIONAL/org account) is blocked with 403 for everyone

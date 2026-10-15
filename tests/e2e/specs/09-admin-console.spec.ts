@@ -252,7 +252,8 @@ on conflict (account_id) do update set role = excluded.role;
           "provider-fallback": { enabled: fallbackEnabled },
           "provider-analytics": {
             days: Number(url.searchParams.get("days")),
-            totals: { provisions: 0, ok: 0, error: 0, stopped: 0, migrations: 0, successRate: null },
+            // One migration: the Provisions tile hints "1 migration", never "1 migrations" (KRTX-2383).
+            totals: { provisions: 3, ok: 3, error: 0, stopped: 0, migrations: 1, successRate: 100 },
             providers: [], latencyByDay: [], volumeByDay: [], migrations: [], recentErrors: [],
           },
         };
@@ -272,6 +273,7 @@ on conflict (account_id) do update set role = excluded.role;
       expect(providerRequests.some(path => path.includes("provider-analytics"))).toBe(false);
       await page.getByRole("tab", { name: "Analytics", exact: true }).click();
       await expect.poll(() => providerRequests.some(path => path.endsWith("provider-analytics?days=7"))).toBe(true);
+      await expect(page.getByText("1 migration", { exact: true })).toBeVisible();
       await page.getByRole("combobox").click();
       await page.getByRole("option", { name: "Last 30 days", exact: true }).click();
       await expect.poll(() => providerRequests.filter(path => path.endsWith("provider-analytics?days=30")).length).toBeGreaterThan(0);

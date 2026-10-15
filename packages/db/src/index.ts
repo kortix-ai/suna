@@ -86,6 +86,7 @@ export {
   projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
+  projectSessionUserStates,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   providerTransitions,
@@ -124,6 +125,7 @@ export {
   kortixApiKeysRelations,
   // Billing / Credits (moved from public → kortix schema)
   billingCustomers,
+  enterpriseContracts,
   creditAccounts,
   creditLedger,
   creditUsage,
