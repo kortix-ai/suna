@@ -1,5 +1,5 @@
 {
-  "source_hash": "10429d49300147fa5f1acb84dadf55f21f23335aaee888d17597207fae511156",
+  "source_hash": "3cb33f62d0be0449b979dad01d212b2dd36ff145b6be6b255dd90deac8cce953",
   "diff_files": [
     ".agents/skills/genui/SKILL.md",
     ".agents/skills/kortix-capture/SKILL.md",
@@ -321,6 +321,7 @@
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
     "apps/web/src/components/iam/role-capability-matrix.test.ts",
     "apps/web/src/components/iam/role-capability-model.ts",
+    "apps/web/src/features/accounts/settings/billing-tab.test.tsx",
     "apps/web/src/features/capture/api/capture-api-modal.tsx",
     "apps/web/src/features/capture/area/capture-account-card.tsx",
     "apps/web/src/features/capture/area/capture-area-shell.tsx",
@@ -396,13 +397,13 @@
     "packages/db/drizzle/meta/20261013234642_snapshot.json",
     "packages/db/drizzle/meta/20261014034706_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261014190000000_capture.sql",
-    "packages/db/migrations/20261014190000001_capture_permissions.sql",
-    "packages/db/migrations/20261014190000002_capture_displays.sql",
-    "packages/db/migrations/20261014190000003_capture_enrollment.sql",
-    "packages/db/migrations/20261014190000004_capture_device_first.sql",
-    "packages/db/migrations/20261014190000005_capture_enrollment_token_person.sql",
-    "packages/db/migrations/20261014190000006_capture_health_notification_kinds.sql",
+    "packages/db/migrations/20261015003000000_capture.sql",
+    "packages/db/migrations/20261015003000001_capture_permissions.sql",
+    "packages/db/migrations/20261015003000002_capture_displays.sql",
+    "packages/db/migrations/20261015003000003_capture_enrollment.sql",
+    "packages/db/migrations/20261015003000004_capture_device_first.sql",
+    "packages/db/migrations/20261015003000005_capture_enrollment_token_person.sql",
+    "packages/db/migrations/20261015003000006_capture_health_notification_kinds.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/sdk/package.json",
@@ -444,13 +445,13 @@
     "tests/src/flows/notifications.flow.ts",
     "tests/unit/release-record-workflow.test.ts"
   ],
-  "diff_hash": "eb7154e579409900d66e0a538d67feda3887a971f49cef42762f1c670bac6785",
-  "head": "ebb16863a9601b4aa781d5249e5bb06587a5491e",
+  "diff_hash": "1d4a00749d7787d0c68572838c9fd84e06f3da20a495bc1abeb470b3222e125d",
+  "head": "4395ba5a1535778f4b12f91690ce29a294e51e8b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T00:25:53.181Z"
+  "at": "2026-10-15T01:57:23.065Z"
 }
