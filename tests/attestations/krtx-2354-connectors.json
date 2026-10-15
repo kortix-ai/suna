@@ -1,8 +1,16 @@
 {
-  "source_hash": "efead87c92587a518388c91ae430c59adcd6dbc0f60b35ab9bb5b06e294d2c8d",
+  "source_hash": "b4fb3ea192c4046f62f63c66e28dd1116b7de3e91f7759b0c7c37f345f541294",
   "diff_files": [
     "apps/api/src/projects/lib/compile-agent-config.test.ts",
     "apps/api/src/projects/lib/compile-agent-config.ts",
+    "apps/api/src/projects/reaping/box-reaper.ts",
+    "apps/api/src/projects/reaping/sandbox-state-sync.ts",
+    "apps/api/src/projects/routes/marketplace-install-session.test.ts",
+    "apps/api/src/projects/routes/turn-stream.test.ts",
+    "apps/api/src/projects/session-lifecycle/actions.ts",
+    "apps/api/src/sandbox-proxy/module-graph.test.ts",
+    "apps/api/src/sandbox-proxy/routes/preview-deadline.test.ts",
+    "apps/api/src/sandbox-proxy/routes/share.ts",
     "apps/cli/src/__tests__/tools-command.blackbox.test.ts",
     "apps/cli/src/commands/tools.ts",
     "apps/cli/src/kortix-tools.generated.json",
@@ -18,19 +26,20 @@
     "apps/web/public/schema/kortix.schema.json",
     "apps/web/public/schema/kortix.v2.schema.json",
     "apps/web/public/schema/kortix.v3.schema.json",
+    "apps/web/src/stores/user-preferences-store.ts",
     "packages/manifest-schema/src/__tests__/json-schema.conformance.test.ts",
     "packages/manifest-schema/src/__tests__/validator.v2.test.ts",
     "packages/manifest-schema/src/constants.ts",
     "packages/manifest-schema/src/index.v2.ts",
     "packages/manifest-schema/src/json-schema.ts"
   ],
-  "diff_hash": "2b31f4c456ba219f74d3b07d41dd5662e40b0d93144e5d8efb06ec890f992c17",
-  "head": "7ef7ed0f6dc1a6bc9889324cd3ae1bc613626c6b",
+  "diff_hash": "6a9e0f0e3386123494281ca8df25f75bcacc94ef2f56bc5cc309cd07c9f810eb",
+  "head": "168c4b082630b88de6072eaca6509817af4f1d5d",
   "passed": false,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "fail",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-14T20:25:53.617Z"
+  "at": "2026-10-15T00:58:51.113Z"
 }
