@@ -11,7 +11,7 @@ import { parseSettingsTab, type SettingsTab } from '@/features/workspace/setting
  * `renderToStaticMarkup` returns an empty string for portalled content
  * (`features/layout/user-menu.test.tsx` documents the same limit), so the rows
  * are not reachable from a unit test; the real menu is verified in a browser
- * (`tests/e2e/specs/44-account-chip-ui.spec.ts`). What IS reachable is the
+ * (`tests/e2e/specs/52-account-chip-ui.spec.ts`). What IS reachable is the
  * wiring the rows are built from, which is what the source-scan tests below
  * read. Comments are stripped before matching, so the prose in the component
  * cannot defeat an absence assertion.

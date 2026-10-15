@@ -183,6 +183,26 @@ on conflict (account_id) do update set role = excluded.role;
         "Git",
       ]);
 
+      // KRTX-2145: the console is authenticated like every other surface, so
+      // its titlebar row carries the same account chip — identity, profile
+      // settings, log out. Before this change /admin had no account control
+      // at all: an admin had to leave the console to reach either. The
+      // identity reads the display name when the account has one, so match
+      // the prefix rather than the email.
+      const adminChip = page
+        .locator(".kx-titlebar-row")
+        .getByRole("button", { name: /^Logged in as / });
+      await expect(adminChip).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /^Logged in as / }),
+      ).toHaveCount(1);
+      await adminChip.click();
+      await expect(
+        page.getByRole("menu").getByRole("menuitem", { name: "Settings" }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      await page.screenshot({ path: "test-results/local/admin-chip.png" });
+
       // /admin/git — the instance's ONE managed-git surface. It lived on the
       // account Git tab until 2026-09-16, when a platform admin ran its
       // manifest flow from a customer's settings and replaced production's

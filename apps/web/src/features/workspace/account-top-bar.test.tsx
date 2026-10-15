@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseSettingsTab, type SettingsTab } from '@/features/workspace/settings/settings-tabs';
-
 /**
  * KRTX-1742: the notification bell sits in the trailing group, before the
  * account menu, on `/projects`, `/new`, `/checkout` and `/connections`. The
@@ -36,7 +34,7 @@ describe('AccountTopBar notification bell', () => {
  * (capability headers, the session header) embed the chip in that row and
  * stamp the marker the shell's `:has([data-kx-account-owner])` rule reads.
  * Source-scan asserts the wiring; the rendered surfaces are proven in a
- * browser by `tests/e2e/specs/44-account-chip-ui.spec.ts`.
+ * browser by `tests/e2e/specs/52-account-chip-ui.spec.ts`.
  */
 describe('AccountTopBar app-wide wiring', () => {
   const strip = (text: string) =>
@@ -82,15 +80,16 @@ describe('AccountTopBar app-wide wiring', () => {
     expect(code).toContain('<AccountMenuButton embedded />');
   });
 
-  test('the standalone Settings row target is a real /settings segment', async () => {
-    // Guard kept from the menu-row suite: every /settings href the chip renders
-    // must be a segment the settings route accepts.
+  test('the admin console header carries the embedded chip too', async () => {
     const code = strip(
-      await Bun.file(new URL('./account-menu-button.tsx', import.meta.url)).text(),
+      await Bun.file(
+        new URL('../../app/[locale]/admin/_components/admin-shell.tsx', import.meta.url),
+      ).text(),
     );
-    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
-    for (const tab of tabs) {
-      expect(parseSettingsTab(tab)).toBe(tab as SettingsTab);
-    }
+    expect(code).toContain('<AccountMenuButton embedded />');
+    // The chip lives in the header's titlebar row, whose root stamps the
+    // titlebar marker — so the desktop Back suppression and the account-corner
+    // rules both read a consistent tree.
+    expect(code).toContain('data-kx-titlebar-owner');
   });
 });

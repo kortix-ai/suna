@@ -50,6 +50,10 @@ const api = createApiJsonClient(apiBase);
  *   shell's floating corner stood down by the `:has([data-kx-account-owner])`
  *   rule;
  * - `/new` still shows exactly one (its own top bar).
+ *
+ * `/admin` is a browser-asserted surface too, in spec 09 — it owns the
+ * platform-admin fixture (`runDatabaseSql` + `platform_user_roles`), and its
+ * overview step asserts the console's titlebar chip.
  */
 test.describe('52 — account chip on every authenticated page', () => {
   test('shows identity, settings and log out on a project page, once per view', async ({ page }) => {

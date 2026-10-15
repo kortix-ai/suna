@@ -24,6 +24,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { AccountMenuButton } from '@/features/workspace/account-menu-button';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
@@ -199,6 +200,13 @@ function AdminHeader() {
           ) : null}
         </BreadcrumbList>
       </Breadcrumb>
+      {/* KRTX-2145: the console is authenticated like every other surface, so
+          it carries the same account control — identity, profile settings,
+          log out — at the trailing edge of its own titlebar row. The shell
+          root already stamps `data-kx-titlebar-owner` (the admin sidebar
+          navigates), so the chip's marker lands inside the same root the
+          desktop Back suppression and the account-corner rules read. */}
+      <AccountMenuButton embedded />
     </header>
   );
 }
