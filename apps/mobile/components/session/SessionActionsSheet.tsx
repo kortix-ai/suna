@@ -445,6 +445,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
             ? {
                 action: {
                   label: t('sessions.undo'),
+                  kind: 'undo',
                   onPress: () => {
                     listState.mutate({ sessionId, action: 'unarchive' });
                   },

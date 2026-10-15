@@ -11193,6 +11193,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Непозната грешка",
       "text27d628c8b427": "{label} је завршио.",
+      "textc0589750863c": "Završeno zadataka: {count}",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Вратите се у апликацију (Applications → ваша апликација) и проверите да је изабрана картица „Sign On“.",
