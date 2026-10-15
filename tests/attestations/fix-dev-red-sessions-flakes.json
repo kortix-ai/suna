@@ -1,18 +1,18 @@
 {
-  "source_hash": "a46fd4bf9dc77b07fadaaa860fdbce09ae3159525787c9a2521bc741c4edec7d",
+  "source_hash": "2564b47a0714cb6de7a7833a080b6e6d1b85719ffbd941a884c9f9d0623b0e1c",
   "diff_files": [
     "tests/e2e/specs/23-composio-connector.spec.ts",
     "tests/e2e/specs/30-session-transcript-history.spec.ts",
     "tests/e2e/specs/34-instant-session-loads.spec.ts",
     "tests/e2e/specs/40-session-lifecycle-permissions.spec.ts"
   ],
-  "diff_hash": "a6efdb492f13e3bf358a83e07a26baa69a885f10cabd3ab41d3b073be5e52577",
-  "head": "21919364a30c9c9028f9d660c051f041730aa90c",
+  "diff_hash": "cdc4c8c70edc3cc323ebf5c9c22e7f57da66d8b6de39f51f1f201eacd8f02a2a",
+  "head": "ebe8a6643704b546dc22075b47d9e6e24dd3cf9c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T16:34:07.520Z"
+  "at": "2026-10-15T17:04:27.515Z"
 }
