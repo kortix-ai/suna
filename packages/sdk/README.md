@@ -505,6 +505,11 @@ server-validated runtime session id and lets the live read reconcile the saved m
 A live read that returns no messages keeps the saved messages on screen: it means the computer
 lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
+An open reads the saved window once: the session-open snapshot carries it (the read waits up
+to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A host that shows
+the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
+plus the empty-conversation proof. The SDK holds that copy for the open that follows (up to 5 min):
+the snapshot then asks for no window, and the saved-history read answers from the held copy.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -566,7 +571,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `subscription.{createPortalSession,cancel,reactivate,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}` and `subscription.scheduleDowngrade` are deprecated: they reject with `ENDPOINT_RETIRED` |
+| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
@@ -726,6 +731,10 @@ still v1:
   for rows a host reads without a `useSession` (a sub-agent's chat). One message
   per row object, kept while the row is unchanged. It goes away with the v1 rows.
 
+A host draws a `ToolCallBlock` with `toolCallStatus(call)` (`completed`, not
+`complete`), `toolCallRawOutput(call)`, `toolCallError(call)` (the semantic error,
+else the result text) and, for a sub-agent row, `subAgentCalls(thread)`.
+
 `getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,
 reads one page of the stored session log (`SessionLogPage`: the session record,
 every thread head, a thread's newest messages by `seq`, `has_more`). `query` is
@@ -754,7 +763,8 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   projection's turn), `held` (the prompts the inbox still holds, in queue
   order), `threads` (the session's threads, for `threads`), `pricing`. A turn
   keeps its identity while its messages and derived fields do. A message out
-  of context (a failed attempt) keeps its turn.
+  of context (a failed attempt) keeps its turn; `hideOutOfContext: true` leaves
+  out every message with `in_context: false` that is not streaming.
 - `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
   and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
   the settled-turn fold, and the rows of a burst.
@@ -787,6 +797,20 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   modal's overview and its sub-agent rows show.
 - A pending permission or question matches a call by `call.call_id`
   (`getPermissionForTool`, `getQuestionForTool`).
+- A session's history: `isSessionLogRestoreNote(message)` is the note a partial
+  restore leaves for the agent (render it as a notice, not a prompt);
+  `sessionLogRestoreNotice(session)` is what that restore could not bring back
+  (`{ generation, missing: [{ kind, count }] }`, null unless the grade is
+  `partial` and a restore wrote the record); `sessionLogHarnessSwitches(history, turns)`
+  maps each switch `harness.history` records to the turn it lands on.
+- Texts stored by reference: `sessionLogReferencedTexts(messages)` lists every
+  text the API kept as a 16 kB preview (`{ ref, bytes }`); read one with
+  `fetchSessionAttachment(ref)` and put it back with `sessionLogWithFullTexts(thread, texts)`. `sessionLogFullTextAction(refs)` says
+  `'download'` above `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'inline'`;
+  `sessionLogFullTextPlan(refs)` says which texts: the smallest fill the 1 MiB inline budget,
+  only the rest download.
+- `useSessionLogRecord(session)` (`@kortix/sdk/react`) is the v2 session record without threads
+  (`restore_grade`, `grade_counts`, `harness`, `ext`); it keeps its identity through message puts.
 
 Both layers give one answer for a record converted from v1 (its `cost` too: a
 v1-derived reply is priced over its v1 parts): the SDK's test suite compares them
@@ -1227,6 +1251,7 @@ per-release changes.
 ### Agent repository access
 
 Agent configuration accepts `repository_access?: boolean` (default `true`).
+The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository`.
 Set `false` to run new sessions without the project repository or repository API access.
 Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
 `AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.
@@ -1377,3 +1402,41 @@ member queries every 10 seconds while the tab is visible. It also refreshes on
 focus and reconnect, including data still inside the stale-time window. It does
 not poll background tabs or change the identity provider's provisioning schedule.
 Other freshness tiers keep their existing behavior.
+
+## Generative UI (`@kortix/sdk/genui`)
+
+When a project turns on the `genui` flag, the agent may answer with ` ```openui ` blocks:
+cards, comparisons, charts, maps, tabs. Render them with the headless renderer and your own
+components, or with the bundled defaults:
+
+```tsx
+import { genuiVersionFromClassName } from '@kortix/sdk/genui';
+import { GenuiBlock, defaultGenuiComponents } from '@kortix/sdk/genui/react';
+
+// A module constant: the same function on every render.
+const renderMarkdown = (md: string) => <Markdown>{md}</Markdown>;
+
+// Inside your markdown renderer's `code` override:
+const version = genuiVersionFromClassName(className);
+if (version !== null) {
+  return (
+    <GenuiBlock
+      code={code}
+      version={version}
+      streaming={isStreaming}
+      components={defaultGenuiComponents}
+      renderMarkdown={renderMarkdown}
+    />
+  );
+}
+```
+
+Pass a stable `renderMarkdown` (module constant or `useCallback`): a new function re-renders the block's markdown parts and node views.
+
+A host that renders no UI (email, a chat bot, a CLI) converts a reply with `genuiToMarkdown(text)`.
+It converts blocks inside blockquotes and list items too. For a reply that is still streaming, pass
+`genuiToMarkdown(text, { streaming: true })`: the unfinished last block shows no "cut off" note.
+
+Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
+sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
+`DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless you opt in.

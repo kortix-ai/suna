@@ -1,5 +1,6 @@
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
+import { FileDropGuard } from '@/components/file-drop-guard';
 import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { ThemeProvider } from '@/components/home/theme-provider';
@@ -16,6 +17,7 @@ import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT } from '@/lib/desktop';
+import { INTERFACE_THEME_INIT_SCRIPT } from '@/lib/interface-themes';
 import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -256,6 +258,10 @@ export default async function RootLayout({
         {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
         <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
 
+        {/* Interface theme palettes on /new, /projects/** and /settings — set
+            before first paint so the stored palette never flashes the default. */}
+        <script dangerouslySetInnerHTML={{ __html: INTERFACE_THEME_INIT_SCRIPT }} />
+
         {/* Font preloading is handled automatically by next/font/local in fonts/roobert.ts */}
 
         {/* Prevent browser auto-translate (Google Translate, Chrome, etc.) from
@@ -348,6 +354,9 @@ export default async function RootLayout({
                     reloading the document. */}
                     <RouterBridge />
                     <BrowserNoiseGuard />
+                    {/* A file dropped outside every drop zone would replace the
+                    page with the file and lose unsent attachments. */}
+                    <FileDropGuard />
                     <TurnAttentionBadge />
                     <DesktopChrome />
                     {/* The window's one Back: every screen gets an exit on the

@@ -145,10 +145,6 @@ const patchFeatureFlagHandler = async (c: any) => {
       );
     }
   }
-  // Stateless sessions run on Volumes.
-  if (feature === 'stateless_sessions' && enabled === true && !resolveFeatureFlag(loaded.row.metadata, 'volumes')) {
-    return c.json({ error: 'Turn on Volumes first' }, 400);
-  }
   const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
@@ -279,10 +275,6 @@ export function registerProjectSettingsRoutes(): void {
     if (!row) return c.json({ error: 'Not found' }, 404);
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
-    // Its sessions' state volumes go with it (durable queue, retried while a box still mounts one).
-    await import('../../platform/services/ephemeral-sandbox')
-      .then(({ queueProjectSessionStateVolumes }) => queueProjectSessionStateVolumes(projectId))
-      .catch((error) => logger.warn('[projects] could not queue the session state volumes', { projectId, error: String(error) }));
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );

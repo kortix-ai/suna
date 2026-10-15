@@ -50,6 +50,13 @@ interface Fixture {
 }
 
 const FIXTURES: Fixture[] = [
+  ...['kortix-connectors_call', 'kortix-connectors_describe', 'custom-tool', 'kortix-connectors_other', 'kortix-connectors_call_extra'].map((name): Fixture => ({
+    name: `v2: exact hosted legacy tool name: ${name}`,
+    format: 'yaml',
+    valid: name === 'kortix-connectors_call' || name === 'kortix-connectors_describe',
+    input: `kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  ${name}: tools/custom.ts\n`,
+  })),
+
   // ─── v1 ──────────────────────────────────────────────────────────────
   {
     name: 'v1: comprehensive manifest (project/env/opencode/sandbox/triggers/connectors/agents/channels)',
@@ -859,6 +866,14 @@ connectors:
   { name: "v2: repository access null", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: null\n" },
   { name: "v2: repository access true\n    workspace: runtime", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: true\n    workspace: runtime\n" },
   { name: "v2: repository access false\n    workspace: runtime", format: 'yaml', valid: true, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: false\n    workspace: runtime\n" },
+  { name: 'v2: workspace.project_repository false', format: 'yaml', valid: true, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    workspace:\n      project_repository: false\n' },
+  { name: 'v2: workspace.project_repository true', format: 'yaml', valid: true, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    workspace:\n      project_repository: true\n' },
+  { name: 'v2: empty workspace map', format: 'yaml', valid: true, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    workspace: {}\n' },
+  { name: 'v2: workspace.project_repository "false"', format: 'yaml', valid: false, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    workspace:\n      project_repository: "false"\n' },
+  { name: 'v2: unknown workspace key', format: 'yaml', valid: false, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    workspace:\n      project_repo: false\n' },
+  { name: 'v2: workspace list', format: 'yaml', valid: false, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    workspace: [project_repository]\n' },
+  { name: 'v2: matching repository_access alias', format: 'yaml', valid: true, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: false\n    workspace:\n      project_repository: false\n' },
+  { name: 'v2: conflicting repository_access alias', format: 'yaml', valid: false, input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: true\n    workspace:\n      project_repository: false\n' },
   {
     name: 'v2: workspace accepts the declared enum',
     format: 'yaml',

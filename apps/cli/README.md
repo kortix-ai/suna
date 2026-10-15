@@ -16,7 +16,7 @@ makes an initial commit.
 ```sh
 kortix init                  # interactive flow: pick a name and wire local coding agents
 kortix init my-project       # use the given name
-kortix ship                  # create the cloud project (first run) + push your code
+kortix ship                  # push to linked/default project; create when neither exists
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```
 
@@ -28,6 +28,24 @@ agents to wire through `--primary` and `--agents`.
 Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
 sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
+
+## Log out of a custom host
+
+`kortix logout --host <name>` clears the token and keeps the registered API URL.
+The signed-out `whoami --host <name>` recovery command includes that URL explicitly.
+
+Older installed CLIs (including v0.13.56) remove the host entry on logout.
+Until you install a release with the host-retention fix, restore the registration
+before signing in:
+
+```sh
+kortix hosts add custom --api http://localhost:8008
+kortix hosts login custom
+```
+
+Replace `custom` and the URL with your host name and original API origin. Do not
+run `hosts login custom` on an older CLI after logout without restoring the URL:
+it otherwise uses the default cloud origin.
 
 ## Use Kortix from an MCP client
 
@@ -99,7 +117,8 @@ chore: init kortix project
 ```
 
 Then it's yours. Add a remote, push, open in your coding agent of choice —
-or run `kortix ship` to create the cloud project and push in one step.
+or run `kortix ship` to push to the linked project or saved host default. With neither,
+ship creates the cloud project and pushes in one step.
 
 ## Self-host
 

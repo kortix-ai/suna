@@ -636,7 +636,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
     balance: 1_000_000,
-    billingModel: 'credits',
+    tier: 'credits',
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),

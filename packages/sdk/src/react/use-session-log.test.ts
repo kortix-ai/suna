@@ -21,7 +21,7 @@ mock.module('../core/rest/projects-client', () => ({
 
 const { useSyncStore } = await import('../browser/stores/sync-store');
 const { setRuntimeCapabilities } = await import('../browser/stores/sandbox-connection-store');
-const { useSessionLog, useSessionLogSync, useSessionLogThread } = await import('./use-session-log');
+const { useSessionLog, useSessionLogRecord, useSessionLogSync, useSessionLogThread } = await import('./use-session-log');
 const { createSavedCopyStore, setSavedCopyStore } = await import('../core/session-sync/saved-copy-store');
 const { savedSessionLogCopies } = await import('../core/session-log/saved-log');
 const v1Convert = await import('../core/session-log/v1');
@@ -512,5 +512,41 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(state.dialect).toBe('v1');
     expect(calls).toEqual([]);
     expect(detailCalls).toEqual([]);
+  });
+});
+
+describe('useSessionLogRecord', () => {
+  const source = { projectId: PROJECT, sessionId: SESSION, runtimeSessionId: null };
+  const put = (n: number) => {
+    const m = structuredClone(log.threads[0]!.messages.at(-1)!);
+    return { type: 'log.message', properties: { rev: 1_000 + n, message: { ...m, message_id: `msg_put_${n}`, seq: 900 + n } } };
+  };
+
+  test('null without a v2 log; the session record (grade, harness, ext) with one', () => {
+    const seen: Array<ReturnType<typeof useSessionLogRecord>> = [];
+    render(() => {
+      seen.push(useSessionLogRecord(source));
+      return null;
+    });
+    expect(seen.at(-1)).toBeNull();
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    expect(seen.at(-1)).toMatchObject({ restore_grade: log.restore_grade, harness: log.harness });
+  });
+
+  test('message puts and deltas re-render no consumer; a session patch does', () => {
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    let renders = 0;
+    render(() => {
+      renders++;
+      useSessionLogRecord(source);
+      return null;
+    });
+    const before = renders;
+    act(() => {
+      for (let n = 0; n < 20; n++) useSyncStore.getState().applySessionLogEvent(SESSION, put(n));
+    });
+    expect(renders).toBe(before);
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.state', properties: { generation: 2, session: { restore_grade: 'partial' } } }));
+    expect(renders).toBe(before + 1);
   });
 });

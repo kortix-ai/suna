@@ -4,8 +4,10 @@
  * context-tool group all derive from `toolKind`, so a harness with its own
  * tool names needs one line in `TOOL_KIND` to render like the rest.
  *
- * The core kinds use the names web and mobile register their renderers
- * under, so `registry.get(toolKind(name))` finds a renderer for an alias.
+ * The core kinds are the names web and mobile register their renderers
+ * under, up to `_` versus `-` (`apply_patch` is registered as `apply-patch`,
+ * `web_search` as `web-search`). The registries resolve `toolKind(name)` with
+ * the same spelling lookup as a tool name, so an alias finds its kind's renderer.
  */
 
 export type ToolKind =
@@ -47,7 +49,9 @@ kind('list', ['list', 'ls']);
 kind('glob', ['glob']);
 kind('grep', ['grep']);
 kind('write', ['write']);
-kind('edit', ['edit', 'multiedit', 'morph_edit']);
+// Claude Code `MultiEdit` and `NotebookEdit` keep their case: a Claude Code name is not
+// lowered, so `Grep`, `Glob` and `LS` stay foreign to the native output parsers.
+kind('edit', ['edit', 'multiedit', 'morph_edit', 'MultiEdit', 'NotebookEdit']);
 kind('apply_patch', ['apply_patch', 'patch']);
 kind('bash', ['bash']);
 kind('web_search', ['web_search', 'websearch', 'image_search']);
@@ -133,9 +137,9 @@ export function toolKind(name: string): ToolKind {
   return 'other';
 }
 
-/** The file a file tool's input names: OpenCode `filePath`, `file_path`, or pi's `path`. */
+/** The file a file tool's input names: OpenCode `filePath`, `file_path`, pi's `path`, or Claude Code `NotebookEdit`'s `notebook_path`. */
 export function inputPath(input: Record<string, unknown> | undefined): string | undefined {
-  for (const value of [input?.filePath, input?.file_path, input?.path]) {
+  for (const value of [input?.filePath, input?.file_path, input?.path, input?.notebook_path]) {
     if (typeof value === 'string' && value) return value;
   }
   return undefined;

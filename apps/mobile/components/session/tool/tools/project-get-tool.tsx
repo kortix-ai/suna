@@ -25,16 +25,16 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_TYPE } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
-  const input = partInput(part);
-  const output = partOutput(part);
+export function ProjectGetTool({ call, defaultOpen, forceOpen }: ToolProps) {
+  const input = partInput(call);
+  const output = partOutput(call);
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it.
   const errored = useMemo(() => isErrorOutput(output), [output]);
   const live = useToolLive();
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={FolderIcon}
       trigger={projectGetTrigger(input)}
       defaultOpen={defaultOpen}

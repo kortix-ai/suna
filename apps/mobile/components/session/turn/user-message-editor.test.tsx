@@ -167,10 +167,8 @@ test('a kept paste is a removable tile, and is text enough to send; removed, the
 test('a pastes-only message: its tile is inside the menu trigger, tap opens the paste, long press opens the menu', async () => {
   const { serializePromptWithPastes } = await import('@kortix/shared');
   const text = serializePromptWithPastes('', [{ id: '0a1b2c3d', text: 'synthetic' }]);
-  const turn = {
-    userMessage: { info: { id: 'msg_1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', id: 'p1', text }] },
-    assistantMessages: [],
-  } as any;
+  const { turnsOf } = await import('@/lib/testing/session-log');
+  const [turn] = turnsOf([{ info: { id: 'msg_1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', id: 'p1', text }] }]);
   let tree!: ReactTestRenderer;
   await act(async () => {
     tree = create(<UserMessage turn={turn} isDark={false} onEditStart={() => {}} />);

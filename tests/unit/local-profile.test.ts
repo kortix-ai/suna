@@ -59,6 +59,8 @@ describe("ke2e local profile", () => {
       KE2E_CAP_PROJECT_SNAPSHOTS: "0",
       KE2E_DEFAULT_FLOW_ATTEMPTS: "1",
       KE2E_STRIPE_WEBHOOK_SECRET: "whsec_local_flow_runner_disabled",
+      // The same address local-stack.ts puts on the API's operator allowlist (ADM-25).
+      KE2E_PLATFORM_ADMIN_EMAIL: "allowlisted-operator@ke2e.kortix.test",
     });
   });
 

@@ -61,6 +61,10 @@ const Schema = z.object({
   // the API at session create. Optional: absent or expired → the daemon
   // fetches one from the Git proxy with KORTIX_TOKEN.
   KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: z.string().optional(),
+  // The published config release (base64 JSON: release ID and signed store
+  // URLs), signed by the API at session create. Absent or expired → the
+  // daemon asks the config-release route.
+  KORTIX_CONFIG_RELEASE: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
@@ -142,6 +146,8 @@ export type Config = {
   projectSnapshotPin?: string
   /** Presigned download descriptor for that pin (base64 JSON), when the API signed one at create. */
   projectSnapshotDescriptor?: string
+  /** The published config release (base64 JSON), when the API signed one at create. */
+  configRelease?: string
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
@@ -185,6 +191,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_PIN: env.KORTIX_PROJECT_SNAPSHOT_PIN,
     KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR,
+    KORTIX_CONFIG_RELEASE: env.KORTIX_CONFIG_RELEASE,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
@@ -221,6 +228,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     projectSnapshotMode: parsed.KORTIX_PROJECT_SNAPSHOT_MODE,
     projectSnapshotPin: parsed.KORTIX_PROJECT_SNAPSHOT_PIN?.trim() || undefined,
     projectSnapshotDescriptor: parsed.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR?.trim() || undefined,
+    configRelease: parsed.KORTIX_CONFIG_RELEASE?.trim() || undefined,
     sandboxToken: parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,

@@ -1,4 +1,4 @@
-import { connectors, connectorCalls, projectSessions, projects } from '@kortix/db';
+import { connectors, connectorCalls, projects } from '@kortix/db';
 import { composioToolkitLogo } from '../connectors/composio';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
@@ -30,11 +30,12 @@ import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { summarizeArgsPreview } from '../connectors/args-preview';
-import { PROJECT_ACTIONS } from '../iam';
-import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
-import { mayResolveApproval } from '../projects/lib/approval-authority';
-import { actorOf } from '../middleware/actor';
-import { callerKortixSessionId } from '../middleware/caller-session';
+import {
+  approvalCallerOf,
+  approvalTargetSession,
+  loadProjectForUser,
+  mayResolveApproval,
+} from '../projects/surface';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
 import type { AppEnv } from '../types';
@@ -114,45 +115,14 @@ approvalLinksApp.openapi(createRoute({
   if (!row) return c.json({ error: 'Not found' }, 404);
 
   // Same authority test as the resolve endpoint — applied to the READ too,
-  // because `args_preview` can carry the content of the pending action.
-  let isManager = false;
-  try {
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    );
-    isManager = true;
-  } catch {
-    isManager = false;
-  }
-
-  let targetCreatedBy: string | null = row.sessionId ? null : row.actingUserId;
-  let targetOrigin: string | null = row.sessionId ? null : 'user';
-  if (row.sessionId) {
-    const [session] = await db
-      .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
-      .from(projectSessions)
-      .where(
-        and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)),
-      )
-      .limit(1);
-    targetCreatedBy = session?.createdBy ?? null;
-    targetOrigin = session?.origin ?? null;
-  }
-
+  // because `args_preview` can carry the content of the pending action. The
+  // same `approvalCallerOf` + target the resolve route and `can_resolve` read,
+  // so this page never disagrees with them.
+  const target = await approvalTargetSession(projectId, row);
   const verdict = mayResolveApproval({
-    isManager,
-    targetSessionOrigin: targetOrigin,
-    targetSessionCreatedBy: targetCreatedBy,
-    callerUserId: loaded.userId,
-    callerAuthType:
-      ((c as unknown as { get(key: string): unknown }).get('authType') as string | undefined) ??
-      null,
-    callerCredentialKind: (await actorOf(c, loaded.row.accountId)).credential.kind,
-    callerSessionId: callerKortixSessionId(c),
+    ...(await approvalCallerOf(c, loaded, projectId)),
+    targetSessionOrigin: target.origin,
+    targetSessionCreatedBy: target.createdBy,
   });
   if (!verdict.allowed) {
     return c.json(

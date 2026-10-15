@@ -260,6 +260,56 @@ describe('the review page of one item', () => {
     expect(buttons()).not.toContain('Deny');
   });
 
+  // KRTX-1724: the API says per call who may decide (`can_resolve`), and a
+  // viewer it refuses finds the call under Waiting, still pending.
+  test('a waiting call says who decides, and offers no decision', () => {
+    search = 'id=call:exec-1';
+    const waiting = { ...call(false), status: 'waiting' } as ReviewItem;
+    (waiting.detail as { actions: Array<{ canResolve?: boolean }> }).actions[0].canResolve = false;
+    mount([waiting], MANAGER);
+    expect(buttons()).not.toContain('Approve this call');
+    expect(buttons()).not.toContain('Deny');
+    expect(text()).toContain(
+      'Waiting for the person who started this session or anyone who manages this project to approve or deny it.',
+    );
+    expect(text()).not.toContain('Approved');
+    // The dialog's screen-reader title and description say the same: no
+    // request for a decision this viewer cannot make.
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).not.toContain('An agent needs your approval');
+    expect(dialog?.textContent).not.toContain('Your decision applies to this call only.');
+    const labelledBy = dialog?.getAttribute('aria-labelledby');
+    expect(labelledBy ? document.getElementById(labelledBy)?.textContent : null).toBe(
+      'Needs approval',
+    );
+  });
+
+  test('a call in a session started with an API token: managers decide, the launcher is not named', () => {
+    search = 'id=call:exec-1';
+    const waiting = { ...call(false), status: 'waiting' } as ReviewItem;
+    const action = (
+      waiting.detail as {
+        actions: Array<{ canResolve?: boolean; resolvers?: 'managers' | 'managers_and_launcher' }>;
+      }
+    ).actions[0];
+    action.canResolve = false;
+    action.resolvers = 'managers';
+    mount([waiting], MEMBER);
+    expect(text()).toContain('Waiting for anyone who manages this project to approve or deny it.');
+    expect(text()).not.toContain('the person who started this session');
+  });
+
+  test('a resolver still gets the decision request, in the dialog title too', () => {
+    search = 'id=call:exec-1';
+    mount([call(true)], MEMBER);
+    const dialog = document.querySelector('[role="dialog"]');
+    const labelledBy = dialog?.getAttribute('aria-labelledby');
+    expect(labelledBy ? document.getElementById(labelledBy)?.textContent : null).toBe(
+      'An agent needs your approval',
+    );
+  });
+
   // Resolving the conflicts stands in for Ship it, the same rule as mobile.
   test('a conflicted change offers the conflict fix only to a viewer who may merge', () => {
     search = `id=${CONFLICTED.id}`;

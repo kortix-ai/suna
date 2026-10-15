@@ -74,7 +74,6 @@ Every field is optional. With no input, the session runs the project's default a
 | `base_ref` | The branch or ref the session branch starts from. Default: the project's default branch. |
 | `sandbox_slug` | The sandbox to boot, by its slug in `kortix.yaml`. Default: the agent's sandbox, then the project default, then `default`. |
 | `provider` | The sandbox provider: `daytona`, `platinum` or `e2b`. Default: the project's pinned provider, else the platform's choice. |
-| `persistent_machine` | `true` keeps the whole root disk across stops. The session then runs on Platinum. Only for an account with Volumes on; without Volumes, Kortix ignores the field and returns no error. See [Persistent and ephemeral machines](/docs/work/runtime#persistent-and-ephemeral-machines). |
 | `runtime_context` | Non-secret values for the agent. See [Start sessions from your server](#start-sessions-from-your-server). |
 | `connector_bindings` | Pins one connector account per connector alias: `{ gmail: { connection_id } }`. |
 | `inherit_unbound` | With `connector_bindings` set, a connector you did not bind gets no account. `true` lets it use the project default. Default `false`. |
@@ -300,6 +299,7 @@ await s.answerQuestion(questions[0].id, [['Yes']]); // one answer list per quest
 | `s.restart()` | Stops and starts the sandbox in place. Clears a failed-start verdict. |
 | `s.delete()` | Deletes the session and its sandbox. Resolves to `{ ok, restore_until }`: the session is restorable until then (30 days), and its branch is kept. |
 | `s.restore()` | Restores a deleted session before `restore_until`. Its next start boots a new sandbox from the branch. A refusal throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. See [Restore a deleted session](/docs/work/sessions#restore-a-deleted-session). |
+| `s.recover()` | Continues a lost session (the provider removed its sandbox) on a new sandbox. Its next start boots from the branch and loads the saved conversation back into the agent. A refusal throws an `ApiError` with `code` `session_not_lost`, `session_transcript_missing` (nothing changed), `session_sandbox_removal_pending` (retry in a minute) or `session_log_restore_off`. See [Continue a lost session](/docs/work/sessions#continue-a-lost-session). |
 | `s.configState()` / `s.reloadConfig({ force? })` | Reads whether the session runs the current config from the base branch, and loads that config into the running session. The reload restarts the runtime. While a turn runs it returns `409` `SESSION_BUSY`; `force: true` ends the turn. |
 | `s.setSharing(intent)` | Sets who can open the session. See [Who can open a session](/docs/work/sessions#who-can-open-a-session). |
 | `s.publicShares.create({ transcript: true })` | Makes one read-only link to the conversation. See [Public links](/docs/work/sessions#public-links). |
@@ -496,7 +496,6 @@ A session create returns these errors. The `code` field of the JSON body holds t
 | `400` | `INVALID_SESSION_SECRETS` | The secrets list is malformed or has more than 128 identifiers. |
 | `400` | `INVALID_IDEMPOTENCY_KEY` | The Idempotency-Key header is longer than 255 characters or has a character outside the allowed set. |
 | `400` | `UNKNOWN_SANDBOX_TEMPLATE` | The sandbox slug names no sandbox in the project. |
-| `400` | `PERSISTENT_MACHINE_UNSUPPORTED` | A persistent machine needs the Platinum provider. |
 | `402` | `subscription_required` / `insufficient_credits` | The account cannot start a session. |
 | `403` | `origin_override_forbidden` | A caller that is not a backend origin sent a secrets list. |
 | `403` | `CONNECTOR_NOT_ASSIGNED` | The agent is not granted a connector you bound. |

@@ -44,6 +44,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // but still not the client's to write.
   'spawned_by_session',
   'on_behalf_of_cleared_at',
+  // Lost-session recovery (KRTX-2419): its boxes restore
+  // from the session log at boot (`recover-lost-session.ts`).
+  'lostRecoveredAt',
   // Legacy migration restore. Selects the archive that session open and
   // restart copy into the sandbox (`legacy-migration-rehydrate.ts`).
   'legacy_migration',
@@ -60,18 +63,6 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
-  // Persistent machine (`platform/services/persistent-machine.ts`): set from
-  // the `persistent_machine` body field at create, and decides how the box
-  // boots, stops and is reset.
-  'persistent_machine',
-  // Ephemeral sessions (`platform/services/ephemeral-sandbox.ts`): the state
-  // volume the session's boxes mount and the session delete removes, and the
-  // box generation that keys Platinum's create dedup. Boot modes
-  // (`boot-mode-store.ts`): the session's boot record, which picks the next
-  // box's mode and its fallbacks.
-  'ephemeral_state_volume',
-  'ephemeral_generation',
-  'bootMode',
 ] as const;
 
 /**

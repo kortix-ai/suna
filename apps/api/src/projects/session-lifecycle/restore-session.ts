@@ -9,20 +9,18 @@
  *  - the tombstone (`deletedAt`, `deletedBy`) goes, so every list and read
  *    serves the session again and the purge skips it;
  *  - the archived sandbox row becomes a retired row with no external id
- *    (`isRetiredEphemeralRow`), so the next open (a `/start` or a prompt)
+ *    (`isRetiredSandboxRow`), so the next open (a `/start` or a prompt)
  *    claims it and boots a fresh box from the session branch. The row is the
  *    only record of the old box, so it gives up that box only once the
  *    provider confirmed it removed (`providerRemovedAt`), and it is held while
- *    the first provisioning the delete interrupted can still land a box on it;
- *  - an ephemeral session's state volume, which the delete queued for
- *    deletion, leaves the queue.
+ *    the first provisioning the delete interrupted can still land a box on it.
  *
  * Public links and connector tokens the delete revoked stay revoked.
  */
-import { platinumVolumeDeletions, projectSessions, sessionContentPurges, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionContentPurges, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
-import { EPHEMERAL_RETIRED_KEY, ownSessionStateVolume } from '../../platform/services/ephemeral-sandbox';
+import { RETIRED_EXTERNAL_ID_KEY } from '../../platform/services/retired-sandbox-row';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import {
@@ -165,7 +163,7 @@ export async function restoreSession(input: {
             columns: { externalId: null },
             metadata: {
               strip: REMOVAL_KEYS,
-              merge: { [EPHEMERAL_RETIRED_KEY]: sandbox.externalId ?? '', sessionRestoredAt: now.toISOString() },
+              merge: { [RETIRED_EXTERNAL_ID_KEY]: sandbox.externalId ?? '', sessionRestoredAt: now.toISOString() },
             },
             // The row still names the box the checks above saw, and that box
             // is confirmed removed.
@@ -180,9 +178,6 @@ export async function restoreSession(input: {
         );
         if (!retired) throw new RestoreLost(REMOVAL_PENDING);
       }
-
-      const volume = ownSessionStateVolume(sessionId, session.metadata);
-      if (volume) await tx.delete(platinumVolumeDeletions).where(eq(platinumVolumeDeletions.volumeName, volume));
     });
   } catch (error) {
     // The session write loses only to a concurrent restore that already lifted

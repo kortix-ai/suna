@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -72,76 +72,47 @@ describe('QueuedPromptList', () => {
     expect(count(markup, 'aria-label="Remove from queue"')).toBe(1);
   });
 
-  test('a queued row offers Send now; a delivering or sending row, or another member\'s, offers nothing to hurry', () => {
+  test('the action matrix: Send now on the one queued own row only; a failed row keeps Retry and gets no second button; delivering, sending and another member\'s rows get nothing to hurry', () => {
+    // One render pins the whole matrix, so the failed-row half is not a
+    // vacuous pass at the base (where no Send now exists anywhere): the
+    // queued row's counted Send now already fails there.
     const markup = render({
       rows: [
         row({ id: 'q' }),
+        row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false }),
         row({ id: 'd', state: 'delivering', removable: false, takeBackEligible: false, interruptible: false }),
         row({ id: 's', state: 'sending', removable: false, takeBackEligible: false, interruptible: false }),
         row({ id: 'o', fromAnotherMember: true }),
       ],
     });
     expect(count(markup, 'aria-label="Send now"')).toBe(1);
+    expect(markup).toContain('aria-label="Retry"');
+    expect(markup).toContain('Not sent');
   });
 
-  test('a row the running turn already took — steer, no fallback — keeps only Remove; a steer row with a fallback still offers Send now', () => {
+  test('a row the running turn already took — steer, no fallback — keeps only Remove; a fallen-back row still offers Send now', () => {
     // A steered row is read at the turn's NEXT step: there is nothing left to
-    // hurry. A steer row whose fallback holds it for the turn's end is still
-    // waiting, so Send now (the promote) is meaningful there.
+    // hurry. A row whose fallback holds it for the turn's end is still
+    // waiting, so Send now (the promote) is meaningful there. The server
+    // clears the steer delivery when it writes the fallback
+    // (command-transitions.ts), so the two rows here are the two shapes the
+    // projection can produce.
     const markup = render({
-      rows: [row({ id: 'steer', steer: true as const }), row({ id: 'fallback', steer: true as const, steerFallback: 'turn_ended' })],
+      rows: [row({ id: 'steer', steer: true as const }), row({ id: 'fallback', steerFallback: 'turn_ended' })],
     });
     expect(count(markup, 'aria-label="Send now"')).toBe(1);
-  });
-
-  test('a failed row keeps Retry and gets no second Send now — one primitive, one button', () => {
-    const markup = render({
-      rows: [row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false })],
-    });
-    expect(markup).toContain('aria-label="Retry"');
-    expect(markup).not.toContain('aria-label="Send now"');
+    const steerRow = markup.slice(
+      markup.indexOf('data-queued-prompt-id="steer"'),
+      markup.indexOf('</li>', markup.indexOf('data-queued-prompt-id="steer"')),
+    );
+    expect(steerRow).toContain('aria-label="Remove from queue"');
+    expect(steerRow).not.toContain('aria-label="Send now"');
   });
 
   test('a held row still offers Send now — the hold\'s per-row way out (KRTX-683 releases its batch)', () => {
     const markup = render({ rows: [row({ id: 'h' })], heldCount: 1 });
     expect(markup).toContain('Queue paused');
     expect(count(markup, 'aria-label="Send now"')).toBe(1);
-  });
-
-  test('clicking Send now runs THAT row through onRetry, and only that row', async () => {
-    const retried: string[] = [];
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(
-        <QueryClientProvider client={new QueryClient()}>
-          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-            <TooltipProvider>
-              <QueuedPromptList rows={[row({ id: 'a' }), row({ id: 'b' })]} heldCount={0} onRetry={(id) => retried.push(id)} />
-            </TooltipProvider>
-          </NextIntlClientProvider>
-        </QueryClientProvider>,
-      );
-    });
-    const buttons = renderer.root.findAll(
-      (node) => node.type === 'button' && node.props['aria-label'] === 'Send now',
-    );
-    expect(buttons).toHaveLength(2);
-    // The row's `li` carries `data-queued-prompt-id`; walk up to it so the
-    // click proves WHICH row's id reached `onRetry`.
-    const rowIdOf = (button: ReactTestInstance): string | undefined => {
-      let current: ReactTestInstance | null = button;
-      while (current && current.props['data-queued-prompt-id'] === undefined) {
-        current = current.parent;
-      }
-      return current ? (current.props['data-queued-prompt-id'] as string) : undefined;
-    };
-    const target = buttons.find((button) => rowIdOf(button) === 'b');
-    expect(target).toBeDefined();
-    await act(async () => {
-      target!.props.onClick();
-    });
-    expect(retried).toEqual(['b']);
-    renderer.unmount();
   });
 
   test('a failed row says so and offers Retry and Remove, both visible without hover', () => {

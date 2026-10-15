@@ -25,7 +25,7 @@ function findCatalogFlag(key: string) {
 /** Registered but deliberately not offered as a toggle — see "Hidden flags" in
  *  the registry header. */
 // Flags derived from the project's Volumes flag are hidden too, but are not
-// choices of their own: they are covered by platform/services/boot-mode.test.ts.
+// choices of their own: they are covered by integration-volumes-feature-flag.test.ts.
 const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden && !f.derivedFrom).map((f) => f.key);
 
 describe('registry ↔ contract', () => {

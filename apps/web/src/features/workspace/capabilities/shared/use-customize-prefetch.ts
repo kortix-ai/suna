@@ -40,7 +40,6 @@ import { contract, FRESHNESS, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
-import { reviewKeys } from '@/features/review-center/hooks/use-review-items';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 
@@ -160,11 +159,14 @@ export async function prefetchCustomize(
     );
   }
   if (gates.reviewRead) {
-    // Same entry and freshness as `useReviewItems`.
+    // Same entry and freshness as `useReviewItems`: the first page of the
+    // segment the Review tab opens on.
     work.push(
-      queryClient.prefetchQuery({
-        queryKey: reviewKeys.list(projectId),
-        queryFn: () => api.listReviewItems(projectId),
+      queryClient.prefetchInfiniteQuery({
+        queryKey: qk.project.reviewItemPages(projectId, { segment: 'needs_you' }),
+        queryFn: ({ pageParam }) =>
+          api.listReviewItems(projectId, { segment: 'needs_you', cursor: pageParam }),
+        initialPageParam: undefined as string | undefined,
         staleTime: 5_000,
         ...gc,
       }),

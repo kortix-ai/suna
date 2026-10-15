@@ -64,11 +64,11 @@ function GeneratedImage({ uri, headers, label, onPress, onError, imageKey }: {
   );
 }
 
-export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ImageGenTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { openFile, openExternal } = useToolNavigation();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const prompt = typeof input.prompt === 'string' ? input.prompt : undefined;
   const action = typeof input.action === 'string' ? input.action : undefined;
 
@@ -133,7 +133,7 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={ImageIcon}
       trigger={{ title: imageGenTitle(action), subtitle: prompt?.slice(0, 60) }}
       defaultOpen={defaultOpen}

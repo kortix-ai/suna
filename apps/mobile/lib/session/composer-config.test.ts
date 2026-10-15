@@ -152,9 +152,9 @@ describe('agents — the SDK resolver over the thread roster', () => {
 
   test('thread: the pick, else the latest assistant turn, else the bound agent, else the project default', () => {
     const messages = [
-      { info: { role: 'user', agent: 'kortix' } },
-      { info: { role: 'assistant', agent: 'kortix' } },
-      { info: { role: 'user' } },
+      { role: 'user', agent: 'kortix' },
+      { role: 'assistant', agent: 'kortix' },
+      { role: 'user' },
     ];
     const latest = latestAssistantAgent(messages);
     expect(latest).toBe('kortix');

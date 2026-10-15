@@ -7,8 +7,7 @@
  * `now` is injected, never read here, so the "N ago" wording is testable.
  */
 
-import { formatCost, formatDuration, formatTokens } from '@kortix/sdk';
-import type { MessageWithParts, Turn } from '@/lib/session/types';
+import { formatCost, formatDuration, formatTokens, type SessionLogTurn } from '@kortix/sdk';
 
 /** The web popover's labels (apps/web translations/en.json). */
 export const TURN_META_LABELS = {
@@ -28,25 +27,29 @@ export interface TurnMetaRow {
   value: string;
 }
 
-/** `time` lives on the user and assistant arms of the message union, not on `info` itself. */
-function messageTime(message: MessageWithParts | undefined): { created?: number; completed?: number } {
-  return (message?.info as { time?: { created?: number; completed?: number } } | undefined)?.time ?? {};
+/** A record time (`created_at` / `completed_at`, ISO) as epoch ms; null when absent. */
+export function recordTimeMs(iso: string | null | undefined): number | null {
+  const ms = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(ms) ? ms : null;
 }
 
-function turnSpan(turn: Turn): { startedAt: number | null; endedAt: number | null } {
-  const startedAt = messageTime(turn.userMessage).created ?? null;
-  const lastAssistant = turn.assistantMessages[turn.assistantMessages.length - 1];
-  const lastTime = messageTime(lastAssistant);
-  return { startedAt, endedAt: lastTime.completed ?? lastTime.created ?? null };
+type TurnTimes = Pick<SessionLogTurn, 'user' | 'assistant'>;
+
+function turnSpan(turn: TurnTimes): { startedAt: number | null; endedAt: number | null } {
+  const lastAssistant = turn.assistant[turn.assistant.length - 1];
+  return {
+    startedAt: recordTimeMs(turn.user.created_at),
+    endedAt: recordTimeMs(lastAssistant?.completed_at) ?? recordTimeMs(lastAssistant?.created_at),
+  };
 }
 
-/** The last assistant message's `completed` stamp, else its `created` stamp. */
-export function turnEndedAt(turn: Turn): number | null {
+/** The last reply's `completed_at`, else its `created_at`. */
+export function turnEndedAt(turn: TurnTimes): number | null {
   return turnSpan(turn).endedAt;
 }
 
 /** User prompt → turn end. `null` when unknown or a same-instant span. */
-export function turnDurationMs(turn: Turn): number | null {
+export function turnDurationMs(turn: TurnTimes): number | null {
   const { startedAt, endedAt } = turnSpan(turn);
   if (startedAt == null || endedAt == null || endedAt <= startedAt) return null;
   return endedAt - startedAt;

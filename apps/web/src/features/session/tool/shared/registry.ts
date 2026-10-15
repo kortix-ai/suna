@@ -34,9 +34,10 @@ export const ToolRegistry = {
    * (a Codex `exec_command`, a Claude Code `LS`) renders like its kind.
    */
   get(name: string, kind?: string): ToolComponent | undefined {
-    const key = resolveRegisteredKey(toolRegistryCandidates(name), registry.keys());
-    if (key !== undefined) return registry.get(key);
-    const byKind = kind === undefined ? undefined : KIND_RENDERER[kind];
-    return registry.get(toolKind(name)) ?? (byKind === undefined ? undefined : registry.get(byKind));
+    const key =
+      resolveRegisteredKey(toolRegistryCandidates(name), registry.keys()) ??
+      resolveRegisteredKey(toolRegistryCandidates(toolKind(name)), registry.keys()) ??
+      (kind === undefined ? undefined : KIND_RENDERER[kind]);
+    return key === undefined ? undefined : registry.get(key);
   },
 };

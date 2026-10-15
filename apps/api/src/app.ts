@@ -45,7 +45,7 @@ import { oauthApp } from './oauth';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { projectWebhooksApp, projectsApp, registerAllProjectRoutes } from './projects';
+import { projectWebhooksApp, projectsApp, registerAllProjectRoutes, registerSessionLookupRoutes, sessionsApp } from './projects';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
@@ -60,6 +60,7 @@ import { registerClientRoutes } from './routes/clients';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
 import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
+import { registerCaptureStoreProxy } from './capture/store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
@@ -77,6 +78,17 @@ registerClientRoutes(app);
 registerRetiredRoutes(app);
 
 registerPlatformEndpoints(app);
+
+// /<capture bucket>/* — the Capture store's S3 path prefix, only when
+// KORTIX_CAPTURE_S3_PROXY_TARGET is set (self-host without a domain).
+registerCaptureStoreProxy(app);
+
+// /v1/capture/* — Kortix Capture device sign-in (public, RFC 8628), the
+// device credential endpoint (device token), the approval reads and the agent
+// tool's /v1/capture/me reads (per-route supabaseAuth). The account-scoped
+// Capture routes live under /v1/accounts/:accountId/capture.
+import { createCaptureRouter } from './capture/device-routes';
+app.route('/v1/capture', createCaptureRouter());
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -174,6 +186,8 @@ import { tokenIssuerApp } from './apps/token-issuer-routes';
 app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+registerSessionLookupRoutes();
+app.route('/v1/sessions', sessionsApp); // GET /v1/sessions/:sessionId — one session by id, in any project
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
 // It answers its own 401 with an OAuth challenge, so no auth middleware here.
 // dispatchInProcess takes the assembled app as its second argument (it

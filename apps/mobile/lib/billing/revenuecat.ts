@@ -425,39 +425,6 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
   };
 }
 
-export async function checkSubscriptionStatus(): Promise<{
-  hasActiveSubscription: boolean;
-  tier?: string;
-  expirationDate?: string;
-}> {
-  try {
-    const customerInfo = await getCustomerInfo();
-    const subscriptionInfo = getSubscriptionInfo(customerInfo);
-
-    if (!subscriptionInfo.isActive) {
-      return { hasActiveSubscription: false };
-    }
-
-    let tier = 'free';
-    if (subscriptionInfo.productIdentifier?.includes('pro')) {
-      tier = 'pro';
-    } else if (subscriptionInfo.productIdentifier?.includes('team')) {
-      tier = 'team';
-    } else if (subscriptionInfo.productIdentifier?.includes('enterprise')) {
-      tier = 'enterprise';
-    }
-
-    return {
-      hasActiveSubscription: true,
-      tier,
-      expirationDate: subscriptionInfo.expirationDate,
-    };
-  } catch (error) {
-    log.rcError('Error checking subscription status:', error);
-    return { hasActiveSubscription: false };
-  }
-}
-
 export async function presentPaywall(
   paywallName?: string
 ): Promise<{ purchased: boolean; cancelled: boolean }> {

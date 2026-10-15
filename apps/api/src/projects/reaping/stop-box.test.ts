@@ -1,7 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { logger } from '../../lib/logger';
 import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
-import * as realEphemeralSandbox from '../../platform/services/ephemeral-sandbox';
 
 // T11: close the live opencode turn on a box BEFORE `provider.stop()`
 // powers it off, via `abortLiveTurnBeforeStop` (exported alongside
@@ -66,13 +65,6 @@ mock.module('../../sandbox-proxy/backend', () => ({
     effectivePort: 8000,
     websocket: false,
   }),
-}));
-
-// None of these boxes is ephemeral: no retire plan, so the stop takes the
-// normal path without a database read.
-mock.module('../../platform/services/ephemeral-sandbox', () => ({
-  ...realEphemeralSandbox,
-  retireOnStopPlan: async () => null,
 }));
 
 const { stopExpiredBox } = await import('./stop-box');

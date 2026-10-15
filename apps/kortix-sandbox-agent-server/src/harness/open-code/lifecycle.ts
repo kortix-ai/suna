@@ -122,13 +122,14 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { configReleaseNoticePath } from '@/services/config-provider/notice'
-import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
+import { bootLinkPath, isInReleaseStore, readBootLinkTarget, readBootReleaseRoot, releaseRootOf } from '@/services/config-provider/boot-config'
+import { syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
-import { SKILLS_DIR } from './project-layout'
+import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -617,7 +618,9 @@ export async function buildOpencodeConfigContent(
   // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
   // OpenCode tool: the tools a capability covers get its rule (E9).
   // (7) OpenCode's built-in skills describe a standalone OpenCode install, not
-  // a Kortix project: every permission block denies them.
+  // a Kortix project: every permission block denies them. (The kortix-genui
+  // skill is not handled here: a project's `"*": "allow"` outranks a skill deny,
+  // so kortixd withholds its files instead, `syncFlaggedManagedSkills`.)
   out.permission = denyBuiltinSkills(capabilityToolRules(out.permission))
   if (out.agent && typeof out.agent === 'object' && !Array.isArray(out.agent)) {
     for (const agent of Object.values(out.agent as Record<string, unknown>)) {
@@ -2148,6 +2151,13 @@ export function createOpencodeLifecycle(
     const served = await readBootLinkTarget()
     const projectRoot = served ? (releaseRootOf(served) ?? currentCfg.projectTarget) : null
     const servesProject = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
+    // A config release is staged once and reused from disk without the overlay step, so the
+    // kortix-genui skill is made to match the `genui` flag here, where the overlay lands
+    // (`managedOverlayRoot`, as the assets service resolves it), before OpenCode reads it.
+    if (served && projectRoot) {
+      const skillsDir = join(managedOverlayRoot(served, projectRoot), 'skills')
+      await syncFlaggedManagedSkills(skillsDir, { env: baseEnv, unseal: isInReleaseStore(skillsDir) })
+    }
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
@@ -2155,7 +2165,8 @@ export function createOpencodeLifecycle(
       servesRelease: !!served && releaseRootOf(served) !== null,
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
-      toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: servesProject ? projectRoot : null, configDir: served },
+      // Project tools load from the served release (or checkout), config dir or not.
+      toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: await readBootReleaseRoot(), configDir: served },
     })
   }
 

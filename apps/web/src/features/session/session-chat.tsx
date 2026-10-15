@@ -17,6 +17,7 @@ import {
   type SessionLogMessage,
   type SessionLogThread,
   type SessionLogTurn,
+  type SessionLogReferencedText,
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
   listSessionPrompts,
@@ -25,9 +26,15 @@ import {
   sessionLogPromptMessage,
   sessionLogRetrying,
   sessionLogTurns,
+  fetchSessionAttachment,
+  sessionLogFullTextPlan,
+  sessionLogHarnessSwitches,
+  sessionLogRestoreNotice,
+  sessionLogWithFullTexts,
 } from '@kortix/sdk';
 import {
   useProjectSession,
+  useSessionLogRecord,
   useSessionLogThread,
   useSessionMessageAuthors,
   useSessionModelUsage,
@@ -258,10 +265,13 @@ import {
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
 import { useComputerAwakeLine } from './composer/computer-awake-bar';
+import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
+import { downloadBlob } from '@/lib/utils/download';
+import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
 
 import {
   TranscriptTurnRow,
-  messageAborted,
+  strandedPromptIds,
   optimisticAnswersCache,
   promptTexts,
   resolveTurnError,
@@ -417,6 +427,8 @@ const TRANSCRIPT_THROTTLE_MS = 50;
 
 /** `useSessionMessages` input when no `useSession` owns this chat: reads nothing. */
 const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', runtimeSessionId: null };
+
+const NO_FULL_TEXTS: ReadonlyMap<string, string> = new Map();
 
 export function SessionChat({
   sessionId,
@@ -638,6 +650,30 @@ export function SessionChat({
     [sessionState, sessionId, hookMessages],
   );
   const thread: SessionLogThread | null = sessionState ? liveThread : detachedThread;
+  // P5.6. The session record of the v2 log (null on v1): the restore notice and the harness
+  // history. `useSessionLogRecord` keeps its identity through message puts, so a streamed
+  // delta does not re-render the chat through it. The view settings are per session.
+  const historyKey = projectSessionId || sessionId;
+  const sessionRecord = useSessionLogRecord(sessionState ?? DETACHED_SESSION_MESSAGES);
+  const restoreNotice = useMemo(() => sessionLogRestoreNotice(sessionRecord), [sessionRecord]);
+  const restoreDismissed = useSessionHistoryViewStore(
+    (s) => !!restoreNotice && s.dismissedRestore[historyKey] === restoreNotice.generation,
+  );
+  const dismissRestore = useSessionHistoryViewStore((s) => s.dismissRestore);
+  const hideOutOfContext = useSessionHistoryViewStore((s) => s.hidden.includes(historyKey));
+  const setOutOfContext = useSessionHistoryViewStore((s) => s.setOutOfContext);
+  const threadHasOutOfContext = hasOutOfContext(thread?.messages);
+  useEffect(() => {
+    setOutOfContext(historyKey, threadHasOutOfContext);
+  }, [historyKey, threadHasOutOfContext, setOutOfContext]);
+  useEffect(() => () => setOutOfContext(historyKey, false), [historyKey, setOutOfContext]);
+  // Texts the API stored by reference that the person loaded in full, by `ref`, for this session.
+  const [fullTexts, setFullTexts] = useState<{ key: string; texts: ReadonlyMap<string, string>; state: Record<string, FullTextState> }>({
+    key: historyKey,
+    texts: NO_FULL_TEXTS,
+    state: {},
+  });
+  const loaded = fullTexts.key === historyKey ? fullTexts : { key: historyKey, texts: NO_FULL_TEXTS, state: {} };
   const messages: SessionLogMessage[] | undefined = thread?.messages.length ? thread.messages : undefined;
   // The thread for handlers that read it at call time (the optimistic answers cache).
   const threadRef = useRef(thread);
@@ -1412,6 +1448,10 @@ export function SessionChat({
     (id: string) => {
       // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
       // landed is still absorbed by the proxy instead of running twice.
+      // This is the ONE client path for the retry route's two labels (the
+      // route's own comment names them one primitive): a failed row's
+      // "Retry" (KRTX-1587 wires the queue list's queued rows here too as
+      // "Send now"), so its failure toast speaks of retrying either way.
       void promptInbox
         .retry(id)
         .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
@@ -1708,7 +1748,12 @@ export function SessionChat({
    * fifty-turn session hands React one new `turn` per streamed delta, not
    * fifty: `turn` is the dependency of ~28 memos inside `SessionTurn`.
    */
+  const shownThread = useMemo(
+    () => (thread ? sessionLogWithFullTexts(thread, loaded.texts) : null),
+    [thread, loaded.texts],
+  );
   const turnThread = useMemo((): SessionLogThread | null => {
+    const thread = shownThread;
     if (!thread && queuedSyntheticMessages.length === 0) return null;
     if (queuedSyntheticMessages.length === 0) return thread;
     const base = thread ?? {
@@ -1723,7 +1768,7 @@ export function SessionChat({
       messages: [],
     };
     return { ...base, messages: [...base.messages, ...queuedSyntheticMessages] };
-  }, [thread, queuedSyntheticMessages, sessionId]);
+  }, [shownThread, queuedSyntheticMessages, sessionId]);
   // The store's alias for a re-minted echo — stable function reference, read
   // per turn for the React key (see the `TurnViewport` key below).
   const optimisticOriginOf = useSessionStateStore((state) => state.optimisticOriginOf);
@@ -1771,8 +1816,9 @@ export function SessionChat({
       liveMessageId,
       held: heldTurnIds,
       pricing: pricingLookup,
+      hideOutOfContext,
     }),
-    [lastTurnWorking, heldTurnIds, pricingLookup],
+    [lastTurnWorking, heldTurnIds, pricingLookup, hideOutOfContext],
   );
   // WHICH turn carries the shimmer (`live`), and which user bubbles are still
   // queued at the agent (`queued`): the working projection's turn, else this
@@ -1795,6 +1841,41 @@ export function SessionChat({
         ? sessionLogTurns(turnThread, turnOptions(freshSendTurnId))
         : projectedTurns,
     [freshSendTurnId, turnThread, turnOptions, projectedTurns],
+  );
+  // P5.6: a switch `harness.history` records, drawn before the turn it lands on.
+  const harnessSwitches = useMemo(
+    () => sessionLogHarnessSwitches(sessionRecord?.harness?.history, turns),
+    [sessionRecord?.harness?.history, turns],
+  );
+  // P5.6: load the whole of every text a turn shows as a preview, on request only.
+  const fullTextsRef = useRef(loaded);
+  fullTextsRef.current = loaded;
+  const loadFullTexts = useCallback(
+    (turnId: string, refs: readonly SessionLogReferencedText[]) => {
+      const key = fullTextsRef.current.key;
+      const mark = (state: FullTextState) =>
+        setFullTexts((prev) => {
+          const base = prev.key === key ? prev : { key, texts: NO_FULL_TEXTS, state: {} };
+          return { ...base, state: { ...base.state, [turnId]: state } };
+        });
+      mark('loading');
+      // Up to 1 MB in all the texts show inline; above it only the large ones download as files
+      // (a multi-MB text in markdown stalls the tab), the small ones still show inline.
+      const plan = sessionLogFullTextPlan(refs);
+      void Promise.all([
+        Promise.all(plan.inline.map(async ({ ref }) => [ref, await (await fetchSessionAttachment(ref)).text()] as const)),
+        Promise.all(plan.download.map(({ ref }) => fetchSessionAttachment(ref))),
+      ])
+        .then(([pairs, blobs]) => {
+          blobs.forEach((blob, i) => downloadBlob(blob, blobs.length > 1 ? `full-text-${i + 1}.txt` : 'full-text.txt'));
+          setFullTexts((prev) => {
+            const base = prev.key === key ? prev : { key, texts: NO_FULL_TEXTS, state: {} };
+            return { key, texts: pairs.length ? new Map([...base.texts, ...pairs]) : base.texts, state: { ...base.state, [turnId]: 'idle' } };
+          });
+        })
+        .catch(() => mark('error'));
+    },
+    [],
   );
   // Outcomes anchor to the SAME id `TurnViewport` receives as `turnId`
   // (`turn.id`) — never `turnRenderKeys`, which re-aliases a turn to its
@@ -2111,23 +2192,11 @@ export function SessionChat({
     }
     return keys;
   }, [turns, sessionId, optimisticOriginOf]);
-  // User messages a Stop stranded: the session is idle, the newest turn with
-  // content ended by abort, and these came after it with nothing under them.
-  // The runtime holds them; nothing runs them until the next send.
-  const interruptedTurnIds = useMemo(() => {
-    if (lastTurnWorking) return new Set<string>();
-    let newestWithContent = -1;
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].assistant.length > 0) {
-        newestWithContent = i;
-        break;
-      }
-    }
-    if (newestWithContent < 0 || newestWithContent === turns.length - 1) return new Set<string>();
-    const last = turns[newestWithContent].assistant.at(-1);
-    if (!last || !messageAborted(last)) return new Set<string>();
-    return new Set(turns.slice(newestWithContent + 1).map((t) => t.id));
-  }, [turns, lastTurnWorking]);
+  // User messages a Stop stranded, while the session is idle (`strandedPromptIds`).
+  const interruptedTurnIds = useMemo(
+    () => (lastTurnWorking ? new Set<string>() : strandedPromptIds(turns, messages)),
+    [turns, messages, lastTurnWorking],
+  );
   /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself.
    *  Opens the inline editor on that message — nothing is staged until its Send. */
   const handleRewind = useCallback(
@@ -4134,6 +4203,12 @@ export function SessionChat({
                         )}
                       </div>
                     )}
+                    {restoreNotice && !restoreDismissed && (
+                      <RestoreNotice
+                        notice={restoreNotice}
+                        onDismiss={() => dismissRestore(historyKey, restoreNotice.generation)}
+                      />
+                    )}
                     <SessionOutcomesProvider
                       projectSessionId={projectSessionId}
                       turnSpans={turnSpans}
@@ -4238,6 +4313,9 @@ export function SessionChat({
                               key={turnRenderKeys.get(turn.id)}
                               turnId={turn.id}
                               suppressed={suppressedFailedCompaction}
+                              continuedWith={harnessSwitches.get(turn.id)?.harness}
+                              fullTextState={loaded.state[turn.id] ?? 'idle'}
+                              onLoadFullText={loadFullTexts}
                               showBusyRow={
                                 showFallbackBusyRow &&
                                 fallbackBusyRowTurnId === turn.id

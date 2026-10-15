@@ -488,6 +488,80 @@ describe('ensureOpencodeConfigDeps on a platform-owned release copy', () => {
     }
   })
 
+  // A release's bun.lock pins the versions of the day it was built; the warm
+  // cache holds the versions of the day the IMAGE was built. Dev, 2026-10-14:
+  // the lock pinned @mendable/firecrawl-js 4.25.1, the cache held 4.46.0, the
+  // offline install failed, and the sealed release could not self-install, so
+  // every tool file failed to import @opencode-ai/plugin.
+  it('resolves the declared ranges from the warm cache when the locked versions are not in it', async () => {
+    const { root, configDir, bakedDir } = await makeRelease(oldStarter)
+    try {
+      const calls: Array<{ offline: boolean; lock: boolean }> = []
+      const declared = installDeclared({})
+      await ensureOpencodeConfigDeps(configDir, {
+        bakedDir,
+        platformOwned: true,
+        install: async (stagingDir, { offline }) => {
+          const lock = await exists(join(stagingDir, 'bun.lock'))
+          calls.push({ offline, lock })
+          if (lock) throw new Error('error: --offline: "@mendable/firecrawl-js" is not in the cache')
+          await declared(stagingDir)
+        },
+      })
+
+      expect(calls).toEqual([
+        { offline: true, lock: true },
+        { offline: true, lock: false },
+      ])
+      expect(await exists(join(configDir, 'node_modules', '@opencode-ai/plugin', 'package.json'))).toBe(true)
+      expect(await exists(join(configDir, 'node_modules', '@mendable/firecrawl-js', 'package.json'))).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('installs from the registry when the warm cache cannot satisfy the release at all', async () => {
+    const { root, configDir, bakedDir } = await makeRelease(oldStarter)
+    try {
+      const calls: boolean[] = []
+      const declared = installDeclared({})
+      await ensureOpencodeConfigDeps(configDir, {
+        bakedDir,
+        platformOwned: true,
+        install: async (stagingDir, { offline }) => {
+          calls.push(offline)
+          if (offline) throw new Error('error: --offline: "left-pad" is not in the cache')
+          await declared(stagingDir)
+        },
+      })
+
+      expect(calls).toEqual([true, true, false])
+      expect(await exists(join(configDir, 'node_modules', '@opencode-ai/plugin', 'package.json'))).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('tries the lock offline only once on a working tree, where OpenCode can still self-install', async () => {
+    const { root, configDir, bakedDir } = await makeRelease(oldStarter)
+    try {
+      const calls: boolean[] = []
+      await ensureOpencodeConfigDeps(configDir, {
+        bakedDir,
+        install: async (_stagingDir, { offline }) => {
+          calls.push(offline)
+          throw new Error('offline cache miss')
+        },
+      })
+
+      expect(calls).toEqual([true])
+      expect(await exists(join(configDir, 'node_modules'))).toBe(false)
+      expect(await readFile(join(configDir, 'bun.lock'), 'utf8')).toBe('{"lockfileVersion":1,"project":true}\n')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('leaves a working-tree config exactly as before: no pin rewrite, no sentinel', async () => {
     const { root, configDir, bakedDir } = await makeRelease(oldStarter)
     try {

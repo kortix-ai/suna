@@ -25,7 +25,6 @@ import { ChatGPT } from '@/features/icon/icons/chat-gpt';
 import { Claude } from '@/features/icon/icons/claude';
 import { Github } from '@/features/icon/icons/github';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
-import { Viktor } from '@/features/icon/icons/viktor';
 import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
@@ -151,8 +150,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         return <Zapier />;
       case 'openclaw':
         return <OpenClaw />;
-      case 'viktor':
-        return <Viktor />;
       case 'chatgpt':
         return <ChatGPT />;
       case 'claude':

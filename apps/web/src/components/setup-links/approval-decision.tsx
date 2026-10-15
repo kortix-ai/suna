@@ -5,9 +5,11 @@ import {
   ApprovalDecisionActions,
   type ApprovalDecisionValue,
   ApprovalParameters,
+  type ApprovalResolvers,
   approvalReviewable,
   resolvedLabel,
   resolvedTone,
+  useApprovalWaitingText,
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -231,6 +233,7 @@ export function ApprovalDecisionView({
  * reads and decides the same way on both surfaces.
  *
  * No `onDecision` = read-only: the viewer may see the call but not decide it.
+ * A pending call then says who decides (`resolvers`, KRTX-1724).
  */
 export function ApprovalDecisionPanel({
   details,
@@ -241,6 +244,7 @@ export function ApprovalDecisionPanel({
   onOpenSession,
   previewAuthorized = true,
   markOnMobile = false,
+  resolvers = null,
 }: {
   details: ApprovalLinkDetails;
   outcome: ApprovalDecisionValue | null;
@@ -253,10 +257,14 @@ export function ApprovalDecisionPanel({
   previewAuthorized?: boolean;
   /** Keep the connector mark on mobile (the modal has no corner logo). */
   markOnMobile?: boolean;
+  /** Who decides the call, for a viewer who may not. Null: the plain wording. */
+  resolvers?: ApprovalResolvers | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const waitingText = useApprovalWaitingText(resolvers);
   const resolved = !details.pending || outcome !== null;
+  const waiting = !resolved && !onDecision;
   const reviewable = approvalReviewable(details.args_preview, details.review_complete);
   const label = resolvedLabel(
     {
@@ -275,9 +283,13 @@ export function ApprovalDecisionPanel({
 
   // Named by the connector when the API says what it is called; a slug is not
   // a name ("github", "googledrive") and never goes into a title.
-  let title: React.ReactNode = details.connector_name
-    ? tHardcodedUi('approvalPage.title', { connector: details.connector_name })
-    : tI18nComplete.raw('text1862f81ed9d6');
+  // "Approve this … action" asks a viewer who may not decide for the one thing
+  // they cannot do: they read the state instead.
+  let title: React.ReactNode = waiting
+    ? tI18nComplete.raw('textdb0e960b68b5')
+    : details.connector_name
+      ? tHardcodedUi('approvalPage.title', { connector: details.connector_name })
+      : tI18nComplete.raw('text1862f81ed9d6');
   if (resolved) {
     const words =
       label === 'Approved'
@@ -302,7 +314,13 @@ export function ApprovalDecisionPanel({
             />
           }
           title={title}
-          description={resolved ? undefined : tI18nComplete.raw('text32c6817c8380')}
+          description={
+            resolved
+              ? undefined
+              : waiting
+                ? waitingText
+                : tI18nComplete.raw('text32c6817c8380')
+          }
         />
       </Rise>
 

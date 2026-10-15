@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { updateChangeRequest } from './change-requests';
+import { listChangeRequests, updateChangeRequest } from './change-requests';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -32,4 +32,12 @@ test('updateChangeRequest PATCHes the title and description and returns the chan
 test('updateChangeRequest throws when the change request is not open', async () => {
   nextResponse = { status: 409, body: { error: 'Cannot edit a merged change request' } };
   await expect(updateChangeRequest('P1', 'cr-1', { title: 'x' })).rejects.toThrow('Cannot edit a merged change request');
+});
+
+// KRTX-2316: the list is one page; `cursor` continues it.
+test('listChangeRequests sends limit and cursor and returns next_cursor', async () => {
+  nextResponse = { status: 200, body: { change_requests: [], next_cursor: '51' } };
+  const page = await listChangeRequests('P1', 'all', { limit: 100, cursor: '101' });
+  expect(calls[0].url).toBe('http://test.local/projects/P1/change-requests?status=all&limit=100&cursor=101');
+  expect(page.next_cursor).toBe('51');
 });

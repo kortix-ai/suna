@@ -8,6 +8,7 @@
  * off and on, and `GET …/log`. `SLOG-3` is the restore claim (P6.1); its operator
  * switch (503) is covered in
  * apps/api/src/__tests__/integration-session-log-restore.test.ts.
+ * `SLOG-4` is the switch preflight (P7.1): the loss report of a stored log on another harness.
  */
 import { createHash } from "node:crypto";
 import {
@@ -17,6 +18,7 @@ import {
   SessionLogPageSchema,
   SessionLogRestoreMissingSchema,
   SessionLogRestoreSchema,
+  SessionLogSwitchPreflightSchema,
   type SessionLogRestore,
   type V1Row,
 } from "@kortix/api-contract/session-log";
@@ -411,6 +413,125 @@ flow(
         if (createHash("sha256").update(r.text()).digest("hex") !== blob.sha256) throw new Error("the attachment's sha256 differs from the blob's");
       });
     } finally {
+      await close();
+    }
+  },
+);
+
+const PREFLIGHT = "/v1/projects/:projectId/sessions/:sessionId/log/switch-preflight";
+
+flow(
+  "SLOG-4",
+  {
+    domain: "sessions",
+    requires: ["database"],
+    routes: ["POST /v1/accounts/tokens", `POST ${JOURNAL}`, "PUT /v1/admin/api/projects/:id/features", `POST ${PREFLIGHT}`],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId! });
+    ctx.track("session", sessionId, { projectId: project.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id, sessionId };
+    const preflight = (to: unknown, as = owner) => as.post(PREFLIGHT, { to }, { params });
+    const { box, close } = await sandboxCredential(ctx, project.id, sessionId);
+    const thread = (id: string, parent: string | null) => ({ schema: "kortix.session/2", v: 1, thread_id: id, parent_thread_id: parent, spawned_by: null, agent: null, title: null, created_at: T, ext: {} });
+    const call = (id: string, name: string, kind: string) => ({ type: "tool_call", id, call_id: id, name, kind, input: {}, status: "complete", result: { content: [{ type: "text", text: "ok" }], is_error: false } });
+    const pdf = { type: "attachment", id: "prt_pdf", mime: "application/pdf", ref: "blob:synthetic", bytes: 3, sha256: "a".repeat(64) };
+    const session = {
+      schema: "kortix.session/2", v: 1, session_id: sessionId, title: "Synthetic switch", created_at: T, restore_grade: "native",
+      harness: { current: "opencode", history: [{ harness: "opencode", version: "1.18.23", from_seq: 1, at: T }] },
+      selection: { agent: null, model: null }, todos: [{ content: "ship it", status: "pending" }], pending: { questions: [], permissions: [] }, ext: {},
+    };
+
+    try {
+      await ctx.step("a session without a stored log → 404; a `to` that is not a harness → 400", async () => {
+        (await preflight("pi")).status(404);
+        (await preflight("claude-code")).status(400);
+      });
+
+      await ctx.step("the OpenCode box journals a sub-agent, a todo list, a PDF, an MCP tool, a rewound message → 200", async () => {
+        (await box.post(JOURNAL, Bun.gzipSync(JSON.stringify({
+          generation: 0, session, threads: [thread("main", null), thread("ses_child", "main")], tombstones: [],
+          puts: [
+            { rev: REV + 1, message: message("msg_u0", 0, { blocks: [{ type: "text", id: "prt_t", text: "read this" }, pdf] }) },
+            { rev: REV + 2, message: message("msg_a1", 1, { role: "assistant", finish: "stop", blocks: [call("call_task", "task", "task"), call("call_todo", "todowrite", "todo"), call("call_mcp", "github_search", "mcp")] }) },
+            { rev: REV + 3, message: message("msg_u2", 2, { in_context: false, hidden_reason: "reverted" }) },
+            { rev: REV + 4, message: message("msg_c0", 0, { thread_id: "ses_child" }) },
+          ],
+        })), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
+      });
+
+      const losses = [
+        { feature: "attachments.user", detail: "application/pdf", used: 1, status: "lost" },
+        { feature: "todos", used: 1, status: "lost" },
+        { feature: "session.rewind", used: 1, status: "lost" },
+        { feature: "session.mcp", detail: "github_search", used: 1, status: "lost" },
+      ];
+      const unsupported = [
+        { feature: "attachments.user", detail: "application/pdf", status: "lost" },
+        { feature: "reasoning_replay", detail: "other_model", status: "lost" },
+        { feature: "todos", status: "lost" },
+        ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config"].map((feature) => ({ feature, status: "lost" })),
+      ];
+
+      await ctx.step("restore off, gateway off: preflight to pi → 200 not available (llm_gateway_off), and the whole history (4 live messages) is the first loss", async () => {
+        await setFeatureAsOperator(ctx, project.id, "llm_gateway", false);
+        (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
+          session_id: sessionId, from: "opencode", to: "pi", available: false, reason: "llm_gateway_off", restores: false,
+          losses: [{ feature: "history", used: 4, status: "lost" }, ...losses], unsupported,
+        });
+      });
+
+      await ctx.step("restore and gateway on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
+        await setFeatureAsOperator(ctx, project.id, "llm_gateway", true);
+        await setFeatureAsOperator(ctx, project.id, "session_log_restore", true);
+        (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
+          session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: true, losses, unsupported,
+        });
+      });
+
+      await ctx.step("preflight to opencode (the same harness) → 200 not available (same_harness), no loss; the read claimed nothing (a journal batch at generation 0 → 200)", async () => {
+        (await preflight("opencode")).status(200).body().has("$.available", false).has("$.reason", "same_harness").has("$.losses", []).has("$.unsupported", []);
+        (await box.post(JOURNAL, batch(0, [{ rev: REV + 5, message: message("msg_u3", 3) }]), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
+      });
+
+      await ctx.step("a converted log (no manifest: every feature native at the source) → pi: the SQL projection gives the JS rules: a tool-result image degraded, a layout compaction degraded, an opaque one lost, another model's reasoning that starts with blank lines lost", async () => {
+        const converted = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId! });
+        ctx.track("session", converted, { projectId: project.id });
+        const second = await sandboxCredential(ctx, project.id, converted);
+        try {
+          const at = { projectId: project.id, sessionId: converted };
+          const image = { ...call("call_img", "screenshot", "other"), result: { content: [{ type: "attachment", mime: "image/png", ref: "blob:synthetic", sha256: "b".repeat(64) }], is_error: false } };
+          const layout = { type: "compaction", id: "prt_layout", summary: "s", first_kept_message_id: null, layout: [{ summary: true }] };
+          const opaque = { type: "compaction", id: "prt_opaque", summary: null, opaque: true, first_kept_message_id: null };
+          const glm = { provider: "kortix", model: "glm-5.3-flash" };
+          (await second.box.post(JOURNAL, Bun.gzipSync(JSON.stringify({
+            generation: 0, threads: [thread("main", null)], tombstones: [],
+            session: { ...session, session_id: converted, harness: { current: "kortix-v1-import", history: [] }, todos: [], selection: { agent: null, model: glm } },
+            puts: [
+              { rev: REV + 1, message: message("msg_x0", 0, { role: "assistant", finish: "stop", blocks: [image, layout, opaque] }) },
+              { rev: REV + 2, message: message("msg_x1", 1, { role: "assistant", finish: "stop", model: { provider: "kortix", model: "other-model" }, blocks: [{ type: "reasoning", id: "prt_think", text: "\n\nthinking" }] }) },
+              { rev: REV + 3, message: message("msg_x2", 2, { role: "assistant", finish: "stop", model: glm, blocks: [{ type: "reasoning", id: "prt_blank", text: "\n \t" }] }) },
+            ],
+          })), { params: at, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
+          (await owner.post(PREFLIGHT, { to: "pi" }, { params: at })).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$.losses", [
+            { feature: "attachments.tool_result", used: 1, status: "degraded" },
+            { feature: "compaction", detail: "layout", used: 1, status: "degraded" },
+            { feature: "compaction", detail: "opaque", used: 1, status: "lost" },
+            { feature: "reasoning_replay", detail: "other_model", used: 1, status: "lost" },
+          ]);
+        } finally {
+          await second.close();
+        }
+      });
+
+      await ctx.step("a user with no membership in the project's account → 403, no report", async () => {
+        (await preflight("pi", ctx.client.as(ctx.P.NONMEMBER))).status(403);
+      });
+    } finally {
+      await setFeatureAsOperator(ctx, project.id, "session_log_restore", null).catch(() => {});
+      await setFeatureAsOperator(ctx, project.id, "llm_gateway", null).catch(() => {});
       await close();
     }
   },

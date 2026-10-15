@@ -23,7 +23,12 @@
  *   message the store deleted after holding it (a revert not yet tombstoned: `held()` keeps
  *   its id) never make the store behind. Content hashes are not compared: a store with unsent
  *   edits differs from the log by design, and the journal sends the difference.
- * - The restore. `POST …/log/restore` claims the next generation; the attachment bytes are
+ * - The restore. Before the first `POST …/log/restore`, `session-log-restore.json` gets a `claiming`
+ *   mark. A restore clears it; so does a 404 or 503 to the first attempt (nothing was claimed), and a
+ *   later boot whose manifest shows no claim above this box. A 404 or 503 after a failed attempt
+ *   settles nothing: that attempt may have claimed. While the mark stands, a manifest that cannot be
+ *   read (5xx, network) fails the boot even with a store; one that answers 403, 404 or 503 boots the
+ *   store and keeps the mark (the journal has the same gates, so nothing posts below a claim). `POST …/log/restore` claims the next generation; the attachment bytes are
  *   read while the texts are; the adapter writes the log; this box's generation, the ids the
  *   write left out and the D3 notice persist in `session-log-restore.json` in the runtime state
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
@@ -57,7 +62,7 @@ import {
   type SessionLogSessionPatch,
   type SessionLogThread,
 } from '@kortix/api-contract/session-log'
-import { mintWireMessageIdAbove, wireIdClock, wireIdClockDelta } from '@kortix/sdk/wire-message-id'
+import { mintWireMessageId } from '@kortix/sdk/wire-message-id'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { sandboxRelayContext, type SandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { logger } from '@/lib/log/logger'
@@ -73,9 +78,15 @@ export type SessionLogBoot = {
   cursors: ExportCursor[]
   /** Set on every session patch the journal sends (D3). */
   session?: SessionLogSessionPatch
+  /** The restored log's harness history: the journal keeps it and appends this box's harness when it is another (P7.1). */
+  harness?: HarnessCarry
 }
 
-type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch }
+/** The log's harness history at the restore, and the root seq and time from which this box's harness serves the session. */
+export type HarnessCarry = { history: SessionLog['harness']['history']; from_seq: number; at: string }
+
+/** `claiming`: a restore POST went out and no answer settled it; the API may hold a claim above `generation`. */
+type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry; claiming?: true }
 
 export const sessionLogBootStatePath = () => join(resolveKortixRuntimeStateDirectory(), 'session-log-restore.json')
 
@@ -96,7 +107,16 @@ function writeState(s: BootState): void {
   renameSync(`${path}.tmp`, path)
 }
 
-const kept = (s: BootState): SessionLogBoot => ({ generation: s.generation, cursors: [], ...(s.session && { session: s.session }) })
+const kept = (s: BootState): SessionLogBoot => ({ generation: s.generation, cursors: [], ...(s.session && { session: s.session }), ...(s.harness && { harness: s.harness }) })
+
+/** No claim above `generation` stands: clear the mark a restore POST left. */
+function settled(s: BootState): SessionLogBoot {
+  if (s.claiming) {
+    const { claiming: _, ...rest } = s
+    writeState(rest)
+  }
+  return kept(s)
+}
 
 export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_000 } = {}): Promise<SessionLogBoot | null> {
   const ctx = sandboxRelayContext()
@@ -108,18 +128,35 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   try {
     manifest = await attempts('manifest', retryMs, () => readManifest(ctx))
   } catch (err) {
-    // No claim happens before the manifest: a box with a store boots on it; only a box with no store fails.
-    if (!held) throw err
+    // No claim happens before the manifest: a box with a store boots on it. A box with no store fails, and so
+    // does one whose earlier restore POST may have claimed (`claiming`): its store may be below that claim.
+    if (!held || state.claiming) throw err
     logger.warn('[session-log] the manifest did not answer; the box keeps its native store', { err: String(err), generation: state.generation })
     return kept(state)
   }
+  // A 403/404/503 manifest reads no claim, so it settles none: the mark stays for the first boot that reads one.
+  // The journal route has the same gates, so this box cannot post below a claim meanwhile.
   if (!manifest) return kept(state)
   const why = behind(manifest, held, state)
-  if (!why) return kept(state)
+  // A claim that committed raised the manifest generation above this box's, which reads as behind.
+  if (!why) return settled(state)
   logger.info('[session-log] the native store is behind the log; restoring', { why, generation: manifest.generation, persisted: state.generation })
+  // The mark goes to disk before the first POST: the API commits a claim before it answers, so a box
+  // that dies or fails after it must not keep its store at a later boot that cannot read the manifest.
+  writeState({ ...state, claiming: true })
   // Each attempt claims a generation before it can fail: a box that kept its store after a failed
   // restore would post below the claim (409) and restore over that boot's turns at the next boot.
-  return attempts('restore', retryMs, async () => (await restore(ctx, port)) ?? kept(state))
+  // A 404/503 settles the claim only before any attempt failed: a failed attempt may have claimed.
+  let failed = false
+  return attempts('restore', retryMs, async () => {
+    const boot = await restore(ctx, port).catch((err) => {
+      failed = true
+      throw err
+    })
+    if (boot) return boot
+    if (failed) throw new Error('restore answered no claim after an attempt that may have claimed')
+    return settled({ ...state, claiming: true })
+  })
 }
 
 async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>): Promise<T> {
@@ -158,9 +195,10 @@ async function readManifest(ctx: SandboxRelayContext) {
 
 function behind(manifest: { generation: number; messages: Array<{ message_id: string; deleted: boolean }> }, held: ReadonlySet<string> | null, state: BootState): string | null {
   const live = manifest.messages.filter((m) => !m.deleted).map((m) => m.message_id)
-  if (live.length === 0) return null
+  const above = manifest.generation > state.generation ? `generation ${manifest.generation} is above this box's ${state.generation}` : null
+  if (live.length === 0) return above
   if (!held) return 'no native store'
-  if (manifest.generation > state.generation) return `generation ${manifest.generation} is above this box's ${state.generation}`
+  if (above) return above
   const unwritten = new Set(state.unwritten)
   const missing = live.filter((id) => !held.has(id) && !unwritten.has(id))
   return missing.length ? `${missing.length} of ${live.length} messages missing` : null
@@ -181,14 +219,16 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
     writeState({ version: 1, generation: answer.generation, unwritten: [] })
     return { generation: answer.generation, cursors: [] }
   }
+  const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0]!
+  const floor = Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq))
+  const harness: HarnessCarry = { history: restoredHistory(log), from_seq: floor + 1, at: new Date().toISOString() }
   let result = await port.restore(log, seq_max, read)
   let note: SessionLogMessage | null = null
   const notice = partialNotice(log, result.dropped, truncated, answer.generation)
   // One note per loss: a partial log that already holds an earlier note gets none for the old loss.
   const earlierNote = log.threads.some((t) => t.messages.some(isRestoreNote))
   if (notice && (Object.keys(result.dropped).length > 0 || truncated.length > 0 || !earlierNote)) {
-    const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0]!
-    note = noteMessage(root, Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq)) + 1, answer.generation, notice.text)
+    note = noteMessage(root, floor + 1, answer.generation, notice.text)
     root.messages.push(note)
     result = await port.restore(log, seq_max, read)
   }
@@ -196,9 +236,31 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   const unwritten = log.threads.flatMap((t) => t.messages.map((m) => m.message_id)).filter((id) => !written.has(id))
   // The journal sends the note as the store holds it.
   if (note) for (const c of result.cursors) delete c.native_hashes[note.message_id]
-  writeState({ version: 1, generation: answer.generation, unwritten, ...(notice && { session: notice.session }) })
+  writeState({ version: 1, generation: answer.generation, unwritten, ...(notice && { session: notice.session }), harness })
   logger.info('[session-log] restored', { generation: answer.generation, threads: result.cursors.length, unwritten: unwritten.length, dropped: result.dropped, truncated: truncated.length })
-  return { generation: answer.generation, cursors: result.cursors, ...(notice && { session: notice.session }) }
+  return { generation: answer.generation, cursors: result.cursors, ...(notice && { session: notice.session }), harness }
+}
+
+/** The stored history; a log without one (a converted log) starts with the harness it names. */
+function restoredHistory(log: SessionLog): HarnessCarry['history'] {
+  const { current, history } = log.harness ?? { current: '', history: [] }
+  if (history?.length) return history
+  return current && current !== 'unknown' ? [{ harness: current, version: 'unknown', from_seq: 1, at: log.created_at }] : []
+}
+
+/**
+ * The harness the journal sends (P7.1). An adapter exports a one-entry history (its own harness);
+ * after a restore the journal sends the restored history instead, with one more entry when this box's
+ * harness is another than the last one that served the session. A new version of the same harness
+ * adds no entry. The entry starts at the first root seq after the restore, so P5.6 draws the switch
+ * before the first turn this harness serves.
+ */
+export function carryHarness(carry: HarnessCarry | undefined, exported: SessionLog['harness']): SessionLog['harness'] {
+  const last = carry?.history.at(-1)
+  if (!carry || !last) return exported
+  if (last.harness === exported.current) return { current: exported.current, history: carry.history }
+  const version = exported.history.at(-1)?.version ?? 'unknown'
+  return { current: exported.current, history: [...carry.history, { harness: exported.current, version, from_seq: carry.from_seq, at: carry.at }] }
 }
 
 /**
@@ -209,20 +271,14 @@ export const RESTORE_NOTE_BLOCK_PREFIX = 'prt_kortix_restore_g'
 export const isRestoreNote = (m: { blocks: ReadonlyArray<{ id: string }> }) => m.blocks.some((b) => b.id.startsWith(RESTORE_NOTE_BLOCK_PREFIX))
 
 /**
- * The note's id is a wire id (`mintWireMessageIdAbove`, backdated as a client prompt is) above every
- * id of the thread, so hosts that order placed messages by id show it after the restored history
- * and before the next turn.
+ * The note's id is a wire id minted as a client prompt's is (`mintWireMessageId`, above every id of the
+ * thread), so hosts that order placed messages by id show it after the restored history and before
+ * the next turn.
  */
 function noteMessage(thread: SessionLogThread, seq: number, generation: number, text: string): SessionLogMessage {
   const at = new Date().toISOString()
-  let floor: bigint | null = null
-  for (const m of thread.messages) {
-    const clock = wireIdClock(m.message_id)
-    if (clock !== null && (floor === null || wireIdClockDelta(clock, floor) > BigInt(0))) floor = clock
-  }
-  const { id } = mintWireMessageIdAbove({ nowMs: Date.now(), newestKnownTime: floor })
   return {
-    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: id, thread_id: thread.thread_id, seq,
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: mintWireMessageId({ after: thread.messages.map((m) => m.message_id) }), thread_id: thread.thread_id, seq,
     role: 'user', kind: 'turn', status: 'complete', in_context: true, origin: 'notification',
     model: null, usage: null, finish: null, error: null, created_at: at, completed_at: at,
     producer: { harness: 'kortix', harness_version: 'restore', adapter_version: '1' },

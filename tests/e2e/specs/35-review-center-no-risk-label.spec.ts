@@ -68,6 +68,29 @@ test.describe('35 — Review Center shows no risk label', () => {
 
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, account.account_id);
+
+      // KRTX-2316: the always-mounted sidebar polls the needs-you counts, never
+      // the inbox list or the whole change-request history. The one list read
+      // allowed is the shell's idle prefetch of the Review tab's first page.
+      const reads: string[] = [];
+      page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (url.pathname.includes(`/projects/${project.id}/`)) reads.push(url.pathname + url.search);
+      });
+      const summaryRead = page.waitForResponse(
+        (response) => response.url().includes(`/projects/${project.id}/review/summary`),
+        { timeout: 60_000 },
+      );
+      await page.goto(`/projects/${project.id}`, { waitUntil: 'domcontentloaded' });
+      await dismissOnboarding(page);
+      const summary = await (await summaryRead).json();
+      expect(summary).toEqual({ needs_you_total: 1, needs_you_by_session: {} });
+      await expect(page.getByRole('link', { name: /Review\s*1/ })).toBeVisible({ timeout: 60_000 });
+      const listReads = reads.filter((read) => read.includes('/review/items'));
+      expect(listReads.length).toBeLessThanOrEqual(1);
+      for (const read of listReads) expect(read).toContain('segment=needs_you');
+      expect(reads.filter((read) => read.includes('/change-requests') && read.includes('status=all'))).toEqual([]);
+
       await page.goto(`/projects/${project.id}/review`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
@@ -79,6 +102,75 @@ test.describe('35 — Review Center shows no risk label', () => {
       await row.click();
       await expect(main.getByRole('heading', { name: title })).toBeVisible();
       await expect(main.getByText(/\b(low|medium|high) risk\b/i)).toHaveCount(0);
+    } finally {
+      if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
+      await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
+
+  // KRTX-2316: the inbox reads one page of 50 per segment. A segment with more
+  // items offers Load more, which reads the next page by its cursor.
+  test('a segment past one page shows 50 items, and Load more reads the rest', async ({ page }) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(180_000);
+
+    const runId = Date.now().toString(36);
+    const email = `e2e-review-pages-${runId}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+    const env = loadEnv();
+    let projectId: string | null = null;
+    const ITEMS = 55;
+
+    try {
+      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+      const account = accounts.find(
+        (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+      );
+      if (!account) throw new Error('test user has no personal account');
+      const project = await createDatabaseProject(env, {
+        accountId: account.account_id,
+        userId: user.id,
+        name: `Review pages ${runId}`,
+      });
+      projectId = project.id;
+
+      const titlePrefix = `Inbox page item ${runId}`;
+      for (let i = 0; i < ITEMS; i += 1) {
+        await api(
+          session.access_token,
+          'POST',
+          `/projects/${project.id}/review/items`,
+          { kind: 'output', title: `${titlePrefix} ${String(i).padStart(2, '0')}`, summary: 'Paged', agent: 'Kortix' },
+          201,
+        );
+      }
+
+      await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
+      await selectAccountForUi(page, account.account_id);
+      const itemReads: string[] = [];
+      page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (url.pathname === `/v1/projects/${project.id}/review/items`) itemReads.push(url.search);
+      });
+
+      await page.goto(`/projects/${project.id}/review`, { waitUntil: 'domcontentloaded' });
+      await dismissOnboarding(page);
+      const main = page.getByRole('main');
+      const rows = main.getByRole('button', { name: new RegExp(`^${titlePrefix} `) });
+
+      await test.step('the first page shows 50 of the 55 items and offers Load more', async () => {
+        await expect(rows).toHaveCount(50, { timeout: 60_000 });
+        await expect(main.getByRole('button', { name: 'Load more' })).toBeVisible();
+        expect(itemReads.every((search) => !search.includes('cursor='))).toBe(true);
+      });
+
+      await test.step('Load more reads the next page by its cursor and shows all 55', async () => {
+        await main.getByRole('button', { name: 'Load more' }).click();
+        await expect(rows).toHaveCount(ITEMS, { timeout: 30_000 });
+        expect(itemReads.some((search) => search.includes('cursor='))).toBe(true);
+        await expect(main.getByRole('button', { name: 'Load more' })).toHaveCount(0);
+      });
     } finally {
       if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});

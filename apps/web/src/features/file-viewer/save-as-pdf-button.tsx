@@ -36,7 +36,10 @@ export function SaveAsPdfButton({
   content,
   className,
   iconClassName,
+  variant = 'ghost',
 }: {
+  /** `secondary` inside the session detail toolbar's `ButtonGroup`. */
+  variant?: 'ghost' | 'secondary';
   fileName: string;
   /** The file's text. `undefined` while it loads. */
   content: string | undefined;
@@ -74,7 +77,7 @@ export function SaveAsPdfButton({
   return (
     <Hint label={label} side="bottom">
       <Button
-        variant="ghost"
+        variant={variant}
         size="icon"
         aria-label={label}
         aria-busy={pending}
@@ -90,7 +93,10 @@ export function SaveAsPdfButton({
       >
         {pending ? (
           <Loading
-            className={cn('text-muted-foreground shrink-0 motion-reduce:animate-none', iconClassName)}
+            className={cn(
+              'text-muted-foreground shrink-0 motion-reduce:animate-none',
+              iconClassName,
+            )}
           />
         ) : (
           <FilePdfIcon className={iconClassName} />

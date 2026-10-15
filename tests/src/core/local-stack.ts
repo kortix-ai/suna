@@ -5,7 +5,9 @@ import { Client } from "pg";
 import {
   LOCAL_AUTH_EMAIL_HOOK_SECRET,
   LOCAL_GATEWAY_INTERNAL_TOKEN,
+  LOCAL_PLATFORM_ADMIN_EMAIL,
   LOCAL_STRIPE_WEBHOOK_SECRET,
+  LOCAL_FLOW_API_KEY_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
   localWebUrl,
   type LocalSupabaseEnvironment,
@@ -639,6 +641,9 @@ export async function ensureLocalStack(
           KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
           // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
           KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
+          // TRG-19 and SCOPE-6 push kortix.yaml and poll until the API's git
+          // mirror sees it. The 60 s default refresh made them wait ~180 s.
+          KORTIX_GIT_REFRESH_INTERVAL_MS: "1000",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),
@@ -653,8 +658,11 @@ export async function ensureLocalStack(
           SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
           // Public by design; served by GET /v1/auth/client-config (AUTH-3).
           ...(ANON_KEY ? { SUPABASE_ANON_KEY: ANON_KEY } : {}),
-          API_KEY_SECRET: "local-flow-runner-api-key-secret",
+          API_KEY_SECRET: LOCAL_FLOW_API_KEY_SECRET,
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
+          // ADM-25: the self-host operator allowlist, naming one synthetic
+          // address that no principal holds.
+          KORTIX_PLATFORM_ADMIN_EMAILS: LOCAL_PLATFORM_ADMIN_EMAIL,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
           // Every access token is confirmed live with GoTrue. TTL 0 sends one
           // GoTrue `/user` call per request; a full core run then exhausts
@@ -677,6 +685,18 @@ export async function ensureLocalStack(
           ...(S3_PROTOCOL_ACCESS_KEY_SECRET
             ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
             : {}),
+          // Kortix Capture reads the same endpoint, bucket `kortix-capture`
+          // (migration). Supabase Storage has no STS: device credentials answer
+          // 503 here and the CAP flows write as a static-credential device.
+          KORTIX_CAPTURE_S3_BUCKET: "kortix-capture",
+          KORTIX_CAPTURE_S3_REGION: "local",
+          KORTIX_CAPTURE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+          KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: "true",
+          ...(S3_PROTOCOL_ACCESS_KEY_ID ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID } : {}),
+          ...(S3_PROTOCOL_ACCESS_KEY_SECRET ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET } : {}),
+          KORTIX_CAPTURE_INDEX_POLL_SECONDS: "2",
+          // No network in the deterministic profile: fleet health skips the newest-version check.
+          KORTIX_CAPTURE_UPDATE_MANIFEST_URL: "",
           SCHEDULER_ENABLED: "false",
           // OAU-7 replays a rotated refresh token after this window; keep it short.
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",

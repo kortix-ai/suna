@@ -721,11 +721,10 @@ export function SqliteRenderer({
     const start = performance.now();
 
     try {
-      const result = dbRef.current.exec(sqlQuery.trim());
-      const elapsed = performance.now() - start;
-
-      // Detect mutation queries → mark dirty + refresh
-      const upper = sqlQuery.trim().toUpperCase();
+      // Classify before executing: a read-only database must refuse a mutation
+      // before it mutates the in-memory copy.
+      const trimmed = sqlQuery.trim();
+      const upper = trimmed.toUpperCase();
       const isMutation =
         upper.startsWith('INSERT') ||
         upper.startsWith('UPDATE') ||
@@ -736,6 +735,11 @@ export function SqliteRenderer({
       if (readOnly && isMutation) {
         throw new Error('Database is open read-only');
       }
+
+      const result = dbRef.current.exec(trimmed);
+      const elapsed = performance.now() - start;
+
+      // Mutation queries → mark dirty + refresh
       if (isMutation) {
         setHasUnsavedChanges(true);
         setDataVersion((v) => v + 1);

@@ -133,15 +133,19 @@ Subcommands:
                                     Destroy one machine. Its volume stays; its group runs
                                     one machine fewer.
   scale count <id|slug> <n>         Machines for a process group (0-20). --process <group>
-                                    (default app). A group with a mount gets one new, empty
-                                    volume per new machine.
+                                    (default app). A group with a mount runs one machine:
+                                    scale its machine size instead (apps set --cpu/--memory).
+    --new-volumes                   Accept more: each new machine gets its own, EMPTY
+                                    volume and serves different data behind the same URL.
   scale show <id|slug>              Machines per process group.
   exec <id|slug> -- <command…>      Run one command in a running machine and print its
                                     output (admins). --machine <id>, --timeout <s> (≤ 300).
-  volumes [ls] <id|slug>            Volumes: name, group, size, attached, retention.
+  volumes [ls] <id|slug>            Volumes: name, group, used, size, attached, retention.
   volumes create <id|slug> <name> --size <gb> [--process <group>]
-  volumes extend <id|slug> <volume> --size <gb>
-                                    Grow a volume (it never shrinks).
+  volumes set <id|slug> <volume> --retention <days>
+                                    Keep daily snapshots 1-60 days (default 5).
+                                    A volume has a fixed size (100 GB on Platinum) and
+                                    cannot grow: past that, keep files in object storage.
   volumes snapshots <id|slug> <volume>
                                     Daily snapshots (kept snapshot_retention_days), manual
                                     ones and the final one of a destroyed volume.

@@ -30,6 +30,9 @@ let inbox: any;
 let inboxOptions: any;
 let pendingOpen: any;
 let project: any;
+/** What `useProjectSession` (the by-id read) answers, by Kortix session id, and the ids it was asked for. */
+let byId: Record<string, any> = {};
+let byIdReads: (string | null)[] = [];
 let tree: ReactTestRenderer | undefined;
 let ProjectScreen: typeof import('./ProjectScreen').ProjectScreen;
 
@@ -61,11 +64,14 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/stores/last-project-store': { useLastProjectStore: { getState: () => ({ remember() {} }) } },
   '@/stores/push-store': { usePushStore: Object.assign((selector: any) => selector({ pendingOpen }), { getState: () => ({ setViewingSessionId() {}, takeOpen: (projectId: string) => { const open = pendingOpen?.projectId === projectId ? pendingOpen : null; if (open) pendingOpen = null; return open; } }) }) },
   '@/stores/upgrade-sheet-store': { useUpgradeSheetStore: (selector: any) => selector(upgradeStore) },
-  '@/lib/projects/hooks': { useProject: () => ({ data: project }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
+  '@/lib/projects/hooks': { useProject: () => ({ data: project }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] },
+    useProjectSession: (_projectId: string, sessionId: string | null) => { byIdReads.push(sessionId); return { data: sessionId ? byId[sessionId] : undefined }; } },
+  '@/lib/session/session-list': { sessionDisplayTitle: (row: any) => row?.name ?? null, resolveSessionTitle: (row: any) => row?.name ?? null, subsessionTitle: (child: any) => child.title },
+  '@/lib/session/sub-agents': { subAgentRelation: (_row: any, parent: any) => (parent ? { type: 'child', parent } : null), subAgentsOf: () => [] },
   '@tanstack/react-query': { useQueryClient: () => queryClient },
-  '@/lib/review/use-review': { useReviewItems: () => ({ data: reviewData }) },
+  '@/lib/review/use-review': { useReviewNeedsYou: () => ({ total: reviewData.length, items: reviewData }) },
   '@/lib/session/needs-you': { needsYouBySession: (items: any[], summary?: any) => new Map([...items.map((item): [string, any] => [item.session_id, item]), ...Object.entries(summary?.sessions ?? {})]) },
-  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
+  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, sessionParentId: (row: any) => row?.parent_session_id ?? null, runtimeSessionsOf: (row: any) => row.runtime_sessions ?? [], SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
     sessionStartKey: (projectId: string, sessionId: string) => ['start', projectId, sessionId],
     getSessionHealth: async (url: string, init?: RequestInit) => { const res = await globalThis.fetch(`${url}/kortix/health`, init); return { status: res.status, ok: res.ok, health: await res.json(), body: '' }; } },
   '@/components/kortix/toast-provider': { useToast: () => ({ error: spy('toast') }) },
@@ -119,6 +125,9 @@ beforeEach(() => {
   homeRenders = 0;
   threadRenders = 0;
   reviewData = [];
+  byId = {};
+  byIdReads = [];
+  (sandbox as any).sandboxUrl = null;
   needsInput = needsInputCall = undefined;
   route = drawer = home = connecting = back = stackListener = thread = actionsSheet = inboxOptions = pendingOpen = undefined;
   inbox = { isSuccess: true, unreadCount: 2, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); } };
@@ -409,6 +418,76 @@ describe('ProjectScreen connect and stack', () => {
     const action = seen('dispatch').at(-1)?.args[0];
     expect([action?.type, action?.args[0]]).toEqual(['popTo', 'index']);
     expect(seen('start')).toHaveLength(0);
+  });
+
+  // KRTX-2316: the first list page (here empty) does not hold the session.
+  // Its row comes from the by-id read, so nothing keyed off it disappears.
+  test('a session older than the first page keeps its saved copy, actions, rename, title and highlight', async () => {
+    byId = {
+      'ps-old': { session_id: 'ps-old', runtime_session_id: 'oc-old', opencode_session_id: 'oc-old', name: 'Older session', agent_name: 'default', metadata: {}, parent_session_id: 'ps-root' },
+      'ps-root': { session_id: 'ps-root', name: 'The parent, older still' },
+    };
+    let finish!: (value: any) => void;
+    response = () => new Promise((resolve) => { finish = resolve; });
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-old' }));
+    // Connecting: the saved copy paints under the row's runtime root.
+    expect(byIdReads).toContain('ps-old');
+    expect(connecting.sessionId).toBe('oc-old');
+    expect(drawer.activeProjectSessionId).toBe('ps-old');
+    await act(async () => finish({ stage: 'ready', retriable: false, failure: null, opencode_session_id: 'oc-old', sandbox: { status: 'active', external_id: 'box-1', sandbox_id: 'ps-old' } }));
+    expect(seen('navigateSession').at(-1)?.args).toEqual(['oc-old']);
+    // The store shows the thread; its sandbox has not switched in yet: the saved copy still paints.
+    tab.activeSessionId = 'oc-old';
+    await rerender();
+    expect(connecting.sessionId).toBe('oc-old');
+    // The sandbox switched in: the thread renders with its title, its "···" and its rename.
+    (sandbox as any).sandboxUrl = 'https://sandbox.test/p/box-1/8000';
+    await rerender();
+    expect(thread.sessionId).toBe('oc-old');
+    expect(thread.sessionTitle).toBe('Older session');
+    expect(typeof thread.onOpenRightDrawer).toBe('function');
+    expect(typeof thread.onRenamePress).toBe('function');
+    expect(drawer.activeProjectSessionId).toBe('ps-old');
+    // Its parent is read by id too: the header links up to it.
+    expect(byIdReads).toContain('ps-root');
+    expect(thread.subAgentRelation?.parent?.session_id).toBe('ps-root');
+    expect(drawer.activeParentSessionId).toBe('ps-root');
+  });
+
+  // KRTX-2316: the by-id row is read once at connect, so its `runtime_sessions`
+  // snapshot misses a sub-agent started later. Any runtime id other than the
+  // row's root is a sub-session: its own title, no rename, no root agent.
+  test("a sub-session the row's snapshot does not list keeps its own title and turns rename off", async () => {
+    byId = {
+      'ps-a': { session_id: 'ps-a', runtime_session_id: 'oc-a', opencode_session_id: 'oc-a', name: 'Root title', agent_name: 'builder', metadata: {},
+        runtime_sessions: [{ id: 'oc-a', title: 'Root title', parent_id: null }, { id: 'oc-listed', title: 'Listed child', parent_id: 'oc-a' }] },
+    };
+    response = async () => ({ stage: 'ready', retriable: false, failure: null, opencode_session_id: 'oc-a', sandbox: { status: 'active', external_id: 'box-1', sandbox_id: 'ps-a' } });
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-a' }));
+    tab.activeSessionId = 'oc-a';
+    (sandbox as any).sandboxUrl = 'https://sandbox.test/p/box-1/8000';
+    await rerender();
+    expect(thread.sessionTitle).toBe('Root title');
+    expect(typeof thread.onRenamePress).toBe('function');
+    expect(thread.boundAgentName).toBe('builder');
+    // A task tool's View opens a sub-agent started after the row was read.
+    tab.activeSessionId = 'oc-child';
+    await rerender();
+    expect(thread.sessionId).toBe('oc-child');
+    expect(thread.sessionTitle).toBeUndefined();
+    expect(thread.onRenamePress).toBeUndefined();
+    expect(thread.boundAgentName).toBeNull();
+    // The sub-session runs in the connected session's sandbox: its "···" and highlight stay.
+    expect(thread.projectSessionId).toBe('ps-a');
+    expect(typeof thread.onOpenRightDrawer).toBe('function');
+    expect(drawer.activeProjectSessionId).toBe('ps-a');
+    // A sub-session the snapshot lists reads its title from there.
+    tab.activeSessionId = 'oc-listed';
+    await rerender();
+    expect(thread.sessionTitle).toBe('Listed child');
+    expect(thread.onRenamePress).toBeUndefined();
   });
 
   test('the drawer gets the latest Needs you sessions', async () => {

@@ -84,8 +84,14 @@ import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../contract/session-log'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
+import { carryHarness, type HarnessCarry } from './session-log-boot'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
+/**
+ * One post's budget: above the API's 25 s request deadline. At 15 s the daemon gave up on a
+ * batch the API was still committing, and re-sent it behind its own lock (KRTX-2344).
+ */
+export const JOURNAL_POST_TIMEOUT_MS = 30_000
 export const JOURNAL_ACK_TIMEOUT_MS = 3_000
 /** Posts of one batch that a 200 does not acknowledge, before its pairs are dropped. */
 export const JOURNAL_UNACKED_RETRIES = 3
@@ -105,6 +111,8 @@ export interface SessionLogJournalOptions {
   cursors?: readonly ExportCursor[]
   /** Set on every session patch this journal sends: a partial restore's notice (D3, `session-log-boot.ts`). */
   session?: SessionLogSessionPatch
+  /** The restored harness history (P7.1, `carryHarness` in `session-log-boot.ts`): replaces the adapter's one-entry history. */
+  harness?: HarnessCarry
   /** Test seams. */
   maxBatchBytes?: number
   retryMs?: number
@@ -324,6 +332,7 @@ export class SessionLogJournal {
     }
     if (changes.session) {
       const session = { ...changes.session, ...this.options.session }
+      if (changes.session.harness) session.harness = carryHarness(this.options.harness, changes.session.harness)
       this.session = { ...this.session, ...session }
       sessionLogEventBus().publish('log.state', { generation: this.options.generation, session } satisfies SessionLogStateEvent)
     }
@@ -395,7 +404,7 @@ export class SessionLogJournal {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${ctx.token}` },
           body: batch.body,
-          signal: AbortSignal.any([this.inflight.signal, AbortSignal.timeout(15_000)]),
+          signal: AbortSignal.any([this.inflight.signal, AbortSignal.timeout(JOURNAL_POST_TIMEOUT_MS)]),
         },
       )
     } catch (err) {

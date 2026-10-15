@@ -44,12 +44,12 @@ import type { ToolProps } from '../shared/types';
 /** `text-xs leading-snug` (1.375). */
 const TODO_TEXT = { fontSize: TURN_TYPE.xs.fontSize, lineHeight: TURN_TYPE.xs.fontSize * 1.375 };
 
-export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function TodoWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { colorScheme } = useColorScheme();
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const metadata = partMetadata(call);
 
   const todos = useMemo(
     () => selectTodos({ input, metadata, streamingInput }),
@@ -60,7 +60,7 @@ export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProp
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={ListChecksIcon}
       trigger={{ title: 'Todos', subtitle }}
       badge={badge}

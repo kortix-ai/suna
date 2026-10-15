@@ -31,6 +31,13 @@ session create returns `201` with the session, including `session_id` and
 when Kortix queues the create. Read the session with
 `GET /v1/projects/<project_id>/sessions/<session_id>` until it appears.
 
+With only a `session_id`, `GET /v1/sessions/<session_id>` returns the same
+session with its `project_id`, under the same access rules: a session you
+cannot read, an unknown id, and a deleted session all return `404`. A session
+in an account or project you have no access to also returns `404`, so the id
+alone never shows that a session exists. A key scoped to one project cannot
+call it. Use the project route with that key.
+
 ## Pick a surface
 
 All four surfaces reach the same API with the same permissions.
@@ -217,6 +224,10 @@ A list route that pages takes `limit` and `cursor`. Pass the next cursor back as
 | `GET /v1/projects/<project_id>/sessions` | `X-Next-Cursor` response header | Default 50, maximum 200 |
 | `GET /v1/accounts/<account_id>/audit` | `next_cursor` in the body | Default 50, maximum 200 |
 | `GET /v1/projects/<project_id>/files?depth=1` | `next_cursor` in the body | Default 500, maximum 2,000. Without `limit` or `cursor`: one response of up to 5,000 entries |
+
+A session page holds only the sessions you may open, and it is full while more
+remain: only the last page holds fewer than `limit` sessions. A delete does not
+move a session in the list order.
 
 The session list also returns an `ETag`. Send it back as `If-None-Match` and an
 unchanged list answers `304` with no body.

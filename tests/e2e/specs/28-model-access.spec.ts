@@ -85,47 +85,46 @@ test('provider and model access persists, keeps credentials, and updates control
     if (await dismissWelcome.isVisible()) await dismissWelcome.click();
     await expect(page.getByRole('heading', { name: 'Models', exact: true })).toBeVisible();
 
+    // Since #9801 a provider is switched on and off in two places: its side
+    // sheet (Providers tab, "Enable <provider>") and its group header on the
+    // Models tab. Each test step says which one is open.
     async function toggle(name: string, expected: { target: string; id: string; enabled: boolean }) {
       const response = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`${base}/model-access`));
-      if (expected.target === 'provider') {
-        await page.getByRole('button', { name: `${name.replace(/^Enable /, '')} settings`, exact: true }).click();
-        await page.getByRole('menuitem', { name: expected.enabled ? 'Enable provider' : 'Disable provider', exact: true }).click();
-      } else {
-        await page.getByRole('switch', { name, exact: true }).click();
-      }
+      const control = page.getByRole('switch', { name, exact: true });
+      await control.click();
       const saved = await response;
       expect(saved.status()).toBe(200);
       expect(saved.request().postDataJSON()).toEqual(expected);
-      if (expected.target === 'provider') {
-        await expect(page.locator(`[data-provider-access="${expected.id}"]`).getByText('Disabled', { exact: true })).toHaveCount(expected.enabled ? 0 : 1);
-      } else {
-        await expect(page.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', String(expected.enabled));
-      }
+      await expect(control).toHaveAttribute('aria-checked', String(expected.enabled));
     }
+    const modelsTab = page.locator('button[role=tab]').filter({ hasText: /^Models$/ });
+    const providersTab = page.getByRole('tab', { name: 'Providers', exact: true });
+    const openProvider = (id: string) => page.locator(`[data-provider-row="${id}"]`).click();
+    // The project default's provider cannot be turned off.
+    const expectProtectedProvider = (name: string) =>
+      expect(page.getByRole('switch', { name: `Enable ${name}`, exact: true })).toBeDisabled();
 
-    await page.locator('[data-provider-row="openai"]').getByRole('button', { name: /models$/ }).click();
-    await expect(page.locator('button[role=tab]').filter({ hasText: /^Models$/ })).toHaveAttribute('aria-selected', 'true');
+    await modelsTab.click();
+    await expect(modelsTab).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveCount(0);
     await expect(page.locator('[data-model-id^="openai/"]').first()).toBeVisible();
     await expect(page.locator('[data-model-id^="codex/"]').first()).toBeAttached();
-    await page.getByRole('tab', { name: 'Providers', exact: true }).click();
+    await expectProtectedProvider('ChatGPT subscription');
+    await providersTab.click();
     await expect(page.getByRole('switch')).toHaveCount(0);
     await expect(page.getByText('Enabled', { exact: true })).toHaveCount(0);
-    async function expectProtectedProvider(name: string) {
-      await page.getByRole('button', { name: `${name} settings`, exact: true }).click();
-      await expect(page.getByRole('menuitem', { name: 'Disable provider', exact: true })).toBeDisabled();
-      await expect(page.getByText('Choose a project default from another provider before disabling this provider.', { exact: true })).toBeVisible();
-      await page.keyboard.press('Escape');
-    }
-    await expectProtectedProvider('ChatGPT subscription');
+    await openProvider('kortix');
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: false });
+    await openProvider('openai');
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: false });
     await page.reload();
-    await expect(page.locator('[data-provider-access="kortix"]').getByText('Disabled', { exact: true })).toBeVisible();
-    await expect(page.locator('[data-provider-access="openai"]').getByText('Disabled', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-provider-row="kortix"]').getByText('Turned off', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-provider-row="openai"]').getByText('Turned off', { exact: true })).toBeVisible();
     expect(await api(session.access_token, 'GET', `${base}/secrets`)).toEqual(beforeSecrets);
+    await openProvider('openai');
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: true });
-    await page.locator('[data-provider-row="openai"]').getByRole('button', { name: /models$/ }).click();
+    await expect(page.locator('[data-provider-row="openai"]').getByText('Turned off', { exact: true })).toHaveCount(0);
+    await modelsTab.click();
     await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveCount(0);
     const hiddenRow = page.locator('[data-model-id="openai/gpt-4o-mini"]');
     await expect(hiddenRow.getByText('Hidden from picker', { exact: true })).toBeVisible();
@@ -154,14 +153,17 @@ test('provider and model access persists, keeps credentials, and updates control
     await expectProtectedProvider('OpenAI');
     await expect(page.getByRole('switch', { name: "GPT-5.5 is this project's default model and cannot be turned off", exact: true })).toBeDisabled();
     await page.screenshot({ path: testInfo.outputPath('model-access.png'), fullPage: true });
-    await page.getByRole('tab', { name: 'Providers', exact: true }).click();
-    await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: false });
-    await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: true });
+    // ChatGPT subscription is not connected here: its group was listed only
+    // while it held the project default, and has no switch to offer now.
+    await expect(page.locator('[data-provider-group="codex"]')).toHaveCount(0);
+    await providersTab.click();
+    await openProvider('kortix');
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: true });
     await page.screenshot({ path: testInfo.outputPath('provider-access.png'), fullPage: true });
 
     await api(session.access_token, 'PATCH', `${base}/experimental`, { feature: 'pooled_provider_secrets', enabled: true });
     await page.reload();
+    await openProvider('anthropic');
     const anthropicKeys = page.getByRole('region', { name: 'Anthropic API keys' });
     await expect(anthropicKeys.getByRole('button', { name: 'Add key' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Anthropic API key' })).toHaveCount(0);
@@ -190,6 +192,7 @@ test('provider and model access persists, keeps credentials, and updates control
     await accessDialog.getByRole('button', { name: 'Done' }).click();
     await expect(accessDialog).toHaveCount(0);
 
+    await openProvider('google');
     const googleKeys = page.getByRole('region', { name: 'Google API keys' });
     await googleKeys.getByRole('button', { name: 'Add key' }).click();
     const googleDialog = page.getByRole('dialog');
@@ -203,6 +206,7 @@ test('provider and model access persists, keeps credentials, and updates control
     await page.getByRole('menuitem', { name: 'Delete key' }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete key' }).click();
     await expect(googleKeys.getByText('Gemini test key', { exact: true })).toHaveCount(0);
+    await openProvider('anthropic');
     for (const label of ['Primary test key', 'Backup test key']) {
       await anthropicKeys.getByRole('button', { name: `Actions for ${label}` }).click();
       await page.getByRole('menuitem', { name: 'Delete key' }).click();

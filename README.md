@@ -64,7 +64,7 @@ LibreChat).
 | **Models** | Anthropic only | GPT-5.6 only | **Any provider, your own API keys** |
 | **Where it runs** | Anthropic's cloud, or Bedrock / Google Cloud / Microsoft Foundry — no self-host | OpenAI's cloud, no self-host | **Our cloud, your VPC, or your own on-prem network** |
 | **Your configuration** | In their product | In their product | **Files in a git repo you own** |
-| **Access** | Paid plans (Pro, Max, Team, Enterprise) | Paid plans, usage-metered | **Self-host free · managed cloud $40/seat/mo + usage** |
+| **Access** | Paid plans (Pro, Max, Team, Enterprise) | Paid plans, usage-metered | **Self-host free · managed cloud from $20/mo in credits, unlimited members** |
 
 Competitor rows reflect publicly documented behavior as of July 2026.
 

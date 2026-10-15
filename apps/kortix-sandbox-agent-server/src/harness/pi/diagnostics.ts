@@ -4,6 +4,7 @@
  * Health is pi's closed `harness` block; `routes/kortix/health.ts` adds the
  * host facts, the pre-W3 flat fields the API still reads, and `runtimeReady`.
  */
+import { HARNESS_RUNTIME_CAPABILITIES } from '@kortix/api-contract/session-log'
 import type { HarnessDiagnosticsService, HarnessHealthReport } from '../contract/diagnostics'
 import { daemonLogFilePath } from '@/lib/log/logger'
 import { tailFile } from '@/lib/log/log-tail'
@@ -21,10 +22,9 @@ export function createPiDiagnosticsService(
   releases: Pick<PiConfigReleases, 'report' | 'sourceCommit'>,
 ): HarnessDiagnosticsService {
   return {
-    // Subagents (the `task` tool), compaction, slash commands (pi's prompt
-    // templates) and steering are native; rewind, fork, MCP, todo, shell and the harness's own
-    // terminal client are not yet (pi/surface.ts answers them 501 `feature_not_supported`).
-    capabilities: async () => ['session.subagents', 'session.compact', 'session.commands', 'session.steer', 'session.log.v2'],
+    // `HARNESS_RUNTIME_CAPABILITIES.pi` names what is native; pi/surface.ts answers the rest 501
+    // `feature_not_supported`. apps/api reads the same list for the switch preflight.
+    capabilities: async () => [...HARNESS_RUNTIME_CAPABILITIES.pi],
     async health(context, query): Promise<HarnessHealthReport> {
       const bootState: PiBootState = context.bootState
       const rt = runtime()

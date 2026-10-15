@@ -11,6 +11,8 @@ const PARENT_ID = "11111111-1111-4111-8111-111111111111";
 let root = "";
 let server: ReturnType<typeof Bun.serve> | null = null;
 let queries: string[] = [];
+/** True: the list answers no rows, as when you archived every session. */
+let emptyList = false;
 
 const row = (over: Record<string, unknown>) => ({
   session_id: PARENT_ID,
@@ -57,6 +59,7 @@ async function runCli(args: string[]) {
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "kortix-sessions-ls-cli-"));
   queries = [];
+  emptyList = false;
   mkdirSync(join(root, ".kortix"), { recursive: true });
   writeFileSync(
     join(root, ".kortix", "link.json"),
@@ -68,6 +71,13 @@ beforeEach(() => {
       const url = new URL(request.url);
       if (url.pathname !== `/v1/projects/${PROJECT_ID}/sessions`) return Response.json({ error: "nf" }, { status: 404 });
       queries.push(url.search);
+      if (emptyList) return Response.json([]);
+      if (url.searchParams.get("pinned") === "only") {
+        return Response.json([row({ name: "Pinned one", pinned_at: "2026-08-04T00:00:00.000Z", archived_at: null })]);
+      }
+      if (url.searchParams.get("archived") === "only") {
+        return Response.json([row({ name: "Old one", pinned_at: null, archived_at: "2026-08-04T00:00:00.000Z" })]);
+      }
       if (url.searchParams.get("parent") === PARENT_ID) {
         return Response.json([row({ session_id: "22222222-2222-4222-8222-222222222222", name: "worker", parent_session_id: PARENT_ID, child_count: undefined, initiator: { type: "member", id: "user-1", label: "Ada" } })]);
       }
@@ -122,6 +132,34 @@ describe("kortix sessions ls attribution", () => {
     expect(queries.at(-1)).toBe(`?parent=${PARENT_ID}`);
     expect(r.stdout).toMatch(/worker\s+you/);
     expect(r.stdout).not.toContain("CHILDREN");
+  });
+
+  test("--pinned sends pinned=only and marks the row (pinned)", async () => {
+    const r = await runCli(["sessions", "ls", "--pinned"]);
+    expect(r.code).toBe(0);
+    expect(queries).toEqual(["?pinned=only"]);
+    expect(r.stdout).toMatch(/Pinned one \(pinned\)\s+nightly/);
+  });
+
+  test("--archived sends archived=only; --json keeps pinned_at and archived_at", async () => {
+    const r = await runCli(["sessions", "ls", "--archived", "--json"]);
+    expect(r.code).toBe(0);
+    expect(queries).toEqual(["?archived=only"]);
+    expect(JSON.parse(r.stdout)[0]).toMatchObject({ name: "Old one", pinned_at: null, archived_at: "2026-08-04T00:00:00.000Z" });
+  });
+
+  test("an empty default list names --archived", async () => {
+    emptyList = true;
+    const r = await runCli(["sessions", "ls"]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("kortix sessions ls --archived");
+  });
+
+  test("--pinned with --archived exits 2 without calling the API", async () => {
+    const r = await runCli(["sessions", "ls", "--pinned", "--archived"]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("only one of --pinned, --archived");
+    expect(queries).toEqual([]);
   });
 
   test("--mine with --shared exits 2 without calling the API", async () => {

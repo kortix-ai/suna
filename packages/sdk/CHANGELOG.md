@@ -5,6 +5,203 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (Enterprise contracts and trials)
+One plan system (2026-10-15): the plan decides features; a trial is a dated
+grant of a plan; Enterprise is an annual contract (license + credit pool).
+
+- `AccountState` adds optional `trial` (`AccountTrial`: `plan`, `ends_at`,
+  `days_left`), `contract` (`AccountContract`), `enterprise_offer`
+  (`AccountEnterpriseOffer`) and `grace` (`AccountAccessGrace`: SSO/SCIM kept
+  14 days after an Enterprise trial or contract ends). Absent on an older
+  server. Additive.
+- `acceptEnterpriseOffer(params)` (`POST /billing/enterprise-offer/checkout`),
+  `kortix.billing.acceptEnterpriseOffer` and `useAcceptEnterpriseOffer()`:
+  a Stripe Checkout link for the open offer. Needs `billing.write`, which owners
+  AND admins now hold. Additive.
+- Admin: `useAdminEnterpriseContracts`, `useAdminCreateEnterpriseContract`,
+  `useAdminEndEnterpriseContract`, `useAdminWithdrawEnterpriseOffer`,
+  `useAdminEnterpriseOfferLink`, types `AdminEnterpriseContract`,
+  `AdminAccountContract`, `AdminContractCollection`,
+  `AdminCreateEnterpriseContractVariables`, and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS`
+  (the six override keys the server accepts). `AdminAccount` adds optional
+  `contract` and `graceEndsAt`. Additive.
+
+### Deprecated (Enterprise preview and flags)
+- `getEnterpriseDemo`, `setEnterpriseDemo`, `useAdminSetEnterpriseDemo`,
+  `useAdminSetEnterpriseEntitled`, `useAdminSetManagedModels` now reject with
+  `ENDPOINT_RETIRED` and send no request (the API answers 410). Grant an
+  Enterprise trial (`useAdminGrantTrial`), create a contract, or set the
+  `managedModels` override. Removed in the next major. No export was removed.
+- Type changes (the API no longer sends these fields): `AdminAccount`
+  `managedModelsOverride`, `demoEnterprise`, `enterpriseEntitled` and
+  `computeRateMultiplier` become optional and `@deprecated`;
+  `AdminAccountTrial.monthlyUsd` becomes optional and `@deprecated`;
+  `AccountState.enterprise_entitled` is `@deprecated` (read `plan.family`).
+
+### Changed (credits-only billing)
+Seat pricing is gone. Every legacy plan reads as `credits`: one paid plan, any
+whole monthly amount from $50 to $10,000, one shared credit wallet, unlimited
+members. 1 credit = $0.01.
+
+- Added: `setBillingPlan(params)` (`POST /v1/billing/plan`), `kortix.billing.setPlan`,
+  and the `useSetBillingPlan()` mutation hook in `@kortix/sdk/react`. Params
+  `{ monthlyUsd, successUrl, cancelUrl, locale?, accountId? }`; result
+  `SetBillingPlanResult` = `checkout_created` | `updated` | `unchanged` |
+  `payment_pending`. The hook invalidates the `['account-state']` queries.
+  Types `SetBillingPlanParams` and `SetBillingPlanResult`. Additive.
+- Deprecated, now reject with `ENDPOINT_RETIRED` and send no request (the API
+  answers `410`): `createPerSeatCheckout`, `claimPerSeatBilling`,
+  `cancelScheduledChange` (also `kortix.billing.subscription.cancelScheduledChange`),
+  `getProrationPreview` (also `...subscription.prorationPreview`). Their result
+  types stay exported. Removed in the next major. No export name was removed.
+- Breaking type changes (the API no longer sends these fields; nothing is
+  renamed):
+  - `PlanFamily` is `'free' | 'credits' | 'enterprise'` (`'team'` is gone).
+  - `AccountState.plan`: `status` is `'current' | 'non_plan'`, `shape` is
+    `'none' | 'credits' | 'contract'`, `is_grandfathered` is removed, and
+    `monthly_usd: number | null` is added.
+  - `AccountState` drops `billing_model`, `seats`, `member_count`,
+    `can_claim_per_seat` and `can_claim_computer`. `usage_this_period` is
+    present for every account.
+  - `ResolvedPlanView.isGrandfathered` is replaced by `monthlyUsd`.
+  - `BillingTierConfigurationsResponse` adds required `min_monthly_usd` and
+    `max_monthly_usd`.
+  - Admin: `AdminGrantTrialVariables.seats` is removed (`creditGrant` is granted
+    now and every 30 days during the trial); `AdminAccountTrial.seats` becomes
+    `monthlyUsd`; `AdminAccount` drops `billingModel` and `seatCount`;
+    `AdminAccountPlan` drops `is_grandfathered`, adds `monthlyUsd`, and its
+    `family` and `status` unions narrow as above.
+- The 402 body no longer carries `billing_model`. Branch on `billing_state`
+  (`out_of_credits`, `no_subscription`, `payment_failed`).
+- Added: `ProjectLlmCatalogResponse.platformFeePercent`, Kortix's fee on managed
+  model usage in percent (5.5). `managedPricingRoutes` now carries base provider
+  prices, before the fee. Optional, absent on an older server. Additive.
+- Changed: `COST_MARKUP` is `1.055` (was `1.2`), so displayed session cost
+  matches what credits are charged.
+
+### Added (session-log follow-ups)
+- `sessionLogFullTextPlan(refs)`: which texts stored by reference a host shows
+  inline and which it downloads. The smallest fill the 1 MiB inline budget;
+  only the rest download. Before, a host could only download every text of a
+  turn over 1 MiB in all.
+- `hasRuntimeConfirmedMessage(sessionID, messageID)`
+  (`@kortix/sdk/internal/sync-store`): the store holds the message from a
+  runtime read or a live event, not only from a saved copy.
+
+### Fixed (session-log follow-ups)
+- `useSessionSync` stops offering the saved copy's older pages once the
+  runtime holds the saved window's oldest message and has no older page of
+  its own: `hasOlder` is `false` when the whole history is loaded. Before,
+  the "earlier messages" control stayed after the runtime had answered
+  everything (web and mobile). A box that lost its state still pages its
+  saved history.
+- `toToolView` reads Claude Code edits: `old_string` / `new_string`, the
+  `edits[]` of a `MultiEdit` (blocks joined in order), and a `NotebookEdit`'s
+  `notebook_path` and `new_source`. `toolKind` maps `MultiEdit` and
+  `NotebookEdit` to `edit`; `inputPath` reads `notebook_path`. The
+  `file-edit` view model reads the same blocks.
+- Unchanged message arrays keep their rows past 20 sessions
+  (`buildSessionMessages`). This stops the "Maximum update depth exceeded"
+  in a host that reads more than 20 sessions per render (the web session
+  context modal with 20+ sub-agents).
+
+### Added (block readers a host draws a tool call with)
+- `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),
+  `toolCallRawOutput(call)` (a completed call's text, one string per call
+  object) and `toolCallError(call)` (a failed call's error: the semantic
+  error, else the result text, as `toV1` gives `state.error`, so a native
+  failed call never shows an empty error body).
+- `subAgentCalls(thread)`: the shown tool calls of a sub-agent thread's
+  replies, in order, one array per thread object.
+
+### Changed (session log)
+- `useSession({ chatEngine: false })` negotiates the session log (v2) as
+  `useSession` with its chat engine does: with the runtime's
+  `session.log.v2` and the project flag `session_log`, it reads the first
+  log page and switches the session stream to `schema=v2`, so
+  `useSessionLogThread` serves v2 records to a host that reads its own
+  transcript (apps/mobile).
+- `useSessionLogThread` on v2 places the v1 store rows the log lacks by time,
+  as `useSessionMessages` does: an older page (`loadOlder`) goes before the
+  log's messages, an optimistic send after them. Before, every such row was
+  appended, so older turns rendered after the newest one.
+
+### Changed (one saved-history read per session open)
+- `useSession` reads a session's saved copy once per open. The session-open
+  snapshot carries the first window; the read waits up to 2 s for a snapshot
+  in flight, then asks `GET …/transcript?shape=sync&history=true`. Before,
+  every open with a snapshot in flight downloaded the window twice, and the
+  sync layer could read it a third time (KRTX-189).
+- `useSessionSync` with no `mirror` runs the same read. `useSession` passes
+  its answer as `mirror`: the copy, or `null` while the read runs and when
+  the server holds none. A host that mounts a second `useSessionSync` for the
+  root conversation beside `useSession` passes `mirror: null`. Beside
+  `useSession({ chatEngine: false })`, which makes no saved-history read, and
+  on a `savedChild` hook, the host omits `mirror`: that hook makes the read.
+- A host that passes no `mirror` now gets the server's "no saved copy" answer
+  from the snapshot too, so the device copy is dropped for the next open, as
+  the route answer already did.
+
+### Added (saved copy before `useSession` binds)
+- `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` and
+  `SavedSessionCopy` (`{ envelope, empty }`): the same saved-history read,
+  plus the empty-conversation proof (`isEmptyConversation` over the turn
+  record, read only when the copy proves the root empty). Never throws. For a
+  connecting screen that shows the conversation while the computer wakes;
+  apps/mobile uses it. Additive (KRTX-189).
+- The open that follows `readSavedSessionCopy` downloads the window no second
+  time. The SDK holds the copy for up to 5 min (one wake). The session-open
+  snapshot then asks for the pointer only (`?transcript=0`), and the
+  saved-history read answers from the held copy. Before, the connecting view
+  and the thread after it each downloaded the window.
+  `resetIdentityState` forgets the held copy and the session-open snapshots
+  (KRTX-189).
+
+### Added (bounded review reads)
+- `getReviewSummary(projectId)` and `project(id).review.summary()`
+  (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you
+  counts of the review inbox, `{ needs_you_total, needs_you_by_session }`.
+  Read it for a badge or a per-session indicator instead of the list. A
+  connector call the caller may not resolve counts nowhere. Additive
+  (KRTX-2316).
+- `listReviewItems` takes `sessionId`, `limit` and `cursor`
+  (`ReviewItemsQuery`) and resolves to `ReviewItemsPage`, which adds
+  `next_cursor` (null on the last page). The server now returns one page:
+  50 items by default, at most 200, with Needs you first, then Waiting, then
+  Done, newest first within each. A caller that read the whole inbox from one
+  response pages with `cursor` or passes `segment`. Additive types.
+- `listChangeRequests` takes `cursor` and its response adds `next_cursor`.
+  The server now returns one page: 50 change requests by default, at most
+  500 (a larger `limit` answers 400, it no longer clamps). Additive types.
+  `project(id).changeRequests.list(status?, options?)` passes both through,
+  so the facade can page as well. Additive (a widened parameter list).
+- React (`@kortix/sdk/react`): `useReviewSummary(projectId)` (polls every
+  60 s), `useReviewItemPages(projectId, query)` (an infinite query; read the
+  rows with `reviewItemsOf(query.data)`), `nextReviewItemsCursor`, and the
+  keys `qk.project.reviewSummary`, `qk.project.reviewItemsScope` and
+  `qk.project.reviewItemPages`. Additive.
+
+### Added (who may decide an approval)
+- `SessionAuditAction.can_resolve`: true only on an unresolved connector call
+  the viewer may approve or deny, the verdict `resolveApproval` would get
+  (today a project manager, or the session's launcher unless an API token or a
+  service account started the session). False on every other
+  row. Show Approve / Deny only when it is true. Also on the session snapshot's
+  `audit` leg. Optional, absent on an older server. Additive (KRTX-1724).
+- `ApiReviewItem.can_resolve` (connector-call items) and
+  `ReviewApprovalAction.canResolve`, set by `mapApiReviewItem`. A viewer who
+  may not decide the call gets it with status `waiting`, not `needs_you`. On an
+  older server `canResolve` follows `args_preview_authorized`, which the same
+  rule decided. Additive.
+- `reviewVerdictAllowed` refuses approve and reject on a connector call whose
+  `canResolve` is false.
+- `SessionAuditAction.resolvers`, `ApiReviewItem.resolvers` and
+  `ReviewApprovalAction.resolvers` (set by `mapApiReviewItem`): who decides a
+  pending call, for a viewer whose `can_resolve` is false. `managers` for a
+  session started with an API token or a service account (`origin: 'backend'`),
+  else `managers_and_launcher`. Null on a settled audit row; optional, absent
+  on an older server. Additive (KRTX-1724).
+
 ### Added (undecryptable stored values)
 - `ProjectSecret.status` and `AccountSecretResource.status`: `'ok'`, or
   `'undecryptable'` when the server can no longer decrypt the stored value

@@ -14,15 +14,19 @@ import {
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
+import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
+import type { AppEnv } from '../../types';
 
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { projectSessions } from '@kortix/db';
 import { SessionUpdateInputSchema } from '@kortix/api-contract';
 import { and, eq, sql } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
-import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionDeleteResultSchema, SessionSchema, projectsApp } from '../lib/app';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned, sessionProjectId } from '../lib/access';
+import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionDeleteResultSchema, SessionSchema, projectsApp, sessionsApp } from '../lib/app';
 import {
   hasOwn,
   normalizeString,
@@ -48,6 +52,7 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
@@ -55,6 +60,10 @@ import {
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
   SERVER_MANAGED_SESSION_METADATA_KEYS,
 } from '../lib/session-metadata-keys';
+import { loadSessionUserStates } from '../lib/session-user-state';
+import { personUserId } from './session-watch';
+
+const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
 function serverManagedSessionMetadataKey(
   value: unknown,
@@ -63,6 +72,95 @@ function serverManagedSessionMetadataKey(
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const metadata = value as Record<string, unknown>;
   return keys.find((key) => hasOwn(metadata, key)) ?? null;
+}
+
+/**
+ * One session read by id: the body and the access check of
+ * `GET /v1/projects/:projectId/sessions/:sessionId`. The account-scoped
+ * `GET /v1/sessions/:sessionId` answers through it too, so the two routes
+ * cannot disagree on who may read a session.
+ */
+async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessionId: string) {
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  // A soft-deleted session is gone for a read-by-id, exactly as it is for the
+  // default list. `deleteSession` only stamps `metadata.deletedAt`
+  // (session-lifecycle/actions.ts), and this loader never looked at it, so a
+  // deleted session stayed readable by id — and `serializeSession` reported it
+  // as `deleted_at: null` here, because only the list passes that context. Use
+  // the same predicate the list uses (session-inventory.ts: a STRING deletedAt
+  // hides the row). `scope=project` on the LIST deliberately keeps tombstones
+  // for managers; that path is untouched.
+  if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+  // The same owner resolution the list uses: without it a read-by-id reported
+  // owner_type 'unknown' and no owner name for the very session the list named.
+  const personId = personUserId(c, loaded);
+  const [owners, userStates] = await Promise.all([
+    visible.row.createdBy
+      ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
+      : undefined,
+    personId ? loadSessionUserStates([sessionId], personId) : undefined,
+  ]);
+  const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
+  return c.json(serializeSession(visible.row, {
+    grants: visible.grants,
+    viewerId: loaded.userId,
+    canManageProject: visible.canManageProject,
+    ownerIsMachine: visible.ownerIsMachine,
+    ownerEmail: owner?.email ?? null,
+    ownerName: owner?.name ?? null,
+    ownerAvatarUrl: owner?.avatarUrl ?? null,
+    ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
+    userState: personId ? (userStates?.get(sessionId) ?? NO_USER_STATE) : undefined,
+  }), 200);
+}
+
+/**
+ * `GET /v1/sessions/:sessionId`: one session by id, in whichever project holds
+ * it. A client that has only the id (an SDK `restartSandbox(id)`) reads it here
+ * instead of listing every project's sessions (KRTX-2316). The answer is the
+ * project route's own (`sessionReadResponse`), with one difference: the
+ * project gate's `403` (no member of the account, no access to the project, no
+ * session read) is `404` here. The id alone must not tell a caller that a
+ * session exists, so an unknown id, a session the caller may not see and a
+ * deleted one are all `404`. A project-scoped token is refused before this
+ * handler (`enforceTokenProjectScope`: no project in the path).
+ */
+export function registerSessionLookupRoutes(): void {
+  sessionsApp.use('/*', supabaseAuth);
+
+  sessionsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{sessionId}',
+      tags: ['sessions'],
+      summary: 'Get a session by id, in any project',
+      ...auth,
+      request: {
+        params: z.object({ sessionId: z.string() }),
+      },
+      responses: {
+        200: json(SessionSchema, 'The session. `project_id` names its project.'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const projectId = await sessionProjectId(sessionId);
+      if (!projectId) return c.json({ error: 'Not found' }, 404);
+      try {
+        return await sessionReadResponse(c, projectId, sessionId);
+      } catch (error) {
+        if (error instanceof HTTPException && error.status === 403) return c.json({ error: 'Not found' }, 404);
+        throw error;
+      }
+    },
+  );
 }
 
 export function registerProjectSessionsRoutes(): void {
@@ -267,6 +365,10 @@ export function registerProjectSessionsRoutes(): void {
             label: z
               .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
               .optional(),
+            // The requesting person's pinned or archived sessions only. Without
+            // either, the list leaves out the sessions the person archived.
+            pinned: z.literal('only').optional(),
+            archived: z.literal('only').optional(),
           }),
         },
       responses: {
@@ -282,9 +384,46 @@ export function registerProjectSessionsRoutes(): void {
     const query = c.req.valid('query');
     const scope = (query.scope ?? 'visible') as ProjectSessionListScope;
 
+    // The poll memo: an If-None-Match repeat of the same (viewer, query) within
+    // the short window is a 304 with no DB work at all. The ETag below is only
+    // known after the full multi-op inventory, so without this every poll paid
+    // 6-14 connection-pool round trips to learn the page was unchanged — and a
+    // poll burst queued its own operations into the p95 (KRTX-468). The key is
+    // built entirely from values the auth middleware already resolved, before
+    // any DB read; the first successful response seeds it, so a burst pays
+    // once and every repeat within the window is free.
+    const pollMemoKey = [
+      c.get('userId'),
+      c.get('iamTokenId'),
+      c.get('authType'),
+      callerKortixSessionId(c),
+      c.req.header('x-kortix-admin-bypass') === '1' ? 'bypass' : '',
+      projectId,
+      c.req.url.split('?')[1] ?? '',
+    ].join('|');
+    const ifNoneMatch = c.req.header('if-none-match');
+    if (ifNoneMatch) {
+      const memoed = peekSessionListPollEtag(pollMemoKey, ifNoneMatch);
+      if (memoed) {
+        // Same binding `loadProjectForUser` performs on the computed path;
+        // a browser-JWT principal has no other source for it, and the audit
+        // snapshot and the post-handler context propagation both read it.
+        c.set('accountId', memoed.accountId);
+        c.header('Cache-Control', 'private, no-cache');
+        c.header('ETag', memoed.etag);
+        if (memoed.nextCursor) c.header('X-Next-Cursor', memoed.nextCursor);
+        c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
+        return c.body(null, 304);
+      }
+    }
+
+    if (query.pinned && query.archived) {
+      return c.json({ error: 'Choose pinned=only or archived=only, not both' }, 400);
+    }
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const personId = personUserId(c, loaded);
 
     const inventory = await loadProjectSessionInventory({
       projectId,
@@ -300,6 +439,8 @@ export function registerProjectSessionsRoutes(): void {
         startedBy: query.started_by ?? null,
         q: query.q ?? null,
         labels: query.label === undefined ? null : [query.label].flat(),
+        personId,
+        view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
@@ -335,6 +476,7 @@ export function registerProjectSessionsRoutes(): void {
         runtimeStatus: item.runtimeStatus,
         deletedAt: item.deletedAt,
         deletedBy: item.deletedBy,
+        userState: personId ? (inventory.userStates.get(row.sessionId) ?? NO_USER_STATE) : undefined,
         // The inventory listing drops the write-only heavy metadata keys. The
         // single-session read below still returns metadata whole.
         trimListMetadata: true,
@@ -365,6 +507,11 @@ export function registerProjectSessionsRoutes(): void {
     // client already parses — adding an envelope would have broken all of them.
     if (inventory.nextCursor) c.header('X-Next-Cursor', inventory.nextCursor);
     c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
+    storeSessionListPollEtag(pollMemoKey, {
+      etag,
+      nextCursor: inventory.nextCursor,
+      accountId: loaded.row.accountId,
+    });
     if (c.req.header('if-none-match') === etag) return c.body(null, 304);
     c.header('Content-Type', 'application/json');
     return c.body(serialized, 200);
@@ -387,40 +534,9 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    // A soft-deleted session is gone for a read-by-id, exactly as it is for the
-    // default list. `deleteSession` only stamps `metadata.deletedAt`
-    // (session-lifecycle/actions.ts), and this loader never looked at it, so a
-    // deleted session stayed readable by id — and `serializeSession` reported it
-    // as `deleted_at: null` here, because only the list passes that context. Use
-    // the same predicate the list uses (session-inventory.ts: a STRING deletedAt
-    // hides the row). `scope=project` on the LIST deliberately keeps tombstones
-    // for managers; that path is untouched.
-    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-    // The same owner resolution the list uses: without it a read-by-id reported
-    // owner_type 'unknown' and no owner name for the very session the list named.
-    const owner = visible.row.createdBy
-      ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
-      : undefined;
-    return c.json(serializeSession(visible.row, {
-      grants: visible.grants,
-      viewerId: loaded.userId,
-      canManageProject: visible.canManageProject,
-      ownerIsMachine: visible.ownerIsMachine,
-      ownerEmail: owner?.email ?? null,
-      ownerName: owner?.name ?? null,
-      ownerAvatarUrl: owner?.avatarUrl ?? null,
-      ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
-    }));
+    return sessionReadResponse(c, c.req.param('projectId'), sessionId);
   },
   );
 

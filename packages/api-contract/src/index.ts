@@ -62,13 +62,12 @@ export const FeatureFlagMapSchema = z.object({
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
+  genui: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
   volumes: z.boolean(),
-  stateless_sessions: z.boolean(),
   drives: z.boolean(),
-  ephemeral_sandboxes: z.boolean(),
   session_log: z.boolean(),
   session_log_restore: z.boolean(),
 });
@@ -1011,10 +1010,10 @@ export const SessionCreateInputSchema = z
       .optional(),
     provider: SandboxProviderSchema.optional(),
     /**
-     * Run the session on a persistent machine: its whole root disk persists
-     * across stops (installed packages, config, files). Platinum only. A stop
-     * keeps the disk and ends running processes; the machine stays on the
-     * image it was created from until it is reset.
+     * @deprecated INERT. Accepted and ignored: persistent machines left the
+     * product. The key stays because this object is `.strict()` and
+     * `@kortix/sdk` is published: dropping it would turn an old client's
+     * create into a 400.
      */
     persistent_machine: z.boolean().optional(),
     branch_already_created: z.boolean().optional(),
@@ -1149,6 +1148,11 @@ export const ProjectSessionSchema = z.object({
     .optional(),
   deleted_at: z.string().nullable().optional(),
   deleted_by: z.string().nullable().optional(),
+  /** When the requesting person pinned / archived it (KRTX-2418). Present on
+   *  the list and the read by id for a person; absent for an agent, an API
+   *  key or a service account, and on other responses. */
+  pinned_at: z.string().nullable().optional(),
+  archived_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -1776,6 +1780,13 @@ export const SessionAuditActionSchema = z.object({
   at: z.string(),
   resolved_at: z.string().nullable(),
   approval_url: z.string().nullable(),
+  /** True only on an unresolved row the CALLER may approve or deny: the verdict
+   *  `POST /approvals/:executionId` enforces (KRTX-1724). False on every other row. */
+  can_resolve: z.boolean(),
+  /** Who decides an unresolved row, as a class: `managers` for a session
+   *  started with an API token or a service account (`origin: 'backend'`),
+   *  else `managers_and_launcher`. Null on every settled row. */
+  resolvers: z.enum(['managers', 'managers_and_launcher']).nullable(),
 });
 export type SessionAuditAction = z.infer<typeof SessionAuditActionSchema>;
 
@@ -1911,8 +1922,13 @@ export const ChangeRequestSchema = z.object({
 });
 export type ChangeRequest = z.infer<typeof ChangeRequestSchema>;
 
-/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. */
-export const ChangeRequestListSchema = z.object({ change_requests: z.array(ChangeRequestSchema) });
+/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. One
+ *  page, newest first; `next_cursor` is the next page's `cursor`, null on the
+ *  last page. */
+export const ChangeRequestListSchema = z.object({
+  change_requests: z.array(ChangeRequestSchema),
+  next_cursor: z.string().nullable(),
+});
 export type ChangeRequestList = z.infer<typeof ChangeRequestListSchema>;
 
 // ─── Accounts ───────────────────────────────────────────────────────────────
@@ -2129,3 +2145,45 @@ export const GrantSecretToAgentResultSchema = z.object({
   adopted_governance: z.boolean(),
 });
 export type GrantSecretToAgentResult = z.infer<typeof GrantSecretToAgentResultSchema>;
+
+// ─── Kortix Capture data API (`/v1/accounts/:accountId/capture/*`) ──────────
+// What apps/api/src/capture serializes for the account switch and search.
+// A Kortix API key reads the same bodies.
+
+export const CaptureWorkspaceSchema = z.object({
+  account_id: z.string(),
+  enabled: z.boolean(),
+  /** IAM `capture.read_all`: you read every member's devices and timeline. */
+  can_read_all: z.boolean(),
+  /** IAM `capture.manage`: you turn Capture on or off, set the policy, revoke any device. */
+  can_manage: z.boolean(),
+  updated_at: z.string().nullable(),
+});
+export type CaptureWorkspace = z.infer<typeof CaptureWorkspaceSchema>;
+
+export const CaptureSearchKindSchema = z.enum(['screen', 'actions', 'audio']);
+
+export const CaptureSearchHitSchema = z.object({
+  kind: CaptureSearchKindSchema,
+  id: z.string(),
+  ts: z.string(),
+  user_id: z.string(),
+  device_id: z.string(),
+  chunk_id: z.string(),
+  app: z.string().nullable(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  /** The display a screen hit shows; null for actions, audio and one-display devices. */
+  display_id: z.number().nullable(),
+  display_name: z.string().nullable(),
+  snippet: z.string(),
+});
+export type CaptureSearchHit = z.infer<typeof CaptureSearchHitSchema>;
+
+export const CaptureSearchResultSchema = z.object({
+  /** The person searched; null for an account-wide search (`scope=account`). */
+  user_id: z.string().nullable(),
+  q: z.string(),
+  hits: z.array(CaptureSearchHitSchema),
+});
+export type CaptureSearchResult = z.infer<typeof CaptureSearchResultSchema>;

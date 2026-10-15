@@ -1,0 +1,8 @@
+{
+  "device_code": "synthetic-device-code",
+  "expires_in": 900,
+  "interval": 5,
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://issuer.example/device",
+  "verification_uri_complete": "https://issuer.example/device?user_code=WDJB-MJHT"
+}

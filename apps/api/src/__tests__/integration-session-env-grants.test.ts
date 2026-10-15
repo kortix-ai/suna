@@ -412,6 +412,37 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     }
   });
 
+  test('a lost session continued on a new computer (lostRecoveredAt) restores from its log with the project flag off; another session does not', async () => {
+    const boot = (sessionId: string) =>
+      buildSessionSandboxEnvVars({
+        accountId: ctx.accountId,
+        projectId: ctx.projectId,
+        sessionId,
+        userId: OWNER,
+        repoUrl: 'https://example.test/principal.git',
+        baseRef: 'main',
+        agentName: 'default',
+        llmGatewayEnabled: false,
+      });
+    const mark = (on: boolean) =>
+      db
+        .update(projectSessions)
+        .set({
+          metadata: on
+            ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || '{"lostRecoveredAt":"2026-10-15T10:00:00.000Z"}'::jsonb`
+            : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - 'lostRecoveredAt'`,
+        })
+        .where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
+    try {
+      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(PRINCIPAL_SESSION))).toBe(false);
+      await mark(true);
+      expect((await boot(PRINCIPAL_SESSION)).KORTIX_SESSION_LOG_RESTORE).toBe('1');
+      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(SESSION_ID))).toBe(false);
+    } finally {
+      await mark(false);
+    }
+  });
+
   test('sandbox boot snapshots the latest committed backend-wrapper capability secrets without caching', async () => {
     await writeSharedProjectSecret({
       projectId: ctx.projectId,

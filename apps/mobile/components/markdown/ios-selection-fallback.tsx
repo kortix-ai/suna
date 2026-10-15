@@ -13,6 +13,7 @@ import { BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorh
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import type { MarkdownTextInput as MarkdownTextInputComponent } from '@expensify/react-native-live-markdown';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 
 import { CopyIcon as Copy } from '@/lib/icons';
 import {
@@ -45,6 +46,10 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
   const [copied, setCopied] = useState(false);
   const [currentSnapIndex, setCurrentSnapIndex] = useState(0);
   const { height: screenHeight } = useWindowDimensions();
+  // The sheet shows and copies the raw message text, so a generative UI block
+  // becomes its markdown here: selecting or copying never yields OpenUI source.
+  // The sheet mounts on the first double tap, so this runs off the render path.
+  const markdown = useMemo(() => genuiToMarkdown(text), [text]);
   
   // Calculate available height based on current snap point
   const snapPercent = currentSnapIndex === 1 ? 0.95 : 0.70;
@@ -66,14 +71,14 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
 
   const handleCopyAll = useCallback(async () => {
     try {
-      await Clipboard.setStringAsync(text);
+      await Clipboard.setStringAsync(markdown);
       setCopied(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       log.error('Failed to copy:', err);
     }
-  }, [text]);
+  }, [markdown]);
 
   return (
     <KortixBottomSheetModal
@@ -117,7 +122,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
         {/* Scrollable + selectable using Expensify MarkdownTextInput */}
         <View style={{ paddingHorizontal: 24 }}>
           <MarkdownTextInput
-            value={text}
+            value={markdown}
             onChangeText={() => {}}
             parser={markdownParser}
             markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}

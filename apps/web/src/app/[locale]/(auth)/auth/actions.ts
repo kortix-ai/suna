@@ -235,7 +235,10 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   );
 
   if (error) {
-    return authFailure(error, 'Could not send the link', tI18nComplete);
+    return {
+      ...authFailure(error, 'Could not send the link', tI18nComplete),
+      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
+    };
   }
 
   // Hand the PKCE verifier to the browser in the RESULT, not only as a
@@ -288,7 +291,7 @@ export async function requestAccess(prevState: any, formData: FormData) {
   }
 }
 
-export async function forgotPassword(prevState: any, formData: FormData) {
+export async function forgotPassword(_prevState: unknown, formData: FormData) {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const origin = formData.get('origin') as string;
@@ -299,9 +302,13 @@ export async function forgotPassword(prevState: any, formData: FormData) {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
-  });
+  const { error } = await settleWithin(
+    supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (error) {
     return authFailure(error, 'Could not send password reset email', tI18nComplete);

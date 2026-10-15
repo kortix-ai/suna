@@ -88,6 +88,14 @@ export function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; a
   );
 }
 
+/** How a caller frames the image: fill or fit the frame, and its natural size once it loads (generative-UI cards). */
+export type MarkdownImageLook = {
+  resizeMode?: 'contain' | 'cover';
+  onSize?: (width: number, height: number) => void;
+  /** No outline or radius: the caller's tile is the frame. */
+  bare?: boolean;
+};
+
 /**
  * The image in web's frame. Inline (`fixedHeight` absent) it takes the width
  * and its own aspect ratio, up to `MAX_INLINE_HEIGHT`; in a gallery it fits a
@@ -98,19 +106,21 @@ export function MarkdownImage({
   alt,
   isDark,
   fixedHeight,
+  look,
 }: {
   src: string;
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
 }) {
   const remoteImages = useContext(MarkdownImagesContext);
   const source = imageSource(src);
   if (source.kind === 'sandbox') {
-    return <SandboxImage path={source.path} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} />;
+    return <SandboxImage path={source.path} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} look={look} />;
   }
   if (source.kind === 'remote' && remoteImages === 'load') {
-    return <RemoteImage uri={source.uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} />;
+    return <RemoteImage uri={source.uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} look={look} />;
   }
   return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} />;
 }
@@ -125,12 +135,14 @@ function RemoteImage({
   alt,
   isDark,
   fixedHeight,
+  look,
 }: {
   uri: string;
   src: string;
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
 }) {
   const { confirm, dialog } = useConfirmDialog();
   const host = describeMarkdownImage(uri, '').label;
@@ -146,7 +158,7 @@ function RemoteImage({
   );
   return (
     <>
-      <FramedImage uri={uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} onPress={ask} />
+      <FramedImage uri={uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} look={look} onPress={ask} />
       {dialog}
     </>
   );
@@ -163,12 +175,14 @@ function SandboxImage({
   alt,
   isDark,
   fixedHeight,
+  look,
 }: {
   path: string;
   src: string;
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
 }) {
   const image = useSandboxImage(path, true);
   if (image.phase === 'load' && image.source) {
@@ -181,6 +195,7 @@ function SandboxImage({
         alt={alt}
         isDark={isDark}
         fixedHeight={fixedHeight}
+        look={look}
         onError={image.handleError}
         onPress={() => openSandboxPreview(path)}
       />
@@ -199,15 +214,15 @@ function SandboxImage({
   return <ImageFrame isDark={isDark} height={fixedHeight ?? 200} />;
 }
 
-function ImageFrame({ isDark, height, children }: { isDark: boolean; height: number; children?: React.ReactNode }) {
+function ImageFrame({ isDark, height, bare, children }: { isDark: boolean; height: number; bare?: boolean; children?: React.ReactNode }) {
   const palette = markdownPalette(isDark);
   return (
     <View
       style={{
         width: '100%',
         height,
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
+        borderRadius: bare ? 0 : RADIUS.lg,
+        borderWidth: bare ? 0 : 1,
         borderColor: palette.imageOutline,
         overflow: 'hidden',
       }}
@@ -224,6 +239,7 @@ function FramedImage({
   alt,
   isDark,
   fixedHeight,
+  look,
   onError,
   onPress,
 }: {
@@ -233,6 +249,7 @@ function FramedImage({
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
   onError?: () => void;
   onPress?: () => void;
 }) {
@@ -245,7 +262,7 @@ function FramedImage({
   return (
     // Full width: a paragraph lays its children out as a wrapping row.
     <View onLayout={onLayout} style={{ width: '100%' }}>
-      <ImageFrame isDark={isDark} height={height}>
+      <ImageFrame isDark={isDark} height={height} bare={look?.bare}>
         {/* A plain Pressable: the image itself is the target, with no button chrome. */}
         <Pressable
           onPress={onPress}
@@ -258,11 +275,14 @@ function FramedImage({
             source={{ uri, headers }}
             // Downsampled by the native loader to the frame, never decoded at full size.
             resizeMethod="resize"
-            resizeMode="contain"
+            resizeMode={look?.resizeMode ?? 'contain'}
             style={{ width: '100%', height: '100%' }}
             onLoad={(e) => {
               const { width: w, height: h } = e.nativeEvent.source;
-              if (w > 0 && h > 0) setAspect(w / h);
+              if (w > 0 && h > 0) {
+                setAspect(w / h);
+                look?.onSize?.(w, h);
+              }
             }}
             onError={() => {
               if (onError) onError();

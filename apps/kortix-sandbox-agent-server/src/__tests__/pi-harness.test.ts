@@ -612,7 +612,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -630,8 +630,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 13 },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 13 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 15 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 15 },
     ])
   })
 
@@ -659,6 +659,46 @@ describe('pi harness', () => {
     const text = await readSse(stream, (t) => t.includes('event: permission.replied'))
     expect(text).toContain('event: permission.asked')
     expect(text).toContain('event: permission.replied')
+  })
+
+  test('a new prompt dismisses an open question, so an unattended session never wedges behind it', async () => {
+    // Prod 2026-10-09: a keyed cron session called `question`, nobody answered,
+    // and every later fire queued behind the blocked turn for 5 days.
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'went on without an answer' },
+        { text: 'second prompt answered' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 0 && !runtime.busy() && runtime.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: { role: string }; parts: Array<Record<string, any>> }> }
+    const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'question')!
+    expect(tool.state.status).not.toBe('running')
+    const texts = page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)
+    expect(texts).toContain('second prompt answered')
+    const text = await readSse(await r.bearer('/kortix/opencode/events?since=0'), (t) => t.includes('event: question.rejected'))
+    expect(text).toContain('event: question.rejected')
+  })
+
+  test('a steered message dismisses an open question, so the turn reads it', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'read the steer' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect(runtime.steer({ messageID: runtime.activeTurnMessageId()!.replace(/.$/, 'z'), text: 'STEERED while asked', parts: [] } as never)).toBe('steered')
+    await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
   test('a rejected permission blocks the tool and the turn still ends', async () => {
@@ -783,6 +823,34 @@ describe('pi harness', () => {
       const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
       expect(system).toContain('deploy')
       for (const hidden of ['kortix-memory', 'review', 'secrets-dump']) expect(system).not.toContain(hidden)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+      rmSync(managed, { recursive: true, force: true })
+    }
+  })
+
+  test('the kortix-genui skill is listed only while KORTIX_GENUI=1', async () => {
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    for (const name of ['kortix-memory', 'kortix-genui']) {
+      mkdirSync(join(managed, name), { recursive: true })
+      writeFileSync(join(managed, name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`)
+    }
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      for (const [flag, listed] of [['1', true], ['0', false]] as const) {
+        const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_GENUI: flag } })
+        const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+        expect(skills.map((s) => s.name).sort()).toEqual(listed ? ['kortix-genui', 'kortix-memory'] : ['kortix-memory'])
+        const root = r.service.runtime()!.rootId
+        const before = gateway.sent.length
+        expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+        await waitFor(() => !r.service.runtime()!.busy())
+        const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
+        expect(system.includes('kortix-genui')).toBe(listed)
+        expect(system).not.toContain('Generative UI')
+      }
     } finally {
       if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
       else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
@@ -1315,7 +1383,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'lookup_order', 'question', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -1878,14 +1946,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {
@@ -2279,6 +2347,44 @@ describe('config releases on pi', () => {
     const second = await ask(r, 'second question')
     expect(second).toContain('PACKAGE-V2')
     expect(second).not.toContain('PACKAGE-V1')
+  })
+
+  test('a ./ pi package in a release loads by native import: host modules resolve, a restart on the same release does not re-run it', async () => {
+    const evals = '__kortixTestNativeEvals'
+    const warn = spyOn(logger, 'warn')
+    // A helper beside the entry, and a value import of a module pi hands every extension: the release dir has no node_modules.
+    write(repo, 'extensions/lib.ts', `import { Type } from 'typebox'\nexport const marker = (v: string): string => (Type.String() ? v : '')\n`)
+    write(
+      repo,
+      'extensions/native.ts',
+      `import { marker } from './lib.ts'\n(globalThis as any).${evals} = ((globalThis as any).${evals} ?? 0) + 1\n` +
+        `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n' + marker('NATIVE-V1') }))\n`,
+    )
+    write(repo, 'extensions/broken.ts', `throw new Error('broken at import')\n`)
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'native'), null, { projectId: 'proj-pi-test', governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'P' } } }) }))
+    const r = await boot({
+      script: [{ text: 'first' }, { text: 'second' }],
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/native.ts', './extensions/broken.ts']) },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+    })
+    const runtime = r.service.runtime()!
+    try {
+      // Only the file whose import throws goes to pi's loader, which reports it; the session runs.
+      expect(warn.mock.calls.filter(([message]) => message === '[pi] project extension loads through pi').map(([, fields]) => fields)).toEqual([
+        { source: './extensions/broken.ts', reason: 'broken at import' },
+      ])
+      expect(runtime.extensionStatus().failed).toEqual([{ name: expect.stringMatching(/\/extensions\/broken\.ts$/), error: expect.stringContaining('broken at import') }])
+      expect(runtime.extensionStatus().loaded.some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/extensions/native.ts'))).toBe(true)
+      expect(await ask(r, 'first question')).toContain('NATIVE-V1')
+      expect((globalThis as Record<string, unknown>)[evals]).toBe(1)
+      // The release dir is content-addressed, so the module Bun cached for its path is still this file.
+      await runtime.restart()
+      expect((globalThis as Record<string, unknown>)[evals]).toBe(1)
+      expect(await ask(r, 'second question')).toContain('NATIVE-V1')
+    } finally {
+      warn.mockRestore()
+      delete (globalThis as Record<string, unknown>)[evals]
+    }
   })
 
   test('config releases off: pi reads the working tree, and the box still advertises the capability', async () => {

@@ -23,10 +23,10 @@ export type InfoBannerIcon =
  * a fill or a hairline, never both (color.md). Hues follow D5: info = blue,
  * success = green, warning = orange, destructive = red.
  */
-const infoBannerVariants = cva('flex flex-wrap items-center gap-2 border px-2.5 py-2 text-sm', {
+const infoBannerVariants = cva('group/item flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-2 text-sm [&_[data-slot=alert-content]]:gap-1', {
   variants: {
     tone: {
-      neutral: 'border-border',
+      neutral: 'border-border bg-popover',
       info: 'bg-kortix-blue/15 border-transparent',
       success: 'bg-kortix-green/15 border-transparent',
       warning: 'bg-kortix-orange/15 border-transparent',
@@ -56,7 +56,7 @@ const infoBannerTitleVariants = cva('text-foreground w-full max-w-full font-medi
 
 /** Status icon tile — mirrors the sandbox template state indicator. */
 const infoBannerMediaVariants = cva(
-  'inline-flex size-7 shrink-0 items-center justify-center self-start [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  'mt-0 group-has-[[data-slot=item-description]]/item:translate-y-0.5 inline-flex size-7 shrink-0 items-center justify-center self-start [&_svg]:pointer-events-none [&_svg]:size-6 [&_svg]:shrink-0',
   {
     variants: {
       tone: {
@@ -117,10 +117,10 @@ export function InfoBanner({
       )}
 
       {title != null && (
-        <AlertTitle className={infoBannerTitleVariants({ tone: safeTone })}>{title}</AlertTitle>
+        <AlertTitle className={cn(infoBannerTitleVariants({ tone: safeTone }), 'line-clamp-1 min-h-4 leading-snug font-medium tracking-tight')}>{title}</AlertTitle>
       )}
       {children != null && (
-        <AlertDescription className="text-muted-foreground">{children}</AlertDescription>
+        <AlertDescription className="text-muted-foreground leading-normal font-medium [&_p]:leading-relaxed">{children}</AlertDescription>
       )}
       {action != null && <AlertActions>{action}</AlertActions>}
     </Alert>

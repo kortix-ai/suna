@@ -4,6 +4,7 @@ import { useSessionWorkingStore } from '../browser/stores/session-working-store'
 import { useSyncStore } from '../browser/stores/sync-store';
 import { resetSessionCacheOwnership } from '../browser/session-sync/session-cache-ownership';
 import { resetSessionSyncControllers } from '../browser/session-sync/session-sync-registry';
+import { resetSessionOpenBundles } from '../core/session/open-bundle';
 import { registerIdentityReset, runIdentityResets } from './identity-reset-registry';
 import { resetSessionOpenPrefetches } from './prefetch-session-open';
 // Registers the model store's reset (module-scoped picks and their storage key).
@@ -16,6 +17,7 @@ registerIdentityReset(() => useDiagnosticsStore.getState().clearAll());
 registerIdentityReset(resetSessionSyncControllers);
 registerIdentityReset(resetSessionCacheOwnership);
 registerIdentityReset(resetSessionOpenPrefetches);
+registerIdentityReset(resetSessionOpenBundles);
 
 /**
  * Forget every piece of in-memory session state that belongs to the signed-in
@@ -26,7 +28,8 @@ registerIdentityReset(resetSessionOpenPrefetches);
  * Clears: session transcripts (sync store), pending permission and question
  * asks and per-session auto-approve, turn receipts, LSP diagnostics (file
  * paths and messages from the event stream), session history controllers and
- * their cache ownership, open-read prefetch windows, and the model store
+ * their cache ownership, open-read prefetch windows, session-open snapshots
+ * and the saved window a connecting view holds, and the model store
  * (per-agent, per-session and default model picks, plus its `localStorage`
  * key).
  *

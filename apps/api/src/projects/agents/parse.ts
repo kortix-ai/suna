@@ -7,7 +7,7 @@ import {
   resolveGrantSet,
   safeAgentFile,
   SLUG_RE,
-  WORKSPACE_MODES_V2,
+  resolveProjectRepository,
   type GrantSetV2,
 } from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases } from '../lib/agent-config-v2';
@@ -319,24 +319,10 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()
       : null;
-  const workspaceRaw = normalizedRow.workspace;
-  if (
-    workspaceRaw !== undefined &&
-    (typeof workspaceRaw !== 'string' ||
-      !(WORKSPACE_MODES_V2 as readonly string[]).includes(workspaceRaw))
-  ) {
-    return err(name, `agents.${name}.workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')}`);
-  }
-  const repositoryAccessRaw = normalizedRow.repository_access;
-  if (repositoryAccessRaw !== undefined && typeof repositoryAccessRaw !== 'boolean') {
-    return err(name, `agents.${name}.repository_access must be a boolean`);
-  }
-  if (repositoryAccessRaw !== undefined && workspaceRaw !== undefined &&
-      repositoryAccessRaw !== (workspaceRaw === 'branch')) {
-    return err(name, `agents.${name}.repository_access conflicts with workspace`);
-  }
-  const repositoryAccess = repositoryAccessRaw ?? (workspaceRaw === undefined || workspaceRaw === 'branch');
-  const legacyReadWorkspace = workspaceRaw === 'read' && repositoryAccessRaw === undefined;
+  const repository = resolveProjectRepository(normalizedRow);
+  if (!repository.ok) return err(name, `agents.${name}.${repository.path} ${repository.message}`);
+  const repositoryAccess = repository.value;
+  const legacyReadWorkspace = repository.legacyRead;
 
   const connectorsResolved = resolveGrantSet(normalizedRow.connectors, 'none');
 

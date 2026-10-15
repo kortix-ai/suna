@@ -99,6 +99,7 @@ Options:
   --admin-email <email>   Grant platform-admin to this account.
   --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
   --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
+  --disable-signup        Turn self sign-up off (DISABLE_SIGNUP=true); nobody can sign up, the admin included.
   --json                  Machine-readable output where supported.
   --yes                   Accept defaults non-interactively.
   -h, --help              Show this help.
@@ -314,6 +315,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const adminEmail = takeFlagValue(args, ['--admin-email']);
   const restrictAccountCreationOn = takeFlagBool(args, ['--restrict-account-creation']);
   const restrictAccountCreationOff = takeFlagBool(args, ['--no-restrict-account-creation']);
+  const disableSignup = takeFlagBool(args, ['--disable-signup']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -353,6 +355,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
       : restrictAccountCreationOff
         ? false
         : undefined,
+    disableSignup: disableSignup || undefined,
     yes,
     json,
   };
@@ -442,6 +445,10 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
   process.stdout.write('\n');
+  const signUp = openSignUpCheck(env);
+  if (signUp && !signUp.ok) {
+    process.stdout.write(`  ${C.yellow}warning${C.reset}  ${C.dim}Sign-up is open: ${signUp.detail}${C.reset}\n\n`);
+  }
   renderConnectionSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
@@ -612,6 +619,19 @@ function selfHostDoctor(flags: GlobalFlags): number {
       detail: result.error?.message ?? (result.stderr.trim() || 'valid'),
     });
   }
+  if (existsSync(composePath(flags.instance))) {
+    // Kortix Capture devices upload to the bundled store. A compose file
+    // rendered by an older CLI has none, so every device gets 503
+    // capture_credentials_unavailable until `update` re-renders it.
+    const hasStore = readFileSync(composePath(flags.instance), 'utf8').includes('\n  capture-store:\n');
+    checks.push({
+      name: 'capture-store',
+      ok: hasStore,
+      detail: hasStore
+        ? 'bundled Kortix Capture store present'
+        : 'this instance has no Kortix Capture store, so Capture devices cannot sync — run: kortix self-host update',
+    });
+  }
   if (existsSync(envPath(flags.instance))) {
     // KORTIX_INSTANCE_DIR is recomputed on every writeEnv() (see
     // normalizeFullSupabaseEnv), so this can only be stale between writes —
@@ -684,30 +704,9 @@ function selfHostDoctor(flags: GlobalFlags): number {
     }
   }
   if (existsSync(envPath(flags.instance))) {
-    // KRTX-1715. The shipped auth defaults leave sign-up open with email
-    // autoconfirm on. On an instance the internet can reach, anyone can then
-    // create a CONFIRMED account for any address: the admin address in
-    // KORTIX_PLATFORM_ADMIN_EMAILS, or a colleague's address an invite waits
-    // for. Nothing in the running stack says so. Either fix closes it: an email
-    // provider makes GoTrue require confirmation (`env set EMAIL_URL=…` turns
-    // autoconfirm off), or DISABLE_SIGNUP stops self sign-up once the team is in.
-    // Not on a laptop instance, which strangers cannot reach.
     const env = loadEnv(flags.instance);
-    if (env && reachabilityMode(env) !== 'local') {
-      const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
-      const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
-      checks.push({
-        name: 'open-sign-up',
-        ok: !(signupOpen && autoconfirm),
-        detail: !signupOpen
-          ? 'self sign-up is off (DISABLE_SIGNUP=true)'
-          : !autoconfirm
-            ? 'new accounts must confirm their email'
-            : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
-              + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
-              + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
-      });
-    }
+    const signUp = env ? openSignUpCheck(env) : null;
+    if (signUp) checks.push({ name: 'open-sign-up', ...signUp });
   }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
@@ -753,7 +752,9 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // moves image tags, so an explicit flag is honored (non-interactively;
   // `update` never prompts) but nothing here resets a value the operator
   // already set via `configure`/`env set`.
+  const beforeFlags = { ...env };
   applyFeatureFlags(env, flags);
+  const changedFlagKeys = Object.keys(env).filter((key) => env[key] !== beforeFlags[key]);
   applyReachabilityFlags(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
@@ -788,6 +789,23 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
       + `${C.dim}Details: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}${C.dim} (per-service outcome, drift, last error)${C.reset}\n`,
     );
     return rollout;
+  }
+
+  // Converge kortix-api onto the rendered environment. The rollout above only
+  // rolls a service whose IMAGE changed, and `up --no-recreate` never touches
+  // an existing container, so an instance rendered by an older CLI keeps an
+  // API without the Kortix Capture store wiring (every device gets 503) until
+  // its container is recreated. Without `--force-recreate`, compose recreates
+  // it only when its rendered configuration differs: a no-op on every later run.
+  const converge = compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
+  if (converge !== 0) return converge;
+
+  // The rollout recreates only the app services whose image moved. A flag this
+  // run changed reaches its readers through the same restart `env set` does:
+  // GoTrue reads DISABLE_SIGNUP only when supabase-auth is recreated.
+  if (changedFlagKeys.length > 0) {
+    const restart = restartServicesForKeys(flags.instance, env, changedFlagKeys);
+    if (restart !== 0) return restart;
   }
 
   // Tunnel reachability mode only, and deliberately AFTER the zero-downtime
@@ -996,6 +1014,32 @@ function warnNoAdminEmail(): void {
 }
 
 /**
+ * KRTX-1715. The shipped auth defaults leave sign-up open with email
+ * autoconfirm on. On an instance the internet can reach, anyone can then
+ * create a CONFIRMED account for any address: the admin address in
+ * KORTIX_PLATFORM_ADMIN_EMAILS, or a colleague's address an invite waits for.
+ * Either fix closes it: an email provider makes GoTrue require confirmation
+ * (`env set EMAIL_URL=…` turns autoconfirm off), or DISABLE_SIGNUP stops self
+ * sign-up once the team is in. `doctor` fails on it and `init` prints it.
+ * Null on a laptop instance, which strangers cannot reach.
+ */
+function openSignUpCheck(env: Record<string, string | undefined>): { ok: boolean; detail: string } | null {
+  if (reachabilityMode(env) === 'local') return null;
+  const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
+  const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
+  return {
+    ok: !(signupOpen && autoconfirm),
+    detail: !signupOpen
+      ? 'self sign-up is off (DISABLE_SIGNUP=true)'
+      : !autoconfirm
+        ? 'new accounts must confirm their email'
+        : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
+          + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
+          + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
+  };
+}
+
+/**
  * Apply --enterprise-license onto env, non-interactively. Only overwrites
  * when the flag was actually passed (undefined = "not passed", never a
  * literal false — see parseGlobalFlags), so a bare `init`/`update` with no
@@ -1020,6 +1064,10 @@ function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
     env.KORTIX_RESTRICT_ACCOUNT_CREATION = value;
     env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = value;
   }
+  // Nobody can sign up while it is on, the operator included: for an install
+  // that creates its accounts another way, or a team that already signed up.
+  // `env set DISABLE_SIGNUP=false` reopens it.
+  if (flags.disableSignup) env.DISABLE_SIGNUP = 'true';
 }
 
 /**
@@ -1580,6 +1628,7 @@ function freshTokenFor(key: string): string {
     case 'DASHBOARD_PASSWORD':
       return token(24);
     case 'S3_PROTOCOL_ACCESS_KEY_SECRET':
+    case 'CAPTURE_STORE_ROOT_PASSWORD':
     case 'GATEWAY_INTERNAL_TOKEN':
     case 'INTERNAL_SERVICE_KEY':
     case 'TUNNEL_SIGNING_SECRET':
@@ -1603,6 +1652,7 @@ const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
   LOGFLARE_PRIVATE_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
   SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
   SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
+  CAPTURE_STORE_ROOT_USER: 'not a rotation target — rotate CAPTURE_STORE_ROOT_PASSWORD instead.',
   DASHBOARD_USERNAME: 'not a rotation target — use `env set DASHBOARD_USERNAME=<value>` to change it.',
   API_KEY_SECRET:
     'the encryption key of every stored secret, connector and OAuth credential and GitHub token, and the pepper of every API key, PAT and session token hash. A new value leaves all of them undecryptable, and the old value is not kept. There is no data-key rotation yet (KRTX-1719).',
@@ -1770,6 +1820,8 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok('Updated self-host connection config')}\n`);
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
+  // `configure` writes the files only; `start` recreates what they changed.
+  process.stdout.write(`  ${C.dim}Apply        ${C.reset}${C.cyan}kortix self-host start${flags.instance === DEFAULT_INSTANCE ? '' : ` --instance ${flags.instance}`}${C.reset}\n`);
   if (reachabilityMode(env) !== 'domain') {
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
@@ -2453,6 +2505,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     LOGFLARE_PRIVATE_ACCESS_TOKEN: token(24),
     S3_PROTOCOL_ACCESS_KEY_ID: token(16),
     S3_PROTOCOL_ACCESS_KEY_SECRET: token(32),
+    // Kortix Capture's bundled object store (the `capture-store` service). The
+    // API holds this pair to issue per-device credentials; devices never see it.
+    CAPTURE_STORE_ROOT_USER: token(8),
+    CAPTURE_STORE_ROOT_PASSWORD: token(32),
     PGRST_DB_SCHEMAS: 'public',
     PGRST_DB_MAX_ROWS: '1000',
     PGRST_DB_EXTRA_SEARCH_PATH: 'public',

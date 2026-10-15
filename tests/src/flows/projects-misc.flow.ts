@@ -489,11 +489,20 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'GET /v1/projects/:projectId/files/content',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project({ seed: true });
+    const kortixBlock = async () => {
+      const file = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', {
+        params: { projectId: project.id }, query: { path: 'kortix.yaml' },
+      });
+      file.status(200);
+      const content = file.json<{ content: string }>().content;
+      return content.slice(content.indexOf('\n  kortix:'));
+    };
 
     await ctx.step(
       'GET reports schema_version 2 / editable true for a seeded manifest',
@@ -520,6 +529,10 @@ flow(
         );
         read.status(200).body().has('$.block.repository_access', access);
         if ('workspace' in read.json<any>().block) throw new Error('response exposes legacy workspace');
+        const block = await kortixBlock();
+        if (!block.includes(`workspace:\n      project_repository: ${access}`) || block.includes('repository_access')) {
+          throw new Error(`kortix.yaml must store workspace.project_repository: ${access}, got:\n${block}`);
+        }
       });
     }
     await ctx.step('legacy runtime saves a disabled repository policy', async () => {
@@ -529,7 +542,7 @@ flow(
       );
       saved.status(200).body().has('$.block.repository_access', false);
     });
-    for (const body of [{ repository_access: 'false' }, { repository_access: true, workspace: 'runtime' }]) {
+    for (const body of [{ repository_access: 'false' }, { repository_access: true, workspace: 'runtime' }, { workspace: { project_repository: false } }]) {
       await ctx.step('invalid or conflicting repository policy is rejected without widening access', async () => {
         const params = { projectId: project.id, agentName: 'kortix' };
         const rejected = await ctx.client.as(ctx.P.OWNER).put(

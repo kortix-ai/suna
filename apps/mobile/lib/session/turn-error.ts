@@ -8,9 +8,15 @@
  *
  * No React / React Native import.
  */
-import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
+import { isAbortError, type GatewayErrorDetails, type SessionLogMessage } from '@kortix/sdk';
 
 import type { GatewayMetaDetails } from './busy-status';
+
+/** A message an abort ended: `status: 'aborted'`, else its error read by the SDK's `isAbortError`. */
+export function messageAborted(message: Pick<SessionLogMessage, 'status' | 'error'>): boolean {
+  if (message.status === 'aborted') return true;
+  return !!message.error && isAbortError({ name: message.error.code, data: { message: message.error.message } });
+}
 
 /** Upstream 402 "Payment Required: Insufficient credits. Balance: $-0.06" and friends. */
 export function isInsufficientCreditsError(text: string): boolean {

@@ -64,8 +64,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import {
   fromV1,
-  type AdapterCapabilities,
-  type CapabilityFeatures,
+  OPENCODE_CAPABILITIES,
   type ExportCursor,
   type SessionLog,
   type V1Attachment,
@@ -87,29 +86,8 @@ import { restoreOpenCodeSessionLog, type OpenCodeRestoreTarget } from './session
 
 export const OPENCODE_ADAPTER_VERSION = '1.0.0'
 
-const native: CapabilityFeatures = {
-  tool_error_channel: false, // openai-chat role:tool has no error flag
-  attachments: { user: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'], tool_result: false },
-  compaction: ['summary_first_tail'],
-  subagents: 'sync', // `task` runs a child session
-  todos: true,
-  reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
-  freeform_tool_input: false,
-}
-/**
- * `harness_versions` and `schema_minors` name what the oracle suites (`opencode-session-log-restore.test.ts`,
- * `opencode-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
- * fails when the pin (runtime-versions.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
- */
-export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
-  harness: 'opencode',
-  harness_versions: '1.18.23',
-  schema_minors: [1],
-  dialects: ['openai-chat'],
-  native,
-  // A tool-result attachment becomes a follow-up user turn; a layout is emulated.
-  rendered: { ...native, attachments: { ...native.attachments, tool_result: true }, compaction: ['summary_first_tail', 'layout'] },
-}
+/** The manifest (C12, F9) lives in `@kortix/api-contract/session-log` (`capabilities.ts`): apps/api reads it for the switch preflight. */
+export { OPENCODE_CAPABILITIES }
 
 type J = Record<string, any>
 type Resolved = V1Attachment & { sha256: string }
@@ -401,11 +379,12 @@ export function createOpenCodeSessionLogPort(options: {
  * (`shared/session-log-boot.ts`, which restores into `opencode.db` when the store is
  * missing or behind the log), then the journal at the generation it returns, before the
  * event loop and the first prompt so the first turn's end flushes it. `target` is the
- * binary and the directory OpenCode serves: `opencode import` runs there. True when it
+ * binary and the directory OpenCode serves (`opencode import` runs there), and the
+ * running OpenCode's URL (its version). True when it
  * restored. Throws when the reconcile fails: no journal starts. A box without a control
  * plane journals nothing.
  */
-export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd'>): Promise<boolean> {
+export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd' | 'url'>): Promise<boolean> {
   const sessionId = readControlPlaneEnv().sessionId
   if (!sessionId) return false
   const dbPath = opencodeDbPath(OPENCODE_HOME)

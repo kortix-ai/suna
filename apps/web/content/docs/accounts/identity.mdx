@@ -276,6 +276,11 @@ working when the account loses it.
 - **New person:** a `POST /Users` for an email with no Kortix sign-in creates a
   pending invitation with the `member` role, valid for 14 days. SCIM lists it as
   an active user. A person who already has a Kortix sign-in joins as a `member`.
+  On a self-hosted instance that confirms sign-ups without an email, a password
+  sign-in that is not yet a member gets the pending invitation instead. That
+  sign-in cannot see or accept the invitation: the person joins through the
+  account's SAML provider. See
+  [Unconfirmed email addresses](/docs/host#unconfirmed-email-addresses).
 - **Groups:** a SCIM group is an ordinary Kortix group. Give it project roles
   like any other.
 - **Remove a person:** `active: false` or `DELETE` removes the membership, its

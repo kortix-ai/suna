@@ -82,6 +82,27 @@ async function dispatchFileEvent(
   );
 }
 
+// A file dragged over the page outside every drop zone, as the page sees it.
+// The browser opens an uncancelled file drop in the tab (leaving the page and
+// its unsent attachments), so the page must cancel both events and show the
+// "no drop" cursor. A synthetic event runs the page's handlers but never the
+// browser's default, which is why this asserts the cancel itself.
+async function strayFileDrop(
+  page: Page,
+): Promise<{ dragoverCancelled: boolean; dropCancelled: boolean; dropEffect: string }> {
+  return page.evaluate(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["stray"], "stray.txt", { type: "text/plain" }));
+    const fire = (type: "dragover" | "drop") =>
+      !document.body.dispatchEvent(
+        new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }),
+      );
+    const dragoverCancelled = fire("dragover");
+    const dropEffect = transfer.dropEffect;
+    return { dragoverCancelled, dropCancelled: fire("drop"), dropEffect };
+  });
+}
+
 test("28 — eager composer uploads before Send and reuses handles after refusal", async ({
   page,
 }, testInfo) => {
@@ -356,6 +377,60 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     await expect(
       page.locator('li > div[aria-busy="true"]:has([title="picker.png"])'),
     ).toHaveCount(0, { timeout: 30_000 });
+
+    // A file dropped outside the composer is refused: the tab stays on the
+    // project and keeps its attachment, instead of opening the file.
+    const projectUrl = page.url();
+    expect(await strayFileDrop(page)).toEqual({
+      dragoverCancelled: true,
+      dropCancelled: true,
+      dropEffect: "none",
+    });
+    await expect(page).toHaveURL(projectUrl);
+    await expect(page.locator('img[alt="picker.png"]')).toBeVisible();
+
+    // ⌘V / Ctrl+V with focus outside the composer pastes into it. A real key
+    // press, so the browser's own paste runs: text lands at the draft's caret,
+    // and an image becomes an attachment.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await input.fill("Draft");
+    await page.evaluate(() => navigator.clipboard.writeText("+pasted"));
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(input).toHaveText("Draft+pasted");
+    await expect(input).toBeFocused();
+    // `fill("")` leaves a TipTap document unchanged; delete the selection instead.
+    await input.press("ControlOrMeta+A");
+    await input.press("Backspace");
+    await expect(input).toHaveText("");
+    // A field keeps its own paste: the search palette's input gets it, not the draft.
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    const paletteInput = page.getByRole("dialog").locator("[cmdk-input]");
+    await expect(paletteInput).toBeFocused();
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(paletteInput).toHaveValue("+pasted");
+    await page.keyboard.press("Escape");
+    await expect(input).toHaveText("");
+    await page.evaluate(async (bytes) => {
+      const image = new Blob([new Uint8Array(bytes)], { type: "image/png" });
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": image })]);
+    }, Array.from(PNG));
+    // A focused button has no paste of its own, so its paste goes to the composer.
+    await page.getByRole("button", { name: "Attach files" }).focus();
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(page.locator('img[alt="image.png"]')).toBeVisible();
+    await expect(
+      page.locator('li > div[aria-busy="true"]:has([title="image.png"])'),
+    ).toHaveCount(0, { timeout: 30_000 });
+    const deletePasted = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" &&
+        pathname(response.request()).includes(
+          `/v1/projects/${project.id}/attachments/`,
+        ),
+    );
+    await page.getByRole("button", { name: "Remove image.png" }).click();
+    expect((await deletePasted).status()).toBe(204);
 
     failUploads = true;
     await page.locator("input[type=file]").setInputFiles({

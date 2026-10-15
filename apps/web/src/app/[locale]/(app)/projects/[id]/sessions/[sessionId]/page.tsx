@@ -86,7 +86,10 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
-import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
+import {
+  useRecoverLostSession,
+  useRestartProjectSession,
+} from '@/hooks/projects/use-restart-project-session';
 import {
   billingDialogArgs,
   billingGateCopy,
@@ -212,10 +215,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const accountLoaded = !!accountState;
   // ONE resolver for "what is this account's billing situation" (see
   // lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
-  // `noPlan` with a "Subscribe to Team plan" pitch — which told a Team account
-  // on an ACTIVE $40/mo subscription with a $0.0099 wallet that it had no plan,
-  // while the modal that CTA opened correctly said "Out of credits — your Team
-  // plan and seats are unaffected". `can_run: false` means blocked, not unplanned.
+  // `noPlan` with a subscribe pitch — which told an account on an ACTIVE
+  // subscription with a $0.0099 wallet that it had no plan, while the modal
+  // that CTA opened correctly said "Out of credits — your plan is unaffected".
+  // `can_run: false` means blocked, not unplanned.
   const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
@@ -312,6 +315,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // ONE restart behavior for every card on this route: optimistic exit from the
   // terminal state, a real pending state, and a SURFACED failure.
   const restart = useRestartProjectSession(projectId, sessionId);
+  // A lost session continues on a new computer only when a person asks (KRTX-2419).
+  const recover = useRecoverLostSession(projectId, sessionId);
   // A manual restart re-arms auto-resume: the box the user just asked us to
   // reboot deserves the same wake attempts a fresh open would get.
   const handleRestart = () => {
@@ -1031,25 +1036,29 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           />
         );
       } else {
-        notice = {
-          title: tSessionPage('stopped.title'),
-          message: restart.errorMessage ?? tSessionPage('stopped.message'),
-          action: <RestartSessionButton restart={restart} onRestart={handleRestart} />,
-        };
+        // A deliberate stop with a readable transcript is not a dead end. The
+        // conversation stays, the composer stays live (a sent message wakes the
+        // box and is delivered — `deliver` carries the wake intent), and the
+        // composer's own notice says the computer is asleep. A human who left
+        // and came back re-opens the box themselves (`useSession` releases the
+        // stop hold on the next presence return), so no explicit Restart
+        // button is needed here — a `notice` would only freeze the composer
+        // (`readOnly`) and replace it with a terminal card.
       }
     }
 
-    // The provider lost this session's computer. THIS MUST NEVER HAPPEN, and
-    // when it does the only honest UI is a hard stop: nothing here is
-    // restartable (`/start` answers `retriable: false`, `POST /restart` answers
-    // 409 forever), and this session cannot be reconstructed.
+    // The provider lost this session's computer. THIS MUST NEVER HAPPEN. The
+    // box is not restartable (`/start` answers `retriable: false`, `POST
+    // /restart` answers 409 forever).
     //
     // It must NOT fall through to the generic stopped card below, which offers
     // a Restart button whose only possible outcome is that 409 — the loop a prod
-    // session hit on 2026-08-13. It must also NEVER silently continue
-    // into a fresh session: the server deliberately preserved this identity
-    // instead of attaching a replacement box, and the UI must not undo that.
-    // Say what happened, name the id, and stop.
+    // session hit on 2026-08-13. It must also NEVER silently continue into a
+    // fresh session: the server deliberately preserved this identity instead of
+    // attaching a replacement box. With a saved conversation, a person may ask
+    // for that: Continue (`POST /recover`, KRTX-2419) boots a new computer from
+    // the session branch that restores the conversation. Without one, say what
+    // happened, name the id, and stop.
     if (!notice && runtimeIdentityUnavailable && !previousRepositoryHistoryAvailable) {
       const deleteAction = (
         <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
@@ -1066,13 +1075,22 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           />
         );
       }
-      // The conversation stays readable: nothing can continue it, but nothing
-      // about losing the computer made its history untrue.
+      // The conversation stays readable, and it can continue on a new
+      // computer. A refusal (no saved log, the old box still being removed)
+      // keeps this banner and names the reason.
       notice = {
         tone: 'destructive',
         title: tSessionPage('lost.title'),
-        message: tSessionPage('lost.message'),
-        action: deleteAction,
+        message: recover.errorMessage ?? tSessionPage('lost.continueMessage'),
+        action: (
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={recover.isPending} onClick={() => recover.recover()}>
+              {recover.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+              {tSessionPage('lost.continue')}
+            </Button>
+            {deleteAction}
+          </div>
+        ),
       };
     }
 
@@ -1226,16 +1244,23 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             during the wake is the composer's own notice; this says only which
             phase the boot is in. */}
         {notice && !canMountChat ? <SessionNoticeBanner {...notice} /> : null}
-        {!notice && bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
-          <SessionConnectingBanner
-            stage={authLoading || !user ? 'provisioning' : startStage}
-            projectId={projectId}
-            sessionId={sessionId}
-            note={wake.note}
-            reason={session.reason}
-            failure={session.failure}
-          />
-        )}
+        {/* Dormant with a transcript paints no boot strip: nothing is booting
+            until a message or a returning human wakes the box, and the
+            composer's asleep notice is the honest state. Once the wake is
+            claimed the sandbox row reappears and this banner mounts for real. */}
+        {!notice &&
+          !dormantWithoutRuntime &&
+          bootPresentation === 'banner' &&
+          (startStage !== 'ready' || !chatReady) && (
+            <SessionConnectingBanner
+              stage={authLoading || !user ? 'provisioning' : startStage}
+              projectId={projectId}
+              sessionId={sessionId}
+              note={wake.note}
+              reason={session.reason}
+              failure={session.failure}
+            />
+          )}
       </div>
     );
   })();

@@ -1,12 +1,14 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
+import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import { Button } from '@/components/ui/button';
 import { sessionCanBeStopped } from '@/components/projects/session-label';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -45,6 +47,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
+import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import {
   type QuickView,
   useIsActionPanelOpen,
@@ -61,6 +64,7 @@ import {
   useSessionWatch,
 } from '@kortix/sdk/react';
 import {
+  ArchiveIcon,
   ArrowsClockwiseIcon,
   BellIcon,
   BellSlashIcon,
@@ -74,6 +78,8 @@ import {
   GlobeSimpleIcon,
   StackIcon as Layers,
   PencilSimpleIcon,
+  PushPinIcon,
+  PushPinSlashIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SquareIcon as Square,
@@ -117,6 +123,7 @@ export function SessionSiteHeader({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tPalette = useTranslations('commandPalette');
   const tNotifications = useTranslations('notifications');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const devTools = useLocalizedUiCatalog(DEV_TOOLS);
   const router = useRouter();
   const pathname = usePathname();
@@ -192,6 +199,13 @@ export function SessionSiteHeader({
       )
       .catch(() => {});
   };
+  // Pin and archive: the viewer's own list (KRTX-2418). Absent `pinned_at` =
+  // no list state for this caller, and no items.
+  const listActions = useSessionListActions(projectId ?? '');
+  const listState =
+    projectSession && projectSessionId && projectSession.pinned_at !== undefined
+      ? { pinned: !!projectSession.pinned_at, archived: !!projectSession.archived_at }
+      : null;
   const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
   const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
   // The Share button's accessible name. A member who cannot change access
@@ -285,6 +299,13 @@ export function SessionSiteHeader({
   const isActionPanelOpen = useIsActionPanelOpen();
   const toggleActionPanel = useToggleActionPanel();
   const readyChip = useReadyChip();
+  // P5.6: show or hide the messages outside the agent's context (a failed attempt), per
+  // session. Listed only while the transcript on screen holds one: otherwise it changes nothing.
+  const historyKey = projectSessionId || sessionId;
+  const tHistory = useTranslations('sessionUi.history');
+  const outOfContextPresent = useSessionHistoryViewStore((s) => !!s.outOfContext[historyKey]);
+  const outOfContextHidden = useSessionHistoryViewStore((s) => s.hidden.includes(historyKey));
+  const setOutOfContextHidden = useSessionHistoryViewStore((s) => s.setHidden);
 
   // The desktop shell has no address bar, so the menu is the only way to
   // share a session: the ID for support and the CLI, the link for people.
@@ -374,6 +395,24 @@ export function SessionSiteHeader({
               {watching ? tNotifications('session.mute') : tNotifications('session.unmute')}
             </DropdownMenuItem>
           )}
+          {listState && (
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => void listActions.setPinned(projectSessionId!, !listState.pinned)}
+              >
+                {listState.pinned ? <PushPinSlashIcon /> : <PushPinIcon />}
+                {tPinArchive(listState.pinned ? 'unpin' : 'pin')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => void listActions.setArchived(projectSessionId!, !listState.archived)}
+              >
+                <ArchiveIcon />
+                {tPinArchive(listState.archived ? 'unarchive' : 'archive')}
+              </DropdownMenuItem>
+            </>
+          )}
           {canFork && (
             <DropdownMenuItem
               className="cursor-pointer"
@@ -410,6 +449,15 @@ export function SessionSiteHeader({
         </>
       )}
 
+      {outOfContextPresent && (
+        <DropdownMenuCheckboxItem
+          className="cursor-pointer"
+          checked={!outOfContextHidden}
+          onCheckedChange={(checked) => setOutOfContextHidden(historyKey, !checked)}
+        >
+          {tHistory('showOutOfContext')}
+        </DropdownMenuCheckboxItem>
+      )}
       <DropdownMenuItem
         className="cursor-pointer"
         onClick={() => setExportOpen(true)}

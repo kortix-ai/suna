@@ -16,9 +16,11 @@
  * `seq_max` is the highest seq each thread holds, tombstones included: a restored box
  * numbers its next message above it, so it never collides on (session, thread, seq).
  *
- * Records are served as stored. A text over 256 kB is its 16 kB preview; `blobs` names
- * each one, and the daemon reads the full text through the attachments route with its
- * own credential. The API never holds a session's full texts in memory here.
+ * Records are served as stored, with each tool_call input in the key order the
+ * harness wrote (`session-log-input-order.ts`; jsonb sorts keys). A text over 256 kB
+ * is its 16 kB preview; `blobs` names each one, and the daemon reads the full text
+ * through the attachments route with its own credential. The API never holds a
+ * session's full texts in memory here.
  *
  * A stored log can lack parts of a `SessionLog`: a session record built only from a
  * first batch without a session patch, or messages whose thread was never upserted.
@@ -36,9 +38,12 @@ import { sessionLogBlobs, sessionLogMessages, sessionLogs, sessionLogThreads } f
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { referencedTexts } from './session-log-blobs';
+import { withToolInputOrder } from './session-log-input-order';
 import type { SessionLogScope } from './session-log-ingest';
 
 type Thread = SessionLog['threads'][number];
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type LogRow = typeof sessionLogs.$inferSelect;
 
 /** Claim the session and read its log, or null when the session has no stored log (nothing claimed). */
 export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLogRestore | null> {
@@ -56,68 +61,74 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
       )
       .returning();
     if (!log) return null;
-    const threads = await tx
-      .select({ threadId: sessionLogThreads.threadId, record: sessionLogThreads.record })
-      .from(sessionLogThreads)
-      .where(eq(sessionLogThreads.sessionId, scope.sessionId))
-      .orderBy(asc(sessionLogThreads.createdAt), asc(sessionLogThreads.threadId));
-    // `rev` through the drizzle column (`bigint`, mode number): a JSON number.
-    const messages = await tx
-      .select({
-        messageId: sessionLogMessages.messageId,
-        threadId: sessionLogMessages.threadId,
-        seq: sessionLogMessages.seq,
-        rev: sessionLogMessages.rev,
-        deletedAt: sessionLogMessages.deletedAt,
-        record: sessionLogMessages.record,
-      })
-      .from(sessionLogMessages)
-      .where(eq(sessionLogMessages.sessionId, scope.sessionId))
-      .orderBy(asc(sessionLogMessages.seq), asc(sessionLogMessages.messageId));
-    const stored = await tx
-      .select({ objectKey: sessionLogBlobs.objectKey, sha256: sessionLogBlobs.sha256, bytes: sessionLogBlobs.bytes })
-      .from(sessionLogBlobs)
-      .where(and(eq(sessionLogBlobs.sessionId, scope.sessionId), isNull(sessionLogBlobs.deletedAt)));
-
-    const byThread = new Map<string, Thread>(
-      threads.map((t) => [t.threadId, { ...(t.record as unknown as Thread), messages: [] }]),
-    );
-    const objects = new Map(stored.map((b) => [`kortix-attachment://${b.objectKey}`, b]));
-    const revs: Record<string, number> = {};
-    const seqMax: Record<string, number> = {};
-    const blobs: SessionLogRestoreBlob[] = [];
-    for (const m of messages) {
-      revs[m.messageId] = m.rev;
-      seqMax[m.threadId] = Math.max(seqMax[m.threadId] ?? 0, m.seq);
-      if (m.deletedAt !== null) continue;
-      const record = m.record as unknown as SessionLogMessage;
-      let thread = byThread.get(m.threadId);
-      if (!thread) {
-        thread = { schema: SESSION_LOG_SCHEMA, v: log.v, thread_id: m.threadId, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: record.created_at, messages: [], ext: {} };
-        byThread.set(m.threadId, thread);
-      }
-      thread.messages.push(record);
-      for (const t of referencedTexts(record)) {
-        const object = objects.get(t.ref);
-        if (object) blobs.push({ message_id: m.messageId, block_id: t.block_id, ref: t.ref, bytes: object.bytes, sha256: object.sha256 });
-      }
-    }
-
-    const session = {
-      schema: SESSION_LOG_SCHEMA,
-      v: log.v,
-      title: null,
-      created_at: log.createdAt.toISOString(),
-      restore_grade: log.restoreGrade,
-      ...(log.gradeCounts && { grade_counts: log.gradeCounts }),
-      harness: { current: log.harnessCurrent, history: [] },
-      selection: { agent: null, model: null },
-      todos: [],
-      pending: { questions: [], permissions: [] },
-      ext: {},
-      ...log.record,
-      session_id: scope.sessionId,
-    } as unknown as Omit<SessionLog, 'threads'>;
-    return { generation: log.generation, log: { ...session, threads: [...byThread.values()] }, revs, seq_max: seqMax, blobs } as SessionLogRestore;
+    return readWholeLog(tx, log);
   });
+}
+
+async function readWholeLog(tx: Tx, log: LogRow): Promise<SessionLogRestore> {
+  const sessionId = log.sessionId;
+  const threads = await tx
+    .select({ threadId: sessionLogThreads.threadId, record: sessionLogThreads.record })
+    .from(sessionLogThreads)
+    .where(eq(sessionLogThreads.sessionId, sessionId))
+    .orderBy(asc(sessionLogThreads.createdAt), asc(sessionLogThreads.threadId));
+  // `rev` through the drizzle column (`bigint`, mode number): a JSON number.
+  const messages = await tx
+    .select({
+      messageId: sessionLogMessages.messageId,
+      threadId: sessionLogMessages.threadId,
+      seq: sessionLogMessages.seq,
+      rev: sessionLogMessages.rev,
+      deletedAt: sessionLogMessages.deletedAt,
+      record: sessionLogMessages.record,
+      toolInputOrder: sessionLogMessages.toolInputOrder,
+    })
+    .from(sessionLogMessages)
+    .where(eq(sessionLogMessages.sessionId, sessionId))
+    .orderBy(asc(sessionLogMessages.seq), asc(sessionLogMessages.messageId));
+  const stored = await tx
+    .select({ objectKey: sessionLogBlobs.objectKey, sha256: sessionLogBlobs.sha256, bytes: sessionLogBlobs.bytes })
+    .from(sessionLogBlobs)
+    .where(and(eq(sessionLogBlobs.sessionId, sessionId), isNull(sessionLogBlobs.deletedAt)));
+
+  const byThread = new Map<string, Thread>(
+    threads.map((t) => [t.threadId, { ...(t.record as unknown as Thread), messages: [] }]),
+  );
+  const objects = new Map(stored.map((b) => [`kortix-attachment://${b.objectKey}`, b]));
+  const revs: Record<string, number> = {};
+  const seqMax: Record<string, number> = {};
+  const blobs: SessionLogRestoreBlob[] = [];
+  for (const m of messages) {
+    revs[m.messageId] = m.rev;
+    seqMax[m.threadId] = Math.max(seqMax[m.threadId] ?? 0, m.seq);
+    if (m.deletedAt !== null) continue;
+    const record = withToolInputOrder(m.record as unknown as SessionLogMessage, m.toolInputOrder);
+    let thread = byThread.get(m.threadId);
+    if (!thread) {
+      thread = { schema: SESSION_LOG_SCHEMA, v: log.v, thread_id: m.threadId, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: record.created_at, messages: [], ext: {} };
+      byThread.set(m.threadId, thread);
+    }
+    thread.messages.push(record);
+    for (const t of referencedTexts(record)) {
+      const object = objects.get(t.ref);
+      if (object) blobs.push({ message_id: m.messageId, block_id: t.block_id, ref: t.ref, bytes: object.bytes, sha256: object.sha256 });
+    }
+  }
+
+  const session = {
+    schema: SESSION_LOG_SCHEMA,
+    v: log.v,
+    title: null,
+    created_at: log.createdAt.toISOString(),
+    restore_grade: log.restoreGrade,
+    ...(log.gradeCounts && { grade_counts: log.gradeCounts }),
+    harness: { current: log.harnessCurrent, history: [] },
+    selection: { agent: null, model: null },
+    todos: [],
+    pending: { questions: [], permissions: [] },
+    ext: {},
+    ...log.record,
+    session_id: sessionId,
+  } as unknown as Omit<SessionLog, 'threads'>;
+  return { generation: log.generation, log: { ...session, threads: [...byThread.values()] }, revs, seq_max: seqMax, blobs } as SessionLogRestore;
 }

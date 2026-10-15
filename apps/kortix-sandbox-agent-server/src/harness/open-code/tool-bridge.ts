@@ -63,8 +63,9 @@ export const KortixTools = async () => {
 /**
  * Load the hosted tools, write the bridge plugin to `path` and its tool list
  * beside it, and return the plugin's `file://` spec. `projectRoot` is the
- * checkout OpenCode serves its config from (the working tree or a release);
- * null loads only the Kortix tools. The list holds only the loaded tools: a
+ * release (or, with releases off, the working tree) the boot link serves,
+ * whether or not it has an OpenCode config dir (`readBootReleaseRoot`); null
+ * loads only the Kortix tools. The list holds only the loaded tools: a
  * Kortix tool the project does not list is not in it.
  */
 export async function writeToolBridge(

@@ -30,7 +30,8 @@ import { dirname } from 'node:path'
  * applies a new release rewrites it, and one that changes nothing does not
  * touch it (`'unchanged'`). The flag-off revert clears it.
  */
-export const CONFIG_RELEASE_NOTICE_PATH = '/tmp/kortix/config-release.md'
+export const CONFIG_RELEASE_NOTICE_PATH =
+  process.env.KORTIX_CONFIG_RELEASE_NOTICE_PATH || '/tmp/kortix/config-release.md'
 
 export interface ConfigReleaseNotice {
   /** The commit the running release was built from. */

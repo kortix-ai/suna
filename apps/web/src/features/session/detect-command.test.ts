@@ -87,4 +87,24 @@ describe('detectCommandFromText', () => {
       args: undefined,
     });
   });
+
+  // A skill run as `/name` (OpenCode lists every skill as a command): the message is the SKILL.md body,
+  // the `Base directory` lines, then the user's prompt. The bubble reads it after `stripSystemPtyText`,
+  // which folds a blank-line run, so the comparison must not depend on how many blank lines there are.
+  const SKILL_TEMPLATE = `\n# Generative UI\n\n${'Pick the block from the content. '.repeat(80)}\n\n\nBase directory for this skill: /opt/skills/kortix-genui\nRelative paths in this skill are relative to this base directory.`;
+  const PROMPT = `I have a 0.7 inch dip in the floor, 200cm by 160cm. ${'Tell me the cheapest, easiest and fastest fix. '.repeat(5)}`;
+
+  test('a skill command still matches after a blank-line run is folded', () => {
+    const sent = `${SKILL_TEMPLATE.trim()}\n\n${PROMPT}`.replace(/\n{3,}/g, '\n\n');
+    expect(detectCommandFromText(sent, [cmd('kortix-genui', SKILL_TEMPLATE, { source: 'skill' })])).toEqual({
+      name: 'kortix-genui',
+      args: PROMPT.trim(),
+    });
+  });
+
+  test('a long prompt after a large template is kept whole, not dropped', () => {
+    const sent = `${SKILL_TEMPLATE.trim()}\n\n${PROMPT}`;
+    expect(PROMPT.length).toBeGreaterThan(200);
+    expect(detectCommandFromText(sent, [cmd('kortix-genui', SKILL_TEMPLATE)])?.args).toBe(PROMPT.trim());
+  });
 });

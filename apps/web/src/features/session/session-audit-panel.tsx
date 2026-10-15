@@ -18,7 +18,10 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { approvalRequestFromAction } from '@/features/session/session-approval-review';
+import {
+  approvalLauncherName,
+  approvalRequestFromAction,
+} from '@/features/session/session-approval-review';
 import {
   isPendingAction,
   relativeTime,
@@ -32,6 +35,7 @@ import {
 import { credentialVia } from '@/components/iam/audit-credential-label';
 import { useTranslations } from '@/i18n/use-translations';
 import type { AuditEvent, SessionAuditAction } from '@kortix/sdk';
+import { useProjectSession } from '@kortix/sdk/react';
 import { CaretRightIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
@@ -49,6 +53,8 @@ export function SessionAuditPanel({
     enabled: data !== undefined && data.audit_access !== false,
   });
   const resolve = useResolveApproval(projectId, projectSessionId);
+  const { data: session } = useProjectSession(projectId, projectSessionId);
+  const launcherName = approvalLauncherName(session);
   const [busy, setBusy] = useState<Record<string, ApprovalDecisionValue>>({});
   const [outcomes, setOutcomes] = useState<Record<string, ApprovalDecisionValue>>({});
   const [selected, setSelected] = useState<SessionAuditAction | null>(null);
@@ -60,6 +66,8 @@ export function SessionAuditPanel({
     [timelineQuery.data],
   );
   const pending = actions.filter(isPendingAction);
+  // KRTX-1724: "Needs your approval" only when the viewer may decide one.
+  const pendingIsMine = pending.some((action) => action.can_resolve !== false);
   const history = events.length > 0 ? [] : actions.filter((action) => !isPendingAction(action));
   const historyGated = data?.audit_access === false;
 
@@ -145,7 +153,9 @@ export function SessionAuditPanel({
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
                   <h3 className="text-foreground text-xs font-medium">
-                    {tI18nComplete.raw('text635ea5c1ebb7')}
+                    {pendingIsMine
+                      ? tI18nComplete.raw('text635ea5c1ebb7')
+                      : tI18nComplete.raw('textdb0e960b68b5')}
                   </h3>
                   <Badge variant="warning" size="xs">
                     {pending.length}
@@ -161,6 +171,7 @@ export function SessionAuditPanel({
                         onDecision={(decision, note) => decide(action.execution_id, decision, note)}
                         busyDecision={busy[action.execution_id] ?? null}
                         outcome={outcome}
+                        resolverName={launcherName}
                       />
                     );
                   })}

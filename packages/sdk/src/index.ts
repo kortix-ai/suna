@@ -524,7 +524,9 @@ export {
 export * from './core/session-sync/saved-copy-store';
 export {
   type EmptyConversationInput,
+  type SavedSessionCopy,
   isEmptyConversation,
+  readSavedSessionCopy,
   savedCopyEmptyRoot,
 } from './core/session-sync/saved-transcript';
 export * from './core/session/url';

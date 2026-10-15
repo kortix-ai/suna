@@ -69,7 +69,7 @@ export function AccountListContent() {
   }, [accountsQuery.data]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
   }
 
   return (

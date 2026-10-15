@@ -221,6 +221,17 @@ describe('reviewVerdictAllowed', () => {
     expect(reviewVerdictAllowed(call(false), 'reject', MANAGER)).toBe(false);
   });
 
+  test('a connector call is decided only by a viewer the API says can resolve it (KRTX-1724)', () => {
+    const resolvable = (canResolve: boolean) =>
+      item('call:exec-9', 'approval', {
+        actions: [{ id: 'exec-9', previewAuthorized: true, canResolve }],
+      });
+    expect(reviewVerdictAllowed(resolvable(true), 'approve', MEMBER)).toBe(true);
+    expect(reviewVerdictAllowed(resolvable(true), 'reject', MEMBER)).toBe(true);
+    expect(reviewVerdictAllowed(resolvable(false), 'approve', MANAGER)).toBe(false);
+    expect(reviewVerdictAllowed(resolvable(false), 'reject', MANAGER)).toBe(false);
+  });
+
   test('a connector call is never dismissed, answered or sent back', () => {
     for (const verdict of ['dismiss', 'answer', 'changes'] as const) {
       expect(reviewVerdictAllowed(call(true), verdict, MANAGER)).toBe(false);

@@ -113,7 +113,7 @@ flow(
         .has("$.slug", slug)
         .has("$.desired_state", "running")
         .has("$.always_on", true)
-        .has("$.estimated_monthly_usd", 73.48)
+        .has("$.estimated_monthly_usd", 39.95)
         .has("$.warnings", [])
         // One primitive: clients branch on capabilities. No labels, services or uses until set.
         .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
@@ -162,7 +162,7 @@ flow(
       (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
         .status(200).body().has("$.always_on", true);
       const reread = await owner.get("/v1/projects/:projectId/apps/:appId", { params });
-      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 73.48);
+      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 39.95);
       if ("monthly_budget_usd" in reread.json<any>()) throw new Error(`an App carries a budget: ${reread.text()}`);
 
       // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.
@@ -1466,20 +1466,25 @@ flow(
           throw new Error(`capabilities with a volume and no server release: ${JSON.stringify(capabilities)}`);
         }
         const ls = await cli.run(["apps", "volumes", slug, "--project", project.id]);
-        if (ls.exitCode !== 0 || !/data\s+app\s+10 GB/.test(ls.stdout)) throw new Error(`kortix apps volumes: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
+        if (ls.exitCode !== 0 || !/data\s+app\s+-\s+10 GB/.test(ls.stdout)) throw new Error(`kortix apps volumes: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
       });
 
-      await ctx.step("extend only grows: shrink → 400 volume_shrink_refused, 101 GB → 400 volume_size_invalid, retention 61 → 400; 20 GB with retention 7 → 200 and reads back", async () => {
-        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 5 }, { params: vol() }))
-          .status(400).body().has("$.code", "volume_shrink_refused");
+      await ctx.step("a volume has a fixed size: 101 GB → 400 volume_size_invalid, retention 61 → 400, any other size without a provider → 503 volume_size_unknown; retention 7 → 200 and reads back; the CLI sets retention 30", async () => {
         (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 101 }, { params: vol() }))
           .status(400).body().has("$.code", "volume_size_invalid");
         (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { snapshot_retention_days: 61 }, { params: vol() }))
           .status(400).body().has("$.code", "volume_retention_invalid");
-        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 20, snapshot_retention_days: 7 }, { params: vol() }))
-          .status(200).body().has("$.size_gb", 20).has("$.snapshot_retention_days", 7);
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 20 }, { params: vol() }))
+          .status(503).body().has("$.code", "volume_size_unknown");
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { snapshot_retention_days: 7 }, { params: vol() }))
+          .status(200).body().has("$.size_gb", 10).has("$.snapshot_retention_days", 7);
         const read = await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() });
-        read.status(200).body().has("$.volumes[0].size_gb", 20).has("$.volumes[0].snapshot_retention_days", 7);
+        read.status(200).body().has("$.volumes[0].size_gb", 10).has("$.volumes[0].snapshot_retention_days", 7)
+          .has("$.volumes[0].used_bytes", null).has("$.volumes[0].last_commit_at", null);
+        const set = await cli.run(["apps", "volumes", "set", slug, "data", "--retention", "30", "--project", project.id]);
+        if (set.exitCode !== 0 || !set.stdout.includes("keeps daily snapshots 30 days")) {
+          throw new Error(`kortix apps volumes set: exit ${set.exitCode}, stdout ${set.stdout}, stderr ${set.stderr}`);
+        }
       });
 
       await ctx.step("destroy needs ?confirm=<name> (400 confirmation_required); restore and fork refuse an unknown snapshot (400 snapshot_invalid); fork refuses a bad name", async () => {
@@ -1509,7 +1514,8 @@ flow(
           await member.del("/v1/projects/:projectId/apps/:appId", { params: app() }),
         ];
         refusals.forEach((response) => response.status(403));
-        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body().has("$.volumes[0].size_gb", 20);
+        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body()
+          .has("$.volumes[0].size_gb", 10).has("$.volumes[0].snapshot_retention_days", 30);
       });
 
       await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {

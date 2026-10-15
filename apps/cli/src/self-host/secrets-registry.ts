@@ -79,6 +79,11 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'DASHBOARD_PASSWORD', category: 'database', kind: 'generated', required: true, rotatable: true },
   { key: 'S3_PROTOCOL_ACCESS_KEY_ID', category: 'database', kind: 'generated', required: false, rotatable: true },
   { key: 'S3_PROTOCOL_ACCESS_KEY_SECRET', category: 'database', kind: 'generated', required: false, rotatable: true },
+  // Kortix Capture's bundled object store (MinIO). The API signs with this pair
+  // to issue per-device credentials. Rotating the password restarts the store
+  // and the API together; stored objects are unaffected.
+  { key: 'CAPTURE_STORE_ROOT_USER', category: 'database', kind: 'generated', required: false, rotatable: false },
+  { key: 'CAPTURE_STORE_ROOT_PASSWORD', category: 'database', kind: 'generated', required: false, rotatable: true },
   // Internal Supabase-infra encryption keys — see the array-level comment
   // above for why these are generated-but-not-rotatable.
   { key: 'SECRET_KEY_BASE', category: 'database', kind: 'generated', required: true, rotatable: false },
@@ -246,6 +251,8 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   // old pair.
   S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage', 'kortix-api'],
   S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage', 'kortix-api'],
+  CAPTURE_STORE_ROOT_USER: ['capture-store', 'kortix-api'],
+  CAPTURE_STORE_ROOT_PASSWORD: ['capture-store', 'kortix-api'],
   SECRET_KEY_BASE: ['supabase-realtime', 'supabase-supavisor'],
   REALTIME_DB_ENC_KEY: ['supabase-realtime'],
   VAULT_ENC_KEY: ['supabase-supavisor'],
@@ -267,6 +274,17 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SMTP_ADMIN_EMAIL: ['supabase-auth'],
   SMTP_SENDER_NAME: ['supabase-auth'],
   SAML_PRIVATE_KEY: ['supabase-auth'],
+  // The auth behavior flags (SHARED_AUTH_DEFAULTS). GoTrue reads them only
+  // through Compose interpolation, so only a recreate applies a new value.
+  // The API also reads ENABLE_EMAIL_AUTOCONFIRM: while it is on, a password
+  // email proves nothing (KRTX-1715). Both must restart on one value.
+  DISABLE_SIGNUP: ['supabase-auth'],
+  ENABLE_EMAIL_SIGNUP: ['supabase-auth'],
+  ENABLE_EMAIL_AUTOCONFIRM: ['supabase-auth', 'kortix-api'],
+  ENABLE_ANONYMOUS_USERS: ['supabase-auth'],
+  ENABLE_PHONE_SIGNUP: ['supabase-auth'],
+  ENABLE_PHONE_AUTOCONFIRM: ['supabase-auth'],
+  ADDITIONAL_REDIRECT_URLS: ['supabase-auth'],
 
   // Agent sandbox — all three interchangeable providers
   DAYTONA_API_KEY: ['kortix-api'],

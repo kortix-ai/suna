@@ -1,9 +1,12 @@
 'use client';
 
+import { toSandboxAbsolutePath } from '@kortix/sdk';
+
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
+import { closeOpenGenuiFence, openGenuiFence, separateGenuiClosers } from '@/components/markdown/code/genui-fence';
 import { parseFileLinkHref, remarkWorkspaceFileLinks } from '@/components/markdown/file-links';
 import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
@@ -20,6 +23,7 @@ import {
   type MarkdownVariant,
 } from '@/components/markdown/markdown-policy';
 import { MarkdownOrderedList } from '@/components/markdown/ordered-list';
+import type { PluggableList } from 'unified';
 import {
   hasLinkReferenceDefinition,
   isInternalUrl,
@@ -61,13 +65,153 @@ interface MarkdownRenderContextValue {
   isStreaming: boolean;
   proxy: (url: string | undefined) => string | undefined;
   policy: Readonly<MarkdownPolicy>;
+  trust: MarkdownTrust;
+  variant: MarkdownVariant;
+  /** ```openui fences render as generative UI (see `UnifiedMarkdownProps.genui`). */
+  genui: boolean;
 }
 
 const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   isStreaming: false,
   proxy: (url) => url,
   policy: markdownPolicy('untrusted'),
+  trust: 'untrusted',
+  variant: 'message',
+  genui: false,
 });
+
+export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
+  const { proxy, policy, variant } = useContext(MarkdownRenderContext);
+  // Only agent content may turn a setup link into the in-app card. From any
+  // other writer it stays a plain link to the same page.
+  const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
+  if (setupLink) {
+    return (
+      <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
+        {children}
+      </SetupLinkButton>
+    );
+  }
+
+  // A setup link whose URL is still streaming: the card it will
+  // become, with nothing to click yet (see `holdPendingSetupLink`).
+  const pendingSetupLink = policy.setupLinks ? parsePendingSetupLinkHref(href) : null;
+  if (pendingSetupLink) {
+    return (
+      <SetupLinkButton kind={pendingSetupLink} token={null}>
+        {children}
+      </SetupLinkButton>
+    );
+  }
+
+  // A file in the session's workspace opens the file preview, the same
+  // as a path in prose (see `remarkWorkspaceFileLinks`).
+  const decodedFilePath = policy.fileLinks ? parseFileLinkHref(href) : null;
+  const filePath = policy.fileLinks ? parseFileLinkHref(href, variant === 'document') : null;
+  if (decodedFilePath && !filePath) {
+    return <span className={LINK_CLASS}>{children}</span>;
+  }
+  if (filePath) {
+    return (
+      <ClickablePath filePath={filePath} className={LINK_CLASS}>
+        {children}
+      </ClickablePath>
+    );
+  }
+
+  // The URL is still streaming: show the label in link style, with
+  // nothing to click until the real href arrives.
+  if (isStreamingLinkPlaceholder(href)) {
+    return <span className={LINK_CLASS}>{children}</span>;
+  }
+
+  const resolvedHref = proxy(href) ?? href ?? '#';
+  const isHash = resolvedHref.startsWith('#');
+  const isExternal = !isInternalUrl(resolvedHref);
+
+  // Markdown can contain arbitrary same-origin absolute URLs. Next.js
+  // treats those as app routes and prefetches them, including typos such
+  // as `/legal/terms.`. Only trusted root-relative/hash paths belong in
+  // the app router; every other href stays a plain anchor.
+  if (!shouldUseNextLink(resolvedHref)) {
+    return (
+      <a
+        href={resolvedHref}
+        className={LINK_CLASS}
+        {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      >
+        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      href={resolvedHref}
+      onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
+      className={LINK_CLASS}
+      {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+    >
+      <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+    </Link>
+  );
+}
+
+/**
+ * `flush`: no vertical margin, for an image inside a generative UI block that spaces its own children.
+ * `compact`: the click-to-load placeholder is an icon-only button that fills its box, for a small thumbnail
+ * whose box would clip the labelled button.
+ */
+export function MarkdownImage({ src, alt, flush = false, compact = false }: { src?: string; alt?: string; flush?: boolean; compact?: boolean }) {
+  const { proxy, policy } = useContext(MarkdownRenderContext);
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const [loadRequested, setLoadRequested] = useState(false);
+  if (!src) return null;
+  const resolvedSrc = proxy(src) ?? src;
+  const remoteHost = remoteImageHost(src, resolvedSrc);
+  if (policy.remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
+    const label = tHardcodedUi('componentsMarkdownUnifiedMarkdown.loadRemoteImage', { host: remoteHost });
+    if (compact) {
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title={label}
+          aria-label={label}
+          onClick={() => setLoadRequested(true)}
+          className="text-muted-foreground size-full"
+        >
+          <ImageIcon className="size-4" />
+        </Button>
+      );
+    }
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        title={alt || undefined}
+        onClick={() => setLoadRequested(true)}
+        className="text-muted-foreground max-w-full"
+      >
+        <ImageIcon className="size-3.5 shrink-0" />
+        <span className="truncate">{label}</span>
+      </Button>
+    );
+  }
+  return (
+    <span className={cn('block', !flush && 'my-5')}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={resolvedSrc}
+        alt={alt || ''}
+        loading="lazy"
+        className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+      />
+    </span>
+  );
+}
 
 /**
  * Every renderer the markdown uses, defined once for the module.
@@ -130,84 +274,22 @@ const MARKDOWN_COMPONENTS = {
   ),
 
   // Links — brand-blue, routed through next/link. Setup links open an in-app modal.
-  a: function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
-    const { proxy, policy } = useContext(MarkdownRenderContext);
-    // Only agent content may turn a setup link into the in-app card. From any
-    // other writer it stays a plain link to the same page.
-    const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
-    if (setupLink) {
-      return (
-        <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
-          {children}
-        </SetupLinkButton>
-      );
-    }
-
-    // A setup link whose URL is still streaming: the card it will
-    // become, with nothing to click yet (see `holdPendingSetupLink`).
-    const pendingSetupLink = policy.setupLinks ? parsePendingSetupLinkHref(href) : null;
-    if (pendingSetupLink) {
-      return (
-        <SetupLinkButton kind={pendingSetupLink} token={null}>
-          {children}
-        </SetupLinkButton>
-      );
-    }
-
-    // A file in the session's workspace opens the file preview, the same
-    // as a path in prose (see `remarkWorkspaceFileLinks`).
-    const filePath = policy.fileLinks ? parseFileLinkHref(href) : null;
-    if (filePath) {
-      return (
-        <ClickablePath filePath={filePath} className={LINK_CLASS}>
-          {children}
-        </ClickablePath>
-      );
-    }
-
-    // The URL is still streaming: show the label in link style, with
-    // nothing to click until the real href arrives.
-    if (isStreamingLinkPlaceholder(href)) {
-      return <span className={LINK_CLASS}>{children}</span>;
-    }
-
-    const resolvedHref = proxy(href) ?? href ?? '#';
-    const isHash = resolvedHref.startsWith('#');
-    const isExternal = !isInternalUrl(resolvedHref);
-
-    // Markdown can contain arbitrary same-origin absolute URLs. Next.js
-    // treats those as app routes and prefetches them, including typos such
-    // as `/legal/terms.`. Only trusted root-relative/hash paths belong in
-    // the app router; every other href stays a plain anchor.
-    if (!shouldUseNextLink(resolvedHref)) {
-      return (
-        <a
-          href={resolvedHref}
-          className={LINK_CLASS}
-          {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-        >
-          <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
-        </a>
-      );
-    }
-
-    return (
-      <Link
-        href={resolvedHref}
-        onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-        className={LINK_CLASS}
-        {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-      >
-        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
-      </Link>
-    );
-  },
+  a: MarkdownLink,
 
   // Every fence kind and inline code resolve in one shared place; see
   // components/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
-    const { isStreaming, policy } = useContext(MarkdownRenderContext);
-    return <MarkdownCode {...props} isStreaming={isStreaming} setupLinks={policy.setupLinks} />;
+    const { isStreaming, policy, trust, variant, genui } = useContext(MarkdownRenderContext);
+    return (
+      <MarkdownCode
+        {...props}
+        isStreaming={isStreaming}
+        setupLinks={policy.setupLinks}
+        trust={trust}
+        variant={variant}
+        genui={genui}
+      />
+    );
   },
   // `code` returns the fully-styled block; collapse the default `<pre>` wrapper.
   pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
@@ -266,44 +348,7 @@ const MARKDOWN_COMPONENTS = {
     </td>
   ),
 
-  img: function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
-    const { proxy, policy } = useContext(MarkdownRenderContext);
-    const tHardcodedUi = useTranslations('hardcodedUi');
-    const [loadRequested, setLoadRequested] = useState(false);
-    if (!src) return null;
-    const resolvedSrc = proxy(src) ?? src;
-    const remoteHost = remoteImageHost(src, resolvedSrc);
-    if (policy.remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
-      return (
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          title={alt || undefined}
-          onClick={() => setLoadRequested(true)}
-          className="text-muted-foreground max-w-full"
-        >
-          <ImageIcon className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {tHardcodedUi('componentsMarkdownUnifiedMarkdown.loadRemoteImage', {
-              host: remoteHost,
-            })}
-          </span>
-        </Button>
-      );
-    }
-    return (
-      <span className="my-5 block">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={resolvedSrc}
-          alt={alt || ''}
-          loading="lazy"
-          className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
-        />
-      </span>
-    );
-  },
+  img: MarkdownImage,
 
   strong: ({ children }: { children?: React.ReactNode }) => (
     <strong className="text-foreground font-semibold">{children}</strong>
@@ -419,8 +464,21 @@ export interface UnifiedMarkdownProps {
   trust: MarkdownTrust;
   /** `document` for a markdown file: embedded HTML is not parsed. Defaults to `message`. */
   variant?: MarkdownVariant;
+  /**
+   * `variant="document"` only: the path of the file being rendered. A
+   * document's relative links are relative to its directory, so with a known
+   * location agent documents resolve and open them (see
+   * `remarkWorkspaceFileLinks`); without one they stay blocked. Untrusted
+   * content never gets file links.
+   */
+  documentPath?: string;
   className?: string;
   isStreaming?: boolean;
+  /**
+   * Render ```openui fences as generative UI. Only session transcript assistant text sets it
+   * (the transcript and the share view); everywhere else such a fence is an ordinary code block.
+   */
+  genui?: boolean;
 }
 
 /**
@@ -437,15 +495,37 @@ const STREAMING_REHYPE_PLUGINS_NO_RAW = [...katexRehypePluginsNoRaw, rehypeStrea
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
-  ({ content, trust, variant = 'message', className, isStreaming = false }) => {
+  ({ content, trust, variant = 'message', className, isStreaming = false, documentPath, genui = false }) => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     const { proxyUrl } = useSandboxProxy();
     const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
     const policy = markdownPolicy(trust, variant);
-    const renderContext = useMemo(
-      () => ({ isStreaming, proxy, policy }),
-      [isStreaming, proxy, policy],
-    );
+    // A document's file links turn on once its location is known, under the
+    // same trust gate as messages (`markdownPolicy(trust, 'message')`), so
+    // untrusted documents never link files. `workspaceFileLinkPath` resolves
+    // relative links against the document's directory and keeps traversal
+    // inside the sandbox roots.
+    const effectivePolicy = useMemo(() => {
+      if (variant !== 'document' || !documentPath) return policy;
+      if (!markdownPolicy(trust, 'message').fileLinks) return policy;
+      return { ...policy, fileLinks: true };
+    }, [policy, trust, variant, documentPath]);
+    const documentBaseDir = useMemo(() => {
+      if (variant !== 'document' || !documentPath || !effectivePolicy.fileLinks) return undefined;
+      const file = toSandboxAbsolutePath(documentPath);
+      const cut = file.lastIndexOf('/');
+      return cut > 0 ? file.slice(0, cut) : undefined;
+    }, [variant, documentPath, effectivePolicy.fileLinks]);
+    const remarkPlugins = useMemo<PluggableList>(() => {
+      if (documentBaseDir) {
+        return [...REMARK_PLUGINS_WITH_SETUP_LINKS, [remarkWorkspaceFileLinks, { baseDir: documentBaseDir }]];
+      }
+      return effectivePolicy.fileLinks
+        ? REMARK_PLUGINS_WITH_FILE_LINKS
+        : policy.setupLinks
+          ? REMARK_PLUGINS_WITH_SETUP_LINKS
+          : katexRemarkPlugins;
+    }, [documentBaseDir, effectivePolicy, policy.setupLinks]);
 
     // Streamdown renders streaming text block by block and settled text as one
     // document: two different React trees. Switching trees when the turn ends
@@ -456,16 +536,34 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
 
     const safeContent = typeof content === 'string' ? content : content ? String(content) : '';
 
+    // A generative UI fence still open at the end streams (the model is writing it) or was cut
+    // off. It is closed here, so nothing after it, such as Streamdown's completion of unfinished
+    // markdown, lands inside the block, and its last line tells the block which of the two it is.
+    // A nested fence (`code === null`) in history may be one its container already closed: closing
+    // it again would render an extra empty code block, so it is closed only while streaming.
+    // A closer the model glued to the last statement (`…")````) moves to its own line first, or
+    // CommonMark would not close the fence and the prose after it would land inside the block.
+    const source = useMemo(() => (genui ? separateGenuiClosers(safeContent) : safeContent), [genui, safeContent]);
+    const genuiOpen = useMemo(() => (genui ? openGenuiFence(source) : null), [genui, source]);
+    const renderContext = useMemo(
+      () => ({ isStreaming, proxy, policy: effectivePolicy, trust, variant, genui }),
+      [isStreaming, proxy, effectivePolicy, trust, variant, genui],
+    );
+
     // Whole-string rewrites (KaTeX prep, system-tag strip, the pending setup
     // link, autolink). Run bare, they re-ran on EVERY render of this component
     // — including every render caused by something other than a new token —
     // for the full length of the answer. Memoising on the string collapses
     // that to once per distinct value. It sits ABOVE the empty-content early
     // return so the hook order stays fixed.
-    const finalContent = useMemo(
-      () => (safeContent ? prepareMarkdownSource(safeContent, isStreaming) : ''),
-      [safeContent, isStreaming],
-    );
+    const finalContent = useMemo(() => {
+      if (!source) return '';
+      const closed =
+        genuiOpen && (genuiOpen.code !== null || isStreaming)
+          ? closeOpenGenuiFence(source, genuiOpen, isStreaming ? 'streaming' : 'cut-off')
+          : source;
+      return prepareMarkdownSource(closed, isStreaming);
+    }, [source, genuiOpen, isStreaming]);
 
     if (!safeContent) {
       return (
@@ -493,13 +591,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             parseIncompleteMarkdown={isStreaming}
             parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
             components={MARKDOWN_COMPONENTS as any}
-            remarkPlugins={
-              policy.fileLinks
-                ? REMARK_PLUGINS_WITH_FILE_LINKS
-                : policy.setupLinks
-                  ? REMARK_PLUGINS_WITH_SETUP_LINKS
-                  : katexRemarkPlugins
-            }
+            remarkPlugins={remarkPlugins}
             // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
             // new array each render made every block re-parse on every token.
             // While streaming, each word also fades in as it mounts. Dropping

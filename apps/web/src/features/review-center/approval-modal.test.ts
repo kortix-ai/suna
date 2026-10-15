@@ -53,6 +53,13 @@ describe('reviewApprovalDetails', () => {
     });
   });
 
+  test('a call waiting on someone else is still pending (KRTX-1724)', () => {
+    expect(reviewApprovalDetails({ ...connectorCall, status: 'waiting' })).toMatchObject({
+      pending: true,
+      status: 'pending_approval',
+    });
+  });
+
   test('a decided call is no longer pending and carries its outcome', () => {
     expect(reviewApprovalDetails({ ...connectorCall, status: 'approved' })).toMatchObject({
       pending: false,

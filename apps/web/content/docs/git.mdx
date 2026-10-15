@@ -337,6 +337,8 @@ A grant that names `project.cr.open` or `project.cr.merge` counts as `project.gi
 
 Each command takes `--project <id>` and `--host <name>`. `ls`, `show`, `diff`, `merge-preview`, `request-changes` and `version-diff` also take `--json`. The REST routes are under `/v1/projects/<project_id>/change-requests` in the [API reference](https://api.kortix.com/v1/docs).
 
+`GET /change-requests` returns one page, newest number first: 50 change requests by default, at most 500 with `limit` (a larger `limit` answers `400`). Pass `next_cursor` back as `cursor` for the next page; it is `null` on the last page. `kortix cr ls` follows it and lists every change request.
+
 ### Errors
 
 | Code | Status | Meaning |
@@ -361,6 +363,8 @@ The Review page is the project's inbox for everything that waits on a person. Op
 | Output (`output`), question (`decision`), finished batch (`batch`) | its own id | An agent submits it with `kortix review submit`. |
 
 The lists are **Needs you**, **Waiting** and **Done**. The filters are **All**, **Changes**, **Approvals**, **Outputs**, **Questions** and **Finished**. Keys: `j` and `k` move, `Enter` opens, `a` approves, `e` asks for changes, `d` dismisses, `1` `2` `3` switch lists, `/` searches, `?` shows help.
+
+Each list loads 50 items at a time, newest first. **Load more** shows the next 50. The filters and the search apply to the items loaded so far. The **Review** count in the sidebar, and the dot on a session that waits on you, count every item that needs you.
 
 What a verdict does depends on the item:
 
@@ -392,6 +396,14 @@ A built-in member holds none of these permissions. It sees changes and agent ite
 | `kortix review submit --kind <k> --title <t>` | Submits an `output`, `decision` or `batch`. Options: `--summary`, `--risk` (`none`, `low`, `medium`, `high`), `--detail <json>`, `--agent`, `--session`. |
 
 Reading needs `project.review.read`, a verdict needs `project.review.act`, and `submit` needs `project.review.submit`. A Member holds read and submit. A Manager holds all three.
+
+The REST routes are under `/v1/projects/<project_id>/review`:
+
+| Route | Returns |
+| --- | --- |
+| `GET /review/items` | One page of items: **Needs you**, then **Waiting**, then **Done**, newest first within each. Filters: `segment`, `kind`, `session_id`. `limit` is 50 by default; above 200 it answers `400`. Pass `next_cursor` back as `cursor` for the next page; it is `null` on the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed. `kortix review ls` follows the cursor and lists each item once, with its newest status. |
+| `GET /review/items/<item>` | One item by its id, including `cr:<id>` and a pending `call:<id>`. |
+| `GET /review/summary` | `{ needs_you_total, needs_you_by_session }`: the counts the sidebar shows. A connector call that you may not decide counts for the people who may. |
 
 ## Config comes from the base branch
 

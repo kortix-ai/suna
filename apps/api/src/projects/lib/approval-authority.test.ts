@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mayResolveApproval, maySeeSessionApprovals } from './approval-authority';
+import { approvalResolvers, mayResolveApproval, maySeeSessionApprovals } from './approval-authority';
 
 const WRAPPER = 'wrapper-service-account';
 const HUMAN = 'human-1';
@@ -199,6 +199,44 @@ describe('mayResolveApproval', () => {
       });
       expect(result).toEqual({ allowed: false, reason: 'non_human_caller' });
     });
+  });
+});
+
+// KRTX-1724: a viewer who may not decide is told who does. The class must be
+// the one the verdict enforces.
+describe('approvalResolvers', () => {
+  test('a session one person started: managers and that launcher', () => {
+    expect(approvalResolvers({ targetSessionOrigin: 'user', targetSessionCreatedBy: HUMAN })).toBe(
+      'managers_and_launcher',
+    );
+    expect(approvalResolvers({ targetSessionOrigin: 'trigger', targetSessionCreatedBy: HUMAN })).toBe(
+      'managers_and_launcher',
+    );
+  });
+
+  test('a backend session (CLI PAT, service account, API key): managers only', () => {
+    expect(approvalResolvers({ targetSessionOrigin: 'backend', targetSessionCreatedBy: WRAPPER })).toBe(
+      'managers',
+    );
+  });
+
+  test('a session with no creator: managers only', () => {
+    expect(approvalResolvers({ targetSessionOrigin: 'user', targetSessionCreatedBy: null })).toBe('managers');
+  });
+
+  test('managers only means the launcher really is refused', () => {
+    const verdict = (targetSessionOrigin: string) =>
+      mayResolveApproval({
+        isManager: false,
+        targetSessionOrigin,
+        targetSessionCreatedBy: HUMAN,
+        callerUserId: HUMAN,
+        callerAuthType: 'supabase',
+        callerCredentialKind: 'jwt',
+        callerSessionId: null,
+      }).allowed;
+    expect(verdict('backend')).toBe(false);
+    expect(verdict('user')).toBe(true);
   });
 });
 
