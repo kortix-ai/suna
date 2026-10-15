@@ -145,6 +145,22 @@ describe('narrateStep', () => {
   });
 });
 
+describe('narrateStep - a codemode script is a script, not the tool name', () => {
+  it('narrates one script and several scripts', () => {
+    expect(narrateStep('other', [part('codemode', { code: 'return 1' })])).toBe('Ran a script');
+    expect(narrateStep('other', [part('codemode'), part('codemode')])).toBe('Ran 2 scripts');
+  });
+
+  it('a group that mixes a script with another tool still names every tool', () => {
+    expect(narrateStep('other', [part('codemode'), part('slack/send')])).toBe('Used Codemode and Send');
+  });
+
+  it('a failed script says so', () => {
+    const failed = { ...part('codemode'), state: { status: 'error', input: {}, error: 'Script failed' } } as unknown as ToolPart;
+    expect(narrateFailedStep('other', [failed])).toBe('A script failed');
+  });
+});
+
 describe('narrationToolName', () => {
   it('strips the MCP server prefix and title-cases', () => {
     expect(narrationToolName('linear/create_issue')).toBe('Create Issue');

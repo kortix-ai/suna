@@ -185,6 +185,22 @@ async function expectThinkingMatchesStop(page: Page) {
     .toBe(true);
 }
 
+/**
+ * Settings → Appearance picks the mode from the searchable Theme combobox
+ * (#9904). Its rows render in a portal outside the settings dialog, so the
+ * row is found on the page. The trigger then names the chosen row.
+ */
+async function chooseAppearanceTheme(
+  page: Page,
+  settings: Locator,
+  theme: string,
+) {
+  const picker = settings.getByRole("button", { name: "Theme", exact: true });
+  await picker.click();
+  await page.getByRole("option", { name: theme, exact: true }).click();
+  await expect(picker).toContainText(theme);
+}
+
 async function expectSeparateRows(rows: Locator) {
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
   const boxes = await rows.evaluateAll((elements) =>
@@ -448,9 +464,7 @@ for (const runtime of runtimes) {
           .getByRole("tab", { name: "Appearance", exact: true })
           .click();
         for (const theme of ["Light", "Dark", "System"]) {
-          await dialog
-            .getByRole("button", { name: theme, exact: true })
-            .click();
+          await chooseAppearanceTheme(page, dialog, theme);
           const expectedTheme =
             theme === "System"
               ? (await page.evaluate(
@@ -1270,9 +1284,7 @@ for (const runtime of runtimes) {
           await settings
             .getByRole("tab", { name: "Appearance", exact: true })
             .click();
-          await settings
-            .getByRole("button", { name: theme, exact: true })
-            .click();
+          await chooseAppearanceTheme(page, settings, theme);
           await settings.getByRole("button", { name: "Back to app" }).click();
           await expect(page.locator("html")).toHaveClass(
             new RegExp(theme.toLowerCase()),

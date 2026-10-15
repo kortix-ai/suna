@@ -12,6 +12,7 @@ import { ProjectPageHeader } from '@/features/workspace/project-layout/project-p
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
+import { useDebounce } from '@/hooks/use-debounce';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
@@ -92,6 +93,17 @@ export function AppsView({ projectId }: { projectId: string }) {
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
+  // Mirror the open App into `?app=` so a reload or a copied link reopens it.
+  // Debounced so a fast open/close writes one history entry, not two.
+  // `replaceState` touches only the `app` key and does not re-run the route.
+  const { debouncedValue: urlAppId } = useDebounce(openAppId, 200);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if ((url.searchParams.get('app') ?? null) === urlAppId) return;
+    if (urlAppId) url.searchParams.set('app', urlAppId);
+    else url.searchParams.delete('app');
+    window.history.replaceState(window.history.state, '', url);
+  }, [urlAppId]);
 
   useEffect(() => {
     const target = searchParams.get('open_app');

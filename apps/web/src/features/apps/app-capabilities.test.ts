@@ -43,7 +43,7 @@ test('the detail modal takes its body and its capability items from app.capabili
   const view = read('features/apps/apps-view.tsx');
   expect(detail).toContain("const preview = appCan(app, 'preview');");
   expect(detail).toContain("appCan(app, 'member_tokens') ? (");
-  expect(detail).toContain("canDeploy={canDeploy && appCan(app, 'rollback')}");
+  expect(detail).toContain("canRollback={canDeploy && appCan(app, 'rollback')}");
   expect(detail).toContain('{canDeploy && canSleep ? (');
   // An App without a preview never asks for an access session (the API answers 409).
   expect(detail).toContain('session: canAccess && preview');
