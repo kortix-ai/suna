@@ -39,6 +39,72 @@ interface AppResponse {
 }
 
 test.describe('18 — Kortix Apps UI', () => {
+  test('App preview fills the window and returns to the gallery', async ({ page }) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(180_000);
+    const env = loadEnv();
+    const email = `e2e-preview-${Date.now()}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+    let projectId: string | null = null;
+    try {
+      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+      const account = accounts.find((item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner')!;
+      await setDatabaseEnterpriseDemo(env, account.account_id, true);
+      const project = await createDatabaseProject(env, { accountId: account.account_id, userId: user.id, name: 'Preview geometry', appsEnabled: true });
+      projectId = project.id;
+      await api(session.access_token, 'POST', `/projects/${project.id}/apps`, { slug: `preview-${Date.now()}`, name: 'Seed App' }, 201);
+      await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
+      await selectAccountForUi(page, account.account_id);
+      await page.goto(`/projects/${project.id}/apps`);
+      await dismissOnboarding(page);
+      const compact = page.getByRole('button', { name: 'Compact — up to 4 per row' });
+      await compact.click();
+      const seededCard = page.getByRole('button', { name: 'Open Seed App' });
+      await seededCard.click();
+      const appModal = page.getByRole('dialog', { name: 'Seed App App' });
+      await expect(appModal).toBeVisible();
+      // App previews use the whole window, not an inset sheet. The shared
+      // Electron host adds only its native titlebar spacer inside this box.
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 720, height: 480 }]) {
+        await page.setViewportSize(viewport);
+        await expect.poll(async () => {
+          const box = await appModal.boundingBox();
+          return box && [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)];
+        }).toEqual([0, 0, viewport.width, viewport.height]);
+        await expect(appModal.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
+      }
+      // Host geometry is shared; emulate macOS's reserved control band.
+      // Native hit testing remains the desktop parity journey's responsibility.
+      await page.evaluate(() => {
+        document.documentElement.dataset.desktop = 'true';
+        document.documentElement.dataset.desktopPlatform = 'macos';
+      });
+      await expect.poll(async () => {
+        const spacer = await appModal.locator('.kx-titlebar-spacer').boundingBox();
+        const header = await appModal.locator('header').boundingBox();
+        return !!spacer && !!header && spacer.height > 0 && header.y >= spacer.height;
+      }).toBe(true);
+      await page.evaluate(() => {
+        delete document.documentElement.dataset.desktop;
+        delete document.documentElement.dataset.desktopPlatform;
+      });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.keyboard.press('Escape');
+      await expect(appModal).toBeHidden();
+      await expect(seededCard).toBeVisible();
+      await expect(compact).toHaveAttribute('aria-pressed', 'true');
+      await seededCard.click();
+      await expect(appModal).toBeVisible();
+      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(seededCard).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
+    } finally {
+      if (projectId) await deleteDatabaseProject(env, projectId);
+      await deleteAuthUser(user.id, authOptions);
+    }
+  });
+
   test('gates Apps on its flag, enables it in place, and renders a read-only deployment index', async ({
     context,
     page,
@@ -272,38 +338,6 @@ test.describe('18 — Kortix Apps UI', () => {
       // Opening an App happens IN PLACE — no new tab, no navigation.
       await seededCard.click();
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
-      await expect(appModal).toBeVisible();
-      // App previews use the whole window, not an inset sheet. The shared
-      // Electron host adds only its native titlebar spacer inside this box.
-      for (const viewport of [{ width: 1440, height: 900 }, { width: 720, height: 480 }]) {
-        await page.setViewportSize(viewport);
-        await expect.poll(async () => {
-          const box = await appModal.boundingBox();
-          return box && [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)];
-        }).toEqual([0, 0, viewport.width, viewport.height]);
-        await expect(appModal.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
-      }
-      // Host geometry is shared; emulate macOS's reserved control band.
-      // Native hit testing remains the desktop parity journey's responsibility.
-      await page.evaluate(() => {
-        document.documentElement.dataset.desktop = 'true';
-        document.documentElement.dataset.desktopPlatform = 'macos';
-      });
-      await expect.poll(async () => {
-        const spacer = await appModal.locator('.kx-titlebar-spacer').boundingBox();
-        const header = await appModal.locator('header').boundingBox();
-        return !!spacer && !!header && spacer.height > 0 && header.y >= spacer.height;
-      }).toBe(true);
-      await page.evaluate(() => {
-        delete document.documentElement.dataset.desktop;
-        delete document.documentElement.dataset.desktopPlatform;
-      });
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await page.keyboard.press('Escape');
-      await expect(appModal).toBeHidden();
-      await expect(seededCard).toBeVisible();
-      await expect(compact).toHaveAttribute('aria-pressed', 'true');
-      await seededCard.click();
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
       // Not deployed yet: there is no runtime to put to sleep, so no control.
