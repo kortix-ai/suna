@@ -12,16 +12,16 @@
  *
  * This test drives the real mechanism — React's own `Activity`, a real client
  * mount under happy-dom, real effect lifecycles — instead of asserting on
- * source text or static markup, which cannot see either effects or display.
+ * source text or static markup, which cannot observe effect cleanup.
  * Delete the marker's effect in `account-menu-button.tsx` and the hidden-mode
  * assertion fails: the retained node would still carry the declarative
  * attribute and the corner would stay suppressed.
  */
 
-import { Activity, act } from 'react';
-import { createElement, useState, type ReactNode } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { Window } from 'happy-dom';
+import { Activity, type ReactNode, act, createElement } from 'react';
+import { type Root, createRoot } from 'react-dom/client';
 
 import { AccountMenuButton } from './account-menu-button';
 
@@ -53,52 +53,39 @@ mock.module('next/link', () => ({
     createElement('a', { ...rest, href }, children),
 }));
 
-let root: Root | null = null;
-
-// The DOM environment exists only while this file runs: later files in the
-// same bun process must keep seeing the bare runtime (`typeof window ===
-// 'undefined'`), or their module-level code takes browser branches (files-store
-// reads `localStorage` at import time) that the bare runtime does not serve.
-let prev: { window?: unknown; document?: unknown; navigator?: unknown; localStorage?: unknown } = {};
+const globalKeys = ['window', 'document', 'navigator', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT'];
+const previousGlobals = new Map(
+  globalKeys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
+);
+let root: Root | undefined;
+let container: HTMLDivElement;
 
 beforeAll(() => {
-  const { Window } = require('happy-dom') as typeof import('happy-dom');
   const win = new Window({ url: 'http://localhost/' });
-  prev = {
-    window: (globalThis as { window?: unknown }).window,
-    document: (globalThis as { document?: unknown }).document,
-    navigator: (globalThis as { navigator?: unknown }).navigator,
-    localStorage: (globalThis as { localStorage?: unknown }).localStorage,
-  };
-  globalThis.window = win as unknown as Window & typeof globalThis;
-  globalThis.document = win.document as unknown as Document;
-  globalThis.navigator = win.navigator as unknown as Navigator;
-  globalThis.localStorage = win.localStorage as unknown as Storage;
-  // React's act() needs an explicit opt-in outside a DOM-testing framework.
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  for (const [key, value] of Object.entries({
+    window: win,
+    document: win.document,
+    navigator: win.navigator,
+    localStorage: win.localStorage,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  })) {
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  }
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
 });
 
 afterAll(async () => {
-  const mounted = root;
-  if (mounted) {
-    act(() => {
-      mounted.unmount();
-    });
-    root = null;
+  try {
+    await act(async () => root?.unmount());
+    container.remove();
+  } finally {
+    for (const [key, descriptor] of previousGlobals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
   }
-  // Let React's scheduler drain the work it posted during the test before the
-  // DOM environment goes away: a late scheduler tick reads `window.event`, and
-  // throwing after the globals are restored would surface as an unhandled
-  // error attributed to whichever file runs next.
-  for (let i = 0; i < 5; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  const g = globalThis as Record<string, unknown>;
-  for (const key of ['window', 'document', 'navigator', 'localStorage'] as const) {
-    if (prev[key] === undefined) delete g[key];
-    else g[key] = prev[key];
-  }
-  delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
 });
 
 /**
@@ -111,56 +98,31 @@ function CacheShape({ mode }: { mode: 'visible' | 'hidden' }) {
   return createElement(
     'div',
     { 'data-kx-titlebar-owner': '' },
-    createElement(Activity, { mode, children: createElement(AccountMenuButton, { embedded: true }) }),
+    <Activity mode={mode}>
+      <AccountMenuButton embedded />
+    </Activity>,
     createElement('div', { className: 'kx-app-account-corner' }, createElement(AccountMenuButton)),
   );
 }
 
-// The route cache's handle: the harness captures its mode setter here on first
-// render so the test can flip the Activity like a navigation would.
-const cache = { setMode: undefined as undefined | ((mode: 'visible' | 'hidden') => void) };
-
-function Harness() {
-  const [mode, setMode] = useState<'visible' | 'hidden'>('visible');
-  cache.setMode = setMode;
-  return createElement(CacheShape, { mode });
-}
-
 describe('the embedded chip marker tracks the visible route', () => {
-  test('hidden Activity trees lose the marker; showing again restores it', () => {
-    const container = document.createElement('div');
-    document.body.append(container);
-    const mounted = createRoot(container);
-    root = mounted;
-    act(() => {
-      mounted.render(createElement(Harness));
-    });
+  test('hidden Activity retains the real chip but releases ownership until shown again', async () => {
+    const mounted = root;
+    if (!mounted) throw new Error('React root was not initialized');
+    await act(async () => mounted.render(createElement(CacheShape, { mode: 'visible' })));
+    const markers = () => container.querySelectorAll('[data-kx-account-owner]').length;
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label^="Logged in as"]');
+    if (!button) throw new Error('Embedded account chip did not render');
+    expect(markers()).toBe(1);
+    expect(button.closest('[data-kx-titlebar-owner]')).not.toBeNull();
 
-    const ownerMarkers = () => document.querySelectorAll('[data-kx-account-owner]').length;
-    const embeddedButton = () =>
-      container.querySelector('button[aria-label^="Logged in as"]') as HTMLButtonElement | null;
+    await act(async () => mounted.render(createElement(CacheShape, { mode: 'hidden' })));
+    expect(button.isConnected).toBe(true);
+    expect(markers()).toBe(0);
 
-    // Visible route: the embedded chip owns the marker, the corner does not.
-    expect(ownerMarkers()).toBe(1);
-    const button = embeddedButton();
-    expect(button).toBeTruthy();
-    expect(button?.closest('[data-kx-titlebar-owner]')).toBeTruthy();
-
-    // The route cache hides the view: the tree stays mounted (Next keeps it
-    // for instant back-navigation) and its effects unmount — so the marker
-    // must leave the document even though the node stays.
-    act(() => {
-      cache.setMode!('hidden');
-    });
-    expect(button?.isConnected).toBe(true);
-    expect(ownerMarkers()).toBe(0);
-
-    // Back to the view: the effect remounts, the marker returns, and the
-    // shell's :has() rule lets the corner step aside again.
-    act(() => {
-      cache.setMode!('visible');
-    });
-    expect(ownerMarkers()).toBe(1);
-    expect(embeddedButton()?.isConnected).toBe(true);
+    await act(async () => mounted.render(createElement(CacheShape, { mode: 'visible' })));
+    expect(markers()).toBe(1);
+    expect(button.isConnected).toBe(true);
+    expect(container.querySelector('button[aria-label^="Logged in as"]')).toBe(button);
   });
 });
