@@ -1,5 +1,5 @@
 {
-  "source_hash": "3b32500697c9977c62e5e56c3d94bd3bfd09498eb6c5028661a86328c253628b",
+  "source_hash": "fdb98d958cb59414bc7048f02924029be9b7b80886c4576319bc204dd34e72a3",
   "diff_files": [
     "apps/web/src/app/[locale]/presentations/decks/security-diagram-content.ts",
     "apps/web/src/app/[locale]/presentations/decks/security-localization.test.tsx",
@@ -120,7 +120,6 @@
     "apps/web/src/features/workspace/settings/tabs/tokens-tab.tsx",
     "apps/web/src/lib/relative-time.test.ts",
     "apps/web/src/lib/relative-time.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -140,13 +139,13 @@
     "packages/sdk/src/react/use-project-name.test.ts",
     "packages/sdk/src/react/use-project-name.ts"
   ],
-  "diff_hash": "3539ae804717a7b8dd10d71975462e02e44735e972ffa634976ba491ee38e0f4",
-  "head": "ecb4e7bf469ebe7b0374d53a8957ee5b5a9792ed",
+  "diff_hash": "cc138c443367b2fd2711e7c0c1a8a988d9ccac4653e5369e5ec47db25957426e",
+  "head": "2fe37364285aa6dcd64245108e1577a3bcae8159",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T06:32:58.858Z"
+  "at": "2026-10-15T07:13:46.178Z"
 }
