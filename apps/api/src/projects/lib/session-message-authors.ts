@@ -19,6 +19,10 @@ export interface SessionMessageAuthors {
   /** A spawned session's first message came from its parent's agent through
    *  `initial_prompt`, which leaves no ledger row. Null otherwise. */
   initial_author: SessionMessageAuthor | null;
+  /** Who stopped each stopped turn, keyed by the message id that started it:
+   *  clients show "Stopped by <name>". Only a stop a person asked for and the
+   *  ledger names (`end_error.by`). Empty when there is none. */
+  stops: Record<string, SessionMessageAuthor>;
 }
 
 /** The agent a session runs, unless it is the column's `'default'` placeholder. */
@@ -37,20 +41,33 @@ export async function sessionMessageAuthors(session: {
   parentSessionId: string | null;
   metadata: unknown;
 }): Promise<SessionMessageAuthors> {
-  const rows = await db
-    .select({
-      userId: sessionLifecycleCommands.actorUserId,
-      payload: sessionLifecycleCommands.payload,
-      result: sessionLifecycleCommands.result,
-    })
-    .from(sessionLifecycleCommands)
-    .where(and(
-      eq(sessionLifecycleCommands.sessionId, session.sessionId),
-      eq(sessionLifecycleCommands.commandType, 'continue_session'),
-      // Inbox rows only: triggers, reminders and channel relays speak for
-      // themselves in their text and carry no human sender.
-      sql`${sessionLifecycleCommands.payload} ? 'clientMessageId'`,
-    ));
+  const [rows, stopRows] = await Promise.all([
+    db
+      .select({
+        userId: sessionLifecycleCommands.actorUserId,
+        payload: sessionLifecycleCommands.payload,
+        result: sessionLifecycleCommands.result,
+      })
+      .from(sessionLifecycleCommands)
+      .where(and(
+        eq(sessionLifecycleCommands.sessionId, session.sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        // Inbox rows only: triggers, reminders and channel relays speak for
+        // themselves in their text and carry no human sender.
+        sql`${sessionLifecycleCommands.payload} ? 'clientMessageId'`,
+      )),
+    // Ended turns a person stopped (`markTurnStopRequested` with `by`).
+    db
+      .select({ messageId: sessionTurns.messageId, endError: sessionTurns.endError })
+      .from(sessionTurns)
+      .where(and(
+        eq(sessionTurns.sessionId, session.sessionId),
+        eq(sessionTurns.state, 'ended'),
+        isNotNull(sessionTurns.messageId),
+        sql`${sessionTurns.endError}->>'name' = 'UserStop'`,
+        sql`${sessionTurns.endError}->>'by' IS NOT NULL`,
+      )),
+  ]);
   const initialFromParent = !!session.parentSessionId &&
     typeof (session.metadata as Record<string, unknown> | null)?.initial_prompt === 'string';
   const sessionIds = new Set<string>(initialFromParent ? [session.parentSessionId!] : []);
@@ -60,6 +77,7 @@ export async function sessionMessageAuthors(session: {
     if (typeof author === 'string') sessionIds.add(author);
     else if (row.userId) userIds.add(row.userId);
   }
+  for (const row of stopRows) if (row.endError?.by) userIds.add(row.endError.by);
   const [titles, identities] = await Promise.all([
     sessionIds.size > 0
       ? db
@@ -76,30 +94,37 @@ export async function sessionMessageAuthors(session: {
     return { kind: 'session', session_id: id, name: sessionTitle(row.metadata), ...(namedAgent(row.agentName) ? { agent: row.agentName } : {}) };
   };
 
+  const memberAuthor = (userId: string): SessionMessageAuthor | null => {
+    const identity = identities.get(userId);
+    if (!identity?.exists) return null;
+    return {
+      kind: 'member',
+      user_id: userId,
+      name: identity.displayName?.trim() || identity.email || 'Member',
+      email: identity.email,
+      avatar_url: identity.avatarUrl ?? null,
+    };
+  };
+
+  const stops: Record<string, SessionMessageAuthor> = {};
+  for (const row of stopRows) {
+    const stopper = row.messageId && row.endError?.by ? memberAuthor(row.endError.by) : null;
+    if (stopper) stops[row.messageId!] = stopper;
+  }
+
   const authors: Record<string, SessionMessageAuthor> = {};
   for (const row of rows) {
     const payload = row.payload as Record<string, unknown>;
     const result = row.result as Record<string, unknown>;
     let author: SessionMessageAuthor | null = null;
     if (typeof payload.authorSessionId === 'string') author = sessionAuthor(payload.authorSessionId);
-    else if (row.userId) {
-      const identity = identities.get(row.userId);
-      if (identity?.exists) {
-        author = {
-          kind: 'member',
-          user_id: row.userId,
-          name: identity.displayName?.trim() || identity.email || 'Member',
-          email: identity.email,
-          avatar_url: identity.avatarUrl ?? null,
-        };
-      }
-    }
+    else if (row.userId) author = memberAuthor(row.userId);
     if (!author) continue;
     const ids = [payload.wireMessageId, payload.redeliveredMessageId, result.forwarded_message_id,
       ...(Array.isArray(payload.redeliveredMessageIds) ? payload.redeliveredMessageIds : [])];
     for (const id of ids) if (typeof id === 'string' && id) authors[id] = author;
   }
-  if (!initialFromParent) return { authors, initial_author: null };
+  if (!initialFromParent) return { authors, initial_author: null, stops };
   // The `initial_prompt` turn is the session's first: its message id is known.
   const [first] = await db
     .select({ messageId: sessionTurns.messageId })
@@ -110,7 +135,7 @@ export async function sessionMessageAuthors(session: {
   const parent = sessionAuthor(session.parentSessionId!);
   if (first?.messageId && parent && !authors[first.messageId]) {
     authors[first.messageId] = parent;
-    return { authors, initial_author: null };
+    return { authors, initial_author: null, stops };
   }
-  return { authors, initial_author: parent };
+  return { authors, initial_author: parent, stops };
 }

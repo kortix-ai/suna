@@ -1912,20 +1912,17 @@ function PendingInvitesSection({
         // admin the link directly so they can share it manually.
         warningToast(tI18nComplete.raw('text146fd497badf'), {
           duration: 8_000,
-          button: (
-            <Button
-              size="sm"
-              onClick={() =>
+          actions: [
+            {
+              label: tI18nComplete.raw('text9adff6870471'),
+              onClick: () =>
                 copyInviteLink(
                   res.invite_url,
                   tI18nComplete.raw('text0dc2f4c75de6'),
                   tI18nComplete.raw('textfa6453683837'),
-                )
-              }
-            >
-              {tI18nComplete.raw('text9adff6870471')}
-            </Button>
-          ),
+                ),
+            },
+          ],
         });
       }
       invalidate();

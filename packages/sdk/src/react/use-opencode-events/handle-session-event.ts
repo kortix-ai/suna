@@ -203,7 +203,10 @@ function handleSessionFailure(event: RuntimeEvent, ctx: HandlerContext) {
           error.name ||
           (typeof rawMessage === 'string' ? rawMessage : undefined) ||
           'An error occurred';
-        notifySessionError(sessionID, errorTitle, getSessionTitle(sessionID));
+        // An abort is the effect of a Stop, not a failure: the transcript
+        // already says who stopped the run, and a "Session Error" beside it
+        // told every other viewer something broke.
+        if (!isAbortError(error)) notifySessionError(sessionID, errorTitle, getSessionTitle(sessionID));
         const key = runtimeKeys.runtimeMessages(sessionID);
         queryClient.cancelQueries({ queryKey: key });
         queryClient.setQueryData<MessageWithParts[]>(key, (old) => {

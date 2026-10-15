@@ -1837,6 +1837,19 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
     0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
 }
 
+/* The lighter `ring-sm` preset of the same plugin (shadow.floriankiem.com):
+   wider, fainter layers. Toasts use it. */
+@utility smooth-shadow-ring-sm {
+  box-shadow:
+    0 18px 47px oklch(0 0 0 / 0.03),
+    0 7.5px 19px oklch(0 0 0 / 0.02),
+    0 4px 10.5px oklch(0 0 0 / 0.02),
+    0 2.3px 5.8px oklch(0 0 0 / 0.01),
+    0 1.2px 3.1px oklch(0 0 0 / 0.01),
+    0 0.5px 1.3px oklch(0 0 0 / 0.01),
+    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
+}
+
 /* ─── Liquid glass — frosted tinted surface (tokens: --liquid-glass-*) ─────
    Theme-aware: light drop-shadow, dark inset rim. Specular lives on
    background-image so this does not steal ::before from hit-area.

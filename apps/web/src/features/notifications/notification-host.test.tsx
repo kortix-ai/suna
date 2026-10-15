@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { InboxNotification } from '@kortix/sdk';
-import { createElement, type ReactElement } from 'react';
+import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
@@ -84,10 +84,14 @@ mock.module('./web-push', () => ({
   },
 }));
 
-const toasts: { title: string; button: ReactElement<{ children: string }> }[] = [];
+const toasts: {
+  title: string;
+  actions: { label: string }[];
+  payload?: { inAppTitle?: string; entityLabel?: string; type?: string };
+}[] = [];
 mock.module('@/components/ui/toast', () => ({
-  infoToast: (title: string, options: { button: ReactElement<{ children: string }> }) => {
-    toasts.push({ title, button: options.button });
+  infoToast: (title: string, options: { actions: { label: string }[] }) => {
+    toasts.push({ title, actions: options.actions });
   },
   dismissToast: () => {},
 }));
@@ -108,6 +112,9 @@ mock.module('@/lib/web-notifications', () => ({
   },
   setServerPushPreferences: (kinds: unknown) => {
     mirrored.push(kinds);
+  },
+  showInAppNotification: (payload: { title: string; actionLabel: string; inAppTitle?: string; entityLabel?: string; type?: string }) => {
+    toasts.push({ title: payload.title, actions: [{ label: payload.actionLabel }], payload });
   },
 }));
 
@@ -283,10 +290,13 @@ describe('NotificationHost', () => {
       row({ trigger_slug: 'nightly', url: '/projects/p1/customize/triggers?notification=n2' }),
     ];
     await rerender();
-    expect(toasts.map((toast) => toast.button.props.children)).toEqual([
+    expect(toasts.map((toast) => toast.actions[0].label)).toEqual([
       'arrival.openReminders',
       'arrival.openTriggers',
     ]);
+    // The in-app toast leads with the kind line; the automation is named in its entity row.
+    expect(toasts[1].payload?.entityLabel).toBe(toasts[1].title);
+    expect(toasts[1].payload?.inAppTitle).toBeDefined();
   });
 });
 

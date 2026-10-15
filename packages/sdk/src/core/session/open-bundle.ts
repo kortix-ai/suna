@@ -229,6 +229,8 @@ export interface OpenBundleTurnObservation {
   turns: SessionTurn[];
   last_ended: SessionTurnEnded | undefined;
   recent_failures?: SessionTurnFailure[];
+  /** The caller's `can_stop` (`SessionTurnStatus`). Absent from an older server. */
+  can_stop?: boolean;
   atMs: number;
 }
 
@@ -244,6 +246,7 @@ export function openBundleTurn(bundle: SessionOpenBundle): OpenBundleTurnObserva
     turns: turn.turns ?? [],
     last_ended: turn.last_ended,
     recent_failures: turn.recent_failures,
+    ...(typeof turn.can_stop === 'boolean' ? { can_stop: turn.can_stop } : {}),
     atMs: Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
   };
 }

@@ -1198,7 +1198,9 @@
     "undo": "Desfazer",
     "pinnedSection": "Fixadas",
     "archivedView": "Arquivadas",
-    "archivedEmpty": "As sessões que você arquivar aparecerão aqui."
+    "archivedEmpty": "As sessões que você arquivar aparecerão aqui.",
+    "stoppedBy": "Interrompido por {{name}}",
+    "stopNotAllowed": "Somente o membro que iniciou esta execução, o proprietário da sessão ou um gerente do projeto pode interrompê-la."
   },
   "genui": {
     "chartTapHint": "Toque para ver um valor",

@@ -473,12 +473,14 @@ const AUTHOR_RETRY_DELAYS_MS = [2000, 5000, 12000];
  * any of `wantedMessageIds` (the transcript's user messages and the queued
  * prompts) has no author, it asks again on `AUTHOR_RETRY_DELAYS_MS`, per set
  * of missing ids. A message that never gets an author (a slash command) stops
- * after the last delay.
+ * after the last delay. When `busy` goes from true to false (a turn ended), it
+ * asks once more: a stop records who stopped the turn (`stops`).
  */
 export function useSessionMessageAuthors(
   projectId: string | null | undefined,
   sessionId: string | null | undefined,
   wantedMessageIds: readonly string[] = [],
+  busy = false,
 ) {
   const query = useQuery({
     queryKey: projectKeys.sessionMessageAuthors(projectId, sessionId),
@@ -500,6 +502,11 @@ export function useSessionMessageAuthors(
     }, delay);
     return () => clearTimeout(timer);
   }, [missing, data, refetch]);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy && projectId && sessionId) void refetch();
+    wasBusy.current = busy;
+  }, [busy, projectId, sessionId, refetch]);
   return query;
 }
 
