@@ -11,6 +11,13 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/forgot-password — the bounded transport for the auth page's
+// password-reset submit. Same rationale as /api/auth/password and
+// /api/auth/send-code: the browser needs an abortable, retryable submit, and
+// the form is forwarded unchanged to the exact action the old direct call used.
+// ---------------------------------------------------------------------------
+
 export async function POST(req: NextRequest) {
   if (!sameOriginRequest(req)) {
     return NextResponse.json({ message: AUTH_UNEXPECTED_MESSAGE }, { status: 403 });

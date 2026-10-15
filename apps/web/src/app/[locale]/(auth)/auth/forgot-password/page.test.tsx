@@ -12,7 +12,6 @@ mock.module('next/navigation', () => ({
   useRouter: () => ({ push() {}, replace() {} }), useParams: () => ({}),
 }));
 mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
-mock.module('../actions', () => ({ forgotPassword: async () => ({ message: 'Synthetic send failure' }) }));
 const submits: { path: string; body: FormData }[] = [];
 let succeed = false;
 mock.module('@/lib/auth/submit-auth', () => ({
