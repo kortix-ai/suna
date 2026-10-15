@@ -20,8 +20,14 @@ import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
  * who could open a teammate's session still saw Restart in the session menu and
  * the sidebar, Restart, Stop and Delete in the sessions list, and a Restart
  * button on the stopped banner — and every one of them failed with a 403 toast.
- * Each surface now follows the verdict, and the banner says who can restart.
- * The owner, on the same session, keeps every action.
+ * Each surface now follows the verdict. The owner, on the same session, keeps
+ * every action.
+ *
+ * A stopped session with a saved conversation is not a dead end (#9682): the
+ * conversation stays, the composer stays live, and its notice says the next
+ * message wakes the computer. That is true for a member too: `/start` needs
+ * only read access. So the restart notice belongs to a stopped session with
+ * nothing to read. There the card says who can restart.
  */
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
@@ -34,17 +40,24 @@ const api = createApiJsonClient(apiBase);
 const TITLE = 'Lifecycle permissions';
 const SAVED_REPLY = 'This reply is stored in the database.';
 const OWNER_ONLY = 'Only the session owner or a project manager can restart this session.';
+// The SDK's `SESSION_NOTICE.idle`: one wording on web and mobile.
+const ASLEEP = "This session's computer is asleep. Your next message wakes it up and is delivered.";
+const STOPPED = 'This session is stopped';
 
 interface AccountSummary {
   account_id: string;
   personal_account?: boolean;
 }
 
-/** Open the session page with its computer released: `/start` answers stopped. */
+/**
+ * Open the session page with its computer released: `/start` answers stopped.
+ * `ready` is the text the page shows once it is open.
+ */
 async function openStoppedSession(
   page: Page,
   input: { projectId: string; sessionId: string; accountId: string },
   auth: Awaited<ReturnType<typeof signIn>>,
+  ready = SAVED_REPLY,
 ) {
   await page.addInitScript(() => localStorage.setItem('kortix:marko-welcome-dismissed', '1'));
   await page.route(`**/sessions/${input.sessionId}/start*`, async (route) => {
@@ -67,7 +80,7 @@ async function openStoppedSession(
     waitUntil: 'commit',
   });
   await dismissOnboarding(page);
-  await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText(ready, { exact: true })).toBeVisible({ timeout: 120_000 });
 }
 
 /** The session menu's item names, read with the menu open. */
@@ -179,11 +192,10 @@ test('40 — a member sees no session lifecycle action the server would refuse',
     });
     await openStoppedSession(page, { projectId, sessionId, accountId }, memberAuth);
 
-    await test.step('the stopped banner says who can restart, with no Restart button', async () => {
-      const banner = page.locator('[data-session-notice-banner]');
-      await expect(banner).toContainText('This session is stopped');
-      await expect(banner).toContainText(OWNER_ONLY);
-      await expect(banner.getByRole('button', { name: /restart/i })).toHaveCount(0);
+    await test.step('the stopped conversation keeps a live composer that says the next message wakes it, with no Restart button', async () => {
+      await expect(page.getByText(ASLEEP, { exact: true })).toBeVisible();
+      await expect(page.locator('[data-session-notice-banner]')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /restart/i })).toHaveCount(0);
     });
 
     await test.step('the session menu offers no Restart, Reload, Stop or Delete', async () => {
@@ -216,16 +228,36 @@ test('40 — a member sees no session lifecycle action the server would refuse',
         contentType: 'image/png',
       });
     });
+
+    // The owner's second session, open to the project, stopped, never prompted.
+    const emptySessionId = await createDatabaseSession(env, {
+      projectId,
+      accountId,
+      userId: owner.id,
+      visibility: 'project',
+    });
+    await runDatabaseSql(
+      "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
+      [emptySessionId],
+      env.databaseUrl,
+    );
+    const emptySession = { projectId, sessionId: emptySessionId, accountId };
+
+    await test.step('a stopped session with nothing to read says who can restart, with no Restart button', async () => {
+      await openStoppedSession(page, emptySession, memberAuth, STOPPED);
+      await expect(page.getByText(OWNER_ONLY, { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /restart/i })).toHaveCount(0);
+    });
     expect(lifecycleRequests).toEqual([]);
 
-    await test.step('the owner keeps Restart and Delete on the same session', async () => {
+    await test.step('the owner keeps Restart and Delete on the same sessions', async () => {
       const ownerContext = await browser.newContext();
       try {
         const ownerPage = await ownerContext.newPage();
+        await openStoppedSession(ownerPage, emptySession, ownerAuth, STOPPED);
+        await expect(ownerPage.getByRole('button', { name: 'Restart session', exact: true })).toBeVisible();
+        await expect(ownerPage.getByText(OWNER_ONLY, { exact: true })).toHaveCount(0);
         await openStoppedSession(ownerPage, { projectId, sessionId, accountId }, ownerAuth);
-        const banner = ownerPage.locator('[data-session-notice-banner]');
-        await expect(banner.getByRole('button', { name: /restart/i })).toBeVisible();
-        await expect(banner).not.toContainText(OWNER_ONLY);
         const items = await sessionMenuItems(ownerPage);
         expect(items).toEqual(expect.arrayContaining(['Restart', 'Delete']));
       } finally {
