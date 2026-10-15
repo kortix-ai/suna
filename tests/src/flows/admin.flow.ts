@@ -9,8 +9,8 @@
  * only has when KE2E_ADMIN_TOKEN is provided (capability `admin`). When present
  * (e.g. dev-api), the flows additionally exercise the real success path:
  * list accounts, read a ledger/users, grant + debit credits, and the
- * trial/entitlement-override writes (ADM-14..ADM-18). ADM-19 is the one
- * exception to the auth model: the trial-expiry cron is internal-cron-authed,
+ * Enterprise demo/license/override writes (ADM-13..ADM-18). ADM-19 is the one
+ * exception to the auth model: the access-sweep cron is internal-cron-authed,
  * not requireAdmin. Maps to ADM-*.
  */
 import { flow } from "../core/flow";
@@ -687,7 +687,7 @@ flow("ADM-18", { domain: "admin", routes: ["GET /v1/admin/api/accounts"] }, asyn
     const name = ctx.fixtures.name("adm18-fields");
     const team = await ctx.fixtures.team({ name });
 
-    await ctx.step("a never-granted account carries the entitlement columns at their defaults", async () => {
+    await ctx.step("a never-granted account reads Enterprise off, no contract, no grace, and no trial block", async () => {
       // Exact-id filter, not `search` — same duplicate-account hazard as ADM-14.
       const r = await admin.get("/v1/admin/api/accounts", {
         query: { accountId: team.id, limit: "5" },
@@ -696,13 +696,8 @@ flow("ADM-18", { domain: "admin", routes: ["GET /v1/admin/api/accounts"] }, asyn
         .body()
         .has("$.total", 1)
         .has("$.accounts[0].accountId", team.id)
-        .has("$.accounts[0].trial", {
-          status: "none",
-          tier: null,
-          startedAt: null,
-          endsAt: null,
-          note: null,
-        })
+        .has("$.accounts[0].enterprise", "off")
+        .has("$.accounts[0].trial", undefined)
         .has("$.accounts[0].contract", null)
         .has("$.accounts[0].graceEndsAt", null)
         .has("$.accounts[0].demoEnterprise", undefined)
