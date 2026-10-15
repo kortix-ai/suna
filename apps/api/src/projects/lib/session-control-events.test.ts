@@ -16,6 +16,8 @@ import {
   controlChannelState,
   publishControlEvent,
   subscribeControlEvents,
+  TURN_FRAME_STOP_PROMPTER,
+  viewerControlEvent,
   type ControlEvent,
 } from './session-control-events';
 
@@ -153,5 +155,53 @@ describe('subscribe: replay, resync, handoff', () => {
     expect(seen).toEqual([1]);
     bad.unsubscribe();
     good.unsubscribe();
+  });
+});
+
+// A shared session's turn frame is one broadcast; whether the viewer may stop
+// the run is per person. Before this, a member watching another member's run
+// had no answer on the stream and saw a Stop the API then refused.
+describe('viewerControlEvent: the per-viewer can_stop of a turn frame', () => {
+  const turnFrame = (payload: Record<string, unknown>): ControlEvent => ({
+    channel: 'control',
+    cepoch: CONTROL_EPOCH,
+    cseq: 7,
+    type: 'kortix.control.turn',
+    at: 1,
+    payload,
+  });
+  const running = { known: true, turns: [{ message_id: 'msg-1' }], [TURN_FRAME_STOP_PROMPTER]: 'user-a' };
+  const member = (callerUserId: string | null, canManageLifecycle = false) => ({ callerUserId, canManageLifecycle });
+
+  test('the prompter may stop, and the prompter id is not written', () => {
+    const out = viewerControlEvent(turnFrame(running), member('user-a'));
+    expect(out.payload).toEqual({ known: true, turns: [{ message_id: 'msg-1' }], can_stop: true });
+  });
+
+  test('another member may not stop', () => {
+    expect((viewerControlEvent(turnFrame(running), member('user-b')).payload as { can_stop: boolean }).can_stop).toBe(false);
+  });
+
+  test('the owner or a manager may stop any run', () => {
+    expect((viewerControlEvent(turnFrame(running), member('user-b', true)).payload as { can_stop: boolean }).can_stop).toBe(true);
+  });
+
+  test('an agent credential is never the prompter', () => {
+    expect((viewerControlEvent(turnFrame(running), member(null)).payload as { can_stop: boolean }).can_stop).toBe(false);
+  });
+
+  test('an unknown prompter leaves only the owner or a manager', () => {
+    const unknown = { ...running, [TURN_FRAME_STOP_PROMPTER]: null };
+    expect((viewerControlEvent(turnFrame(unknown), member('user-a')).payload as { can_stop: boolean }).can_stop).toBe(false);
+  });
+
+  test('nothing running: can_stop is true', () => {
+    const idle = { known: true, turns: [], [TURN_FRAME_STOP_PROMPTER]: null };
+    expect((viewerControlEvent(turnFrame(idle), member('user-b')).payload as { can_stop: boolean }).can_stop).toBe(true);
+  });
+
+  test('other frames are written as published', () => {
+    const queue: ControlEvent = { ...turnFrame({ known: true }), type: 'kortix.control.queue' };
+    expect(viewerControlEvent(queue, member('user-b'))).toBe(queue);
   });
 });

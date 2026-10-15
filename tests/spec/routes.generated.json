@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 835,
+  "count": 836,
   "routes": [
     {
       "method": "GET",
@@ -2781,6 +2781,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/recover"
     },
     {
       "method": "POST",

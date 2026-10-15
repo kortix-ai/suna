@@ -311,9 +311,8 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
  * UX/UI for each"). Runtime is what a session runs on: model, tools,
  * workspace.
  *
- * `apps` is listed here unconditionally — this module is pure data — and the
- * PAGE drops it when the project's `apps` feature flag is off, so a project
- * without Kortix Apps never sees a grant page for them.
+ * `apps` is listed here unconditionally: Apps is generally available, so every
+ * project gets the grant page.
  */
 export const AGENT_CONFIG_SECTIONS = [
   { key: 'overview', label: 'Overview', group: 'General' },

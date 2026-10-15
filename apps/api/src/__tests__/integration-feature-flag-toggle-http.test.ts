@@ -194,42 +194,56 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 
   test('an archived project is 404 and its metadata is NOT mutated', async () => {
     for (const path of [`/v1/projects/${ARCHIVED}/features`, `/v1/projects/${ARCHIVED}/experimental`]) {
-      const res = await patch(path, JSON.stringify({ feature: 'apps', enabled: false }));
+      const res = await patch(path, JSON.stringify({ feature: 'session_log', enabled: false }));
       expect(res.status).toBe(404);
       expect((await res.json()).error).toBe('Not found');
+      // The seed carries a leftover `apps: true` from before Apps went GA —
+      // inert, and a marker that a 404'd write touches nothing.
       expect(await storedOverrides(ARCHIVED)).toEqual({ apps: true });
     }
   });
+
+  test('the graduated apps key is unknown: 400, not an operator-only 403, and nothing is stored', async () => {
+    // Apps went GA (2026-10-14): the key left the registry and the contract.
+    // A project manager — or anyone with settings.write — PATCHing it gets the
+    // ordinary unknown-key 400; the operator-only refusal is unreachable.
+    for (const enabled of [true, false, null]) {
+      const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled }));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("Unknown feature flag 'apps'");
+    }
+    expect(await storedOverrides(PROJECT)).toBeUndefined();
+  });
 });
 
-// `apps` is internal-only (catalogHidden): it starts billable
-// machines, so only a platform operator writes it (D10).
+// `session_log` is internal-only (catalogHidden): it changes what the
+// platform records, so only a platform operator writes it (D10).
 describe('operator-only flags', () => {
   test('a project manager gets 403 feature_operator_only for enable, disable and clear; nothing is stored', async () => {
     for (const enabled of [true, false, null]) {
-      const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled }));
+      const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log', enabled }));
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.code).toBe('feature_operator_only');
-      expect(body.feature).toBe('apps');
+      expect(body.feature).toBe('session_log');
       expect(body.error).toContain('Contact Kortix');
     }
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 
   test('a platform operator who is a project member may write it; the catalog then lists it read-only', async () => {
-    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: true }), operatorSecret);
+    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log', enabled: true }), operatorSecret);
     expect(on.status).toBe(200);
     const body = await on.json();
-    expect(body.experimental.apps).toBe(true);
-    expect(body.experimental_features.find((f: { key: string }) => f.key === 'apps')).toMatchObject({
+    expect(body.experimental.session_log).toBe(true);
+    expect(body.experimental_features.find((f: { key: string }) => f.key === 'session_log')).toMatchObject({
       enabled: true,
       operator_only: true,
     });
-    const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: null }), operatorSecret);
+    const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log', enabled: null }), operatorSecret);
     expect(cleared.status).toBe(200);
     const after = await cleared.json();
-    expect(after.experimental_features.map((f: { key: string }) => f.key)).not.toContain('apps');
+    expect(after.experimental_features.map((f: { key: string }) => f.key)).not.toContain('session_log');
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 });
@@ -244,25 +258,26 @@ describe('PUT /v1/admin/api/projects/:id/features', () => {
   }
 
   test('a non-operator gets 403 and nothing is stored', async () => {
-    const res = await put(PROJECT, { feature: 'apps', enabled: true }, secret);
+    const res = await put(PROJECT, { feature: 'session_log', enabled: true }, secret);
     expect(res.status).toBe(403);
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 
   test('an operator sets and clears a hidden flag; unknown flag 400; unknown or archived project 404', async () => {
-    const on = await put(PROJECT, { feature: 'apps', enabled: true }, operatorSecret);
+    const on = await put(PROJECT, { feature: 'session_log', enabled: true }, operatorSecret);
     expect(on.status).toBe(200);
-    expect(await on.json()).toMatchObject({ project_id: PROJECT, feature: 'apps', override: true });
-    expect(await storedOverrides(PROJECT)).toEqual({ apps: true });
+    expect(await on.json()).toMatchObject({ project_id: PROJECT, feature: 'session_log', override: true });
+    expect(await storedOverrides(PROJECT)).toEqual({ session_log: true });
 
-    const cleared = await put(PROJECT, { feature: 'apps', enabled: null }, operatorSecret);
+    const cleared = await put(PROJECT, { feature: 'session_log', enabled: null }, operatorSecret);
     expect(cleared.status).toBe(200);
     expect(await cleared.json()).toMatchObject({ override: null, enabled: false });
     expect(await storedOverrides(PROJECT)).toBeUndefined();
 
     expect((await put(PROJECT, { feature: 'nope', enabled: true }, operatorSecret)).status).toBe(400);
-    expect((await put(crypto.randomUUID(), { feature: 'apps', enabled: true }, operatorSecret)).status).toBe(404);
-    expect((await put(ARCHIVED, { feature: 'apps', enabled: false }, operatorSecret)).status).toBe(404);
+    expect((await put(PROJECT, { feature: 'apps', enabled: true }, operatorSecret)).status).toBe(400);
+    expect((await put(crypto.randomUUID(), { feature: 'session_log', enabled: true }, operatorSecret)).status).toBe(404);
+    expect((await put(ARCHIVED, { feature: 'session_log', enabled: false }, operatorSecret)).status).toBe(404);
     expect(await storedOverrides(ARCHIVED)).toEqual({ apps: true });
   });
 });

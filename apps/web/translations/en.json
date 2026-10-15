@@ -1016,10 +1016,6 @@
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
         },
-        "apps": {
-          "name": "Apps",
-          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
-        },
         "monitors": {
           "name": "Monitors",
           "description": "Run persistent watchers that observe logs, feeds, or APIs and start agent sessions from events."
@@ -1840,7 +1836,9 @@
     },
     "lost": {
       "title": "This session's computer was lost",
-      "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
+      "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository.",
+      "continueMessage": "Its cloud sandbox disappeared on the provider side. This is a fault on our end, and it has been reported. Continue the session on a new computer: it starts from the session branch and brings this conversation back. Work that was not committed and pushed stays lost.",
+      "continue": "Continue session"
     },
     "restart": {
       "label": "Restart session",
@@ -2065,6 +2063,7 @@
     "expandQuotes": "Expand quotes",
     "collapseQuotes": "Collapse quotes",
     "stopUnconfirmed": "Could not confirm Stop. The agent may still be running. Try Stop again.",
+    "stoppedBy": "Stopped by {name}",
     "queued": "Queued",
     "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "queuedCount": "{count} Queued",
@@ -7546,6 +7545,7 @@
       "treeMessages": "messages",
       "subAgentsLoaded": "{loaded} of {total} sub-agents loaded",
       "loadAll": "Load all",
+      "subAgentLoadFailed": "Could not load",
       "detailInput": "Input tokens",
       "detailOutput": "Output tokens",
       "detailReasoning": "Reasoning tokens",
@@ -11192,6 +11192,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Unknown error",
       "text27d628c8b427": "{label} has finished.",
+      "textc0589750863c": "{count} tasks finished",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Return to the application (Applications → your app) and make sure the \"Sign On\" tab is selected.",

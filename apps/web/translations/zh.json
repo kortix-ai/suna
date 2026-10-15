@@ -1194,10 +1194,6 @@
           "name": "元智能体",
           "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
         },
-        "apps": {
-          "name": "应用",
-          "description": "将静态网站、JavaScript 包、Dockerfile 和 OCI 镜像部署到稳定的无服务器网址，并运行后端：在始终运行的机器上提供数据库、服务器函数、实时查询、文件存储、定时任务和搜索。"
-        },
         "monitors": {
           "name": "监控器",
           "description": "运行持久监控器来观察日志、信息源或 API，并根据事件启动智能体会话。"
@@ -1840,7 +1836,9 @@
     },
     "lost": {
       "title": "此会话的计算机已丢失",
-      "message": "其云端沙盒已在服务提供商一侧消失，因此无法重启或恢复此会话。这是我们的问题，并非你的操作所致 — 系统已自动上报。已从此会话提交并推送的内容仍安全地保存在项目仓库中。"
+      "message": "其云端沙盒已在服务提供商一侧消失，因此无法重启或恢复此会话。这是我们的问题，并非你的操作所致 — 系统已自动上报。已从此会话提交并推送的内容仍安全地保存在项目仓库中。",
+      "continueMessage": "其云端沙盒已在服务提供商一侧消失。这是我们的问题，系统已自动上报。在新计算机上继续此会话：它从会话分支启动，并恢复这段对话。未提交并推送的工作仍会丢失。",
+      "continue": "继续会话"
     },
     "restart": {
       "label": "重启会话",
@@ -2088,6 +2086,7 @@
     "expandQuotes": "展开引用",
     "collapseQuotes": "收起引用",
     "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
+    "stoppedBy": "由 {name} 停止",
     "queued": "排队中",
     "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}",
     "queuedCount": "{count} 条排队中",
@@ -7535,6 +7534,7 @@
       "treeMessages": "条消息",
       "subAgentsLoaded": "已加载 {loaded}/{total} 个子代理",
       "loadAll": "全部加载",
+      "subAgentLoadFailed": "无法加载",
       "detailInput": "输入令牌",
       "detailOutput": "输出令牌",
       "detailReasoning": "推理令牌",
@@ -11181,6 +11181,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "未知错误",
       "text27d628c8b427": "{label} 已完成。",
+      "textc0589750863c": "{count} 个任务已完成",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "返回应用（Applications → 您的应用），并确认已选中“Sign On”标签页。",

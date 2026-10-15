@@ -1194,10 +1194,6 @@
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
         },
-        "apps": {
-          "name": "Aplicaciones",
-          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
-        },
         "monitors": {
           "name": "Monitores",
           "description": "Ejecuta observadores persistentes de registros, fuentes o API que inician sesiones de agente ante eventos."
@@ -1840,7 +1836,9 @@
     },
     "lost": {
       "title": "Se perdió el ordenador de esta sesión",
-      "message": "Su sandbox en la nube desapareció del lado del proveedor, por lo que esta sesión no se puede reiniciar ni recuperar. Es un error nuestro, no algo que hayas hecho tú; se ha notificado automáticamente. Todo lo que se confirmó y envió desde esta sesión está a salvo en el repositorio de tu proyecto."
+      "message": "Su sandbox en la nube desapareció del lado del proveedor, por lo que esta sesión no se puede reiniciar ni recuperar. Es un error nuestro, no algo que hayas hecho tú; se ha notificado automáticamente. Todo lo que se confirmó y envió desde esta sesión está a salvo en el repositorio de tu proyecto.",
+      "continueMessage": "Su sandbox en la nube desapareció del lado del proveedor. Es un error nuestro y ya se ha notificado. Continúa la sesión en un ordenador nuevo: parte de la rama de la sesión y recupera esta conversación. Lo que no se confirmó y envió sigue perdido.",
+      "continue": "Continuar sesión"
     },
     "restart": {
       "label": "Reiniciar sesión",
@@ -2088,6 +2086,7 @@
     "expandQuotes": "Expandir citas",
     "collapseQuotes": "Contraer citas",
     "stopUnconfirmed": "No se pudo confirmar la detención. El agente podría seguir ejecutándose. Inténtalo de nuevo.",
+    "stoppedBy": "Detenido por {name}",
     "queued": "En cola",
     "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}",
     "queuedCount": "{count} en cola",
@@ -7535,6 +7534,7 @@
       "treeMessages": "mensajes",
       "subAgentsLoaded": "{loaded} de {total} subagentes cargados",
       "loadAll": "Cargar todos",
+      "subAgentLoadFailed": "No se pudo cargar",
       "detailInput": "Tokens de entrada",
       "detailOutput": "Tokens de salida",
       "detailReasoning": "Tokens de razonamiento",
@@ -11181,6 +11181,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Error desconocido",
       "text27d628c8b427": "{label} ha terminado.",
+      "textc0589750863c": "{count} tareas terminadas",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Vuelve a la aplicación (Applications → tu aplicación) y asegúrate de que la pestaña \"Sign On\" esté seleccionada.",

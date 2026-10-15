@@ -54,6 +54,14 @@ interface RegistryEntry {
 }
 
 const MAX_CONTROLLERS = 20;
+/**
+ * How long an unretained controller is safe from eviction after its last use. A hook holds
+ * its controller from render until its effect retains it, and between an effect's cleanup and
+ * its next run (StrictMode runs every effect twice). Evicting there destroyed the controller
+ * the hook then read with: a list that mounts more than `MAX_CONTROLLERS` hooks in one commit
+ * (the sub-agent rows' "Load all") lost the initial read of most rows.
+ */
+const IDLE_BEFORE_EVICT_MS = 30_000;
 const controllers = new Map<string, RegistryEntry>();
 
 function runtimeScopeKey(runtimeScope?: string): string {
@@ -247,14 +255,41 @@ function createController(sessionId: string, key: string): SessionSyncController
 
 function evictInactiveControllers(protectedKey?: string): void {
   if (controllers.size <= MAX_CONTROLLERS) return;
+  const now = Date.now();
   const inactive = [...controllers.entries()]
-    .filter(([key, entry]) => entry.consumers === 0 && key !== protectedKey)
+    .filter(
+      ([key, entry]) =>
+        entry.consumers === 0 &&
+        key !== protectedKey &&
+        now - entry.lastUsedAt > IDLE_BEFORE_EVICT_MS,
+    )
     .sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
   for (const [key, entry] of inactive) {
     entry.controller.destroy();
     controllers.delete(key);
     if (controllers.size <= MAX_CONTROLLERS) return;
   }
+}
+
+let evictionTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * One pending pass that evicts what has been idle past the hold, when nothing else calls the
+ * registry. A pass that leaves overflow still inside the hold re-arms for when the oldest of it
+ * leaves the hold.
+ */
+function scheduleEviction(delayMs = IDLE_BEFORE_EVICT_MS + 1): void {
+  if (evictionTimer !== undefined) return;
+  evictionTimer = setTimeout(() => {
+    evictionTimer = undefined;
+    evictInactiveControllers();
+    if (controllers.size <= MAX_CONTROLLERS) return;
+    const idleSince = Math.min(
+      ...[...controllers.values()].filter((entry) => entry.consumers === 0).map((entry) => entry.lastUsedAt),
+    );
+    if (Number.isFinite(idleSince)) scheduleEviction(Math.max(1, idleSince + IDLE_BEFORE_EVICT_MS + 1 - Date.now()));
+  }, delayMs);
+  (evictionTimer as { unref?: () => void }).unref?.();
 }
 
 function getOrCreateRegistryEntry(
@@ -343,7 +378,10 @@ export function retainSessionSyncController(sessionId: string, runtimeScope?: st
     if (!current || current.controller !== controller) return;
     current.consumers = Math.max(0, current.consumers - 1);
     current.lastUsedAt = Date.now();
-    if (current.consumers === 0) controller.setBusy(false);
+    if (current.consumers === 0) {
+      controller.setBusy(false);
+      scheduleEviction();
+    }
     evictInactiveControllers();
   };
 }
@@ -436,6 +474,8 @@ export function noteSessionSyncEvent(event: {
 export function resetSessionSyncControllers(): void {
   for (const entry of controllers.values()) entry.controller.destroy();
   controllers.clear();
+  clearTimeout(evictionTimer);
+  evictionTimer = undefined;
 }
 
 /** Retire controllers for one wire id after a different sandbox claims it. */

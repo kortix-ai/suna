@@ -1194,10 +1194,6 @@
           "name": "Meta-agente",
           "description": "Adicione um coordenador que gerencia sessões especializadas e trabalhos de várias etapas no projeto."
         },
-        "apps": {
-          "name": "Aplicativos",
-          "description": "Implante sites estáticos, pacotes JavaScript, Dockerfiles e imagens OCI em URLs estáveis e execute backends: um banco de dados, funções de servidor, consultas em tempo real, armazenamento de arquivos, agendamento e busca em uma máquina sempre ativa."
-        },
         "monitors": {
           "name": "Monitores",
           "description": "Execute observadores persistentes de registros, feeds ou APIs que iniciam sessões de agentes a partir de eventos."
@@ -1840,7 +1836,9 @@
     },
     "lost": {
       "title": "O computador desta sessão foi perdido",
-      "message": "O sandbox na nuvem desapareceu do lado do provedor, então esta sessão não pode ser reiniciada nem recuperada. Isso é uma falha nossa, não algo que você fez — o problema foi relatado automaticamente. Tudo o que foi confirmado e enviado a partir desta sessão está seguro no repositório do seu projeto."
+      "message": "O sandbox na nuvem desapareceu do lado do provedor, então esta sessão não pode ser reiniciada nem recuperada. Isso é uma falha nossa, não algo que você fez — o problema foi relatado automaticamente. Tudo o que foi confirmado e enviado a partir desta sessão está seguro no repositório do seu projeto.",
+      "continueMessage": "O sandbox na nuvem desapareceu do lado do provedor. Isso é uma falha nossa e já foi reportado. Continue a sessão em um novo computador: ele parte da branch da sessão e traz esta conversa de volta. O trabalho que não teve commit e push continua perdido.",
+      "continue": "Continuar sessão"
     },
     "restart": {
       "label": "Reiniciar sessão",
@@ -2088,6 +2086,7 @@
     "expandQuotes": "Expandir citações",
     "collapseQuotes": "Recolher citações",
     "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
+    "stoppedBy": "Parado por {name}",
     "queued": "Na fila",
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",
@@ -7535,6 +7534,7 @@
       "treeMessages": "mensagens",
       "subAgentsLoaded": "{loaded} de {total} subagentes carregados",
       "loadAll": "Carregar todos",
+      "subAgentLoadFailed": "Não foi possível carregar",
       "detailInput": "Tokens de entrada",
       "detailOutput": "Tokens de saída",
       "detailReasoning": "Tokens de raciocínio",
@@ -11181,6 +11181,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Erro desconhecido",
       "text27d628c8b427": "{label} terminou.",
+      "textc0589750863c": "{count} tarefas concluídas",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Volte ao aplicativo (Applications → seu aplicativo) e verifique se a aba \"Sign On\" está selecionada.",

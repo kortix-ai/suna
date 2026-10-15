@@ -6,7 +6,6 @@ import type { App } from '@kortix/sdk';
 
 import { appGrantRows } from './agent-apps-grant';
 import { AGENT_CONFIG_SECTIONS } from '@/features/workspace/customize/sections/view/agent-editor';
-import { editableAgentSections } from './agent-page';
 
 const app = (over: Partial<App>): App =>
   ({
@@ -77,13 +76,10 @@ describe('the Apps topic on the agent rail', () => {
     expect(entry).toEqual({ key: 'apps', label: 'Apps', group: 'Access' });
   });
 
-  test('is dropped when the project has no Apps feature flag', () => {
-    // A project without the flag has no Apps page and no way to create one, so
-    // the grant page would be a dead tab. Dropping the key also takes it out
-    // of `useAgentSection`'s allow-list, so `?section=apps` falls back.
-    expect(editableAgentSections(true)).toContain('apps');
-    expect(editableAgentSections(false)).not.toContain('apps');
-    expect(editableAgentSections(false).length).toBe(editableAgentSections(true).length - 1);
+  test('is never dropped — Apps is generally available', () => {
+    // Apps went GA (2026-10-14): there is no feature flag, so the grant page is
+    // a live tab on every project and `?section=apps` always resolves.
+    expect(AGENT_CONFIG_SECTIONS.map((s) => s.key)).toContain('apps');
   });
 });
 

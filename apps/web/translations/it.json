@@ -1194,10 +1194,6 @@
           "name": "Meta-agente",
           "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
         },
-        "apps": {
-          "name": "App",
-          "description": "Distribuisci siti statici, pacchetti JavaScript, Dockerfile e immagini OCI su URL stabili ed esegui backend: un database, funzioni server, query in tempo reale, archiviazione file, pianificazione e ricerca su una macchina sempre attiva."
-        },
         "monitors": {
           "name": "Monitor",
           "description": "Esegui controlli permanenti su registri, feed o API che avviano sessioni agente in risposta agli eventi."
@@ -1840,7 +1836,9 @@
     },
     "lost": {
       "title": "Il computer di questa sessione è andato perso",
-      "message": "Il suo sandbox cloud è scomparso dal lato del provider, quindi questa sessione non può essere riavviata né recuperata. È un problema nostro, non dipende da te: è stato segnalato automaticamente. Tutto ciò che è stato sottoposto a commit e inviato da questa sessione è al sicuro nel repository del tuo progetto."
+      "message": "Il suo sandbox cloud è scomparso dal lato del provider, quindi questa sessione non può essere riavviata né recuperata. È un problema nostro, non dipende da te: è stato segnalato automaticamente. Tutto ciò che è stato sottoposto a commit e inviato da questa sessione è al sicuro nel repository del tuo progetto.",
+      "continueMessage": "Il suo sandbox cloud è scomparso dal lato del provider. È un problema nostro ed è stato segnalato. Continua la sessione su un nuovo computer: parte dal branch della sessione e riporta questa conversazione. Il lavoro non sottoposto a commit e push resta perso.",
+      "continue": "Continua sessione"
     },
     "restart": {
       "label": "Riavvia sessione",
@@ -2088,6 +2086,7 @@
     "expandQuotes": "Espandi citazioni",
     "collapseQuotes": "Comprimi citazioni",
     "stopUnconfirmed": "Impossibile confermare l’arresto. L’agente potrebbe essere ancora in esecuzione. Riprova.",
+    "stoppedBy": "Interrotto da {name}",
     "queued": "In coda",
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
@@ -7535,6 +7534,7 @@
       "treeMessages": "messaggi",
       "subAgentsLoaded": "{loaded} di {total} sub-agenti caricati",
       "loadAll": "Carica tutti",
+      "subAgentLoadFailed": "Impossibile caricare",
       "detailInput": "Token di input",
       "detailOutput": "Token di output",
       "detailReasoning": "Token di ragionamento",
@@ -11181,6 +11181,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Errore sconosciuto",
       "text27d628c8b427": "{label} ha terminato.",
+      "textc0589750863c": "{count} attività completate",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Torna all'applicazione (Applications → la tua app) e assicurati che sia selezionata la scheda \"Sign On\".",

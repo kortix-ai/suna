@@ -16,6 +16,7 @@ let account: Record<string, unknown> | null = null;
 let liveSubscription: Record<string, any> | null = null;
 let updateResult: Record<string, unknown> = {};
 const checkouts: Array<Record<string, any>> = [];
+const checkoutOptions: unknown[] = [];
 const updates: Array<{ id: string; params: Record<string, any> }> = [];
 const syncs: Array<Record<string, unknown>> = [];
 const grants: GrantInput[] = [];
@@ -31,8 +32,9 @@ mock.module('../../shared/stripe', () => ({
     },
     checkout: {
       sessions: {
-        create: async (params: Record<string, any>) => {
+        create: async (params: Record<string, unknown>, options: unknown) => {
           checkouts.push(params);
+          checkoutOptions.push(options);
           return { id: 'cs_1', url: 'https://checkout.stripe.test/cs_1' };
         },
       },
@@ -96,6 +98,7 @@ beforeEach(() => {
   liveSubscription = sub([{ price: FREE_PRICE, quantity: 1 }], 'active', 'sub_free');
   updateResult = {};
   checkouts.length = 0;
+  checkoutOptions.length = 0;
   updates.length = 0;
   syncs.length = 0;
   grants.length = 0;
@@ -122,6 +125,8 @@ describe('setPlan', () => {
     expect(result).toEqual({ status: 'checkout_created', checkout_url: 'https://checkout.stripe.test/cs_1', monthly_usd: 100 });
     expect(checkouts).toHaveLength(1);
     expect(checkouts[0].mode).toBe('subscription');
+    expect(checkouts[0].wallet_options).toEqual({ link: { display: 'never' } });
+    expect(checkoutOptions[0]).toEqual({ apiVersion: '2025-04-30.basil' });
     expect(checkouts[0].line_items).toEqual([{ price: CREDITS_PRICE, quantity: 10_000 }]);
     expect(checkouts[0].subscription_data.metadata).toMatchObject({ plan_key: 'credits', previous_subscription_id: 'sub_free' });
     expect(updates).toHaveLength(0);

@@ -322,9 +322,8 @@ banner('FRAME 12 — Alt+A apps');
 console.log(apps);
 expectAnyFrame(
   apps,
-  // Three legitimate answers: Apps with rows, Apps with none, and Apps turned
-  // off for this project. All three prove the ROUTE opened.
-  ['o open · y copy', 'kortix apps deploy .', 'Apps is not enabled for this project'],
+  // Apps with rows or Apps with none both prove the route opened.
+  ['o open · y copy', 'kortix apps deploy .'],
   'the apps route opens',
 );
 await backToSession();

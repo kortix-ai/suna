@@ -348,7 +348,7 @@ A monitor trigger rejects `cron`, `run_at`, `timezone` and `secret_env`. An even
 
 `computer` is not a valid provider: connecting a computer creates that connector. The slugs `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors. Connecting a channel writes its `channel` connector for you: see [Slack, Teams & email](/docs/connect/channels).
 
-**`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml). Apps must be on for the project: see [Turn Apps on](/docs/apps#turn-apps-on).
+**`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml).
 
 `apps` maps an App slug to its configuration. The keys are `path`, `type` (`static`, `bundle`, `dockerfile`, `oci_image`), `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy` and `labels`. Any other key is an error.
 

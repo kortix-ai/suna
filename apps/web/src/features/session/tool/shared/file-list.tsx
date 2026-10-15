@@ -36,7 +36,10 @@ export function parseListing(output: string, dir?: string): string[] | null {
   const lines = output
     .split(/\r?\n/)
     .filter((l) => l.trim() && !/^\[.*\]$|^\(empty directory\)$/.test(l.trim()));
-  let root = dir ? dir.replace(/\/*$/, '/') : '';
+  // A loop, not /\/*$/: that regex is quadratic on a long run of slashes (CodeQL js/polynomial-redos).
+  let end = dir?.length ?? 0;
+  while (end > 0 && dir![end - 1] === '/') end--;
+  let root = dir ? `${dir.slice(0, end)}/` : '';
   if (/^\/.*\/$/.test(lines[0]?.trim() ?? '')) root = lines.shift()!.trim();
   if (!root) return null;
   if (lines.length === 0) return [];
