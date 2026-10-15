@@ -1,0 +1,17 @@
+{
+  "source_hash": "fc25e94a8a1b0e9129c9a846925913b122cefc23dff48f2e24cf0d74c519e6e6",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-stripe-webhook-canonicalization.test.ts",
+    "apps/api/src/billing/services/credits-plan.test.ts",
+    "apps/api/src/billing/services/tiers.ts"
+  ],
+  "diff_hash": "a59787fe12a78676ef84695e5cb26fa07a360f71399d42e3f221acb495d48a10",
+  "head": "14e36ba80679692c15c0ca9f0f7ef8d788397f75",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T16:13:04.509Z"
+}
