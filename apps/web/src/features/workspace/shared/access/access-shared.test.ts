@@ -171,6 +171,6 @@ describe('small formatters', () => {
 
 test('RBAC_UPSELL_MESSAGE matches the backend 402 wording exactly', () => {
   expect(RBAC_UPSELL_MESSAGE).toBe(
-    'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.',
+    'Custom roles, policies, and groups need Enterprise. An owner or admin can turn on the Enterprise demo, or talk to sales for a license.',
   );
 });

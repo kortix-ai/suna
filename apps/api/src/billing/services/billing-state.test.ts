@@ -126,7 +126,7 @@ describe('NO account bypasses the wallet floor', () => {
   // `trialing` at $0 BLOCKS. Deliberate and load-bearing: a Stripe trial
   // produces no `invoice.paid`, and the seat grant is driven by `invoice.paid`,
   // so a trial started through Stripe has NO wallet unless something else funds
-  // it. Admin-issued trials are fine: trial-admin.ts grants credits explicitly.
+  // it.
   // If Stripe-native trials on the per-seat plan are ever used, they must be
   // funded at trial start or this row is the thing that will have warned you.
   const DRAINED: ReadonlyArray<[status: string, state: 'out_of_credits' | 'payment_failed']> = [

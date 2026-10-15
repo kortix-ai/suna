@@ -26,7 +26,6 @@ import {
 } from '@/features/billing/compute-pricing';
 import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
@@ -57,8 +56,7 @@ export function describePlanChange(opts: {
   return 'unchanged';
 }
 
-/** Monthly credits the account's current plan grants, or `null` when it grants
- *  a fixed amount that is not a purchase (Enterprise contracts). */
+/** Monthly credits the account's current plan grants, or `null` when unknown. */
 function currentPlanCredits(state: AccountState): number | null {
   const plan = resolvedPlan(state);
   if (plan.monthlyUsd != null) return monthlyCreditsForUsd(plan.monthlyUsd);
@@ -78,10 +76,6 @@ export function PlanCard({ state }: { state: AccountState }) {
     renews: (date: string) => t('renews', { date }),
     active: t('active'),
     noSubscription: t('noSubscription'),
-    trialDaysLeft: (days: number) => t('trialDaysLeft', { days }),
-    trialEndsToday: t('trialEndsToday'),
-    ends: (date: string) => t('ends', { date }),
-    annualContract: t('annualContract'),
     graceUntil: (date: string) => t('graceUntil', { date }),
     status: (status: string) =>
       t.has(`statuses.${status}`)
@@ -142,53 +136,38 @@ export function PlanCard({ state }: { state: AccountState }) {
   );
 }
 
-export type PlanPickerView =
-  | { kind: 'enterprise' }
-  | { kind: 'picker'; currentUsd: number | null; initialUsd: number | null; enterpriseTrial: boolean };
-
-/**
- * What the plan picker shows. An Enterprise CONTRACT is managed with the
- * account team. A trial only lends a plan: the account can pay for one at any
- * time, so the picker stays, on the amount it pays (`subscription.monthly_usd`)
- * or the default tier.
- */
-export function planPickerView(state: AccountState): PlanPickerView {
-  const plan = resolvedPlan(state);
-  const trial = state.trial ?? null;
-  if (plan.family === 'enterprise' && !trial) return { kind: 'enterprise' };
-  const currentUsd = trial ? (state.subscription.monthly_usd ?? null) : (plan.monthlyUsd ?? null);
-  // An off-ladder current amount (a legacy $20 plan) opens on the select's
-  // "choose a tier" state; everyone else opens on their tier or the default one.
-  const initialUsd = currentUsd ?? (accountHasLiveSubscription(state) && !trial ? null : DEFAULT_TIER_USD);
-  return { kind: 'picker', currentUsd, initialUsd, enterpriseTrial: trial?.plan === 'enterprise' };
+export interface PlanPickerView {
+  /** The monthly amount the account pays, or null when it pays none. */
+  currentUsd: number | null;
+  /** The amount the picker opens on. */
+  initialUsd: number | null;
 }
 
 /**
- * Pick a monthly amount and apply it. Renders nothing when billing is off, for
- * an Enterprise contract (managed with the account team), and shows who to ask
- * to anyone who may not change billing.
+ * What the plan picker opens on: the amount the account pays, or the default
+ * tier. Enterprise never changes the billing plan, so every account gets the
+ * picker. A live subscription on an amount the API does not report (an
+ * off-ladder legacy price) opens on the select's "choose a tier" state.
+ */
+export function planPickerView(state: AccountState): PlanPickerView {
+  const currentUsd = resolvedPlan(state).monthlyUsd ?? state.subscription?.monthly_usd ?? null;
+  const initialUsd = currentUsd ?? (accountHasLiveSubscription(state) ? null : DEFAULT_TIER_USD);
+  return { currentUsd, initialUsd };
+}
+
+/**
+ * Pick a monthly amount and apply it. Renders nothing when billing is off, and
+ * shows who to ask to anyone who may not change billing.
  */
 export function PlanChanger({ state, className }: { state: AccountState; className?: string }) {
   const t = useTranslations('billing.credits.planCard');
   const locale = useLocale();
-  const tAccess = useTranslations('billing.access');
-  const openDemo = useRequestDemo();
-  const view = planPickerView(state);
-  const currentUsd = view.kind === 'picker' ? view.currentUsd : null;
+  const { currentUsd, initialUsd } = planPickerView(state);
   const hasSubscription = accountHasLiveSubscription(state);
-  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(
-    view.kind === 'picker' ? view.initialUsd : null,
-  );
+  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(initialUsd);
   const { change, isPending } = useChangeCreditPlan();
 
   if (!isBillingEnabled()) return null;
-  if (view.kind === 'enterprise') {
-    return (
-      <p className={cn('text-muted-foreground px-4 py-3 text-xs', className)}>
-        {t('enterpriseNote')}
-      </p>
-    );
-  }
   if (!canManageBilling(state)) {
     return (
       <p className={cn('text-muted-foreground px-4 py-3 text-xs', className)}>{t('ownerOnly')}</p>
@@ -229,14 +208,6 @@ export function PlanChanger({ state, className }: { state: AccountState; classNa
           {label}
         </Button>
       </div>
-      {view.enterpriseTrial ? (
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-3">
-          <p className="text-muted-foreground min-w-0 flex-1 text-xs text-balance">{t('keepEnterprise')}</p>
-          <Button size="sm" variant="outline" onClick={() => openDemo({ source: 'billing-plan-changer' })}>
-            {tAccess('talkToSales')}
-          </Button>
-        </div>
-      ) : null}
     </section>
   );
 }
