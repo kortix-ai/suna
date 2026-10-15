@@ -451,6 +451,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
           source_commit: candidate.manifest.source_commit,
           config_dir: candidate.manifest.config_dir,
           agent_repoint_reason: candidate.manifest.agent_repoint_reason ?? null,
+          compiled_governance: candidate.manifest.compiled_governance,
         },
         candidate.root,
       )
