@@ -1,13 +1,18 @@
 {
-  "source_hash": "5f5624a7d59dc7a689b4f22dc37ee6f55cd4b1b07f24faded6ce119deb4d9a5d",
+  "source_hash": "290650cb3aaaf8fb0bacec15a873c08f7c20e4d36bfdd7a91580cc63c22c084d",
   "diff_files": [
-    "apps/mobile/components/session/tool/tools/codemode-tool.tsx",
-    "apps/mobile/components/session/tool/tools/register.ts",
-    "apps/mobile/lib/session/tools/codemode.test.ts",
-    "apps/mobile/lib/session/tools/codemode.ts",
+    "apps/mobile/components/icons/teams-icon.tsx",
+    "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/features/apps/app-releases.tsx",
+    "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
     "apps/web/src/features/session/action-panel/easy/step-icon.tsx",
-    "apps/web/src/features/workspace/capabilities/agents/agent-triggers-section.tsx",
+    "apps/web/src/features/session/action-panel/shared/narration.test.ts",
+    "apps/web/src/features/session/model-consumers.test.tsx",
+    "apps/web/src/features/workspace/command-palette-search.test.ts",
+    "apps/web/src/features/workspace/customize/sections/channels-view.email.test.tsx",
+    "apps/web/src/features/workspace/customize/sections/component/slack-connect-card.tsx",
+    "apps/web/src/features/workspace/customize/sections/component/teams-connect-card.tsx",
+    "apps/web/src/features/workspace/settings/settings-panel.test.tsx",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -20,16 +25,15 @@
     "packages/sdk/src/core/turns/segments/narration.test.ts",
     "packages/sdk/src/core/turns/segments/narration.ts",
     "packages/sdk/src/core/turns/tool-kind.ts",
-    "packages/sdk/src/core/turns/tool-registry.ts",
-    "packages/shared/src/session-fixture/tools/pi.ts"
+    "packages/sdk/src/core/turns/tool-registry.ts"
   ],
-  "diff_hash": "30c69600a04d4f3c57d0d704eaa1f20e12543eb1355a461c996aa63ffe55b605",
-  "head": "92dff445f00c3a9617f5eaea79dfca08de215f0f",
+  "diff_hash": "68751264e49c522358eb95692b370eeedeb292cb811de4219117a310028f4461",
+  "head": "f9666587ec39fae67c560e54537035320eb99135",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T19:23:51.206Z"
+  "at": "2026-10-15T22:39:50.050Z"
 }
