@@ -1204,6 +1204,7 @@
   },
   "genui": {
     "chartTapHint": "点按查看数值",
+    "checklistReady": "已完成 {{done}}/{{total}}",
     "map": "地图",
     "mapUnavailable": "地图不可用",
     "openImage": "打开图片",

@@ -8,7 +8,6 @@ import { MoonIcon } from '@phosphor-icons/react';
 
 import { COMPOSER_INPUT_SLOT_CLASS, type SessionChatInputProps } from './composer';
 import type { ComposerQuote } from './composer-logic';
-import { ComputerAwakeBar } from './computer-awake-bar';
 import { QuoteList } from './quote-list';
 import { ServedModelBar } from './served-model-bar';
 
@@ -50,7 +49,6 @@ export function ComposerAboveCard({
   notice = null,
   onNoticeRetry,
   servedModel = null,
-  computerAwake = null,
   onModelChange,
   slashMenuPlacement = 'above',
   questionActive = false,
@@ -58,9 +56,6 @@ export function ComposerAboveCard({
   const showQueueStrip = Boolean(inputSlot);
   // The strip explains the model selector, so it shows only where one exists.
   const served = onModelChange ? servedModel : null;
-  // A waking computer is not one that stays on: the notice says what is true.
-  // A docked question meets the card as one surface: no strip between them.
-  const awake = notice || questionActive ? null : computerAwake;
 
   return (
     <>
@@ -116,7 +111,7 @@ export function ComposerAboveCard({
       this wrapper. `ComposerCard` applies the same rule to the card
       through `data-composer-stack`.
     */}
-    {(notice || awake || served || showQueueStrip) && (
+    {(notice || served || showQueueStrip) && (
       <div
         data-composer-stack
         className="relative isolate flex w-full flex-col items-center justify-center [&>[data-composer-strip]:not(:empty)~*]:rounded-t-none"
@@ -179,13 +174,11 @@ export function ComposerAboveCard({
           </div>
         )}
 
-        {awake && <ComputerAwakeBar line={awake} />}
-
         {served && (
           <ServedModelBar
             notice={served}
             className={cn(
-              (notice || awake) && 'rounded-t-none',
+              notice && 'rounded-t-none',
               questionActive && DOCKED_MIDDLE_LAYER_CLASS,
             )}
           />

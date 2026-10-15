@@ -473,3 +473,9 @@ test('canOfferTopup offers nothing while the account state loads, or without a s
   expect(canOfferTopup({} as AccountState)).toBe(false);
   expect(canOfferTopup(getDefaultAccountState())).toBe(false);
 });
+
+// The amount the account PAYS, kept during a trial: the plan picker needs it
+// to mark the current tier while `plan.monthly_usd` describes the trial.
+test('subscription.monthly_usd: the default state carries it as null, never undefined', () => {
+  expect(getDefaultAccountState().subscription.monthly_usd).toBeNull();
+});

@@ -1,15 +1,15 @@
 {
-  "source_hash": "320e7827135a1763bd005bffb674b02088a6dc4929001d33b558000f4d094c7a",
+  "source_hash": "166c0042396816299c4e4eb0b0d420ff15c2077f715c28a239ab36fea2235914",
   "diff_files": [
-    "apps/api/src/__tests__/unit-trigger-fire-paths.test.ts",
-    "apps/api/src/projects/lib/access.test.ts",
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
     "apps/api/src/projects/routes/project-settings.ts",
     "apps/api/src/projects/routes/project-transfer.test.ts",
+    "apps/mobile/components/session/tool/tools/bash-tool.tsx",
     "apps/web/content/docs/audit-actions.mdx",
     "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
+    "apps/web/src/features/apps/app-releases.tsx",
     "apps/web/src/features/workspace/capabilities/agents/agent-triggers-section.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.tsx",
@@ -27,19 +27,22 @@
     "packages/db/migrations/20261015130500000_project_transfer_tenant_fks.sql",
     "packages/sdk/src/core/rest/projects-client/projects.test.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts",
+    "packages/sdk/src/core/turns/tool-kind.test.ts",
+    "packages/sdk/src/core/turns/tool-kind.ts",
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
     "packages/shared/src/audit-route-labels.ts",
+    "packages/shared/src/session-fixture/tools/pi.ts",
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "08cc9e9d6444063ea5fd2ccb5b65e29f424f40d1d31b6de8d657f64dfd7c6ec9",
-  "head": "443b3fbac2a99d5a719abcfd7e23aa7e1724e168",
+  "diff_hash": "48a5849aedef2d671bd1fc5a78aebefb8b8df5ccf80394f228c542f2410ef581",
+  "head": "c2c7b4f6a1b7828042dbc0fdfe41d4821d7b824a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T15:56:18.012Z"
+  "at": "2026-10-15T18:14:09.551Z"
 }

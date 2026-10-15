@@ -2992,6 +2992,7 @@
     "fileListKeys",
     "filterToGatewayProviders",
     "filterToNativeProviders",
+    "findCachedProjectSession",
     "findOpenCodeFiles",
     "findPermissionBlockedCandidate",
     "findRuntimeFiles",

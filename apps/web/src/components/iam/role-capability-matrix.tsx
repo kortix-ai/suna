@@ -340,14 +340,6 @@ function MatrixCell({
         onCheckedChange={(c) => onToggle(c === true)}
         disabled={disabled}
         aria-label={`${kind === 'view' ? 'View' : 'Edit'} ${areaLabel}`}
-        className={cn(
-          'relative',
-          'data-[state=indeterminate]:border-foreground/60',
-          'data-[state=indeterminate]:[&_svg]:hidden',
-          'data-[state=indeterminate]:after:bg-foreground data-[state=indeterminate]:after:absolute',
-          'data-[state=indeterminate]:after:inset-x-[3px] data-[state=indeterminate]:after:h-0.5',
-          'data-[state=indeterminate]:after:rounded-full data-[state=indeterminate]:after:content-[""]',
-        )}
       />
     </span>
   );

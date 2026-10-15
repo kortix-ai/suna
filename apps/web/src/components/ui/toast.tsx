@@ -339,23 +339,14 @@ function UndoToastCard({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // The same card and text-link action as every other toast ("Open session").
   return (
-    <div className={cn(CARD, 'flex w-full items-center gap-2.5 py-2 pr-2 pl-4 sm:w-[var(--width)]')}>
-      {icon && (
-        <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
-          {icon}
-        </span>
-      )}
-      <span className="min-w-0 grow truncate text-xs leading-5 font-medium">{message}</span>
-      <button
-        type="button"
-        onClick={undo}
-        className="bg-foreground/5 hover:bg-foreground/10 flex shrink-0 items-center rounded-md px-2 py-1 transition-colors"
-      >
-        <span className="text-xs leading-5 font-medium">{undoLabel}</span>
-      </button>
-      <ToastClose onDismiss={onDismiss} className="size-6" />
-    </div>
+    <ToastCard
+      message={message}
+      icon={icon ? <span className="text-muted-foreground flex">{icon}</span> : null}
+      options={{ actions: [{ label: undoLabel, onClick: onUndo }] }}
+      onDismiss={onDismiss}
+    />
   );
 }
 

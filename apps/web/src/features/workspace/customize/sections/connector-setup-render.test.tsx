@@ -28,6 +28,7 @@ mock.module('@/components/ui/modal', () =>
 mock.module('motion/react', () => ({ m: { div: host('div') } }));
 mock.module('@/components/ui/toast', () => ({ successToast: () => {} }));
 mock.module('./component/manifest-copy-block', () => ({ ManifestCopyBlock: host('pre') }));
+mock.module('@/components/markdown/copy-button', () => ({ CopyButton: host('span') }));
 const mutation = {
   isPending: false,
   mutate: (_value: unknown, options: { onSuccess: () => void }) => options.onSuccess(),

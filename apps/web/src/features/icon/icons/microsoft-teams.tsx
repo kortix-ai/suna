@@ -1,8 +1,13 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { useId } from 'react';
 
 export const MicrosoftTeams = ({ className }: { className?: string }) => {
+  // Per-instance gradient ids. Bare ids ("a", "b", …) collide with any other
+  // SVG on the page that reuses them, and the fills then resolve to the wrong
+  // defs: the mark rendered as a blank tile on the Channels tab.
+  const uid = useId().replace(/:/g, '');
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -11,54 +16,54 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
       className={cn('size-4', className)}
     >
       <path
-        fill="url(#a)"
+        fill={`url(#${uid}a)`}
         d="M22 20h12c3.31 0 6 2.69 6 6v10c0 3.31-2.69 6-6 6s-6-2.69-6-6V26c0-3.31-2.69-6-6-6"
       />
       <path
-        fill="url(#b)"
+        fill={`url(#${uid}b)`}
         d="M8 24c0-3.31 2.69-6 6-6h8c3.31 0 6 2.69 6 6v12c0 3.31 2.69 6 6 6l-16-.0001c-5.52 0-10-4.48-10-10z"
       />
       <path
-        fill="url(#c)"
+        fill={`url(#${uid}c)`}
         fillOpacity=".7"
         d="M8 24c0-3.31 2.69-6 6-6h8c3.31 0 6 2.69 6 6v12c0 3.31 2.69 6 6 6l-16-.0001c-5.52 0-10-4.48-10-10z"
       />
       <path
-        fill="url(#d)"
+        fill={`url(#${uid}d)`}
         fillOpacity=".7"
         d="M8 24c0-3.31 2.69-6 6-6h8c3.31 0 6 2.69 6 6v12c0 3.31 2.69 6 6 6l-16-.0001c-5.52 0-10-4.48-10-10z"
       />
-      <path fill="url(#e)" d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5" />
+      <path fill={`url(#${uid}e)`} d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5" />
       <path
-        fill="url(#f)"
+        fill={`url(#${uid}f)`}
         fillOpacity=".46"
         d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5"
       />
       <path
-        fill="url(#g)"
+        fill={`url(#${uid}g)`}
         fillOpacity=".4"
         d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5"
       />
       <path
-        fill="url(#h)"
+        fill={`url(#${uid}h)`}
         d="M18 16c3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6s-6 2.69-6 6c0 3.31 2.69 6 6 6"
       />
       <path
-        fill="url(#i)"
+        fill={`url(#${uid}i)`}
         fillOpacity=".6"
         d="M18 16c3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6s-6 2.69-6 6c0 3.31 2.69 6 6 6"
       />
       <path
-        fill="url(#j)"
+        fill={`url(#${uid}j)`}
         fillOpacity=".5"
         d="M18 16c3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6s-6 2.69-6 6c0 3.31 2.69 6 6 6"
       />
-      <rect width="16" height="16" x="4" y="23" fill="url(#k)" rx="3.25" />
-      <rect width="16" height="16" x="4" y="23" fill="url(#l)" fillOpacity=".7" rx="3.25" />
+      <rect width="16" height="16" x="4" y="23" fill={`url(#${uid}k)`} rx="3.25" />
+      <rect width="16" height="16" x="4" y="23" fill={`url(#${uid}l)`} fillOpacity=".7" rx="3.25" />
       <path fill="#fff" d="M15.48 28.11h-2.45v7.466h-2.06v-7.466H8.52v-1.68h6.96z" />
       <defs>
         <radialGradient
-          id="a"
+          id={`${uid}a`}
           cx="0"
           cy="0"
           r="1"
@@ -71,7 +76,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset=".9" stopColor="#3c2cb8" />
         </radialGradient>
         <radialGradient
-          id="b"
+          id={`${uid}b`}
           cx="0"
           cy="0"
           r="1"
@@ -83,7 +88,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset="1" stopColor="#6459fe" />
         </radialGradient>
         <radialGradient
-          id="d"
+          id={`${uid}d`}
           cx="0"
           cy="0"
           r="1"
@@ -94,7 +99,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset=".686685" stopColor="#bd96ff" stopOpacity="0" />
         </radialGradient>
         <radialGradient
-          id="e"
+          id={`${uid}e`}
           cx="0"
           cy="0"
           r="1"
@@ -105,7 +110,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset="1" stopColor="#3923b1" />
         </radialGradient>
         <radialGradient
-          id="f"
+          id={`${uid}f`}
           cx="0"
           cy="0"
           r="1"
@@ -116,7 +121,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset=".813393" stopColor="#a1d3ff" stopOpacity="0" />
         </radialGradient>
         <radialGradient
-          id="g"
+          id={`${uid}g`}
           cx="0"
           cy="0"
           r="1"
@@ -127,7 +132,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset=".816041" stopColor="#9fa2ff" stopOpacity="0" />
         </radialGradient>
         <radialGradient
-          id="h"
+          id={`${uid}h`}
           cx="0"
           cy="0"
           r="1"
@@ -138,7 +143,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset="1" stopColor="#3923b1" />
         </radialGradient>
         <radialGradient
-          id="i"
+          id={`${uid}i`}
           cx="0"
           cy="0"
           r="1"
@@ -149,7 +154,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset=".813393" stopColor="#a1d3ff" stopOpacity="0" />
         </radialGradient>
         <radialGradient
-          id="j"
+          id={`${uid}j`}
           cx="0"
           cy="0"
           r="1"
@@ -160,7 +165,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset=".816041" stopColor="#9fa2ff" stopOpacity="0" />
         </radialGradient>
         <radialGradient
-          id="k"
+          id={`${uid}k`}
           cx="0"
           cy="0"
           r="1"
@@ -171,7 +176,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset=".946875" stopColor="#230f94" />
         </radialGradient>
         <radialGradient
-          id="l"
+          id={`${uid}l`}
           cx="0"
           cy="0"
           r="1"
@@ -182,7 +187,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
           <stop offset="1" stopColor="#8f8fff" />
         </radialGradient>
         <linearGradient
-          id="c"
+          id={`${uid}c`}
           x1="20.5936"
           x2="20.5936"
           y1="18"

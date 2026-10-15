@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 837,
+  "count": 839,
   "routes": [
     {
       "method": "GET",
@@ -2677,6 +2677,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/blobs/:sha256"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/blobs/:sha256"
     },
     {
       "method": "POST",
