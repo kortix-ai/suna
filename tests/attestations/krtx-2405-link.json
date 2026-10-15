@@ -1,5 +1,5 @@
 {
-  "source_hash": "68dda76193b690638c6e1003f28e73bab0b175422c060d406283fe9e719c95b2",
+  "source_hash": "8f0f51befec7f2a4dd241ed4fcae01e0e03a486213f0c5bd6424e081e372850d",
   "diff_files": [
     "apps/api/src/billing/routes/payments-checkout.test.ts",
     "apps/api/src/billing/routes/payments.ts",
@@ -11,12 +11,12 @@
     "apps/api/src/billing/services/subscriptions.ts"
   ],
   "diff_hash": "281212152d6ec4fcd7a8391a7ca8f03081ad93d1fd220fd536d8e4c0165788e5",
-  "head": "24d44cdeb1a29b662209d5d6b0637c66a5904280",
-  "passed": false,
+  "head": "32e21831aa23015d9d9475208847a39ae6ba7967",
+  "passed": true,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T12:33:56.781Z"
+  "at": "2026-10-15T12:48:29.305Z"
 }
