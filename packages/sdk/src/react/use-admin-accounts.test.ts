@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ADMIN_ENTITLEMENT_OVERRIDE_KEYS,
   ADMIN_OVERRIDE_KEYS,
   adminAccountLookupPath,
   adminAccountOverridesPath,
@@ -152,7 +153,14 @@ describe('admin entitlement-override mutation contract', () => {
       'auditAccess',
       'branding',
       'managedModels',
+      'byokFee',
     ]);
+  });
+
+  // The BYOK platform fee is an entitlement, on by default, that an operator
+  // can switch off (or on) per account.
+  test('ADMIN_ENTITLEMENT_OVERRIDE_KEYS ends with byokFee', () => {
+    expect(ADMIN_ENTITLEMENT_OVERRIDE_KEYS.at(-1)).toBe('byokFee');
   });
 
   // Merge-patch (RFC 7386): an entry sets, `null` deletes, an absent key is

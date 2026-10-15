@@ -940,6 +940,33 @@ agents:
   });
 });
 
+// Prod 2026-10-14: a project whose declared agents held ~270 KB of prompts never
+// booted (one env string over 128 KiB). A v3 project declares them in kortix.yaml.
+describe('a compiled config over 128 KiB', () => {
+  test('17 declared agents with ~300 KB of prompts reach the sandbox env, every string within the exec limit', async () => {
+    const { buildSessionRuntimeEnv } = await import('./session-runtime-env');
+    const { MAX_ENV_STRING_BYTES, envStringBytes, readCompiledAgentConfigEnv } = await import('@kortix/api-contract/compiled-agent-config-env');
+    const words = 'read the evidence pack then cite each page and the quoted line before any claim about the class'.split(' ');
+    const prose = (seed: number) => Array.from({ length: 3_600 }, (_, i) => words[(seed * 7 + i * i) % words.length]).join(' ');
+    const agents: Record<string, unknown> = { lead: { mode: 'primary', prompt: 'Lead.' }, admin: { mode: 'primary', prompt: 'Admin.' } };
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 15; i++) {
+      agents[`worker-${i}`] = { mode: 'subagent', model: 'kortix/test-model', variant: 'high', permission: 'allow', prompt_file: `agents/worker-${i}.md` };
+      files[`agents/worker-${i}.md`] = prose(i);
+    }
+    const compiled = JSON.stringify(compileAgentConfig({ kortix_version: 3, default_agent: 'lead', agents }, 'opencode', files));
+    expect(Buffer.byteLength(compiled)).toBeGreaterThan(280_000);
+
+    const env = buildSessionRuntimeEnv({ projectId: 'p', sessionId: 's', compiledAgentConfig: compiled } as Parameters<typeof buildSessionRuntimeEnv>[0]);
+    for (const [name, value] of Object.entries(env)) {
+      if (value !== undefined) expect({ name, fits: envStringBytes(name, value) <= MAX_ENV_STRING_BYTES }).toEqual({ name, fits: true });
+    }
+    const delivered = JSON.parse(readCompiledAgentConfigEnv(env)!);
+    expect(Object.keys(delivered.agent)).toHaveLength(17);
+    expect(delivered.agent['worker-14']).toMatchObject({ mode: 'subagent', model: 'kortix/test-model', variant: 'high', prompt: prose(14), permission: 'allow' });
+  });
+});
+
 describe('v2 agent tool toggles', () => {
   test('manifest tool toggles compile per agent without changing other agents', () => {
     const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });

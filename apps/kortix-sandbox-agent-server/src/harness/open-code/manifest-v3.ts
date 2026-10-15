@@ -9,11 +9,12 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { compiledSetV3 } from '@/lib/config/manifest-v3'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { logger } from '@/lib/log/logger'
 
 /** The v3 compiled set in `env`, or null for a v1/v2 session. */
 export function compiledV3(env: NodeJS.ProcessEnv = process.env): CompiledAgentSet | null {
-  return compiledSetV3(env.KORTIX_COMPILED_AGENT_CONFIG) as CompiledAgentSet | null
+  return compiledSetV3(compiledAgentConfigFromEnv(env)) as CompiledAgentSet | null
 }
 
 /** A v3 set's commands (`{}` when it has none), or undefined for a v1/v2 session. */

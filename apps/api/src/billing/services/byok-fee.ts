@@ -26,10 +26,11 @@ export function byokFeeUsd(input: {
   provider: string | null | undefined;
   upstreamCostUsd: number | null | undefined;
   monthToDateUsd: number;
-  enterpriseContract: boolean;
+  /** The account's resolved `byokFee` entitlement: on by default, off on Enterprise or by override. */
+  feeApplies: boolean;
 }): number {
   const cost = input.upstreamCostUsd ?? 0;
-  if (cost <= 0 || input.enterpriseContract) return 0;
+  if (cost <= 0 || !input.feeApplies) return 0;
   if (FEE_EXEMPT_PROVIDERS.includes(input.provider ?? '')) return 0;
   if (input.monthToDateUsd < BYOK_FEE_FREE_MONTHLY_USD) return 0;
   return Math.round(cost * BYOK_FEE_PERCENT * 10_000) / 1_000_000;

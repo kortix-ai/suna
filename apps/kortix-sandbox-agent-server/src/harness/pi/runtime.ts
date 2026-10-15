@@ -29,6 +29,7 @@ import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
 import { loadTools } from '@/services/tools/host'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories, resolvePiV3SkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
@@ -517,7 +518,7 @@ export class PiRuntime {
       this.core = core
       this.coding = coding
       const { convertToLlm } = coding
-      this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
+      this.compiled = parseCompiledAgentConfig(compiledAgentConfigFromEnv(this.env))
       this.sessionAgentName = this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
         env: this.env,
@@ -661,7 +662,7 @@ export class PiRuntime {
     if (!this.agent || !this.models) return { changed: false }
     const { createPiModels } = await import('./model')
     const before = `${this.selected?.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
-    this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
+    this.compiled = parseCompiledAgentConfig(compiledAgentConfigFromEnv(this.env))
     this.sessionAgentName = this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
       env: this.env,

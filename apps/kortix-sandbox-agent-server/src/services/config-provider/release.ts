@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { ReleaseManifest } from './boot-config'
 import type { ConfigReleaseDescriptor } from './descriptor'
 import { compiledSetV3 } from '@/lib/config/manifest-v3'
+import { compiledAgentConfigFromEnv, setCompiledAgentConfigEnv } from './compiled-agent-config'
 
 /**
  * The harness-neutral half of a convergence: what the descriptor means. Each
@@ -81,6 +82,10 @@ export function agentRepointSentence(
  * place: the API sends null for a project without compiled governance or for
  * a read failure, and deleting the env would drop every agent. Returns the
  * function that restores the previous values.
+ *
+ * Governance over 128 KiB is stored gzip-encoded (`setCompiledAgentConfigEnv`):
+ * held raw in `process.env`, it would make every later child exec fail with
+ * E2BIG, OpenCode's first.
  */
 export function deliverGovernance(
   governance: string | null,
@@ -89,14 +94,13 @@ export function deliverGovernance(
 ): () => void {
   if (governance === null) return () => undefined
   const previous = {
-    config: env.KORTIX_COMPILED_AGENT_CONFIG,
+    config: compiledAgentConfigFromEnv(env),
     etag: env.KORTIX_COMPILED_AGENT_CONFIG_ETAG,
   }
-  env.KORTIX_COMPILED_AGENT_CONFIG = governance
+  setCompiledAgentConfigEnv(env, governance)
   env.KORTIX_COMPILED_AGENT_CONFIG_ETAG = etag ?? ''
   return () => {
-    if (previous.config === undefined) delete env.KORTIX_COMPILED_AGENT_CONFIG
-    else env.KORTIX_COMPILED_AGENT_CONFIG = previous.config
+    setCompiledAgentConfigEnv(env, previous.config ?? null)
     if (previous.etag === undefined) delete env.KORTIX_COMPILED_AGENT_CONFIG_ETAG
     else env.KORTIX_COMPILED_AGENT_CONFIG_ETAG = previous.etag
   }

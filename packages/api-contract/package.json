@@ -13,7 +13,8 @@
     "./session-log": "./src/session-log/index.ts",
     "./fallback-models": "./src/fallback-models.ts",
     "./egress-shim-rules": "./src/egress-shim-rules.ts",
-    "./sandbox-layout": "./src/sandbox-layout.ts"
+    "./sandbox-layout": "./src/sandbox-layout.ts",
+    "./compiled-agent-config-env": "./src/compiled-agent-config-env.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
