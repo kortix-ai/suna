@@ -24,7 +24,7 @@ const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
 const { menuContextForUrl, copyableUrl } = require('./menu-state');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
-const { backgroundForTheme, normalizeTheme } = require('./theme-state');
+const { backgroundForTheme, normalizeChoice, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
 const { buildFrontendMenu } = require('./frontend-menu');
 const { resolveChannel } = require('./update-channel');
@@ -148,24 +148,38 @@ function themePath() {
   return path.join(app.getPath('userData'), 'theme.json');
 }
 
+// Which light and which dark palette the web app's interface theme uses. Only
+// the launch background depends on it; nativeTheme needs just the mode.
+let themeChoice = normalizeChoice();
+
 function readTheme() {
   try {
-    return normalizeTheme(JSON.parse(fs.readFileSync(themePath(), 'utf8')).theme);
+    const stored = JSON.parse(fs.readFileSync(themePath(), 'utf8'));
+    themeChoice = normalizeChoice(stored.palettes);
+    return normalizeTheme(stored.theme);
   } catch {
     return 'system';
   }
 }
 
-function writeTheme(theme) {
+function writeTheme(theme, choice) {
   try {
-    fs.writeFileSync(themePath(), JSON.stringify({ theme: normalizeTheme(theme) }), 'utf8');
+    fs.writeFileSync(
+      themePath(),
+      JSON.stringify({ theme: normalizeTheme(theme), palettes: normalizeChoice(choice) }),
+      'utf8',
+    );
   } catch {
     /* best-effort */
   }
 }
 
 function currentBackgroundColor() {
-  return backgroundForTheme(nativeTheme.themeSource, nativeTheme.shouldUseDarkColors);
+  return backgroundForTheme(
+    nativeTheme.themeSource,
+    nativeTheme.shouldUseDarkColors,
+    themeChoice,
+  );
 }
 
 /* ─── Navigation gate (port of lib.rs) ───────────────────────────────────── */
@@ -1139,8 +1153,9 @@ function registerIpc() {
       }
       case 'set_native_theme': {
         const theme = normalizeTheme(args.theme);
+        themeChoice = normalizeChoice(args.palettes);
         nativeTheme.themeSource = theme;
-        writeTheme(theme);
+        writeTheme(theme, themeChoice);
         const background = currentBackgroundColor();
         mainWindow?.setBackgroundColor(background);
         splashWindow?.setBackgroundColor(background);

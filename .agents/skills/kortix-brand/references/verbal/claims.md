@@ -42,7 +42,7 @@ Use these words. Do not invent others.
 | Models | Any model provider with your own keys. Or the ChatGPT plan you already pay for. Or sign in with your OpenCode Console account for OpenCode Zen and Go. | `apps/web/content/docs/project/models.mdx:43,57-71`; `apps/api/src/llm-gateway/credentials/opencode-console.ts:1-19` | 2026-10-01 |
 | Channels | Slack and Microsoft Teams are live. Email is experimental, per project. | section 5, item 2 | 2026-10-01 |
 | Hosting | Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. | README.md; `self-hosted/content.ts` | 2026-10-01 |
-| Price | Free is $0 with 200 credits per month and 1 project. The team plan is $40 per seat per month with 2,500 credits per month per seat, pooled. | `apps/web/src/features/billing/pricing-plans.ts:36-59` | 2026-10-01 |
+| Price | Free is $0 with 200 credits per month and 1 project. The paid plan is credits: tiers from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits), $200 marked most popular, at 100 credits per dollar. Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month. | `apps/web/src/features/billing/pricing-plans.ts`, `apps/web/src/features/billing/compute-pricing.ts` | 2026-10-14 |
 | Compliance | SOC 2 Type I is held (the report has landed). SOC 2 Type II is in progress. GDPR is a posture Kortix runs, not a certificate. | `security-page/content.ts:16-17,406-407` | 2026-10-01 |
 | Ways work runs | On demand, human-assisted, automated. | `concepts.md` section 3 | carried over |
 | Harness | OpenCode is the harness. | `how-it-work/how-it-works-content.ts` gate | gate cited 2026-07-31 |

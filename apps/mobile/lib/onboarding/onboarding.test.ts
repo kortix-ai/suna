@@ -80,7 +80,7 @@ describe('onboardingAccountId', () => {
 });
 
 describe('welcomeOffer', () => {
-  const base = { family: 'free' as const, canManageBilling: true, pricePerSeat: 40 };
+  const base = { family: 'free' as const, canManageBilling: true };
 
   test('iOS: benefits and Continue with Free only — no purchase action, no price', () => {
     const offer = welcomeOffer({ ...base, os: 'ios' });
@@ -92,10 +92,10 @@ describe('welcomeOffer', () => {
     expect(welcomeOffer({ ...base, os: 'ios', canManageBilling: false }).action).toBe('none');
   });
 
-  test('Android: Upgrade opens web billing, and the first benefit names the per-seat credit', () => {
+  test('Android: Upgrade opens web billing, and the first benefit names the shared credit pool', () => {
     const offer = welcomeOffer({ ...base, os: 'android' });
     expect(offer.action).toBe('upgrade');
-    expect(offer.benefits[0]).toBe('$40 of usage credit per teammate, every month');
+    expect(offer.benefits[0]).toBe('Unlimited members, one shared credit pool');
   });
 
   test('Android: a user who cannot manage billing is asked to go to an owner', () => {
@@ -108,7 +108,7 @@ describe('welcomeOffer', () => {
 
   test('shown only on the Free plan', () => {
     expect(welcomeOffer({ ...base, os: 'android' }).show).toBe(true);
-    expect(welcomeOffer({ ...base, os: 'android', family: 'team' }).show).toBe(false);
+    expect(welcomeOffer({ ...base, os: 'android', family: 'credits' }).show).toBe(false);
     expect(welcomeOffer({ ...base, os: 'ios', family: 'enterprise' }).show).toBe(false);
   });
 });

@@ -132,7 +132,7 @@ The rule of thumb: **one checkpoint per meaningful phase** — enough that a tea
 teams send "Reverted api@a3f1 — the new auth middleware dropped the trace header on retries. Errors are back to baseline."
 ```
 
-This finalizes the live card: the plan flips to **Task complete**, your answer renders below it, and a link back to the Kortix session is appended automatically. The server wraps your text into the Adaptive Card — you don't build the card yourself; just write a clear, well-structured message.
+This finalizes the live card: the "Working on it…" title goes away, your answer renders below the steps, and a link back to the Kortix session is appended automatically. The server wraps your text into the Adaptive Card — you don't build the card yourself; just write a clear, well-structured message.
 
 - **One `teams send` per turn.** It closes the card; a second call from the same run is dropped. If you have multiple things to say, fold them into one message.
 - **Send the answer LAST.** A `teams step` after it is dropped.

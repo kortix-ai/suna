@@ -32,11 +32,14 @@ import {
   type StatusTone as SessionStatusTone,
 } from '@kortix/sdk';
 import {
+  ArchiveIcon,
   ArrowCounterClockwiseIcon,
   CaretRightIcon,
   ChatTeardropTextIcon,
   DotsThreeIcon,
   PencilSimpleIcon,
+  PushPinIcon,
+  PushPinSlashIcon,
   TagIcon,
   ShareNetworkIcon,
   SquareIcon,
@@ -181,6 +184,10 @@ export interface SessionRowActions {
   onDelete: (sessionId: string, label: string) => void;
   onRestart: (sessionId: string, label: string) => void;
   onStop: (sessionId: string, label: string) => void;
+  /** Pin (`true`) or unpin the session in the viewer's own list. */
+  onPin: (sessionId: string, pinned: boolean) => void;
+  /** Archive (`true`) or unarchive the session in the viewer's own list. */
+  onArchive: (sessionId: string, archived: boolean) => void;
 }
 
 export interface SessionRowProps {
@@ -230,6 +237,7 @@ function SessionRowImpl({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tStatus = useTranslations('sidebar.sessionList.status');
   const tLabels = useTranslations('sidebar.labels');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const [menuOpen, setMenuOpen] = useState(false);
   const title = getSessionDisplayTitle(session);
   const source = sessionSource(session, tI18nComplete);
@@ -287,6 +295,13 @@ function SessionRowImpl({
             <span className="text-muted-foreground"> · {source.triggerSlug}</span>
           ) : null}
         </span>
+        {session.pinned_at ? (
+          <PushPinIcon
+            role="img"
+            aria-label={tPinArchive('pinnedMark')}
+            className="text-muted-foreground size-3.5 shrink-0"
+          />
+        ) : null}
         {childCount > 0 && onToggleChildren ? (
           <SessionChildrenToggle
             count={childCount}
@@ -441,6 +456,32 @@ function SessionRowImpl({
                         <ShareNetworkIcon />
                         {canManageSharing ? 'Share' : tI18nComplete.raw('textadc01d813da0')}
                       </DropdownMenuItem>
+                    ) : null}
+                    {/* The viewer's own list (KRTX-2418): anyone who can open
+                        the session. Absent `pinned_at` = no list state. */}
+                    {hasLifecycleActions && session.pinned_at !== undefined ? (
+                      <>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onSelect={() =>
+                            deferAfterClose(() => actions.onPin(session.session_id, !session.pinned_at))
+                          }
+                        >
+                          {session.pinned_at ? <PushPinSlashIcon /> : <PushPinIcon />}
+                          {tPinArchive(session.pinned_at ? 'unpin' : 'pin')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onSelect={() =>
+                            deferAfterClose(() =>
+                              actions.onArchive(session.session_id, !session.archived_at),
+                            )
+                          }
+                        >
+                          <ArchiveIcon />
+                          {tPinArchive(session.archived_at ? 'unarchive' : 'archive')}
+                        </DropdownMenuItem>
+                      </>
                     ) : null}
                     {canManageLifecycle ? (
                       <DropdownMenuItem

@@ -30,6 +30,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
 import { useWorkspaceSearch } from '@/features/files';
+import { ThemeSwatch, useInterfaceTheme } from '@/features/layout/interface-theme';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { openChangeRequestListQuery } from '@/features/project-files/hooks/use-change-requests';
@@ -81,6 +82,7 @@ import { copyToClipboard } from '@/lib/utils/clipboard';
 import { isDesktop } from '@/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
+import type { InterfaceThemeId } from '@/lib/interface-themes';
 import {
   type MenuItemDef,
   type SettingsTabId,
@@ -159,7 +161,6 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Copy } from '@/features/icon/icons/copy';
@@ -866,7 +867,11 @@ export function CommandPalette() {
   const sidebarOpen = sidebarCtx?.open ?? false;
   const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
-  const { theme, setTheme } = useTheme();
+  const {
+    selected: activeInterfaceTheme,
+    select: selectInterfaceTheme,
+    choice: themeChoice,
+  } = useInterfaceTheme();
   const activeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
@@ -1879,11 +1884,11 @@ export function CommandPalette() {
   }, []);
 
   const handleSetTheme = useCallback(
-    (newTheme: string) => {
-      setTheme(newTheme);
+    (newTheme: InterfaceThemeId) => {
+      selectInterfaceTheme(newTheme);
       close();
     },
-    [setTheme, close],
+    [selectInterfaceTheme, close],
   );
 
   const handleSetWallpaper = useCallback(
@@ -2606,7 +2611,8 @@ export function CommandPalette() {
                                 ? tHardcodedUi.raw('i18nComplete.text5f7c8d97889a')
                                 : tHardcodedUi.raw('i18nComplete.text9b21dbb9a947')
                               : item.label;
-                          const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
+                          const isActiveTheme =
+                            item.kind === 'theme' && activeInterfaceTheme === item.themeValue;
                           const isActiveWallpaper =
                             item.kind === 'wallpaper' && activeWallpaperId === item.wallpaperValue;
                           const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
@@ -2622,6 +2628,9 @@ export function CommandPalette() {
                             >
                               {item.id === 'new-session' && isCreating ? (
                                 <Loading className="text-muted-foreground size-4 shrink-0" />
+                              ) : item.kind === 'theme' && item.themeValue ? (
+                                // The same live palette preview the Appearance tab shows.
+                                <ThemeSwatch value={item.themeValue} choice={themeChoice} />
                               ) : (
                                 <SidebarIcon className="size-4" />
                               )}

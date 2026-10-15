@@ -13,7 +13,8 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
-import { isConnectorsEnabled } from '@/lib/config';
+import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { isBillingEnabled, isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { useFirstChatStore } from '@/stores/first-chat-store';
@@ -318,6 +319,10 @@ export function ProjectOnboardingWizard({
             if (index > 0) back();
           }}
         >
+          {/* "See plans" on the plan step opens the billing dialog. The app-level
+              host sits one dialog lower and would render it behind this
+              fullscreen dialog; a host mounted here is deeper, so it wins. */}
+          {isBillingEnabled() && <GlobalUpgradeModal />}
           <div className="flex h-full flex-col overflow-hidden">
             {/* The entire chrome: a back control on the left, progress centred,
               the skip escape hatch on the right. No mark, no title. Nothing here

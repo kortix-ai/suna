@@ -8,6 +8,7 @@ import {
   foreignKey,
   index,
   integer,
+  json,
   jsonb,
   numeric,
   pgSchema,
@@ -1514,6 +1515,34 @@ export const projectSessionGrants = kortixSchema.table(
   ],
 );
 
+/**
+ * One person's own list state for one session: pinned to the top of their
+ * list, or archived out of it. Per person, so a shared session can be pinned
+ * by one member and archived by another. Neither write moves the session's
+ * `updated_at`. Archiving clears the pin and pinning clears the archive.
+ * `user_id` has no FK to auth.users: account erasure and member offboarding
+ * delete the rows (`projects/lib/session-user-state.ts`).
+ */
+export const projectSessionUserStates = kortixSchema.table(
+  'project_session_user_states',
+  {
+    sessionId: text('session_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.userId] }),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_session_user_states_session_fk',
+    }).onDelete('cascade'),
+    index('idx_project_session_user_states_user').on(table.userId),
+  ],
+);
+
 export const projectSessionPublicShares = kortixSchema.table(
   'project_session_public_shares',
   {
@@ -2656,6 +2685,12 @@ export const sessionLogMessages = kortixSchema.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     // The whole Message record.
     record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    // The key order of each tool_call input in `record` (jsonb sorts keys), by
+    // block index: the input with every leaf as 0, `null` for other blocks. A
+    // restore puts the keys back in this order, so the next model request is
+    // byte-equal and keeps the provider prompt cache. `json` keeps its text as
+    // written. Null: no tool_call input, or a row written before this column.
+    toolInputOrder: json('tool_input_order').$type<unknown[]>(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -4123,6 +4158,55 @@ export const billingCustomers = kortixSchema.table(
   (table) => [index('idx_kortix_billing_customers_account_id').on(table.accountId)],
 );
 
+/**
+ * Enterprise contracts: an annual license plus a prepaid credit pool.
+ * Lifecycle and rules: .agents/skills/billing/references/plans-and-access.md.
+ * At most one `offered` and one `active` contract per account.
+ */
+export const enterpriseContracts = kortixSchema.table(
+  'enterprise_contracts',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    /** offered | active | ended | withdrawn */
+    status: text().notNull(),
+    licenseUsd: numeric('license_usd', { precision: 12, scale: 2 }).notNull(),
+    creditsUsd: numeric('credits_usd', { precision: 12, scale: 2 }).notNull(),
+    termMonths: integer('term_months').default(12).notNull(),
+    /** checkout | invoice | manual */
+    collection: text().notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true, mode: 'string' }),
+    endsAt: timestamp('ends_at', { withTimezone: true, mode: 'string' }),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+    /** True while a Stripe subscription renews the term on its own. */
+    autoRenews: boolean('auto_renews').default(false).notNull(),
+    note: text(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    index('idx_enterprise_contracts_account').on(table.accountId),
+    uniqueIndex('uq_enterprise_contracts_one_active')
+      .on(table.accountId)
+      .where(sql`status = 'active'`),
+    uniqueIndex('uq_enterprise_contracts_one_offered')
+      .on(table.accountId)
+      .where(sql`status = 'offered'`),
+    index('idx_enterprise_contracts_stripe_subscription').on(table.stripeSubscriptionId),
+    check(
+      'enterprise_contracts_status_check',
+      sql`status IN ('offered', 'active', 'ended', 'withdrawn')`,
+    ),
+    check(
+      'enterprise_contracts_collection_check',
+      sql`collection IN ('checkout', 'invoice', 'manual')`,
+    ),
+  ],
+);
+
 export const creditAccounts = kortixSchema.table(
   'credit_accounts',
   {
@@ -4223,10 +4307,13 @@ export const creditAccounts = kortixSchema.table(
       withTimezone: true,
       mode: 'string',
     }),
-    // Billing v2 — per-seat model. Existing rows default to 'legacy' so legacy
-    // customers are untouched; new signups use 'per_seat'. The wallet is a
-    // single fungible balance; usage breakdown by category comes from
-    // aggregating credit_ledger entries by `type` (compute_debit / llm_debit).
+    // Credits-only billing (2026-10-14): the monthly credit allowance, in USD,
+    // of the account's paid plan. Written from the subscription by the Stripe
+    // and RevenueCat webhooks. Null for free/enterprise and for rows not yet
+    // backfilled (`planMonthlyUsd()` in tiers.ts falls back for those).
+    planMonthlyUsd: numeric('plan_monthly_usd', { precision: 12, scale: 2 }),
+    // Retired by credits-only billing; no code reads them. Dropped by the
+    // contract migration once every replica runs code that ignores them.
     billingModel: text('billing_model').default('legacy').notNull(),
     seatCount: integer('seat_count').default(1).notNull(),
     seatSubscriptionItemId: text('seat_subscription_item_id'),
@@ -4270,7 +4357,12 @@ export const creditAccounts = kortixSchema.table(
     trialTier: varchar('trial_tier', { length: 50 }),
     // Seat allowance while the trial is active. Enforced on member add/invite
     // for non-per_seat accounts (per-seat accounts meter seats via Stripe).
+    // Retired with seats (2026-10-14); read only as the re-grant fallback of a
+    // trial issued before `trial_monthly_usd` existed.
     trialSeats: integer('trial_seats'),
+    // Credits (USD) an active trial grants every 30 days. Null = issued before
+    // credits-only billing (falls back to $25 × trial_seats).
+    trialMonthlyUsd: numeric('trial_monthly_usd', { precision: 12, scale: 2 }),
     trialNote: text('trial_note'),
     trialGrantedBy: uuid('trial_granted_by'),
     // Operator-set managed-models override. NULL (default) = the effective
@@ -7204,6 +7296,357 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   check('push_device_tokens_platform', sql`${table.platform} in ('ios', 'android')`),
 ]);
 
+// ─── Durable job queue ───────────────────────────────────────────────────────
+
+/**
+ * A minimal Postgres-backed job queue (`apps/api/src/shared/job-queue.ts`).
+ * Workers claim due rows with `FOR UPDATE SKIP LOCKED` and hold them for a
+ * visibility timeout (`locked_until`); a crash leaves the row claimable again
+ * once that passes. `(queue, job_key)` is the idempotency key: enqueueing a key
+ * that exists is a no-op, so a producer can re-send freely. Done and dead rows
+ * are pruned after 7 days, which bounds the table.
+ */
+export const jobQueue = kortixSchema.table(
+  'job_queue',
+  {
+    jobId: uuid('job_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    queue: text('queue').notNull(),
+    jobKey: text('job_key').notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().default({}).notNull(),
+    status: text('status').default('queued').notNull(),
+    runAt: timestamp('run_at', { withTimezone: true }).defaultNow().notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(8).notNull(),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_job_queue_key').on(table.queue, table.jobKey),
+    index('idx_job_queue_due').on(table.queue, table.runAt).where(sql`${table.status} = 'queued'`),
+    index('idx_job_queue_finished').on(table.updatedAt).where(sql`${table.status} <> 'queued'`),
+    check('job_queue_status', sql`${table.status} in ('queued', 'done', 'dead')`),
+  ],
+);
+
+// ─── Kortix Capture ──────────────────────────────────────────────────────────
+//
+// Capture is a standalone product whose tenant is a Kortix account (an
+// organization). It has no project anywhere in its model. The desktop app
+// writes the Kortix Capture format (schema 2) to S3 under
+// `orgs/<account_id>/<device_id>/`. Kortix signs devices in (RFC 8628 grants
+// below), issues scoped S3 credentials, and indexes every finished item (one
+// manifest) into the timeline tables. The timeline tables that grow with
+// recorded time (frames, actions, audio) are RANGE-partitioned by month on
+// their event time (migration 20261015003000000_capture); drizzle-kit has no syntax
+// for that, so they are declared here as their parents.
+
+/**
+ * One account's Capture workspace: the account-level switch and the policy,
+ * mirrored to `orgs/<account_id>/policy.json`. No row, or `enabled` false,
+ * means Capture is off for the account: no sign-in, credentials or ingest.
+ */
+export const captureWorkspaces = kortixSchema.table('capture_workspaces', {
+  accountId: uuid('account_id')
+    .primaryKey()
+    .references(() => accounts.accountId, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').default(false).notNull(),
+  policy: jsonb('policy').$type<Record<string, unknown>>().default({}).notNull(),
+  updatedBy: uuid('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** One pending RFC 8628 device authorization. Short-lived (15 min). */
+export const captureDeviceGrants = kortixSchema.table(
+  'capture_device_grants',
+  {
+    grantId: uuid('grant_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    deviceCodeHash: varchar('device_code_hash', { length: 128 }).notNull(),
+    userCode: varchar('user_code', { length: 9 }).notNull(),
+    machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
+    /** Untrusted device description sent with the request (hostname, os, …). */
+    deviceInfo: jsonb('device_info').$type<Record<string, unknown>>().default({}).notNull(),
+    status: text('status').default('pending').notNull(),
+    /** The account the person approved the device into. */
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+    deviceId: uuid('device_id'),
+    lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_device_grants_user_code').on(table.userCode),
+    uniqueIndex('idx_capture_device_grants_device_code').on(table.deviceCodeHash),
+    index('idx_capture_device_grants_expires').on(table.expiresAt),
+    check(
+      'capture_device_grants_status',
+      sql`${table.status} in ('pending', 'approved', 'denied', 'consumed')`,
+    ),
+  ],
+);
+
+/** One signed-in device: one machine, one member, one account. */
+export const captureDevices = kortixSchema.table(
+  'capture_devices',
+  {
+    deviceId: uuid('device_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** The member the device records for; null: an IT-enrolled computer linked to no one yet. */
+    userId: uuid('user_id'),
+    machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
+    /** Hash of the current device token (`hashSecretKey`). Null after a revoke. */
+    tokenHash: varchar('token_hash', { length: 128 }),
+    tokenIssuedAt: timestamp('token_issued_at', { withTimezone: true }),
+    name: text('name'),
+    os: text('os'),
+    osVersion: text('os_version'),
+    arch: text('arch'),
+    appVersion: text('app_version'),
+    /** The device's last `device.json`. */
+    deviceInfo: jsonb('device_info').$type<Record<string, unknown>>().default({}).notNull(),
+    /** The device's last `status.json` and when the device reported it. */
+    status: jsonb('status').$type<Record<string, unknown>>(),
+    statusReportedAt: timestamp('status_reported_at', { withTimezone: true }),
+    lastCredentialsAt: timestamp('last_credentials_at', { withTimezone: true }),
+    /** Index reader cursor: the newest index day, `{"<day>": "<bytes>:<mtime>"}` of the day files read (index_etag), and their count. */
+    indexDay: text('index_day'),
+    indexEtag: text('index_etag'),
+    indexLines: integer('index_lines').default(0).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by'),
+    /** The enrollment token the device enrolled with. Null: a person signed it in. */
+    enrollmentTokenId: uuid('enrollment_token_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_devices_identity').on(
+      table.accountId,
+      table.machineKeySha256,
+      table.userId,
+    ),
+    uniqueIndex('idx_capture_devices_token').on(table.tokenHash),
+    index('idx_capture_devices_account_user').on(table.accountId, table.userId),
+  ],
+);
+
+/**
+ * An IT rollout secret: a computer that presents it enrolls itself into the
+ * account, as the person signed in to Windows, with no browser sign-in.
+ * Stored only as `hashSecretKey(token)`; `token_prefix` names it in the UI.
+ */
+export const captureEnrollmentTokens = kortixSchema.table(
+  'capture_enrollment_tokens',
+  {
+    tokenId: uuid('token_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    tokenHash: varchar('token_hash', { length: 128 }).notNull(),
+    tokenPrefix: text('token_prefix').notNull(),
+    /** Lower-case email domains a person must sign in to Windows with. Empty: any member. */
+    emailDomains: text('email_domains').array().default(sql`'{}'::text[]`).notNull(),
+    /** At most this many computers enroll with the token. Null: no limit. */
+    maxDevices: integer('max_devices'),
+    /** Every new computer waits for an admin, also when its person is a member. */
+    requireApproval: boolean('require_approval').default(false).notNull(),
+    /** Every computer the token enrolls is linked to this member. Null: matched by the sign-in email. */
+    userId: uuid('user_id'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by'),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdBy: uuid('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_enrollment_tokens_hash').on(table.tokenHash),
+    index('idx_capture_enrollment_tokens_account').on(table.accountId),
+  ],
+);
+
+/**
+ * One computer + Windows person that presented an enrollment token. The row
+ * is the poll state: `pending` until a member is matched or an admin decides,
+ * `enrolled` once a device token was minted for it.
+ */
+export const captureEnrollments = kortixSchema.table(
+  'capture_enrollments',
+  {
+    enrollmentId: uuid('enrollment_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => captureEnrollmentTokens.tokenId, { onDelete: 'cascade' }),
+    machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
+    /** The Windows person, lower-case: the UPN, else the login name. */
+    principal: text('principal').notNull(),
+    principalName: text('principal_name'),
+    accountName: text('account_name'),
+    /** Untrusted device description sent with the request (hostname, os, …). */
+    deviceInfo: jsonb('device_info').$type<Record<string, unknown>>().default({}).notNull(),
+    status: text('status').default('pending').notNull(),
+    /** Why a pending row waits: `no_member` or `approval_required`. */
+    reason: text('reason'),
+    userId: uuid('user_id'),
+    deviceId: uuid('device_id'),
+    decidedBy: uuid('decided_by'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_enrollments_identity').on(
+      table.accountId,
+      table.machineKeySha256,
+      table.principal,
+    ),
+    index('idx_capture_enrollments_token').on(table.tokenId),
+    check(
+      'capture_enrollments_status',
+      sql`${table.status} in ('pending', 'approved', 'denied', 'enrolled')`,
+    ),
+  ],
+);
+
+/** One indexed item: one manifest (`chunk`, `audio` or `actions`). The ingest ledger. */
+export const timelineChunks = kortixSchema.table(
+  'timeline_chunks',
+  {
+    chunkId: uuid('chunk_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => captureDevices.deviceId, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+    kind: text('kind').notNull(),
+    manifestKey: text('manifest_key').notNull(),
+    startAt: timestamp('start_at', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    itemCount: integer('item_count').default(0).notNull(),
+    encrypted: boolean('encrypted').default(false).notNull(),
+    manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
+    /** The display a screen item recorded (one item per display); null before multi-display devices. */
+    displayId: bigint('display_id', { mode: 'number' }),
+    /** That display: `{id, name, x, y, w, h, scale, main}` from the manifest. */
+    display: jsonb('display').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_timeline_chunks_manifest').on(table.manifestKey),
+    index('idx_timeline_chunks_account_user_start').on(
+      table.accountId,
+      table.userId,
+      table.startAt,
+    ),
+    index('idx_timeline_chunks_device_start').on(table.deviceId, table.startAt),
+    check('timeline_chunks_kind', sql`${table.kind} in ('chunk', 'audio', 'actions')`),
+  ],
+);
+
+const timelineSearch = (...columns: AnyPgColumn[]) =>
+  sql`to_tsvector('simple'::regconfig, ${sql.join(
+    columns.map((column) => sql`coalesce(${column}, '')`),
+    sql` || ' ' || `,
+  )})`;
+
+/** One screen frame: app, window, URL and on-screen text. Partitioned by month on `ts`. */
+export const timelineFrames = kortixSchema.table(
+  'timeline_frames',
+  {
+    frameId: uuid('frame_id').default(sql`kortix.uuid_v7()`).notNull(),
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    chunkId: uuid('chunk_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    userId: uuid('user_id'),
+    frameIndex: integer('frame_index'),
+    app: text('app'),
+    bundleId: text('bundle_id'),
+    title: text('title'),
+    url: text('url'),
+    domain: text('domain'),
+    ocrText: text('ocr_text'),
+    ocrBoxes: jsonb('ocr_boxes').$type<unknown[]>(),
+    inactive: boolean('inactive').default(false).notNull(),
+    /** The display the frame shows; null before multi-display devices. */
+    displayId: bigint('display_id', { mode: 'number' }),
+    /** The display holding the focused window at that moment (the app track reads these). */
+    focused: boolean('focused').default(true).notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'timeline_frames_pkey', columns: [table.frameId, table.ts] }),
+    index('idx_timeline_frames_account_user_ts').on(table.accountId, table.userId, table.ts),
+    index('idx_timeline_frames_chunk').on(table.chunkId),
+    index('idx_timeline_frames_search').using(
+      'gin',
+      timelineSearch(table.app, table.title, table.url, table.ocrText),
+    ),
+  ],
+);
+
+/** One input action (click, key, …). Partitioned by month on `ts`. */
+export const timelineActions = kortixSchema.table(
+  'timeline_actions',
+  {
+    actionId: uuid('action_id').default(sql`kortix.uuid_v7()`).notNull(),
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    chunkId: uuid('chunk_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    userId: uuid('user_id'),
+    kind: text('kind').notNull(),
+    app: text('app'),
+    windowTitle: text('window_title'),
+    /** Human-readable line, e.g. `Click left at 41%,20%` or `Type "invoice"`. */
+    description: text('description'),
+    target: jsonb('target').$type<Record<string, unknown>>(),
+    /** Content-addressed asset name of the action screenshot, or null. */
+    screenshot: text('screenshot'),
+  },
+  (table) => [
+    primaryKey({ name: 'timeline_actions_pkey', columns: [table.actionId, table.ts] }),
+    index('idx_timeline_actions_account_user_ts').on(table.accountId, table.userId, table.ts),
+    index('idx_timeline_actions_chunk').on(table.chunkId),
+    index('idx_timeline_actions_search').using(
+      'gin',
+      timelineSearch(table.kind, table.app, table.windowTitle, table.description),
+    ),
+  ],
+);
+
+/** One audio transcript line. Partitioned by month on `ts` (the line's start). */
+export const timelineAudio = kortixSchema.table(
+  'timeline_audio',
+  {
+    lineId: uuid('line_id').default(sql`kortix.uuid_v7()`).notNull(),
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    chunkId: uuid('chunk_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    userId: uuid('user_id'),
+    text: text('text').notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'timeline_audio_pkey', columns: [table.lineId, table.ts] }),
+    index('idx_timeline_audio_account_user_ts').on(table.accountId, table.userId, table.ts),
+    index('idx_timeline_audio_chunk').on(table.chunkId),
+    index('idx_timeline_audio_search').using('gin', timelineSearch(table.text)),
+  ],
+);
+
+
 // ─── Drives ───────────────────────────────────────────────────────────────
 // A Drive is a folder tree backed by one Platinum volume in drive sync mode.
 // `project` is THE drive: one per project, shown as Files, with access per
@@ -7369,7 +7812,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered')`),
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */

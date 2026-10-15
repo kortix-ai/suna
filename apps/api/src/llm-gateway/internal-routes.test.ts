@@ -378,15 +378,12 @@ describe('POST /refresh-credential', () => {
 describe('POST /pool-rate-limit', () => {
   const ACCOUNT = '22222222-2222-4222-8222-222222222222';
   const SECRET = '44444444-4444-4444-8444-444444444444';
-  const post = (seconds: number) =>
+  const SESSION_PRINCIPAL = { accountId: ACCOUNT, sessionId: '55555555-5555-4555-8555-555555555555' };
+  const post = (seconds: number, principal: object = SESSION_PRINCIPAL) =>
     app().request('http://test/pool-rate-limit', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({
-        principal: { accountId: ACCOUNT, sessionId: '55555555-5555-4555-8555-555555555555' },
-        secretId: SECRET,
-        seconds,
-      }),
+      body: JSON.stringify({ principal, secretId: SECRET, seconds }),
     });
 
   // The gateway rests a ChatGPT account until its plan limit resets (days).
@@ -397,6 +394,22 @@ describe('POST /pool-rate-limit', () => {
     expect(cooledDown).toEqual([[SECRET, ACCOUNT, 414_374]]);
     expect((await post(8 * 24 * 60 * 60 + 1)).status).toBe(400);
     expect((await post(0)).status).toBe(400);
+    expect(cooledDown).toHaveLength(1);
+  });
+
+  // KRTX-2417: a gateway API key has no session. The route required one, so it
+  // answered 400, recorded no rest, and every next request tried the
+  // exhausted account first again.
+  test('records a rest for a gateway API key, which has no session', async () => {
+    cooledDown.length = 0;
+    const apiKeyPrincipal = {
+      accountId: ACCOUNT, userId: '66666666-6666-4666-8666-666666666666',
+      projectId: '77777777-7777-4777-8777-777777777777', keyId: '88888888-8888-4888-8888-888888888888',
+    };
+    expect((await post(414_374, apiKeyPrincipal)).status).toBe(200);
+    expect(cooledDown).toEqual([[SECRET, ACCOUNT, 414_374]]);
+    expect((await post(30, { ...apiKeyPrincipal, accountId: 'not-a-uuid' })).status).toBe(400);
+    expect((await post(30, { sessionId: SESSION_PRINCIPAL.sessionId })).status).toBe(400);
     expect(cooledDown).toHaveLength(1);
   });
 });

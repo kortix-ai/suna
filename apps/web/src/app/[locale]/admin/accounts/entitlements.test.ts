@@ -1,20 +1,17 @@
-// The Entitlements tab is the only UI for four operator-only writes (trial
-// grant/revoke, managed-models override, enterprise demo, enterprise contract
-// entitlement). Losing a control in a refactor is silent — nothing else calls
-// these routes — so this pins the wiring: the SDK hooks are the transport, the
-// destructive action is confirmed, and the tri-state override can express all
-// three states. Same source-assertion style as
-// `src/components/iam/enterprise-upsell.test.ts`.
+// The Entitlements tab is the only UI for the operator-only plan writes: trial
+// grant/revoke, Enterprise contracts (offer, end, withdraw, payment link) and
+// per-key overrides. Losing a control in a refactor is silent — nothing else
+// calls these routes — so this pins the wiring: the SDK hooks are the
+// transport, destructive actions are confirmed, and the retired controls
+// (demo switch, entitled switch, managed-models tri-state, compute multiplier)
+// stay gone. Same source-assertion style as `src/components/iam/enterprise-upsell.test.ts`.
 import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const dir = import.meta.dir;
 const pageSource = readFileSync(join(dir, 'page.tsx'), 'utf8');
-const demoCardSource = readFileSync(
-  join(dir, '../../../../components/iam/enterprise-demo-card.tsx'),
-  'utf8',
-);
+const contractSource = readFileSync(join(dir, 'enterprise-contract-card.tsx'), 'utf8');
 
 describe('admin accounts — Entitlements tab', () => {
   test('the tab is registered with a matching content panel', () => {
@@ -23,33 +20,65 @@ describe('admin accounts — Entitlements tab', () => {
   });
 
   test('every write goes through an SDK hook, never a raw fetch', () => {
-    for (const hook of [
-      'useAdminGrantTrial',
-      'useAdminRevokeTrial',
-      'useAdminSetManagedModels',
-      'useAdminSetEnterpriseDemo',
-      'useAdminSetEnterpriseEntitled',
-    ]) {
+    for (const hook of ['useAdminGrantTrial', 'useAdminRevokeTrial', 'useAdminSetOverrides']) {
       expect(pageSource).toContain(hook);
     }
+    for (const hook of [
+      'useAdminEnterpriseContracts',
+      'useAdminCreateEnterpriseContract',
+      'useAdminEndEnterpriseContract',
+      'useAdminWithdrawEnterpriseOffer',
+      'useAdminEnterpriseOfferLink',
+    ]) {
+      expect(contractSource).toContain(hook);
+    }
     expect(pageSource).not.toContain('/admin/api/accounts/');
+    expect(contractSource).not.toContain('/admin/api/accounts/');
+    expect(contractSource).not.toContain('fetch(');
   });
 
-  test('trial grant sends tier, seats, duration, credit grant and note', () => {
-    const grant = pageSource.match(/grantTrial\.mutateAsync\(\{([\s\S]*?)\}\);/)?.[1] ?? '';
-    expect(grant).not.toBe('');
-    for (const field of ['tierKey', 'seats:', 'durationDays', 'creditGrant', 'note:']) {
-      expect(grant).toContain(field);
+  test('the retired controls are gone from the console', () => {
+    for (const source of [pageSource, contractSource]) {
+      for (const retired of [
+        // Written as character classes so this file does not carry the names.
+        'useAdminSet[E]nterpriseDemo',
+        'useAdminSet[E]nterpriseEntitled',
+        'useAdminSet[M]anagedModels',
+        'compute[R]ateMultiplier',
+        'demo[E]nterprise',
+        'enterprise[E]ntitled',
+        'managed[M]odelsOverride',
+        'monthlyUsd != null &&',
+        'trial.monthlyUsd',
+      ]) {
+        expect(source).not.toMatch(new RegExp(retired));
+      }
     }
   });
 
-  test('the grant form defaults to 5 seats, 30 days and a $25 credit grant', () => {
-    expect(pageSource).toContain("useState('5')");
+  test('trial grant sends tier, duration, credit grant and note, and no seats', () => {
+    const grant = pageSource.match(/grantTrial\.mutateAsync\(\{([\s\S]*?)\}\);/)?.[1] ?? '';
+    expect(grant).not.toBe('');
+    for (const field of ['tierKey', 'durationDays', 'creditGrant', 'note:']) {
+      expect(grant).toContain(field);
+    }
+    expect(grant).not.toContain('seats');
+  });
+
+  test('the grant form defaults to Enterprise, 30 days and the server credit default', () => {
+    expect(pageSource).toContain("useState('enterprise')");
     expect(pageSource).toContain("useState('30')");
-    expect(pageSource).toContain("useState('25')");
+    expect(pageSource).toContain("useState('')");
+    expect(pageSource).toContain('DEFAULT_ENTERPRISE_TRIAL_CREDIT = 500');
+    expect(pageSource).not.toMatch(/MAX_TRIAL_SEATS|setSeats/);
     for (const preset of [14, 30, 60, 90]) {
       expect(pageSource).toContain(String(preset));
     }
+  });
+
+  test('granting the plan already on trial is labelled Extend', () => {
+    expect(pageSource).toContain('const extending = isActive && trial?.tier === tierKey');
+    expect(pageSource).toContain("? 'Extend'");
   });
 
   test('revoking a trial is confirmed, never fired from a single click', () => {
@@ -57,30 +86,22 @@ describe('admin accounts — Entitlements tab', () => {
     expect(pageSource).toMatch(/<ConfirmDialog[\s\S]*?onConfirm=\{handleRevokeTrial\}/);
   });
 
-  test('managed models is tri-state — null, true and false are all reachable', () => {
-    const choices = pageSource.match(/managedModelsChoices[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
-    expect(choices).toContain('value: null');
-    expect(choices).toContain('value: true');
-    expect(choices).toContain('value: false');
-  });
-
-  test('trial picker offers exactly Team and Enterprise — model access is the switch, not the tier', () => {
+  test('trial picker offers exactly Enterprise and Credits', () => {
     const options = pageSource.match(/TRIAL_TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(options).not.toBe('');
-    for (const tier of ['team', 'enterprise']) {
+    for (const tier of ['credits', 'enterprise']) {
       expect(options).toContain(`value: '${tier}'`);
     }
     // Never offer non-plans, legacy plans, or the whole catalog — that picker
     // confused even the founder ("what are these tiers dude").
-    for (const tier of ['free', 'none', 'starter', 'pro', 'per_seat', 'scale', 'tier_']) {
+    for (const tier of ['free', 'none', 'team', 'starter', 'pro', 'per_seat', 'scale', 'tier_']) {
       expect(options).not.toContain(`value: '${tier}'`);
     }
   });
 
   // The page used to own a TIER_CATALOG and stamp "· legacy" onto any key in
   // it — a second, hand-maintained plan vocabulary that drifted from the
-  // server's. The API now resolves the plan (trial + per-seat self-heal
-  // applied) and ships it as `account.plan`; the page renders that.
+  // server's. The API now resolves the plan (trial applied) and ships it as `account.plan`; the page renders that.
   test('an account plan is rendered from the API plan block, never re-derived', () => {
     expect(pageSource).not.toContain('TIER_CATALOG');
     expect(pageSource).not.toMatch(/function tierLabel\b/);
@@ -91,7 +112,6 @@ describe('admin accounts — Entitlements tab', () => {
     // Every place a plan is shown goes through the one component.
     for (const site of [
       '<PlanBadge account={account} />',
-      '<PlanBadge account={account} size="default" />',
       '<PlanBadge key="tier" account={account} />',
     ]) {
       expect(pageSource).toContain(site);
@@ -103,17 +123,19 @@ describe('admin accounts — Entitlements tab', () => {
     expect(pageSource.toLowerCase()).not.toContain('legacy');
   });
 
-  test('the tier filter still sends raw tier keys, grandfathered ones grouped', () => {
+  test('the tier filter sends the four raw plan keys', () => {
     // The list route filters on the STORED credit_accounts.tier column, so the
     // filter values must stay the raw keys even though nothing else on the
     // page names a plan from them.
     const options = pageSource.match(/TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(options).not.toBe('');
-    for (const key of ['free', 'none', 'per_seat', 'tier_25_200', 'enterprise']) {
+    for (const key of ['none', 'free', 'credits', 'enterprise']) {
       expect(options).toContain(`value: '${key}'`);
     }
-    expect(options).toContain('grandfathered: true');
-    expect(pageSource).toContain('Grandfathered');
+    for (const key of ['per_seat', 'team', 'tier_']) {
+      expect(options).not.toContain(`value: '${key}`);
+    }
+    expect(pageSource).not.toContain('Grandfathered');
   });
 
   test('the open sheet resolves a live row via the exact-id lookup, with list/snapshot fallback', () => {
@@ -133,15 +155,14 @@ describe('admin accounts — Overrides card', () => {
     );
   });
 
-  test('every override row the server accepts has a control', () => {
+  test('every override row the server accepts has a control, and only those', () => {
     const rows =
       pageSource.match(/OVERRIDE_ENTITLEMENT_ROWS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(rows).not.toBe('');
     for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'branding', 'managedModels']) {
       expect(rows).toContain(`key: '${key}'`);
     }
-    // The numeric override is laid out by hand — an input, not a Select.
-    expect(pageSource).toContain("raw('texta6b6d1454df0')");
+    expect(rows.match(/key: '/g)).toHaveLength(6);
   });
 
   test('the entitlement rows are tri-state — inherit, force on, force off', () => {
@@ -150,16 +171,6 @@ describe('admin accounts — Overrides card', () => {
     for (const value of ['inherit', 'on', 'off']) {
       expect(options).toContain(`value: '${value}'`);
     }
-  });
-
-  test('the compute multiplier input carries the range and step the server enforces', () => {
-    const at = pageSource.indexOf("raw('texta6b6d1454df0')");
-    expect(at).toBeGreaterThan(-1);
-    const declaration = pageSource.slice(at - 400, at + 400);
-    expect(declaration).toContain('min={0}');
-    expect(declaration).toContain('max={MAX_COMPUTE_RATE_MULTIPLIER}');
-    expect(declaration).toContain('step={0.05}');
-    expect(declaration).toContain('draft.computeRateMultiplier');
   });
 
   test('the whole card saves through one merge-patch mutation', () => {
@@ -196,22 +207,34 @@ describe('admin accounts — Ledger tab', () => {
   });
 });
 
-describe('EnterpriseDemoCard — the self-serve toggle is now admin-only', () => {
-  test('the switch is gated on the platform-admin role', () => {
-    expect(demoCardSource).toContain('useAdminRole');
-    expect(demoCardSource).toMatch(/isPlatformAdmin \? \(\s*<Switch/);
+describe('admin accounts — Enterprise contract card', () => {
+  test('the card is mounted in the Entitlements tab', () => {
+    expect(pageSource).toMatch(
+      /function EntitlementsTab[\s\S]*?<EnterpriseContractCard account=\{account\}/,
+    );
   });
 
-  // The card became a `SettingsRow` on 2026-08-12 (it used to draw its own
-  // bordered box; the settings panel mounts it inside a `SettingsRowGroup`
-  // now). The hint moved from a standalone `<p>` under the title into the row's
-  // `description`, so this reads the ternary that picks it rather than a JSX
-  // block. What is asserted is unchanged: a non-admin is told who can turn this
-  // on, and is given a state badge instead of a switch that would only 403.
-  test('non-admins get read-only state plus a contact hint, not a switch that 403s', () => {
-    expect(demoCardSource).toMatch(
-      /!isLoading && !isPlatformAdmin\s*\? tI18nComplete\.raw\('text0aa30be6e0c5'\)/,
-    );
-    expect(demoCardSource).toMatch(/<Badge variant=\{enabled \? 'success' : 'muted'\}/);
+  test('the form offers the three collection modes and the term cap', () => {
+    for (const value of ['checkout', 'invoice', 'manual']) {
+      expect(contractSource).toContain(`case '${value}'`);
+    }
+    expect(contractSource).toContain('MAX_TERM_MONTHS_STRIPE = 12');
+    expect(contractSource).toContain('MAX_TERM_MONTHS_MANUAL = 60');
+  });
+
+  test('ending a contract is confirmed, and the payment link is copied from checkout_url', () => {
+    expect(contractSource).toContain('onClick={() => setConfirmEnd(true)}');
+    expect(contractSource).toMatch(/<ConfirmDialog[\s\S]*?onConfirm=\{handleEnd\}/);
+    expect(contractSource).toContain('navigator.clipboard.writeText(checkout_url)');
+  });
+
+  test('an Enterprise account with no contract is flagged', () => {
+    expect(contractSource).toContain('No contract on file');
+    expect(contractSource).toContain('Enterprise · no contract');
+    expect(contractSource).toContain("t('text06bdc1c507f1', { date: day(account.graceEndsAt) })");
+  });
+
+  test('the list and sheet show the plan state line', () => {
+    expect(pageSource).toContain('<AccountPlanState account={account} />');
   });
 });

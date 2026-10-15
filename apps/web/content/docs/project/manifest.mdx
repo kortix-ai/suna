@@ -111,7 +111,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
-| `tools` | map | all five Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
+| `tools` | map | all seven Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
 | `sandbox` | map | platform image | `templates`, `default`. See [sandbox](#sandbox). |
 | `triggers` | list | none | Schedules, webhooks, monitors, app events. |
 | `connectors` | list | none | Apps, APIs and MCP servers an agent can call. |
@@ -209,7 +209,7 @@ agents:
 ```
 
 - `project_repository: true` (the default): the session checks out the project repository on its own session branch.
-- `project_repository: false`: the session gets no checkout, no git variables, and no repository API access (`403`).
+- `project_repository: false`: the session gets no checkout, no git variables, and no repository API access (`403`). Its [project tools](/docs/project/tools#agents-without-the-project-repository) still load: the sandbox receives only the modules of the tools the agent may call.
 - A running session keeps the value it started with. A change applies to new sessions.
 - Any other key under `workspace` is an error. A typo does not fall back to the default: Kortix withholds the repository from that agent until the block is fixed.
 
@@ -311,7 +311,7 @@ agents:
 
 ## tools
 
-`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all five Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
+`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all seven Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
 
 ## triggers, connectors, apps
 

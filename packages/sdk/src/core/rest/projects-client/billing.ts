@@ -3,21 +3,23 @@
 // app-access redirect on login) PLUS the checkout/subscription/credits
 // mutation surface (Stripe-backed). Wraps a deliberately curated subset of
 // apps/api/src/billing/routes — the ones a "Kortix as a Backend" host needs to
-// drive billing itself; Stripe-webhook-only routes and legacy/per-seat-claim
+// drive billing itself; Stripe-webhook-only routes and retired per-seat
 // internals stay unwired.
 
 import { backendApi } from '../../http/api-client';
 import { serverTokenGet, unwrap, type ServerTokenOptions } from './shared';
 import { retiredEndpointError } from '../../http/api/errors';
 
-const CHECKOUT_INSTEAD = 'Use createPerSeatCheckout().';
+const CHECKOUT_INSTEAD = 'Use setBillingPlan().';
+const PLAN_CHANGE_INSTEAD =
+  'Change the plan with setBillingPlan(); manage the card in the Stripe customer portal (createPortalSession()).';
 
 /**
  * The unambiguous billing situation for an account — the SAME state the API's
  * billing gate admits on (apps/api/src/billing/services/billing-state.ts).
  *
- * Branch on this, never on `tier_key` (which stays `free` for per-seat Team
- * accounts) and never on `can_run` alone (`false` means BLOCKED, not "no plan").
+ * Branch on this, never on `tier_key` (which stays `free` for an account on an
+ * admin trial) and never on `can_run` alone (`false` means BLOCKED, not "no plan").
  */
 export type BillingState =
   | 'active'
@@ -27,10 +29,52 @@ export type BillingState =
   | 'no_account';
 
 /**
- * The public plan ladder. Exactly three rungs — every plan key an account can
- * carry, current or grandfathered, belongs to one of them.
+ * The public plan ladder. Exactly three rungs. Every legacy plan key reads as
+ * `credits`: one paid plan, any whole monthly amount, one shared credit wallet.
  */
-export type PlanFamily = 'free' | 'team' | 'enterprise';
+export type PlanFamily = 'free' | 'credits' | 'enterprise';
+
+/** A dated grant of a plan. `days_left` counts whole days, rounded up; 0 on the last day. */
+export interface AccountTrial {
+  plan: 'credits' | 'enterprise';
+  started_at: string | null;
+  ends_at: string;
+  days_left: number;
+}
+
+/** How an Enterprise contract is paid: Stripe Checkout by card, a Stripe invoice, or outside Stripe. */
+export type EnterpriseContractCollection = 'checkout' | 'invoice' | 'manual';
+
+/** An active Enterprise contract: an annual license plus a prepaid credit pool. */
+export interface AccountContract {
+  id: string;
+  /** Annual platform fee, USD. */
+  license_usd: number;
+  /** Annual credit commitment, USD, granted as one pool per term. */
+  credits_usd: number;
+  term_months: number;
+  collection: EnterpriseContractCollection;
+  starts_at: string | null;
+  /** End of the current term. Null for an open-ended contract. */
+  ends_at: string | null;
+  /** True when the term renews on its own. */
+  renews: boolean;
+}
+
+/** An Enterprise contract offered and not yet accepted. */
+export interface AccountEnterpriseOffer {
+  id: string;
+  license_usd: number;
+  credits_usd: number;
+  term_months: number;
+  collection: EnterpriseContractCollection;
+}
+
+/** SSO/SCIM kept after an Enterprise trial or contract ended. */
+export interface AccountAccessGrace {
+  reason: 'trial_ended' | 'contract_ended';
+  ends_at: string;
+}
 
 export interface AccountState {
   credits: {
@@ -62,36 +106,28 @@ export interface AccountState {
    * The plan the account BEHAVES as, named the way the product names plans.
    *
    * Distinct from `subscription` on purpose. `subscription.tier_key` is the
-   * STORED plan — the one Stripe sold. This block is the RESOLVED plan: an
-   * active admin-issued trial and the per-seat self-heal overlay it, so it
-   * reports the plan the server's gates actually enforce. Read it through
-   * {@link resolvedPlan}, which also covers responses from an API too old to
-   * send it.
-   *
-   * Optional: additive on the wire. The API sends it as of the plan-resolver
-   * rollout; older deployments omit it entirely.
+   * STORED plan (legacy keys read as `'credits'`). This block is the RESOLVED
+   * plan: an active admin-issued trial overlays it, so it reports the plan the
+   * server's gates actually enforce. Read it through {@link resolvedPlan},
+   * which also covers responses from an API too old to send it.
    */
   plan?: {
-    /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+    /** Plan key — 'none' | 'free' | 'credits' | 'enterprise'. */
     key: string;
     /** Public ladder position: there are exactly three families. */
     family: PlanFamily;
-    /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+    /** Customer-facing family name — 'Free' | 'Credits' | 'Enterprise'. */
     label: string;
-    /** Qualifier under the label, e.g. '$200/mo · grandfathered'. Null when
-     *  the plan needs no qualifier. */
+    /** Qualifier under the label. Null when the plan needs none. */
     sublabel: string | null;
-    /** Lifecycle: sellable today, sold-once-and-honored, defined-but-never-sold,
-     *  or the absence of a plan. */
-    status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+    /** Lifecycle: sellable today, or the absence of a plan. */
+    status: 'current' | 'non_plan';
     /** How the recurring charge is computed. */
-    shape: 'none' | 'flat' | 'seat' | 'contract';
+    shape: 'none' | 'credits' | 'contract';
     /** Strictly ordered ladder position (0 = no plan). Compare, don't display. */
     rank: number;
-    /** `status === 'grandfathered'` — sold once, still honored exactly as sold.
-     *  Render the plan as it was sold instead of mapping it onto a current plan
-     *  it is not. */
-    is_grandfathered: boolean;
+    /** The paid plan's monthly amount in USD. Null for free, enterprise and trial. */
+    monthly_usd: number | null;
   };
   subscription: {
     tier_key: string;
@@ -185,16 +221,25 @@ export interface AccountState {
   };
   /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
    *  forces every enterprise entitlement on platform-wide — the frontend
-   *  hides the self-serve "Enterprise features — Demo" toggle and any
-   *  "Request enterprise access" upsell when this is true. */
+   *  hides every Enterprise upsell when this is true. */
   enterprise_license_available?: boolean;
-  /** True when an operator flagged this account as a contracted cloud
-   *  Enterprise customer (`credit_accounts.enterprise_entitled`). The account
-   *  then resolves all enterprise entitlements regardless of billing tier, so
-   *  a deal that is BOTH Enterprise AND per-seat can hold both at once. The
-   *  frontend uses this to hide the self-serve demo toggle (a real contract
-   *  supersedes the demo). */
+  /** @deprecated Read `plan.family === 'enterprise'`. True on the Enterprise
+   *  plan (a contract or an Enterprise trial). */
   enterprise_entitled?: boolean;
+  /** The active trial: a dated grant of a plan. Null when there is none.
+   *  Absent on an older server. */
+  trial?: AccountTrial | null;
+  /** The active Enterprise contract. Null when there is none. Absent on an
+   *  older server. */
+  contract?: AccountContract | null;
+  /** An Enterprise contract offered and not yet accepted. A billing manager
+   *  accepts a `checkout` offer with {@link acceptEnterpriseOffer}. Null when
+   *  there is none. Absent on an older server. */
+  enterprise_offer?: AccountEnterpriseOffer | null;
+  /** SSO and SCIM stay on after an Enterprise trial or contract ends, until
+   *  `ends_at`, so nobody is locked out. Null outside that window. Absent on
+   *  an older server. */
+  grace?: AccountAccessGrace | null;
   auto_topup?: {
     enabled: boolean;
     threshold: number;
@@ -223,30 +268,13 @@ export interface AccountState {
     created_at: string;
   }>;
   can_add_instances?: boolean;
-  can_claim_computer?: boolean;
   // Whether the CURRENT user may change billing for this account (billing.write —
   // owners only by default). Drives the "Subscribe" / "Manage billing" CTA gate:
   // members (billing.read only) see a disabled CTA instead of clicking through to
   // a 403. UI hint only — the billing API enforces the same gate server-side.
   // Absent (undefined) is treated as "allowed" so older responses don't block owners.
   can_manage_billing?: boolean;
-  // True only for genuine legacy per-machine accounts that have a machine to
-  // migrate — gates the "Claim seat-based pricing" card (new per-seat-era users
-  // must not see it, or the claim dead-ends on "nothing to switch").
-  can_claim_per_seat?: boolean;
-  // Billing v2 — present for accounts on the new per-seat plan.
-  billing_model?: 'legacy' | 'per_seat';
-  seats?: {
-    count: number;
-    price_per_seat_usd: number;
-    typical_compute_budget_per_seat_usd: number;
-    typical_llm_budget_per_seat_usd: number;
-  };
-  // Live account-member count = the seat quantity a per-seat subscribe is billed
-  // for right now (server uses the same count for the Stripe line item). Lets the
-  // subscribe modal show the real projected total before redirecting to Stripe.
-  // Present once the API is updated; absent → fall back to seats.count then 1.
-  member_count?: number;
+  /** Usage in the current billing period. Present for every account. */
   usage_this_period?: {
     compute_usd: number;
     llm_usd: number;
@@ -329,26 +357,25 @@ export function getDefaultAccountState(): AccountState {
 export interface ResolvedPlanView {
   /** Which rung of the public ladder — the only value worth branching on. */
   family: PlanFamily;
-  /** Customer-facing plan name, e.g. 'Team'. Never empty. */
+  /** Customer-facing plan name, e.g. 'Credits'. Never empty. */
   label: string;
   /** Qualifier to render muted after the label, e.g.
-   *  '$40/seat/mo · grandfathered'. Null when the plan needs none. */
+   *  Null when the plan needs none. */
   sublabel: string | null;
-  /** Sold once, still honored exactly as sold, no longer offered. */
-  isGrandfathered: boolean;
+  /** The paid plan's monthly amount in USD. Null for free, enterprise and trial. */
+  monthlyUsd: number | null;
 }
 
 /**
  * Fallback family for an API that predates the `plan` block. `free` and `none`
  * are the only two keys in the free family and `enterprise` is the only key in
- * the enterprise family, so everything else is a Team-family plan — current or
- * grandfathered.
+ * the enterprise family, so everything else is a credits-family plan, legacy keys included.
  */
 function planFamilyForTierKey(tierKey: string): PlanFamily {
   const key = tierKey.trim().toLowerCase();
   if (key === '' || key === 'free' || key === 'none') return 'free';
   if (key === 'enterprise') return 'enterprise';
-  return 'team';
+  return 'credits';
 }
 
 /**
@@ -356,8 +383,7 @@ function planFamilyForTierKey(tierKey: string): PlanFamily {
  *
  * Prefer this over `state.subscription.tier_key` for anything a person reads or
  * any "is this account on a paid plan?" branch. `tier_key` is the STORED plan,
- * which stays `free` for an account on an admin trial and for a paying per-seat
- * team whose row is stale — branch on it and the UI contradicts the server.
+ * which stays `free` for an account on an admin trial and for a row the webhook has not synced yet — branch on it and the UI contradicts the server.
  *
  * Degrades safely: an API too old to send `plan` still yields a family and a
  * label, derived from `tier` / `subscription.tier_key`.
@@ -369,7 +395,7 @@ export function resolvedPlan(state: AccountState | null | undefined): ResolvedPl
       family: plan.family,
       label: plan.label,
       sublabel: plan.sublabel ?? null,
-      isGrandfathered: plan.is_grandfathered === true,
+      monthlyUsd: plan.monthly_usd ?? null,
     };
   }
 
@@ -382,10 +408,9 @@ export function resolvedPlan(state: AccountState | null | undefined): ResolvedPl
     family: planFamilyForTierKey(tierKey),
     label,
     // The old shape carries no qualifier and no lifecycle, so there is nothing
-    // honest to put here. Guessing "grandfathered" from a `tier_*` key would
-    // print a billing claim the response never made.
+    // honest to put here, and no amount.
     sublabel: null,
-    isGrandfathered: false,
+    monthlyUsd: null,
   };
 }
 
@@ -575,6 +600,10 @@ export interface BillingTierConfiguration {
 export interface BillingTierConfigurationsResponse {
   success?: boolean;
   tiers: BillingTierConfiguration[];
+  /** Lowest purchasable monthly amount in USD. */
+  min_monthly_usd: number;
+  /** Highest purchasable monthly amount in USD. */
+  max_monthly_usd: number;
   timestamp?: string;
 }
 
@@ -744,31 +773,29 @@ export async function scheduleDowngrade(
   );
 }
 
-/** Cancel a previously scheduled downgrade/plan change. */
-export async function cancelScheduledChange(accountId?: string): Promise<SubscriptionMutationResult> {
-  return unwrap(
-    await backendApi.post<SubscriptionMutationResult>('/billing/cancel-scheduled-change', {
-      account_id: accountId,
-    }),
-    'Failed to cancel scheduled change',
-  );
+/**
+ * @deprecated The API retired `POST /billing/cancel-scheduled-change`. Always
+ * rejects with `ENDPOINT_RETIRED` and sends no request. A plan cut applies at
+ * the next renewal; set the amount again with {@link setBillingPlan}. Removed in
+ * the next major.
+ */
+export async function cancelScheduledChange(_accountId?: string): Promise<SubscriptionMutationResult> {
+  throw retiredEndpointError('cancelScheduledChange', PLAN_CHANGE_INSTEAD);
 }
 
 export interface ProrationPreviewResult {
   [key: string]: unknown;
 }
 
-/** Preview proration for a price change (new Stripe price id) before committing to it. */
+/**
+ * @deprecated The API retired `GET /billing/proration-preview`. Always rejects
+ * with `ENDPOINT_RETIRED` and sends no request. Removed in the next major.
+ */
 export async function getProrationPreview(
-  newPriceId: string,
-  accountId?: string,
+  _newPriceId: string,
+  _accountId?: string,
 ): Promise<ProrationPreviewResult> {
-  const search = new URLSearchParams({ new_price_id: newPriceId });
-  if (accountId) search.set('account_id', accountId);
-  return unwrap(
-    await backendApi.get<ProrationPreviewResult>(`/billing/proration-preview?${search.toString()}`),
-    'Failed to load proration preview',
-  );
+  throw retiredEndpointError('getProrationPreview', PLAN_CHANGE_INSTEAD);
 }
 
 export interface PurchaseCreditsInput {
@@ -893,6 +920,74 @@ export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoT
   );
 }
 
+export interface SetBillingPlanParams {
+  /** Whole USD per month, 20 to 10,000. 1 credit = $0.01. */
+  monthlyUsd: number;
+  successUrl: string;
+  cancelUrl: string;
+  locale?: string;
+  accountId?: string;
+}
+
+/**
+ * Result of {@link setBillingPlan}.
+ * - `checkout_created`: no paid subscription yet. Redirect to `checkout_url`.
+ * - `updated` / `unchanged`: an existing subscription changed in place. A raise
+ *   is charged now and grants the prorated credits at once; a cut applies at
+ *   the next renewal.
+ * - `payment_pending`: the raise needs payment confirmation with `client_secret`.
+ */
+export type SetBillingPlanResult =
+  | { status: 'checkout_created'; checkout_url: string; monthly_usd: number }
+  | { status: 'updated' | 'unchanged'; monthly_usd: number }
+  | { status: 'payment_pending'; monthly_usd: number; client_secret: string };
+
+/** Subscribe to, or change, the credits plan: `POST /billing/plan`. Rejects with 400 outside 20..10,000. */
+export async function setBillingPlan(params: SetBillingPlanParams): Promise<SetBillingPlanResult> {
+  return unwrap(
+    await backendApi.post<SetBillingPlanResult>('/billing/plan', {
+      monthly_usd: params.monthlyUsd,
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      locale: params.locale,
+      account_id: params.accountId,
+    }),
+    'Failed to set billing plan',
+  );
+}
+
+export interface AcceptEnterpriseOfferParams {
+  successUrl: string;
+  cancelUrl: string;
+  /** Defaults to the caller's active account. */
+  accountId?: string;
+}
+
+export interface AcceptEnterpriseOfferResult {
+  /** Stripe Checkout for the offered contract. Expires within 24 h: create one per click. */
+  checkout_url: string;
+  contract_id: string;
+}
+
+/**
+ * Accept the account's open Enterprise offer (`POST /billing/enterprise-offer/checkout`):
+ * returns a Stripe Checkout link that pays the annual license and credit
+ * commitment by card. Needs `billing.write` (owners and admins). Rejects with
+ * 404 when there is no open offer and 409 when the offer is invoiced instead.
+ */
+export async function acceptEnterpriseOffer(
+  params: AcceptEnterpriseOfferParams,
+): Promise<AcceptEnterpriseOfferResult> {
+  return unwrap(
+    await backendApi.post<AcceptEnterpriseOfferResult>('/billing/enterprise-offer/checkout', {
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      account_id: params.accountId,
+    }),
+    'Failed to start the Enterprise checkout',
+  );
+}
+
 export interface CreatePerSeatCheckoutInput {
   accountId?: string;
   successUrl: string;
@@ -907,18 +1002,15 @@ export interface CreatePerSeatCheckoutResult {
   seat_count: number;
 }
 
+/**
+ * @deprecated The API retired `POST /billing/create-per-seat-checkout`. Always
+ * rejects with `ENDPOINT_RETIRED` and sends no request. Use
+ * {@link setBillingPlan}. Removed in the next major.
+ */
 export async function createPerSeatCheckout(
-  input: CreatePerSeatCheckoutInput,
+  _input: CreatePerSeatCheckoutInput,
 ): Promise<CreatePerSeatCheckoutResult> {
-  return unwrap(
-    await backendApi.post<CreatePerSeatCheckoutResult>('/billing/create-per-seat-checkout', {
-      account_id: input.accountId,
-      success_url: input.successUrl,
-      cancel_url: input.cancelUrl,
-      locale: input.locale,
-    }),
-    'Failed to create per-seat checkout',
-  );
+  throw retiredEndpointError('createPerSeatCheckout', CHECKOUT_INSTEAD);
 }
 
 export interface ClaimPerSeatResult {
@@ -930,13 +1022,13 @@ export interface ClaimPerSeatResult {
   reason?: string | null;
 }
 
-export async function claimPerSeatBilling(accountId?: string): Promise<ClaimPerSeatResult> {
-  return unwrap(
-    await backendApi.post<ClaimPerSeatResult>('/billing/claim-per-seat', {
-      account_id: accountId,
-    }),
-    'Failed to switch to per-seat billing',
-  );
+/**
+ * @deprecated The API retired `POST /billing/claim-per-seat`. Always rejects
+ * with `ENDPOINT_RETIRED` and sends no request. Legacy plans now read as
+ * `credits`; use {@link setBillingPlan}. Removed in the next major.
+ */
+export async function claimPerSeatBilling(_accountId?: string): Promise<ClaimPerSeatResult> {
+  throw retiredEndpointError('claimPerSeatBilling', CHECKOUT_INSTEAD);
 }
 
 export async function syncSubscription(accountId?: string): Promise<SubscriptionMutationResult> {

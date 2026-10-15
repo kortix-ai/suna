@@ -6,14 +6,13 @@ import type { UiTranslator } from '@/i18n/translator';
  * Every blocking surface used to answer it for itself, and they disagreed:
  *
  * - the session page treated `credits.can_run === false` as `noPlan` and
- *   rendered "Your team isn't on a plan yet — Subscribe to Team plan";
- * - the modal that CTA opened branched on `billing_model === 'per_seat' ||
- *   has_subscription` and rendered "Out of credits — your Team plan and seats
- *   are unaffected";
+ *   rendered "Your team isn't on a plan yet";
+ * - the modal that CTA opened branched on `has_subscription` alone and
+ *   rendered "Out of credits — your plan is unaffected";
  * - the project page keyed off `tier_key === 'free' | 'none'`;
  * - the sidebar keyed off the raw balance.
  *
- * So a Team account on an ACTIVE $40/mo subscription with a $0.0099 wallet was
+ * So an account on an ACTIVE subscription with a $0.0099 wallet was
  * told it had no plan by one surface and told its plan was fine by the next.
  * `can_run: false` means BLOCKED. It has never meant "no plan".
  *
@@ -40,7 +39,7 @@ const FAILING_STATUSES = new Set(['past_due', 'unpaid', 'incomplete', 'incomplet
 
 export type AccountStateLike = Pick<
   AccountState,
-  'billing_state' | 'has_active_subscription' | 'billing_model'
+  'billing_state' | 'has_active_subscription'
 > & {
   credits?: { can_run?: boolean | null; total?: number | null } | null;
   subscription?: { subscription_id?: string | null; status?: string | null } | null;
@@ -82,11 +81,8 @@ export function resolveBillingState(
   // exemption back in.
   if (state.credits?.can_run === true) return 'active';
   if (FAILING_STATUSES.has(state.subscription?.status ?? '')) return 'payment_failed';
-  // REMOVED: `accountHasLiveSubscription(state) && billing_model === 'per_seat'
-  // -> 'active'`. That was the client's copy of `subscriptionBypassesWalletFloor`,
-  // and it would have re-rendered a drained Team account as fully runnable — on
-  // a rolling deploy, against a server that had already started blocking it.
-  // Nothing bypasses the wallet floor on either side of the wire now.
+  // Nothing bypasses the wallet floor on either side of the wire: a live
+  // subscription with an empty wallet is `out_of_credits`, never `active`.
   if (state.subscription?.subscription_id || state.tier?.can_purchase_credits) {
     return 'out_of_credits';
   }
@@ -173,10 +169,9 @@ export interface BillingModalCopy {
  */
 export function billingModalCopy(
   state: BillingState | null,
-  opts: { isPerSeat?: boolean } | undefined,
   tI18nComplete: UiTranslator,
 ): BillingModalCopy {
-  const planNoun = opts?.isPerSeat ? 'your Team plan and seats are' : 'your plan is';
+  const planNoun = 'your plan is';
   switch (state) {
     case 'payment_failed':
       return {
@@ -196,7 +191,7 @@ export function billingModalCopy(
     case 'no_subscription':
       return {
         title: tI18nComplete.raw('text51d7edea32d3'),
-        description: tI18nComplete.raw('textdbc55cb506f2'),
+        description: tI18nComplete.raw('text3fa17bba73e1'),
       };
     default:
       // `active` — a voluntary top-up. Nothing is wrong, so nothing alarming.
@@ -228,7 +223,7 @@ export function billingGateCopy(
     case 'out_of_credits':
       return {
         title: tI18nComplete.raw('textf1c24ec92034'),
-        message: tI18nComplete.raw('text109346f4fd22'),
+        message: tI18nComplete.raw('text6821e42be2c1'),
         ctaLabel: 'Top up credits',
         dialogReason: 'insufficient_credits',
       };
@@ -249,8 +244,8 @@ export function billingGateCopy(
     default:
       return {
         title: tI18nComplete.raw('text51d7edea32d3'),
-        message: tI18nComplete.raw('textdbc55cb506f2'),
-        ctaLabel: 'Subscribe to Team plan',
+        message: tI18nComplete.raw('text3fa17bba73e1'),
+        ctaLabel: 'Choose a plan',
         dialogReason: 'subscription_required',
       };
   }
@@ -265,7 +260,6 @@ export function billingDialogArgs(
 ): {
   reason: UpgradeReason;
   accountId?: string;
-  billingModel?: string;
   hasSubscription?: boolean;
   billingState?: BillingState;
   balance?: number;
@@ -280,7 +274,6 @@ export function billingDialogArgs(
   return {
     reason,
     accountId,
-    billingModel: accountState?.billing_model ?? undefined,
     hasSubscription: accountHasLiveSubscription(accountState),
     billingState: resolved,
     balance: accountState?.credits?.total ?? undefined,

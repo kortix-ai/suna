@@ -165,7 +165,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Kortix’s own upstream provider keys, which no sandbox may hold': 'text9fac860db4d4',
   'llm-gateway': 'text1a89c40bda2b',
   Machine: 'text8f1cc42d7c1c',
-  'Manage members, groups, roles and tokens.': 'text186c10caa2d2',
+  'Manage members, groups, roles, tokens and billing.': 'text0ef1d8916df6',
   Manager: 'text8b2085f74dfa',
   member: 'texte31ab643c44f',
   Member: 'text7c968fb71f50',

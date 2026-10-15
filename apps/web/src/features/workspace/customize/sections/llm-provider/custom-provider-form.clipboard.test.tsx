@@ -21,9 +21,17 @@ mock.module('@kortix/sdk/react', () => ({
   qk: { project: { secrets: (id: string) => ['secrets', id] } },
   refreshProjectProviderState: mock(() => {}),
 }));
+const realMotion = await import('motion/react');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject, via its UI imports).
+// Spread the real module.
 mock.module('motion/react', () => ({
+  ...realMotion,
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
+  MotionConfig: ({ children }: { children: ReactNode }) => children,
   m: { span: ({ children }: { children: ReactNode }) => <span>{children}</span> },
+  MotionConfig: ({ children }: { children: ReactNode }) => children,
 }));
 const { CustomProviderForm } = await import('./custom-provider-form');
 const expectedSnippet = JSON.stringify(

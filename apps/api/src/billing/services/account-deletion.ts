@@ -65,7 +65,7 @@ import {
   claimDeletionRequest,
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
-import { releaseProjectEventSubscriptions } from '../../projects/surface';
+import { deleteUserSessionStates, releaseProjectEventSubscriptions } from '../../projects/surface';
 import { deleteAccountExternalStores } from './account-erasure-stores';
 
 const GRACE_PERIOD_DAYS = 14;
@@ -170,6 +170,8 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     // So are their notifications, watcher rows, preferences and browser push
     // subscriptions, in every account (KRTX-1742).
     await deleteUserNotificationData(requester);
+    // Their session pins and archive, in every account (KRTX-2418).
+    await deleteUserSessionStates(requester);
     const { error } = await getSupabase().auth.admin.deleteUser(requester);
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.

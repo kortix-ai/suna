@@ -33,6 +33,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatWholeUsd } from '@/features/billing/compute-pricing';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
 import { resolvedPlan, type AccountState } from '@kortix/sdk';
@@ -76,7 +77,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
 /**
  * Presentational only — no hooks, no data fetching, no query client. The same
  * container/view split `billing-tab.tsx` and `profile-tab.tsx` use, and for
- * the same reason: the shapes worth reviewing (per-seat, out of credits,
+ * the same reason: the shapes worth reviewing (a credits plan, out of credits,
  * negative balance) cannot be produced locally without provisioning three
  * accounts and a Stripe subscription, so the view has to be renderable against
  * a fixed `AccountState` with no API, no auth, and no billing flag.
@@ -181,10 +182,9 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
  * no subscription) cannot be produced locally without Stripe.
  */
 export interface PlanStatus {
-  /** Plan name as the product names it. Per-seat accounts carry the seat
-   *  count, which no plan label does. */
+  /** Plan name as the product names it: Free, Credits or Enterprise. */
   name: string;
-  /** Qualifier under the name, e.g. `$200/mo · grandfathered`. */
+  /** Qualifier under the name: the credits plan's monthly amount, e.g. `$100/mo`. */
   sublabel: string | null;
   /** `Renews Sep 24` · `Cancels Sep 24` · `Active` · `past due`. */
   detail: string;
@@ -196,55 +196,111 @@ export interface PlanStatus {
 
 export interface PlanStatusCopy {
   locale: string;
-  teamSeats: (count: number) => string;
+  /** `$100/mo` — a whole-dollar amount in, the monthly form out. */
+  perMonth: (amount: string) => string;
   cancels: (date: string) => string;
   cancelsAtPeriodEnd: string;
   renews: (date: string) => string;
   active: string;
   noSubscription: string;
   status: (status: string) => string;
+  /** `Trial · 9 days left`. Optional so an older caller keeps compiling. */
+  trialDaysLeft?: (days: number) => string;
+  /** `Trial · ends today`. */
+  trialEndsToday?: string;
+  /** `Ends Nov 14` — a trial or a contract that does not renew. */
+  ends?: (date: string) => string;
+  /** `Annual contract` — an Enterprise contract. */
+  annualContract?: string;
+  /** `SSO stays on until Nov 28` — the grace after Enterprise access ended. */
+  graceUntil?: (date: string) => string;
 }
 
 const DEFAULT_PLAN_STATUS_COPY: PlanStatusCopy = {
   locale: 'en-US',
-  teamSeats: (count) => `Team · ${count} seat${count === 1 ? '' : 's'}`,
+  perMonth: (amount) => `${amount}/mo`,
   cancels: (date) => `Cancels ${date}`,
   cancelsAtPeriodEnd: 'Cancels at period end',
   renews: (date) => `Renews ${date}`,
   active: 'Active',
   noSubscription: 'No subscription',
   status: (status) => status.replace(/_/g, ' '),
+  trialDaysLeft: (days) => `Trial · ${days} ${days === 1 ? 'day' : 'days'} left`,
+  trialEndsToday: 'Trial · ends today',
+  ends: (date) => `Ends ${date}`,
+  annualContract: 'Annual contract',
+  graceUntil: (date) => `SSO stays on until ${date}`,
 };
+
+/** `Nov 14, 2026` — a calendar date from an ISO timestamp. */
+function formatIsoDate(iso: string | null | undefined, locale?: string): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export function describePlanStatus(
   state: AccountState,
   copy: PlanStatusCopy = DEFAULT_PLAN_STATUS_COPY,
 ): PlanStatus {
-  const seatCount = state.seats?.count ?? 1;
   const plan = resolvedPlan(state);
-  const isPerSeat = state.billing_model === 'per_seat';
   const sub = state.subscription;
+  const text = { ...DEFAULT_PLAN_STATUS_COPY, ...copy };
+
+  // A trial and an Enterprise contract are not Stripe subscriptions: say what
+  // they are and until when, before the subscription lines below.
+  const trial = state.trial;
+  if (trial) {
+    const ends = formatIsoDate(trial.ends_at, text.locale);
+    return {
+      name: plan.label,
+      sublabel: trial.days_left > 0 ? text.trialDaysLeft!(trial.days_left) : text.trialEndsToday!,
+      detail: ends ? text.ends!(ends) : text.trialEndsToday!,
+      isActive: true,
+      isWindingDown: true,
+    };
+  }
+  if (plan.family === 'enterprise') {
+    const contract = state.contract;
+    const ends = formatIsoDate(contract?.ends_at, text.locale);
+    return {
+      name: plan.label,
+      // With no term on file the detail already says "Annual contract".
+      sublabel: contract && ends ? text.annualContract! : null,
+      detail: ends ? (contract?.renews ? text.renews(ends) : text.ends!(ends)) : text.annualContract!,
+      isActive: true,
+      isWindingDown: Boolean(contract && ends && !contract.renews),
+    };
+  }
+
   const periodEnd = sub?.current_period_end
-    ? formatDate(sub.current_period_end, copy.locale)
+    ? formatDate(sub.current_period_end, text.locale)
     : null;
   const isActive = sub?.status === 'active';
+  const graceEnds = formatIsoDate(state.grace?.ends_at, text.locale);
 
   return {
-    name: isPerSeat ? copy.teamSeats(seatCount) : plan.label,
-    sublabel: isPerSeat ? null : plan.sublabel,
-    detail: sub?.cancel_at_period_end
-      ? periodEnd
-        ? copy.cancels(periodEnd)
-        : copy.cancelsAtPeriodEnd
-      : isActive && periodEnd
-        ? copy.renews(periodEnd)
-        : isActive
-          ? copy.active
-          : // Raw Stripe statuses are snake_case ('past_due', 'incomplete_expired').
-            // Shown to a person, so they read as words.
-            sub?.status
-            ? copy.status(sub.status)
-            : copy.noSubscription,
+    name: plan.label,
+    sublabel:
+      plan.monthlyUsd != null
+        ? text.perMonth(formatWholeUsd(plan.monthlyUsd, text.locale))
+        : plan.sublabel,
+    detail: graceEnds
+      ? text.graceUntil!(graceEnds)
+      : sub?.cancel_at_period_end
+        ? periodEnd
+          ? text.cancels(periodEnd)
+          : text.cancelsAtPeriodEnd
+        : isActive && periodEnd
+          ? text.renews(periodEnd)
+          : isActive
+            ? text.active
+            : // Raw Stripe statuses are snake_case ('past_due', 'incomplete_expired').
+              // Shown to a person, so they read as words.
+              sub?.status
+              ? text.status(sub.status)
+              : text.noSubscription,
     isActive,
     isWindingDown: Boolean(sub?.cancel_at_period_end),
   };
@@ -252,8 +308,7 @@ export function describePlanStatus(
 
 /** The right-hand column of the balance card: plan name, then the one line
  *  that says where that plan stands — renewal date when there is a live
- *  subscription, status otherwise. Per-seat accounts name the seat count,
- *  which no plan label carries. */
+ *  subscription, status otherwise. */
 function PlanSummary({ state }: { state: AccountState }) {
   const { name, sublabel, detail, isActive, isWindingDown } = describePlanStatus(state);
 

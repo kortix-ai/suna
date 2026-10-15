@@ -250,7 +250,6 @@ mock.module('../../billing/services/billing-gate', () => ({
           message: 'out of credits',
           reason: 'no_credits',
           balance: 0,
-          billingModel: 'credits',
           hasSubscription: false,
           billingState: 'drained',
         };

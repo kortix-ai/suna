@@ -54,14 +54,25 @@ describe('sandbox template provider coverage', () => {
       ]);
   });
 
-  test('automatic routing is ready only when every enabled provider is launch ready', () => {
+  test.each(['missing', 'building', 'unknown', 'build_failed', 'removing'] as const)(
+    'Automatic reports active with Platinum active and another provider %s', (state) => {
+      const coverage = [
+        { provider: 'daytona', available: true, state },
+        { provider: 'platinum', available: true, state: 'active' },
+      ] as const;
+      expect(resolveRoutedTemplateState(coverage, null)).toBe('active');
+      expect(resolveRoutedTemplateState(coverage, 'daytona')).toBe(state);
+    },
+  );
+
+  test('automatic routing is ready while another enabled provider builds', () => {
     const coverage = [
       { provider: 'daytona', available: true, state: 'active' },
       { provider: 'platinum', available: true, state: 'active' },
       { provider: 'e2b', available: true, state: 'building' },
     ] as const;
 
-    expect(resolveRoutedTemplateState(coverage, null)).toBe('building');
+    expect(resolveRoutedTemplateState(coverage, null)).toBe('active');
     expect(resolveRoutedTemplateState(coverage, 'daytona')).toBe('active');
   });
 

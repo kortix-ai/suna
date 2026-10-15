@@ -40,27 +40,24 @@ function useSidebarUpgrade(accountId?: string) {
   );
 
   if (!isBillingEnabled() || !accountState) {
-    return { show: false as const, handleClick };
+    return { show: false as const, trial: null, handleClick };
   }
 
+  // A trial is always visible, with the upgrade one click away: the account
+  // must never learn it was on a trial when the trial ends.
+  const trial = accountState.trial ?? null;
   const hasActiveSubscription = !!accountState.subscription?.subscription_id;
   // The RESOLVED plan family (free = the keys `free` and `none`), so an admin
-  // trial and a self-healed per-seat team both read as Team here, exactly as
-  // the server's gates read them.
+  // trial reads as paid here, exactly as the server's gates read it.
   const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
-  // Kept on top of that: a per-seat account with no live Stripe subscription
-  // does NOT self-heal, so the resolver still reports it free. It is never "on
-  // Free" from the customer's side — it gets the balance/top-up warning instead
-  // of an "Upgrade plan" pitch.
-  const isPerSeat = accountState.billing_model === 'per_seat';
-  const show = isFreeOrNoPlan && !hasActiveSubscription && !isPerSeat;
+  const show = !!trial || (isFreeOrNoPlan && !hasActiveSubscription);
 
-  return { show, handleClick };
+  return { show, trial, handleClick };
 }
 
 export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeButtonProps) {
   const t = useTranslations('sidebar');
-  const { show, handleClick } = useSidebarUpgrade(accountId);
+  const { show, trial, handleClick } = useSidebarUpgrade(accountId);
 
   if (!show) return null;
 
@@ -72,7 +69,12 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
         className={cn(className)}
         onClick={handleClick}
       >
-        {t('upgradePlan')}
+        {trial
+          ? t('trialBadge', {
+              plan: trial.plan === 'enterprise' ? t('trialPlanEnterprise') : t('trialPlanCredits'),
+              days: trial.days_left,
+            })
+          : t('upgradePlan')}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

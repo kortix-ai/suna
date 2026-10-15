@@ -1382,6 +1382,12 @@
     ]
   },
   {
+    "id": "boundless",
+    "env": [
+      "BOUNDLESS_API_KEY"
+    ]
+  },
+  {
     "id": "aixy",
     "env": [
       "AIXY_API_KEY"
