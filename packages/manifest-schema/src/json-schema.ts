@@ -690,8 +690,8 @@ function projectToolsSchema(): JsonSchemaFragment {
     description:
       'Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. ' +
       'Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. ' +
-      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.',
-    propertyNames: { pattern: TOOL_NAME_RE.source },
+      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all Kortix tools.',
+    propertyNames: { anyOf: [{ pattern: TOOL_NAME_RE.source }, { enum: [...KORTIX_TOOL_NAMES] }] },
     properties: Object.fromEntries(
       KORTIX_TOOL_NAMES.map((name) => [
         name,
@@ -747,8 +747,23 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       },
       kortix_permissions: kortixPermissionsGrantSetSchema(2),
       kortix_cli: deprecatedKortixCliGrantSetSchema(2),
-      repository_access: { type: 'boolean', description: 'Allow new sessions to access the project repository. Defaults to true.' },
-      workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2], deprecated: true },
+      repository_access: { type: 'boolean', deprecated: true, description: 'Use workspace.project_repository.' },
+      workspace: {
+        description: 'What new sessions of this agent get in /workspace.',
+        oneOf: [
+          {
+            type: 'object',
+            properties: {
+              project_repository: {
+                type: 'boolean',
+                description: 'Check out the project repository and allow repository access. Defaults to true.',
+              },
+            },
+            additionalProperties: false,
+          },
+          { type: 'string', enum: [...WORKSPACE_MODES_V2], deprecated: true },
+        ],
+      },
       // This agent's pi packages, on top of the top-level list; `exclude` drops top-level ones.
       harnesses: harnessesSchema('agent'),
     },
@@ -756,6 +771,8 @@ function agentBlockV2Schema(): JsonSchemaFragment {
     allOf: [
       { if: { required: ['workspace'], properties: { workspace: { const: 'branch' } } }, then: { properties: { repository_access: { const: true } } } },
       { if: { required: ['workspace'], properties: { workspace: { enum: ['runtime', 'read'] } } }, then: { properties: { repository_access: { const: false } } } },
+      { if: { required: ['workspace'], properties: { workspace: { type: 'object', required: ['project_repository'], properties: { project_repository: { const: true } } } } }, then: { properties: { repository_access: { const: true } } } },
+      { if: { required: ['workspace'], properties: { workspace: { type: 'object', required: ['project_repository'], properties: { project_repository: { const: false } } } } }, then: { properties: { repository_access: { const: false } } } },
     ],
   };
 }
@@ -963,7 +980,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
     title: 'Kortix manifest (kortix_version 2)',
     description:
       'kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, ' +
-      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/repository_access/enabled) plus `file`, ' +
+      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/workspace/enabled) plus `file`, ' +
       'the path of the agent’s `.md`; every agent must ' +
       'be declared, and agent behavior (description/model/mode/temperature/permission/the ' +
       'prompt itself) lives entirely in that agent’s own `.md` frontmatter + body ' +

@@ -63,8 +63,62 @@ import { safeAgentFile, safeToolFile } from './layout';
 /** Full OpenCode `AgentConfig.mode` parity — https://opencode.ai/config.json `$defs.AgentConfig`. */
 export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 
-/** @deprecated Use AgentBlockV2.repository_access. Retained for existing manifests. */
+/** @deprecated Use AgentBlockV2.workspace.project_repository. Retained for existing manifests. */
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
+
+/** What an agent's sessions get in `/workspace`. */
+export interface AgentWorkspaceV2 {
+  /** Check out the project repository. Defaults to true. */
+  project_repository?: boolean;
+}
+
+export type ProjectRepositoryResult =
+  | { ok: true; value: boolean; legacyRead: boolean }
+  | { ok: false; path: string; message: string };
+
+/**
+ * Resolve `agents.<name>.workspace.project_repository` (default true) from the
+ * block and its two legacy forms: `repository_access: <bool>` and
+ * `workspace: runtime|read|branch`. Forms that disagree are an error.
+ * `legacyRead` is the legacy `workspace: read` with no explicit choice.
+ */
+export function resolveProjectRepository(entry: Record<string, unknown>): ProjectRepositoryResult {
+  const access = entry.repository_access;
+  if (access !== undefined && typeof access !== 'boolean') {
+    return { ok: false, path: 'repository_access', message: 'must be a boolean.' };
+  }
+  const workspace = entry.workspace;
+  let fromWorkspace: boolean | undefined;
+  if (typeof workspace === 'string') {
+    if (!(WORKSPACE_MODES_V2 as readonly string[]).includes(workspace.trim())) {
+      return {
+        ok: false,
+        path: 'workspace',
+        message: `must be a map ({ project_repository: true|false }) or one of: ${WORKSPACE_MODES_V2.join(', ')} (got "${workspace.trim() || 'unset'}").`,
+      };
+    }
+    fromWorkspace = workspace.trim() === 'branch';
+  } else if (workspace !== undefined) {
+    if (!workspace || typeof workspace !== 'object' || Array.isArray(workspace)) {
+      return { ok: false, path: 'workspace', message: 'must be a map ({ project_repository: true|false }).' };
+    }
+    const extra = Object.keys(workspace).find((key) => key !== 'project_repository');
+    if (extra) return { ok: false, path: `workspace.${extra}`, message: 'is not a workspace key (allowed: project_repository).' };
+    const value = (workspace as Record<string, unknown>).project_repository;
+    if (value !== undefined && typeof value !== 'boolean') {
+      return { ok: false, path: 'workspace.project_repository', message: 'must be a boolean.' };
+    }
+    fromWorkspace = value;
+  }
+  if (access !== undefined && fromWorkspace !== undefined && access !== fromWorkspace) {
+    return { ok: false, path: 'repository_access', message: 'conflicts with workspace.' };
+  }
+  return {
+    ok: true,
+    value: access ?? fromWorkspace ?? true,
+    legacyRead: typeof workspace === 'string' && workspace.trim() === 'read' && access === undefined,
+  };
+}
 
 /** Session runtimes — which agent harness a session boots inside its sandbox.
  *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`).
@@ -217,10 +271,10 @@ export interface AgentBlockV2 {
   /** @deprecated Input alias for `kortix_permissions` (the pre-rename key).
    *  Accepted with a validation warning; must match when both are set. */
   kortix_cli?: GrantSetV2;
-  /** Whether new sessions receive repository access. Defaults to true. */
+  /** @deprecated Use `workspace.project_repository`. Accepted when it matches. */
   repository_access?: boolean;
-  /** @deprecated branch = true, runtime = false; read requires an explicit choice. */
-  workspace?: WorkspaceModeV2;
+  /** What new sessions get in `/workspace`. The legacy string form: branch = true, runtime = false; read requires an explicit choice. */
+  workspace?: AgentWorkspaceV2 | WorkspaceModeV2;
   /** This agent's pi packages on top of the top-level `harnesses`, and `exclude` to drop top-level ones. */
   harnesses?: HarnessesV2;
 }
@@ -809,23 +863,9 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // warning (see `validateGrantList`'s doc comment).
   validateKortixPermissionFields(entry, where, issues, 2);
 
-  if (entry.repository_access !== undefined && typeof entry.repository_access !== 'boolean') {
-    issues.push({ path: `${where}.repository_access`, message: 'must be a boolean.', severity: 'error' });
-  }
-  if (typeof entry.repository_access === 'boolean' && entry.workspace !== undefined &&
-      entry.repository_access !== (entry.workspace === 'branch')) {
-    issues.push({ path: `${where}.repository_access`, message: 'repository_access conflicts with workspace.', severity: 'error' });
-  }
-
-  if (entry.workspace !== undefined) {
-    const w = typeof entry.workspace === 'string' ? entry.workspace.trim() : '';
-    if (!(WORKSPACE_MODES_V2 as readonly string[]).includes(w)) {
-      issues.push({
-        path: `${where}.workspace`,
-        message: `workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')} (got "${w || 'unset'}").`,
-        severity: 'error',
-      });
-    }
+  const repository = resolveProjectRepository(entry);
+  if (!repository.ok) {
+    issues.push({ path: `${where}.${repository.path}`, message: repository.message, severity: 'error' });
   }
 }
 
@@ -1005,7 +1045,7 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
   }
   for (const [name, file] of Object.entries(value ?? {})) {
     const where = `${path}.${name}`;
-    if (!TOOL_NAME_RE.test(name)) {
+    if (!TOOL_NAME_RE.test(name) && !isKortixTool(name)) {
       issues.push({ path: where, message: 'a tool name is snake_case: a lower-case letter, then letters, digits or `_` (64 characters at most).', severity: 'error' });
     } else if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
       issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });

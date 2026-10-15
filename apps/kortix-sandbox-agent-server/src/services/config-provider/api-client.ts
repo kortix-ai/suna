@@ -212,6 +212,11 @@ export async function downloadConfigArchive(
     }
   }
   if (!res.ok) throw await errorFromResponse(res, 'archive request')
+  return readCappedArchive(res, maxBytes, opts.expectedBytes)
+}
+
+/** Read an archive body, refused past `maxBytes` while it streams, and checked against `expectedBytes`. */
+async function readCappedArchive(res: Response, maxBytes: number, expectedBytes: number | undefined): Promise<Buffer> {
   const declared = Number(res.headers.get('content-length') ?? NaN)
   if (Number.isFinite(declared) && declared > maxBytes) {
     void res.body?.cancel().catch(() => undefined)
@@ -239,11 +244,33 @@ export async function downloadConfigArchive(
     throw new ConfigReleaseApiError(`archive download failed: ${(err as Error).message}`, res.status)
   }
   const body = Buffer.concat(chunks)
-  if (opts.expectedBytes !== undefined && body.length !== opts.expectedBytes) {
+  if (expectedBytes !== undefined && body.length !== expectedBytes) {
     throw new ConfigReleaseApiError(
-      `archive is ${body.length} bytes; the descriptor says ${opts.expectedBytes}`,
+      `archive is ${body.length} bytes; the descriptor says ${expectedBytes}`,
       res.status,
     )
   }
   return body
+}
+
+/**
+ * Download an archive from a signed store URL (`KORTIX_CONFIG_RELEASE`). No
+ * Authorization header: the URL carries its own signature, and the sandbox
+ * token must never reach storage. No redirect.
+ */
+export async function downloadSignedArchive(
+  url: string,
+  opts: { maxBytes?: number; timeoutMs?: number } = {},
+): Promise<Buffer> {
+  let res: Response
+  try {
+    res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(opts.timeoutMs ?? ARCHIVE_TIMEOUT_MS) })
+  } catch (err) {
+    throw new ConfigReleaseApiError(`signed archive request failed: ${(err as Error).message}`, null)
+  }
+  if (!res.ok) {
+    void res.body?.cancel().catch(() => undefined)
+    throw new ConfigReleaseApiError(`signed archive answered ${res.status}`, res.status)
+  }
+  return readCappedArchive(res, opts.maxBytes ?? MAX_CONFIG_ARCHIVE_BYTES, undefined)
 }

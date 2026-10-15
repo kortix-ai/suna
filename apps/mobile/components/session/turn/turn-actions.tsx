@@ -24,7 +24,7 @@ import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { CheckIcon, CopyIcon } from '@/lib/icons';
-import type { Turn } from '@/lib/session/types';
+import type { SessionLogTurn } from '@kortix/sdk';
 import { turnDurationMs, turnEndedAt, type TurnMetaCost } from '@/lib/session/turn-meta';
 import { THEME } from '@/lib/utils/theme';
 
@@ -42,7 +42,7 @@ interface TurnActionsProps {
   response: string;
   /** The turn: the details sheet derives Finished and Duration exactly like
    * web (`sessionTurnEndedAt` / `sessionTurnDurationMs`). */
-  turn: Turn;
+  turn: SessionLogTurn;
   costInfo?: TurnMetaCost;
 }
 

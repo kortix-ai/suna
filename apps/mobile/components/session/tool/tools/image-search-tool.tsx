@@ -75,12 +75,12 @@ function ImageGrid({ tiles }: { tiles: Array<{ url: string; title: string }> }) 
   );
 }
 
-export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ImageSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { chain } = useToolRowVariant();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const query = typeof input.query === 'string' ? input.query : '';
   const errored = useMemo(() => isErrorOutput(output), [output]);
   const parsed = useMemo(() => parseImageSearchOutput(output, query), [output, query]);
@@ -90,7 +90,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={ImageIcon}
       trigger={
         <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5 }}>

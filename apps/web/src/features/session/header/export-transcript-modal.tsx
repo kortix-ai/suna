@@ -113,7 +113,9 @@ export function ExportTranscriptModal({
   const [copied, setCopied] = useState(false);
 
   const { data: session } = useRuntimeSession(sessionId);
-  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope });
+  // `mirror: null`: this dialog is mounted with every session header, and the
+  // page's `useSession` already reads the saved copy once per open.
+  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope, mirror: null });
   const [messages, setMessages] = useState(visibleMessages);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const visibleMessagesRef = useRef(visibleMessages);

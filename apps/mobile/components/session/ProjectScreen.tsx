@@ -620,7 +620,7 @@ export function ProjectScreen() {
   const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
   const savedCopyRootId = savedCopyTarget?.rootId ?? null;
   const savedCopyChild = savedCopyTarget?.child ?? false;
-  // `empty`: the saved copy proved the root empty (`SavedCopyRead.empty`), so
+  // `empty`: the saved copy proved the root empty (`SavedSessionCopy.empty`), so
   // the view opens on its composer instead of a loader.
   const savedCopyHookTarget = useMemo(
     () =>
@@ -630,7 +630,7 @@ export function ProjectScreen() {
     [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]
   );
   const savedCopy = useSavedCopy(savedCopyHookTarget);
-  const savedCopyMessages = savedCopy.messages;
+  const savedCopyThread = savedCopy.thread;
   const connectingEmpty = !!savedCopyRootId && savedCopy.empty && !connectingFirstPrompt;
   // The thread's and the connecting view's props, read before the memo below:
   // `openedProjectSessionIdsRef` is a ref, so the memo must depend on its value.
@@ -722,7 +722,7 @@ export function ProjectScreen() {
               onRestart={handleRestartSession}
               restarting={restartingSession}
               showLoader={!viewDrawerOpen}
-              messages={savedCopyMessages}
+              thread={savedCopyThread}
               statusLabel={WAKING_NOTICE}
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
@@ -762,7 +762,7 @@ export function ProjectScreen() {
     handleRestartSession,
     restartingSession,
     viewDrawerOpen,
-    savedCopyMessages,
+    savedCopyThread,
     savedCopyRootId,
     connectingEmpty,
     connectingViewProjectSessionId,

@@ -70,8 +70,8 @@ export default function ProjectIndexPage() {
 
   // One-time "you're on Free" onboarding pitch. Keyed off the SAME resolved
   // billing state every other surface uses — the old `tier_key === 'free'`
-  // guess pitched the Free plan to per-seat Team accounts, whose tier_key stays
-  // 'free' (the PR #5141 lesson).
+  // guess pitched the Free plan to paying accounts whose stored tier_key lagged
+  // (the PR #5141 lesson).
   useEffect(() => {
     if (!isBillingEnabled() || !accountState || !projectAccountId) return;
     if (resolveBillingState(accountState) !== 'no_subscription') return;

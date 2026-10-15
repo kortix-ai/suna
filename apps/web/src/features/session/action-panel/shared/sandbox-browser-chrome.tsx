@@ -22,6 +22,7 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
@@ -39,7 +40,9 @@ import type { FormEvent, ReactNode, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /** Split a URL so the hostname can be rendered brighter than the rest. */
-export function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: string } | null {
+export function splitUrlForDisplay(
+  url: string,
+): { prefix: string; host: string; rest: string } | null {
   try {
     const host = new URL(url).host;
     const idx = url.indexOf(host);
@@ -167,31 +170,37 @@ export function SandboxAddressBar({
 
   return (
     <>
-      <Hint label={tI18nComplete.raw('text76900f1bfd16')} side="bottom">
-        <Button variant="ghost" size="icon" onClick={onBack} disabled={!hasPreview || !canGoBack}>
-          <ArrowLeft className="size-4" />
-        </Button>
-      </Hint>
+      <ButtonGroup className="shrink-0">
+        <Hint label={tI18nComplete.raw('text76900f1bfd16')} side="bottom">
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onBack}
+            disabled={!hasPreview || !canGoBack}
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
+        </Hint>
 
-      <Hint label={tI18nComplete.raw('textf1c65e14817e')} side="bottom">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onForward}
-          disabled={!hasPreview || !canGoForward}
-        >
-          <ArrowRight className="size-4" />
-        </Button>
-      </Hint>
+        <Hint label={tI18nComplete.raw('textf1c65e14817e')} side="bottom">
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onForward}
+            disabled={!hasPreview || !canGoForward}
+          >
+            <ArrowRight className="size-4" />
+          </Button>
+        </Hint>
+      </ButtonGroup>
 
       {/* The address pill: what is open, with the actions on it — Reload and
           the surface's `trailing` — at its trailing edge. */}
-      <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1 items-center px-1">
+      <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1  items-center px-1">
         <div
           className={cn(
-            'bg-muted focus-within:border-border flex h-8 w-full items-center gap-1 rounded-md border border-transparent px-1 text-xs tracking-tight transition-colors',
-            addressError &&
-              'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
+            'bg-muted flex h-7 w-full items-center gap-1 rounded-md border border-transparent px-1 text-xs tracking-tight transition-colors',
+            addressError && 'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
           )}
         >
           <span className="flex size-6 shrink-0 items-center justify-center">
@@ -223,7 +232,7 @@ export function SandboxAddressBar({
               }}
               placeholder={placeholder}
               className={cn(
-                'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none',
+                'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none focus:ring-0',
                 urlParts && 'text-transparent',
               )}
             />
@@ -245,7 +254,7 @@ export function SandboxAddressBar({
               {tI18nComplete.raw('textce1e609b7bf5')}
             </span>
           )}
-          <span className="flex shrink-0 items-center gap-0.5">
+          <ButtonGroup className="shrink-0">
             <Hint label={tI18nComplete.raw('text0e9161011702')} side="bottom">
               <Button
                 type="button"
@@ -259,7 +268,7 @@ export function SandboxAddressBar({
               </Button>
             </Hint>
             {trailing}
-          </span>
+          </ButtonGroup>
         </div>
       </form>
     </>

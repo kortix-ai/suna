@@ -282,7 +282,10 @@ export function loadManifestAppDefaults(
   allowSingleDefault = false,
 ): ManifestAppDefaults | null {
   const loaded = loadManifestApps(cwd);
-  if (!loaded) return null;
+  if (!loaded) {
+    if (requestedName) throw new Error(`--manifest-app ${requestedName} needs a kortix.yaml with kortix_version: 2 and an apps.${requestedName} block`);
+    return null;
+  }
   const entries = Object.entries(loaded.blocks);
   const selected = requestedName
     ? entries.find(([name]) => name === requestedName)

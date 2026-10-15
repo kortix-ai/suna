@@ -9,9 +9,10 @@
  * says); everything that changes what it does — language, shortcuts,
  * sounds, notifications — stays on Preferences and Sessions.
  *
- * Theme values come from `THEME_OPTIONS` in `features/layout/user-menu.tsx`
- * (imported, not re-declared) so this control and the user menu's theme
- * submenu can never drift apart. `WallpaperCard` is reused from
+ * Theme rows come from `INTERFACE_THEME_OPTIONS` in
+ * `features/layout/interface-theme.tsx` (imported, not re-declared) so this
+ * control, the user menu's theme submenu and the command palette can never
+ * drift apart. `WallpaperCard` is reused from
  * `features/accounts/settings/appearance-tab.tsx`, the home of the wallpaper
  * picker's card.
  *
@@ -21,17 +22,48 @@
  * mounts while this tab is active.
  */
 
-import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import {
+  CaretDownIcon,
+  CheckCircleIcon as CheckCircleSolid,
+  CheckIcon,
+} from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import {
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPopover,
+  CommandPopoverContent,
+  CommandPopoverTrigger,
+  CommandSeparator,
+} from '@/components/ui/command';
 import { Separator } from '@/components/ui/separator';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Switch } from '@/components/ui/switch';
+import {
+  TRIGGER_CARET_CLASS,
+  TRIGGER_ICON_SIZE,
+  triggerVariants,
+} from '@/components/ui/trigger-variants';
 import { WallpaperCard } from '@/features/accounts/settings/appearance-tab';
 import { useGenuiEnabled } from '@/features/genui/use-genui-enabled';
-import { THEME_OPTIONS } from '@/features/layout/user-menu';
+import {
+  INTERFACE_THEME_OPTIONS,
+  ThemeSwatch,
+  useInterfaceTheme,
+  type InterfaceThemeLabel,
+  type InterfaceThemeOption,
+} from '@/features/layout/interface-theme';
+import {
+  DEFAULT_THEME_CHOICE,
+  type InterfaceThemeId,
+  type ThemeChoice,
+} from '@/lib/interface-themes';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
 import { useUserPreferencesStore, type ConversationDensity } from '@/stores/user-preferences-store';
@@ -50,8 +82,6 @@ const DENSITY_OPTIONS: { id: ConversationDensity; label: string; description: st
   },
 ];
 
-type ThemeValue = (typeof THEME_OPTIONS)[number]['value'];
-
 export interface AppearanceTabCopy {
   theme: string;
   themeDescription: string;
@@ -62,7 +92,11 @@ export interface AppearanceTabCopy {
   wallpaper: string;
   wallpaperDescription: string;
   defaultWallpaper: string;
-  themes: Record<ThemeValue, string>;
+  themes: Record<InterfaceThemeLabel, string>;
+  /** Captions for the three groups under the System row. */
+  themeGroups: { kortix: string; lightThemes: string; darkThemes: string };
+  /** The theme picker's search field and its empty state. */
+  themeSearch: { placeholder: string; empty: string };
   densities: Record<ConversationDensity, { label: string; description: string }>;
   wallpapers: Record<Wallpaper['id'], string>;
 }
@@ -79,7 +113,22 @@ export const DEFAULT_APPEARANCE_TAB_COPY: AppearanceTabCopy = {
   wallpaper: 'Wallpaper',
   wallpaperDescription: 'The background behind your workspace.',
   defaultWallpaper: 'Default',
-  themes: { light: 'Light', dark: 'Dark', system: 'System' },
+  themes: {
+    system: 'System',
+    light: 'Light',
+    pureLight: 'Pure light',
+    dark: 'Dark',
+    pureDark: 'Pure dark',
+  },
+  themeGroups: {
+    kortix: 'Kortix',
+    lightThemes: 'Light themes',
+    darkThemes: 'Dark themes',
+  },
+  themeSearch: {
+    placeholder: 'Search themes…',
+    empty: 'No themes found',
+  },
   densities: {
     normal: {
       label: 'Normal',
@@ -181,8 +230,10 @@ function DensityCard({
 }
 
 export interface AppearanceTabViewProps {
-  theme?: string;
-  onThemeChange?: (value: string) => void;
+  theme?: InterfaceThemeId;
+  onThemeChange?: (value: InterfaceThemeId) => void;
+  /** Palettes the System swatch previews — the themes System resolves to. */
+  themeChoice?: ThemeChoice;
   wallpaperId?: string;
   isLightTheme?: boolean;
   onWallpaperSelect?: (id: Wallpaper['id']) => void;
@@ -193,11 +244,121 @@ export interface AppearanceTabViewProps {
   copy?: AppearanceTabCopy;
 }
 
+const optionFor = (value: InterfaceThemeId) =>
+  INTERFACE_THEME_OPTIONS.find((option) => option.value === value) ?? INTERFACE_THEME_OPTIONS[0];
+
+/** A row's display name: the translated catalog entry for a Kortix row, the
+ *  terminal theme's own proper noun (verbatim, never translated) otherwise. */
+const nameFor = (option: InterfaceThemeOption, copy: AppearanceTabCopy): string =>
+  option.kind === 'labelled' ? copy.themes[option.labelKey] : option.name;
+
+const KORTIX_OPTIONS = INTERFACE_THEME_OPTIONS.filter(
+  (option): option is Extract<InterfaceThemeOption, { kind: 'labelled' }> =>
+    option.kind === 'labelled' && option.value !== 'system',
+);
+const LIGHT_TERMINAL_OPTIONS = INTERFACE_THEME_OPTIONS.filter(
+  (option) => option.kind === 'named' && option.group === 'light',
+);
+const DARK_TERMINAL_OPTIONS = INTERFACE_THEME_OPTIONS.filter(
+  (option) => option.kind === 'named' && option.group === 'dark',
+);
+
+/**
+ * The theme picker: a combobox, not a Select. 44 rows are too many to scan,
+ * and a Select's type-ahead only jumps to the next row whose label STARTS
+ * with the typed letters — "night" never finds "Tokyo Night". Opening focuses
+ * a search field; cmdk filters on each row's name, id and group, so "rose",
+ * "tokyo night" and "dark" all find what a person expects. The panel aligns
+ * to the trigger's end edge because the trigger sits at the right of the
+ * settings row.
+ */
+function ThemePicker({
+  theme,
+  themeChoice,
+  onThemeChange,
+  copy,
+}: {
+  theme: InterfaceThemeId;
+  themeChoice: ThemeChoice;
+  onThemeChange: (theme: InterfaceThemeId) => void;
+  copy: AppearanceTabCopy;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const row = (option: InterfaceThemeOption, group: string) => {
+    const label = nameFor(option, copy);
+    return (
+      <CommandItem
+        key={option.value}
+        value={`${label} ${option.value} ${group}`}
+        onSelect={() => {
+          onThemeChange(option.value);
+          setOpen(false);
+        }}
+      >
+        <ThemeSwatch value={option.value} choice={themeChoice} />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {option.value === theme && <CheckIcon className="text-foreground size-4" />}
+      </CommandItem>
+    );
+  };
+
+  return (
+    <CommandPopover open={open} onOpenChange={setOpen}>
+      <CommandPopoverTrigger>
+        <button
+          type="button"
+          id="appearance-theme"
+          aria-label={copy.theme}
+          className={cn(triggerVariants({}), 'hit-area-y-4 hit-area-l-4 w-48')}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <ThemeSwatch value={theme} choice={themeChoice} />
+            <span className="truncate">{nameFor(optionFor(theme), copy)}</span>
+          </span>
+          <CaretDownIcon className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE.sm)} />
+        </button>
+      </CommandPopoverTrigger>
+      <CommandPopoverContent
+        side="bottom"
+        align="end"
+        sideOffset={6}
+        shouldFilter
+        className={cn(
+          'w-[min(280px,calc(100vw-1.5rem))]',
+          // Group captions read as plain menu labels (MENU_LABEL), not the
+          // command popover's tracked-out caps.
+          '[&_[cmdk-group-heading]]:!text-muted-foreground [&_[cmdk-group-heading]]:!font-sans [&_[cmdk-group-heading]]:!font-medium [&_[cmdk-group-heading]]:!tracking-normal',
+        )}
+      >
+        <CommandInput compact placeholder={copy.themeSearch.placeholder} />
+        <CommandList className="max-h-[360px]">
+          <CommandEmpty>{copy.themeSearch.empty}</CommandEmpty>
+          <CommandGroup>{row(optionFor('system'), copy.themeGroups.kortix)}</CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading={copy.themeGroups.kortix}>
+            {KORTIX_OPTIONS.map((option) => row(option, copy.themeGroups.kortix))}
+          </CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading={copy.themeGroups.lightThemes}>
+            {LIGHT_TERMINAL_OPTIONS.map((option) => row(option, copy.themeGroups.lightThemes))}
+          </CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading={copy.themeGroups.darkThemes}>
+            {DARK_TERMINAL_OPTIONS.map((option) => row(option, copy.themeGroups.darkThemes))}
+          </CommandGroup>
+        </CommandList>
+      </CommandPopoverContent>
+    </CommandPopover>
+  );
+}
+
 /** Presentational only — no hooks, no store read. Every prop is optional with
  *  a safe default so the bare `<AppearanceTabView />` renders every section. */
 export function AppearanceTabView({
   theme = 'system',
   onThemeChange = () => {},
+  themeChoice = DEFAULT_THEME_CHOICE,
   wallpaperId = DEFAULT_WALLPAPER_ID,
   isLightTheme = false,
   onWallpaperSelect = () => {},
@@ -214,22 +375,12 @@ export function AppearanceTabView({
       {/* Theme */}
       <section className="flex flex-col items-start justify-between gap-4 md:flex-row md:gap-10">
         <SettingsSubsectionHeader title={copy.theme} description={copy.themeDescription} />
-        <div className="bg-foreground/10 flex w-fit items-center gap-1 rounded-md p-0.5">
-          {THEME_OPTIONS.map(({ value, Icon }) => (
-            <button
-              key={value}
-              type="button"
-              aria-label={copy.themes[value]}
-              aria-pressed={theme === value}
-              className="text-foreground duration-normal inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-[color,background-color,scale] ease-out active:scale-[0.96] [&>svg]:size-4"
-              style={{ backgroundColor: theme === value ? 'var(--background)' : 'transparent' }}
-              onClick={() => onThemeChange(value)}
-            >
-              <Icon />
-              <span className="text-sm font-medium">{copy.themes[value]}</span>
-            </button>
-          ))}
-        </div>
+        <ThemePicker
+          theme={theme}
+          themeChoice={themeChoice}
+          onThemeChange={onThemeChange}
+          copy={copy}
+        />
       </section>
 
       <Separator />
@@ -298,7 +449,8 @@ export function AppearanceTabView({
  *  renders `AppearanceTabView`. Only ever mounted while this tab is active. */
 export function AppearanceTab() {
   const t = useTranslations('settings.appearance');
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { resolvedTheme } = useTheme();
+  const { selected, select, choice } = useInterfaceTheme();
 
   const wallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
@@ -332,7 +484,22 @@ export function AppearanceTab() {
         wallpaper: t('wallpaper'),
         wallpaperDescription: t('wallpaperDescription'),
         defaultWallpaper: t('defaultWallpaper'),
-        themes: { light: t('themes.light'), dark: t('themes.dark'), system: t('themes.system') },
+        themes: {
+          system: t('themes.system'),
+          light: t('themes.light'),
+          pureLight: t('themes.pureLight'),
+          dark: t('themes.dark'),
+          pureDark: t('themes.pureDark'),
+        },
+        themeGroups: {
+          kortix: t('themes.kortix'),
+          lightThemes: t('themes.lightThemes'),
+          darkThemes: t('themes.darkThemes'),
+        },
+        themeSearch: {
+          placeholder: t('themes.search'),
+          empty: t('themes.noResults'),
+        },
         densities: {
           normal: {
             label: t('densities.normal.label'),
@@ -353,8 +520,9 @@ export function AppearanceTab() {
           blank: t('wallpapers.blank'),
         },
       }}
-      theme={theme ?? 'system'}
-      onThemeChange={setTheme}
+      theme={selected}
+      onThemeChange={select}
+      themeChoice={choice}
       wallpaperId={wallpaperId}
       isLightTheme={resolvedTheme === 'light'}
       onWallpaperSelect={setWallpaperId}

@@ -22,6 +22,7 @@
 import {
   type AgentBlockV2,
   resolveGrantSet,
+  resolveProjectRepository,
   SLUG_RE,
   validateManifest,
   type ManifestIssue,
@@ -249,24 +250,25 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   };
 }
 
-/** Canonicalize supported legacy modes without granting access or enabling legacy read. */
+/**
+ * The wire block carries `repository_access`; kortix.yaml stores
+ * `workspace: { project_repository }`. Reading maps every form to the wire key;
+ * writing maps it back to the YAML form. Neither grants access nor enables
+ * legacy read: an undeclared value stays undeclared (default true), and a
+ * legacy `workspace: read` with no explicit choice is written back unchanged.
+ */
 function normalizeRepositoryAccess(block: Record<string, unknown>, reading = false): NormalizeRequiredConnectorsResult {
-  const next = { ...block };
-  if (next.repository_access !== undefined && typeof next.repository_access !== 'boolean') {
-    return { ok: false, error: 'repository_access must be a boolean' };
-  }
-  if (next.workspace !== undefined) {
-    if (!['runtime', 'read', 'branch'].includes(String(next.workspace))) {
-      return { ok: false, error: 'workspace must be runtime, read, or branch' };
-    }
-    const access = next.workspace === 'branch';
-    if (next.repository_access !== undefined && next.repository_access !== access) {
-      return { ok: false, error: 'repository_access conflicts with workspace' };
-    }
-    if (next.workspace !== 'read' || next.repository_access !== undefined || reading) {
-      next.repository_access ??= access;
-      delete next.workspace;
-    }
+  const repository = resolveProjectRepository(block);
+  if (!repository.ok) return { ok: false, error: `${repository.path} ${repository.message}` };
+  if (repository.legacyRead && !reading) return { ok: true, block: { ...block } };
+  const { repository_access: access, workspace, ...next } = block;
+  const declared =
+    access !== undefined ||
+    typeof workspace === 'string' ||
+    (workspace as { project_repository?: unknown } | undefined)?.project_repository !== undefined;
+  if (declared) {
+    if (reading) next.repository_access = repository.value;
+    else next.workspace = { project_repository: repository.value };
   }
   return { ok: true, block: next };
 }
@@ -294,8 +296,6 @@ function applyAgentMapBlock(
   const nextAgents: Record<string, unknown> = { ...agents.map };
   const repository = normalizeRepositoryAccess(aliases.block);
   if (!repository.ok) return repository;
-  // Older API replicas ignore repository_access. Keep their deny signal during rollout and rollback.
-  if (repository.block.repository_access === false) repository.block.workspace = 'runtime';
   nextAgents[agentName] = repository.block;
   const nextRaw = { ...manifest.raw, agents: nextAgents };
 

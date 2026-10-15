@@ -127,25 +127,25 @@ describe('account page rail groups every access surface under Access', () => {
     }
   });
 
-  test('the enterprise-demo toggle moved OUT of Identity and INTO Settings (tucked away, not headline)', () => {
+  test('the Enterprise access row lives in Settings, not Identity (tucked away, not headline)', () => {
     const identityStart = pageSource.indexOf("activeSection === 'identity' && canWriteAccount");
     const identityEnd = pageSource.indexOf('section-panes:end', identityStart);
     const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
     const identityBody = pageSource.slice(identityStart, Math.min(identityEnd, settingsStart));
-    expect(identityBody).not.toContain('EnterpriseDemoCard');
+    expect(identityBody).not.toContain('EnterpriseAccessRow');
 
     const settingsEnd = pageSource.indexOf('section-panes:end', settingsStart);
     const settingsBody = pageSource.slice(settingsStart, settingsEnd);
-    expect(settingsBody).toContain('EnterpriseDemoCard');
+    expect(settingsBody).toContain('EnterpriseAccessRow');
     // Placed above Danger zone, not at the top — tucked away.
-    const demoIdx = settingsBody.indexOf('EnterpriseDemoCard');
+    const demoIdx = settingsBody.indexOf('EnterpriseAccessRow');
     const dangerIdx = settingsBody.indexOf('Danger zone');
     expect(demoIdx).toBeGreaterThan(-1);
     expect(dangerIdx).toBeGreaterThan(-1);
     expect(demoIdx).toBeLessThan(dangerIdx);
   });
 
-  test('the demo card + upsell are skipped entirely when a self-host Enterprise license already forces entitlements on', () => {
+  test('the Enterprise access row + upsell are skipped entirely when a self-host Enterprise license already forces entitlements on', () => {
     expect(pageSource).toContain('accountStateQuery.data?.enterprise_license_available');
   });
 

@@ -27,6 +27,8 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 
 
 import { db } from '../../shared/db';
+import { configReleaseEnvForSession } from '../../config-releases/publish';
+import { logger } from '../../lib/logger';
 
 
 
@@ -405,6 +407,24 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // must get these back or the resurrected agent can't talk to its thread. The
   // session is the durable source of truth; the first boot got these via
   // extraEnvVars, every later rebuild gets them here.
+  // pi boots from the published release: signed store URLs, no API call (config-releases/publish.ts).
+  // Any other session, and any lookup that fails, leaves it out: the box asks the descriptor route.
+  const configRelease =
+    harness === 'pi' && (input.repositoryAccess ?? true) && !input.platformMetaAgent
+      ? await configReleaseEnvForSession({
+          projectId: input.projectId,
+          ref: input.baseRef,
+          agentName: input.agentName,
+          tip: input.baseSha ?? null,
+        }).catch((error: Error) => {
+          logger.warn('[config-releases] published release lookup failed; the box asks the route', {
+            projectId: input.projectId,
+            sessionId: input.sessionId,
+            error: error.message,
+          });
+          return null;
+        })
+      : null;
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   const genuiEnv = await buildGenuiSandboxEnv(input.projectId);
@@ -413,6 +433,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
     ...channelEnv,
     ...sessionContextEnv,
     ...genuiEnv,
+    ...(configRelease ? { KORTIX_CONFIG_RELEASE: configRelease } : {}),
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,

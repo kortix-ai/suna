@@ -23,6 +23,7 @@ import {
   buildRelease,
   commitAll,
   initRepo,
+  publishRelease,
   serveRelease,
   serveSnapshot,
   startFakeApi,
@@ -159,6 +160,61 @@ describe('pi config releases: boot', () => {
     // A convergence never does: it is how a box learns of a push the API has not fetched.
     await releases.converge(fakeRuntime())
     expect((api.descriptorRequests.at(-1)!.body as { base_sha?: string }).base_sha).toBeUndefined()
+  })
+
+  test('a published release boots from the store alone: no API request', async () => {
+    const one = release('deploy', 'published')
+    const { releases, env } = create(undefined, {}, { configRelease: publishRelease(api, one) })
+    const marks: string[] = []
+
+    await releases.boot((label) => marks.push(label))
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, desired_release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('published'))
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(marks).toEqual(['config-release-published', 'config-release-archive', 'config-release-proven'])
+    expect(api.descriptorRequests).toHaveLength(0)
+    expect(api.archiveRequests).toHaveLength(0)
+    // The descriptor and the archive, from signed URLs: the sandbox token never reaches storage.
+    expect(api.storageRequests.map((r) => r.path).sort()).toEqual([`/releases/${id}.json`, `/signed/${one.descriptor.config_tree_id}`])
+    expect(api.storageRequests.every((r) => r.authorization === null)).toBe(true)
+  })
+
+  test('an expired or unreadable published release: the box asks the route, as before', async () => {
+    const one = release('deploy', 'from the route')
+    serveRelease(api, one)
+    const expired = create(undefined, {}, { configRelease: publishRelease(api, one, { expiresInMs: 10_000 }) })
+    const marks: string[] = []
+    await expired.releases.boot((label) => marks.push(label))
+    expect(marks[0]).toBe('config-release-fetched')
+    expect(api.descriptorRequests).toHaveLength(1)
+    expect(expired.releases.report()).toMatchObject({ release_id: one.descriptor.release_id, proven: true })
+
+    // The store lost the descriptor.
+    const lost = publishRelease(api, one)
+    api.storageObjects.clear()
+    root = join(tmp, 'store-2') // A new box: nothing on disk.
+    const unreadable = create(undefined, {}, { configRelease: lost })
+    await unreadable.releases.boot()
+    expect(api.descriptorRequests).toHaveLength(2)
+    expect(unreadable.releases.report()).toMatchObject({ release_id: one.descriptor.release_id, proven: true })
+  })
+
+  test('a published archive the store cannot deliver is downloaded through the API', async () => {
+    const one = release('deploy', 'archive through the API')
+    const configRelease = publishRelease(api, one)
+    // The signed archive URL answers the wrong bytes; the API archive route has the right ones.
+    api.storageObjects.set(`/signed/${one.descriptor.config_tree_id}`, Buffer.from('not the archive'))
+    const { releases } = create(undefined, {}, { configRelease })
+    const marks: string[] = []
+
+    await releases.boot((label) => marks.push(label))
+
+    expect(releases.report()).toMatchObject({ release_id: one.descriptor.release_id, source: 'release', proven: true })
+    expect(marks).toEqual(['config-release-published', 'config-release-archive', 'config-release-proven'])
+    expect(api.descriptorRequests).toHaveLength(0)
+    expect(api.archiveRequests).toHaveLength(1)
   })
 
   test('a release with no archive and no snapshot yet is fetched from the project remote, into its own directory', async () => {
@@ -520,7 +576,7 @@ describe('pi config releases: convergence', () => {
   test('a change to the Kortix tool list restarts the runtime; the same list reconfigures', async () => {
     const withKortix = (prompt: string, kortixTools?: string[]) =>
       JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })
-    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
+    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe']
     write(repo, 'README.md', 'all five\n')
     const one = buildRelease(repo, commitAll(repo, 'all five'), DIR, { projectId: 'proj-1', governance: withKortix('one', all) })
     serveRelease(api, one)

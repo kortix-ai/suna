@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 795,
+  "count": 835,
   "routes": [
     {
       "method": "GET",
@@ -261,6 +261,90 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/branding/assets/:kind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/capture"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/chunks/:chunkId/media"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/days"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/devices"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/capture/devices/:deviceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/assets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/enrollment-tokens"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/enrollment-tokens"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/capture/enrollment-tokens/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/enrollments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/enrollments/:enrollmentId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/enrollments/:enrollmentId/deny"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/frames/:frameId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/timeline"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/timeline/items"
     },
     {
       "method": "GET",
@@ -648,11 +732,31 @@
     },
     {
       "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/enterprise-contract"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/enterprise-contract/checkout-link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/enterprise-contract/end"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/enterprise-contracts"
+    },
+    {
+      "method": "POST",
       "path": "/v1/admin/api/accounts/:id/enterprise-demo"
     },
     {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/enterprise-entitlement"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/admin/api/accounts/:id/enterprise-offer"
     },
     {
       "method": "GET",
@@ -935,6 +1039,14 @@
       "path": "/v1/billing/deduct-usage"
     },
     {
+      "method": "POST",
+      "path": "/v1/billing/enterprise-offer/checkout"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/plan"
+    },
+    {
       "method": "GET",
       "path": "/v1/billing/proration-preview"
     },
@@ -989,6 +1101,46 @@
     {
       "method": "POST",
       "path": "/v1/billing/webhooks/stripe"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/enroll"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/device/grants/:user_code"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/grants/:user_code/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/grants/:user_code/deny"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/me/frames/:frameId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/me/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/me/timeline"
     },
     {
       "method": "POST",
@@ -2439,6 +2591,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/archive"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
     },
@@ -2557,6 +2713,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/pin"
     },
     {
       "method": "PUT",

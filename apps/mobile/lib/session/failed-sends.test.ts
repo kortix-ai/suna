@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { sendIdsFor, useFailedSendStore, withFailed, withoutFailed, failedSendRows } from './failed-sends';
+import { localUriOf } from './optimistic-parts';
+import { sendIdsFor, useFailedSendStore, withFailed, withoutFailed, failedSendMessages } from './failed-sends';
 
 const send = { text: 'hello', options: { agent: 'kortix' } };
 
@@ -69,9 +70,9 @@ describe('sendIdsFor', () => {
   });
 });
 
-describe('failedSendRows', () => {
-  test('each failed send is a user row under its message id, oldest first, with its text and picked files', () => {
-    const rows = failedSendRows('ses_1', {
+describe('failedSendMessages', () => {
+  test('each failed send is a user message under its id, oldest first, with its text and picked files', () => {
+    const messages = failedSendMessages('ses_1', {
       msg_b: { text: 'second', options: {}, failedAtMs: 200 },
       msg_a: {
         text: 'first',
@@ -80,16 +81,18 @@ describe('failedSendRows', () => {
         localFiles: [{ uri: 'file:///a.png', name: 'a.png', mimeType: 'image/png', isImage: true } as never],
       },
     });
-    expect(rows.map((row) => row.info.id)).toEqual(['msg_a', 'msg_b']);
-    expect(rows[0].info).toMatchObject({ role: 'user', sessionID: 'ses_1' });
-    expect(rows[0].parts).toMatchObject([
-      { type: 'text', text: 'first', sessionID: 'ses_1', messageID: 'msg_a' },
-      { type: 'file', filename: 'a.png', localUri: 'file:///a.png', messageID: 'msg_a' },
+    expect(messages.map((m) => m.message_id)).toEqual(['msg_a', 'msg_b']);
+    expect(messages[0]).toMatchObject({ role: 'user', kind: 'turn', thread_id: 'ses_1', created_at: new Date(100).toISOString() });
+    expect(messages[0].blocks).toMatchObject([
+      { type: 'text', text: 'first' },
+      { type: 'attachment', name: 'a.png', mime: 'image/png' },
     ]);
-    expect(rows[1].parts).toMatchObject([{ type: 'text', text: 'second' }]);
+    // The bubble finds the picked file's thumbnail by the attachment's id.
+    expect(localUriOf(messages[0].blocks[1].id)).toBe('file:///a.png');
+    expect(messages[1].blocks).toMatchObject([{ type: 'text', text: 'second' }]);
   });
 
-  test('no failed send, no row', () => {
-    expect(failedSendRows('ses_1', {})).toEqual([]);
+  test('no failed send, no message', () => {
+    expect(failedSendMessages('ses_1', {})).toEqual([]);
   });
 });

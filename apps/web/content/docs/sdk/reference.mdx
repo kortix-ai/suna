@@ -68,6 +68,7 @@ App viewers are described in [Know who is looking](/docs/apps#know-who-is-lookin
 | `gitBackend` | The instance git backend that holds Kortix-managed repositories. | `/projects/git/backend` |
 | `billing` | Plan, credit balance, transactions, usage, subscription. | `/billing/…`, `/usage/…` |
 | `notifications` | The caller's inbox, preferences, Web Push and device tokens. | `/notifications/…` |
+| `capture` | Kortix Capture: one account's recorded screen, actions and audio, and the device sign-in approval. | `/accounts/{accountId}/capture/…`, `/capture/…` |
 | `marketplace` | The public marketplace catalog and its sources. | `/marketplace/…` |
 | `sandboxShares` | Public share links for one sandbox port. | `/p/share` |
 | `connectStatus()` | Whether the managed OAuth connect provider is configured on this instance. | `/connectors/connect-status` |
@@ -174,8 +175,9 @@ For change requests and the review inbox, probe `REVIEW_CONTROL_ACTIONS`. `chang
 | `creditBreakdown(accountId?)` · `transactions(params?)` · `transactionsSummary(params?)` | Credit balance by bucket · transaction history · totals. |
 | `usageHistory(params?)` · `usageRollup(params?)` | Usage over time · usage grouped by model, provider or day. |
 | `sessionCosts.list({ accountId?, projectId?, limit?, offset? })` · `sessionCosts.get(sessionId, options?)` | Usage records per session · one session's model and compute ledger. |
-| `tierConfigurations()` | The available plans. |
-| `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` · `.cancelScheduledChange(accountId?)` · `.prorationPreview(newPriceId, accountId?)` | Manage the subscription. |
+| `tierConfigurations()` | The named amounts (Starter, Pro, Scale) and the minimum and maximum monthly amount. |
+| `setPlan({ monthlyUsd, successUrl, cancelUrl, locale?, accountId? })` | Subscribe to, or change, the credits plan. `monthlyUsd` is a whole dollar from 20 to 10,000; one credit is one cent. It resolves to `{ status: 'checkout_created', checkout_url }` when the account has no paid subscription (redirect there), `{ status: 'updated' \| 'unchanged' }` when an existing subscription changed in place, or `{ status: 'payment_pending', client_secret }` when a raise needs payment confirmation. A raise is charged now and grants the prorated credits at once; a cut applies at the next renewal. React: `useSetBillingPlan()` from `@kortix/sdk/react`. |
+| `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` | Manage the subscription. `cancelScheduledChange` and `prorationPreview` are retired and reject with `ENDPOINT_RETIRED`. |
 | `credits.purchase(input)` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · read and set auto top-up. |
 
 Before you render a purchase control, ask `canOfferTopup(state)` (root export) about the account state: `true` only when the plan may buy credits and the caller may change billing. `canManageBilling(state)` answers the second half alone. Both return `false` while `state` is `undefined` or `null`, so a member never sees a control the API answers with `403`.
@@ -195,6 +197,23 @@ Every method needs a person's credential. A service account gets `403`.
 | `registerDeviceToken(input)` · `unregisterDeviceToken(token)` | A native app's push token. |
 
 Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs/work/sessions#notifications).
+
+### `kortix.capture`
+
+Capture belongs to the account, not to a project. `kortix.capture.account(accountId)` binds one account. Every account call answers `403 capture_disabled` while Capture is off for the account. Each member reads their own devices and timeline. Reading another member needs the `capture.read_all` permission and writes a `capture.member_view` audit event. Account owners and admins have it by default. See [Capture](/docs/capture).
+
+| Method | What it does |
+| --- | --- |
+| `account(id).workspace.get()` · `.workspace.setEnabled(on)` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` · turn Capture on or off (`capture.manage`). |
+| `account(id).devices.list({ userId?, scope? })` · `.devices.revoke(deviceId)` · `.devices.assetUrl(deviceId, name)` | Devices with live status (`recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status). `scope: 'account'` lists every member's devices. · Revoke a device's token. · A 5-minute signed URL of an action screenshot. |
+| `account(id).policy.get()` · `.policy.set(policy)` | The account's capture policy: layers, privacy, retention, recording, notice. A write needs `capture.manage`. |
+| `account(id).timeline.get(query?)` · `.timeline.items(query?)` · `.timeline.days(query?)` | App and window runs for a UTC day or a window up to 31 days · frames, actions and audio in a window, 500 of each · the days with recorded items, newest first. |
+| `account(id).search({ q, kinds?, app?, from?, to?, limit?, userId?, scope? })` | Full-text search over on-screen text, actions and audio, newest first. |
+| `account(id).frame(frameId, { userId? })` · `.media(chunkId, { userId? })` | One frame with its on-screen text and a 5-minute signed URL of its video · signed URLs of an item's video and audio. |
+| `deviceGrant(userCode)` · `approveDevice(userCode, accountId?)` · `denyDevice(userCode)` | The person's half of the device sign-in. |
+| `me.search(query)` · `me.timeline(query)` · `me.frame(frameId)` | Reads for the person the token acts for, in the token's account. A credential that acts for no person gets `403 capture_no_human`. |
+
+React (`@kortix/sdk/react`): `useCaptureWorkspace`, `useSetCaptureEnabled`, `useCaptureDevices` (polls every 10 s), `useRevokeCaptureDevice`, `useCapturePolicy`, `useSetCapturePolicy`, `useCaptureDays`, `useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`, `useCaptureChunkMedia`, `useCaptureDeviceGrant`, `useApproveCaptureDevice`, `useDenyCaptureDevice`. Each account hook takes the account id first. A `null` id sends no request.
 
 ## The project handle
 
@@ -576,6 +595,17 @@ const child = getChildSessionId(call); // a running task's child session
 const command = toolCallMetadata(call).command; // bash
 ```
 
+### Reading a tool call
+
+What a host draws a `ToolCallBlock` with. Block-native: they stay.
+
+| Name | What it does |
+| --- | --- |
+| `toolCallStatus(call)` | The status in the words a renderer compares: `pending`, `running`, `completed` or `error`. |
+| `toolCallRawOutput(call)` | A completed call's output text as the tool returned it (its result's text items, joined); `''` for any other call. One string per call object. |
+| `toolCallError(call)` | A failed call's error text: its semantic error (`result.error.message`), else its result text, as `toV1` gives a v1 part's `state.error`. A harness that closes a failed call with `is_error` and the tool's text only still shows that text. `undefined` for a call that did not fail. |
+| `subAgentCalls(thread)` | The tool calls a sub-agent row lists: every shown call (`shouldShowToolPart`) of the thread's replies, in order. One array per thread object; the same empty array for `null`. |
+
 ### Block turns
 
 The turn model over session-log blocks: what a transcript renders a thread from. Each name replaces a v1 helper over `MessageWithParts` (see [Turns, status and helpers](#turns-status-and-helpers)); the v1 helpers stay until the next major.
@@ -603,6 +633,7 @@ The turn model over session-log blocks: what a transcript renders a thread from.
 | `sessionLogReferencedTexts(messages)` | The texts the API stored by reference (a text over 256 kB keeps a 16 kB preview, plus `ref` and `bytes`) that a transcript renders, text blocks and tool results' `content` items (not `model_content`), once per `ref`: `{ ref, bytes }`. Read one with `fetchSessionAttachment(ref)`. | new |
 | `sessionLogWithFullTexts(thread, texts)` | `thread` with each text whose `ref` is a key of `texts` replaced by the whole text, without `ref` and `bytes`. Untouched messages, and the thread when nothing changes, keep their identity. | new |
 | `sessionLogFullTextAction(refs)` | How a host offers the whole of `refs`: `'inline'` up to `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'download'` (a multi-MB text rendered as markdown stalls the page). | new |
+| `sessionLogFullTextPlan(refs)` | Which of `refs` show inline and which download: the smallest texts fill the 1 MiB inline budget first, only the rest download (`{ inline, download }`, both in record order). Nothing downloads exactly when `sessionLogFullTextAction` says `'inline'`. | new |
 
 A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`, `getQuestionForTool(questions, call.call_id)`. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept a `SessionLogTurn[]` as well as v1 turns, and `stepLabel` any session-log block (a non-call block reads by its `type`).
 
@@ -637,7 +668,7 @@ Each name below is marked `@deprecated` and stays until the next major version. 
 | `setCachedAuthToken` · `setBootstrapAuthToken` | Return the token from your own `getToken` |
 | `claimNext`, `enqueue`, `createSessionQueue` and the other `@kortix/sdk/message-queue` names | `s.send`, or `useSession().send` in React |
 | `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `newestWireIdClock`, `mintWireMessageIdAbove` and the `WIRE_ID_*` constants | `mintWireMessageId`. Message ids are opaque. |
-| `billing.checkout.createSession` · `billing.checkout.confirmSession` | `createPerSeatCheckout(input)` (root export). Both reject with `ENDPOINT_RETIRED`. |
-| `billing.subscription.scheduleDowngrade` | `billing.subscription.createPortalSession`. It rejects with `ENDPOINT_RETIRED`. |
+| `billing.checkout.createSession` · `billing.checkout.confirmSession` · `createPerSeatCheckout` · `claimPerSeatBilling` | `billing.setPlan(input)`. All reject with `ENDPOINT_RETIRED`. |
+| `billing.subscription.scheduleDowngrade` · `billing.subscription.cancelScheduledChange` · `billing.subscription.prorationPreview` | `billing.setPlan(input)`, or `billing.subscription.createPortalSession`. They reject with `ENDPOINT_RETIRED`. |
 
 Other deprecated root names wrap routes that the API does not serve. They reject with `ENDPOINT_RETIRED`, resolve `null`, or return `404`, and they have no replacement.

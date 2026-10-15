@@ -24,7 +24,6 @@ import {
   addOptimisticMessage,
   markSeededPrompt,
   sessionMessageIds,
-  sessionRows,
   sessionStatus,
   setLocalSessionStatus,
 } from '@/lib/session/session-store';
@@ -149,7 +148,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       clearTimeout(seedWatchdogsRef.current[root]);
       seedWatchdogsRef.current[root] = setTimeout(() => {
         delete seedWatchdogsRef.current[root];
-        if (seedUndelivered(sessionRows(root), seed.info.id) && sessionStatus(root)?.type === 'busy') {
+        if (seedUndelivered(sessionMessageIds(root), seed.info.id) && sessionStatus(root)?.type === 'busy') {
           log.warn(`⏱️ [connect] first prompt not seen in ${SEED_BUSY_WATCHDOG_MS} ms; clearing busy`);
           setLocalSessionStatus(root, { type: 'idle' });
         }

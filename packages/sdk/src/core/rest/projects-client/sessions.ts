@@ -150,6 +150,11 @@ export interface ProjectSession {
   /** Server-managed soft-deletion audit fields, present in project inventory mode. */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** When the caller pinned / archived this session in their own list
+   *  (KRTX-2418). Present for a person's list and read by id; absent for an
+   *  agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -355,6 +360,9 @@ export interface ListProjectSessionsOptions {
   q?: string;
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
+  /** Only the caller's pinned or archived sessions. Omit for the list, which
+   *  leaves out the sessions the caller archived. */
+  view?: 'pinned' | 'archived';
 }
 
 /** One keyset page of a project's sessions. */
@@ -374,6 +382,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const q = options?.q?.trim();
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
+  if (options?.view) params.set(options.view, 'only');
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -492,6 +501,34 @@ export async function setSessionWatch(projectId: string, sessionId: string, watc
     await backendApi.put<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
       watching,
     }),
+  );
+}
+
+/** The caller's own pin and archive of one session. */
+export interface SessionListState {
+  pinned_at: string | null;
+  archived_at: string | null;
+}
+
+/**
+ * Pin (`true`) or unpin (`false`) a session at the top of the caller's own
+ * list. Pinning takes it out of the archive; no one else's list changes.
+ * Needs a person's credential; an agent token gets 403.
+ */
+export async function setSessionPinned(projectId: string, sessionId: string, pinned: boolean) {
+  return unwrap(
+    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/pin`, { pinned }),
+  );
+}
+
+/**
+ * Archive (`true`) or unarchive (`false`) a session in the caller's own list.
+ * An archived session leaves the list (`view: 'archived'` lists it) and loses
+ * its pin; no one else's list changes. Needs a person's credential.
+ */
+export async function setSessionArchived(projectId: string, sessionId: string, archived: boolean) {
+  return unwrap(
+    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/archive`, { archived }),
   );
 }
 

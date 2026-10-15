@@ -55,7 +55,7 @@ describe('turnErrorCard routing (web TurnErrorDisplay)', () => {
     expect(
       turnErrorCard({ error: { kind: 'billing', message: 'x', billing: { detail: { code: 'budget_exceeded' } } } }).kind,
     ).toBe('usage-limit');
-    expect(turnErrorCard({ error: { kind: 'billing', message: 'Subscribe to activate your seat' } }).kind).toBe(
+    expect(turnErrorCard({ error: { kind: 'billing', message: 'Subscribe to continue' } }).kind).toBe(
       'usage-limit',
     );
     expect(

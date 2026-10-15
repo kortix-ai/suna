@@ -77,7 +77,10 @@ describe('a session with foreign tool names renders no generic fallback', () => 
     'codex-question': ['Which files should the patch touch?'],
     'cc-ls': ['index.ts', 'util.ts'],
     'cc-edit': ['util.ts', '+1', '−1'],
-    'cc-multiedit': ['index.ts'],
+    'cc-multiedit': ['index.ts', '+1', '−1'],
+    'cc-notebook': ['analysis.ipynb', '+1'],
+    'cc-task-create': ['Map the block kind', '0 of 1 done'],
+    'cc-task-update': ['#1', '1 of 1 done'],
     'cc-grep': ['pattern=TODO', 'include=*.ts', 'index.ts'],
     'cc-agent': ['List files'],
     'cc-question': ['Which notation should the card use?'],
@@ -93,7 +96,7 @@ describe('a session with foreign tool names renders no generic fallback', () => 
     test(`${call.name} (${call.kind}) renders with a registered renderer`, () => {
       expect(ToolRegistry.get(call.name, call.kind)).toBeDefined();
       // Text content: a highlighted command is split across spans.
-      const text = render(call).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
+      const text = render(call).split('<').map((chunk, i) => (i ? chunk.slice(chunk.indexOf('>') + 1) : chunk)).join('').replaceAll('&amp;', '&');
       for (const shown of SHOWS[call.id]!) expect(text).toContain(shown);
     });
   }
@@ -193,6 +196,14 @@ describe('parseListing', () => {
 
   test('a pi ls listing → the files under `path`, without the notice', () => {
     expect(parseListing('components/\nindex.ts\n\n[1 entries limit reached]', '/w/src')).toEqual(['/w/src/index.ts']);
+  });
+
+  test('trailing slashes on `path` collapse to one; a long run of slashes parses in linear time', () => {
+    expect(parseListing('index.ts', '/w/src///')).toEqual(['/w/src/index.ts']);
+    const slashes = '/'.repeat(262_144);
+    const started = performance.now();
+    expect(parseListing('index.ts', `${slashes}x`)).toEqual([`${slashes}x/index.ts`]);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   test('entries in brackets or parentheses (route folders) are entries, not notices', () => {

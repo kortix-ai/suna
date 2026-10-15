@@ -1,6 +1,6 @@
 /**
  * kortix.com pages the mobile billing screens open. Mobile has no in-app
- * purchase: plan changes, seats, credit top-ups, and invoices happen on web.
+ * purchase: plan changes, credit top-ups, and invoices happen on web.
  */
 
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
@@ -8,7 +8,7 @@ import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 const frontend = () => KORTIX_WEB_URL;
 
 /**
- * Web billing for the signed-in user's account (plan, seats, credits,
+ * Web billing for the signed-in user's account (plan, credits,
  * invoices). A signed-out browser goes through `/auth?redirect=` and lands
  * back here (apps/web/src/middleware.ts).
  */

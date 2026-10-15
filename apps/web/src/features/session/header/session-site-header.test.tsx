@@ -229,7 +229,9 @@ describe('SessionSiteHeader transcript ownership', () => {
     expect(source).toContain(
       'kortixSessionScope={isProjectSession ? `${projectId}/${projectSessionId}` : undefined}',
     );
-    expect(exportModalSource).toContain('useSessionSync(sessionId, { kortixSessionScope })');
+    // `mirror: null`: the modal mounts with every header, and the page's
+    // `useSession` already reads the saved copy once per open (KRTX-189).
+    expect(exportModalSource).toContain('useSessionSync(sessionId, { kortixSessionScope, mirror: null })');
   });
 });
 

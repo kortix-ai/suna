@@ -62,8 +62,12 @@ export {
   updateProjectSession,
   deleteProjectSession,
   setProjectSessionSharing,
+  setSessionArchived,
+  setSessionPinned,
   stopProjectSession,
 } from '@kortix/sdk';
+/** The viewer's own pin and archive of a session (KRTX-2418). */
+export type { SessionListState } from '@kortix/sdk';
 
 // ── Session participants and message authors ───────────────────────────────
 

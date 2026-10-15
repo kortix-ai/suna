@@ -27,7 +27,7 @@ import {
   sessionLogRetrying,
   sessionLogTurns,
   fetchSessionAttachment,
-  sessionLogFullTextAction,
+  sessionLogFullTextPlan,
   sessionLogHarnessSwitches,
   sessionLogRestoreNotice,
   sessionLogWithFullTexts,
@@ -267,11 +267,11 @@ import { useReadinessSettling } from './use-readiness-settling';
 import { useComputerAwakeLine } from './composer/computer-awake-bar';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import { downloadBlob } from '@/lib/utils/download';
-import { RestoreNotice, hasOutOfContext, harnessName, type FullTextState } from './session-history';
+import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
 
 import {
   TranscriptTurnRow,
-  messageAborted,
+  strandedPromptIds,
   optimisticAnswersCache,
   promptTexts,
   resolveTurnError,
@@ -1859,23 +1859,20 @@ export function SessionChat({
           return { ...base, state: { ...base.state, [turnId]: state } };
         });
       mark('loading');
-      // Above 1 MB in all the texts download as files: a multi-MB text in markdown stalls the tab.
-      if (sessionLogFullTextAction(refs) === 'download') {
-        void Promise.all(refs.map(({ ref }) => fetchSessionAttachment(ref)))
-          .then((blobs) => {
-            blobs.forEach((blob, i) => downloadBlob(blob, blobs.length > 1 ? `full-text-${i + 1}.txt` : 'full-text.txt'));
-            mark('idle');
-          })
-          .catch(() => mark('error'));
-        return;
-      }
-      void Promise.all(refs.map(async ({ ref }) => [ref, await (await fetchSessionAttachment(ref)).text()] as const))
-        .then((pairs) =>
+      // Up to 1 MB in all the texts show inline; above it only the large ones download as files
+      // (a multi-MB text in markdown stalls the tab), the small ones still show inline.
+      const plan = sessionLogFullTextPlan(refs);
+      void Promise.all([
+        Promise.all(plan.inline.map(async ({ ref }) => [ref, await (await fetchSessionAttachment(ref)).text()] as const)),
+        Promise.all(plan.download.map(({ ref }) => fetchSessionAttachment(ref))),
+      ])
+        .then(([pairs, blobs]) => {
+          blobs.forEach((blob, i) => downloadBlob(blob, blobs.length > 1 ? `full-text-${i + 1}.txt` : 'full-text.txt'));
           setFullTexts((prev) => {
             const base = prev.key === key ? prev : { key, texts: NO_FULL_TEXTS, state: {} };
-            return { key, texts: new Map([...base.texts, ...pairs]), state: { ...base.state, [turnId]: 'idle' } };
-          }),
-        )
+            return { key, texts: pairs.length ? new Map([...base.texts, ...pairs]) : base.texts, state: { ...base.state, [turnId]: 'idle' } };
+          });
+        })
         .catch(() => mark('error'));
     },
     [],
@@ -2195,23 +2192,11 @@ export function SessionChat({
     }
     return keys;
   }, [turns, sessionId, optimisticOriginOf]);
-  // User messages a Stop stranded: the session is idle, the newest turn with
-  // content ended by abort, and these came after it with nothing under them.
-  // The runtime holds them; nothing runs them until the next send.
-  const interruptedTurnIds = useMemo(() => {
-    if (lastTurnWorking) return new Set<string>();
-    let newestWithContent = -1;
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].assistant.length > 0) {
-        newestWithContent = i;
-        break;
-      }
-    }
-    if (newestWithContent < 0 || newestWithContent === turns.length - 1) return new Set<string>();
-    const last = turns[newestWithContent].assistant.at(-1);
-    if (!last || !messageAborted(last)) return new Set<string>();
-    return new Set(turns.slice(newestWithContent + 1).map((t) => t.id));
-  }, [turns, lastTurnWorking]);
+  // User messages a Stop stranded, while the session is idle (`strandedPromptIds`).
+  const interruptedTurnIds = useMemo(
+    () => (lastTurnWorking ? new Set<string>() : strandedPromptIds(turns, messages)),
+    [turns, messages, lastTurnWorking],
+  );
   /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself.
    *  Opens the inline editor on that message — nothing is staged until its Send. */
   const handleRewind = useCallback(

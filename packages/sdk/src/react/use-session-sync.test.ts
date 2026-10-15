@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { createElement } from 'react';
+import { StrictMode, createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 import { getSessionSyncController } from '../browser/session-sync/session-sync-registry';
+import { useSyncStore } from '../browser/stores/sync-store';
+import { configureKortix } from '../core/http/config';
+import { setCurrentRuntime } from '../core/session/current-runtime';
 import { useSessionSync } from './use-session-sync';
 import { livenessBusy, sessionSyncBusy } from './use-session-sync';
 
@@ -247,3 +250,54 @@ describe('livenessBusy: an open server turn keeps the repair running', () => {
     ).toBe(false);
   });
 });
+
+// The session context modal mounts one `useSessionSync(child, { savedChild: true })` per
+// sub-agent, and "Load all" mounts the rest of them in one commit. With more than the
+// registry's 20 controllers, the first rows' retains evicted the later rows' controllers
+// before their own effects ran: on dev, 12 of 14 rows read no runtime messages and showed
+// "0 messages" over a sub-agent that had 3.
+// React's StrictMode (every `next dev` page) runs each effect, its cleanup, then the effect
+// again: the release in between must not destroy the controller the remount reads with.
+async function everySubAgentReads(strict: boolean) {
+  const ids = Array.from({ length: 25 }, (_, index) => `ses_subagent${index}`);
+  const read = new Set<string>();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const message = /\/session\/(ses_[a-z0-9]+)\/message/.exec(url);
+    if (message) {
+      read.add(message[1]!);
+      const info = { id: `msg_${message[1]}`, sessionID: message[1], role: 'user', time: { created: 1 } };
+      return new Response(JSON.stringify([{ info, parts: [] }]), { headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ available: false, complete: false, message_count: 0, reason: 'none' }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  setCurrentRuntime('http://test.local/v1/p/sbx-many/8000', 'sbx-many');
+  function SubAgent({ id }: { id: string }) {
+    useSessionSync(id, { kortixSessionScope: 'p1/s1', savedChild: true, subscribeMessages: false });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    await act(async () => {
+      const rows = createElement('div', null, ...ids.map((id) => createElement(SubAgent, { key: id, id })));
+      renderer = create(strict ? createElement(StrictMode, null, rows) : rows);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect([...read].sort()).toEqual([...ids].sort());
+    for (const id of ids) expect(useSyncStore.getState().messages[id]?.length).toBe(1);
+  } finally {
+    await act(async () => renderer?.unmount());
+    for (const id of ids) useSyncStore.getState().clearSession(id);
+    setCurrentRuntime(null);
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test('every sub-agent hook mounted in one commit reads its runtime messages', () => everySubAgentReads(false));
+test('every sub-agent hook mounted in one commit reads its runtime messages under StrictMode', () => everySubAgentReads(true));

@@ -1387,8 +1387,23 @@ const PROJECT_TOOL_FILES = {
     '  limited:',
     '    kortix_permissions: all',
     '    tools: [read]',
+    // No checkout and no file tools: the box receives only the tool's modules.
+    '  locked:',
+    '    kortix_permissions: all',
+    '    workspace:',
+    '      project_repository: false',
+    '    tools: [ke2e_marker]',
     '',
   ].join('\n'),
+  'agents/locked.md': [
+    '---',
+    'description: Records markers with the ke2e_marker tool only.',
+    'mode: primary',
+    '---',
+    'You record markers. Follow the user instructions exactly.',
+    '',
+  ].join('\n'),
+  'tools/lib/marker-text.ts': 'export const markerText = (nonce: string, agent: string) => `${nonce}:${agent}`\n',
   'agents/limited.md': [
     '---',
     'description: Reads this repository with the read tool only.',
@@ -1400,12 +1415,13 @@ const PROJECT_TOOL_FILES = {
   'tools/ke2e_marker.ts': [
     "import { writeFileSync } from 'node:fs'",
     "import { join } from 'node:path'",
+    "import { markerText } from './lib/marker-text'",
     '',
     'export default {',
     "  description: 'Records a ke2e marker: writes <nonce>:<agent> to ke2e-run15-<nonce>.txt and returns that text.',",
     "  parameters: { type: 'object', properties: { nonce: { type: 'string', description: 'The nonce to record' } }, required: ['nonce'] },",
     '  execute(args, context) {',
-    "    const text = `${args.nonce}:${context.agent}`",
+    '    const text = markerText(args.nonce, context.agent)',
     "    writeFileSync(join(context.directory, `ke2e-run15-${args.nonce}.txt`), text)",
     '    return text',
     '  },',
@@ -1419,8 +1435,8 @@ harnessFlow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    // Two sessions: boot (≤540s) + one turn (≤240s) each.
-    timeoutMs: 1_700_000,
+    // Three sessions: boot (≤540s) + one turn (≤240s) each.
+    timeoutMs: 2_500_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/sessions',
@@ -1461,6 +1477,16 @@ harnessFlow(
         const ran = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker' && t.status !== 'error');
         if (ran.length > 0) throw new Error(`the limited agent ran ke2e_marker on ${harness}: ${JSON.stringify(ran)}`);
         (await file(limited.sandboxId, limitedNonce)).status(404);
+      });
+
+      const lockedNonce = `n${Date.now()}`;
+      const lockedDone = `RUN15_LOCKED_${Date.now()}`;
+      const locked = await bootSession(ctx, harness, { project, agentName: 'locked', prompt: ask(lockedNonce, lockedDone) });
+      await ctx.step('an agent without the project repository still runs the project tool and its relative import', async () => {
+        const messages = await waitForAssistantText(ctx, locked.projectId, locked.sessionId, lockedDone);
+        const calls = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker');
+        if (!calls.some((t) => t.status === 'completed')) throw new Error(`no completed ke2e_marker call for the locked agent on ${harness}: ${JSON.stringify(calls)}`);
+        (await file(locked.sandboxId, lockedNonce)).status(200).body().matches('$.content', new RegExp(`^${lockedNonce}:locked$`));
       });
     } finally {
       await world.close();

@@ -19,7 +19,7 @@
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { configureKortix } from '@kortix/sdk';
+import { configureKortix, sessionLogOfV1Rows, type MessageWithParts } from '@kortix/sdk';
 import { readFileSync } from 'node:fs';
 import React from 'react';
 import type { QuestionPrompt } from './QuestionPrompt';
@@ -30,8 +30,6 @@ import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 // stores/in-memory-async-storage.ts). Import it before any store import.
 import '@/stores/in-memory-async-storage';
 import { useRuntimePendingStore, useSessionStateStore } from '@kortix/sdk/react';
-import { sessionRows } from '@/lib/session/session-store';
-import type { MessageWithParts } from '@/lib/session/types';
 import { TURN_GAP_PX, turnTopGap } from '@/lib/session/auto-scroll';
 import { useFailedSendStore } from '@/lib/session/failed-sends';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
@@ -178,7 +176,7 @@ const RNFlatList = React.forwardRef((props: any, ref: any) => {
     ...(props.data ?? []).map((item: any, index: number) =>
       React.createElement(
         React.Fragment,
-        { key: item.userMessage.info.id },
+        { key: item.id },
         props.renderItem({ item, index }),
       ),
     ),
@@ -493,6 +491,12 @@ const mergedOverrides: Record<string, Record<string, any>> = {
         const id = source.runtimeSessionId ?? '';
         return state.buildSessionMessages(id, state.messages[id], state.parts);
       }),
+    // The v1 path of the SDK hook: the `fromV1` view of the runtime session's rows, unpaced.
+    useSessionLogThread: (source: { sessionId: string; runtimeSessionId?: string | null }, threadId?: string | null) => {
+      const id = threadId || source.runtimeSessionId || '';
+      const rows = useSessionStateStore((state) => state.buildSessionMessages(id, state.messages[id], state.parts));
+      return id && rows?.length ? (sessionLogOfV1Rows(source.sessionId, id, rows).threads[0] ?? null) : null;
+    },
     useRuntimeSession: () => ({ data: { title: 'Saved title' } }),
     // React Query hands the same `data` until it changes.
     useRuntimeSessions: () => ({ data: NO_ROWS }),
@@ -665,6 +669,11 @@ const seedRows = (rows: MessageWithParts[]) => {
 };
 const seedTurns = (texts: string[]) => seedRows(texts.flatMap((text) => makeTurn(text)));
 const statusOf = () => useSessionStateStore.getState().sessionStatus[SID];
+/** The store's rows of a runtime session now (the v1 transcript the SDK keeps). */
+const sessionRows = (id: string): MessageWithParts[] => {
+  const state = useSessionStateStore.getState();
+  return state.buildSessionMessages(id, state.messages[id], state.parts) ?? [];
+};
 const userTexts = () =>
   sessionRows(SID)
     .filter((row) => row.info.role === 'user')
@@ -1127,13 +1136,13 @@ describe('SessionPage send, retry and stop', () => {
     const [failedId] = Object.keys(failed);
     expect(failed[failedId]).toMatchObject({ text: 'hello' });
     const shown = listProps.data.map((turn: any) => [
-      turn.userMessage.info.id,
-      turn.userMessage.parts[0]?.text,
+      turn.id,
+      turn.user.blocks[0]?.text,
     ]);
     expect(shown.at(-1)).toEqual([failedId, 'hello']);
 
     const retryTurn = turnProps.findLast((props) => props.uploadStatus?.state === 'failed');
-    expect(retryTurn.turn.userMessage.info.id).toBe(failedId);
+    expect(retryTurn.turn.id).toBe(failedId);
     expect(retryTurn.uploadStatus.onRetry).toBeTypeOf('function');
     await act(async () => {
       inboxFails = false;
@@ -1428,7 +1437,7 @@ describe('SessionPage render work', () => {
     seedRows([user, assistantMsg('partial', user.info.id)]);
     runtimeValue = { ...runtimeValue, isBusy: true };
     await renderPage();
-    const working = () => turnProps.findLast((p) => p.isWorkingTurn);
+    const working = () => turnProps.findLast((p) => p.turn.live);
     const id = user.info.id;
     expect(working().onScreen).toBe(true);
     expect(listProps.viewabilityConfig).toEqual({ itemVisiblePercentThreshold: 1 });
@@ -1451,8 +1460,8 @@ describe('SessionPage render work', () => {
       appendMessages([next, assistantMsg('partial', next.info.id)]);
       await sleep(15);
     });
-    const working = turnProps.findLast((p) => p.isWorkingTurn);
-    expect(working.turn.userMessage.info.id).toBe(next.info.id);
+    const working = turnProps.findLast((p) => p.turn.live);
+    expect(working.turn.id).toBe(next.info.id);
     expect(working.onScreen).toBe(false);
   });
 
@@ -1463,7 +1472,7 @@ describe('SessionPage render work', () => {
     const stranded = userMsg('two');
     seedRows([user, reply, stranded]);
     await renderPage();
-    const queueStateOf = (id: string) => turnProps.findLast((props) => props.turn.userMessage.info.id === id)?.queueState;
+    const queueStateOf = (id: string) => turnProps.findLast((props) => props.turn.id === id)?.queueState;
     expect(queueStateOf(stranded.info.id)).toBe('interrupted');
     const renderItem = listProps.renderItem;
     const onStop = composerProps.onStop;
@@ -1681,7 +1690,7 @@ describe('SessionConnecting saved thread', () => {
     await act(async () => {
       tree = create(
         React.createElement(SessionConnecting, {
-          messages,
+          thread: sessionLogOfV1Rows('kses_saved', SID, messages).threads[0],
           statusLabel: 'Waking the computer',
           sessionId: SID,
           onCancel: () => {},
@@ -1730,7 +1739,7 @@ describe('SessionConnecting saved thread', () => {
     await act(async () => {
       tree = create(
         React.createElement(SessionConnecting, {
-          messages,
+          thread: sessionLogOfV1Rows('kses_saved', SID, messages).threads[0],
           statusLabel: 'Waking the computer',
           sessionId: SID,
           onCancel: () => {},

@@ -14,7 +14,6 @@
  */
 
 import { readMirrorCommitSha, resolveCommitSha } from '../projects/git/commits';
-import { invalidateProjectMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import {
   buildConfigRelease,
@@ -46,13 +45,12 @@ export interface DesiredReleaseInput {
   /** Record the assignment. Only the daemon's own request records it. */
   recordAssignment?: boolean;
   /**
-   * Default true: drop the mirror's TTL so the base tip is fetched before it
-   * is resolved. Set false only from a caller that has JUST refreshed this
+   * Default true: the base tip is the upstream's, asked at most once per
+   * mirror refresh interval per `(project, ref)` across every API process
+   * (`base-tip.ts`). Set false only from a caller that has JUST refreshed this
    * project's mirror within the same request (`GET /config` compiles the
-   * latest etag first — its own invalidate already fetched the tip, and a
-   * second invalidation made every one of those reads pay a second sequential
-   * `git fetch`). The next request on that route invalidates again, so a push
-   * that landed after this one's fetch is caught one read later.
+   * latest etag first — its own invalidate already fetched the tip): the tip
+   * is then read from the mirror as it is.
    */
   refreshProjectMirror?: boolean;
   /**
@@ -106,10 +104,10 @@ export interface DesiredReleaseDeps {
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
   /** The base tip the mirror holds now, with no refresh; null when unknown. */
   readBase: (project: GitBackedProject, ref: string) => Promise<string | null>;
+  /** The upstream's base tip, shared across requests (`sharedBaseTip`). */
+  checkBase: (project: GitBackedProject, ref: string) => Promise<string>;
   /** What the manifest declares at the release's own commit. */
   loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
-  /** Drop the mirror's freshness stamp. Injectable so tests count the call. */
-  invalidate: (projectId: string) => void;
 }
 
 const defaultDeps: DesiredReleaseDeps = {
@@ -117,8 +115,10 @@ const defaultDeps: DesiredReleaseDeps = {
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
   readBase: readMirrorCommitSha,
+  // Loaded on first use: base-tip reaches projects/surface, whose session code imports the
+  // sandbox proxy root, which reaches back here through turn-start (an import cycle).
+  checkBase: async (project, ref) => (await import('./base-tip')).sharedBaseTip(project, ref),
   loadRoster: loadAgentRosterAtCommit,
-  invalidate: invalidateProjectMirror,
 };
 
 /**
@@ -148,11 +148,12 @@ export async function resolveDesiredRelease(
     const known = input.bootTip ? await deps.readBase(input.project, input.baseRef).catch(() => null) : null;
     if (known && known === input.bootTip) {
       baseSha = known;
-    } else {
-      // A push the warm mirror has not fetched must not be missed — unless the
-      // caller refreshed the mirror itself moments ago (`refreshProjectMirror`).
-      if (input.refreshProjectMirror !== false) deps.invalidate(input.project.projectId);
+    } else if (input.refreshProjectMirror === false) {
       baseSha = await deps.resolveBase(input.project, input.baseRef);
+    } else {
+      // A push the warm mirror has not fetched must not be missed: ask the
+      // upstream, or read what another request asked it moments ago.
+      baseSha = await deps.checkBase(input.project, input.baseRef);
     }
   } catch (error) {
     throw new BaseRefUnresolvedError(input.baseRef, error as Error);

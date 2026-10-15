@@ -17,8 +17,13 @@
  *      live runtime, one that serves `session.compact` (not pi), and never
  *      runs while the session works.
  *
+ * Below them, beside Rename and Share: Pin and Archive (KRTX-2418), which
+ * change only the viewer's own list (`sessionListActions`).
+ *
  * No React / React Native import.
  */
+
+import type { SessionListChange } from './session-cache-write';
 
 // ─── Changes ─────────────────────────────────────────────────────────────────
 
@@ -214,4 +219,30 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
   }
 
   return { openChangeRequest, viewChanges, files, compact };
+}
+
+// ─── Pin and archive (KRTX-2418) ─────────────────────────────────────────────
+
+/** A Pin or Archive row's action. Its strings: `sessions.<action>`, `sessions.<action>Done`, `sessions.<action>Failed`. */
+export type SessionListAction = 'pin' | 'unpin' | 'archive' | 'unarchive';
+
+/**
+ * The Pin and Archive rows, by the viewer's own state of the session: Unpin
+ * while pinned, Unarchive while archived. Every viewer who can open the
+ * session gets both: they change only the viewer's own list. `null` when the
+ * row carries no `pinned_at` at all: the server keeps no list state for this
+ * caller (web's rule), or it predates the feature.
+ */
+export function sessionListActions(session: {
+  pinned_at?: string | null;
+  archived_at?: string | null;
+}): { pin: 'pin' | 'unpin'; archive: 'archive' | 'unarchive' } | null {
+  if (session.pinned_at === undefined) return null;
+  return { pin: session.pinned_at ? 'unpin' : 'pin', archive: session.archived_at ? 'unarchive' : 'archive' };
+}
+
+/** The change an action sends: `PUT …/pin {pinned}` or `PUT …/archive {archived}`. */
+export function sessionListChange(action: SessionListAction): SessionListChange {
+  if (action === 'pin' || action === 'unpin') return { pinned: action === 'pin' };
+  return { archived: action === 'archive' };
 }

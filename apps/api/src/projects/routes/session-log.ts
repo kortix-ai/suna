@@ -127,7 +127,7 @@ export function registerSessionLogRoutes(): void {
         200: json(SessionLogJournalResponseSchema, 'Every pair of the batch, after commit'),
         409: json(SessionLogJournalConflictSchema, 'The batch generation is older than the session generation'),
         422: json(SessionLogJournalSeqConflictSchema, 'A put reuses a seq of its thread; nothing was written'),
-        ...errors(400, 403, 404, 413, 503),
+        ...errors(400, 403, 404, 413, 429, 503),
       },
     }),
     async (c) => {
@@ -145,6 +145,10 @@ export function registerSessionLogRoutes(): void {
       if (outcome.status === 200) return c.json(outcome.body, 200);
       if (outcome.status === 409) return c.json(outcome.body, 409);
       if (outcome.status === 422) return c.json(outcome.body, 422);
+      if (outcome.status === 429) {
+        c.header('Retry-After', '2');
+        return c.json(outcome.body, 429);
+      }
       return c.json(outcome.body, 404);
     },
   );

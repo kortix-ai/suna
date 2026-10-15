@@ -124,6 +124,14 @@ export async function enforceTokenProjectScope(
   // not authorization.
   if (path.startsWith('/v1/runtime-assets/')) return;
 
+  // `/v1/capture/me/*` — the agent capture tool (`kortix capture`). Capture's
+  // tenant is the account, not the project, so a session token cannot reach the
+  // account routes. These three read routes bind every query to the token's
+  // OWN account and to the person it acts for (`on_behalf_of`, private session
+  // only; else 403 capture_no_human), checked in the handler
+  // (capture/account-routes.ts). Nothing here reads another person or account.
+  if (c.req.method === 'GET' && path.startsWith('/v1/capture/me/')) return;
+
   const deny = (check: string, reason: string): never => {
     // NAME the principal and the check in the message. The global `app.onError`
     // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a

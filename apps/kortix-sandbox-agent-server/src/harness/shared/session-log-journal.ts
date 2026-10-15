@@ -87,6 +87,11 @@ import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
 import { carryHarness, type HarnessCarry } from './session-log-boot'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
+/**
+ * One post's budget: above the API's 25 s request deadline. At 15 s the daemon gave up on a
+ * batch the API was still committing, and re-sent it behind its own lock (KRTX-2344).
+ */
+export const JOURNAL_POST_TIMEOUT_MS = 30_000
 export const JOURNAL_ACK_TIMEOUT_MS = 3_000
 /** Posts of one batch that a 200 does not acknowledge, before its pairs are dropped. */
 export const JOURNAL_UNACKED_RETRIES = 3
@@ -399,7 +404,7 @@ export class SessionLogJournal {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${ctx.token}` },
           body: batch.body,
-          signal: AbortSignal.any([this.inflight.signal, AbortSignal.timeout(15_000)]),
+          signal: AbortSignal.any([this.inflight.signal, AbortSignal.timeout(JOURNAL_POST_TIMEOUT_MS)]),
         },
       )
     } catch (err) {

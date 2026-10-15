@@ -9,6 +9,12 @@
 //   node tests/verify-attestation.mjs verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict]
 //   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db|skipped-unaffected> ...
 //   node tests/verify-attestation.mjs status   # {files, lanes} for the diff-scoped runner
+//   node tests/verify-attestation.mjs fingerprint   # source_hash of the working tree now
+//
+// `pnpm test` takes the fingerprint before its lanes start and passes it to
+// write as KORTIX_ATTEST_FINGERPRINT. write refuses when the source changed
+// since: a commit made while the lanes ran was never tested, and a write
+// hashes the tree as it is at the END of the run.
 //
 // verify reads the attestation the PR itself added or edited under
 // tests/attestations/ (`git diff origin/dev...rev`). With none, it reads
@@ -260,7 +266,16 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
-  if (cmd === 'write') {
+  if (cmd === 'fingerprint') {
+    console.log(sourceHash());
+  } else if (cmd === 'write') {
+    const started = process.env.KORTIX_ATTEST_FINGERPRINT;
+    if (started && started !== sourceHash()) {
+      console.error(
+        '[attest] the source changed during this run, so these results do not cover it. Nothing written. Re-run pnpm test.',
+      );
+      process.exit(1);
+    }
     const results = Object.fromEntries(args.map((a) => a.split('=')));
     const { path, attestation } = write(results);
     console.log(`[attest] wrote ${path}: ${JSON.stringify(attestation.lanes)}`);
@@ -280,7 +295,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(code);
   } else {
     console.error(
-      'usage: verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict] | write <lane>=<result>... | status',
+      'usage: verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict] | write <lane>=<result>... | status | fingerprint',
     );
     process.exit(2);
   }

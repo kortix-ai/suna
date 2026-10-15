@@ -2,7 +2,7 @@
  * Blackbox coverage for the `kortix sessions` verbs added for web parity:
  * stop/start/warm, share + links, the durable prompt queue (and
  * `chat --queue`), model, connector approvals, the sandbox file surface,
- * `shell ls|kill`, `preview --list` and multi-id `rm`.
+ * `shell ls|kill`, `preview --list`, multi-id `rm`, and pin / archive.
  *
  * The CLI runs as a real process against a fake Kortix API that also serves
  * the sandbox-daemon proxy paths (`/v1/p/<external-id>/8000/...`), so every
@@ -25,6 +25,10 @@ const SESSION_B = '00000000-0000-4000-a000-000000000502';
 const SESSION_C = '00000000-0000-4000-a000-000000000503';
 /** A pi-harness session: its runtime lists no `session.compact` / `session.attach`. */
 const SESSION_PI = '00000000-0000-4000-a000-000000000504';
+/** A session the caller archived: only `GET .../sessions?archived=only` lists it. */
+const SESSION_ARCHIVED = 'a7c1e2d4-0000-4000-a000-000000000505';
+/** The time the fake API stamps on a pin or an archive. */
+const STAMP = '2026-01-03T00:00:00.000Z';
 const ACCOUNT = '00000000-0000-4000-a000-000000000401';
 const EXECUTION = '00000000-0000-4000-a000-000000000601';
 const PROMPT_ROW = '00000000-0000-4000-a000-000000000701';
@@ -348,6 +352,29 @@ function startServer(): string {
       if (method === 'DELETE' && path === `${project}/sessions/${SESSION_B}`) {
         return Response.json({ error: 'Only the session owner can delete this' }, { status: 403 });
       }
+      // The list leaves out the caller's archived sessions; archived=only lists them.
+      if (method === 'GET' && path === `${project}/sessions`) {
+        return Response.json(
+          url.searchParams.get('archived') === 'only'
+            ? [{ ...sessionRow(SESSION_ARCHIVED), pinned_at: null, archived_at: STAMP }]
+            : [{ ...sessionRow(), pinned_at: null, archived_at: null }],
+        );
+      }
+      if (method === 'GET' && path === `${project}/sessions/${SESSION_ARCHIVED}`) {
+        return Response.json(sessionRow(SESSION_ARCHIVED));
+      }
+      const listState = path.match(/^\/v1\/projects\/[^/]+\/sessions\/([^/]+)\/(pin|archive)$/);
+      if (method === 'PUT' && listState) {
+        if (listState[1] === SESSION_B) {
+          return Response.json({ error: 'Only a person can pin or archive a session' }, { status: 403 });
+        }
+        const on = Object.values((body ?? {}) as Record<string, boolean>)[0] === true;
+        return Response.json(
+          listState[2] === 'pin'
+            ? { pinned_at: on ? STAMP : null, archived_at: null }
+            : { pinned_at: null, archived_at: on ? STAMP : null },
+        );
+      }
 
       // ── sandbox daemon (through the /v1/p proxy) ─────────────────────────
       if (method === 'GET' && path === `${daemon}/kortix/health`) {
@@ -526,6 +553,11 @@ describe('kortix sessions — help', () => {
       'links <session-id>',
       'files <session-id>',
       'rm <session-id>...',
+      'pin <session-id>...',
+      'unpin <session-id>...',
+      'archive <session-id>...',
+      'unarchive <session-id>...',
+      '--pinned|--archived',
     ]) {
       expect(r.stdout).toContain(fragment);
     }
@@ -1234,6 +1266,76 @@ describe('kortix sessions restore', () => {
     const r = await runCli(['sessions', 'rm', ...P], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('Pass a session id');
+  });
+});
+
+describe('kortix sessions pin / unpin / archive / unarchive', () => {
+  const verbs = [
+    { verb: 'pin', route: 'pin', body: { pinned: true }, done: 'Pinned' },
+    { verb: 'unpin', route: 'pin', body: { pinned: false }, done: 'Unpinned' },
+    { verb: 'archive', route: 'archive', body: { archived: true }, done: 'Archived' },
+    { verb: 'unarchive', route: 'archive', body: { archived: false }, done: 'Unarchived' },
+  ];
+  test.each(verbs)('$verb PUTs $route once with $body and prints one line', async ({ verb, route, body, done }) => {
+    const r = await runCli(['sessions', verb, SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    const path = `/v1/projects/${PROJECT}/sessions/${SESSION}/${route}`;
+    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/`)).toEqual([{ method: 'PUT', path, body }]);
+    expect(r.stdout.trim()).toBe(`✓  ${done} Parity`);
+  });
+
+  test('--json prints one result per session with the API state', async () => {
+    const r = await runCli(['sessions', 'pin', SESSION, '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual([
+      { session_id: SESSION, project_id: PROJECT, ok: true, pinned_at: STAMP, archived_at: null },
+    ]);
+  });
+
+  test('several ids: each is attempted, a refusal exits 1 with the API reason', async () => {
+    const r = await runCli(['sessions', 'archive', SESSION, SESSION_B, ...P], config);
+    expect(r.code).toBe(1);
+    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION}/archive`)).toHaveLength(1);
+    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION_B}/archive`)).toHaveLength(1);
+    expect(r.stdout).toContain('Archived Parity');
+    expect(r.stderr).toContain('Only a person can pin or archive a session');
+    expect(r.stderr).toContain('1 of 2 sessions could not be archived');
+    const json = await runCli(['sessions', 'archive', SESSION_B, '--json', ...P], config);
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.stdout)).toEqual([
+      { session_id: SESSION_B, ok: false, error: 'Only a person can pin or archive a session' },
+    ]);
+  });
+
+  test('the short id of an archived session resolves through archived=only', async () => {
+    const r = await runCli(['sessions', 'unarchive', SESSION_ARCHIVED.slice(0, 8), ...P], config);
+    expect(r.code).toBe(0);
+    const lists = calls('GET', `/v1/projects/${PROJECT}/sessions`).filter((c) => !c.path.includes('/sessions/'));
+    expect(lists.map((c) => c.path)).toEqual([
+      `/v1/projects/${PROJECT}/sessions`,
+      `/v1/projects/${PROJECT}/sessions?archived=only`,
+    ]);
+    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/`)).toEqual([
+      {
+        method: 'PUT',
+        path: `/v1/projects/${PROJECT}/sessions/${SESSION_ARCHIVED}/archive`,
+        body: { archived: false },
+      },
+    ]);
+  });
+
+  test('no id or an unknown option exits 2 without a request; --help exits 0', async () => {
+    const none = await runCli(['sessions', 'pin', ...P], config);
+    expect(none.code).toBe(2);
+    expect(none.stderr).toContain('Pass a session id');
+    const unknown = await runCli(['sessions', 'archive', SESSION, '--force', ...P], config);
+    expect(unknown.code).toBe(2);
+    expect(unknown.stderr).toContain('unknown option "--force"');
+    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/`)).toEqual([]);
+    const usage = await runCli(['sessions', 'unarchive', '--help'], config);
+    expect(usage.code).toBe(0);
+    expect(usage.stdout).toContain('Usage: kortix sessions pin|unpin|archive|unarchive');
+    expect(usage.stdout).toContain('ls --archived');
   });
 });
 

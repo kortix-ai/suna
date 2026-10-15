@@ -49,7 +49,7 @@ When the agent starts a dev server on port 3000, run `kortix sessions forward <s
 
 - The session branch is named after the `session_id`. Commits push to that branch through the Kortix git proxy. By default, work reaches the base branch through a [change request](/docs/git#change-requests).
 - The agents, skills and tools a session runs come from a read-only copy of the base branch, not from `/workspace`. An edit in `/workspace` takes effect after it reaches the base branch. See [Config comes from the base branch](/docs/git#config-comes-from-the-base-branch).
-- An agent with `repository_access: false` gets no clone and no git variables.
+- An agent with `workspace: { project_repository: false }` gets no clone and no git variables.
 - The sandbox has its own id at the provider, the external id. It is not the `session_id`. Previews and the API proxy use the external id. `kortix sessions info <session_id> --json` shows it in `sandbox_url`, after `/v1/p/`.
 
 ## Ports and previews
@@ -224,7 +224,7 @@ From a terminal, run `kortix sandboxes provider <name>`. `kortix sandboxes provi
 
 - A pin needs the `project.settings.write` permission. Only a person can set it. A session token gets `403` with code `agent_session_forbidden`. A session that needs another provider passes `provider` on create instead.
 - A switch to a different provider prepares the project's images on the target, verifies them, then activates the pin. New sessions use the old provider until the switch completes. The CLI follows the switch for up to 600 seconds (`--timeout <sec>`).
-- The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. The flag shows only when the operator configured a US region.
+- The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. After a new sandbox image, the first session can wait while Platinum copies the image to the region. If the copy fails, the session starts in the home region instead. That sandbox keeps the home region on restart. A replacement sandbox asks for the US region again. The flag shows only when the operator configured a US region.
 
 ## Troubleshooting
 

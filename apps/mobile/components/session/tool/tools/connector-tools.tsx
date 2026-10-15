@@ -99,10 +99,10 @@ function Section({ section, children }: { section: ConnectorSection; children: R
 
 // ─── connectors ──────────────────────────────────────────────────────────────
 
-export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorsTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const connectors = (Array.isArray(parsed?.connectors) ? parsed.connectors : EMPTY_ROWS) as Record<string, unknown>[];
@@ -110,7 +110,7 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PlugIcon}
       trigger={connectorsTrigger(status, connectors.length)}
       defaultOpen={defaultOpen}
@@ -160,12 +160,12 @@ ToolRegistry.register('kortix-connectors_connectors', ConnectorsTool);
 
 // ─── discover ────────────────────────────────────────────────────────────────
 
-export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorDiscoverTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
-  const status = partStatus(part);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const matches = (Array.isArray(parsed?.matches) ? parsed.matches : EMPTY_ROWS) as Record<string, unknown>[];
@@ -175,7 +175,7 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={MagnifyingGlassIcon}
       trigger={trigger}
       defaultOpen={defaultOpen}
@@ -227,12 +227,12 @@ ToolRegistry.register('kortix-connectors_discover', ConnectorDiscoverTool);
 
 // ─── describe ────────────────────────────────────────────────────────────────
 
-export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorDescribeTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
-  const status = partStatus(part);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const view = connectorDescribeView(input, parsed);
@@ -240,7 +240,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={CodeSimpleIcon}
       trigger={{ title: 'Inspected a connector action', subtitle: view.tool || undefined, args: view.triggerArgs }}
       defaultOpen={defaultOpen}
@@ -475,20 +475,20 @@ function ConnectorApprovalPrompt({
   );
 }
 
-/** When a tool call settled (its `time.end`), epoch ms; `null` while it runs. */
-function partSettledAtMs(part: ToolProps['part']): number | null {
-  const time = (part.state as { time?: { start?: number; end?: number } }).time;
-  return time?.end ?? time?.start ?? null;
+/** When a tool call settled (its `ended_at`, else `started_at`), epoch ms; `null` while it runs. */
+function partSettledAtMs(call: ToolProps['call']): number | null {
+  const at = call.ended_at ?? call.started_at;
+  return at ? Date.parse(at) : null;
 }
 
 // ─── call ────────────────────────────────────────────────────────────────────
 
-export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ConnectorCallTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
-  const status = partStatus(part);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const view = useMemo(() => connectorCallView(input, parsed), [input, parsed]);
@@ -498,7 +498,7 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TerminalWindowIcon}
       trigger={{ title: 'Used a connector', subtitle: view.ref || undefined, args: view.triggerArgs }}
       // A connect-need or a pending approval is a call to action, not history
@@ -559,7 +559,7 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
           </View>
         ) : approvalNeed ? (
           <View style={{ marginTop: webSpace(2) }}>
-            <ConnectorApprovalPrompt need={approvalNeed} callSettledAtMs={partSettledAtMs(part)} />
+            <ConnectorApprovalPrompt need={approvalNeed} callSettledAtMs={partSettledAtMs(call)} />
           </View>
         ) : null}
       </>

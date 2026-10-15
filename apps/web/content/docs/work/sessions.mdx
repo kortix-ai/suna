@@ -180,7 +180,7 @@ See [Connectors](/docs/connect/connectors#policies-and-approvals).
 | Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
 | Live events | — | `GET .../sessions/<session_id>/events` |
 
-The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `"provisional": true`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true`. Read that key: the top-level `"provisional": true` they also carry is deprecated and goes in the next release. Without `--json`, the header names the sandbox status (`sandbox running`) and, for a running session, whether the agent is `working` or `idle`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
 
 ## Stop, resume and delete
 
@@ -283,6 +283,31 @@ kortix sessions ls --label needs-review
 ```
 
 `kortix sessions update` also takes `--clear-labels` and `--unmeta <key>`. Kortix refuses a metadata key it manages itself with `400`.
+
+### Pin and archive
+
+Pin a session to keep it at the top of your session list. Archive a session to take it out of your session list. A pin and an archive are yours alone: they change only your list, and other people see the session as before.
+
+- Archiving a pinned session unpins it. Pinning an archived session unarchives it.
+- Neither stops the session or changes its `updated_at`.
+- Only a person can pin or archive. A personal access token acts as you. An agent's session token, an API key and a service account get `403`.
+
+- **Web:** open the `⋯` menu of a session in the sidebar, on the Sessions page or in the session header, then choose **Pin session** or **Archive session**. Pinned sessions sit in the **Pinned** section at the top of the sidebar. The **Archived** tab of the Sessions page lists your archived sessions; **Archived sessions** in the sidebar's session menu opens it. On the Sessions page, **Select** archives several sessions at once. An archive toast offers **Undo**.
+- **Mobile:** the session actions sheet has **Pin** and **Archive**. Pinned sessions sit in the **Pinned** section of the project drawer. The Sessions page's filter sheet opens the **Archived** view.
+- **CLI:**
+
+```bash
+kortix sessions pin <session_id>...
+kortix sessions unpin <session_id>...
+kortix sessions archive <session_id>...
+kortix sessions unarchive <session_id>...
+kortix sessions ls --pinned      # only your pinned sessions
+kortix sessions ls --archived    # only your archived sessions
+```
+
+`kortix sessions ls` leaves out the sessions you archived and marks a pinned session `(pinned)`. A short ID from `ls --archived` resolves like any other short ID.
+
+- **API:** `PUT /v1/projects/<project_id>/sessions/<session_id>/pin` with `{"pinned": true}` or `false`, and `PUT …/archive` with `{"archived": true}` or `false`. Both answer `200` with `pinned_at` and `archived_at`, `null` when not set. `GET /v1/projects/<project_id>/sessions` leaves out your archived sessions; `?pinned=only` or `?archived=only` lists only those. Every row carries your `pinned_at` and `archived_at`.
 
 ## Who can open a session
 
