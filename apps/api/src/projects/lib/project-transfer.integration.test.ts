@@ -31,6 +31,11 @@ import {
   accountSecretGrants,
   accountTokens,
   accounts,
+  connectors,
+  connectorConnections,
+  connectionCredentials,
+  connectionOAuthApplications,
+  projectSessionConnectorBindings,
   drives,
   iamRoles,
   projectGitConnections,
@@ -44,6 +49,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import { db } from '../../shared/db';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { authorize } from '../../iam/authorize';
+import { decryptProjectSecret, encryptProjectSecret } from '../secrets/envelope';
 import {
   PROJECT_TRANSFER_LEAVE_TABLES,
   PROJECT_TRANSFER_TABLES,
@@ -160,6 +166,8 @@ async function seed(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
+  await db.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.projectId, PROJECT_ID));
+  await db.delete(connectionOAuthApplications).where(eq(connectionOAuthApplications.projectId, PROJECT_ID));
   await db.delete(accounts).where(eq(accounts.accountId, SOURCE_ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, TARGET_ACCOUNT));
 }
@@ -192,6 +200,37 @@ withDb('project transfer', () => {
     return secret;
   }
 
+  async function seedConnectorGraph() {
+    const [connector] = await db.insert(connectors).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID,
+      slug: 'transfer-http', name: 'Transfer HTTP', providerType: 'http',
+    }).returning();
+    if (!connector) throw new Error('connector fixture missing');
+    const [connection] = await db.insert(connectorConnections).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, connectorId: connector.connectorId,
+      label: 'Synthetic connection', isDefault: true,
+    }).returning();
+    if (!connection) throw new Error('connection fixture missing');
+    const valueEnc = encryptProjectSecret(PROJECT_ID, 'synthetic-connector-token');
+    const configEnc = encryptProjectSecret(PROJECT_ID, JSON.stringify({ clientId: 'synthetic-client', clientSecret: 'synthetic-client-secret' }));
+    const [credential] = await db.insert(connectionCredentials).values({
+      connectorId: connector.connectorId, connectionId: connection.connectionId, valueEnc,
+    }).returning();
+    if (!credential) throw new Error('credential fixture missing');
+    const [application] = await db.insert(connectionOAuthApplications).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, connectorId: connector.connectorId,
+      connectionId: connection.connectionId, configEnc,
+    }).returning();
+    if (!application) throw new Error('OAuth application fixture missing');
+    const [binding] = await db.insert(projectSessionConnectorBindings).values({
+      sessionId: SESSION_ID, accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID,
+      connectorAlias: connector.slug, connectorId: connector.connectorId, connectionId: connection.connectionId,
+    }).returning();
+    if (!binding) throw new Error('binding fixture missing');
+
+    return { connector, connection, credential, application, binding, configEnc };
+  }
+
   test('transfers a project secret with source-member grants without retaining source access', async () => {
     const secret = await seedSecret(true);
     await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
@@ -218,7 +257,8 @@ withDb('project transfer', () => {
   });
 
   test('an undecryptable project secret rolls back ownership, grants and all ciphertext', async () => {
-    const secret = await seedSecret();
+    const secret = await seedSecret(true);
+    const grants = await db.select().from(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId));
     await seedSecret(false, true);
     await expect(transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT })).rejects.toThrow();
     const [project] = await db.select().from(projects).where(eq(projects.projectId, PROJECT_ID));
@@ -226,15 +266,16 @@ withDb('project transfer', () => {
     const [unchanged] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, secret.secretId));
     expect(unchanged?.valueEnc).toBe(secret.valueEnc);
     expect(unchanged?.accountId).toBe(SOURCE_ACCOUNT);
-    expect(await db.select().from(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId))).toHaveLength(0);
+    expect(await db.select().from(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId))).toEqual(grants);
     expect(await accountOf('session', SESSION_ID)).toBe(SOURCE_ACCOUNT);
   });
 
   test('a later write failure rolls back the re-encrypted secret and revoked grants', async () => {
     const secret = await seedSecret(true);
+    const { connector, connection, application, binding } = await seedConnectorGraph();
     await db.execute(sql`CREATE FUNCTION kortix.reject_transfer_test() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN RAISE EXCEPTION 'synthetic late transfer failure'; END $$`);
-    await db.execute(sql`CREATE TRIGGER reject_transfer_test BEFORE UPDATE ON kortix.project_sessions
+    await db.execute(sql`CREATE TRIGGER reject_transfer_test BEFORE UPDATE ON kortix.role_assignments
       FOR EACH ROW EXECUTE FUNCTION kortix.reject_transfer_test()`);
     try {
       await expect(transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT })).rejects.toThrow();
@@ -244,8 +285,13 @@ withDb('project transfer', () => {
       expect(unchanged?.valueEnc).toBe(secret.valueEnc);
       expect(unchanged?.accountId).toBe(SOURCE_ACCOUNT);
       expect(await db.select().from(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId))).toHaveLength(1);
+      expect(await db.select().from(connectors).where(eq(connectors.connectorId, connector.connectorId))).toEqual([connector]);
+      expect(await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, connection.connectionId))).toEqual([connection]);
+      expect(await db.select().from(connectionOAuthApplications).where(eq(connectionOAuthApplications.applicationId, application.applicationId))).toEqual([application]);
+      expect(await db.select().from(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.sessionId, SESSION_ID))).toEqual([binding]);
+      expect(await accountOf('session', SESSION_ID)).toBe(SOURCE_ACCOUNT);
     } finally {
-      await db.execute(sql`DROP TRIGGER reject_transfer_test ON kortix.project_sessions`);
+      await db.execute(sql`DROP TRIGGER reject_transfer_test ON kortix.role_assignments`);
       await db.execute(sql`DROP FUNCTION kortix.reject_transfer_test()`);
     }
   });
@@ -281,6 +327,58 @@ withDb('project transfer', () => {
     // The usage ledger stays with the account that consumed it.
     const [event] = await db.select().from(usageEvents).where(eq(usageEvents.projectId, PROJECT_ID));
     expect(event?.accountId).toBe(SOURCE_ACCOUNT);
+  });
+
+  test('preserves the connector graph and project-encrypted credentials across transfer', async () => {
+    const { connector, connection, credential, application, binding, configEnc } = await seedConnectorGraph();
+
+    for (const [fromAccountId, toAccountId] of [[SOURCE_ACCOUNT, TARGET_ACCOUNT], [TARGET_ACCOUNT, SOURCE_ACCOUNT]]) {
+      await expect(transferProjectOwnership({
+        projectId: PROJECT_ID, fromAccountId, toAccountId,
+      })).resolves.toEqual({ projectId: PROJECT_ID, accountId: toAccountId });
+
+      const [movedConnector] = await db.select().from(connectors).where(eq(connectors.connectorId, connector.connectorId));
+      expect(movedConnector).toEqual({ ...connector, accountId: toAccountId });
+      const [movedConnection] = await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, connection.connectionId));
+      expect(movedConnection).toEqual({ ...connection, accountId: toAccountId });
+      const [movedBinding] = await db.select().from(projectSessionConnectorBindings).where(and(
+        eq(projectSessionConnectorBindings.sessionId, SESSION_ID), eq(projectSessionConnectorBindings.connectorAlias, connector.slug),
+      ));
+      expect(movedBinding).toEqual({ ...binding, accountId: toAccountId });
+      expect(await accountOf('session', SESSION_ID)).toBe(toAccountId);
+      const [movedCredential] = await db.select().from(connectionCredentials).where(eq(connectionCredentials.credentialId, credential.credentialId));
+      expect(movedCredential).toEqual(credential);
+      expect(decryptProjectSecret(PROJECT_ID, movedCredential?.valueEnc ?? '')).toBe('synthetic-connector-token');
+      const [movedApplication] = await db.select().from(connectionOAuthApplications).where(eq(connectionOAuthApplications.applicationId, application.applicationId));
+      expect(movedApplication).toEqual({ ...application, accountId: toAccountId });
+      expect(decryptProjectSecret(PROJECT_ID, movedApplication?.configEnc ?? '')).toBe(decryptProjectSecret(PROJECT_ID, configEnc));
+    }
+  });
+
+  test('connector tenant checks reject inconsistent ordinary writes immediately', async () => {
+    const { connector } = await seedConnectorGraph();
+    let updated = false;
+    await expect(db.transaction(async (tx) => {
+      await tx.update(connectors).set({ accountId: TARGET_ACCOUNT })
+        .where(eq(connectors.connectorId, connector.connectorId));
+      updated = true;
+    })).rejects.toThrow();
+    expect(updated).toBe(false);
+    expect(await db.select().from(connectors).where(eq(connectors.connectorId, connector.connectorId))).toEqual([connector]);
+  });
+
+  test('a deferred inconsistent connector graph cannot commit', async () => {
+    const { connector } = await seedConnectorGraph();
+    let updated = false;
+    await expect(db.transaction(async (tx) => {
+      await tx.execute(sql`SET CONSTRAINTS kortix.connector_connections_connector_tenant_fk,
+        kortix.project_session_connector_bindings_alias_tenant_fk DEFERRED`);
+      await tx.update(connectors).set({ accountId: TARGET_ACCOUNT })
+        .where(eq(connectors.connectorId, connector.connectorId));
+      updated = true;
+    })).rejects.toThrow();
+    expect(updated).toBe(true);
+    expect(await db.select().from(connectors).where(eq(connectors.connectorId, connector.connectorId))).toEqual([connector]);
   });
 
   test('re-points system user grants and drops source-directory and pending grants', async () => {

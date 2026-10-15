@@ -239,12 +239,28 @@ export async function transferProjectOwnership(
       }).where(eq(accountSecretResources.secretId, secret.secretId));
     }
 
+    // Both ends contain account_id. Defer only this graph's tenant checks;
+    // ordinary connector writes retain immediate foreign-key enforcement.
+    await tx.execute(sql`SET CONSTRAINTS
+      kortix.connector_connections_connector_tenant_fk,
+      kortix.project_session_connector_bindings_session_tenant_fk,
+      kortix.project_session_connector_bindings_alias_tenant_fk,
+      kortix.project_session_connector_bindings_connection_tenant_fk,
+      kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
+
     for (const table of PROJECT_TRANSFER_TABLES) {
       await tx.execute(
         sql`UPDATE ${table} SET account_id = ${toAccountId}
              WHERE project_id = ${projectId} AND account_id = ${fromAccountId}`,
       );
     }
+
+    await tx.execute(sql`SET CONSTRAINTS
+      kortix.connector_connections_connector_tenant_fk,
+      kortix.project_session_connector_bindings_session_tenant_fk,
+      kortix.project_session_connector_bindings_alias_tenant_fk,
+      kortix.project_session_connector_bindings_connection_tenant_fk,
+      kortix.connection_oauth_applications_connection_tenant_fk IMMEDIATE`);
 
     // Project-scoped grants follow the project; group grants die with the
     // source account's directory (see the doc comment).
