@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kortix Capture for an organization's Windows computers (WiX v5).
+
+  Silent install (Intune, GPO, SCCM, or by hand as an administrator):
+
+    msiexec /i KortixCapture.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_...
+
+  - Installs kortix-capture, kortix-capture-engine, kortix-backend and the ONNX
+    runtime to %ProgramFiles%\Kortix\Capture.
+  - Registers the machine service KortixCapture (LocalSystem, automatic start,
+    restarts on failure): `kortix-capture machine run`.
+  - Writes KORTIX_URL and ENROLLMENT_TOKEN to HKLM\SOFTWARE\Policies\Kortix\Capture
+    (Url, EnrollmentToken). Only SYSTEM and Administrators can read that key.
+    Without the properties the values stay as they are, so IT may also set them
+    by Group Policy or Intune, and an upgrade keeps them.
+  - Uninstall stops the service (and with it every recorder it started) and
+    removes the files and the two values. People's recordings stay in their profiles.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Kortix Capture"
+           Manufacturer="Kortix"
+           Version="$(Version)"
+           UpgradeCode="abc8aeb5-6049-466d-8790-a488cce300da"
+           Scope="perMachine"
+           InstallerVersion="500"
+           Compressed="yes">
+    <SummaryInformation Description="Kortix Capture" />
+    <!-- AllowDowngrades: a dev build only differs from the next one in the part an MSI drops
+         (X.Y.Z-dev.N), and the updater's rollback installs the previous version over a newer one. -->
+    <MajorUpgrade AllowDowngrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="KortixCaptureIcon" SourceFile="$(IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="KortixCaptureIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPURLINFOABOUT" Value="https://kortix.com" />
+
+    <!-- The command line sets these; Hidden keeps the token out of MSI logs. -->
+    <Property Id="KORTIX_URL" Secure="yes" />
+    <Property Id="ENROLLMENT_TOKEN" Secure="yes" Hidden="yes" />
+
+    <!-- An upgrade or repair without the properties keeps what is configured. -->
+    <Property Id="SAVED_URL" Secure="yes">
+      <RegistrySearch Id="SavedUrl" Root="HKLM" Key="SOFTWARE\Policies\Kortix\Capture" Name="Url" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="SAVED_TOKEN" Secure="yes" Hidden="yes">
+      <RegistrySearch Id="SavedToken" Root="HKLM" Key="SOFTWARE\Policies\Kortix\Capture" Name="EnrollmentToken" Type="raw" Bitness="always64" />
+    </Property>
+    <SetProperty Id="KORTIX_URL" Value="[SAVED_URL]" After="AppSearch" Sequence="both" Condition="NOT KORTIX_URL AND SAVED_URL" />
+    <SetProperty Id="ENROLLMENT_TOKEN" Value="[SAVED_TOKEN]" After="AppSearch" Sequence="both" Condition="NOT ENROLLMENT_TOKEN AND SAVED_TOKEN" />
+
+    <!-- The machine service's state and log (no secrets), removed on uninstall. -->
+    <SetProperty Id="MACHINEDATA" Value="[CommonAppDataFolder]Kortix\Capture\" After="AppSearch" Sequence="both" />
+
+    <!-- The token goes into the (already locked) key by our own binary, as SYSTEM;
+         HideTarget keeps the command line, and so the token, out of the log. -->
+    <CustomAction Id="WriteEnrollmentToken" FileRef="KortixCaptureExe"
+                  ExeCommand="machine configure --token &quot;[ENROLLMENT_TOKEN]&quot;"
+                  Execute="deferred" Impersonate="no" Return="check" HideTarget="yes" />
+    <!-- A personal install, interactive: open the window once, on onboarding. A silent install
+         and an install with IT's URL and token are preconfigured and open nothing. -->
+    <CustomAction Id="LaunchApp" FileRef="KortixCaptureExe" ExeCommand="app" Execute="immediate" Impersonate="yes" Return="asyncNoWait" />
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND UILevel &gt;= 4 AND NOT KORTIX_URL AND NOT ENROLLMENT_TOKEN" />
+      <Custom Action="WriteEnrollmentToken" After="WriteRegistryValues"
+              Condition="KORTIX_URL AND ENROLLMENT_TOKEN AND NOT (REMOVE~=&quot;ALL&quot;)" />
+    </InstallExecuteSequence>
+
+    <!-- The machine folder is made here, with a locked ACL, so that a standard user cannot
+         pre-create it and point it (a junction) at a place SYSTEM writes to. Owner and group
+         SYSTEM; SYSTEM and Administrators full control; Users read only. The service checks
+         the owner again before it writes (machine_dir_trusted). -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="MachineKortixFolder" Name="Kortix">
+        <Component Id="MachineKortixFolderAcl" Guid="5d1c7e0a-3b52-4c8e-9f41-7a6d2e8b0c13" Bitness="always64">
+          <CreateFolder>
+            <PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
+          </CreateFolder>
+        </Component>
+        <Directory Id="MachineCaptureFolder" Name="Capture">
+          <Component Id="MachineCaptureFolderAcl" Guid="e84a19c6-0d73-4f2b-b6a5-1c9f3d57a208" Bitness="always64">
+            <CreateFolder>
+              <PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
+            </CreateFolder>
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="KortixFolder" Name="Kortix">
+        <Directory Id="INSTALLFOLDER" Name="Capture" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="Engine" Directory="INSTALLFOLDER">
+      <Component Id="CaptureExe" Bitness="always64">
+        <File Id="KortixCaptureExe" Source="$(StageDir)\kortix-capture.exe" KeyPath="yes" />
+        <ServiceInstall Id="MachineService"
+                        Name="KortixCapture"
+                        DisplayName="Kortix Capture"
+                        Description="Records the screen of each person who signs in to this computer."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem"
+                        Arguments="machine run"
+                        Vital="yes">
+          <!-- Start a minute after boot (delayed automatic start); every failure restarts it. -->
+          <ServiceConfig DelayedAutoStart="yes" OnInstall="yes" OnReinstall="yes" />
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="10"
+                              ResetPeriodInDays="1" />
+        </ServiceInstall>
+        <ServiceControl Id="MachineServiceControl" Name="KortixCapture" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+        <util:RemoveFolderEx On="uninstall" Property="MACHINEDATA" />
+      </Component>
+      <Component Id="CaptureEngineExe" Bitness="always64">
+        <File Source="$(StageDir)\kortix-capture-engine.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="BackendExe" Bitness="always64">
+        <File Source="$(StageDir)\kortix-backend.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="OnnxRuntime" Bitness="always64">
+        <File Source="$(StageDir)\onnxruntime.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="Notices" Bitness="always64">
+        <File Source="$(StageDir)\privacy-runtime-notices.txt" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Written only when both values are known (command line or the previous install). -->
+    <Component Id="ManagedPolicy" Directory="INSTALLFOLDER" Bitness="always64" Condition="KORTIX_URL AND ENROLLMENT_TOKEN">
+      <!-- Protected DACL on the key (a lock on a registry row applies to its key):
+           SYSTEM and Administrators only; people cannot read the token. Windows
+           Installer logs every Registry-table value, Hidden property or not, so
+           the token is not a Registry-table value. -->
+      <RegistryKey Root="HKLM" Key="SOFTWARE\Policies\Kortix\Capture">
+        <RegistryValue Name="Url" Type="string" Value="[KORTIX_URL]" KeyPath="yes">
+          <PermissionEx Sddl="O:BAG:SYD:PAI(A;OICI;KA;;;SY)(A;OICI;KA;;;BA)" />
+        </RegistryValue>
+      </RegistryKey>
+      <!-- EnrollmentToken is written by WriteEnrollmentToken below, and the key goes on uninstall. -->
+      <RemoveRegistryKey Root="HKLM" Key="SOFTWARE\Policies\Kortix\Capture" Action="removeOnUninstall" />
+    </Component>
+
+    <!-- The Start menu entry opens the Kortix Capture window (`kortix-capture app`). -->
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Bitness="always64">
+      <Shortcut Id="AppShortcut" Name="Kortix Capture" Description="Open Kortix Capture"
+                Target="[INSTALLFOLDER]kortix-capture.exe" Arguments="app" WorkingDirectory="INSTALLFOLDER"
+                Icon="KortixCaptureIcon" Show="minimized" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Kortix\Capture" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="Main" Title="Kortix Capture" Level="1">
+      <ComponentGroupRef Id="Engine" />
+      <ComponentRef Id="ManagedPolicy" />
+      <ComponentRef Id="MachineKortixFolderAcl" />
+      <ComponentRef Id="MachineCaptureFolderAcl" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

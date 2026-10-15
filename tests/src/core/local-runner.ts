@@ -480,6 +480,10 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         DATABASE_URL: supabase.DB_URL,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
         SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
+        // The capture store (Supabase Storage S3): journeys write a device's day with it.
+        E2E_CAPTURE_S3_ENDPOINT: `${supabase.API_URL.replace(/\/+$/, '')}/storage/v1/s3`,
+        E2E_CAPTURE_S3_ACCESS_KEY_ID: supabase.S3_PROTOCOL_ACCESS_KEY_ID ?? '',
+        E2E_CAPTURE_S3_SECRET_ACCESS_KEY: supabase.S3_PROTOCOL_ACCESS_KEY_SECRET ?? '',
       };
     } else if (lane.name === 'target-browser-full') {
       const required = [
@@ -553,6 +557,11 @@ function dockerAvailable(): boolean {
 
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   let plan = buildLocalTestPlan(args);
+  // The source this run tests. The attestation write refuses when the tree
+  // differs at the end: a commit made while the lanes ran was never tested.
+  const fingerprint = ATTESTED_MODES.has(plan.mode)
+    ? Bun.spawnSync(['node', 'tests/verify-attestation.mjs', 'fingerprint'], { cwd: root }).stdout.toString().trim()
+    : '';
   // Sanctioned environment skips: verify-attestation.mjs records them, never
   // counts a skip as a pass, and `--strict` (a push to main) rejects them.
   const skipped = new Map<string, string>();
@@ -685,10 +694,11 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
         lanes[group] = ran.length > 0 ? 'pass' : (skipValues[0] ?? 'pass');
       }
     }
-    Bun.spawnSync(
+    const written = Bun.spawnSync(
       ['node', 'tests/verify-attestation.mjs', 'write', ...Object.entries(lanes).map(([k, v]) => `${k}=${v}`)],
-      { cwd: root, stdout: 'inherit', stderr: 'inherit' },
+      { cwd: root, stdout: 'inherit', stderr: 'inherit', env: { ...process.env, KORTIX_ATTEST_FINGERPRINT: fingerprint } },
     );
+    if (written.exitCode !== 0) return 1;
   }
   return failed.length === 0 ? 0 : 1;
 }

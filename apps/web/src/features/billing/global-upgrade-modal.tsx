@@ -14,19 +14,18 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useBillingReturnUrl } from '@/features/billing/billing-return';
+import { DEFAULT_TIER_USD, formatWholeUsd, tierForMonthlyUsd } from '@/features/billing/compute-pricing';
+import { CreditTierSelect } from '@/features/billing/credit-tier-select';
+import { PlanChanger } from '@/features/billing/plan-card';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
-import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
+import type { PricingPlan } from '@/features/billing/pricing-plans';
 import { TopupControls } from '@/features/billing/topup-controls';
+import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
+import { useUpgradePlans } from '@/features/billing/use-pricing-plans';
 import { useUpgradeModalHost } from '@/features/billing/use-upgrade-modal-host';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import {
-  invalidateAccountState,
-  useAccountState,
-  useCreatePerSeatCheckout,
-  useCreatePortalSession,
-} from '@/hooks/billing';
-import { useTranslations } from '@/i18n/use-translations';
+import { invalidateAccountState, useAccountState, useCreatePortalSession } from '@/hooks/billing';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   accountHasLiveSubscription,
   billingModalCopy,
@@ -44,16 +43,15 @@ import {
   UserPlusIcon as UserPlus,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface UpgradePlansModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountState?: AccountState;
-  /** From the 402: distinguishes "Team wallet drained → top up" (credit view)
-   *  from "no plan → subscribe" (plans view). Fall back to accountState. */
+  /** From the 402: distinguishes "wallet drained → top up" (credit view)
+   *  from "no plan → pick a plan" (plans view). Fall back to accountState. */
   reason?: string;
-  billingModel?: string;
   hasSubscription?: boolean;
   /** The resolved state from whichever surface opened the modal. Preferred over
    *  `reason` (the lossy 402 code) so the modal and the gate that opened it can
@@ -70,30 +68,24 @@ export function UpgradePlansModal({
   onOpenChange,
   accountState,
   reason,
-  billingModel,
   hasSubscription,
   billingState,
   balance,
   accountLoading,
 }: UpgradePlansModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const createPerSeat = useCreatePerSeatCheckout();
+  const t = useTranslations('billing.credits.modal');
+  const plans = useUpgradePlans();
   const openDemo = useRequestDemo();
-  const billingReturnUrl = useBillingReturnUrl();
 
   // Which view? Resolved from the ONE billing-state resolver. The caller's
   // `billingState` (from the 402 or the gate that opened this) wins because
   // accountState can still be loading; otherwise derive it from live state.
-  const isPerSeat = billingModel === 'per_seat' || accountState?.billing_model === 'per_seat';
   const hasSub = hasSubscription ?? accountHasLiveSubscription(accountState);
-  const canPurchaseCredits = accountState?.tier?.can_purchase_credits ?? isPerSeat;
+  const canPurchaseCredits = accountState?.tier?.can_purchase_credits ?? hasSub;
   const resolvedState = billingState ?? resolveBillingState(accountState);
   const showTopUp =
-    (billingStateNeedsTopUp(resolvedState) ||
-      reason === 'insufficient_credits' ||
-      isPerSeat ||
-      hasSub) &&
+    (billingStateNeedsTopUp(resolvedState) || reason === 'insufficient_credits' || hasSub) &&
     canPurchaseCredits;
 
   if (showTopUp) {
@@ -109,113 +101,29 @@ export function UpgradePlansModal({
     );
   }
 
-  const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 40;
-  const seatCount = Math.max(1, accountState?.member_count ?? accountState?.seats?.count ?? 1);
-  const monthlyTotal = pricePerSeat * seatCount;
-  const hasSeatMath = seatCount > 1;
   // `false` until the account state loads (KRTX-1720): Subscribe stays
   // disabled for that window, and the "owner required" button and the "ask an
   // owner" note wait for the answer.
   const mayManageBilling = canManageBilling(accountState);
   const ownerRequired = !!accountState && !mayManageBilling;
 
-  const handleSubscribe = () => {
-    createPerSeat.mutate({
-      success_url: billingReturnUrl('team_signup'),
-      cancel_url: window.location.href,
-    });
-  };
-
-  // Keyed by MARKETING plan id (display-only — see pricing-plans.ts). The
-  // account's real plan is `isPerSeat` / `resolvedPlan(accountState)`, never
-  // one of these ids.
-  const planActions: Record<UpgradeModalPlanId, React.ReactNode> = {
-    free: (
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        onClick={() => onOpenChange(false)}
-      >
-        {tI18nHardcoded.raw('i18nComplete.text73a7da68c3bf')}
-      </Button>
-    ),
-    team_seat: !ownerRequired ? (
-      <div className="space-y-2">
-        {hasSeatMath && (
-          <p className="text-muted-foreground text-center text-xs tabular-nums">
-            {seatCount} {seatCount === 1 ? 'seat' : 'seats'} × ${pricePerSeat} = ${monthlyTotal}
-            {tI18nHardcoded.raw('i18nComplete.textdcc954337afd')}
-          </p>
-        )}
-        <Button
-          type="button"
-          variant="default"
-          className="group w-full"
-          disabled={createPerSeat.isPending || !mayManageBilling}
-          onClick={handleSubscribe}
-        >
-          {createPerSeat.isPending ? (
-            <>
-              <Loading />
-              {tI18nHardcoded.raw(
-                'autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f',
-              )}
-            </>
-          ) : (
-            <>
-              {hasSeatMath
-                ? tI18nComplete('text1614f84867d4', { value0: monthlyTotal })
-                : tI18nComplete('text289aec13d5aa', { value0: pricePerSeat })}
-              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-            </>
-          )}
-        </Button>
-        <p className="text-muted-foreground text-center text-xs">
-          {tI18nHardcoded.raw(
-            'autoFeaturesBillingTeamPlanCheckoutJsxTextAutoProratedCancelfa091962',
-          )}
-        </p>
-      </div>
-    ) : (
-      <Button type="button" variant="outline" className="w-full" disabled>
-        {tI18nHardcoded.raw('i18nComplete.text160ecadfebc2')}
-      </Button>
-    ),
-  };
-
-  // Badge the plan the account is ACTUALLY on, computed from account state —
-  // never hardcoded to Free (that mislabels every paying account as Free, the
-  // core bug here). The top-up view already handles per-seat/subscribed
-  // accounts, so this plans view is only reached for free/no-plan accounts.
-  const planBadges: Partial<Record<UpgradeModalPlanId, string>> = isPerSeat
-    ? { team_seat: 'Current plan' }
-    : { free: 'Current plan' };
-
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="gap-0 space-y-0 p-0 lg:max-w-3xl">
         <ModalHeader className="space-y-2 px-6 pt-6 pb-4">
-          <ModalTitle className="text-2xl font-medium tracking-tight">
-            {tI18nHardcoded.raw(
-              'autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d',
-            )}
-          </ModalTitle>
-          <ModalDescription className="text-base">
-            {tI18nHardcoded.raw('i18nComplete.text5a0b692095be')}
-          </ModalDescription>
+          <ModalTitle className="text-2xl font-medium tracking-tight">{t('title')}</ModalTitle>
+          <ModalDescription className="text-base">{t('description')}</ModalDescription>
         </ModalHeader>
 
         <ModalBody className="space-y-4 px-6 pb-6">
           <div className="grid gap-4 md:grid-cols-2">
-            {UPGRADE_MODAL_PLANS.map((plan) => (
-              <PricingPlanCard
+            {plans.map((plan) => (
+              <UpgradePlanCard
                 key={plan.id}
                 plan={plan}
-                compact
-                action={planActions[plan.id]}
-                badgeOverride={planBadges[plan.id]}
-                priceOverride={plan.id === 'team_seat' ? `$${pricePerSeat}` : undefined}
+                onContinueFree={() => onOpenChange(false)}
+                ownerRequired={ownerRequired}
+                mayManageBilling={mayManageBilling}
               />
             ))}
           </div>
@@ -236,27 +144,15 @@ export function UpgradePlansModal({
 
           {ownerRequired && (
             <Item variant="outline" size="sm" className="items-start bg-none">
-              <Hint
-                label={tI18nHardcoded.raw(
-                  'autoFeaturesBillingTeamPlanCheckoutJsxAttrLabelOnlyAccountbf72d3e0',
-                )}
-                side="top"
-                className="max-w-xs text-xs"
-              >
+              <Hint label={t('askOwnerHint')} side="top" className="max-w-xs text-xs">
                 <ItemMedia variant="icon">
                   <UserPlus />
                 </ItemMedia>
               </Hint>
               <ItemContent>
-                <ItemTitle>
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesBillingTeamPlanCheckoutJsxTextAskAnAccount6f6b506d',
-                  )}
-                </ItemTitle>
+                <ItemTitle>{t('askOwnerTitle')}</ItemTitle>
                 <ItemDescription className="text-xs leading-relaxed">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesBillingTeamPlanCheckoutJsxTextOnlyAccountOwnerse7f0d952',
-                  )}
+                  {t('askOwnerBody')}
                 </ItemDescription>
               </ItemContent>
             </Item>
@@ -264,6 +160,91 @@ export function UpgradePlansModal({
         </ModalBody>
       </ModalContent>
     </Modal>
+  );
+}
+
+/**
+ * One card of the plan view. Free closes the dialog. Credits carries the
+ * shared tier select and starts the plan change; its own state, so the tier
+ * survives re-renders of the modal.
+ */
+function UpgradePlanCard({
+  plan,
+  onContinueFree,
+  ownerRequired,
+  mayManageBilling,
+}: {
+  plan: PricingPlan;
+  onContinueFree: () => void;
+  ownerRequired: boolean;
+  mayManageBilling: boolean;
+}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tAccess = useTranslations('billing.access');
+  const tCard = useTranslations('billing.credits.planCard');
+  const tPlan = useTranslations('billing.plan');
+  const locale = useLocale();
+  const [monthlyUsd, setMonthlyUsd] = useState<number>(DEFAULT_TIER_USD);
+  const { change, isPending } = useChangeCreditPlan();
+
+  if (plan.id !== 'credits') {
+    return (
+      <PricingPlanCard
+        plan={plan}
+        compact
+        badgeOverride={tPlan('currentPlan')}
+        action={
+          <Button type="button" variant="outline" className="w-full" onClick={onContinueFree}>
+            {tI18nHardcoded.raw('i18nComplete.text73a7da68c3bf')}
+          </Button>
+        }
+      />
+    );
+  }
+
+  const valid = !!tierForMonthlyUsd(monthlyUsd);
+  return (
+    <PricingPlanCard
+      plan={plan}
+      compact
+      priceSlot={
+        <div className="space-y-3">
+          <CreditTierSelect value={monthlyUsd} onChange={setMonthlyUsd} disabled={isPending} />
+          <p className="text-muted-foreground text-xs text-balance">{tCard('rate')}</p>
+        </div>
+      }
+      action={
+        ownerRequired ? (
+          <Button type="button" variant="outline" className="w-full" disabled>
+            {tAccess('managerRequired')}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="default"
+            className="group w-full"
+            disabled={isPending || !mayManageBilling || !valid}
+            onClick={() => valid && change(monthlyUsd)}
+          >
+            {isPending ? (
+              <>
+                <Loading />
+                {tI18nHardcoded.raw(
+                  'autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f',
+                )}
+              </>
+            ) : (
+              <>
+                {valid
+                  ? tCard('subscribeAction', { amount: formatWholeUsd(monthlyUsd, locale) })
+                  : tCard('chooseAction')}
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </>
+            )}
+          </Button>
+        )
+      }
+    />
   );
 }
 
@@ -279,7 +260,7 @@ interface CreditTopUpModalProps {
 /**
  * The out-of-credits view of the blocking modal: a clear "why you're blocked"
  * header + wallet balance, one-time top-up (packages + custom amount), and
- * auto-top-up config underneath so a drained Team account can both refill now
+ * auto-top-up config underneath so a drained paid account can both refill now
  * and never hit zero again — instead of being wrongly pitched the Free plan.
  */
 function CreditTopUpModal({
@@ -296,15 +277,9 @@ function CreditTopUpModal({
   // Copy is DERIVED, never written here. The title used to be hardcoded
   // `'Out of credits'` with a single `payment_failed` branch, so this modal
   // announced an emergency to every account that opened it — including one
-  // topping up voluntarily with a healthy balance — and promised "your Team
-  // plan and seats are unaffected" to accounts that have no seats.
-  const copy = billingModalCopy(
-    billingState ?? null,
-    {
-      isPerSeat: accountState?.billing_model === 'per_seat',
-    },
-    tI18nComplete,
-  );
+  // topping up voluntarily with a healthy balance — and promised "your plan
+  // is unaffected" to accounts that had none.
+  const copy = billingModalCopy(billingState ?? null, tI18nComplete);
 
   // Trust the LIVE account state as the source of truth (same field the Plan
   // page reads) — the 402's `balance` is only a pre-load hint. Using `??` on the
@@ -385,6 +360,13 @@ function CreditTopUpModal({
               ) : null
             }
           />
+
+          {/* Out of credits on a paid plan: raising the monthly amount is the
+              other way out, so the same picker the Plan tab uses sits under
+              the one-time top-up. Owners only; PlanChanger says who to ask. */}
+          {accountState ? (
+            <PlanChanger state={accountState} className="bg-popover rounded-md border" />
+          ) : null}
         </ModalBody>
 
         <ModalFooter className="pt-4 pb-5 sm:justify-start">
@@ -411,16 +393,8 @@ export function GlobalUpgradeModal() {
 }
 
 function GlobalUpgradeModalContent() {
-  const {
-    isOpen,
-    closeUpgradeDialog,
-    accountId,
-    reason,
-    billingModel,
-    hasSubscription,
-    billingState,
-    balance,
-  } = useUpgradeDialogStore();
+  const { isOpen, closeUpgradeDialog, accountId, reason, hasSubscription, billingState, balance } =
+    useUpgradeDialogStore();
   const { data: accountState, isLoading: accountLoading } = useAccountState({ accountId });
   const queryClient = useQueryClient();
 
@@ -438,7 +412,6 @@ function GlobalUpgradeModalContent() {
         onOpenChange={(open) => !open && closeUpgradeDialog()}
         accountState={accountState}
         reason={reason}
-        billingModel={billingModel}
         hasSubscription={hasSubscription}
         billingState={billingState}
         balance={balance}

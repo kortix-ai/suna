@@ -119,15 +119,15 @@ billingApp.openapi(
   },
 );
 
-// Trial-expiry sweep cron endpoint. Pure status hygiene: the trial overlay
-// stops granting lazily at trial_ends_at (resolve-billing.ts trialIsActive);
-// this flips trial_status to 'expired' so rows read honestly.
+// Access sweep cron endpoint: expires trials (the overlay already stopped
+// granting lazily at trial_ends_at), ends manual contracts whose term is over,
+// and sends the warnings that are due (services/access-notices.ts).
 billingApp.openapi(
   createRoute({
     method: 'post',
     path: '/cron/trial-expiry',
     tags: ['billing'],
-    summary: 'Sweep expired trials (cron)',
+    summary: 'Sweep trials and contracts: expire, end, warn (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Sweep result'),
       ...errors(401),
@@ -139,10 +139,13 @@ billingApp.openapi(
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
       return c.json({ skipped: true, reason: 'billing disabled' });
     }
-    const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
-    const expired = await sweepExpiredTrials();
-    const monthlyRegrants = await sweepTrialMonthlyGrants();
-    return c.json({ expired, monthly_regrants: monthlyRegrants });
+    const { runAccessSweep } = await import('./services/access-notices');
+    const result = await runAccessSweep();
+    return c.json({
+      expired: result.trialsExpired,
+      contracts_ended: result.contractsEnded,
+      warnings_sent: result.warningsSent,
+    });
   },
 );
 

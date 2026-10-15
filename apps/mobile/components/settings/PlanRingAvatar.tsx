@@ -1,11 +1,11 @@
 /**
  * PlanRingAvatar — the profile photo in a gradient ring coloured by the active
  * account's plan family (Jay, 2026-09-23; the project drawer's avatar). The
- * API's plans are Free, Team and Enterprise (`planTier`). The paid rings are
+ * API's plans are Free, Credits and Enterprise (`planTier`). The paid rings are
  * metals, banded like polished metal catching light:
  *
  *   Free        a quiet grey ring
- *   Team        lapis lazuli (a deep ultramarine blue; Jay, 2026-09-27 — was silver)
+ *   Credits     lapis lazuli (a deep ultramarine blue; Jay, 2026-09-27 — was silver)
  *   Enterprise  champagne gold (the Kortix yellow hue, low saturation)
  *
  * Each ring has a dark and a light set: the light set is darker, so its
@@ -38,7 +38,7 @@ const METAL_LOCATIONS = [0, 0.3, 0.5, 0.72, 1] as const;
 /** `hsl()` from a hue and saturation — the metals are recipes, not tokens. */
 const hsl = (h: number, s: number, l: number) => `hsl(${h} ${s}% ${l}%)`;
 
-/** Lapis lazuli's ultramarine (Team's ring): between #26619C (210) and ultramarine pigment (~225). */
+/** Lapis lazuli's ultramarine (Credits' ring): between #26619C (210) and ultramarine pigment (~225). */
 const LAPIS_HUE = 222;
 
 /** The hue of a THEME accent (`hsl(H S% L%)`). */
@@ -50,7 +50,7 @@ function ringFor(tier: PlanTier, isDark: boolean): Ring {
       const muted = (isDark ? THEME.dark : THEME.light).mutedForeground;
       return { colors: [withAlpha(muted, 0.6), withAlpha(muted, 0.25)] };
     }
-    case 'team': {
+    case 'credits': {
       // Lapis lazuli (Jay, 2026-09-27; it was silver, which read as grey): the
       // stone's deep ultramarine, hue 222 — between the lapis colour
       // (#26619C, hue 210) and ultramarine pigment (~225) — banded like the

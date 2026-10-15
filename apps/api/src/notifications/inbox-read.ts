@@ -40,6 +40,9 @@ export interface InboxReadContext {
   skipMfaGate?: boolean;
 }
 
+/** Capture fleet-health rows belong to the account, not to a project: no project flag or trigger read applies. */
+const isAccountNotification = (kind: string) => kind.startsWith('capture_device_');
+
 /** One inbox row as `GET /v1/notifications` returns it. */
 export interface InboxNotification {
   id: string;
@@ -117,7 +120,9 @@ async function visible<T extends InboxRowForFilter>(
     mfaBlockedAccounts(userId, [...new Set(rows.map((row) => row.accountId))], ctx),
     notificationCenterProjects([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
   ]);
-  const open = rows.filter((row) => !blocked.has(row.accountId) && row.projectId !== null && projectNames.has(row.projectId));
+  const open = rows.filter(
+    (row) => !blocked.has(row.accountId) && (isAccountNotification(row.kind) || (row.projectId !== null && projectNames.has(row.projectId))),
+  );
 
   const loaded = await loadSessionAccessRows(open.flatMap((row) => (row.sessionId ? [row.sessionId] : [])));
   const seen = await maySeeSessions(userId, [...loaded.values()]);
@@ -136,7 +141,7 @@ async function visible<T extends InboxRowForFilter>(
   }));
 
   const kept = open.filter((row) =>
-    row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`),
+    isAccountNotification(row.kind) || (row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
   );
   return { rows: kept, sessions, projectNames };
 }
@@ -244,6 +249,8 @@ export async function listInbox(
         projectId: row.projectId,
         sessionId: row.sessionId,
         triggerSlug: row.triggerSlug,
+        kind: row.kind,
+        accountId: row.accountId,
       }),
       read: row.readAt !== null,
       created_at: row.createdAt.toISOString(),

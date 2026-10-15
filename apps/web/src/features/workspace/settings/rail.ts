@@ -171,7 +171,7 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
   {
     tab: 'plan',
     label: 'Plan',
-    description: 'Your subscription, team seats, and billing for this account.',
+    description: 'Your plan, credits, and billing for this account.',
     icon: CreditCard,
   },
 ];

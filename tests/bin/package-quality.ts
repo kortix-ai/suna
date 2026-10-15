@@ -226,6 +226,10 @@ await runAll([
   when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install'])),
   // Frozen counts (apps/api/eslint.config.mjs): new violations fail, fixed ones must be pruned.
   when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'lint'])),
+  // The migration file lint (backfill-safe sign-off, CONCURRENTLY, safety header).
+  // A PR into dev runs no CI, so without this it first ran after the merge,
+  // where a merged file can no longer be fixed (migrations are immutable).
+  when('packages/db', () => run(['pnpm', '--filter', '@kortix/db', 'run', 'migrate:lint'])),
 ]);
 await runAll([
   ...['llm-catalog', 'sdk'].map((directory) =>
