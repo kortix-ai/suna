@@ -173,8 +173,6 @@ test.describe('18 — Kortix Apps UI', () => {
       });
       projectId = project.id;
 
-      await api<Record<string, unknown>>(
-        session.access_token,
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, account.account_id);
