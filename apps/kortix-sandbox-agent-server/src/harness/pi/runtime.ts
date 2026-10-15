@@ -67,6 +67,22 @@ export function parseCompiledAgentConfig(raw: string | undefined): CompiledAgent
   }
 }
 
+/**
+ * A kortix.yaml command's prompt with its arguments, as OpenCode expands a
+ * command: `$1`, `$2`, … take the words in order (the last one present takes
+ * the rest), `$ARGUMENTS` takes them all.
+ */
+export function expandCommandTemplate(template: string, args: string): string {
+  const words = args.split(/\s+/).filter(Boolean)
+  const last = Math.max(0, ...[...template.matchAll(/\$(\d+)/g)].map((match) => Number(match[1])))
+  return template
+    .replace(/\$(\d+)/g, (_, n: string) => {
+      const index = Number(n) - 1
+      return (index === last - 1 ? words.slice(index).join(' ') : words[index]) ?? ''
+    })
+    .replaceAll('$ARGUMENTS', args)
+}
+
 export const DEFAULT_SYSTEM_PROMPT = [
   'You are a coding agent working inside a Kortix sandbox. The project repository is checked out at the working directory.',
   'Use the tools to read, search and change files and to run commands. Prefer small, verifiable steps. Report what you did and what remains.',
@@ -511,7 +527,7 @@ export class PiRuntime {
       )
       this.skills = await this.loadSkills()
       this.instructions = this.loadInstructions()
-      this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
+      this.policy = compilePermissionPolicy(this.compiledAgent()?.permission ?? this.compiled?.permission)
       this.permissions.setPolicy(this.policy)
       const restored = this.restore(dump)
       // pi's session store is the model context: the agent's messages are its projection.
@@ -628,7 +644,7 @@ export class PiRuntime {
       defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
     })
     this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
-    this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
+    this.policy = compilePermissionPolicy(this.compiledAgent()?.permission ?? this.compiled?.permission)
     this.permissions.setPolicy(this.policy)
     this.skills = await this.loadSkills()
     this.instructions = this.loadInstructions()
@@ -837,14 +853,20 @@ export class PiRuntime {
       })
   }
 
-  /** pi's prompt templates, as the command list a client reads (`GET /command`). */
+  /**
+   * The command list a client reads (`GET /command`): kortix.yaml `commands`
+   * from the compiled config, then pi's prompt templates of the same name not
+   * already listed.
+   */
   commandList(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[] }> {
-    return (this.pi?.session.promptTemplates ?? []).map((template) => ({
-      name: template.name,
-      description: template.description,
+    const compiled = Object.entries(this.compiled?.command ?? {}).map(([name, command]) => ({ name, description: command.description ?? '', template: command.template }))
+    const templates = (this.pi?.session.promptTemplates ?? [])
+      .filter((template) => !this.compiled?.command?.[template.name])
+      .map((template) => ({ name: template.name, description: template.description, template: template.content }))
+    return [...compiled, ...templates].map((command) => ({
+      ...command,
       source: 'command' as const,
-      template: template.content,
-      hints: [...new Set(template.content.match(/\$(\d+|ARGUMENTS)/g) ?? [])],
+      hints: [...new Set(command.template.match(/\$(\d+|ARGUMENTS)/g) ?? [])],
     }))
   }
 
@@ -854,6 +876,19 @@ export class PiRuntime {
     const name = typeof body.command === 'string' ? body.command : ''
     if (!this.commandList().some((command) => command.name === name)) throw new PromptRejected(`unknown command "${name}"`)
     const args = typeof body.arguments === 'string' ? body.arguments.trim() : ''
+    const compiled = this.compiled?.command?.[name]
+    if (compiled) {
+      // ponytail: `subtask` runs inline on pi; route it through the task tool if a project needs the separate context.
+      const [providerID, ...model] = (typeof body.model === 'string' ? body.model : compiled.model ?? '').split('/')
+      const agent = body.agent ?? compiled.agent
+      return parsePromptBody({
+        parts: [{ type: 'text', text: expandCommandTemplate(compiled.template, args) }],
+        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+        ...(agent !== undefined ? { agent } : {}),
+        ...(body.variant !== undefined ? { variant: body.variant } : {}),
+        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+      })
+    }
     const [providerID, ...model] = typeof body.model === 'string' ? body.model.split('/') : []
     return {
       ...parsePromptBody({
@@ -1541,7 +1576,7 @@ export class PiRuntime {
   private applyAgent(name: string): void {
     if (name === this.agentName) return
     this.agentName = name
-    this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
+    this.policy = compilePermissionPolicy(this.compiledAgent()?.permission ?? this.compiled?.permission)
     this.permissions.setPolicy(this.policy)
     // `setActiveToolsByName` re-reads `systemPrompt()`, so the next request carries the agent's prompt.
     this.rebuildSystemPrompt()
@@ -1711,7 +1746,10 @@ export class PiRuntime {
       agents: { known: true, value: agents },
       commands: {
         known: true,
-        value: this.commandList().map(({ template, ...command }) => ({ ...command, agent: null, model: null, subtask: null, template_bytes: template.length })),
+        value: this.commandList().map(({ template, ...command }) => {
+          const compiled = this.compiled?.command?.[command.name]
+          return { ...command, agent: compiled?.agent ?? null, model: compiled?.model ?? null, subtask: compiled?.subtask ?? null, template_bytes: template.length }
+        }),
       },
       config: {
         known: true,

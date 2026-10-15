@@ -56,7 +56,9 @@ import {
 import {
   rejectChannelsV2,
   validateAgentsV2,
+  validateCommandsV3,
   validateDefaultAgentV2,
+  validatePermissionConfig,
   validateHarnessesV2,
   validateRuntimeV2,
   validateToolsV2,
@@ -232,6 +234,7 @@ export {
   type GrantSetV2,
   type AgentToolsV2,
   type AgentBlockV2,
+  type CommandV3,
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
@@ -403,6 +406,14 @@ function validateManifestBodyV2(
   validateToolsV2(parsed.tools, 'tools', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
   warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
+  if (parsed.kortix_version === 3) {
+    validatePermissionConfig(parsed.permission, 'permission', issues);
+    validateCommandsV3(parsed.commands, 'commands', agentNames, issues);
+  } else {
+    for (const key of ['permission', 'commands']) {
+      if (parsed[key] !== undefined) issues.push({ path: key, message: `\`${key}\` needs kortix_version 3; in v2 it lives in the OpenCode harness folder.`, severity: 'error' });
+    }
+  }
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }

@@ -69,7 +69,7 @@ export function resolveLocalManifestImports(
     return {
       raw,
       files: [rootSource],
-      origins: { triggers: {}, connectors: {}, agents: {}, apps: {}, tools: {} },
+      origins: { triggers: {}, connectors: {}, agents: {}, apps: {}, tools: {}, commands: {} },
     };
   }
   return resolveManifestImportsSync(rootSource, localImportReader(root));

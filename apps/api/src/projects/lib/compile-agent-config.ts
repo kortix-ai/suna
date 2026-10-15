@@ -36,7 +36,7 @@
  */
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
-import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
+import type { CompiledAgent, CompiledAgentSet, CompiledCommand } from '@kortix/api-contract/runtime-relay';
 import {
   agentFileCandidates,
   defaultAgentFile,
@@ -257,7 +257,7 @@ export function compileAgentConfig(
     const md = manifestSchemaVersion(manifest) === 3 ? null : suppliedAgentMarkdown(manifest, name, agentMdFiles);
     agent[name] = md
       ? compileAgentBlock(name, block, md.path, md.content)
-      : compileYamlAgentBlock(name, block, agentMdFiles);
+      : compileYamlAgentBlock(name, block, agentMdFiles, v2.permission);
   }
 
   const defaultAgentName = typeof v2.default_agent === 'string' ? v2.default_agent : undefined;
@@ -270,7 +270,69 @@ export function compileAgentConfig(
     ...(runnableDefault ? { default_agent: defaultAgentName } : {}),
     agent,
     ...compileTools(v2.tools),
+    ...compileV3Defaults(v2, agentMdFiles),
   };
+}
+
+/**
+ * v3 top-level `permission` and `commands`, the two settings a project kept
+ * in its OpenCode harness folder (opencode.jsonc `permission`, `commands/`).
+ * `forAgent` keeps only the commands that agent can run (no `agent`, or itself).
+ */
+function compileV3Defaults(
+  manifest: ManifestV2,
+  files: Record<string, string>,
+  forAgent?: string,
+): Pick<CompiledAgents, 'permission' | 'command'> {
+  if (manifestSchemaVersion(manifest as unknown as Record<string, unknown>) !== 3) return {};
+  const command: Record<string, CompiledCommand> = {};
+  for (const [name, raw] of Object.entries(manifest.commands ?? {})) {
+    if (forAgent && raw.agent && raw.agent !== forAgent) continue;
+    const template = raw.prompt_file !== undefined ? files[raw.prompt_file] : raw.prompt;
+    if (typeof template !== 'string') {
+      throw new CompileAgentConfigError(`commands.${name}.prompt_file: "${raw.prompt_file}" could not be read.`);
+    }
+    command[name] = {
+      template,
+      ...(raw.description ? { description: raw.description } : {}),
+      ...(raw.agent ? { agent: raw.agent } : {}),
+      ...(raw.model ? { model: raw.model } : {}),
+      ...(raw.subtask !== undefined ? { subtask: raw.subtask } : {}),
+    };
+  }
+  return {
+    ...(manifest.permission !== undefined ? { permission: manifest.permission } : {}),
+    ...(Object.keys(command).length ? { command } : {}),
+  };
+}
+
+/**
+ * `over` applied on top of `base`, the way OpenCode reads its global
+ * permission followed by an agent's (the last matching rule wins): a whole
+ * action replaces everything; a key `over` sets moves after the base's keys,
+ * and two pattern maps merge with `over`'s patterns last.
+ */
+export function layerPermission(
+  base: PermissionConfigV2 | undefined,
+  over: PermissionConfigV2 | undefined,
+): PermissionConfigV2 | undefined {
+  if (over === undefined || typeof over === 'string' || base === undefined) return over ?? base;
+  const out: PermissionConfigObjectV2 = typeof base === 'string' ? { '*': base } : { ...base };
+  for (const [key, rule] of Object.entries(over)) {
+    const prior = out[key];
+    delete out[key];
+    out[key] = prior && typeof prior === 'object' && rule && typeof rule === 'object' ? layerRules(prior, rule) : rule;
+  }
+  return out;
+}
+
+function layerRules(base: Record<string, PermissionActionV2>, over: Record<string, PermissionActionV2>) {
+  const out = { ...base };
+  for (const [pattern, action] of Object.entries(over)) {
+    delete out[pattern];
+    out[pattern] = action;
+  }
+  return out;
 }
 
 /**
@@ -324,7 +386,7 @@ export function compileSelectedAgentConfig(
 
   let compiledAgent: CompiledAgentEntry;
   if (manifestSchemaVersion(manifest) === 3) {
-    compiledAgent = compileYamlAgentBlock(agentName, block, agentMdFiles);
+    compiledAgent = compileYamlAgentBlock(agentName, block, agentMdFiles, v2.permission);
   } else {
     const md = suppliedAgentMarkdown(manifest, agentName, agentMdFiles);
     compiledAgent = compileAgentBlock(agentName, block, md.path, md.content);
@@ -333,6 +395,7 @@ export function compileSelectedAgentConfig(
     ...(compiledAgent.model ? { model: compiledAgent.model } : {}),
     agent: { [agentName]: compiledAgent },
     ...compileTools(v2.tools),
+    ...compileV3Defaults(v2, agentMdFiles, agentName),
   };
 }
 
@@ -349,6 +412,7 @@ function compileYamlAgentBlock(
   name: string,
   block: AgentBlockV2,
   files: Record<string, string>,
+  defaultPermission?: PermissionConfigV2,
 ): CompiledAgentEntry {
   const raw = block as Record<string, unknown>;
   const issues: ManifestIssue[] = [];
@@ -376,6 +440,8 @@ function compileYamlAgentBlock(
   if (block.enabled === false) compiled.disable = true;
   const tools = resolveAgentTools(block.tools);
   if (tools) compiled.tools = tools;
+  const permission = layerPermission(defaultPermission, compiled.permission);
+  if (permission !== undefined) compiled.permission = permission;
   if (block.skills !== undefined) compiled.permission = applySkillsGovernance(compiled.permission, block.skills);
   if (compiled.permission !== undefined) compiled.permission = denyToolsBehindDeniedPermission(compiled.permission);
   return compiled;
@@ -755,6 +821,7 @@ export async function resolveCompiledAgentConfigForSession(
       }),
     );
 
+    await readCommandPromptFiles(project, raw, ref, agentMdFiles);
     const compiled = compileAgentConfig(raw, 'opencode', agentMdFiles);
     return compiled ? JSON.stringify(compiled) : null;
   } catch (err) {
@@ -764,6 +831,24 @@ export async function resolveCompiledAgentConfigForSession(
     if (manifestVersion === 3) throw err;
     return null;
   }
+}
+
+/** Read the v3 `commands` prompt files (those `forAgent` can run) into `files`. A missing file throws. */
+async function readCommandPromptFiles(
+  project: GitBackedProject,
+  manifest: Record<string, unknown>,
+  ref: string,
+  files: Record<string, string>,
+  forAgent?: string,
+): Promise<void> {
+  if (manifestSchemaVersion(manifest) !== 3) return;
+  const commands = (manifest as unknown as ManifestV2).commands ?? {};
+  await Promise.all(
+    Object.values(commands).map(async (command) => {
+      if (forAgent && command.agent && command.agent !== forAgent) return;
+      if (typeof command.prompt_file === 'string') files[command.prompt_file] = await readRepoFile(project, command.prompt_file, ref);
+    }),
+  );
 }
 
 /** Resolve one selected agent for a restricted session. Every failure is fatal. */
@@ -806,6 +891,7 @@ export async function resolveSelectedAgentConfigForSession(
     const agents = raw.agents as Record<string, Record<string, unknown>>;
     const promptFile = agents?.[agentName]?.prompt_file;
     if (typeof promptFile === 'string') agentMdFiles[promptFile] = await readRepoFile(project, promptFile, ref);
+    await readCommandPromptFiles(project, raw, ref, agentMdFiles, agentName);
   } else {
     const md = await readAgentMarkdownFile(project, raw, agentName, ref);
     if (md.content !== null) agentMdFiles[md.path] = md.content;

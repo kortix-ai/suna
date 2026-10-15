@@ -1072,6 +1072,25 @@ connectors:
     input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w: {}\nopencode:\n  config_dir: .opencode\n',
   },
   {
+    name: 'v3: default permission and commands',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 3\ndefault_agent: w\npermission: allow\nagents:\n  w:\n    prompt: Be brief.\ncommands:\n  daily:\n    description: Daily report\n    prompt_file: commands/daily.md\n    agent: w\n  quick:\n    prompt: Summarize $ARGUMENTS\n    subtask: true\n',
+  },
+  {
+    name: 'v3: a command with both prompt and prompt_file rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w: {}\ncommands:\n  daily:\n    prompt: Go.\n    prompt_file: commands/daily.md\n',
+  },
+  {
+    name: 'v3: a command without a prompt rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w: {}\ncommands:\n  daily:\n    description: Nothing to send\n',
+  },
+  {
     name: 'v3: invalid prompt',
     format: 'yaml',
     valid: false,

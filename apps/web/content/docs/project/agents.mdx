@@ -429,7 +429,7 @@ The optional features are capabilities:
 | --- | --- | --- | --- |
 | `session.subagents` | Subagents through the `task` tool | Yes | Yes |
 | `session.compact` | Summarize the conversation, on demand and near the context window | Yes | Yes |
-| `session.commands` | Project slash commands | Yes, from `commands/` | Yes, from `prompts/` and pi packages |
+| `session.commands` | Project slash commands | Yes, from `kortix.yaml` `commands` (v3) and `commands/` | Yes, from `kortix.yaml` `commands` (v3), `prompts/` and pi packages |
 | `session.steer` | A message sent during a turn is read at the turn's next step | OpenCode 1.18.15 or later | Yes |
 | `session.log.v2` | The event stream serves the session log as `log.*` frames (`?schema=v2`) | Yes | Yes |
 | `session.rewind` | Rewind to a message; edit and resend | Yes | No |
@@ -444,7 +444,7 @@ A pi session answers a request for a feature it does not serve with `501` and `c
 
 ### Harness-only files
 
-Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here.
+Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here. A v3 project declares its default `permission` and its slash `commands` in `kortix.yaml` and needs no directory here (see [Versions](/docs/project/manifest#versions)).
 
 | | OpenCode | pi |
 | --- | --- | --- |

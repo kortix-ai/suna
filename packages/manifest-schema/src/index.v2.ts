@@ -279,6 +279,57 @@ export interface AgentBlockV2 {
   harnesses?: HarnessesV2;
 }
 
+/** One `commands.<name>` entry (v3): a slash command, as OpenCode's `command` config. */
+export interface CommandV3 {
+  description?: string;
+  /** The prompt the command sends; `$ARGUMENTS` and `$1`, `$2`, … take the command's arguments. */
+  prompt?: string;
+  /** Repo-relative Markdown file holding the prompt, instead of `prompt`. */
+  prompt_file?: string;
+  /** The declared agent that runs it; default: the session's agent. */
+  agent?: string;
+  model?: string;
+  /** Run as a subagent task instead of in the session's own context. */
+  subtask?: boolean;
+}
+
+const COMMAND_KEYS = ['description', 'prompt', 'prompt_file', 'agent', 'model', 'subtask'];
+
+/** `commands:` (v3). `agentNames` are the declared agents a command may name. */
+export function validateCommandsV3(node: unknown, path: string, agentNames: string[], issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: '`commands` must be a map of command name to command.', severity: 'error' });
+    return;
+  }
+  for (const [name, entry] of Object.entries(node)) {
+    const where = `${path}.${name}`;
+    if (!SLUG_RE.test(name)) {
+      issues.push({ path: where, message: 'a command name uses lowercase letters, digits, `-` and `_`.', severity: 'error' });
+      continue;
+    }
+    if (!isTable(entry)) {
+      issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
+      continue;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!COMMAND_KEYS.includes(key)) issues.push({ path: `${where}.${key}`, message: `unknown command key (allowed: ${COMMAND_KEYS.join(', ')}).`, severity: 'error' });
+    }
+    if ((entry.prompt === undefined) === (entry.prompt_file === undefined)) {
+      issues.push({ path: where, message: 'set exactly one of `prompt` or `prompt_file`.', severity: 'error' });
+    }
+    if (entry.prompt !== undefined && typeof entry.prompt !== 'string') issues.push({ path: `${where}.prompt`, message: 'must be a string.', severity: 'error' });
+    if (entry.prompt_file !== undefined && !safeAgentFile(entry.prompt_file)) issues.push({ path: `${where}.prompt_file`, message: 'must be a repo-relative .md path.', severity: 'error' });
+    for (const key of ['description', 'model'] as const) {
+      if (entry[key] !== undefined && typeof entry[key] !== 'string') issues.push({ path: `${where}.${key}`, message: 'must be a string.', severity: 'error' });
+    }
+    if (entry.subtask !== undefined && typeof entry.subtask !== 'boolean') issues.push({ path: `${where}.subtask`, message: 'must be a boolean.', severity: 'error' });
+    if (entry.agent !== undefined && !(typeof entry.agent === 'string' && agentNames.includes(entry.agent))) {
+      issues.push({ path: `${where}.agent`, message: `must name a declared agent (${agentNames.join(', ') || 'none declared'}).`, severity: 'error' });
+    }
+  }
+}
+
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
 export interface ManifestV2 {
   kortix_version: 2;
@@ -287,6 +338,10 @@ export interface ManifestV2 {
   harnesses?: HarnessesV2;
   /** Project tools: tool name → repo-relative module path. Every harness loads them. */
   tools?: Record<string, string>;
+  /** v3 only: the tool policy every agent starts from (its own `permission` is applied over it). */
+  permission?: PermissionConfigV2;
+  /** v3 only: slash commands, by name. */
+  commands?: Record<string, CommandV3>;
   agents: Record<string, AgentBlockV2>;
   project?: Record<string, unknown>;
   env?: Record<string, unknown>;

@@ -1051,6 +1051,25 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       kortix_version: { const: 3 },
       opencode: false,
       agents: { ...v2.properties.agents, additionalProperties: agent },
+      permission: { ...permissionConfigSchema(), description: "The tool policy every agent starts from, OpenCode's built-in agents included. An agent's own `permission` is applied over it." },
+      commands: {
+        type: 'object',
+        description: 'Slash commands, by name. Each sends its prompt as a user message; `$ARGUMENTS` and `$1`, `$2`, … take the arguments.',
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            description: { type: 'string' },
+            prompt: { type: 'string' },
+            prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN, description: 'Repo-relative Markdown file holding the prompt.' },
+            agent: { type: 'string', description: 'The declared agent that runs the command. Default: the session agent.' },
+            model: { type: 'string' },
+            subtask: { type: 'boolean', description: 'Run as a subagent task.' },
+          },
+          oneOf: [{ required: ['prompt'] }, { required: ['prompt_file'] }],
+          additionalProperties: false,
+        },
+      },
     },
   };
 }

@@ -919,6 +919,95 @@ agents:
   });
 });
 
+describe('v3 default permission and commands', () => {
+  const manifest = () => parseYaml(`kortix_version: 3
+default_agent: writer
+permission:
+  "*": allow
+  bash:
+    "git push *": ask
+agents:
+  writer:
+    prompt: Write.
+    permission:
+      bash:
+        "rm *": deny
+  reader:
+    prompt: Read.
+    permission: deny
+  plain:
+    prompt: Plain.
+commands:
+  daily:
+    description: Daily report
+    prompt_file: commands/daily.md
+    agent: reader
+  quick:
+    prompt: Summarize $ARGUMENTS
+    model: test/model
+    subtask: true
+`);
+
+  test('compile into the OpenCode permission and command keys, with the default under every agent', () => {
+    const compiled = compileAgentConfig(manifest(), 'opencode', { 'commands/daily.md': 'Run the daily report.' });
+    expect(compiled?.permission).toEqual({ '*': 'allow', bash: { 'git push *': 'ask' } });
+    // An agent's rules apply over the default; a whole-agent action replaces it.
+    expect(compiled?.agent.writer.permission).toEqual({ '*': 'allow', bash: { 'git push *': 'ask', 'rm *': 'deny' } });
+    expect(compiled?.agent.reader.permission).toBe('deny');
+    expect(compiled?.agent.plain.permission).toEqual({ '*': 'allow', bash: { 'git push *': 'ask' } });
+    expect(compiled?.command).toEqual({
+      daily: { template: 'Run the daily report.', description: 'Daily report', agent: 'reader' },
+      quick: { template: 'Summarize $ARGUMENTS', model: 'test/model', subtask: true },
+    });
+    expect(() => compileAgentConfig(manifest(), 'opencode', {})).toThrow('commands.daily.prompt_file');
+  });
+
+  test('a selected-agent session keeps the default and the commands it can run', () => {
+    const selected = compileSelectedAgentConfig(manifest(), 'writer', 'opencode', { 'commands/daily.md': 'Daily.' });
+    expect(selected.permission).toEqual({ '*': 'allow', bash: { 'git push *': 'ask' } });
+    expect(Object.keys(selected.command ?? {})).toEqual(['quick']);
+  });
+
+  test('the session compile reads each command prompt_file at the session ref', async () => {
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    prompt: Hi.\ncommands:\n  daily:\n    prompt_file: commands/daily.md\n' };
+    mdFileContent = { 'commands/daily.md': 'Daily.' };
+    readRepoFileCalls = [];
+    const result = JSON.parse((await resolveCompiledAgentConfigForSession(PROJECT, 'feature/yaml'))!);
+    expect(result.command.daily.template).toBe('Daily.');
+    expect(readRepoFileCalls).toEqual(['commands/daily.md']);
+    expect(JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'w', 'feature/yaml')).command.daily.template).toBe('Daily.');
+  });
+
+  // Prod 2026-10-14: 15 declared subagents with ~270 KB of prompts never booted
+  // (one env string over 128 KiB). A v3 project declares them all in kortix.yaml.
+  test('17 declared agents with ~300 KB of prompts reach the sandbox env, every string within the exec limit', async () => {
+    const { buildSessionRuntimeEnv } = await import('./session-runtime-env');
+    const { MAX_ENV_STRING_BYTES, envStringBytes, readCompiledAgentConfigEnv } = await import('@kortix/api-contract/compiled-agent-config-env');
+    const words = 'read the evidence pack then cite each page and the quoted line before any claim about the class'.split(' ');
+    const prose = (seed: number) => Array.from({ length: 3_600 }, (_, i) => words[(seed * 7 + i * i) % words.length]).join(' ');
+    const agents: Record<string, unknown> = { lead: { mode: 'primary', prompt: 'Lead.' }, admin: { mode: 'primary', prompt: 'Admin.' } };
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 15; i++) {
+      agents[`worker-${i}`] = { mode: 'subagent', model: 'kortix/test-model', variant: 'high', prompt_file: `agents/worker-${i}.md` };
+      files[`agents/worker-${i}.md`] = prose(i);
+    }
+    const compiled = JSON.stringify(compileAgentConfig({ kortix_version: 3, default_agent: 'lead', permission: 'allow', agents }, 'opencode', files));
+    expect(Buffer.byteLength(compiled)).toBeGreaterThan(280_000);
+
+    const env = buildSessionRuntimeEnv({ projectId: 'p', sessionId: 's', compiledAgentConfig: compiled } as Parameters<typeof buildSessionRuntimeEnv>[0]);
+    for (const [name, value] of Object.entries(env)) if (value !== undefined) expect({ name, fits: envStringBytes(name, value) <= MAX_ENV_STRING_BYTES }).toEqual({ name, fits: true });
+    const delivered = JSON.parse(readCompiledAgentConfigEnv(env)!);
+    expect(Object.keys(delivered.agent)).toHaveLength(17);
+    expect(delivered.agent['worker-14']).toMatchObject({ mode: 'subagent', model: 'kortix/test-model', variant: 'high', prompt: prose(14), permission: 'allow' });
+  });
+
+  test('v2 compiles neither', () => {
+    const compiled = compileAgentConfig({ kortix_version: 2, default_agent: 'w', permission: 'allow', commands: { x: { prompt: 'x' } }, agents: { w: {} } });
+    expect(compiled?.permission).toBeUndefined();
+    expect(compiled?.command).toBeUndefined();
+  });
+});
+
 describe('v2 agent tool toggles', () => {
   test('manifest tool toggles compile per agent without changing other agents', () => {
     const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });

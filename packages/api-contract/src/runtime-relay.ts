@@ -359,6 +359,25 @@ export interface CompiledAgentSet {
    * plus the ones `project_tools` replaces. Absent: all of them load.
    */
   kortix_tools?: string[];
+  /**
+   * kortix.yaml v3 `permission`: the tool policy every agent starts from. Each
+   * compiled agent's `permission` already has it applied under its own rules;
+   * this copy reaches the harness's built-in agents (OpenCode's general/explore).
+   */
+  permission?: unknown;
+  /** kortix.yaml v3 `commands`, as OpenCode's `command` config. */
+  command?: Record<string, CompiledCommand>;
+}
+
+/** One slash command. `template` is the prompt; `$ARGUMENTS` and `$1`, `$2`, … take the arguments. */
+export interface CompiledCommand {
+  template: string;
+  description?: string;
+  /** The agent that runs it; default: the session's agent. */
+  agent?: string;
+  model?: string;
+  /** Run as a subagent task. */
+  subtask?: boolean;
 }
 
 /** May an agent with this compiled `tools` map use `tool`? Its own entry, else `*`, else yes. */

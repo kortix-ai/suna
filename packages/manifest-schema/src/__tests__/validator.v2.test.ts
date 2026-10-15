@@ -1298,6 +1298,30 @@ describe('kortix_version 3 YAML-only agent behavior', () => {
     expect(summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2')).errorPaths).toContain('agents.writer.prompt');
     expect(summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2')).errorPaths).toContain('agents.reader.prompt_file');
   });
+
+  test('a default `permission` and `commands` replace the harness folder', () => {
+    const yaml =
+      'kortix_version: 3\ndefault_agent: writer\npermission: allow\nagents:\n  writer:\n    prompt: Be concise.\n' +
+      'commands:\n  daily:\n    description: Run the daily report\n    prompt_file: commands/daily.md\n    agent: writer\n' +
+      '  quick:\n    prompt: Summarize $ARGUMENTS\n    model: kortix/test-model\n    subtask: true\n';
+    expect(summarize(yaml).errorPaths).toEqual([]);
+    expect(summarize(yaml.replace('permission: allow', 'permission: { bash: { "git *": deny }, "*": allow }')).errorPaths).toEqual([]);
+    expect(summarize(yaml.replace('permission: allow', 'permission: maybe')).errorPaths).toContain('permission');
+    for (const [from, to, path] of [
+      ['prompt: Summarize $ARGUMENTS', 'description: no prompt', 'commands.quick'],
+      ['prompt: Summarize $ARGUMENTS', 'prompt: [bad]', 'commands.quick.prompt'],
+      ['prompt_file: commands/daily.md', 'prompt_file: ../daily.md', 'commands.daily.prompt_file'],
+      ['    agent: writer', '    agent: nobody', 'commands.daily.agent'],
+      ['subtask: true', 'subtask: yes please', 'commands.quick.subtask'],
+      ['subtask: true', 'template: raw', 'commands.quick.template'],
+      ['  quick:', '  Bad Name:', 'commands.Bad Name'],
+    ] as const) {
+      expect({ to, errors: summarize(yaml.replace(from, to)).errorPaths }).toEqual({ to, errors: expect.arrayContaining([path]) });
+    }
+    // v2 keeps its harness folder: both keys are v3-only.
+    const v2 = summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2').replace('    prompt: Be concise.\n', ''));
+    expect(v2.errorPaths).toEqual(expect.arrayContaining(['permission', 'commands']));
+  });
 });
 
 describe('v2 agent tool access', () => {

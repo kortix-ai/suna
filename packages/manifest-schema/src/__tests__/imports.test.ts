@@ -126,6 +126,18 @@ describe('resolveManifestImports', () => {
     expect(result.issues).toEqual([]);
   });
 
+  test('an imported file declares commands; a default permission stays in the root', async () => {
+    const resolved = await resolve({
+      'kortix.yaml': 'kortix_version: 3\ndefault_agent: a\npermission: allow\nimports: [desk/kortix.yaml]\nagents:\n  a:\n    prompt: Hi.\ncommands:\n  hello:\n    prompt: Say hello.\n',
+      'desk/kortix.yaml': 'commands:\n  daily:\n    prompt_file: desk/commands/daily.md\n    agent: a\n',
+    });
+    expect(Object.keys(resolved.raw.commands as object)).toEqual(['hello', 'daily']);
+    expect(resolved.origins.commands).toEqual({ hello: 'kortix.yaml', daily: 'desk/kortix.yaml' });
+    expect(validateManifest(resolved.raw, 'yaml').issues).toEqual([]);
+    const error = await resolve({ 'kortix.yaml': 'kortix_version: 3\nimports: [a.yaml]\n', 'a.yaml': 'permission: allow\n' }).catch((e: unknown) => e);
+    expect((error as Error).message).toMatch(/a\.yaml: "permission" is only allowed in kortix\.yaml/);
+  });
+
   test('a tools key in any file selects the Kortix tools; with none in any file, all of them load', async () => {
     const root = 'kortix_version: 2\ndefault_agent: a\nimports: [extra.yaml]\nagents:\n  a: {}\n';
     const none = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'agents:\n  b: {}\n' });
