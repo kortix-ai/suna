@@ -18691,6 +18691,7 @@
       "text5cbdd59d7048": "En todos los proveedores",
       "text347cf684f3e7": "{value0}% de los sandboxes nuevos",
       "textad0f852848bf": "{value0} correctos · {value1} fallidos",
+      "textbdb4791584c6": "{count, plural, one {# migración} other {# migraciones}}",
       "text87ee04b2e9ee": "Ninguno detenido",
       "text58dfb849aa70": "{value0} detenidos",
       "text42bd5f3bc3ca": "Se muestra en tu lista de {value0}.",

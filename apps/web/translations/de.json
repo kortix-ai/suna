@@ -18691,6 +18691,7 @@
       "text5cbdd59d7048": "Über alle Anbieter hinweg",
       "text347cf684f3e7": "{value0}% der neuen Sandboxes",
       "textad0f852848bf": "{value0} ok · {value1} fehlgeschlagen",
+      "textbdb4791584c6": "{count, plural, one {# Migration} other {# Migrationen}}",
       "text87ee04b2e9ee": "Keine gestoppt",
       "text58dfb849aa70": "{value0} gestoppt",
       "text42bd5f3bc3ca": "Wird in deiner Liste der {value0} angezeigt.",

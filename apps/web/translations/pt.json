@@ -18691,6 +18691,7 @@
       "text5cbdd59d7048": "Em todos os provedores",
       "text347cf684f3e7": "{value0}% dos novos sandboxes",
       "textad0f852848bf": "{value0} ok · {value1} com falha",
+      "textbdb4791584c6": "{count, plural, one {# migração} other {# migrações}}",
       "text87ee04b2e9ee": "Nenhum interrompido",
       "text58dfb849aa70": "{value0} interrompidos",
       "text42bd5f3bc3ca": "Exibido na sua lista de {value0}.",

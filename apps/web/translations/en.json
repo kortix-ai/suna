@@ -18702,6 +18702,7 @@
       "text5cbdd59d7048": "Across every provider",
       "text347cf684f3e7": "{value0}% of new sandboxes",
       "textad0f852848bf": "{value0} ok · {value1} failed",
+      "textbdb4791584c6": "{count, plural, one {# migration} other {# migrations}}",
       "text87ee04b2e9ee": "None stopped",
       "text58dfb849aa70": "{value0} stopped",
       "text42bd5f3bc3ca": "Shown in your list of {value0}s.",

@@ -18691,6 +18691,7 @@
       "text5cbdd59d7048": "涵盖所有提供商",
       "text347cf684f3e7": "新沙盒的 {value0}%",
       "textad0f852848bf": "{value0} 个正常 · {value1} 个失败",
+      "textbdb4791584c6": "{count, plural, other {# 次迁移}}",
       "text87ee04b2e9ee": "无已停止项",
       "text58dfb849aa70": "已停止 {value0} 个",
       "text42bd5f3bc3ca": "显示在你的{value0}列表中。",
