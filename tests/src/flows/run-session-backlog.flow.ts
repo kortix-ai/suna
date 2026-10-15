@@ -1371,9 +1371,24 @@ harnessFlow(
 );
 
 // ─── RUN-20: a codemode script runs its tool calls on pi ─────────────────────
-// pi only: codemode is a pi tool (kortix.yaml `harnesses.pi.codemode`, on by default).
-// The script's two bash calls write files, so the flow reads the effect back; the
-// runtime's own message list holds the nested calls the transcript flattens away.
+// pi only: codemode is a pi tool. The project sets `harnesses.pi.codemode: only`, so the
+// manifest reaches the box (API -> KORTIX_PI_CODEMODE) and the model has no other tool to
+// call: a direct bash call cannot pass for a script. The script's two bash calls write
+// files, so the flow reads the effect back; the runtime's own message list holds the
+// nested calls the transcript flattens away.
+const RUN20_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'agents:',
+  '  kortix:',
+  '    kortix_permissions: all',
+  '    skills: all',
+  'harnesses:',
+  '  pi:',
+  '    codemode: only',
+  '',
+].join('\n');
+
 flow(
   'RUN-20',
   {
@@ -1381,55 +1396,64 @@ flow(
     requires: ['funded', 'daytona'],
     timeoutMs: 780_000,
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
-    const session = await bootSession(ctx, 'pi');
-    const { projectId, sessionId } = session;
-    const nonce = `ke2e-run20-${Date.now()}`;
-    const done = `RUN20_DONE_${Date.now()}`;
-    await ctx.step('the agent runs one codemode script that makes two bash calls', async () => {
-      // A task, not pasted code: a model told to copy escaped source verbatim sent it to bash.
-      await sendPrompt(
-        ctx,
-        projectId,
-        sessionId,
-        `Use the codemode tool exactly once. In that one script, call tools.bash twice: ` +
-          `the first command is: printf ${nonce}-a > ${nonce}-a.txt ` +
-          `and the second command is: printf ${nonce}-b > ${nonce}-b.txt ` +
-          `Then return the text "wrote both". Use no other tool. Then reply with exactly: ${done}`,
-      );
-      const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
-      const tools = messages.flatMap((m) => m.tools ?? []);
-      if (!tools.some((t) => t.tool === 'codemode' && t.status === 'completed')) {
-        throw new Error(`no completed codemode call: ${JSON.stringify(tools)}`);
-      }
-      // The script's calls are not calls of their own in the conversation.
-      if (tools.some((t) => t.tool === 'bash')) throw new Error(`a bash call ran outside the script: ${JSON.stringify(tools)}`);
-    });
-    await ctx.step('the runtime records the script\'s two bash calls on the codemode part', async () => {
-      const root = await pinnedRoot(ctx, projectId, sessionId);
-      const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
-      const codemode = parts.find((p) => p.type === 'tool' && p.tool === 'codemode' && p.state?.status === 'completed');
-      const calls = (codemode?.state?.metadata?.calls ?? []) as Array<{ name?: string; status?: string }>;
-      const ran = calls.map((c) => `${c.name}:${c.status}`);
-      if (ran.length !== 2 || !ran.every((c) => c === 'bash:ok' || c === 'bash:complete')) {
-        throw new Error(`codemode metadata.calls is ${JSON.stringify(calls)}`);
-      }
-    });
-    await ctx.step('both files the script wrote exist with their content', async () => {
-      for (const suffix of ['a', 'b']) {
-        const file = await ctx.client
-          .as(ctx.P.OWNER)
-          .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${nonce}-${suffix}.txt`)}`));
-        file.status(200).body().matches('$.content', new RegExp(`^${nonce}-${suffix}$`));
-      }
-    });
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step('the project runs pi with harnesses.pi.codemode: only', async () => {
+        await world.setFeature('pi_harness', true);
+        await world.commitToMain({ 'kortix.yaml': RUN20_MANIFEST }, 'ke2e RUN-20: codemode only');
+      });
+      const session = await bootSession(ctx, 'pi', { project });
+      const { projectId, sessionId } = session;
+      const nonce = `ke2e-run20-${Date.now()}`;
+      const done = `RUN20_DONE_${Date.now()}`;
+      await ctx.step('the agent runs one codemode script that makes two bash calls', async () => {
+        await sendPrompt(
+          ctx,
+          projectId,
+          sessionId,
+          `Use the codemode tool exactly once. In that one script, call tools.bash twice: ` +
+            `the first command is: printf ${nonce}-a > ${nonce}-a.txt ` +
+            `and the second command is: printf ${nonce}-b > ${nonce}-b.txt ` +
+            `Then return the text "wrote both". Then reply with exactly: ${done}`,
+        );
+        const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+        const tools = messages.flatMap((m) => m.tools ?? []);
+        if (!tools.some((t) => t.tool === 'codemode' && t.status === 'completed')) {
+          throw new Error(`no completed codemode call: ${JSON.stringify(tools)}`);
+        }
+        // The script's calls are not calls of their own in the conversation.
+        if (tools.some((t) => t.tool === 'bash')) throw new Error(`a bash call ran outside the script: ${JSON.stringify(tools)}`);
+      });
+      await ctx.step('the runtime records the script\'s two bash calls on the codemode part', async () => {
+        const root = await pinnedRoot(ctx, projectId, sessionId);
+        const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
+        const codemode = parts.find((p) => p.type === 'tool' && p.tool === 'codemode' && p.state?.status === 'completed');
+        const calls = (codemode?.state?.metadata?.calls ?? []) as Array<{ name?: string; status?: string }>;
+        const ran = calls.map((c) => `${c.name}:${c.status}`);
+        if (ran.length !== 2 || !ran.every((c) => c === 'bash:ok' || c === 'bash:complete')) {
+          throw new Error(`codemode metadata.calls is ${JSON.stringify(calls)}`);
+        }
+      });
+      await ctx.step('both files the script wrote exist with their content', async () => {
+        for (const suffix of ['a', 'b']) {
+          const file = await ctx.client
+            .as(ctx.P.OWNER)
+            .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${nonce}-${suffix}.txt`)}`));
+          file.status(200).body().matches('$.content', new RegExp(`^${nonce}-${suffix}$`));
+        }
+      });
+    } finally {
+      await world.close();
+    }
   },
 );
 
