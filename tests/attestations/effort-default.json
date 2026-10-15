@@ -40,12 +40,12 @@
     "tests/src/flows/projects-misc.flow.ts"
   ],
   "diff_hash": "39faac17f5fb15108d6674e39a5aa9e4fb69248e77ebfef503caa0a548273b8f",
-  "head": "bb43cfe1f4c9b633acb95a6e8f60e7903598003e",
-  "passed": false,
+  "head": "13f9ebd7bf29f9eee4f57d0fefbb64af3bd53662",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "skipped-unaffected",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T14:01:42.057Z"
+  "at": "2026-10-15T14:04:17.877Z"
 }
