@@ -174,8 +174,9 @@ For change requests and the review inbox, probe `REVIEW_CONTROL_ACTIONS`. `chang
 | `creditBreakdown(accountId?)` · `transactions(params?)` · `transactionsSummary(params?)` | Credit balance by bucket · transaction history · totals. |
 | `usageHistory(params?)` · `usageRollup(params?)` | Usage over time · usage grouped by model, provider or day. |
 | `sessionCosts.list({ accountId?, projectId?, limit?, offset? })` · `sessionCosts.get(sessionId, options?)` | Usage records per session · one session's model and compute ledger. |
-| `tierConfigurations()` | The available plans. |
-| `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` · `.cancelScheduledChange(accountId?)` · `.prorationPreview(newPriceId, accountId?)` | Manage the subscription. |
+| `tierConfigurations()` | The named amounts (Starter, Pro, Scale) and the minimum and maximum monthly amount. |
+| `setPlan({ monthlyUsd, successUrl, cancelUrl, locale?, accountId? })` | Subscribe to, or change, the credits plan. `monthlyUsd` is a whole dollar from 20 to 10,000; one credit is one cent. It resolves to `{ status: 'checkout_created', checkout_url }` when the account has no paid subscription (redirect there), `{ status: 'updated' \| 'unchanged' }` when an existing subscription changed in place, or `{ status: 'payment_pending', client_secret }` when a raise needs payment confirmation. A raise is charged now and grants the prorated credits at once; a cut applies at the next renewal. React: `useSetBillingPlan()` from `@kortix/sdk/react`. |
+| `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` | Manage the subscription. `cancelScheduledChange` and `prorationPreview` are retired and reject with `ENDPOINT_RETIRED`. |
 | `credits.purchase(input)` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · read and set auto top-up. |
 
 Before you render a purchase control, ask `canOfferTopup(state)` (root export) about the account state: `true` only when the plan may buy credits and the caller may change billing. `canManageBilling(state)` answers the second half alone. Both return `false` while `state` is `undefined` or `null`, so a member never sees a control the API answers with `403`.
@@ -649,7 +650,7 @@ Each name below is marked `@deprecated` and stays until the next major version. 
 | `setCachedAuthToken` · `setBootstrapAuthToken` | Return the token from your own `getToken` |
 | `claimNext`, `enqueue`, `createSessionQueue` and the other `@kortix/sdk/message-queue` names | `s.send`, or `useSession().send` in React |
 | `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `newestWireIdClock`, `mintWireMessageIdAbove` and the `WIRE_ID_*` constants | `mintWireMessageId`. Message ids are opaque. |
-| `billing.checkout.createSession` · `billing.checkout.confirmSession` | `createPerSeatCheckout(input)` (root export). Both reject with `ENDPOINT_RETIRED`. |
-| `billing.subscription.scheduleDowngrade` | `billing.subscription.createPortalSession`. It rejects with `ENDPOINT_RETIRED`. |
+| `billing.checkout.createSession` · `billing.checkout.confirmSession` · `createPerSeatCheckout` · `claimPerSeatBilling` | `billing.setPlan(input)`. All reject with `ENDPOINT_RETIRED`. |
+| `billing.subscription.scheduleDowngrade` · `billing.subscription.cancelScheduledChange` · `billing.subscription.prorationPreview` | `billing.setPlan(input)`, or `billing.subscription.createPortalSession`. They reject with `ENDPOINT_RETIRED`. |
 
 Other deprecated root names wrap routes that the API does not serve. They reject with `ENDPOINT_RETIRED`, resolve `null`, or return `404`, and they have no replacement.

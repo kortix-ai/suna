@@ -76,7 +76,7 @@ const ROLES: RoleInput[] = [
 const ACTIVE_BILLING: BillingInput = {
   credits: { total: 2, daily: 0, monthly: 2, extra: 0, can_run: true },
   billing_state: 'active',
-  plan: { key: 'free', label: 'Free', sublabel: null } as BillingInput['plan'],
+  plan: { key: 'free', label: 'Free' } as BillingInput['plan'],
   subscription: { tier_display_name: 'Free', can_purchase_credits: false },
   tier: { name: 'free', display_name: 'Free', monthly_credits: 2 },
 };
@@ -157,6 +157,15 @@ describe('billingView', () => {
     expect(model.blocked).toBe(false);
     expect(model.blockedReason).toBeNull();
     expect(model.credits.total).toBe(2);
+  });
+
+  test('a Credits plan reports its monthly credits (USD x 100); Free reports none', () => {
+    const paid = billingView({
+      ...ACTIVE_BILLING,
+      plan: { family: 'credits', label: 'Credits', monthly_usd: 20 },
+    });
+    expect(paid.monthlyCredits).toBe(2000);
+    expect(billingView(ACTIVE_BILLING).monthlyCredits).toBeNull();
   });
 
   test('out_of_credits is a hard block with its own reason', () => {

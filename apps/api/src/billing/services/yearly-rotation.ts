@@ -2,7 +2,7 @@ import {
   getYearlyAccountsDueForRotation,
   updateCreditAccount,
 } from '../repositories/credit-accounts';
-import { getMonthlyCredits } from './tiers';
+import { canonicalTier, getTier, planMonthlyUsd } from './tiers';
 import { wallet } from '../wallet';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { ROTATION_BATCH_SIZE } from './rotation-batch';
@@ -15,8 +15,8 @@ import { ROTATION_BATCH_SIZE } from './rotation-batch';
 // reconciliation, and it is the only column that says what was actually
 // charged. The resolver's overlays are entitlement overlays: an admin-issued
 // trial lifts what an account may DO for a window without any money changing
-// hands, and the per-seat self-heal repairs a stale gate. Granting against
-// either would hand out credits nobody paid for, every rotation, forever.
+// hands. Granting against it would hand out credits nobody paid for, every
+// rotation, forever.
 
 export async function processYearlyCreditRotation(): Promise<{
   processed: number;
@@ -38,7 +38,12 @@ export async function processYearlyCreditRotation(): Promise<{
   async function rotateBatch(accounts: Awaited<ReturnType<typeof getYearlyAccountsDueForRotation>>) {
     for (const account of accounts) {
       try {
-        const credits = getMonthlyCredits(account.tier ?? 'free');
+        // A paid plan and an Enterprise contract both carry their monthly
+        // amount on the row; anything else grants its fixed allowance.
+        const plan = canonicalTier(account.tier);
+        const credits = plan === 'credits' || plan === 'enterprise'
+          ? planMonthlyUsd(account)
+          : getTier(account.tier ?? 'free').monthlyCredits;
         const now = new Date();
         // UTC, like the free-tier key: a replica in another time zone must not mint a second key at a month edge.
         const yearMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -48,7 +53,9 @@ export async function processYearlyCreditRotation(): Promise<{
           await wallet.reset({
             accountId: account.accountId,
             amount: credits,
-            description: `Yearly plan monthly credit rotation: ${credits} credits`,
+            description: plan === 'enterprise'
+              ? `Enterprise contract monthly credits: ${Math.round(credits * 100)} credits`
+              : `Yearly plan monthly credits: ${Math.round(credits * 100)} credits`,
             key: { event: idempotencyKey },
           });
         }

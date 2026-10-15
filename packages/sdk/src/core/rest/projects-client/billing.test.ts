@@ -9,19 +9,17 @@ import type {
 import {
   canManageBilling,
   canOfferTopup,
-  cancelScheduledChange,
   cancelSubscription,
   configureAutoTopup,
-  claimPerSeatBilling,
-  createPerSeatCheckout,
   createPortalSession,
   fetchAccountStateWithToken,
   getAccountState,
   getAccountStateMinimal,
   getAutoTopupSettings,
   getAutoTopupSetupStatus,
+  getBillingTierConfigurations,
   getDefaultAccountState,
-  getProrationPreview,
+  setBillingPlan,
   purchaseCredits,
   reactivateSubscription,
   requestTopUp,
@@ -138,32 +136,74 @@ test('createPortalSession posts return_url to create-portal-session', async () =
   expect(last().body).toEqual({ account_id: undefined, return_url: 'https://app.example.com/billing' });
 });
 
-test('cancelSubscription / reactivateSubscription / cancelScheduledChange hit their endpoints', async () => {
+test('cancelSubscription / reactivateSubscription hit their endpoints', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await cancelSubscription('too expensive');
   expect(last().url).toContain('/billing/cancel-subscription');
 
   await reactivateSubscription();
   expect(last().url).toContain('/billing/reactivate-subscription');
-
-  await cancelScheduledChange();
-  expect(last().url).toContain('/billing/cancel-scheduled-change');
 });
 
-test('per-seat, sync, and auto-topup setup methods own their REST paths', async () => {
-  nextResponse = { status: 200, body: { status: 'checkout_created' } };
-  await createPerSeatCheckout({
+test('setBillingPlan posts monthly_usd to /billing/plan and returns the checkout_created result', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 'checkout_created', checkout_url: 'https://checkout.stripe.test/c', monthly_usd: 100 },
+  };
+  const result = await setBillingPlan({
+    monthlyUsd: 100,
     successUrl: 'https://example.com/success',
     cancelUrl: 'https://example.com/cancel',
+    locale: 'de',
     accountId: 'acc-1',
   });
-  expect(last().url).toContain('/billing/create-per-seat-checkout');
-  expect(last().body).toMatchObject({ account_id: 'acc-1' });
+  expect(last().url).toContain('/billing/plan');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    monthly_usd: 100,
+    success_url: 'https://example.com/success',
+    cancel_url: 'https://example.com/cancel',
+    locale: 'de',
+    account_id: 'acc-1',
+  });
+  expect(result).toEqual({
+    status: 'checkout_created',
+    checkout_url: 'https://checkout.stripe.test/c',
+    monthly_usd: 100,
+  });
+});
 
-  nextResponse = { status: 200, body: { ok: true, status: 'migrated' } };
-  await claimPerSeatBilling('acc-1');
-  expect(last().url).toContain('/billing/claim-per-seat');
+test('setBillingPlan returns the updated, unchanged and payment_pending variants unchanged', async () => {
+  const input = { monthlyUsd: 500, successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' };
+  for (const body of [
+    { status: 'updated', monthly_usd: 500 },
+    { status: 'unchanged', monthly_usd: 500 },
+    { status: 'payment_pending', monthly_usd: 500, client_secret: 'pi_secret' },
+  ]) {
+    nextResponse = { status: 200, body };
+    expect(await setBillingPlan(input)).toEqual(body as never);
+  }
+});
 
+test('setBillingPlan surfaces the 400 for an out-of-range amount', async () => {
+  nextResponse = { status: 400, body: { error: 'monthly_usd out of range' } };
+  await expect(
+    setBillingPlan({ monthlyUsd: 5, successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' }),
+  ).rejects.toMatchObject({ status: 400 });
+});
+
+test('tier configurations expose the purchasable range', async () => {
+  nextResponse = {
+    status: 200,
+    body: { tiers: [], min_monthly_usd: 50, max_monthly_usd: 10000 },
+  };
+  const result = await getBillingTierConfigurations();
+  expect(last().url).toContain('/billing/tier-configurations');
+  const range: [number, number] = [result.min_monthly_usd, result.max_monthly_usd];
+  expect(range).toEqual([50, 10000]);
+});
+
+test('sync and auto-topup setup methods own their REST paths', async () => {
   await syncSubscription('acc-1');
   expect(last().url).toContain('/billing/sync-subscription');
 
@@ -173,15 +213,6 @@ test('per-seat, sync, and auto-topup setup methods own their REST paths', async 
   };
   await getAutoTopupSetupStatus('acc-1');
   expect(last().url).toContain('/billing/auto-topup/setup-status?account_id=acc-1');
-});
-
-test('getProrationPreview GETs with new_price_id (+ optional account_id) as query params', async () => {
-  nextResponse = { status: 200, body: {} };
-  await getProrationPreview('price_123', 'acc-1');
-  expect(last().url).toContain('/billing/proration-preview?');
-  expect(last().url).toContain('new_price_id=price_123');
-  expect(last().url).toContain('account_id=acc-1');
-  expect(last().method).toBe('GET');
 });
 
 test('purchaseCredits posts amount + urls to purchase-credits', async () => {
@@ -230,7 +261,7 @@ test('getUsageRollup serializes only supported grouping dimensions', async () =>
 
 // ── resolvedPlan ────────────────────────────────────────────────────────────
 // The API's `plan` block is the one place that knows what an account BEHAVES
-// as (trial overlay + per-seat self-heal + grandfathered naming). These pin
+// as (trial overlay + legacy-key naming). These pin
 // that the selector reads it, and that it still answers on a response from an
 // API old enough not to send the block at all.
 
@@ -238,22 +269,22 @@ test('resolvedPlan reads the API plan block verbatim', () => {
   const state: AccountState = {
     ...getDefaultAccountState(),
     plan: {
-      key: 'per_seat',
-      family: 'team',
-      label: 'Team',
-      sublabel: '$40/seat/mo · grandfathered',
-      status: 'grandfathered',
-      shape: 'seat',
+      key: 'credits',
+      family: 'credits',
+      label: 'Credits',
+      sublabel: null,
+      status: 'current',
+      shape: 'credits',
       rank: 4,
-      is_grandfathered: true,
+      monthly_usd: 100,
     },
   };
 
   expect(resolvedPlan(state)).toEqual({
-    family: 'team',
-    label: 'Team',
-    sublabel: '$40/seat/mo · grandfathered',
-    isGrandfathered: true,
+    family: 'credits',
+    label: 'Credits',
+    sublabel: null,
+    monthlyUsd: 100,
   });
 });
 
@@ -265,19 +296,20 @@ test('resolvedPlan reports the TRIAL plan, not the stored subscription tier', ()
     ...getDefaultAccountState(),
     subscription: { ...getDefaultAccountState().subscription, tier_key: 'free' },
     plan: {
-      key: 'team',
-      family: 'team',
-      label: 'Team',
+      key: 'credits',
+      family: 'credits',
+      label: 'Credits',
       sublabel: null,
-      status: 'retired',
-      shape: 'flat',
+      status: 'current',
+      shape: 'credits',
       rank: 8,
-      is_grandfathered: false,
+      monthly_usd: null,
     },
   };
 
-  expect(resolvedPlan(state).family).toBe('team');
-  expect(resolvedPlan(state).label).toBe('Team');
+  expect(resolvedPlan(state).family).toBe('credits');
+  expect(resolvedPlan(state).label).toBe('Credits');
+  expect(resolvedPlan(state).monthlyUsd).toBeNull();
 });
 
 test('resolvedPlan falls back to the tier fields when the API sends no plan block', () => {
@@ -290,10 +322,10 @@ test('resolvedPlan falls back to the tier fields when the API sends no plan bloc
 
   expect(state.plan).toBeUndefined();
   expect(resolvedPlan(state)).toEqual({
-    family: 'team',
+    family: 'credits',
     label: 'Ultra (Legacy)',
     sublabel: null,
-    isGrandfathered: false,
+    monthlyUsd: null,
   });
 });
 
@@ -309,8 +341,9 @@ test('the fallback maps every tier key onto one of the three families', () => {
   expect(familyOf('free')).toBe('free');
   expect(familyOf('none')).toBe('free');
   expect(familyOf('enterprise')).toBe('enterprise');
-  expect(familyOf('per_seat')).toBe('team');
-  expect(familyOf('tier_150_1200')).toBe('team');
+  expect(familyOf('per_seat')).toBe('credits');
+  expect(familyOf('credits')).toBe('credits');
+  expect(familyOf('tier_150_1200')).toBe('credits');
 });
 
 test('the fallback label degrades to the raw tier key, never to an empty string', () => {
@@ -329,7 +362,7 @@ test('resolvedPlan answers for a missing account state instead of throwing', () 
     family: 'free',
     label: 'No Plan',
     sublabel: null,
-    isGrandfathered: false,
+    monthlyUsd: null,
   });
 });
 
@@ -340,12 +373,12 @@ test('the app-access projection carries the resolved plan key', () => {
   // account on an admin trial.
   const trialing: AccountStateAppAccessView = {
     subscription: { tier_key: 'free' },
-    plan: { key: 'team' },
+    plan: { key: 'credits' },
     credits: { can_run: false },
   };
   const olderApi: AccountStateAppAccessView = { subscription: { tier_key: 'free' } };
 
-  expect(trialing.plan?.key).toBe('team');
+  expect(trialing.plan?.key).toBe('credits');
   expect(olderApi.plan).toBeUndefined();
 });
 

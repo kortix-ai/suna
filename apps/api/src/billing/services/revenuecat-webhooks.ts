@@ -3,7 +3,7 @@ import { logger } from '../../lib/logger';
 import { WebhookError } from '../../errors';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyStripeSync } from './account-write-owner';
-import { mapRevenueCatProductToTier, getRevenueCatPeriodType, isRevenueCatAnonymous, getMonthlyCredits, getTier } from './tiers';
+import { getRevenueCatPeriodType, isRevenueCatAnonymous, planMonthlyUsd, revenueCatProductMonthlyUsd } from './tiers';
 import { wallet } from '../wallet';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
@@ -100,8 +100,8 @@ export async function processRevenueCatWebhook(body: any) {
 
 async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey: string) {
   const productId = event.product_id;
-  const tierKey = mapRevenueCatProductToTier(productId);
-  if (!tierKey) {
+  const monthlyUsd = revenueCatProductMonthlyUsd(productId);
+  if (monthlyUsd === null) {
     console.warn(`[RevenueCat] Unknown product ID: ${productId}`);
     return;
   }
@@ -112,7 +112,6 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
     return;
   }
 
-  const tier = getTier(tierKey);
   const periodType = getRevenueCatPeriodType(productId);
 
   const oldStripeSubscriptionId = existingAccount?.stripeSubscriptionId ?? null;
@@ -120,7 +119,8 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
   await applyStripeSync(
     accountId,
     {
-      tier: tierKey,
+      tier: 'credits',
+      planMonthlyUsd: String(monthlyUsd),
       provider: 'revenuecat',
       paymentStatus: 'active',
       planType: periodType === 'yearly_commitment' ? 'yearly' : periodType,
@@ -142,39 +142,22 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
     logger.info(`[RevenueCat] Trial INITIAL_PURCHASE for ${accountId}: no credit granted`);
   }
 
-  if (!isTrial && tier.monthlyCredits > 0) {
+  if (!isTrial && monthlyUsd > 0) {
     await wallet.grant({
       accountId,
-      amount: tier.monthlyCredits,
+      amount: monthlyUsd,
       kind: 'tier_grant',
-      description: `${tier.displayName} subscription (mobile): ${tier.monthlyCredits} credits`,
+      description: `Credits plan (mobile): ${monthlyUsd * 100} credits`,
       expiring: true,
       key: { event: dedupeKey },
     });
-  }
-
-  const { MACHINE_CREDIT_BONUS } = await import('./tiers');
-  if (!isTrial && MACHINE_CREDIT_BONUS > 0) {
-    try {
-      await wallet.grant({
-        accountId,
-        amount: MACHINE_CREDIT_BONUS,
-        kind: 'machine_bonus',
-        description: `Welcome credit bonus: $${MACHINE_CREDIT_BONUS}`,
-        expiring: false,
-        key: { event: `machine_bonus:revenuecat:${accountId}:${productId}` },
-      });
-      console.log(`[RevenueCat] Granted $${MACHINE_CREDIT_BONUS} machine bonus for ${accountId}`);
-    } catch (err) {
-      console.error(`[RevenueCat] Failed to grant machine bonus for ${accountId}:`, err);
-    }
   }
 
   if (oldStripeSubscriptionId) {
     await cancelFreeSubscriptionForUpgrade(oldStripeSubscriptionId, accountId);
   }
 
-  console.log(`[RevenueCat] Initial purchase: ${tierKey} for ${accountId}`);
+  console.log(`[RevenueCat] Initial purchase: $${monthlyUsd}/mo for ${accountId}`);
 }
 
 async function handleRevenueCatRenewal(accountId: string, event: any, dedupeKey: string) {
@@ -184,14 +167,13 @@ async function handleRevenueCatRenewal(accountId: string, event: any, dedupeKey:
     return;
   }
 
-  const tierName = account.tier ?? 'free';
-  const credits = getMonthlyCredits(tierName);
+  const credits = revenueCatProductMonthlyUsd(account.revenuecatProductId ?? '') ?? planMonthlyUsd(account);
 
   if (credits > 0) {
     await wallet.reset({
       accountId,
       amount: credits,
-      description: `Mobile renewal: ${credits} credits`,
+      description: `Mobile renewal: ${Math.round(credits * 100)} credits`,
       key: { event: dedupeKey },
     });
   }
@@ -229,6 +211,7 @@ async function handleRevenueCatCancellation(accountId: string, event: any) {
       accountId,
       {
         tier: 'free',
+        planMonthlyUsd: null,
         revenuecatProductId: null,
       },
       { mode: 'update', reason: 'revenuecat.EXPIRATION:revert' },
@@ -270,12 +253,13 @@ async function handleRevenueCatProductChange(accountId: string, event: any) {
       { mode: 'update', reason: 'revenuecat.PRODUCT_CHANGE:pending' },
     );
   } else {
-    const tierKey = mapRevenueCatProductToTier(newProductId);
-    if (tierKey) {
+    const monthlyUsd = revenueCatProductMonthlyUsd(newProductId);
+    if (monthlyUsd !== null) {
       await applyStripeSync(
         accountId,
         {
-          tier: tierKey,
+          tier: 'credits',
+          planMonthlyUsd: String(monthlyUsd),
           provider: 'revenuecat',
           revenuecatProductId: newProductId,
           revenuecatPendingChangeProduct: null,
@@ -333,8 +317,7 @@ async function handleRevenueCatBillingIssue(accountId: string, event: any) {
  * Keyed on the store transaction, so a redelivery replays.
  */
 async function clawBackRevenueCatRefund(accountId: string, event: any, dedupeKey: string) {
-  const tierKey = mapRevenueCatProductToTier(event.product_id);
-  const dollars = tierKey ? getMonthlyCredits(tierKey) : Math.abs(Number(event.price) || 0);
+  const dollars = revenueCatProductMonthlyUsd(event.product_id ?? '') ?? Math.abs(Number(event.price) || 0);
   if (dollars <= 0) return;
 
   await wallet.grant({

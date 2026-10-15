@@ -2,7 +2,7 @@ import type { AccountState } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { describePlanStatus } from './account-overview';
-import { seatProperties } from './plan-card';
+import { describePlanChange } from './plan-card';
 
 /**
  * The Plan pane's model, tested without React.
@@ -22,10 +22,9 @@ function stateWith(patch: Partial<AccountState>): AccountState {
 }
 
 describe('describePlanStatus', () => {
-  test('uses localized status and seat copy', () => {
+  test('uses localized status and monthly-amount copy', () => {
     const state = stateWith({
-      billing_model: 'per_seat',
-      seats: { count: 3 },
+      plan: { key: 'credits', family: 'credits', label: 'Кредити', sublabel: null, monthly_usd: 100 },
       subscription: {
         status: 'active',
         cancel_at_period_end: false,
@@ -35,7 +34,7 @@ describe('describePlanStatus', () => {
     expect(
       describePlanStatus(state, {
         locale: 'sr',
-        teamSeats: (count) => `Тим · ${count} места`,
+        perMonth: (amount) => `${amount}/мес`,
         cancels: (date) => `Отказује се ${date}`,
         cancelsAtPeriodEnd: 'Отказује се на крају периода',
         renews: (date) => `Обнавља се ${date}`,
@@ -43,7 +42,19 @@ describe('describePlanStatus', () => {
         noSubscription: 'Нема претплате',
         status: (value) => value,
       }),
-    ).toMatchObject({ name: 'Тим · 3 места', detail: 'Обнавља се 24. сеп' });
+    ).toMatchObject({ name: 'Кредити', detail: 'Обнавља се 24. сеп' });
+    const { sublabel } = describePlanStatus(state, {
+      locale: 'sr',
+      perMonth: (amount) => `${amount}/мес`,
+      cancels: String,
+      cancelsAtPeriodEnd: '',
+      renews: String,
+      active: '',
+      noSubscription: '',
+      status: String,
+    });
+    expect(sublabel).toStartWith('100');
+    expect(sublabel).toEndWith('/мес');
   });
 
   test('a live subscription renews on its period end', () => {
@@ -92,71 +103,63 @@ describe('describePlanStatus', () => {
     expect(describePlanStatus({} as AccountState).detail).toBe('No subscription');
   });
 
-  test('a per-seat account carries the seat count in the plan name', () => {
-    expect(
-      describePlanStatus(
-        stateWith({ billing_model: 'per_seat', seats: { count: 3 } } as Partial<AccountState>),
-      ).name,
-    ).toBe('Team · 3 seats');
-    // Singular, because "1 seats" is the kind of thing that ships.
-    expect(
-      describePlanStatus(
-        stateWith({ billing_model: 'per_seat', seats: { count: 1 } } as Partial<AccountState>),
-      ).name,
-    ).toBe('Team · 1 seat');
+  test('a credits plan names itself and its monthly amount', () => {
+    const status = describePlanStatus(
+      stateWith({
+        plan: { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: 100 },
+      } as Partial<AccountState>),
+    );
+    expect(status.name).toBe('Credits');
+    expect(status.sublabel).toBe('$100/mo');
+  });
+
+  test('Free and Enterprise carry no monthly amount', () => {
+    for (const [key, label] of [
+      ['free', 'Free'],
+      ['enterprise', 'Enterprise'],
+    ] as const) {
+      const status = describePlanStatus(
+        stateWith({
+          plan: { key, family: key, label, sublabel: null, monthly_usd: null },
+        } as Partial<AccountState>),
+      );
+      expect(status.name).toBe(label);
+      expect(status.sublabel).toBeNull();
+    }
   });
 });
 
-describe('seatProperties', () => {
-  test('uses localized labels, currency, and monthly suffix', () => {
-    expect(
-      seatProperties(
-        stateWith({
-          billing_model: 'per_seat',
-          seats: { count: 3, price_per_seat_usd: 25 },
-        } as Partial<AccountState>),
-        {
-          seats: 'Места',
-          perSeat: 'По месту',
-          monthlyTotal: 'Месечно укупно',
-          perMonth: (amount) => `${amount}/мес`,
-          locale: 'sr',
-        },
-      ),
-    ).toEqual([
-      { id: 'count', label: 'Места', value: '3' },
-      { id: 'price', label: 'По месту', value: '25,00 US$/мес' },
-      { id: 'total', label: 'Месечно укупно', value: '75,00 US$/мес' },
-    ]);
+describe('describePlanChange', () => {
+  test('no paid subscription starts checkout for any valid amount', () => {
+    expect(describePlanChange({ currentUsd: null, nextUsd: 100, hasSubscription: false })).toBe(
+      'subscribe',
+    );
   });
 
-  test('derives the monthly total from count x price', () => {
-    expect(
-      seatProperties(
-        stateWith({
-          billing_model: 'per_seat',
-          seats: { count: 3, price_per_seat_usd: 25 },
-        } as Partial<AccountState>),
-      ),
-    ).toEqual([
-      { id: 'count', label: 'Seats', value: '3' },
-      { id: 'price', label: 'Per seat', value: '$25.00/mo' },
-      { id: 'total', label: 'Monthly total', value: '$75.00/mo' },
-    ]);
+  test('a higher amount is a raise, a lower one a cut, the same one unchanged', () => {
+    expect(describePlanChange({ currentUsd: 100, nextUsd: 500, hasSubscription: true })).toBe(
+      'raise',
+    );
+    expect(describePlanChange({ currentUsd: 100, nextUsd: 50, hasSubscription: true })).toBe('cut');
+    expect(describePlanChange({ currentUsd: 100, nextUsd: 100, hasSubscription: true })).toBe(
+      'unchanged',
+    );
   });
 
-  test('is null for any account that does not bill per seat', () => {
-    // The strip is the one thing on the card a flat plan has no version of —
-    // rendering three empty columns would be worse than rendering none.
-    expect(
-      seatProperties(stateWith({ billing_model: 'legacy' } as Partial<AccountState>)),
-    ).toBeNull();
-    expect(seatProperties(stateWith({}))).toBeNull();
+  test('an amount off the tier ladder is invalid, with or without a subscription', () => {
+    for (const nextUsd of [null, 20, 49, 250, 10_001, 75.5]) {
+      expect(describePlanChange({ currentUsd: 100, nextUsd, hasSubscription: true })).toBe(
+        'invalid',
+      );
+      expect(describePlanChange({ currentUsd: null, nextUsd, hasSubscription: false })).toBe(
+        'invalid',
+      );
+    }
   });
 
-  test('per_seat with no seats block yields null rather than "undefined seats"', () => {
-    expect(
-      seatProperties(stateWith({ billing_model: 'per_seat' } as Partial<AccountState>)),
-    ).toBeNull();
+  test('a live subscription with no known amount counts as a raise, not a new checkout', () => {
+    expect(describePlanChange({ currentUsd: null, nextUsd: 100, hasSubscription: true })).toBe(
+      'raise',
+    );
   });
 });

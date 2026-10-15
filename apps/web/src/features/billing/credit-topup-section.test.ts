@@ -18,6 +18,8 @@ describe('describeTopup', () => {
       minimum: (amount: string) => `Минимум је ${amount}.`,
       contactSales: (amount: string) => `За више од ${amount}, контактирајте продају.`,
       creditHint: (credits: string) => `${credits} кредита · додају се након плаћања.`,
+      creditHintBonus: (credits: string, bonus: string) =>
+        `${credits} кредита + ${bonus} бонуса · додају се након плаћања.`,
       noExpiry: 'Кредити не истичу. 1 $ = 100 кредита.',
       processing: 'Обрада',
       addAmount: (amount: string) => `Додај ${amount}`,
@@ -26,7 +28,7 @@ describe('describeTopup', () => {
     };
     expect(describeTopup(50, false, copy)).toEqual({
       canBuy: true,
-      hint: '5.000 кредита · додају се након плаћања.',
+      hint: '5.000 кредита + 50 бонуса · додају се након плаћања.',
       actionLabel: 'Додај 50 US$',
     });
   });
@@ -35,7 +37,7 @@ describe('describeTopup', () => {
     const { canBuy, hint, actionLabel } = describeTopup(null);
     expect(canBuy).toBe(false);
     expect(actionLabel).toBe('Add credits');
-    expect(hint).toBe('Credits never expire. $1 = 100 credits.');
+    expect(hint).toBe('Credits never expire. $1 = 100 credits, plus a bonus from $50.');
   });
 
   test('a preset amount: buyable, and the button names the exact charge', () => {
@@ -43,6 +45,15 @@ describe('describeTopup', () => {
     expect(canBuy).toBe(true);
     expect(actionLabel).toBe('Add $50');
     expect(hint).toContain('5,000 credits');
+  });
+
+  test('a top-up from $50 shows the bonus credits it adds', () => {
+    expect(describeTopup(50).hint).toBe('5,000 credits + 50 bonus · added as soon as you pay.');
+    expect(describeTopup(1000).hint).toBe('100,000 credits + 5,000 bonus · added as soon as you pay.');
+  });
+
+  test('below $50 there is no bonus and the plain hint shows', () => {
+    expect(describeTopup(49).hint).toBe('4,900 credits · added as soon as you pay.');
   });
 
   test('below the $5 Stripe floor: not buyable, and the line says why', () => {

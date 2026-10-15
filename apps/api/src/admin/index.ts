@@ -143,6 +143,7 @@ adminApp.openapi(
     // extra queries (no N+1) and reports the same plan every server gate
     // enforces for that account.
     const { resolveBillingFromRow } = await import('../billing/services/resolve-billing');
+    const { planMonthlyUsd } = await import('../billing/services/tiers');
 
     const query = parseAdminAccountsListQuery((k: string) => c.req.query(k));
     const { page, limit } = query;
@@ -171,8 +172,8 @@ adminApp.openapi(
 
     const now = Date.now();
     const list = rows.map((r) => {
-      // The plan the account BEHAVES as: an active admin trial and the
-      // per-seat self-heal overlay the stored `tier`, and that is what every
+      // The plan the account BEHAVES as: an active admin trial overlays the
+      // stored `tier`, and that is what every
       // gate enforces. `tier` below stays the STORED column — the tier filter
       // matches on it server-side, so the two must keep meaning the same thing.
       const resolved = resolveBillingFromRow(r, now);
@@ -192,8 +193,8 @@ adminApp.openapi(
         nonExpiringCredits: r.nonExpiringCredits ?? null,
         dailyCreditsBalance: r.dailyCreditsBalance ?? null,
         tier: r.tier ?? null,
-        // RESOLVED plan, named the way the product names plans (Free / Team /
-        // Enterprise + a qualifier). The console renders this instead of mapping
+        // RESOLVED plan, named the way the product names plans (Free / Credits /
+        // Enterprise). The console renders this instead of mapping
         // the raw key onto a hand-maintained label table of its own.
         plan: {
           key: resolved.plan.key,
@@ -201,18 +202,16 @@ adminApp.openapi(
           label: resolved.display.label,
           sublabel: resolved.display.sublabel,
           status: resolved.plan.status,
-          is_grandfathered: resolved.plan.status === 'grandfathered',
+          monthlyUsd: resolved.plan.key === 'credits' ? planMonthlyUsd(r) : null,
         },
         paymentStatus: r.paymentStatus ?? null,
         provider: r.provider ?? null,
         planType: r.planType ?? null,
         stripeSubscriptionId: r.stripeSubscriptionId ?? null,
-        billingModel: r.billingModel ?? null,
-        seatCount: r.seatCount ?? null,
         trial: {
           status: r.trialStatus ?? 'none',
           tier: r.trialTier ?? null,
-          seats: r.trialSeats ?? null,
+          monthlyUsd: r.trialMonthlyUsd != null ? Number(r.trialMonthlyUsd) : (r.trialSeats ? 25 * r.trialSeats : null),
           startedAt: r.trialStartedAt ?? null,
           endsAt: r.trialEndsAt ?? null,
           note: r.trialNote ?? null,
@@ -772,7 +771,7 @@ adminApp.openapi(
       body: {
         content: {
           'application/json': {
-            schema: z.object({ tier: z.string() }),
+            schema: z.object({ tier: z.string(), monthly_usd: z.number().min(0).optional() }),
           },
         },
       },
@@ -794,18 +793,15 @@ adminApp.openapi(
     const { isValidTier } = await import('../billing/services/tiers');
     if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
 
-    // Enterprise is an ENTITLEMENT, not a tier. A `tier='enterprise'` write is
-    // clobbered by the next Stripe subscription sync (webhooks.ts writes the
-    // price-resolved tier back), which silently reverts the account. The flag
-    // survives sync — refuse the wrong primitive here.
-    if (tier === 'enterprise') {
-      return c.json(
-        {
-          error:
-            "enterprise is not assignable as a tier — use POST /admin/api/accounts/{id}/enterprise-entitlement instead (the flag survives Stripe subscription sync; a tier write does not)",
-        },
-        400,
-      );
+    // `tier='enterprise'` is the custom plan: SSO, SCIM, RBAC, audit, uncapped
+    // projects and Apps. Stripe sync never overwrites it (accountIsAdminPinned).
+    // `monthly_usd` is the contract's monthly credit amount: credited every
+    // month by the rotation sweep for an Enterprise contract, shown as the plan
+    // amount for a credits plan. Omit it to leave the amount unchanged.
+    const monthlyRaw = body.monthly_usd;
+    const monthlyUsd = monthlyRaw === undefined || monthlyRaw === null ? undefined : Number(monthlyRaw);
+    if (monthlyUsd !== undefined && (!Number.isFinite(monthlyUsd) || monthlyUsd < 0 || monthlyUsd > 1_000_000)) {
+      return c.json({ error: 'monthly_usd must be a number from 0 to 1,000,000' }, 400);
     }
 
     const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
@@ -817,7 +813,13 @@ adminApp.openapi(
     // and invalidates the one billing cache the value feeds.
     await applyAdminOverride(
       accountId,
-      { tier },
+      {
+        tier,
+        ...(monthlyUsd !== undefined ? { planMonthlyUsd: String(monthlyUsd) } : {}),
+        // An Enterprise contract with an amount starts crediting on the next
+        // rotation pass.
+        ...(tier === 'enterprise' && monthlyUsd ? { nextCreditGrant: new Date().toISOString() } : {}),
+      },
       { userId: actorUserId ?? null, action: 'admin.account.tier.set' },
     );
 
@@ -848,14 +850,12 @@ adminApp.openapi(
 // ── Set account contracted-Enterprise entitlement flag ────────────────────────
 // `enterprise_entitled` decouples a contracted cloud Enterprise customer's
 // feature entitlements (SAML SSO, SCIM, RBAC, audit access) from the billing
-// tier. Set this when an account signs an Enterprise agreement that is ALSO
-// per-seat billed (a flat Enterprise fee plus per-seat billing): the
-// per-seat Stripe webhook reconciliation will then populate
-// billing_model/seats/credits from the subscription WITHOUT clobbering the
-// enterprise identity entitlements (it leaves `tier` untouched when this flag
-// is on). Clear it when the Enterprise term ends. For a pure-Enterprise (no
-// per-seat) deal, `tier='enterprise'` alone is still sufficient; this flag is
-// the additional, independent entitlement source for the hybrid case.
+// tier. Set this when an account signs an Enterprise agreement that ALSO pays
+// a credits subscription: the Stripe webhook reconciliation then keeps the
+// monthly amount and credits current WITHOUT clobbering the enterprise
+// identity entitlements (it leaves `tier` untouched when this flag is on).
+// Clear it when the Enterprise term ends. For a pure-Enterprise deal,
+// `tier='enterprise'` alone is still sufficient.
 adminApp.openapi(
   createRoute({
     method: 'post',
@@ -940,7 +940,6 @@ adminApp.openapi(
           'application/json': {
             schema: z.object({
               tier_key: z.string().min(1).max(50),
-              seats: z.number().int().min(1),
               duration_days: z.number().int().min(1),
               note: z.string().max(2000).optional(),
               credit_grant: z.number().min(0).optional(),
@@ -962,7 +961,6 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as {
         tier_key: string;
-        seats: number;
         duration_days: number;
         note?: string;
         credit_grant?: number;
@@ -973,7 +971,6 @@ adminApp.openapi(
       const input = {
         accountId,
         tierKey: body.tier_key,
-        seats: body.seats,
         durationDays: body.duration_days,
         note: body.note ?? null,
         actorUserId,

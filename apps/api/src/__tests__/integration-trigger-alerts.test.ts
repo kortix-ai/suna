@@ -173,7 +173,7 @@ beforeAll(async () => {
   // A paid plan with an empty wallet: the billing gate refuses every run.
   await db.execute(sql`
     INSERT INTO kortix.credit_accounts (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-    VALUES (${project.account_id}::uuid, 0, 0, 0, 0, 'tier_2_20')`);
+    VALUES (${project.account_id}::uuid, 0, 0, 0, 0, 'credits')`);
   config.KORTIX_BILLING_INTERNAL_ENABLED = true;
   setTriggerAlertNotifierForTest({
     pushEnabled: true,

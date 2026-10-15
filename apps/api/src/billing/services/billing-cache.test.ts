@@ -33,7 +33,7 @@ describe('resolveAccountBilling — the one billing cache', () => {
 
   test('a plan change mid-window is invisible until the entry expires', async () => {
     expect((await resolveAccountBilling('acct-1', { now: 1_000 })).plan.key).toBe('free');
-    row = { tier: 'per_seat' };
+    row = { tier: 'credits' };
 
     expect(
       (await resolveAccountBilling('acct-1', { now: 1_000 + BILLING_CACHE_TTL_MS - 1 })).plan.key,
@@ -42,7 +42,7 @@ describe('resolveAccountBilling — the one billing cache', () => {
 
     expect(
       (await resolveAccountBilling('acct-1', { now: 1_000 + BILLING_CACHE_TTL_MS })).plan.key,
-    ).toBe('per_seat');
+    ).toBe('credits');
     expect(reads).toBe(2);
   });
 
@@ -62,39 +62,39 @@ describe('resolveAccountBilling — the one billing cache', () => {
     await resolveAccountBilling('acct-b');
     expect(reads).toBe(2);
 
-    row = { tier: 'pro' };
+    row = { tier: 'credits' };
     invalidateAccountBilling();
 
-    expect((await resolveAccountBilling('acct-a')).plan.key).toBe('pro');
-    expect((await resolveAccountBilling('acct-b')).plan.key).toBe('pro');
+    expect((await resolveAccountBilling('acct-a')).plan.key).toBe('credits');
+    expect((await resolveAccountBilling('acct-b')).plan.key).toBe('credits');
     expect(reads).toBe(4);
   });
 
   test('accounts are cached independently of one another', async () => {
     expect((await resolveAccountBilling('acct-1')).plan.key).toBe('free');
-    row = { tier: 'per_seat' };
-    expect((await resolveAccountBilling('acct-2')).plan.key).toBe('per_seat');
+    row = { tier: 'credits' };
+    expect((await resolveAccountBilling('acct-2')).plan.key).toBe('credits');
     expect((await resolveAccountBilling('acct-1')).plan.key).toBe('free');
     expect(reads).toBe(2);
   });
 
   test('{ fresh: true } bypasses the cached value and refreshes it', async () => {
     expect((await resolveAccountBilling('acct-1')).plan.key).toBe('free');
-    row = { tier: 'pro' };
+    row = { tier: 'credits' };
 
-    expect((await resolveAccountBilling('acct-1', { fresh: true })).plan.key).toBe('pro');
+    expect((await resolveAccountBilling('acct-1', { fresh: true })).plan.key).toBe('credits');
     expect(reads).toBe(2);
     // …and the fresh answer is what the next cached read serves.
-    expect((await resolveAccountBilling('acct-1')).plan.key).toBe('pro');
+    expect((await resolveAccountBilling('acct-1')).plan.key).toBe('credits');
     expect(reads).toBe(2);
   });
 
   test('a caller-supplied row skips the read entirely and seeds the cache', async () => {
     const resolved = await resolveAccountBilling('acct-1', { row: { tier: 'tier_25_200' } });
-    expect(resolved.plan.key).toBe('tier_25_200');
+    expect(resolved.plan.key).toBe('credits');
     expect(reads).toBe(0);
 
-    expect((await resolveAccountBilling('acct-1')).plan.key).toBe('tier_25_200');
+    expect((await resolveAccountBilling('acct-1')).plan.key).toBe('credits');
     expect(reads).toBe(0);
   });
 
@@ -116,7 +116,7 @@ describe('resolveAccountBilling — the one billing cache', () => {
     };
 
     const resolved = await resolveAccountBilling('acct-trial', { now: 10_000 });
-    expect(resolved.plan.key).toBe('tier_25_200');
+    expect(resolved.plan.key).toBe('credits');
     expect(resolved.source).toBe('trial');
   });
 });

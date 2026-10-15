@@ -32,8 +32,6 @@ export const ADMIN_ACCOUNTS_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Scale · $800/mo': 'texta5241f08e49b',
   Starter: 'text262b4ff6afdd',
   Team: 'text5985039f106d',
-  'Team · $40/seat/mo': 'text24e800f1cdb3',
   Trialing: 'text3792573d9e3c',
-  'Ultra · $200/mo': 'text098d65d3bf79',
   Unpaid: 'text4b80e74f3fa4',
 };

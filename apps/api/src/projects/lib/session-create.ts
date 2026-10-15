@@ -876,7 +876,6 @@ async function checkSessionBillingAdmission(accountId: string): Promise<{ error:
           // Lets the client tell a genuinely-free/no-plan account ("subscribe")
           // from a paying Team account whose wallet ran dry ("top up") instead
           // of pitching the Free plan to a Team account. See web error-handler.
-          billing_model: billingCheck.billingModel,
           has_subscription: billingCheck.hasSubscription,
           // The unambiguous state — the one field a client should branch on.
           billing_state: billingCheck.billingState,

@@ -67,7 +67,7 @@ describe('ProviderConnectView — two groups, rows open the sheet', () => {
 
   test('the meta line names the method and the model count', () => {
     const out = render();
-    expect(out).toContain('Included with your plan · 42 models');
+    expect(out).toContain('Paid from credits · 42 models');
     expect(out).toContain('API key · 14 models');
   });
 

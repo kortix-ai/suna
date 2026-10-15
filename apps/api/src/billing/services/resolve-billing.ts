@@ -1,7 +1,7 @@
 /**
  * One pure function that answers "what is this account's billing situation?"
- * from a single credit_accounts row: the plan it behaves as (trial overlay,
- * per-seat self-heal), its entitlements after the account-level overrides, and
+ * from a single credit_accounts row: the plan it behaves as (trial overlay),
+ * its entitlements after the account-level overrides, and
  * its compute price. Entitlements, limits, and account state
  * all read it through the cache in `billing-cache.ts`, so no surface
  * re-derives part of the answer and skews from the others.
@@ -21,7 +21,6 @@ import {
   getPlanRecord,
   resolvePlanRecord,
 } from './plan-catalog';
-import { isPaidTier, isPerSeatAccount } from './tier-facts';
 
 /**
  * Trial/subscription/override columns this resolver reads. A structural subset
@@ -33,9 +32,6 @@ export interface BillingRow {
   trialStatus?: string | null;
   trialTier?: string | null;
   trialEndsAt?: string | null;
-  /** Seat allowance of an admin-issued trial; null is uncapped. */
-  trialSeats?: number | null;
-  billingModel?: string | null;
   stripeSubscriptionId?: string | null;
   stripeSubscriptionStatus?: string | null;
   enterpriseEntitled?: boolean | null;
@@ -50,7 +46,7 @@ export interface BillingRow {
 }
 
 /** Where the resolved plan came from. */
-export type BillingPlanSource = 'no_account' | 'trial' | 'per_seat_selfheal' | 'stored';
+export type BillingPlanSource = 'no_account' | 'trial' | 'stored';
 
 /** Where a resolved limit came from. */
 export type BillingLimitSource = 'plan' | 'account_override';
@@ -89,48 +85,8 @@ function trialIsActive(row: BillingRow, nowMs: number): boolean {
   return Number.isFinite(endsAt) && endsAt > nowMs;
 }
 
-/**
- * Per-seat self-heal. A paying seat subscription overrides a stored non-paid
- * tier (the seat-billing migration set billing_model without backfilling tier)
- * so stale rows cannot gate a paying team as free.
- */
-function coercePerSeatTier(rawTier: string, row: BillingRow): string {
-  if (
-    !isPaidTier(rawTier) &&
-    isPerSeatAccount(row.billingModel) &&
-    !!row.stripeSubscriptionId &&
-    row.stripeSubscriptionStatus !== 'canceled' &&
-    row.stripeSubscriptionStatus !== 'unpaid'
-  ) {
-    return 'per_seat';
-  }
-  return rawTier;
-}
-
-/**
- * Seat allowance while an admin-issued trial is active; null when no trial is
- * active or the trial is uncapped. Gates member add and invite.
- */
-export function activeTrialSeatLimit(
-  row: BillingRow | null | undefined,
-  nowMs: number = Date.now(),
-): number | null {
-  if (!row || !trialIsActive(row, nowMs)) return null;
-  return positiveOverride(row.trialSeats);
-}
-
-/** Positive-integer override, or null. */
-function positiveOverride(value: number | null | undefined): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : null;
-}
-
 function displayFor(plan: PlanRecord): { label: string; sublabel: string | null } {
-  const label = PLAN_FAMILY_LABELS[plan.family];
-  if (plan.status !== 'grandfathered') return { label, sublabel: null };
-  const per = plan.price.unit === 'seat_month' ? '/seat/mo' : '/mo';
-  return { label, sublabel: `$${plan.price.amountUsd}${per} · grandfathered` };
+  return { label: PLAN_FAMILY_LABELS[plan.family], sublabel: null };
 }
 
 /**
@@ -140,8 +96,7 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  * Plan precedence:
  *   1. no row                 → `none`     (fail-closed)
  *   2. active admin trial     → trial tier (overlay, never a tier write)
- *   3. per-seat self-heal     → `per_seat`
- *   4. stored tier
+ *   3. stored tier (legacy keys resolve to `credits`)
  *
  * Override precedence (`getAccountEntitlements`, entitlements.ts:107-140):
  *   enterprise_entitled → demo_enterprise → plan. `ENTERPRISE_LICENSE_AVAILABLE`
@@ -162,6 +117,20 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  * The last step is what lets one capability be switched off independently of
  * the all-or-nothing enterprise flag.
  */
+/**
+ * Whether the row carries a contracted Enterprise entitlement: the JSONB
+ * override when present and unexpired, else the legacy column. Every check of
+ * "is this an Enterprise contract" goes through here, so the two stores cannot
+ * disagree.
+ */
+export function enterpriseEntitledFromRow(
+  row: { enterpriseEntitled?: boolean | null; entitlementOverrides?: unknown } | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!row) return false;
+  return readOverride(row.entitlementOverrides, 'enterpriseEntitled', nowMs) ?? row.enterpriseEntitled === true;
+}
+
 export function resolveBillingFromRow(
   row: BillingRow | null | undefined,
   nowMs: number = Date.now(),
@@ -184,9 +153,8 @@ export function resolveBillingFromRow(
     key = row.trialTier as string;
   } else {
     // A row with no tier reads as 'none', not 'free'.
-    const stored = row.tier ?? 'none';
-    key = coercePerSeatTier(stored, row);
-    source = key === stored ? 'stored' : 'per_seat_selfheal';
+    key = row.tier ?? 'none';
+    source = 'stored';
   }
 
   const plan = resolvePlanRecord(key);
@@ -197,8 +165,7 @@ export function resolveBillingFromRow(
   // the column. Per KEY, not per row — an account can carry an expiring
   // `managedModelsOverride` in the JSONB and a permanent `enterprise_entitled`
   // in its column at the same time, and each resolves from its own source.
-  const enterpriseEntitled =
-    readOverride(ov, 'enterpriseEntitled', nowMs) ?? row.enterpriseEntitled === true;
+  const enterpriseEntitled = enterpriseEntitledFromRow(row, nowMs);
   const demoEnterprise = readOverride(ov, 'demoEnterprise', nowMs) ?? row.demoEnterprise === true;
   const managedModelsOverride =
     readOverride(ov, 'managedModelsOverride', nowMs) ??

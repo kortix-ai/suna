@@ -9,7 +9,7 @@ import { getUpgradeGate } from './upgrade-gate.ts';
 
 test('recognizes a subscription-required API response and preserves its account', () => {
   const error = new BillingError(402, {
-    message: 'Subscribe to activate your seat.',
+    message: 'Subscribe to continue.',
     code: 'subscription_required',
     account_id: 'account-team',
   });
@@ -17,7 +17,7 @@ test('recognizes a subscription-required API response and preserves its account'
   assert.deepEqual(getUpgradeGate(error), {
     reason: 'subscription_required',
     accountId: 'account-team',
-    message: 'Subscribe to activate your seat.',
+    message: 'Subscribe to continue.',
   });
 });
 

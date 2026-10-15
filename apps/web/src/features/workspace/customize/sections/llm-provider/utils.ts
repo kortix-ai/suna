@@ -92,7 +92,7 @@ export function buildCodexProvider(
  * exists (`provider-selection.ts` hardcodes it), but the catalog it carries is
  * plan-gated: a free-tier account whose deployment has no servable platform
  * default gets an EMPTY managed set. Reporting that as a connected provider
- * with zero models is the "Kortix · Included with your plan · 0 models" row the
+ * with zero models is the "Kortix · Paid from credits · 0 models" row the
  * model picker contradicts with "No models available" (KRTX-1482), so an empty
  * served set returns null — the row then renders not-connected under the same
  * upgrade story the picker shows. Self-hosts (KORTIX_MANAGED_PROVIDER_ENABLED

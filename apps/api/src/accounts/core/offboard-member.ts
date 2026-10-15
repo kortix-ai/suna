@@ -11,13 +11,13 @@
  * 2. Their tokens in the account, at once.
  * 3. What keeps acting on their identity: computer accounts that reach their
  *    machines, and reminders they set. One audit event records the counts.
- * 4. The paid seat, after the identity row: the sync counts the members left.
- *    Only SCIM waits for it.
+ * 4. Their legacy gateway (YOLO) token in the account. Members are unlimited
+ *    and free, so there is no seat to release.
  * 5. Their personal drives pass to an owner.
  */
 import { accountGroupMembers, accountMemberships } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { onMemberRemoved } from '../../billing/services/seat-management';
+import { revokeYoloTokenForMember } from '../../billing/services/yolo-tokens';
 import { revokeComputersOfDepartedOwner } from '../../connectors/computers';
 import { isAudienceObjectType } from '../../iam/audience-grants';
 import {
@@ -99,18 +99,13 @@ export async function offboardMember(
 
   await endWhatTheyLeftRunning(writer, accountId, userId, reason);
 
-  // Revoke the member's YOLO token and lower the Stripe seat count. No seat
-  // reconciler exists: a failure leaves the seat count wrong until the next
-  // member change.
-  const seatSync = onMemberRemoved(accountId, userId).catch((err) =>
-    logger.error('[billing] seat sync FAILED after member removed', { accountId, userId, error: errorMessage(err) }),
+  // Their legacy gateway (YOLO) token stops working. Awaited: it is one DB
+  // write, so every exit answers after it is gone.
+  await revokeYoloTokenForMember(userId, accountId).catch((err) =>
+    logger.error('[offboarding] YOLO token revoke FAILED', { accountId, userId, reason, error: errorMessage(err) }),
   );
   // Their personal drives in this account pass to an owner.
   await import('../../drives/service').then(({ releaseMemberDrives }) => releaseMemberDrives(accountId, userId));
-  // SCIM answers after the seat is released. Removal and leave answer a person
-  // within the 25 s request deadline (middleware/request-deadline.ts), and the
-  // Stripe client sets no shorter timeout, so they do not wait for Stripe.
-  if (reason === 'deprovisioned') await seatSync;
 
   return { tokenRevocationError };
 }
@@ -139,7 +134,7 @@ async function revokeAssignments(writer: Writer, accountId: string, userId: stri
  * Computer accounts that reach the person's machines, and reminders they set,
  * keep acting on their identity after access ends. Revoke and pause them, and
  * record one event with the counts (null: that step failed). Best effort: the
- * seat release and drive hand-over still run, and the call-time guard
+ * token revoke and drive hand-over still run, and the call-time guard
  * (`tunnel/core/rpc-core.ts`) and fire-time guard (`projects/lib/trigger-fire.ts`)
  * still refuse both.
  */

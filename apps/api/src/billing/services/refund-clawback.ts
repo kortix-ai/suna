@@ -2,6 +2,7 @@ import type Stripe from 'stripe';
 import { logger } from '../../lib/logger';
 import { getStripe } from '../../shared/stripe';
 import { wallet } from '../wallet';
+import { topUpBonusUsd } from './tiers';
 
 // A refund or a lost dispute takes the credit back that the payment bought.
 // Without it, a customer buys a pack, spends it, and then refunds the charge or
@@ -11,6 +12,10 @@ import { wallet } from '../wallet';
 // pack (mode=payment, metadata.type=credit_purchase) and an auto-topup
 // PaymentIntent. A subscription invoice charge is skipped: whether a refunded
 // renewal also revokes the plan's monthly credit is a policy question.
+//
+// A top-up also earned a bonus (top-up-bonus.ts). The clawback takes back the
+// same share of it as the share of the payment refunded: refund half a $1,000
+// top-up and half its $50 bonus goes too.
 
 interface PaidCredit {
   accountId: string;
@@ -36,6 +41,13 @@ async function resolvePaidCredit(paymentIntentId: string | null): Promise<PaidCr
 
 function paymentIntentId(value: string | Stripe.PaymentIntent | null | undefined): string | null {
   return typeof value === 'string' ? value : (value?.id ?? null);
+}
+
+/** The credit (USD) a refund of `refundedUsd` of a `paidUsd` top-up takes back: the refund plus its bonus share. */
+export function creditForRefund(refundedUsd: number, paidUsd: number): number {
+  if (!(paidUsd > 0)) return refundedUsd;
+  const bonusShare = topUpBonusUsd(paidUsd) * (refundedUsd / paidUsd);
+  return Math.round((refundedUsd + bonusShare) * 100) / 100;
 }
 
 async function clawBack(
@@ -77,7 +89,7 @@ export async function handleChargeRefunded(
   // a later partial refund of the same charge is a new key.
   await clawBack(
     credit.accountId,
-    refundedCents / 100,
+    creditForRefund(refundedCents / 100, charge.amount / 100),
     `Refund clawback (${credit.description}, charge ${charge.id})`,
     `refund:${charge.id}:${charge.amount_refunded}`,
   );
@@ -92,7 +104,7 @@ export async function handleDisputeCreated(dispute: Stripe.Dispute): Promise<voi
   }
   await clawBack(
     credit.accountId,
-    dispute.amount / 100,
+    creditForRefund(dispute.amount / 100, dispute.amount / 100),
     `Dispute clawback (${credit.description}, dispute ${dispute.id})`,
     `dispute:${dispute.id}`,
   );
@@ -105,7 +117,7 @@ export async function handleDisputeClosed(dispute: Stripe.Dispute): Promise<void
   if (!credit) return;
   await wallet.grant({
     accountId: credit.accountId,
-    amount: dispute.amount / 100,
+    amount: creditForRefund(dispute.amount / 100, dispute.amount / 100),
     kind: 'admin_grant',
     description: `Dispute won, credit restored (${credit.description}, dispute ${dispute.id})`,
     expiring: false,
