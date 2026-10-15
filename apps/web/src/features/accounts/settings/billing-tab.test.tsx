@@ -80,14 +80,14 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     accountStateData = freeState();
     const html = renderPlan();
     expect(html).toContain('Most popular');
-    expect(html).toContain('≈ 1,000 agent-computer hours a month.');
+    expect(html).toContain('≈ 1,830 agent-computer hours a month.'); // agentHoursForCredits(20_000)
     expect(html).not.toContain('Starter');
   });
 
   test('a member who may not change billing sees who to ask, not the picker', () => {
     accountStateData = freeState({ can_manage_billing: false });
     const html = renderPlan();
-    expect(html).toContain('Only account owners can change the plan.');
+    expect(html).toContain('Only account owners and admins can change the plan.');
     expect(html).not.toContain('Subscribe for');
   });
 

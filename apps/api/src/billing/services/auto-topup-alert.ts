@@ -8,7 +8,7 @@
  */
 import { actionButton, renderEmail, renderText, S } from '../../lib/email/template';
 import { escapeHtml } from '../../shared/html';
-import { billingPaneUrl, emailAccountOwners } from './owner-alerts';
+import { billingPaneUrl, emailBillingManagers } from './owner-alerts';
 
 const REASON_TEXT: Record<string, string> = {
   insufficient_funds: 'The card has insufficient funds.',
@@ -28,7 +28,7 @@ export function notifyAutoTopupDisabled(accountId: string, reason: string): Prom
   const stopped =
     'Kortix turned auto top-up off so it stops charging. When the balance reaches $0, sessions and triggers stop.';
   const note = 'Update the payment method, then turn auto top-up back on.';
-  return emailAccountOwners(accountId, (accountName) => ({
+  return emailBillingManagers(accountId, (accountName) => ({
     subject: `Auto top-up is off for ${accountName}`,
     category: 'billing-auto-topup-disabled',
     html: renderEmail({

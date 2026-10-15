@@ -75,6 +75,7 @@ const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }>
   billing: { label: 'Billing', hint: 'Plan, invoices and payment method.' },
   audit: { label: 'Audit', hint: 'The account audit log.' },
   credentials: { label: 'Credentials', hint: 'Minting long-lived project tokens.' },
+  capture: { label: 'Capture', hint: 'Other members’ recordings; the Capture switch, policy and devices.' },
 };
 
 /** The display name for one catalog area. Exported so the member-capability

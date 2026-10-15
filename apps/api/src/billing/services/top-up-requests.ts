@@ -11,7 +11,7 @@ import { actionButton, renderEmail, renderText, S } from '../../lib/email/templa
 import { db } from '../../shared/db';
 import { escapeHtml } from '../../shared/html';
 import { getCreditAccount } from '../repositories/credit-accounts';
-import { billingPaneUrl, emailAccountOwners } from './owner-alerts';
+import { billingPaneUrl, emailBillingManagers } from './owner-alerts';
 
 /** One request per member and account in this window. */
 export const TOP_UP_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -57,7 +57,7 @@ export async function requestTopUp(input: {
   const url = billingPaneUrl(input.accountId);
   const title = 'Add credits';
   const note = 'Add credits, or turn on auto top-up so the balance refills itself.';
-  const notified = await emailAccountOwners(input.accountId, (accountName) => ({
+  const notified = await emailBillingManagers(input.accountId, (accountName) => ({
     subject: `${requester} asked you to add credits to ${accountName}`,
     category: 'billing-top-up-request',
     html: renderEmail({

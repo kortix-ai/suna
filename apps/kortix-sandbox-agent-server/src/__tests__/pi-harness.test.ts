@@ -612,7 +612,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -630,8 +630,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 13 },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 13 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 15 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 15 },
     ])
   })
 
@@ -1383,7 +1383,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'lookup_order', 'question', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -1946,14 +1946,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {

@@ -308,6 +308,13 @@ Tray icons are in `assets/tray/`: `trayTemplate.png` / `@2x` (black + alpha,
 from `apps/web/public/kortix-symbol.svg`) and `tray.png` / `tray.ico` (from
 `build/icon.png`).
 
+## Kortix Capture
+
+Kortix Capture is not part of this app. It is a standalone app (`apps/capture` in this repository) that a person installs and signs in to with their Kortix
+account, or that IT installs with an enrollment token. Its admin pages
+(`/capture/...`: Devices, timelines, policy, rollout) open in this app like
+any other Kortix page.
+
 ## Package
 
 ```bash

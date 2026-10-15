@@ -2147,3 +2147,45 @@ export const GrantSecretToAgentResultSchema = z.object({
   adopted_governance: z.boolean(),
 });
 export type GrantSecretToAgentResult = z.infer<typeof GrantSecretToAgentResultSchema>;
+
+// ─── Kortix Capture data API (`/v1/accounts/:accountId/capture/*`) ──────────
+// What apps/api/src/capture serializes for the account switch and search.
+// A Kortix API key reads the same bodies.
+
+export const CaptureWorkspaceSchema = z.object({
+  account_id: z.string(),
+  enabled: z.boolean(),
+  /** IAM `capture.read_all`: you read every member's devices and timeline. */
+  can_read_all: z.boolean(),
+  /** IAM `capture.manage`: you turn Capture on or off, set the policy, revoke any device. */
+  can_manage: z.boolean(),
+  updated_at: z.string().nullable(),
+});
+export type CaptureWorkspace = z.infer<typeof CaptureWorkspaceSchema>;
+
+export const CaptureSearchKindSchema = z.enum(['screen', 'actions', 'audio']);
+
+export const CaptureSearchHitSchema = z.object({
+  kind: CaptureSearchKindSchema,
+  id: z.string(),
+  ts: z.string(),
+  user_id: z.string(),
+  device_id: z.string(),
+  chunk_id: z.string(),
+  app: z.string().nullable(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  /** The display a screen hit shows; null for actions, audio and one-display devices. */
+  display_id: z.number().nullable(),
+  display_name: z.string().nullable(),
+  snippet: z.string(),
+});
+export type CaptureSearchHit = z.infer<typeof CaptureSearchHitSchema>;
+
+export const CaptureSearchResultSchema = z.object({
+  /** The person searched; null for an account-wide search (`scope=account`). */
+  user_id: z.string().nullable(),
+  q: z.string(),
+  hits: z.array(CaptureSearchHitSchema),
+});
+export type CaptureSearchResult = z.infer<typeof CaptureSearchResultSchema>;
