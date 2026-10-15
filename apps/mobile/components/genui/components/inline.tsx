@@ -75,6 +75,9 @@ export const GenuiImageGridContext = createContext<false | 'page'>(false);
 /** Every gallery page is this tall, as the markdown gallery's (`markdown-image.tsx`); each image fits inside it. */
 export const GALLERY_PAGE_HEIGHT = 280;
 
+/** The picture of an Image with text is this wide; the text takes the rest of the row. */
+const FIGURE_WIDTH = 112;
+
 /**
  * Paper Image 3F0H: the image in a dark letterbox well (the terminal surface in both themes, so a photo reads
  * the same on light and dark), its caption as a chip over the bottom-left, and an open button top-right.
@@ -83,6 +86,19 @@ export const GALLERY_PAGE_HEIGHT = 280;
 export function GenuiImage({ props }: GenuiComponentProps) {
   const { t } = useTranslation();
   const page = useContext(GenuiImageGridContext) === 'page';
+  // An image with text is a figure: the picture beside the sentences that say what to look for in it.
+  if (props.text && !page) {
+    return (
+      <View className="flex-row items-start gap-3">
+        <View style={{ width: FIGURE_WIDTH }} className="overflow-hidden rounded-lg bg-secondary">
+          <GenuiImageView src={props.src} alt={props.alt} />
+        </View>
+        <Text style={TYPE.sm} className="flex-1">
+          {props.text}
+        </Text>
+      </View>
+    );
+  }
   return (
     <View className="overflow-hidden rounded-xl bg-terminal-surface">
       <GenuiImageView src={props.src} alt={props.alt} fixedHeight={page ? GALLERY_PAGE_HEIGHT : undefined} />

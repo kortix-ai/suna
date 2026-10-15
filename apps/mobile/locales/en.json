@@ -1206,6 +1206,7 @@
   },
   "genui": {
     "chartTapHint": "Tap to read a value",
+    "checklistReady": "{{done}}/{{total}} ready",
     "map": "Map",
     "mapUnavailable": "Map unavailable",
     "openImage": "Open image",

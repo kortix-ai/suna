@@ -134,6 +134,27 @@ A trial is a dated grant of a plan on the trial columns of `credit_accounts`:
 - Admin actions: grant (also extends: a re-grant moves the end), revoke,
   convert to a contract offer.
 
+## Bring your own key (BYOK)
+
+A model request on the account's own provider key is billed by the provider.
+Kortix matches OpenRouter's model at a lower allowance
+(`apps/api/src/billing/services/byok-fee.ts`):
+
+- The first **$1,000 of list-price BYOK usage per calendar month (UTC)** is
+  free. Past it, each request pays **5% of its list price**, from the wallet.
+- Never charged: a ChatGPT subscription (`openai-codex`) and OpenCode Go
+  (`opencode-go`), which are subscriptions, not metered keys. An Enterprise
+  contract (billing plan Enterprise) waives the fee; an Enterprise trial does
+  not. Billing off (self-host): no fee.
+- Month-to-date usage is the sum of `gateway_request_logs.upstream_cost_precise`
+  for the account's `billing_mode = 'none'` rows since the 1st (UTC), cached
+  60 s per replica.
+- The fee is settled AFTER the request (`recordGatewayUsage`), never at
+  admission: BYOK descriptors stay `billingMode: 'none'`, so a drained wallet
+  never blocks the customer's own key and no Kortix-billed fallback is added
+  (learnings 2026-09-22). The usage row's `cost_usd` is the fee and
+  `metadata.byokFeeUsd` names it; the ledger line reads "BYOK fee · …".
+
 ## Overrides
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,

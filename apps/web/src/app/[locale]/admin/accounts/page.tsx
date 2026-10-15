@@ -1552,12 +1552,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             placeholder={tI18nComplete.raw('text7477f5a7b656')}
           />
           <label className="text-muted-foreground flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isExpiring}
-              onChange={(e) => setIsExpiring(e.target.checked)}
-              className="size-4"
-            />
+            <Checkbox checked={isExpiring} onCheckedChange={(v) => setIsExpiring(v === true)} />
             {tI18nComplete.raw('texta9141e58e179')}
           </label>
         </div>

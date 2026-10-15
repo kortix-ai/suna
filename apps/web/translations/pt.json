@@ -2433,7 +2433,7 @@
         },
         "credit": {
           "question": "O que um crédito compra?",
-          "answer": "1 crédito equivale a US$ 0,01. Os créditos pagam o computador do agente, cobrado por segundo e por recurso: {vcpuRate} por vCPU por hora, {memoryRate} por GB de RAM por hora, {diskRate} por GB de armazenamento por mês. A máquina padrão de {spec} usa cerca de {creditsPerHour} créditos por hora, então 1 crédito equivale a cerca de {minutes} minutos. Um computador parado não custa nada. Os créditos também pagam os modelos da Kortix, pelo preço base do provedor mais {fee}% de taxa de plataforma. Sua própria chave de API ou assinatura do ChatGPT não consome créditos."
+          "answer": "1 crédito equivale a US$ 0,01. Os créditos pagam o computador do agente, cobrado por segundo e por recurso: {vcpuRate} por vCPU por hora, {memoryRate} por GB de RAM por hora, {diskRate} por GB de armazenamento por mês. A máquina padrão de {spec} usa cerca de {creditsPerHour} créditos por hora, então 1 crédito equivale a cerca de {minutes} minutos. Um computador parado não custa nada. Os créditos também pagam os modelos da Kortix, pelo preço base do provedor mais {fee}% de taxa de plataforma. Sua própria chave de API é gratuita nos primeiros US$ 1.000 de uso de modelos por mês, e depois 5% do preço do provedor são pagos com créditos. Uma assinatura do ChatGPT não consome créditos."
         },
         "amounts": {
           "question": "Quanto pago por mês?",
@@ -2449,7 +2449,7 @@
         },
         "models": {
           "question": "Os modelos consomem créditos?",
-          "answer": "Somente os modelos da Kortix. Eles custam o preço base do provedor mais {fee}% de taxa de plataforma, pagos com créditos, e o app mostra os preços base. Com sua própria chave de API ou uma assinatura do ChatGPT conectada, o uso do modelo vai para o seu provedor e não consome créditos. Nesse caso, os créditos pagam apenas o computador do agente."
+          "answer": "Os modelos da Kortix, e suas próprias chaves de API acima de US$ 1.000 de uso de modelos por mês. Os modelos da Kortix custam o preço base do provedor mais {fee}% de taxa de plataforma, pagos com créditos, e o app mostra os preços base. Com sua própria chave de API, o uso do modelo vai para o seu provedor: os primeiros US$ 1.000 por mês são gratuitos, e depois 5% do preço do provedor são pagos com créditos. Uma assinatura do ChatGPT conectada não consome créditos."
         },
         "topup": {
           "question": "Posso adicionar créditos no meio do mês?",
@@ -2514,9 +2514,9 @@
         "title": "Os modelos são cobrados à parte do computador do agente",
         "description": "Os créditos pagam o computador do agente. O custo de uma chamada de modelo depende da origem do modelo.",
         "keys": {
-          "tag": "Sem créditos",
+          "tag": "Grátis até US$ 1.000/mês",
           "title": "Suas próprias chaves de API",
-          "body": "Adicione uma chave da Anthropic, da OpenAI ou de qualquer outro provedor. O uso do modelo vai direto para o seu provedor e não consome créditos."
+          "body": "Adicione uma chave da Anthropic, da OpenAI ou de qualquer outro provedor. O uso do modelo vai direto para o seu provedor. Os primeiros US$ 1.000 por mês são gratuitos, e depois a Kortix adiciona 5%, pagos com créditos."
         },
         "chatgpt": {
           "tag": "Sem créditos",
@@ -2528,7 +2528,7 @@
           "title": "Modelos da Kortix",
           "body": "Sem chaves para gerenciar. Cada chamada custa o preço base do provedor mais {fee}% de taxa de plataforma, pagos com créditos. O app mostra os preços base."
         },
-        "summary": "Com suas próprias chaves, os créditos pagam apenas o computador do agente."
+        "summary": "Com suas próprias chaves, os créditos pagam o computador do agente e 5% do uso de modelos acima de US$ 1.000 por mês."
       }
     },
     "access": {
@@ -3347,7 +3347,7 @@
       "contactGeneral": "Geral",
       "contactSecurity": "Segurança",
       "faqWhatCreditsQuestion": "O que são créditos e quanto custam?",
-      "faqWhatCreditsAnswerBefore": "Os créditos pagam o computador do agente e os modelos Kortix. 1 crédito custa US$ 0,01, e o computador do agente padrão usa cerca de 11 créditos por hora. Os modelos Kortix custam o preço base do provedor mais uma taxa de plataforma de 5,5%. Sua própria chave API ou assinatura do ChatGPT não usa créditos. Planos, recargas e como fazer o saldo durar estão em",
+      "faqWhatCreditsAnswerBefore": "Os créditos pagam o computador do agente e os modelos Kortix. 1 crédito custa US$ 0,01, e o computador do agente padrão usa cerca de 11 créditos por hora. Os modelos Kortix custam o preço base do provedor mais uma taxa de plataforma de 5,5%. Sua própria chave API é gratuita nos primeiros US$ 1.000 de uso de modelos por mês, e depois custa 5%. Uma assinatura do ChatGPT não usa créditos. Planos, recargas e como fazer o saldo durar estão em",
       "faqWhatCreditsLink": "Créditos e uso",
       "faqWhatCreditsAnswerAfter": "."
     }
@@ -18848,6 +18848,20 @@
       "text843ed3b90b42": "Compacte este ficheiro com um color.png de 192×192 e um outline.png transparente de 32×32.",
       "text5c71673648a2": "No Teams, vá a Apps → Manage your apps → Upload an app e carregue o zip.",
       "text91b9932411cc": "Adicione a aplicação a um chat ou canal e mencione-a para iniciar uma sessão.",
+      "textfd326bb01b61": "Cole os três valores do bot que você acabou de criar.",
+      "text39864856b1bc": "No portal do Azure",
+      "text14bb4b708203": "No Microsoft Teams",
+      "textbda0f959cde0": "Mantenha o valor do segredo à mão. Você o colará na próxima etapa.",
+      "text9bd6f94da702": "Manifesto do aplicativo do Teams para este bot",
+      "text7fd0fd8f2405": "Use seu próprio bot do Azure e mencione-o em qualquer chat ou canal do Teams.",
+      "text776fd1de4147": "Peça a um administrador do espaço de trabalho para conectar o Microsoft Teams.",
+      "text89e9e20668f3": "Leve seu agente para o Slack",
+      "textc1bd5ca19f5f": "Leve seu agente para o Teams",
+      "texta15b754f2e91": "Mencione-o em qualquer chat ou canal e ele faz o trabalho ali mesmo, sem painel e sem troca de contexto.",
+      "text675d4a4174ba": "resuma esta conversa",
+      "textbd52d3eb5ed1": "Três decisões até agora, uma pergunta em aberto para o Leo.",
+      "text5df6373cf99f": "o que falta até sexta?",
+      "textf4d1a9671f2f": "Já estou nisso. Lendo a checklist do lançamento e os três tickets abertos.",
       "textd208e2f1260f": "Abrir o centro de administração do Teams",
       "text98722a5463cb": "Não foi possível ligar o Teams",
       "text53e5f96332d9": "Conceda o consentimento de administrador para que o bot do Kortix possa funcionar no seu inquilino.",
@@ -21106,6 +21120,7 @@
     "zoomOut": "Diminuir zoom",
     "mapTwoFingers": "Use dois dedos para mover o mapa",
     "pick": "Escolha",
+    "checklistReady": "{done}/{total} prontos",
     "convertFailed": "Não foi possível preparar a transcrição. Tente novamente."
   },
   "mobileAppPromo": {

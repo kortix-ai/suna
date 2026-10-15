@@ -94,6 +94,8 @@ export type MarkdownImageLook = {
   onSize?: (width: number, height: number) => void;
   /** No outline or radius: the caller's tile is the frame. */
   bare?: boolean;
+  /** A failed load calls this instead of showing the placeholder: the caller draws its own fallback. */
+  onError?: () => void;
 };
 
 /**
@@ -285,7 +287,8 @@ function FramedImage({
               }
             }}
             onError={() => {
-              if (onError) onError();
+              const handle = onError ?? look?.onError;
+              if (handle) handle();
               else setFailed(true);
             }}
           />

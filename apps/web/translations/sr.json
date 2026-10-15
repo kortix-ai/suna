@@ -2433,7 +2433,7 @@
         },
         "credit": {
           "question": "Шта може да се купи једним кредитом?",
-          "answer": "1 кредит је 0,01 $. Кредити плаћају рачунар агента, који се наплаћује по секунди и по ресурсу: {vcpuRate} по vCPU по сату, {memoryRate} по GB RAM-а по сату, {diskRate} по GB складишта месечно. Подразумевана машина од {spec} троши око {creditsPerHour} кредита на сат, па 1 кредит вреди око {minutes} минута. Заустављен рачунар не кошта ништа. Кредити плаћају и Kortix моделе, по основној цени провајдера плус {fee}% накнаде платформе. Ваш API кључ или ChatGPT претплата не троше кредите."
+          "answer": "1 кредит је 0,01 $. Кредити плаћају рачунар агента, који се наплаћује по секунди и по ресурсу: {vcpuRate} по vCPU по сату, {memoryRate} по GB RAM-а по сату, {diskRate} по GB складишта месечно. Подразумевана машина од {spec} троши око {creditsPerHour} кредита на сат, па 1 кредит вреди око {minutes} минута. Заустављен рачунар не кошта ништа. Кредити плаћају и Kortix моделе, по основној цени провајдера плус {fee}% накнаде платформе. Ваш API кључ је бесплатан за првих 1.000 $ коришћења модела месечно, а затим се 5% цене провајдера плаћа кредитима. ChatGPT претплата не троши кредите."
         },
         "amounts": {
           "question": "Колико плаћам месечно?",
@@ -2449,7 +2449,7 @@
         },
         "models": {
           "question": "Да ли модели троше кредите?",
-          "answer": "Само Kortix модели. Они коштају основну цену провајдера плус {fee}% накнаде платформе, плаћено кредитима, а апликација приказује основне цене. Са вашим API кључем или повезаном ChatGPT претплатом, коришћење модела иде вашем провајдеру и не троши кредите. Тада кредити плаћају само рачунар агента."
+          "answer": "Kortix модели, и ваши API кључеви преко 1.000 $ коришћења модела месечно. Kortix модели коштају основну цену провајдера плус {fee}% накнаде платформе, плаћено кредитима, а апликација приказује основне цене. Са вашим API кључем, коришћење модела иде вашем провајдеру: првих 1.000 $ месечно је бесплатно, а затим се 5% цене провајдера плаћа кредитима. Повезана ChatGPT претплата не троши кредите."
         },
         "topup": {
           "question": "Могу ли да додам кредите усред месеца?",
@@ -2514,9 +2514,9 @@
         "title": "Модели се наплаћују одвојено од рачунара агента",
         "description": "Кредити плаћају рачунар агента. Цена позива модела зависи од тога одакле модел долази.",
         "keys": {
-          "tag": "Без кредита",
+          "tag": "Бесплатно до 1.000 $ месечно",
           "title": "Ваши API кључеви",
-          "body": "Додајте кључ од Anthropic-а, OpenAI-а или било ког другог провајдера. Коришћење модела иде директно вашем провајдеру и не троши кредите."
+          "body": "Додајте кључ од Anthropic-а, OpenAI-а или било ког другог провајдера. Коришћење модела иде директно вашем провајдеру. Првих 1.000 $ месечно је бесплатно, а затим Kortix додаје 5%, плаћено кредитима."
         },
         "chatgpt": {
           "tag": "Без кредита",
@@ -2528,7 +2528,7 @@
           "title": "Kortix модели",
           "body": "Нема кључева за управљање. Сваки позив кошта основну цену провајдера плус {fee}% накнаде платформе, плаћено кредитима. Апликација приказује основне цене."
         },
-        "summary": "Са вашим кључевима, кредити плаћају само рачунар агента."
+        "summary": "Са вашим кључевима, кредити плаћају рачунар агента и 5% коришћења модела преко 1.000 $ месечно."
       }
     },
     "access": {
@@ -3347,7 +3347,7 @@
       "contactGeneral": "Опште",
       "contactSecurity": "Безбедност",
       "faqWhatCreditsQuestion": "Шта су кредити и колико коштају?",
-      "faqWhatCreditsAnswerBefore": "Кредити плаћају рачунар агента и Kortix моделе. 1 кредит је $0.01, а подразумевани рачунар агента троши око 11 кредита на сат. Kortix модели коштају основну цену провајдера плус накнаду платформе од 5,5%. Ваш API кључ или ChatGPT претплата не троше кредите. Планови, допуне и како да стање дуже траје налазе се у",
+      "faqWhatCreditsAnswerBefore": "Кредити плаћају рачунар агента и Kortix моделе. 1 кредит је $0.01, а подразумевани рачунар агента троши око 11 кредита на сат. Kortix модели коштају основну цену провајдера плус накнаду платформе од 5,5%. Ваш API кључ је бесплатан за првих 1.000 $ коришћења модела месечно, а затим кошта 5%. ChatGPT претплата не троши кредите. Планови, допуне и како да стање дуже траје налазе се у",
       "faqWhatCreditsLink": "Кредити и употреба",
       "faqWhatCreditsAnswerAfter": "."
     }
@@ -18848,6 +18848,20 @@
       "text843ed3b90b42": "Zapakujte ovu datoteku zajedno sa color.png 192×192 i providnom outline.png 32×32.",
       "text5c71673648a2": "U Teams-u idite na Apps → Manage your apps → Upload an app i otpremite zip.",
       "text91b9932411cc": "Dodajte aplikaciju u ćaskanje ili kanal, pa je pomenite da biste pokrenuli sesiju.",
+      "textfd326bb01b61": "Nalepite tri vrednosti iz bota koji ste upravo kreirali.",
+      "text39864856b1bc": "Na Azure portalu",
+      "text14bb4b708203": "U Microsoft Teams",
+      "textbda0f959cde0": "Držite vrednost tajne pri ruci. Nalepićete je u sledećem koraku.",
+      "text9bd6f94da702": "Manifest Teams aplikacije za ovog bota",
+      "text7fd0fd8f2405": "Koristite sopstveni Azure bot, pa ga pomenite u bilo kom Teams četu ili kanalu.",
+      "text776fd1de4147": "Zamolite administratora radnog prostora da poveže Microsoft Teams.",
+      "text89e9e20668f3": "Dovedite svog agenta u Slack",
+      "textc1bd5ca19f5f": "Dovedite svog agenta u Teams",
+      "texta15b754f2e91": "Pomenite ga u bilo kom četu ili kanalu i on obavlja posao tamo, bez kontrolne table i bez promene konteksta.",
+      "text675d4a4174ba": "sažmi ovu temu",
+      "textbd52d3eb5ed1": "Do sada tri odluke, jedno otvoreno pitanje za Lea.",
+      "text5df6373cf99f": "šta je ostalo do petka?",
+      "textf4d1a9671f2f": "Radim na tome. Čitam listu za lansiranje i tri otvorena tiketa.",
       "textd208e2f1260f": "Otvori Teams centar za administraciju",
       "text98722a5463cb": "Povezivanje sa Teams-om nije uspelo",
       "text53e5f96332d9": "Dodelite saglasnost administratora da Kortix bot može da radi u vašem zakupcu.",
@@ -21106,6 +21120,7 @@
     "zoomOut": "Умањи",
     "mapTwoFingers": "Користите два прста да померите мапу",
     "pick": "Избор",
+    "checklistReady": "{done}/{total} спремно",
     "convertFailed": "Није могуће припремити транскрипт. Покушајте поново."
   },
   "mobileAppPromo": {

@@ -1204,6 +1204,7 @@
   },
   "genui": {
     "chartTapHint": "Toca para ver un valor",
+    "checklistReady": "{{done}}/{{total}} listos",
     "map": "Mapa",
     "mapUnavailable": "Mapa no disponible",
     "openImage": "Abrir imagen",
