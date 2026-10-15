@@ -103,29 +103,30 @@ describe('AccountTopBar app-wide wiring, rendered', () => {
     expect(html).toContain('aria-label="Logged in as Grace Hopper"');
     // The corner's chip is NOT embedded: a corner chip that stamped the marker
     // would hide itself forever (`:has([data-kx-account-owner])`). This is the
-    // rendered half of that contract; the CSS half is the next test.
+    // rendered half of that contract; the behavioral half lives in the browser
+    // (spec 52 asserts the corner hidden on a header page and visible again on
+    // the chromeless view the user navigates back to).
     expect(html).not.toContain('data-kx-account-owner');
   });
 
-  test('the suppression rule hides exactly the marker the embedded chips stamp', async () => {
-    // The stylesheet is data, not component source: its contract is that the
-    // `:has([data-kx-account-owner])` rule reads the same attribute the
-    // embedded chips stamp in rendered markup. Both sides are checked here —
-    // the rule from globals.css, the attribute from a rendered embedded chip —
-    // so the CSS can never drift from the DOM it is meant to match.
-    const css = await Bun.file(new URL('../../app/globals.css', import.meta.url)).text();
-    const rule = css.match(
-      /\[data-kx-titlebar-owner\]:has\(\[data-kx-account-owner\]\) \.kx-app-account-corner/,
-    );
-    expect(rule).not.toBeNull();
-    // Desktop: the corner clears the title-bar band with the same arithmetic
-    // the `/new` top row uses.
-    expect(css).toContain("html[data-desktop='true'] .kx-app-account-corner");
-
+  test('the embedded chip stamps the marker the shell reads; the corner chip does not', () => {
+    // Rendered, not source text: the marker is what the shell's suppression
+    // rule matches on. Its VISIBILITY contract — the marker only while the
+    // owning view is visible, so Next's hidden Activity cache cannot keep the
+    // corner suppressed — is exercised in a real browser (spec 52); static
+    // markup cannot run effects.
     const embedded = renderToStaticMarkup(createElement(AccountMenuButton, { embedded: true }));
     expect(embedded).toContain('data-kx-account-owner');
     const corner = renderToStaticMarkup(createElement(ProjectAccountCorner));
     expect(corner).not.toContain('data-kx-account-owner');
+  });
+
+  test('the desktop offset rule keeps the corner clear of the OS title-bar band', async () => {
+    // Desktop-only positioning (the browser spec runs web), checked as data:
+    // the corner clears the title-bar band with the same arithmetic the `/new`
+    // top row uses.
+    const css = await Bun.file(new URL('../../app/globals.css', import.meta.url)).text();
+    expect(css).toContain("html[data-desktop='true'] .kx-app-account-corner");
   });
 
   test('the admin console header carries the embedded chip in its titlebar row', async () => {

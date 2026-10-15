@@ -100,8 +100,11 @@ test.describe('52 — account chip on every authenticated page', () => {
       const chip = page.getByRole('button', { name: `Logged in as ${email}` });
 
       // A project page (not /new) carries the account control, and the shell
-      // renders exactly one — the floating corner.
-      await expect(chip).toBeVisible();
+      // renders exactly one — the floating corner. The long timeout waits out
+      // the dev server's on-demand chunk compiles: a cold Turbopack builds the
+      // route's client bundles during this very navigation, and the chip paints
+      // when the auth bootstrap lands on top of them.
+      await expect(chip).toBeVisible({ timeout: 120_000 });
       await expect(chip).toHaveCount(1);
       const corner = page.locator('.kx-app-account-corner');
       await expect(corner).toBeVisible();
@@ -123,11 +126,23 @@ test.describe('52 — account chip on every authenticated page', () => {
       // shell's corner stands down — still exactly one account control.
       await page.goto(`/projects/${projectId}/files`, { waitUntil: 'domcontentloaded' });
       await clearMobilePromo(page);
-      await expect(page.getByRole('heading', { name: 'Files', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Files', exact: true })).toBeVisible({ timeout: 120_000 });
       await expect(
         page.locator('.kx-titlebar-row').getByRole('button', { name: `Logged in as ${email}` }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 120_000 });
       await expect(page.locator('.kx-app-account-corner')).toBeHidden();
+      await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toHaveCount(1);
+
+      // Suppression must track the VISIBLE route, not stick: client-navigate
+      // back to the chromeless project home (a sidebar link keeps Next's
+      // client cache warm — a full reload would erase the state under test)
+      // and the floating corner must come back. This is the regression shape
+      // for cached-but-hidden views: React's Activity keeps recently visited
+      // session trees in the DOM, so an owner that only existed in markup
+      // would keep the corner hidden on the view the user is looking at.
+      await page.locator(`a[href="/projects/${projectId}"]`).first().click();
+      await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), { timeout: 60_000 });
+      await expect(page.locator('.kx-app-account-corner')).toBeVisible({ timeout: 60_000 });
       await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toHaveCount(1);
 
       // `/new` keeps its own top bar — still exactly one control.
@@ -166,7 +181,7 @@ test.describe('52 — account chip on every authenticated page', () => {
       });
       await page.goto(`/projects/${projectId}/sessions/${sessionId}`, { waitUntil: 'domcontentloaded' });
       await dismissWelcomeCard(page);
-      await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toBeVisible();
+      await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toBeVisible({ timeout: 120_000 });
       await expect(page.getByRole('button', { name: `Logged in as ${email}` })).toHaveCount(1);
 
       expect(pageErrors).toEqual([]);

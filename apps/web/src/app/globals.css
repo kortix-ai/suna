@@ -1600,7 +1600,15 @@ html[data-desktop='true'] .kx-app-account-corner {
    session header render `<AccountMenuButton embedded>`) steps the corner
    aside — two identity buttons for one person is the bug, not the feature.
    The same `:has()` pattern the drag region above uses to detect a view that
-   owns the titlebar band. */
+   owns the titlebar band.
+
+   The marker is managed by the chip for the VISIBLE route only: Next's client
+   cache keeps recently visited session views mounted inside React
+   `<Activity mode="hidden">` (session-route-cache.tsx), and a hidden tree
+   stays in the DOM — but React unmounts a hidden tree's effects, and the
+   chip removes the marker in that cleanup (account-menu-button.tsx). So a
+   cached-but-hidden session header never matches here, and the corner stays
+   live on the view the user is actually looking at. */
 [data-kx-titlebar-owner]:has([data-kx-account-owner]) .kx-app-account-corner {
   display: none;
 }

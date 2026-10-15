@@ -2,7 +2,7 @@
 
 import { CaretDownIcon, GearSixIcon, SignOutIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   DropdownMenu,
@@ -13,8 +13,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
-import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useTranslations } from '@/i18n/use-translations';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 
 /**
  * Who you are, as a button: the identity chip and its menu (profile settings,
@@ -33,6 +33,16 @@ import { useTranslations } from '@/i18n/use-translations';
  * `.kx-app-account-corner` rules in `globals.css`) uses to step aside when a
  * view carries its own chip in a page header. Two identity buttons for one
  * person is the bug, not the feature.
+ *
+ * The marker is owned for the VISIBLE route only. Next's client cache keeps
+ * recently visited session views mounted inside React `<Activity mode="hidden">`
+ * (see `session-route-cache.tsx`): a hidden tree stays in the DOM, so a plain
+ * declarative attribute would keep matching the shell's `:has()` rule and hide
+ * the corner on the view the user is actually looking at. React unmounts a
+ * hidden tree's effects and remounts them when it shows again — so the marker
+ * lives in an effect: present while the owning view is visible, absent while
+ * it is hidden. The declarative attribute stays for SSR and first paint, which
+ * the effect then re-asserts; hidden trees render nothing visible anyway.
  */
 export function AccountMenuButton({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations('newWorkspace');
@@ -40,9 +50,25 @@ export function AccountMenuButton({ embedded = false }: { embedded?: boolean }) 
   const identity = user?.user_metadata?.name?.trim() || user?.email || null;
   // Never cleared: `performSignOut` replaces the document.
   const [signingOut, setSigningOut] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Present on mount, absent while hidden. StrictMode double-invocation is
+  // harmless (set → remove → set); the declarative attribute above makes the
+  // first paint match, so this only matters for the Activity hide/unhide cycle.
+  useEffect(() => {
+    if (!embedded) return;
+    const root = rootRef.current;
+    if (!root) return;
+    root.setAttribute('data-kx-account-owner', '');
+    return () => root.removeAttribute('data-kx-account-owner');
+  }, [embedded]);
 
   return (
-    <div data-kx-account-owner={embedded ? '' : undefined} className="flex min-w-0 items-center">
+    <div
+      ref={rootRef}
+      data-kx-account-owner={embedded ? '' : undefined}
+      className="flex min-w-0 items-center"
+    >
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
