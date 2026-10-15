@@ -6,6 +6,7 @@ import type { App } from '@kortix/sdk';
 
 import { appGrantRows } from './agent-apps-grant';
 import { AGENT_CONFIG_SECTIONS } from '@/features/workspace/customize/sections/view/agent-editor';
+import { EDITABLE_SECTIONS } from './agent-page';
 
 const app = (over: Partial<App>): App =>
   ({
@@ -78,8 +79,12 @@ describe('the Apps topic on the agent rail', () => {
 
   test('is never dropped — Apps is generally available', () => {
     // Apps went GA (2026-10-14): there is no feature flag, so the grant page is
-    // a live tab on every project and `?section=apps` always resolves.
+    // a live tab on every project and `?section=apps` always resolves. Pin the
+    // rail's own render list too: `agent-page.tsx` builds EDITABLE_SECTIONS
+    // from these entries with no flag filtering left, so `apps` must survive
+    // that derivation unchanged.
     expect(AGENT_CONFIG_SECTIONS.map((s) => s.key)).toContain('apps');
+    expect(EDITABLE_SECTIONS).toContain('apps');
   });
 });
 

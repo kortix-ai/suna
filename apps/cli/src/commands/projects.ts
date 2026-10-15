@@ -1405,8 +1405,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
-  // Internal-only surfaces Kortix turned on (apps). Agents read this
-  // to know `kortix apps` works here.
+  // Internal-only surfaces Kortix turned on (session logs). Agents read
+  // this to know which operator-managed surfaces are live here.
   const managed = featureRows(p as unknown as Record<string, unknown>)
     .filter((r) => r.operator_only && r.enabled)
     .map((r) => r.key);
