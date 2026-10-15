@@ -5,12 +5,12 @@
     "apps/web/src/lib/browser-noise/rules/extensions.ts"
   ],
   "diff_hash": "5e7676414d8a67b7220425a5e6503361dddf0ebdc05ae110357aabdf9bd88b6f",
-  "head": "4e6432915804bc7a75dc793e3b5489eccd5982b9",
+  "head": "5a7ad563e6637c1604002f56aa755fb70fd35314",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T06:55:15.084Z"
+  "at": "2026-10-15T07:18:45.486Z"
 }
