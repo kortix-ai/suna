@@ -44,7 +44,7 @@ provider, so neither service imports the other.
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
 | `src/services/skills/` | services | Image-baked managed Kortix skills and their injection. |
 | `src/services/static-web/` | services | The static file server on port 3211. |
-| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. A project with a `tools` key gets only the Kortix tools it lists. |
+| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. In `kortix_version` 3 every Kortix tool loads and each agent's `tools` grant hides tools; in a v2 project a `tools` key gets only the Kortix tools it lists. |
 | `src/services/monitor/` | services | The monitor process runner for monitor boxes. |
 | `src/services/event-bus/` | services | The daemon event sequencer. |
 | `src/services/resources/` | services | Box resource telemetry (memory, cgroup, load, disk, RSS). |
