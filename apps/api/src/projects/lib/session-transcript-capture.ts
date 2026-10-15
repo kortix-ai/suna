@@ -18,7 +18,7 @@ import {
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
 } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { errorSqlstate } from '../../shared/error-cause';
@@ -231,6 +231,7 @@ const liveCaptureDeps: CaptureDeps = {
       entry.settled &&= row.role !== 'assistant' || row.messageCompletedAt !== null;
       savedChildren.set(row.opencodeSessionId, entry);
     }
+    const failed: { count: number; first?: string } = { count: 0 };
     const { children, more } = await readChildTranscripts({
       references: childSessionReferences([...result.rows, ...previous]),
       stored: savedChildren,
@@ -243,12 +244,15 @@ const liveCaptureDeps: CaptureDeps = {
           recoveryFor(partsById(stored.filter((row) => row.opencodeSessionId === child))),
         ),
       // One unreadable sub-agent never costs the conversation its capture.
-      onError: (_child, err) =>
-        console.warn('[transcript-mirror] sub-agent read failed', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        }),
+      onError: (_child, err) => {
+        failed.count += 1;
+        failed.first ??= err instanceof Error ? err.message : String(err);
+      },
     });
+    // One line per capture: past the deadline every remaining read fails the same way.
+    if (failed.count > 0) {
+      console.warn('[transcript-mirror] sub-agent reads failed', { sessionId, ...failed });
+    }
 
     return {
       opencodeSessionId: resolved.opencodeSessionId,
@@ -280,8 +284,10 @@ export function timeField(info: Record<string, unknown>, key: 'created' | 'compl
  */
 async function captureSessionTranscript(
   sessionId: string,
-  deps: CaptureDeps = liveCaptureDeps,
-  options?: CaptureOptions,
+  deps: CaptureDeps,
+  options: CaptureOptions | undefined,
+  /** When this capture's run was queued: a stop asked for after it drops the rest of the run. */
+  chainStartedAt: number,
 ): Promise<CaptureResult | null> {
   try {
     const [session] = await db
@@ -295,8 +301,6 @@ async function captureSessionTranscript(
     if (!session) return null;
 
     const fullHistory = options?.scope !== 'tail';
-    // A chain is as old as its first capture: a stop asked for after that drops the rest of it.
-    const chainStartedAt = options?.chain?.startedAt ?? Date.now();
     let moreChildren = false;
     const capture = async (): Promise<CaptureResult | null> => {
       const startedAt = new Date();
@@ -402,12 +406,18 @@ async function captureSessionTranscript(
 
         // A sub-agent has no rewind, so its rows only ever merge. A partial
         // read writes nothing, so a saved sub-agent starts whole.
-        for (const child of read.children ?? []) {
-          if (child.complete !== true) continue;
+        const written = (read.children ?? []).filter((child) => child.complete === true);
+        const savedBefore = await savedRuntimeSessions(tx, sessionId, written.map((child) => child.opencodeSessionId));
+        for (const child of written) {
           const childRows = mirrorRowsFromOpencodePayload(child.payload);
           await upsertMirrorRows(tx, sessionId, child.opencodeSessionId, childRows, now);
         }
-        moreChildren = read.moreChildren === true;
+        // Progress is what was WRITTEN: a sub-agent whose message ids are already stored
+        // unchanged under another session (a forked copy) writes nothing and is no progress.
+        const savedAfter = read.moreChildren
+          ? await savedRuntimeSessions(tx, sessionId, written.map((child) => child.opencodeSessionId))
+          : savedBefore;
+        moreChildren = read.moreChildren === true && [...savedAfter].some((id) => !savedBefore.has(id));
         return { captured: rows.length, head_complete: headComplete };
       });
     };
@@ -531,6 +541,16 @@ async function applyRecordedRewind(
 }
 
 /** Merge one OpenCode session's rows into the mirror, 100 per statement. */
+/** The runtime sessions among `ids` that hold at least one saved row of this session. */
+async function savedRuntimeSessions(tx: Tx, sessionId: string, ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await tx
+    .selectDistinct({ id: sessionTranscriptMessages.runtimeSessionId })
+    .from(sessionTranscriptMessages)
+    .where(and(eq(sessionTranscriptMessages.sessionId, sessionId), inArray(sessionTranscriptMessages.runtimeSessionId, ids)));
+  return new Set(rows.map((row) => row.id).filter((id): id is string => !!id));
+}
+
 async function upsertMirrorRows(
   tx: Tx,
   sessionId: string,
@@ -694,6 +714,15 @@ export function backfillSessionTranscriptMirrorOnWake(
   })();
 }
 
+/** Test seam: resolves once no capture of this session is queued or running (a run queues its
+ *  next capture before its own promise settles). */
+export async function transcriptCapturesSettledForTests(sessionId: string): Promise<void> {
+  for (let pending = captures.get(sessionId); pending; pending = captures.get(sessionId)) {
+    await pending.catch(() => null);
+    if (captures.get(sessionId) === pending) captures.delete(sessionId);
+  }
+}
+
 /** Test seam: the memo is process-global and would leak between cases. */
 export function resetTranscriptBackfillMemoForTests(): void {
   backfillAttempts.clear();
@@ -714,11 +743,12 @@ export function captureSessionTranscriptMirror(
     if (tailRequestedAt.size >= BACKFILL_MEMO_MAX) tailRequestedAt.clear();
     tailRequestedAt.set(sessionId, Date.now());
   }
+  // A run is as old as the moment its first capture was queued, not when it started to run.
+  const startedAt = options?.chain?.startedAt ?? Date.now();
   const previous = captures.get(sessionId) ?? Promise.resolve(null);
   const pending = previous.then(() => {
-    const chain = options?.chain;
-    if (chain && (tailRequestedAt.get(sessionId) ?? -Infinity) >= chain.startedAt) return null;
-    return captureSessionTranscript(sessionId, deps, options);
+    if (options?.chain && (tailRequestedAt.get(sessionId) ?? -Infinity) >= startedAt) return null;
+    return captureSessionTranscript(sessionId, deps, options, startedAt);
   });
   captures.set(sessionId, pending);
   void pending.finally(() => {

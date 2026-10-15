@@ -273,13 +273,22 @@ function evictInactiveControllers(protectedKey?: string): void {
 
 let evictionTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** One pending pass that evicts what has been idle past the hold, when nothing else calls the registry. */
-function scheduleEviction(): void {
+/**
+ * One pending pass that evicts what has been idle past the hold, when nothing else calls the
+ * registry. A pass that leaves overflow still inside the hold re-arms for when the oldest of it
+ * leaves the hold.
+ */
+function scheduleEviction(delayMs = IDLE_BEFORE_EVICT_MS + 1): void {
   if (evictionTimer !== undefined) return;
   evictionTimer = setTimeout(() => {
     evictionTimer = undefined;
     evictInactiveControllers();
-  }, IDLE_BEFORE_EVICT_MS + 1);
+    if (controllers.size <= MAX_CONTROLLERS) return;
+    const idleSince = Math.min(
+      ...[...controllers.values()].filter((entry) => entry.consumers === 0).map((entry) => entry.lastUsedAt),
+    );
+    if (Number.isFinite(idleSince)) scheduleEviction(Math.max(1, idleSince + IDLE_BEFORE_EVICT_MS + 1 - Date.now()));
+  }, delayMs);
   (evictionTimer as { unref?: () => void }).unref?.();
 }
 

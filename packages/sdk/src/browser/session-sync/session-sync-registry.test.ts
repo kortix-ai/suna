@@ -354,6 +354,49 @@ describe('session sync controller eviction', () => {
     }
   });
 
+  test('the eviction pass re-arms for a controller released later in the burst', () => {
+    const realNow = Date.now;
+    const realSetTimeout = globalThis.setTimeout;
+    const timers: Array<{ run: () => void; ms: number }> = [];
+    globalThis.setTimeout = ((run: () => void, ms: number) => {
+      timers.push({ run, ms });
+      return { unref() {} } as never;
+    }) as unknown as typeof setTimeout;
+    const at = (offset: number) => (Date.now = () => realNow() + offset);
+    const evictionPasses = () => timers.filter((timer) => timer.ms > 1_000);
+    try {
+      at(0);
+      // 20 stay retained; `early` is released at 0 and `late` at 10 s.
+      const releases = Array.from({ length: 22 }, (_, index) => {
+        getSessionSyncController(`burst-${index}`);
+        return retainSessionSyncController(`burst-${index}`);
+      });
+      const late = getSessionSyncController('burst-21');
+      releases[20]!();
+      at(10_000);
+      releases[21]!();
+      expect(evictionPasses()).toHaveLength(1);
+      // The pass armed at 0 evicts `early`; `late` is still inside the hold ...
+      at(30_001);
+      evictionPasses()[0]!.run();
+      // Read without touching it: a registry call would count as a use.
+      const destroyed = () => (late as unknown as { destroyed: boolean }).destroyed;
+      expect(destroyed()).toBe(false);
+      // ... so it re-arms for the moment `late` leaves the hold, and that pass evicts it.
+      expect(evictionPasses()).toHaveLength(2);
+      const rearmed = evictionPasses()[1]!;
+      expect(rearmed.ms).toBeGreaterThan(9_000);
+      expect(rearmed.ms).toBeLessThanOrEqual(10_001);
+      at(40_002);
+      rearmed.run();
+      expect(destroyed()).toBe(true);
+      for (const release of releases.slice(0, 20)) release();
+    } finally {
+      Date.now = realNow;
+      globalThis.setTimeout = realSetTimeout;
+    }
+  });
+
   test('a controller a render handed out and nothing retained is evicted after the hold', () => {
     const realNow = Date.now;
     try {

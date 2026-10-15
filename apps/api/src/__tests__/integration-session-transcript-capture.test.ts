@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { PgClient } from './helpers/pg-client';
-import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
+import {
+  captureSessionTranscriptMirror,
+  transcriptCapturesSettledForTests,
+} from '../projects/lib/session-transcript-capture';
 import {
   mirrorHoldsStrippedRows,
   readSessionTranscriptMirror,
@@ -424,58 +427,66 @@ test('a capture that leaves sub-agents unread queues the next capture, which sav
         )
       ).rows.map((row: { id: string }) => row.id);
 
+    const settled = () => transcriptCapturesSettledForTests(sessionId);
     await captureSessionTranscriptMirror(sessionId, { readMessages });
-    for (let i = 0; i < 100 && (await saved()).length < 3; i += 1) await new Promise((r) => setTimeout(r, 50));
+    await settled();
     expect(await saved()).toEqual(['ses_fanout', 'ses_first', 'ses_second']);
     // The second capture reported nothing more: no third read.
-    await new Promise((r) => setTimeout(r, 200));
     expect(reads.length).toBe(2);
 
     // A stop's `tail` capture never queues another: the box powers off next.
     await captureSessionTranscriptMirror(sessionId, { readMessages: async () => ({ ...(await readMessages()), moreChildren: true }) }, { scope: 'tail' });
-    await new Promise((r) => setTimeout(r, 200));
+    await settled();
     expect(reads.length).toBe(3);
 
-    // A box that always reports more: the run stops after 8 queued captures (9 reads).
+    // A box that always reports more, and a new sub-agent each time: the run stops after
+    // 8 queued captures (9 reads).
     let always = 0;
-    const settle = async (count: () => number) => {
-      for (let last = -1; last !== count(); ) {
-        last = count();
-        await new Promise((r) => setTimeout(r, 300));
-      }
-    };
     const alwaysMore = async () => {
       always += 1;
       return { ...(await readMessages()), children: [child(`ses_always${always}`)], moreChildren: true };
     };
     await captureSessionTranscriptMirror(sessionId, { readMessages: alwaysMore });
-    await settle(() => always);
+    await settled();
     expect(always).toBe(9);
 
-    // A stop asked for while a run is going drops the run's queued capture: the tail runs next,
-    // and nothing reads the box after it.
+    // A sub-agent whose message is already stored unchanged under another session (a forked
+    // copy) writes nothing: no progress, so nothing is queued although the read says more.
+    let copies = 0;
+    const forkCopy = async () => {
+      copies += 1;
+      const copy = { opencodeSessionId: 'ses_forkcopy', payload: [message(root, 'msg_root')], complete: true };
+      return { ...(await readMessages()), children: [copy], moreChildren: true };
+    };
+    await captureSessionTranscriptMirror(sessionId, { readMessages: forkCopy });
+    await settled();
+    expect(copies).toBe(1);
+
+    // A stop asked for after a run was queued, even before the run started, drops the run's
+    // queued capture: the tail runs next, and nothing reads the box after it.
     let gate!: () => void;
     const opened = new Promise<void>((r) => (gate = r));
     const order: string[] = [];
-    const first = captureSessionTranscriptMirror(sessionId, {
+    let fresh = 0;
+    const busy = captureSessionTranscriptMirror(sessionId, {
+      readMessages: async () => (order.push('busy'), await opened, readMessages()),
+    });
+    const run = captureSessionTranscriptMirror(sessionId, {
       readMessages: async () => {
-        order.push('first');
-        await opened;
-        return { ...(await readMessages()), moreChildren: true };
+        order.push('run');
+        fresh += 1;
+        return { ...(await readMessages()), children: [child(`ses_run${fresh}`)], moreChildren: true };
       },
     });
-    // The stop arrives while the run's first capture reads the box.
-    while (!order.includes('first')) await new Promise((r) => setTimeout(r, 10));
-    await new Promise((r) => setTimeout(r, 5));
     const tail = captureSessionTranscriptMirror(
       sessionId,
       { readMessages: async () => (order.push('tail'), readMessages()) },
       { scope: 'tail' },
     );
     gate();
-    await Promise.all([first, tail]);
-    await new Promise((r) => setTimeout(r, 300));
-    expect(order).toEqual(['first', 'tail']);
+    await Promise.all([busy, run, tail]);
+    await settled();
+    expect(order).toEqual(['busy', 'run', 'tail']);
   } finally {
     if (project) await removeSeeded([project]);
     await db.end();
