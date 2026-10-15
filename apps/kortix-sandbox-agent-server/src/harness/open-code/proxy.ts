@@ -154,7 +154,6 @@ export function createOpenCodeProxyService(
       return { ready: true }
     },
     async forward(input) {
-      const upstreamUrl = `${opencode.getInternalUrl()}${input.path}${input.search}`
       const method = input.method.toUpperCase()
       const hasBody = method !== 'GET' && method !== 'HEAD'
 
@@ -169,6 +168,9 @@ export function createOpenCodeProxyService(
       // caches the daemon built.
       const loopTarget = loopStartTargetOf(method, input.path)
       if (loopTarget) await instanceGuard.settled(undefined, loopTarget)
+      // After the wait: a convergence may have promoted its candidate during
+      // it, moving the live port and killing the old process (CFG-12).
+      const upstreamUrl = `${opencode.getInternalUrl()}${input.path}${input.search}`
 
       // Bound only the wait for opencode's response (headers) — not the abort
       // controller's whole lifetime — so we can free-run a stream once it starts.

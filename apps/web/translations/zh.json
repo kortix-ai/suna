@@ -2200,7 +2200,8 @@
         "updateAction": "更改为每月 {amount}",
         "chooseAction": "更新套餐",
         "ownerOnly": "只有账户所有者和管理员可以更改套餐。",
-        "enterpriseNote": "企业版套餐由你的客户团队负责管理。"
+        "enterpriseNote": "企业版套餐由你的客户团队负责管理。",
+        "keepEnterprise": "试用结束后如需继续使用 Enterprise，请联系销售。"
       },
       "modal": {
         "title": "选择你的积分档位",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "我每月需要支付多少？",
-          "answer": "可选择每月 50 美元（5,000 个积分）到每月 10,000 美元（1,000,000 个积分）的档位。每月 200 美元（20,000 个积分）最受欢迎。所有档位的积分费率相同：每美元 100 个积分。每月超过 10,000 美元请联系销售。"
+          "answer": "可选择每月 50 美元（5,000 个积分）到每月 10,000 美元（1,000,000 个积分）的档位。所有档位的积分费率相同：每美元 100 个积分。每月超过 10,000 美元请联系销售。"
         },
         "members": {
           "question": "成员需要付费吗？",
@@ -2535,7 +2536,7 @@
       "credits": "积分版",
       "trialTitle": "{plan}试用 · {days, plural, =0 {今天结束} other {剩余 # 天}}",
       "trialBody": "此账户正在试用{plan}，至 {date} 为止。之后将恢复为已付费的套餐。随时升级即可保留。",
-      "trialBodyEnterprise": "此账户正在试用企业版，至 {date} 为止：SSO、SCIM、高级角色和审计日志已开启。之后将恢复为已付费的套餐，SSO 和 SCIM 再保持开启 14 天。随时可以升级。",
+      "trialBodyEnterprise": "此账户正在试用企业版，至 {date} 为止：SSO、SCIM、高级角色和审计日志已开启。之后将恢复为已付费的套餐，SSO 和 SCIM 再保持开启 14 天。如需继续使用 Enterprise，请联系销售。",
       "upgrade": "升级",
       "talkToSales": "联系销售",
       "askManager": "请让账户所有者或管理员升级套餐。",
@@ -10067,7 +10068,7 @@
       "text0679d5053dda": "{value0}尚未报告任何工具。一旦同步，每个人都会在此处获得自己的默认·阻止·询问·允许控制。",
       "text067ed033e4a6": "六种会破坏系统的模式，每种旁边都附有修复方案。",
       "text0686a22fbf7d": "另一个会话——同一项目、同一团队或另一个客户",
-      "text0690079160b0": "“{value0}”已删除",
+      "text0690079160b0": "{value0}已删除",
       "text0690d70b6301": "Easy connect 通过各自的 OAuth 页面覆盖 3,000+ 个应用，适合数据栈外围的 SaaS 来源。对于数据仓库本身，直接连接器通常才是诚实答案——大多数数据仓库通过驱动程序或 API 访问，而不是 OAuth 目录条目。",
       "text06993786f49e": "已断开 GitHub 连接",
       "text06a6228ef85f": "连接代码仓库时——它们都以相同方式受限；无法在此选择或更改。",
@@ -19521,12 +19522,6 @@
       "servedModelInPlaceOf": "替代",
       "servedModelBadge": "正在使用 {model}",
       "servedModelBarDescription": "{requested} 未响应上一个请求",
-      "computerAwakeStays": "你在此页面时，沙盒保持开启 · 最多 {duration}",
-      "computerAwakeStops": "沙盒将在 {duration}后停止。发送一条消息以保持开启。",
-      "computerAwakeStopsSoon": "沙盒即将停止。发送一条消息以保持开启。",
-      "computerAwakeHoursMinutes": "{hours} 小时 {minutes} 分钟",
-      "computerAwakeHours": "{hours} 小时",
-      "computerAwakeMinutes": "{minutes} 分钟",
       "text414cc580557b": "已编辑排队中的会话提示",
       "text52867b778586": "一个 kortix.yaml。",
       "textd0dfd435b2f4": "你的 AI 团队，以代码定义。",

@@ -18,7 +18,6 @@ import messages from '../../../../translations/en.json';
 
 import { COMPOSER_INPUT_SLOT_CLASS, COMPOSER_SHELL_CLASS } from './composer';
 import { ComposerAboveCard } from './ComposerAboveCard';
-import type { ComputerAwakeLine } from './computer-awake';
 
 const noop = () => {};
 
@@ -36,7 +35,6 @@ function render(props?: {
   quotes?: unknown[];
   questionActive?: boolean;
   served?: boolean;
-  computerAwake?: ComputerAwakeLine | null;
 }): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -49,7 +47,6 @@ function render(props?: {
         onNoticeRetry={props?.onNoticeRetry}
         inputSlot={props?.inputSlot}
         questionActive={props?.questionActive}
-        computerAwake={props?.computerAwake ?? null}
         servedModel={props?.served ? { served: 'Model B', fallbackFrom: 'Model A' } : null}
         onModelChange={props?.served ? noop : undefined}
         slashMenuPlacement="above"
@@ -92,48 +89,6 @@ describe('ComposerAboveCard (the moved above-card stack)', () => {
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('waking');
     expect(html).toContain('>Retry<');
-  });
-
-  // KRTX-1729: the "computer stays on" strip.
-  test('the computer-awake strip renders above the card, rounded on top', () => {
-    const html = render({ computerAwake: { kind: 'stays', minutes: 25 } });
-    expect(html).toContain('data-testid="computer-awake-bar"');
-    expect(html).toContain('up to 25 min');
-    expect(html).toMatch(/data-testid="computer-awake-bar" class="[^"]*rounded-t-xl/);
-  });
-
-  test('a waking notice outranks the computer-awake strip', () => {
-    const html = render({ notice: 'waking', computerAwake: { kind: 'stays', minutes: 25 } });
-    expect(html).toContain('waking');
-    expect(html).not.toContain('computer-awake-bar');
-  });
-
-  // A docked question and the card are one surface; a strip between them
-  // broke the seam. A question left open on an idle session is exactly when
-  // the strip would show.
-  test('a docked question hides the computer-awake strip', () => {
-    const html = render({
-      questionActive: true,
-      inputSlot: <div>question</div>,
-      computerAwake: { kind: 'stays', minutes: 25 },
-    });
-    expect(html).toContain('question');
-    expect(html).not.toContain('computer-awake-bar');
-  });
-
-  test('the served-model strip under the computer-awake strip stays square and shares its divider', () => {
-    const html = render({ computerAwake: { kind: 'stops', minutes: 9 }, served: true });
-    expect(html.indexOf('computer-awake-bar')).toBeLessThan(html.indexOf('served-model-bar'));
-    expect(html).toMatch(/data-testid="served-model-bar" class="(?![^"]*rounded-t-xl)[^"]*"/);
-  });
-
-  test('under a visible queue strip, the computer-awake strip is a middle layer of the stack', () => {
-    const html = render({
-      inputSlot: <div>queued row</div>,
-      computerAwake: { kind: 'stays', minutes: 25 },
-    });
-    expect(html.indexOf('data-composer-strip')).toBeLessThan(html.indexOf('computer-awake-bar'));
-    expect(html.indexOf('data-composer-stack')).toBeLessThan(html.indexOf('data-composer-strip'));
   });
 
   test('with nothing to show, the stack block is absent entirely', () => {

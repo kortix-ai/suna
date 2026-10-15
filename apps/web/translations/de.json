@@ -2200,7 +2200,8 @@
         "updateAction": "Auf {amount} / Monat ändern",
         "chooseAction": "Plan aktualisieren",
         "ownerOnly": "Nur Inhaber und Administratoren des Kontos können den Plan ändern.",
-        "enterpriseNote": "Enterprise-Pläne werden mit deinem Account-Team verwaltet."
+        "enterpriseNote": "Enterprise-Pläne werden mit deinem Account-Team verwaltet.",
+        "keepEnterprise": "Um nach der Testphase bei Enterprise zu bleiben, kontaktieren Sie den Vertrieb."
       },
       "modal": {
         "title": "Wähle deine Credit-Stufe",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
-          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 10.000 $ pro Monat (1.000.000 Credits). 200 $ pro Monat (20.000 Credits) ist die beliebteste. Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
+          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 10.000 $ pro Monat (1.000.000 Credits). Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
         },
         "members": {
           "question": "Zahle ich für Mitglieder?",
@@ -2535,7 +2536,7 @@
       "credits": "Credits",
       "trialTitle": "{plan}-Testphase · {days, plural, =0 {endet heute} one {noch # Tag} other {noch # Tage}}",
       "trialBody": "Dieses Konto nutzt bis {date} eine {plan}-Testphase. Danach wechselt es zurück zum bezahlten Plan. Upgrade jederzeit, um sie zu behalten.",
-      "trialBodyEnterprise": "Dieses Konto nutzt bis {date} eine Enterprise-Testphase: SSO, SCIM, erweiterte Rollen und Audit-Logs sind aktiv. Danach wechselt es zurück zum bezahlten Plan, und SSO und SCIM bleiben noch 14 Tage aktiv. Upgrade jederzeit.",
+      "trialBodyEnterprise": "Dieses Konto nutzt bis {date} eine Enterprise-Testphase: SSO, SCIM, erweiterte Rollen und Audit-Logs sind aktiv. Danach wechselt es zurück zum bezahlten Plan, und SSO und SCIM bleiben noch 14 Tage aktiv. Um Enterprise zu behalten, kontaktieren Sie den Vertrieb.",
       "upgrade": "Upgrade",
       "talkToSales": "Vertrieb kontaktieren",
       "askManager": "Bitte einen Inhaber oder Administrator des Kontos um ein Upgrade.",
@@ -10067,7 +10068,7 @@
       "text0679d5053dda": "{value0} hat keine Tools gemeldet. Sobald es synchronisiert ist, erhält jeder hier seine eigene Standardsteuerung · Blockieren · Fragen · Zulassen.",
       "text067ed033e4a6": "Sechs Muster, die das System beeinträchtigen – jeweils mit der passenden Lösung daneben.",
       "text0686a22fbf7d": "Eine andere Sitzung – dasselbe Projekt, dasselbe Team oder ein anderer Kunde",
-      "text0690079160b0": "„{value0}“ gelöscht",
+      "text0690079160b0": "{value0} gelöscht",
       "text0690d70b6301": "Easy Connect deckt über die OAuth-Bildschirme der Anbieter mehr als 3.000 Apps ab und ist der richtige Weg für SaaS-Quellen am Rand eines Datenstacks. Für das Warehouse selbst sind direkte Konnektortypen meist die ehrlichere Antwort – die meisten Warehouses werden über einen Treiber oder eine API erreicht, nicht über einen OAuth-Katalogeintrag.",
       "text06993786f49e": "GitHub-Verbindung getrennt",
       "text06a6228ef85f": "wenn du ein Repository verbindest – und alle werden auf dieselbe Weise geschützt; keine davon kann hier ausgewählt oder geändert werden.",
@@ -19521,12 +19522,6 @@
       "servedModelInPlaceOf": "Anstelle von",
       "servedModelBadge": "Läuft auf {model}",
       "servedModelBarDescription": "{requested} hat die letzte Anfrage nicht beantwortet",
-      "computerAwakeStays": "Die Sandbox bleibt an, solange du hier bist · bis zu {duration}",
-      "computerAwakeStops": "Die Sandbox schaltet sich in {duration} ab. Sende eine Nachricht, damit sie anbleibt.",
-      "computerAwakeStopsSoon": "Die Sandbox schaltet sich bald ab. Sende eine Nachricht, damit sie anbleibt.",
-      "computerAwakeHoursMinutes": "{hours} Std. {minutes} Min.",
-      "computerAwakeHours": "{hours} Std.",
-      "computerAwakeMinutes": "{minutes} Min.",
       "text414cc580557b": "Sitzungsaufforderung in der Warteschlange bearbeitet",
       "text52867b778586": "Eine kortix.yaml.",
       "textd0dfd435b2f4": "Deine KI-Belegschaft als Code.",

@@ -2200,7 +2200,8 @@
         "updateAction": "Cambiar a {amount} / mes",
         "chooseAction": "Actualizar plan",
         "ownerOnly": "Solo los propietarios y administradores de la cuenta pueden cambiar el plan.",
-        "enterpriseNote": "Los planes Enterprise se gestionan con tu equipo de cuenta."
+        "enterpriseNote": "Los planes Enterprise se gestionan con tu equipo de cuenta.",
+        "keepEnterprise": "Para seguir en Enterprise después de la prueba, habla con ventas."
       },
       "modal": {
         "title": "Elige tu nivel de créditos",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "¿Cuánto pago cada mes?",
-          "answer": "Elige un nivel desde 50 $ al mes (5.000 créditos) hasta 10.000 $ al mes (1.000.000 de créditos). 200 $ al mes (20.000 créditos) es el más popular. Todos los niveles dan créditos a la misma tarifa: 100 créditos por dólar. Para más de 10.000 $ al mes, habla con ventas."
+          "answer": "Elige un nivel desde 50 $ al mes (5.000 créditos) hasta 10.000 $ al mes (1.000.000 de créditos). Todos los niveles dan créditos a la misma tarifa: 100 créditos por dólar. Para más de 10.000 $ al mes, habla con ventas."
         },
         "members": {
           "question": "¿Pago por los miembros?",
@@ -2535,7 +2536,7 @@
       "credits": "Créditos",
       "trialTitle": "Prueba de {plan} · {days, plural, =0 {termina hoy} one {queda # día} other {quedan # días}}",
       "trialBody": "Esta cuenta está en una prueba de {plan} hasta el {date}. Después vuelve al plan que paga. Mejora el plan en cualquier momento para conservarlo.",
-      "trialBodyEnterprise": "Esta cuenta está en una prueba de Enterprise hasta el {date}: SSO, SCIM, roles avanzados y registros de auditoría están activos. Después vuelve al plan que paga, y SSO y SCIM siguen activos 14 días más. Mejora el plan en cualquier momento.",
+      "trialBodyEnterprise": "Esta cuenta está en una prueba de Enterprise hasta el {date}: SSO, SCIM, roles avanzados y registros de auditoría están activos. Después vuelve al plan que paga, y SSO y SCIM siguen activos 14 días más. Para mantener Enterprise, habla con ventas.",
       "upgrade": "Mejorar plan",
       "talkToSales": "Hablar con ventas",
       "askManager": "Pide a un propietario o administrador de la cuenta que mejore el plan.",
@@ -10067,7 +10068,7 @@
       "text0679d5053dda": "{value0} no ha informado de ninguna herramienta. Una vez que se sincroniza, cada uno obtiene su propio control Predeterminado · Bloquear · Preguntar · Permitir aquí.",
       "text067ed033e4a6": "Seis patrones que rompen el sistema, cada uno con su solución al lado.",
       "text0686a22fbf7d": "Otra sesión: del mismo proyecto, equipo u otro cliente",
-      "text0690079160b0": "\"{value0}\" eliminado",
+      "text0690079160b0": "{value0} eliminado",
       "text0690d70b6301": "Easy connect cubre más de 3.000 aplicaciones mediante sus propias pantallas OAuth y es la ruta adecuada para las fuentes SaaS periféricas de un stack de datos. Para el warehouse, los tipos de conectores directos suelen ser la respuesta más honesta: la mayoría se acceden mediante un driver o una API, no mediante una entrada de catálogo OAuth.",
       "text06993786f49e": "GitHub desconectado",
       "text06a6228ef85f": "cuando conectas un repositorio; todos se controlan de la misma forma y ninguno puede elegirse ni cambiarse aquí.",
@@ -19521,12 +19522,6 @@
       "servedModelInPlaceOf": "En lugar de",
       "servedModelBadge": "Ejecutándose en {model}",
       "servedModelBarDescription": "{requested} no respondió a la última solicitud",
-      "computerAwakeStays": "El entorno aislado sigue encendido mientras estés aquí · hasta {duration}",
-      "computerAwakeStops": "El entorno aislado se detiene en {duration}. Envía un mensaje para que siga encendido.",
-      "computerAwakeStopsSoon": "El entorno aislado se detiene pronto. Envía un mensaje para que siga encendido.",
-      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
-      "computerAwakeHours": "{hours} h",
-      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Solicitud de sesión en cola editada",
       "text52867b778586": "Un kortix.yaml.",
       "textd0dfd435b2f4": "Tu plantilla de IA, como código.",

@@ -2200,7 +2200,8 @@
         "updateAction": "Passer à {amount} / mois",
         "chooseAction": "Mettre à jour le forfait",
         "ownerOnly": "Seuls les propriétaires et les administrateurs du compte peuvent modifier le forfait.",
-        "enterpriseNote": "Les forfaits Enterprise sont gérés avec votre équipe dédiée."
+        "enterpriseNote": "Les forfaits Enterprise sont gérés avec votre équipe dédiée.",
+        "keepEnterprise": "Pour rester sur Enterprise après l'essai, contactez les ventes."
       },
       "modal": {
         "title": "Choisissez votre palier de crédits",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "Combien dois-je payer chaque mois ?",
-          "answer": "Choisissez un palier de 50 $ par mois (5 000 crédits) à 10 000 $ par mois (1 000 000 de crédits). 200 $ par mois (20 000 crédits) est le plus populaire. Chaque palier donne des crédits au même taux : 100 crédits par dollar. Au-delà de 10 000 $ par mois, contactez les ventes."
+          "answer": "Choisissez un palier de 50 $ par mois (5 000 crédits) à 10 000 $ par mois (1 000 000 de crédits). Chaque palier donne des crédits au même taux : 100 crédits par dollar. Au-delà de 10 000 $ par mois, contactez les ventes."
         },
         "members": {
           "question": "Dois-je payer pour les membres ?",
@@ -2535,7 +2536,7 @@
       "credits": "Crédits",
       "trialTitle": "Essai {plan} · {days, plural, =0 {se termine aujourd'hui} one {# jour restant} other {# jours restants}}",
       "trialBody": "Ce compte est en essai {plan} jusqu'au {date}. Ensuite, il revient au forfait qu'il paie. Passez à un forfait supérieur à tout moment pour le conserver.",
-      "trialBodyEnterprise": "Ce compte est en essai Enterprise jusqu'au {date} : SSO, SCIM, rôles avancés et journaux d'audit sont activés. Ensuite, il revient au forfait qu'il paie, et SSO et SCIM restent actifs 14 jours de plus. Passez à un forfait supérieur à tout moment.",
+      "trialBodyEnterprise": "Ce compte est en essai Enterprise jusqu'au {date} : SSO, SCIM, rôles avancés et journaux d'audit sont activés. Ensuite, il revient au forfait qu'il paie, et SSO et SCIM restent actifs 14 jours de plus. Pour garder Enterprise, contactez les ventes.",
       "upgrade": "Passer au forfait supérieur",
       "talkToSales": "Contacter les ventes",
       "askManager": "Demandez à un propriétaire ou à un administrateur du compte de passer au forfait supérieur.",
@@ -10067,7 +10068,7 @@
       "text0679d5053dda": "{value0} n’a signalé aucun outil. Une fois synchronisé, chacun obtient son propre contrôle par défaut · Bloquer · Demander · Autoriser ici.",
       "text067ed033e4a6": "Six modèles qui perturbent le système, chacun accompagné de sa solution.",
       "text0686a22fbf7d": "Une autre session — même projet, même équipe ou autre client",
-      "text0690079160b0": "« {value0} » supprimé",
+      "text0690079160b0": "{value0} supprimé",
       "text0690d70b6301": "Easy connect couvre plus de 3 000 applications via leurs propres écrans OAuth, ce qui convient aux sources SaaS périphériques d’une stack de données. Pour le data warehouse lui-même, les connecteurs directs sont généralement la réponse honnête — la plupart sont accessibles via un driver ou une API, pas via une entrée de catalogue OAuth.",
       "text06993786f49e": "GitHub déconnecté",
       "text06a6228ef85f": "lorsque vous connectez un dépôt — chacun est contrôlé de la même manière ; aucun ne peut être sélectionné ou modifié ici.",
@@ -19521,12 +19522,6 @@
       "servedModelInPlaceOf": "À la place de",
       "servedModelBadge": "Exécuté sur {model}",
       "servedModelBarDescription": "{requested} n’a pas répondu à la dernière requête",
-      "computerAwakeStays": "Le bac à sable reste allumé tant que vous êtes là · jusqu’à {duration}",
-      "computerAwakeStops": "Le bac à sable s’arrête dans {duration}. Envoyez un message pour le garder allumé.",
-      "computerAwakeStopsSoon": "Le bac à sable s’arrête bientôt. Envoyez un message pour le garder allumé.",
-      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
-      "computerAwakeHours": "{hours} h",
-      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Invite de session en file d’attente modifiée",
       "text52867b778586": "Un seul kortix.yaml.",
       "textd0dfd435b2f4": "Vos équipes IA, sous forme de code.",
