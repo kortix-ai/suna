@@ -887,6 +887,17 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/scheduled-tasks',
   },
   {
+    // Kortix Capture is its own area: devices, install and its organization settings live under /capture.
+    id: 'capture',
+    label: 'Kortix Capture',
+    icon: MonitorIcon,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/capture',
+    keywords: 'capture recording screen devices install enrollment',
+  },
+  {
     id: 'running-services',
     label: 'Service Manager',
     icon: Activity,

@@ -101,8 +101,9 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // sandbox.write, model.read, model.write). The two retired customize rows
     // stay until the contract migration; the API no longer lists them. Then
     // `project.app.admin` (20261009115640000, which also removed the two
-    // `project.backend.*` leaves #9264 had added).
-    expect(seeded).toHaveLength(80);
+    // `project.backend.*` leaves #9264 had added). Then Kortix Capture's
+    // `capture.read_all` and `capture.manage` (20261015003000001).
+    expect(seeded).toHaveLength(82);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');
@@ -134,7 +135,8 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const owner = await systemRoleActions('owner', 'account');
     const admin = await systemRoleActions('admin', 'account');
     const member = await systemRoleActions('member', 'account');
-    expect([owner.length, admin.length, member.length]).toEqual([29, 26, 5]);
+    // +2 owner and admin: Kortix Capture's capture.read_all and capture.manage (20261015003000001).
+    expect([owner.length, admin.length, member.length]).toEqual([31, 28, 5]);
     // A plain member does not read the whole directory (20261013172952181):
     // they see the people and groups they share access with.
     expect(member).not.toContain('member.read');
