@@ -46,7 +46,7 @@ import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
-import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
+import { EnterpriseAccessRow } from '@/features/billing/enterprise-access-row';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
@@ -174,6 +174,7 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
 
 export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAccess = useTranslations('billing.access');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
   // onto the page it floats over. See `account-hub-location.tsx`.
   const accountId = useAccountPanelId();
@@ -374,8 +375,8 @@ export function AccountHubContent() {
                   returnUrl={typeof window !== 'undefined' ? window.location.href : '/projects'}
                   isActive
                 />
-                {/* The "Subscribe to Team plan" button opens the global
-                    upgrade-dialog store; mount its renderer here (the global
+                {/* The plan picker's subscribe button starts checkout, and the
+                    top-up view opens the global upgrade-dialog store; mount its renderer here (the global
                     one lives only on share pages) so the dialog actually
                     appears, scoped to THIS account via the provider above. */}
                 <GlobalUpgradeModal />
@@ -619,24 +620,17 @@ export function AccountHubContent() {
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>
 
-              {/* Tucked away, not headline: this reports whether the
-                  Enterprise surface (SSO/SCIM/RBAC/audit) is unlocked for
-                  evaluation, not a feature admins configure day-to-day. The
-                  toggle is platform-admin-only now; account admins see the
-                  state read-only (see EnterpriseDemoCard). Hidden entirely
-                  when a self-host operator's Enterprise license already
-                  forces every entitlement on — there's nothing left to
-                  demo-toggle or upsell in that case. */}
-              {!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available ? (
+              {/* Whether the Enterprise features are on, and why: the plan
+                  decides (a contract or an Enterprise trial). Hidden when a
+                  self-host operator's Enterprise license already forces every
+                  entitlement on. */}
+              {accountStateQuery.data && !accountStateQuery.data?.enterprise_license_available ? (
                 <SettingsGroup
                   title={tI18nComplete.raw('textc2ef82e31689')}
-                  description={tI18nComplete.raw('text9c7d38b81f41')}
+                  description={tAccess('featuresSection')}
                 >
                   <SettingsRowGroup>
-                    <EnterpriseDemoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
+                    <EnterpriseAccessRow state={accountStateQuery.data} />
                   </SettingsRowGroup>
                 </SettingsGroup>
               ) : null}

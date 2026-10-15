@@ -120,6 +120,11 @@ describe('admin accounts search predicate', () => {
     expect(await accountIds(adminAccountsSearchCondition('strip'))).toEqual([ACCOUNT_BETA]);
   });
 
+  test('an account id finds exactly that account (the console placeholder offers ids)', async () => {
+    await seed();
+    expect(await accountIds(adminAccountsSearchCondition(` ${ACCOUNT_BETA} `))).toEqual([ACCOUNT_BETA]);
+  });
+
   test('the email branch resolves users-first, never users-per-membership', async () => {
     await seedPlanScale();
     // A non-selective pattern: with it, an unfenced EXISTS form plans the

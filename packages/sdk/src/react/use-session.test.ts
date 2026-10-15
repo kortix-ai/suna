@@ -272,6 +272,86 @@ describe('answerPermission', () => {
     });
     expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
   });
+
+  // KRTX-2190 (prod 2026-10-12): two reply affordances raced for one request;
+  // the runtime answered the first and answered the second with 404
+  // `Permission request not found: per_<id>`, which reached the browser as an
+  // unhandled promise rejection and paged Sentry. The request is gone — the
+  // pending entry must drop and the reply must NOT throw.
+  test('a 404 permission-request-not-found reply resolves and drops the pending entry', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: { message: 'Permission request not found: per_x' },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'once')).resolves.toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('a lowercase permission-request-not-found 404 (pi harness wording) resolves too', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: 'permission request not found',
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'reject')).resolves.toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('a 404 that is not an already-answered reply still throws', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: { message: 'no such route' },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
+      kind: 'runtime-error',
+    });
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
+  });
+
+  test('a second concurrent reply for the same request joins the first instead of double-sending', async () => {
+    seedPermission('p1');
+    let calls = 0;
+    permissionReplyImpl = async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { data: {} };
+    };
+
+    // The composer card and the tool-card inline prompt (or the allow-everything
+    // flow and the auto-approve backstop) both funnel into the same reply verb;
+    // racing them must not POST twice for one request id.
+    await Promise.all([answerPermission('p1', 'once'), answerPermission('p1', 'always')]);
+
+    expect(calls).toBe(1);
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('after a reply settles, a later reply for the same request sends again (the in-flight entry cleared)', async () => {
+    seedPermission('p1');
+    let calls = 0;
+    permissionReplyImpl = async () => {
+      calls += 1;
+      if (calls === 1) return { data: {} };
+      return {
+        error: { message: 'Permission request not found: per_x' },
+        response: new Response(null, { status: 404 }),
+      };
+    };
+
+    await answerPermission('p1', 'once');
+    // A stale caller retries the same request after the first reply settled;
+    // the runtime answers it with the already-answered 404, which resolves.
+    seedPermission('p1');
+    await expect(answerPermission('p1', 'always')).resolves.toBeUndefined();
+
+    expect(calls).toBe(2);
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
 });
 
 describe('classifySendError', () => {

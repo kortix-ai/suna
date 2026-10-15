@@ -28,6 +28,7 @@ import {
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../session-open';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -589,14 +590,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'before_stop'))) return;
   await provider.stop(externalId).catch(() => {});
   if (!(await ownsRestart(restart, 'after_stop'))) return;
-  // Dynamic import, not a static one: a static edge into `sandbox-proxy` closes a module-init
-  // cycle through `sandbox-proxy/index.ts`, whose top-level route mounts then read a route
-  // sub-app (e.g. publicShareApp) from a module that is still initializing —
-  // "Cannot access 'publicShareApp' before initialization" (sandbox-proxy/module-graph.test.ts
-  // guards this). At runtime the proxy module is always already loaded, so this await is one
-  // microtask; the cache clear keeps its order relative to the awaits around it.
-  const { invalidateProviderCache } = await import('../../sandbox-proxy');
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   await db
     .update(sessionSandboxes)
     .set({
@@ -630,7 +624,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'after_start'))) return;
   // Provider ingress credentials can change on every stop/start cycle.
   // Remove any link resolved while the sandbox was stopped.
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   // A provider may acknowledge start before discovering that the backing
   // runtime is gone. A confirmed `removed` status starts recovery.
   // `unknown` remains non-terminal because it does not prove runtime loss.

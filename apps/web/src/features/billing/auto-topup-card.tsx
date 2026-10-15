@@ -22,10 +22,12 @@ import {
   AUTO_TOPUP_MIN_AMOUNT,
   AUTO_TOPUP_MIN_BUFFER,
   AUTO_TOPUP_MIN_THRESHOLD,
+  formatCredits,
 } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { formatWholeUsd, monthlyCreditsForUsd, TOP_UP_BONUS_STEPS, topUpBonusCredits } from './compute-pricing';
 import { autoTopupFailureNotice } from './auto-topup-failure-notice';
 
 /**
@@ -313,6 +315,19 @@ export function AutoTopupCard({
             {!bufferError && showMissingCardWarning && (
               <p className="text-kortix-orange mt-2.5 text-xs">{t('paymentNeeded')}</p>
             )}
+
+            {!bufferError && !showMissingCardWarning && (
+              <p className="text-muted-foreground mt-2.5 text-xs tabular-nums">
+                {topUpBonusCredits(amountNum) > 0
+                  ? t('bonusHint', {
+                      credits: formatCredits(monthlyCreditsForUsd(amountNum), { locale }),
+                      bonus: formatCredits(topUpBonusCredits(amountNum), { locale }),
+                    })
+                  : t('bonusFrom', {
+                      min: formatWholeUsd(TOP_UP_BONUS_STEPS[TOP_UP_BONUS_STEPS.length - 1].minUsd, locale),
+                    })}
+              </p>
+            )}
           </m.div>
         )}
       </AnimatePresence>
@@ -334,14 +349,6 @@ export function AutoTopupCard({
   );
 }
 
-function formatWholeUsd(amount: number, locale: string): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
 
 /** A dollar field sized to its content — these sit inside a sentence, so a
  *  full-width `Input` would break the line it belongs to. */

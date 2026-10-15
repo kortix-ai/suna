@@ -34,6 +34,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Home: 'text3a78695388b3',
   'Internal Browser': 'text875c0e464942',
   'Invite members': 'texte85663498c96',
+  'Kortix Capture': 'texta67e3dc962e8',
   'LLM Providers': 'textf9e89f3cc0c8',
   'Light Theme': 'textceab50a6f7f4',
   'Log Out': 'textd57d48b71020',
@@ -68,7 +69,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'View Changes': 'textf65ed2ec9c30',
   Workspace: 'text87bb59ba2f92',
   'Project members': 'textab95d456c6bb',
-  'account members organization roster owners admins seats': 'text1a24578b099b',
+  'account members organization roster owners admins': 'textf651529d7e60',
   'accounts teams organizations switch manage': 'textb6bb289a7a2c',
   'agent sync branch base pull merge conflict resolve reconcile reload restart refresh workspace':
     'textcb97e7f77a44',
@@ -82,6 +83,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textd440cfc72edc',
   'browser chromium agent viewport automation live stream': 'texta019a77aa6df',
   'browser preview app port localhost session': 'textb597cb0305b9',
+  'capture recording screen devices install enrollment': 'textf12162aa6ac0',
   'channels channel slack teams discord email agentmail inbox inbound messaging':
     'text508121aba2d4',
   'connectors connections pipedream mcp openapi postman collections connector': 'text40f61622c4a4',
@@ -104,8 +106,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'invite members add teammate email collaborator people access send': 'text07cbfe83d4d0',
   'llm providers models anthropic openai openrouter google groq xai': 'text73149a51d652',
   'log out sign out logout signout disconnect': 'text35fc0e79987e',
-  'members member workspace access collaborators people teammates roster who can see permissions grant share seats':
-    'text1b85843d53b1',
+  'members member workspace access collaborators people teammates roster who can see permissions grant share':
+    'textad828837ddd8',
   'models model llm gateway providers provider budgets limits anthropic openai openrouter claude gpt gemini reasoning byok':
     'text3e076e95c0eb',
   'permissions help what does mean reference explain owner admin member viewer': 'text06c4e75ab508',

@@ -67,9 +67,12 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
+const realEnvSync = await import('../../projects/lib/sandbox-env-sync');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
-  ...realSandboxEnvSync,
+  ...realEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
@@ -82,6 +85,9 @@ mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
 const realSessionOpen = await import('../../projects/session-open');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../../projects/session-open', () => ({
   ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async () => true,
@@ -123,12 +129,10 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   },
 }));
 
-// The stub spreads the real backend: the test file's own graph lazy-reads
-// exports this stub does not override (the index barrel binds resolveServiceKey
-// from it), and a partial mock turns those live bindings into "Export named …
-// not found" SyntaxErrors that bun reports as unhandled errors between tests —
-// killing the whole batch.
 const realBackend = await import('../backend');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../backend', () => ({
   ...realBackend,
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),

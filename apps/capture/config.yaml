@@ -1,0 +1,58 @@
+# Kortix Application Configuration
+
+# Screen Recorder settings
+screen_recorder:
+  # Frames per second for screen recording (default: 5)
+  fps: 5
+  # Frames per second immediately after activity (default: 5)
+  burst_fps: 5
+  # Seconds without input before the recorder is considered idle (default: 3)
+  idle_after_seconds: 3
+  # Seconds between idle screenshots once idle (default: 15). Replaces idle_fps.
+  idle_interval_seconds: 15
+  # Idle frames within this perceptual hash distance of the last emitted frame are skipped (default: 3)
+  idle_dedupe_distance: 3
+  # Always emit at least one idle frame within this many seconds, even if unchanged (default: 300)
+  idle_heartbeat_seconds: 300
+  # JPEG compression quality (0-100, default: 60)
+  quality: 60
+  # Scale factor for captured screenshots (default: 0.5)
+  scale_factor: 0.5
+  # Windows-only raw screenshot frames waiting for encode; lower drops stale frames sooner on slow PCs.
+  windows_frame_queue_capacity: 8
+
+# Accessibility snapshot settings
+a11y_recorder:
+  # Accessibility snapshots are opt-in because UI Automation can be expensive on Windows.
+  enabled: false
+  # Seconds between accessibility-tree snapshots (default: 10)
+  interval_seconds: 10
+  # Maximum accessibility tree depth to serialize per focused window (default: 12)
+  max_depth: 12
+  # Maximum children serialized per accessibility node (default: 200)
+  max_children: 200
+  # Maximum total accessibility nodes serialized per snapshot (default: 3000)
+  max_nodes: 3000
+
+# Audio Recorder settings
+audio_recorder:
+  # Audio sample rate in Hz (default: 44100)
+  sample_rate: 44100
+  # Number of audio channels (default: 1)
+  channels: 1
+
+# Action recording: the local store in the capture library (actions/)
+actions:
+  # Oldest action segments leave this computer above this size (uploaded ones stay in the bucket).
+  local_cap_gb: 2
+
+# Update settings. The self-updater is not in this build yet; a new installer upgrades in place.
+# Updates come from the capture-update.json of the Kortix release (see the kortix-capture skill).
+updates:
+  # manifest_url: https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json
+  # public_key: <base64 Ed25519 public key>
+  interval_seconds: 3600
+
+# Debug settings
+debug:
+  enabled: false

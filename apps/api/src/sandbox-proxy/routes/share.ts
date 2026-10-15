@@ -10,15 +10,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi'
 import type { Context } from 'hono'
-// resolveProvider lives in the proxy entry (sandbox-proxy/index.ts). Type-only
-// import here: a static value import would make this route module statically
-// reach index.ts, and bun test --parallel evaluates test files' module graphs
-// concurrently in one process — that static edge re-opens the cyclic window
-// where index.ts's body reads route bindings from a module that is still
-// initializing (the 2026-10-14/15 lane incidents, module-graph.test.ts). The
-// value is read lazily at call time instead, per the session-lifecycle/stop.ts
-// dynamic-import precedent.
-import type { resolveProvider } from '../index'
+import { resolveProvider } from '../provider'
 import { combinedAuth } from '../../middleware/auth'
 import { canAccessPreviewSandbox } from '../../shared/preview-ownership'
 import { makeOpenApiApp, json, errors, auth } from '../../openapi'
@@ -63,8 +55,7 @@ async function resolveShareTarget(sandboxId: string): Promise<{
   error: string
   status: number
 }> {
-  const { resolveProvider: resolve } = await import('../index')
-  const resolved = await resolve(sandboxId)
+  const resolved = await resolveProvider(sandboxId)
   if (!resolved) {
     return { error: 'Sandbox not found or not active', status: 404 }
   }
