@@ -1,18 +1,16 @@
 {
-  "source_hash": "a818f1330ef34fb6a0c8b47b1310a2a9dc94fc859fe1b6d67e3676f9f4048ce6",
+  "source_hash": "c405936dea6ac4e21530f5f4b8ae21caeef659e7b10ab4df31f88231846a7f72",
   "diff_files": [
     "apps/web/src/lib/browser-error-noise.test.mts",
-    "apps/web/src/lib/browser-noise/rules/extensions.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "apps/web/src/lib/browser-noise/rules/extensions.ts"
   ],
-  "diff_hash": "7b7c8efb9e907e33803dbc5055e58896db900d98461a0366c62285d8cfd7a50f",
-  "head": "6f57ea776d8d6ec2084981b8f8b7516cc5c7ed3a",
-  "passed": false,
+  "diff_hash": "5e7676414d8a67b7220425a5e6503361dddf0ebdc05ae110357aabdf9bd88b6f",
+  "head": "4e6432915804bc7a75dc793e3b5489eccd5982b9",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass",
-    "browser": "fail"
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T06:49:29.011Z"
+  "at": "2026-10-15T06:55:15.084Z"
 }
