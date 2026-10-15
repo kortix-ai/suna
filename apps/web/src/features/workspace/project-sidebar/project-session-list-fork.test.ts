@@ -19,7 +19,10 @@ describe('session row Fork', () => {
 
   test('canFork requires the runtime capability, the active session, and a runtime root', () => {
     expect(listSource).toContain("useRuntimeSupports('session.fork')");
-    const gate = listSource.slice(listSource.indexOf('canFork={'), listSource.indexOf('isForking={'));
+    const gate = listSource.slice(
+      listSource.indexOf('canFork={'),
+      listSource.indexOf('isForking={'),
+    );
     expect(gate).toContain('runtimeForks');
     expect(gate).toContain('session.session_id === activeSessionId');
     expect(gate).toContain('session.runtime_session_id');
@@ -44,8 +47,8 @@ describe('session row Fork', () => {
   });
 
   test('pending matches on the runtime id too, so the spinner lands on the forked row', () => {
-    expect(listSource).toContain(
-      'forkSession.variables?.sessionId ===\n            (session.runtime_session_id ?? session.opencode_session_id)',
+    expect(listSource).toMatch(
+      /forkSession\.variables\?\.sessionId ===\s*\(session\.runtime_session_id \?\? session\.opencode_session_id\)/,
     );
   });
 });

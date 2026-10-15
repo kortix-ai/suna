@@ -1,15 +1,14 @@
 'use client';
 
-import { TrayIcon } from '@phosphor-icons/react';
+import { ProjectNavRow } from '@/features/workspace/project-sidebar/project-nav-row';
+
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import { TrayIcon } from '@phosphor-icons/react';
 import { usePathname } from 'next/navigation';
 
 import { CountBadge } from '@/components/ui/count-badge';
-import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import type { SidebarNavVisibility } from '@/stores/sidebar-nav-store';
@@ -33,8 +32,6 @@ export function ProjectChangeRequestsNavItem({
 }) {
   const t = useTranslations('sidebar');
   const pathname = usePathname();
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
   const canRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ).allowed === true;
   const count = useReviewSessionSummary(projectId).totalNeedsYou;
 
@@ -50,36 +47,21 @@ export function ProjectChangeRequestsNavItem({
   // whenever it answers wrong — an auth bounce, a build-id skew mid-deploy, a
   // network blip.
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        asChild
-        isActive={isActive}
-        tooltip={t('review')}
-        className="group/menu-button text-sidebar-foreground relative"
-      >
-        <Link
-          href={href}
-          prefetch
-          onClick={() => {
-            if (isMobile) setOpenMobile(false);
-          }}
-        >
-          <span className="shrink-0">
-            <TrayIcon />
-          </span>
-          {/* `truncate` sits on the label, not on the trailing group: the
+    <ProjectNavRow active={isActive} label={t('review')} href={href} prefetch>
+      <span className="shrink-0">
+        <TrayIcon />
+      </span>
+      {/* `truncate` sits on the label, not on the trailing group: the
               sidebar's base recipe truncates the last child, which used to be
               the count. */}
-          <span className="truncate">{t('review')}</span>
-          {count > 0 ? (
-            <span className="ml-auto flex shrink-0 items-center gap-1">
-              {/* Pending, not done. An amber count says "N waiting" without
+      <span className="truncate">{t('review')}</span>
+      {count > 0 ? (
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {/* Pending, not done. An amber count says "N waiting" without
                   claiming the green this system uses for "finished". */}
-              <CountBadge count={count} tone="waiting" />
-            </span>
-          ) : null}
-        </Link>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+          <CountBadge count={count} tone="waiting" />
+        </span>
+      ) : null}
+    </ProjectNavRow>
   );
 }

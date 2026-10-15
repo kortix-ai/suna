@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import type { ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SessionsTabView, type SessionsTabCopy } from './sessions-tab';
+import { SessionsTabView } from './sessions-tab';
 
 const headings = (html: string): string[] =>
   [...html.matchAll(/<(h[23])[^>]*>([^<]*)<\/\1>/g)].map((m) => `${m[1]}:${m[2]}`);
@@ -33,7 +33,7 @@ function switchState(out: string, label: string): string | null {
 
 const switchCount = (out: string) => [...out.matchAll(/role="switch"/g)].length;
 
-const SERBIAN_COPY: SessionsTabCopy = {
+const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> = {
   notifications: 'Обавештења',
   notificationsDescription: 'Обавештења прегледача.',
   unsupported: 'Прегледач не подржава обавештења.',
@@ -125,7 +125,9 @@ describe('SessionsTabView', () => {
   });
 
   test('enabling notifications reveals the type and behaviour toggles', () => {
-    const out = renderToStaticMarkup(<SessionsTabView notificationPreferences={ENABLED_PREFERENCES} />);
+    const out = renderToStaticMarkup(
+      <SessionsTabView notificationPreferences={ENABLED_PREFERENCES} />,
+    );
     expect(out).toContain('Notification types');
     expect(out).toContain('Behavior');
     expect(out).toContain('Send test notification');

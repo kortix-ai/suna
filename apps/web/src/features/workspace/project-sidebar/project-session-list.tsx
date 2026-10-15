@@ -13,8 +13,8 @@ import {
   sessionSource,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
-import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
@@ -33,13 +33,17 @@ import { changeRequestKeys } from '@/features/project-files/hooks/use-change-req
 import { useAuth } from '@/features/providers/auth-provider';
 import { useSessionNeedsYouCounts } from '@/features/review-center/hooks/use-review-session-summary';
 import {
+  childSessionHref,
+  readRuntimeSessionParam,
+} from '@/features/session/tool/tools/session-spawn-urls';
+import {
   SessionStarterMark,
   useSessionStarter,
 } from '@/features/workspace/project-sessions/session-starter-mark';
 import { SessionsEmptyState } from '@/features/workspace/project-sessions/sessions-empty-state';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
-import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
+import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
@@ -90,28 +94,30 @@ import {
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { qk, useForkSession, useProjectSession, useProjectSessions, useRuntimeSupports, useSessionChildren } from '@kortix/sdk/react';
+import {
+  qk,
+  useForkSession,
+  useProjectSession,
+  useProjectSessions,
+  useRuntimeSupports,
+  useSessionChildren,
+} from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
-  FolderSimpleIcon as MetaFolder,
   GitForkIcon,
-  SparkleIcon,
   PencilSimpleIcon,
-  TagIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
+  SparkleIcon,
   SquareIcon as Square,
+  TagIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import {
-  childSessionHref,
-  readRuntimeSessionParam,
-} from '@/features/session/tool/tools/session-spawn-urls';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -181,7 +187,7 @@ const SESSION_MENU_TRIGGER_CLASS = cn(
 const SESSION_MENU_TRIGGER_TOUCH_CLASS = cn(
   "max-md:pointer-events-auto max-md:relative max-md:size-8 max-md:translate-y-0 max-md:opacity-100 max-md:after:absolute max-md:after:-inset-2 max-md:after:content-['']",
   "[@media(hover:none)]:pointer-events-auto [@media(hover:none)]:relative [@media(hover:none)]:size-8 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100 [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-2 [@media(hover:none)]:after:content-['']",
-  "[@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:relative [@media(pointer:coarse)]:size-8 [@media(pointer:coarse)]:translate-y-0 [@media(pointer:coarse)]:opacity-100 [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-2 [@media(pointer:coarse)]:after:content-['']",
+  "pointer-coarse:pointer-events-auto pointer-coarse:relative pointer-coarse:size-8 pointer-coarse:translate-y-0 pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-2 pointer-coarse:after:content-['']",
 );
 
 /** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
@@ -320,7 +326,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // polled every 60 s; KRTX-2316).
   const { data: changeRequestData } = useQuery({
     queryKey: [...changeRequestKeys.listScope(projectId), 'recent'],
-    queryFn: () => listChangeRequests(projectId, undefined, { limit: SIDEBAR_CHANGE_REQUEST_LIMIT }),
+    queryFn: () =>
+      listChangeRequests(projectId, undefined, { limit: SIDEBAR_CHANGE_REQUEST_LIMIT }),
     staleTime: 5_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
@@ -465,7 +472,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           isForking={
             forkSession.isPending &&
             forkSession.variables?.sessionId ===
-            (session.runtime_session_id ?? session.opencode_session_id)
+              (session.runtime_session_id ?? session.opencode_session_id)
           }
           onFork={(runtimeSessionId, href) =>
             forkSession.mutate(
@@ -473,7 +480,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               {
                 onSuccess: (fork) => router.push(childSessionHref(href, fork.id)),
                 onError: (err) => {
-                  errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text32ad3abe4479'));
+                  errorToast(
+                    err instanceof Error ? err.message : tI18nComplete.raw('text32ad3abe4479'),
+                  );
                 },
               },
             )
@@ -605,9 +614,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // `more`: no row yet, but a list has a next page. Its Load more renders below.
     if (viewState !== 'more' && grouped.sections.length === 0 && visibleOtherCount === 0) {
       return (
-        <div className="text-muted-foreground px-2 pt-1 pb-2 text-xs">
-          {t('allSectionsHidden')}
-        </div>
+        <div className="text-muted-foreground px-2 pt-1 pb-2 text-xs">{t('allSectionsHidden')}</div>
       );
     }
 
@@ -1236,7 +1243,7 @@ function ProjectSessionRow({
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
         <span
-          className="hidden max-md:block [@media(hover:none)]:block [@media(pointer:coarse)]:block"
+          className="hidden max-md:block pointer-coarse:block [@media(hover:none)]:block"
           aria-hidden
           data-session-mobile-created-at="true"
         >
@@ -1244,9 +1251,7 @@ function ProjectSessionRow({
         </span>
       </span>
 
-      {childCount > 0 && (
-        <CountBadge count={childCount} />
-      )}
+      {childCount > 0 && <CountBadge count={childCount} />}
 
       {spawnedCount > 0 && onToggleSpawned && (
         <SpawnedToggle
@@ -1286,7 +1291,7 @@ function ProjectSessionRow({
         <div
           className={cn(
             'flex shrink-0 items-center gap-0 transition-none',
-            'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
+            'max-md:hidden pointer-coarse:hidden [@media(hover:none)]:hidden',
             'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
             'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
           )}
@@ -1328,7 +1333,7 @@ function ProjectSessionRow({
           'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
           'max-md:h-auto max-md:min-h-12 max-md:gap-1',
           '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
-          '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
+          'pointer-coarse:h-auto pointer-coarse:min-h-12 pointer-coarse:gap-1',
           isActive
             ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--sidebar-row)]'
             : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--sidebar-row)]',
@@ -1501,7 +1506,7 @@ function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: bo
         'flex h-8 items-center gap-2 rounded-md px-2 transition-none',
         'max-md:h-auto max-md:min-h-12 max-md:gap-1',
         '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
-        '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
+        'pointer-coarse:h-auto pointer-coarse:min-h-12 pointer-coarse:gap-1',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         isActive
           ? 'bg-sidebar-row text-sidebar-foreground'

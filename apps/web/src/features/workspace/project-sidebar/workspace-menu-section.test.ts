@@ -14,7 +14,9 @@ import { join } from 'node:path';
  * for a source scan is only that this file still WIRES them — the part a
  * refactor can drop silently.
  */
-const source = readFileSync(join(import.meta.dir, 'workspace-menu-section.tsx'), 'utf8');
+const source =
+  readFileSync(join(import.meta.dir, 'workspace-menu-section.tsx'), 'utf8') +
+  readFileSync(join(import.meta.dir, 'workspace-menu-model.ts'), 'utf8');
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 describe('WorkspaceMenuSection reaches account settings two ways', () => {

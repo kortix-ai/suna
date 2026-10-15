@@ -55,9 +55,10 @@ describe('connector tools write path', () => {
   // a half-typed pattern rule on the next per-tool click
   // (`pattern-rule-draft.test.ts` reproduces exactly that).
   test('the reseed guard keys on the order-normalized signature', () => {
-    expect(source).toContain('const advancedSignature = useMemo(() => signPatternRules(');
-    expect(source).toContain('if (seededSignature.current === advancedSignature) return;');
-    expect(source.match(/signPatternRules\(/g)).toHaveLength(2);
+    const advanced = readFileSync(join(import.meta.dir, 'connector-advanced-tools.tsx'), 'utf8');
+    expect(advanced).toContain('const advancedSignature = useMemo(() => signPatternRules(');
+    expect(advanced).toContain('if (seededSignature.current === advancedSignature) return;');
+    expect(advanced.match(/signPatternRules\(/g)).toHaveLength(2);
   });
 
   test('rules reach the wire through applyBulkPolicy, never hand-built', () => {

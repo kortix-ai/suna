@@ -1,4 +1,5 @@
 'use client';
+import { invalidateConnections } from '../invalidate-connections';
 
 import { createConnector, getDiscoverConnector, type AdminConnector } from '@kortix/sdk';
 import { useQueryClient } from '@tanstack/react-query';
@@ -13,7 +14,6 @@ import {
   connectorHref,
   type AppRef,
 } from '@/features/workspace/capabilities/connectors/connector-routes';
-import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { useTranslations } from '@/i18n/use-translations';
 
 import {
@@ -46,12 +46,7 @@ export function useInstall(projectId: string) {
       options: { connectors: readonly AdminConnector[]; app: AppRef | null },
     ) => {
       /** Settles when every invalidated query has refetched. Never rejects. */
-      const refresh = () =>
-        Promise.all(
-          connectorConnectionQueryKeys(projectId).map((key) =>
-            queryClient.invalidateQueries({ queryKey: key }).catch(() => undefined),
-          ),
-        );
+      const refresh = () => invalidateConnections(queryClient, projectId);
       setPendingKey(options.app?.slug ?? target.appName);
       void runInstall(sdkInstallDeps, { projectId, target, connectors: options.connectors })
         .then(async (result) => {

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 const read = (path: string) => readFileSync(join(import.meta.dir, path), 'utf8');
 
-const sandboxSource = read('footer/project-sandbox-alert.tsx');
+const sandboxSource = read('footer/sandbox-health.ts');
 const sandboxStateSource = read('footer/sandbox-alert-state.ts');
 const reviewPillSource = read('footer/project-change-requests-nav.tsx');
 const reviewSource = read('../../review-center/hooks/use-review-session-summary.ts');

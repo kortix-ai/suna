@@ -1,4 +1,6 @@
 'use client';
+import { agentStatus } from './agent-status';
+import { useDefaultAgent } from './use-default-agent';
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
@@ -20,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
@@ -29,7 +31,6 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
@@ -37,7 +38,6 @@ import {
   listProjectResourceGrants,
   listProjectTriggers,
   type ProjectConfigSummary,
-  updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
@@ -47,18 +47,18 @@ import {
   RobotIcon,
   StarIcon as StarSolid,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { agentHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { prefetchAgentConfig } from '@/hooks/projects/use-agent-config';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { prefetchAgentConfig } from '@/hooks/projects/use-agent-config';
 
-import { filterAgents } from './agent-filter';
 import { useSlashFocus } from '@/hooks/utils';
+import { filterAgents } from './agent-filter';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -150,7 +150,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // No mode filter (Marko, 2026-09-03): the list is the manifest's `agents:`
   // map, and whether one is a subagent is a chip on its card, not a lens on
   // the list — three agents do not need a tab bar.
-  const filtered = useMemo(() => filterAgents(agents, { mode: null, query }), [agents, query]);
+  const filtered = useMemo(() => filterAgents(agents, { query }), [agents, query]);
 
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero agents vs. agents exist but this filter/search hid all of
@@ -256,9 +256,11 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             key={agent.path}
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-            title={isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
+            title={
+              isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)
+            }
             description={agent.description}
-            badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
+            badges={<AgentCardBadges agent={agent} config={config} />}
             meta={
               <AgentCardFacts
                 agent={agent}
@@ -334,12 +336,12 @@ function AgentCardFacts({
  * noise to a grid. A subagent (or an explicit both-ways `all`) is the case
  * worth marking.
  */
-function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolean }) {
+function AgentCardBadges({ agent, config }: { agent: Agent; config: ProjectConfigSummary | null }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const mode = agent.mode?.toLowerCase();
+  const { showMode, isDefault, disabled } = agentStatus(agent, config);
   return (
     <>
-      {mode && mode !== 'primary' ? (
+      {showMode ? (
         <Badge variant="muted" size="xs">
           {formatMode(agent.mode ?? '')}
         </Badge>
@@ -351,7 +353,7 @@ function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolea
           className="text-kortix-orange size-3.5 shrink-0"
         />
       ) : null}
-      {agent.enabled === false ? (
+      {disabled ? (
         <Badge variant="muted" size="xs">
           {tI18nComplete.raw('text75081b593d15')}
         </Badge>
@@ -382,20 +384,7 @@ function DefaultAgentSelector({
   const isV2 = detectManifestVersion(config.manifest_raw) === 2;
   const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
   const current = config.default_agent ?? config.open_code_default_agent;
-  const mutation = useMutation({
-    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
-    onSuccess: async (result) => {
-      successToast(
-        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
-      );
-      // One invalidation, not two: the project CONFIG is a `select` projection
-      // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not
-      // its own fetch. The retired standalone `['project-config', id]` slot no
-      // longer exists, so a second call for it would invalidate nothing.
-      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
-    },
-    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
-  });
+  const mutation = useDefaultAgent(projectId);
 
   if (!isV2 || availableAgents.length === 0 || !current) return null;
 

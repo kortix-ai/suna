@@ -20,7 +20,9 @@ import { join } from 'node:path';
 
 import { SIDEBAR_MAX_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX } from '@/components/ui/sidebar-width';
 
-const source = readFileSync(join(import.meta.dir, 'project-sandbox-alert.tsx'), 'utf8');
+const source =
+  readFileSync(join(import.meta.dir, 'project-sandbox-alert.tsx'), 'utf8') +
+  readFileSync(join(import.meta.dir, 'sandbox-health.ts'), 'utf8');
 const code = source.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 const primitive = readFileSync(join(import.meta.dir, 'sidebar-alert.tsx'), 'utf8');
 

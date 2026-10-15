@@ -665,7 +665,6 @@
       "phone": "Telefone",
       "sms": "SMS",
       "authenticatorTotp": "Aplicativo autenticador (TOTP)",
-      "verified": "Verificado",
       "unverified": "Não verificado",
       "signedOutOtherDevices": "Desconectado dos seus outros dispositivos",
       "signOutOtherDevicesFailed": "Não foi possível desconectar outros dispositivos",
@@ -700,12 +699,10 @@
       },
       "densities": {
         "normal": {
-          "label": "Normal",
-          "description": "As etapas e o raciocínio aparecem em tempo real enquanto o Kortix trabalha."
+          "label": "Normal"
         },
         "minimal": {
-          "label": "Mínima",
-          "description": "Uma linha de status até você expandi-la."
+          "label": "Mínima"
         }
       },
       "wallpapers": {
@@ -1147,11 +1144,7 @@
       "revokeFailed": "Não foi possível revogar o app"
     },
     "featureFlags": {
-      "stability": {
-        "experimental": "Experimental",
-        "beta": "Beta",
-        "stable": "Estável"
-      },
+      "stability": {},
       "origin": {
         "overridden": "Substituído para este projeto",
         "defaultOn": "Ativado por padrão",
@@ -19637,7 +19630,36 @@
       "text91dc861375bc": "Política de versão móvel visualizada",
       "texta37dd5ef6ef2": "Personalizar barra lateral",
       "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegação sidebar",
-      "text2313fe21ea84": "Editar {name}"
+      "text2313fe21ea84": "Editar {name}",
+      "text1eddfe2fbb7a": "Um projeto é um repositório. main é a única coisa que todos compartilham.",
+      "text6a51a65a11f4": "Iniciar uma sessão corta um branch e inicializa uma máquina para ele. O banco de dados não permitirá que uma segunda sessão tenha aquela máquina.",
+      "textdb3871e22b38": "Uma segunda sessão obtém seu próprio branch e sua própria máquina. Nada se cruza entre eles – mesmo projeto, mesma equipe ou outro cliente.",
+      "textc610d5d19d2b": "A máquina é descartável. Uma instalação ruim desaparece com isso. Somente o que a sessão confirma sobrevive, e sobrevive como uma solicitação de mudança.",
+      "text08cadd4156a5": "Uma sandbox é uma máquina Linux real na qual o modelo pode executar qualquer coisa. Portanto, a única credencial nele é um token Kortix, com escopo definido para o projeto.",
+      "textc19146bd7bd6": "O agente chama uma ferramenta pelo nome. Não possui URL, host e chave - ele não pode construir a solicitação sozinho.",
+      "textafeac15c27a6": "Kortix verifica se este agente pode usar este conector, aplica a política e descriptografa a credencial em seu próprio lado da parede.",
+      "text5b70d52b009e": "A API de terceiros vê uma solicitação autenticada comum. A resposta volta para o agente. A credencial fica para trás.",
+      "textcf072fa71675": "Esses quatro nunca entram na máquina que o modelo está dirigindo. A desativação do conector entra em vigor na próxima chamada — sem nada na sandbox para girar.",
+      "text0913fabeeba4": "O trabalho da sessão chega ao main por meio de uma solicitação de mudança.",
+      "text4c6aaca6d645": "Cada sessão possui sua própria máquina e ramificação isoladas.",
+      "text28ef515dd5b9": "Quando a sessão deseja manter algo, ela abre uma solicitação de alteração.",
+      "text8f0f0d2cd359": "Nada se mescla sozinho: o trabalho chega ao principal por meio de uma solicitação de mudança aprovada por uma pessoa, a menos que um administrador conceda o recurso de mesclagem.",
+      "text7a570559b1e0": "Uma pessoa age através dos papéis que lhe foram atribuídos, avaliados em relação aos recursos que procura.",
+      "text66d3cd60b831": "Uma conta de serviço é um principal próprio. As políticas são anexadas diretamente a ele e sua solicitação é avaliada exclusivamente em relação a essas políticas.",
+      "text89faa819e995": "O que nunca consegue é o alcance de quem o criou. Não há vantagem de herança aqui para subir.",
+      "textd26b162f1b6a": "Portanto, o que uma sessão pode realmente tocar é a interseção: o que a pessoa pode fazer e o que foi declarado permitido ao agente. Nunca o sindicato.",
+      "text8e97f02e6f34": "Cada chamada que um agente faz por meio de um conector é uma linha. O gateway que resolve a credencial é quem a grava.",
+      "text94ddcfbb2f30": "Uma chamada negada também é uma briga. O que não aconteceu faz parte do registro tanto quanto o que aconteceu.",
+      "textc7d878b8738e": "As ações da conta ficam no mesmo lugar – associação, funções, políticas, tokens, grupos.",
+      "text6fb8ad227c23": "Gravar nunca é algo pelo qual você paga. Todo plano escreve isso. O plano decide quem pode ler, exportar ou transmitir.",
+      "text0c983266f830": "limite de confiança",
+      "text10fd874b68da": "escrever",
+      "text2687f86ed678": "aprovado",
+      "text1b933329d22a": "destrutivo",
+      "text6973dddd3ef9": "bloqueado",
+      "text8c6976e5b541": "administrador",
+      "textc8fc6bf296fa": "corrido",
+      "catalogExcludedNoActions": "{count, plural, one {1 aplicativo corresponde, mas não publica nenhuma ação que um agente possa chamar.} other {{count} aplicativos correspondem, mas não publicam nenhuma ação que um agente possa chamar.}}"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

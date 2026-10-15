@@ -665,7 +665,6 @@
       "phone": "Telefon",
       "sms": "SMS",
       "authenticatorTotp": "Authentifizierungs-App (TOTP)",
-      "verified": "Verifiziert",
       "unverified": "Nicht bestätigt",
       "signedOutOtherDevices": "Von Ihren anderen Geräten abgemeldet",
       "signOutOtherDevicesFailed": "Andere Geräte konnten nicht abgemeldet werden",
@@ -700,12 +699,10 @@
       },
       "densities": {
         "normal": {
-          "label": "Normal",
-          "description": "Schritte und Überlegungen werden live angezeigt, während Kortix arbeitet."
+          "label": "Normal"
         },
         "minimal": {
-          "label": "Minimal",
-          "description": "Eine Statuszeile, bis Sie sie erweitern."
+          "label": "Minimal"
         }
       },
       "wallpapers": {
@@ -1147,11 +1144,7 @@
       "revokeFailed": "Die App konnte nicht widerrufen werden"
     },
     "featureFlags": {
-      "stability": {
-        "experimental": "Experimentell",
-        "beta": "Beta",
-        "stable": "Stabil"
-      },
+      "stability": {},
       "origin": {
         "overridden": "Für dieses Projekt überschrieben",
         "defaultOn": "Standardmäßig an",
@@ -19637,7 +19630,36 @@
       "text91dc861375bc": "Mobile Release-Richtlinie angezeigt",
       "texta37dd5ef6ef2": "Seitenleiste anpassen",
       "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar",
-      "text2313fe21ea84": "{name} bearbeiten"
+      "text2313fe21ea84": "{name} bearbeiten",
+      "text1eddfe2fbb7a": "Ein Projekt ist ein Repo. main ist das Einzige, was jeder teilt.",
+      "text6a51a65a11f4": "Beim Starten einer Sitzung wird ein Zweig abgeschnitten und eine Maschine dafür gestartet. Die Datenbank lässt keine zweite Sitzung auf diesem Computer zu.",
+      "textdb3871e22b38": "Eine zweite Sitzung erhält einen eigenen Zweig und eine eigene Maschine. Es gibt keine Überschneidungen zwischen ihnen – dasselbe Projekt, dasselbe Team oder ein anderer Kunde.",
+      "textc610d5d19d2b": "Die Maschine ist ein Einweggerät. Eine fehlerhafte Installation ist damit erledigt. Nur das, was die Sitzung festschreibt, bleibt bestehen, und zwar als Änderungsanforderung.",
+      "text08cadd4156a5": "Eine Sandbox ist eine echte Linux-Maschine, auf der das Modell alles ausführen kann. Der einzige darin enthaltene Berechtigungsnachweis ist also ein Kortix-Token, der auf das Projekt beschränkt ist.",
+      "textc19146bd7bd6": "Der Agent ruft ein Werkzeug beim Namen auf. Es hat keine URL, keinen Host und keinen Schlüssel – es kann die Anfrage nicht selbst erstellen.",
+      "textafeac15c27a6": "Kortix prüft, ob dieser Agent diesen Connector verwenden darf, wendet die Richtlinie an und entschlüsselt die Anmeldeinformationen auf seiner eigenen Seite der Wall.",
+      "text5b70d52b009e": "Die Drittanbieter-API sieht eine normale authentifizierte Anfrage. Die Antwort geht zurück an den Agenten. Der Ausweis bleibt zurück.",
+      "textcf072fa71675": "Diese vier gelangen niemals in die Maschine, die das Modell fährt. Das Ausschalten des Connectors wird beim nächsten Aufruf wirksam – es gibt nichts in der Sandbox, das rotiert werden könnte.",
+      "text0913fabeeba4": "Die Sitzungsarbeit gelangt über eine Änderungsanforderung in den Mittelpunkt.",
+      "text4c6aaca6d645": "Jede Sitzung verfügt über eine eigene isolierte Maschine und einen eigenen Zweig.",
+      "text28ef515dd5b9": "Wenn die Sitzung etwas behalten möchte, öffnet sie eine Änderungsanforderung.",
+      "text8f0f0d2cd359": "Nichts führt von selbst zusammen: Die Arbeit gelangt durch eine Änderungsanforderung, die eine Person genehmigt, in den Hauptbereich, es sei denn, ein Administrator hat die Möglichkeit zur Zusammenführung gewährt.",
+      "text7a570559b1e0": "Eine Person handelt anhand der ihr zugewiesenen Rollen, bewertet anhand der Ressource, nach der sie greift.",
+      "text66d3cd60b831": "Ein Dienstkonto ist ein eigener Prinzipal. Richtlinien sind direkt damit verbunden, und seine Anfrage wird ausschließlich anhand dieser Richtlinien bewertet.",
+      "text89faa819e995": "Was es nie erreicht, ist die Reichweite desjenigen, der es geschaffen hat. Es gibt hier keine Vererbungskante, die man hochgehen kann.",
+      "textd26b162f1b6a": "Was eine Sitzung also tatsächlich berühren kann, ist die Schnittstelle: was die Person tun darf und was dem Agenten erlaubt wurde. Niemals die Gewerkschaft.",
+      "text8e97f02e6f34": "Jeder Anruf, den ein Agent über einen Connector tätigt, ist eine Zeile. Das Gateway, das die Anmeldeinformationen auflöst, ist das, was sie schreibt.",
+      "text94ddcfbb2f30": "Auch ein abgelehnter Anruf ist ein Streit. Was nicht passiert ist, ist ebenso Teil der Aufzeichnungen wie das, was passiert ist.",
+      "textc7d878b8738e": "Kontoaktionen landen am selben Ort – Mitgliedschaft, Rollen, Richtlinien, Token, Gruppen.",
+      "text6fb8ad227c23": "Die Aufnahme ist nie das, wofür Sie bezahlen. Jeder Plan schreibt dies. Der Plan entscheidet darüber, wer es lesen, exportieren oder streamen darf.",
+      "text0c983266f830": "Vertrauensgrenze",
+      "text10fd874b68da": "schreiben",
+      "text2687f86ed678": "genehmigt",
+      "text1b933329d22a": "destruktiv",
+      "text6973dddd3ef9": "blockiert",
+      "text8c6976e5b541": "Administrator",
+      "textc8fc6bf296fa": "rannte",
+      "catalogExcludedNoActions": "{count, plural, one {1 App stimmt überein, veröffentlicht jedoch keine Aktionen, die ein Agent aufrufen kann.} other {{count} Apps stimmen überein, veröffentlichen jedoch keine Aktionen, die ein Agent aufrufen kann.}}"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

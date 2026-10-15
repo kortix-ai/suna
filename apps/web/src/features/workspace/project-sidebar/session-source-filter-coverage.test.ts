@@ -1,3 +1,4 @@
+import { resolveSectionLabels } from './session-section-labels';
 /**
  * Every session source the filter menu OFFERS must have an icon and a label.
  *
@@ -61,10 +62,14 @@ describe('the filter menu can render every source it offers', () => {
 
   test('every offered source has an icon', () => {
     // `...SOURCE_ICONS` is spread into the menu's map, so its keys count too.
-    expect([...mapKeys('SOURCE_FILTER_ICONS'), ...Object.keys(SOURCE_ICONS)].sort()).toEqual(offered);
+    expect([...mapKeys('SOURCE_FILTER_ICONS'), ...Object.keys(SOURCE_ICONS)].sort()).toEqual(
+      offered,
+    );
   });
 
   test('every offered source has a label', () => {
-    expect(mapKeys('const sourceLabels').sort()).toEqual(offered);
+    const t = (key: string) => key;
+    const labels: Record<string, string> = { ...resolveSectionLabels(t), shared: 'shared' };
+    expect(offered.filter((key) => typeof labels[key] === 'string').sort()).toEqual(offered);
   });
 });

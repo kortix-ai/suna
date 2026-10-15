@@ -5,9 +5,18 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '../..');
 
 // Structural assertions follow the owning modules after extraction.
-const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts', 'app-density.tsx', 'app-access.tsx']
-  .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
-  .join('\n');
+const appsSource = () =>
+  [
+    'apps-view.tsx',
+    'app-detail.tsx',
+    'app-shared.tsx',
+    'app-preview.tsx',
+    'app-preview-pool.ts',
+    'app-density.tsx',
+    'app-access.tsx',
+  ]
+    .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
+    .join('\n');
 
 test('every Apps discovery surface hides until the apps feature flag is on', () => {
   const nav = readFileSync(
@@ -210,8 +219,11 @@ test('the Apps row matches the row contract of the group it sits in', () => {
   const ROW = 'group/menu-button text-sidebar-foreground relative';
   // The same string the sibling rows in this group use — if that contract is
   // ever restyled, this fails rather than letting Apps silently drift out.
-  expect(customize).toContain(ROW);
-  expect(apps).toContain(ROW);
+  expect(customize).toContain('<ProjectNavRow');
+  expect(apps).toContain('<ProjectNavRow');
+  expect(
+    readFileSync(resolve(root, 'features/workspace/project-sidebar/project-nav-row.tsx'), 'utf8'),
+  ).toContain(ROW);
   // The glyph keeps its box on a narrow sidebar, like its neighbours.
   expect(apps).toContain('<span className="shrink-0">');
 });
@@ -225,7 +237,9 @@ test('an App with no deployment never claims to be Running', () => {
   expect(view).toContain('const deployed = Boolean(app.active_deployment_id);');
   // `deployed` gates both branches; a static App is live without a runtime
   // (behavior asserted in app-shared.test.ts).
-  expect(view).toContain("const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');");
+  expect(view).toContain(
+    "const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');",
+  );
   expect(view).toContain("!deployed ? 'Not deployed'");
   // The badge and its tint must both follow real state, not intent.
   expect(view).not.toContain("variant={app.desired_state === 'running' ? 'success' : 'muted'}");

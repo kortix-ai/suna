@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const catalog = readFileSync(join(import.meta.dir, 'catalog', 'use-catalog.ts'), 'utf8');
@@ -41,7 +41,7 @@ describe('connectors page without a Connect provider', () => {
     expect(catalog).toContain('const connectStatus = useConnectProviderStatus(');
     expect(catalog).toContain('const easyConnectRunnable =');
     expect(catalog).toContain('enabled: opts.enabled && easyConnectRunnable,');
-    expect(catalog).toContain("easyConnectProvider === 'pipedream'");
+    expect(catalog).toContain('provider: easyConnectProvider,');
     expect(catalog).not.toContain("enabled: opts.enabled && source === 'easy-connect'");
   });
 
@@ -84,5 +84,4 @@ describe('connectors page without a Connect provider', () => {
     expect(catalog).toContain('useConnectProviderStatus(true)');
     expect(catalog).not.toContain('useConnectProviderStatus(opts.enabled');
   });
-
 });

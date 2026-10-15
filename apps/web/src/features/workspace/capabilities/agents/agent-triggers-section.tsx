@@ -1,5 +1,7 @@
 'use client';
 
+import { useTriggerMutations } from '@/components/projects/schedule/use-trigger-mutations';
+
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The Triggers section of the agent page — every project trigger that starts
@@ -27,23 +29,18 @@ import {
   triggerName,
   type TriggerKind,
 } from '@/components/projects/schedule/schedule-copy';
-import { TriggerComposer } from '@/components/projects/schedule/trigger-composer';
 import { ScheduleDetailSheet } from '@/components/projects/schedule/schedule-detail-sheet';
+import { TriggerComposer } from '@/components/projects/schedule/trigger-composer';
 import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
-import {
-  deleteProjectTrigger,
-  fireProjectTrigger,
-  listProjectTriggers,
-  type ProjectTrigger,
-} from '@kortix/sdk';
+import { listProjectTriggers, type ProjectTrigger } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   LightningIcon,
@@ -53,7 +50,7 @@ import {
   WebhooksLogoIcon,
   type Icon,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
 const KIND_ICON: Record<ProjectTrigger['type'], Icon> = {
@@ -126,44 +123,17 @@ export function AgentTriggersSection({
   const selected = mine.find((t) => t.slug === selectedSlug) ?? null;
 
   // The same two mutations the Triggers tab owns, against the same key.
-  const run = useMutation({
-    mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
-    onSuccess: (res) => {
-      if (res.status === 'fired') {
-        successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          description: res.session_id
-            ? `Session ${res.session_id.slice(0, 8)}…`
-            : 'Getting a session ready',
-        });
-      } else if (res.status === 'queued') {
-        successToast(tI18nComplete.raw('text661ff40a07e0'), {
-          description: res.reason ?? 'Busy right now — it will retry',
-        });
-      } else {
-        errorToast(tI18nComplete.raw('textfc56800b00af'), { description: res.error });
-      }
-      void invalidate();
-    },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
-  });
-  const remove = useMutation({
-    mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
-    onSuccess: (_data, trigger) => {
-      const noun = isTriggerKind(trigger.type)
-        ? KIND_COPY[trigger.type as TriggerKind].noun
-        : 'trigger';
-      successToast(
-        tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
-      );
+  const { run, remove } = useTriggerMutations({
+    projectId,
+    invalidate,
+    runFailureKey: 'textfc56800b00af',
+    deletedNoun: (trigger) =>
+      isTriggerKind(trigger.type) ? KIND_COPY[trigger.type as TriggerKind].noun : 'trigger',
+    onRemoved: () => {
       setDeleteTarget(null);
       setSelectedSlug(null);
-      void invalidate();
     },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text76bf191d6426')),
   });
-
   return (
     <EditorSection
       title={tI18nComplete.raw('texte62f2148a64d')}

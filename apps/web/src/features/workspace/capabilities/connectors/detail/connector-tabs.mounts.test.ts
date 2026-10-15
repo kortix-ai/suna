@@ -26,9 +26,13 @@ const TAB_COMPONENT: Record<ConnectorTab, string> = {
 };
 
 for (const file of SHELLS) {
-  const source = readFileSync(join(import.meta.dir, file), 'utf8');
+  const shell = readFileSync(join(import.meta.dir, file), 'utf8');
+  const source = readFileSync(join(import.meta.dir, 'connector-detail-tabs.tsx'), 'utf8');
 
   describe(`every tab in CONNECTOR_TABS is mounted in ${file}`, () => {
+    test('shell mounts the shared tab content', () => {
+      expect(shell).toContain('<ConnectorDetailTabs');
+    });
     test('TAB_COMPONENT names exactly the tabs CONNECTOR_TABS declares', () => {
       expect(Object.keys(TAB_COMPONENT).sort()).toEqual([...CONNECTOR_TABS].sort());
     });

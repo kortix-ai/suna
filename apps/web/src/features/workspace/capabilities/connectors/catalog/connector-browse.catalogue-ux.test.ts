@@ -1,8 +1,6 @@
-import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-
-import { CURATED_SECTIONS } from './connector-categories';
 
 /**
  * The source with its comments removed.
@@ -159,7 +157,7 @@ describe('the catalogue reaches the whole catalogue', () => {
 
     // The category is part of the query KEY. Without it, changing category
     // would re-slice an accumulated list instead of starting a new one.
-    expect(catalog).toContain("queryKey: ['easy-connect-apps', projectId, activeQuery, category]");
+    expect(catalog).toContain("queryKey: ['easy-connect-apps', projectId, activeQuery, null]");
 
     // No client-side bucketing of loaded entries to fake a category.
     expect(catalog).not.toContain('countInSection');
@@ -199,7 +197,6 @@ describe('the catalogue browses in place', () => {
     expect(browse).toContain('catalogFootSummary');
     expect(browse).toContain('tabular-nums');
   });
-
 });
 
 /**

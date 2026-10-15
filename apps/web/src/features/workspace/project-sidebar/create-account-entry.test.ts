@@ -79,13 +79,16 @@ describe('create-account entry point', () => {
       join(import.meta.dir, '../../accounts/hub/account-list-content.tsx'),
       'utf8',
     );
+    const helper = readFileSync(join(import.meta.dir, '../../accounts/account-created.ts'), 'utf8');
 
     for (const [name, code] of [
       ['workspace-switcher.tsx', switcher],
       ['account-list-content.tsx', hub],
     ] as const) {
-      expect({ file: name, scoped: code.includes('newWorkspacePathForAccount(account.account_id)') })
-        .toEqual({ file: name, scoped: true });
+      expect({ file: name, delegates: code.includes('accountCreated(') }).toEqual({
+        file: name,
+        delegates: true,
+      });
       // The door is what made the create look like a no-op. It must not come
       // back on either path.
       expect({ file: name, usesDoor: code.includes('PROJECT_LANDING_PATH') }).toEqual({
@@ -93,6 +96,9 @@ describe('create-account entry point', () => {
         usesDoor: false,
       });
     }
+    // The scoped destination lives in the one shared helper
+    // (behaviorally pinned by account-created.test.ts).
+    expect(helper.includes('newWorkspacePathForAccount(account.account_id)')).toBe(true);
   });
 
   test('/new seeds the picked account from the url', () => {

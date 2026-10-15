@@ -26,7 +26,10 @@ describe('project Files sidebar entry', () => {
     // unchanged.
     const navItem = filesNavItemSource();
 
-    expect(navItem).toContain('<HoverPrefetchLink');
+    expect(navItem).toContain('<ProjectNavRow');
+    expect(readFileSync(resolve(import.meta.dir, '../project-nav-row.tsx'), 'utf8')).toContain(
+      '<HoverPrefetchLink',
+    );
     // toContain('prefetch') alone is vacuous: `prefetch={false}` also contains
     // the substring "prefetch" and would pass, silently restoring the 5-6s
     // navigation this test exists to prevent. Require the bare/enabled form and
@@ -35,7 +38,9 @@ describe('project Files sidebar entry', () => {
     expect(navItem).not.toContain('prefetch={false}');
     // href was previously unasserted, so `<Link href="#">` would have passed.
     expect(navItem).toMatch(/href=\{`\/projects\/\$\{projectId\}\/files`\}/);
-    expect(navItem).toContain('asChild');
+    expect(readFileSync(resolve(import.meta.dir, '../project-nav-row.tsx'), 'utf8')).toContain(
+      'asChild',
+    );
     expect(navItem).not.toContain('router.push');
   });
 
@@ -49,7 +54,9 @@ describe('project Files sidebar entry', () => {
   test('still closes the mobile drawer on navigate', () => {
     const navItem = filesNavItemSource();
 
-    expect(navItem).toContain('setOpenMobile(false)');
+    expect(readFileSync(resolve(import.meta.dir, '../project-nav-row.tsx'), 'utf8')).toContain(
+      'setOpenMobile(false)',
+    );
   });
 
   test('does not retain the router.push helper the rail used', () => {
@@ -76,7 +83,7 @@ describe('project Files sidebar entry', () => {
     expect(SOURCE).toContain('qk.project.summary(projectId)');
     // Same fetcher + options as `ProjectFilesView`'s own query — a mismatched
     // `queryFn`/staleTime would make this a second fetch, not an accelerator.
-    expect(SOURCE).toContain("queryFn: () => getProject(projectId)");
+    expect(SOURCE).toContain('queryFn: () => getProject(projectId)');
     expect(SOURCE).toContain("...contract('config')");
   });
 });

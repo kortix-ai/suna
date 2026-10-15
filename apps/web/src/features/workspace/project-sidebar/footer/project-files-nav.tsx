@@ -1,13 +1,12 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { ProjectNavRow } from '@/features/workspace/project-sidebar/project-nav-row';
+
 import { useTranslations } from '@/i18n/use-translations';
+import { useQueryClient } from '@tanstack/react-query';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
-import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { getProject } from '@kortix/sdk';
@@ -46,18 +45,12 @@ export function ProjectFilesNavItem() {
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
   const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
   const queryClient = useQueryClient();
   // Volumes on for the project (its derived `drives` flag).
   const volumes = useFeatureFlag(projectId, 'drives');
   const label = repoNavLabel(volumes.enabled);
-
-  const handleClick = useCallback(() => {
-    if (isMobile) setOpenMobile(false);
-  }, [isMobile, setOpenMobile]);
 
   // The Files view cannot pick a git ref (`resolveFilesRef`,
   // `project-layout/resolve-files-ref.ts`) until it knows the project's
@@ -85,25 +78,18 @@ export function ProjectFilesNavItem() {
   if (!projectId) return null;
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        asChild
-        isActive={isActive}
-        tooltip={t(label)}
-        className="group/menu-button text-sidebar-foreground relative"
-      >
-        <HoverPrefetchLink
-          href={`/projects/${projectId}/files`}
-          prefetch
-          onClick={handleClick}
-          onMouseEnter={prefetchSummary}
-          onFocus={prefetchSummary}
-          onTouchStart={prefetchSummary}
-        >
-          {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
-          {t(label)}
-        </HoverPrefetchLink>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+    <ProjectNavRow
+      active={isActive}
+      label={t(label)}
+      href={`/projects/${projectId}/files`}
+      prefetch
+
+      onMouseEnter={prefetchSummary}
+      onFocus={prefetchSummary}
+      onTouchStart={prefetchSummary}
+    >
+      {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
+      {t(label)}
+    </ProjectNavRow>
   );
 }

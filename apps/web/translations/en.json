@@ -487,7 +487,6 @@
       "phone": "Phone",
       "sms": "SMS",
       "authenticatorTotp": "Authenticator app (TOTP)",
-      "verified": "verified",
       "unverified": "unverified",
       "signedOutOtherDevices": "Signed out of your other devices",
       "signOutOtherDevicesFailed": "Could not sign out other devices",
@@ -522,12 +521,10 @@
       },
       "densities": {
         "normal": {
-          "label": "Normal",
-          "description": "Steps and thinking stream live while Kortix works."
+          "label": "Normal"
         },
         "minimal": {
-          "label": "Minimal",
-          "description": "One status line until you expand it."
+          "label": "Minimal"
         }
       },
       "wallpapers": {
@@ -969,11 +966,7 @@
       "revokeFailed": "Could not revoke the app"
     },
     "featureFlags": {
-      "stability": {
-        "experimental": "Experimental",
-        "beta": "Beta",
-        "stable": "Stable"
-      },
+      "stability": {},
       "origin": {
         "overridden": "Overridden for this project",
         "defaultOn": "Default on",
@@ -19648,7 +19641,36 @@
       "text91dc861375bc": "Viewed mobile release policy",
       "texta37dd5ef6ef2": "Customize Sidebar",
       "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
-      "text2313fe21ea84": "Edit {name}"
+      "text2313fe21ea84": "Edit {name}",
+      "text1eddfe2fbb7a": "A project is a repo. main is the only thing everyone shares.",
+      "text6a51a65a11f4": "Starting a session cuts a branch and boots one machine for it. The database will not let a second session have that machine.",
+      "textdb3871e22b38": "A second session gets its own branch and its own machine. Nothing crosses between them — same project, same team, or another customer.",
+      "textc610d5d19d2b": "The machine is disposable. A bad install goes away with it. Only what the session commits survives, and it survives as a change request.",
+      "text08cadd4156a5": "A sandbox is a real Linux machine the model can run anything on. So the only credential in it is one Kortix token, scoped to the project.",
+      "textc19146bd7bd6": "The agent calls a tool by name. It has no URL, no host and no key — it cannot construct the request itself.",
+      "textafeac15c27a6": "Kortix checks that this agent may use this connector, applies the policy, and decrypts the credential on its own side of the wall.",
+      "text5b70d52b009e": "The third-party API sees an ordinary authenticated request. The answer goes back to the agent. The credential stays behind.",
+      "textcf072fa71675": "These four never cross into the machine the model is driving. Turning the connector off takes effect on the next call — with nothing in the sandbox to rotate.",
+      "text0913fabeeba4": "Session work reaches main through a change request.",
+      "text4c6aaca6d645": "Each session has its own isolated machine and branch.",
+      "text28ef515dd5b9": "When the session wants to keep something, it opens a change request.",
+      "text8f0f0d2cd359": "Nothing merges itself: work reaches main through a change request a person approves, unless an admin granted the merge capability.",
+      "text7a570559b1e0": "A person acts through the roles they were granted, evaluated against the resource they are reaching for.",
+      "text66d3cd60b831": "A service account is a principal of its own. Policies attach to it directly, and its request is evaluated purely against those policies.",
+      "text89faa819e995": "What it never gets is the reach of whoever created it. There is no inheritance edge here to walk up.",
+      "textd26b162f1b6a": "So what a session can actually touch is the intersection: what the person may do, and what the agent was declared to be allowed. Never the union.",
+      "text8e97f02e6f34": "Every call an agent makes through a connector is a row. The gateway that resolves the credential is the thing that writes it.",
+      "text94ddcfbb2f30": "A denied call is a row too. What did not happen is as much a part of the record as what did.",
+      "textc7d878b8738e": "Account actions land in the same place — membership, roles, policies, tokens, groups.",
+      "text6fb8ad227c23": "Recording is never the thing you pay for. Every plan writes this. The plan decides who may read, export, or stream it.",
+      "text0c983266f830": "trust boundary",
+      "text10fd874b68da": "write",
+      "text2687f86ed678": "approved",
+      "text1b933329d22a": "destructive",
+      "text6973dddd3ef9": "blocked",
+      "text8c6976e5b541": "admin",
+      "textc8fc6bf296fa": "ran",
+      "catalogExcludedNoActions": "{count, plural, one {1 app matches but publishes no actions an agent can call.} other {{count} apps match but publish no actions an agent can call.}}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

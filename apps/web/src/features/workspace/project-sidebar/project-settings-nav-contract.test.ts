@@ -40,7 +40,10 @@ describe('project Customize sidebar entry (the routed one)', () => {
     // hover/focus/touch instead of on mount — see
     // sidebar-prefetch-contract.test.ts. Still a prefetched link, still not
     // router.push, which is what this test exists to pin.
-    expect(navItem).toContain('<HoverPrefetchLink');
+    expect(navItem).toContain('<ProjectNavRow');
+    expect(readFileSync(resolve(import.meta.dir, 'project-nav-row.tsx'), 'utf8')).toContain(
+      '<HoverPrefetchLink',
+    );
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
     expect(navItem).not.toContain('prefetch={false}');
     // The href is the first tab the caller may open — Agents, for anyone who
@@ -49,7 +52,9 @@ describe('project Customize sidebar entry (the routed one)', () => {
     // route now redirects here.
     expect(navItem).toContain('href={capabilityTabHref(projectId, tab)}');
     expect(navItem).not.toContain('href={`/projects/${projectId}/customize`}');
-    expect(navItem).toContain('asChild');
+    expect(readFileSync(resolve(import.meta.dir, 'project-nav-row.tsx'), 'utf8')).toContain(
+      'asChild',
+    );
     expect(navItem).not.toContain('router.push');
   });
 
@@ -126,7 +131,10 @@ describe('project Customize sidebar entry (the routed one)', () => {
   });
 
   test('closes the mobile drawer on navigate', () => {
-    expect(fnSource('ProjectCustomizeNavItem')).toContain('setOpenMobile(false)');
+    expect(fnSource('ProjectCustomizeNavItem')).toContain('<ProjectNavRow');
+    expect(readFileSync(resolve(import.meta.dir, 'project-nav-row.tsx'), 'utf8')).toContain(
+      'setOpenMobile(false)',
+    );
   });
 
   test('does not open the overlay', () => {

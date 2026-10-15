@@ -1,28 +1,9 @@
 'use client';
 
-/**
- * The Appearance tab — theme, conversation density, rich answers, wallpaper.
- *
- * Split out of Preferences on 2026-09-02 (Jay: "appearance will be in a
- * separate type"). These are the only settings that change what the app
- * LOOKS like (rich answers changes how an answer is drawn, not what it
- * says); everything that changes what it does — language, shortcuts,
- * sounds, notifications — stays on Preferences and Sessions.
- *
- * Theme values come from `THEME_OPTIONS` in `features/layout/user-menu.tsx`
- * (imported, not re-declared) so this control and the user menu's theme
- * submenu can never drift apart. `WallpaperCard` is reused from
- * `features/accounts/settings/appearance-tab.tsx`, the home of the wallpaper
- * picker's card.
- *
- * `AppearanceTabView` is the pure, props-only half — it renders under
- * `renderToStaticMarkup` with no `next-themes` provider or Zustand store (see
- * `appearance-tab.test.tsx`). `AppearanceTab` is the container; it only
- * mounts while this tab is active.
- */
+import { localizedCopy } from './localized-copy';
 
-import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 import { useEffect } from 'react';
 
@@ -37,16 +18,14 @@ import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpape
 import { useUserPreferencesStore, type ConversationDensity } from '@/stores/user-preferences-store';
 import { SettingsTabHeader } from '../settings-tab-header';
 
-const DENSITY_OPTIONS: { id: ConversationDensity; label: string; description: string }[] = [
+const DENSITY_OPTIONS: { id: ConversationDensity; label: string }[] = [
   {
     id: 'normal',
     label: 'Normal',
-    description: 'Steps and thinking stream live while Kortix works.',
   },
   {
     id: 'minimal',
     label: 'Minimal',
-    description: 'One status line until you expand it.',
   },
 ];
 
@@ -63,7 +42,7 @@ export interface AppearanceTabCopy {
   wallpaperDescription: string;
   defaultWallpaper: string;
   themes: Record<ThemeValue, string>;
-  densities: Record<ConversationDensity, { label: string; description: string }>;
+  densities: Record<ConversationDensity, { label: string }>;
   wallpapers: Record<Wallpaper['id'], string>;
 }
 
@@ -83,9 +62,8 @@ export const DEFAULT_APPEARANCE_TAB_COPY: AppearanceTabCopy = {
   densities: {
     normal: {
       label: 'Normal',
-      description: 'Steps and thinking stream live while Kortix works.',
     },
-    minimal: { label: 'Minimal', description: 'One status line until you expand it.' },
+    minimal: { label: 'Minimal' },
   },
   wallpapers: {
     dither: 'Dither',
@@ -322,37 +300,7 @@ export function AppearanceTab() {
 
   return (
     <AppearanceTabView
-      copy={{
-        theme: t('theme'),
-        themeDescription: t('themeDescription'),
-        conversationDensity: t('conversationDensity'),
-        conversationDensityDescription: t('conversationDensityDescription'),
-        richAnswers: t('richAnswers'),
-        richAnswersDescription: t('richAnswersDescription'),
-        wallpaper: t('wallpaper'),
-        wallpaperDescription: t('wallpaperDescription'),
-        defaultWallpaper: t('defaultWallpaper'),
-        themes: { light: t('themes.light'), dark: t('themes.dark'), system: t('themes.system') },
-        densities: {
-          normal: {
-            label: t('densities.normal.label'),
-            description: t('densities.normal.description'),
-          },
-          minimal: {
-            label: t('densities.minimal.label'),
-            description: t('densities.minimal.description'),
-          },
-        },
-        wallpapers: {
-          dither: t('wallpapers.dither'),
-          brandmark: t('wallpapers.brandmark'),
-          nebula: t('wallpapers.nebula'),
-          silk: t('wallpapers.silk'),
-          grain: t('wallpapers.grain'),
-          neuro: t('wallpapers.neuro'),
-          blank: t('wallpapers.blank'),
-        },
-      }}
+      copy={localizedCopy(DEFAULT_APPEARANCE_TAB_COPY, t)}
       theme={theme ?? 'system'}
       onThemeChange={setTheme}
       wallpaperId={wallpaperId}

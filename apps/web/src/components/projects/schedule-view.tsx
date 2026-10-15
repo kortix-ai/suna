@@ -1,5 +1,7 @@
 'use client';
 
+import { useTriggerMutations } from '@/components/projects/schedule/use-trigger-mutations';
+
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * Triggers — the single capability page at `/projects/<id>/triggers`,
@@ -52,8 +54,6 @@ import {
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import {
   type ProjectTrigger,
-  deleteProjectTrigger,
-  fireProjectTrigger,
   listProjectTriggers,
   setProjectTriggersActivation,
   updateProjectTrigger,
@@ -62,16 +62,17 @@ import { contract, qk, useProjectTriggerEventApps, useVisibleAgents } from '@kor
 import {
   LightningIcon,
   LockKeyIcon,
-  MagnifyingGlassIcon as SearchIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
+  MagnifyingGlassIcon as SearchIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { useSlashFocus } from '@/hooks/utils';
 import { EventAppsStrip } from './schedule/event-apps-strip';
 import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
 import {
@@ -98,7 +99,6 @@ import {
 } from './schedule/trigger-filter';
 import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { useEventTitles } from './schedule/use-event-titles';
-import { useSlashFocus } from '@/hooks/utils';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -296,26 +296,15 @@ export function ScheduleView({ projectId }: { projectId: string }) {
 
   /* ── Mutations shared by the row menu and the detail panel ───────────── */
 
-  const run = useMutation({
-    mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
-    onSuccess: (res) => {
-      if (res.status === 'fired') {
-        successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          description: res.session_id
-            ? `Session ${res.session_id.slice(0, 8)}…`
-            : tI18nComplete.raw('text747e9e0e8e92'),
-        });
-      } else if (res.status === 'queued') {
-        successToast(tI18nComplete.raw('text661ff40a07e0'), {
-          description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
-        });
-      } else {
-        errorToast(tI18nComplete.raw('text9c18cb990345'), { description: res.error });
-      }
-      invalidate();
+  const { run, remove } = useTriggerMutations({
+    projectId,
+    invalidate,
+    runFailureKey: 'text9c18cb990345',
+    deletedNoun: (trigger) => kindCopy[trigger.type as TriggerKind].noun,
+    onRemoved: () => {
+      setDeleteTarget(null);
+      setSelectedSlug(null);
     },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
   });
 
   const toggle = useMutation({
@@ -331,23 +320,6 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     },
     onError: (err) =>
       errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text43ec39943667')),
-  });
-
-  const remove = useMutation({
-    mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
-    onSuccess: (_data, trigger) => {
-      // Safe: `trigger` came off the `triggers` list above, already filtered
-      // to `isTriggerKind`.
-      const noun = kindCopy[trigger.type as TriggerKind].noun;
-      successToast(
-        tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
-      );
-      setDeleteTarget(null);
-      setSelectedSlug(null);
-      invalidate();
-    },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text76bf191d6426')),
   });
 
   /* ── Derived state ──────────────────────────────────────────────────── */
@@ -457,9 +429,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
            on an error or a 403. */
         showContent ? (
           <div className="flex items-center gap-2">
-            {triggers.length > 0 || paused ? (
-              <TriggerActivationMenu projectId={projectId} />
-            ) : null}
+            {triggers.length > 0 || paused ? <TriggerActivationMenu projectId={projectId} /> : null}
             {canWrite ? (
               <NewEntityMenu
                 label={copy.createLabel}
@@ -526,7 +496,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             className="py-12"
             action={
               canWrite ? (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openCreate()}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => openCreate()}
+                >
                   <PlusIcon className="size-4 shrink-0" />
                   {copy.createLabel}
                 </Button>
