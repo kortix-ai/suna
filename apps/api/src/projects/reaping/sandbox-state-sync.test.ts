@@ -91,13 +91,6 @@ mock.module('../../sandbox-proxy/backend', () => ({
   },
 }));
 
-mock.module('../../sandbox-proxy/backend', () => ({
-  ...realSandboxProxyBackend,
-  invalidateProviderCache: (externalId: string) => {
-    cacheInvalidations.push(externalId);
-  },
-}));
-
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.

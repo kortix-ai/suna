@@ -2875,7 +2875,7 @@
   },
   "src/sandbox-proxy/routes/share.ts": {
     "no-console": {
-      "count": 4
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 3

@@ -870,7 +870,7 @@ flow(
       // list with the App filtered out) shows this 403 is the project gate
       // firing — group membership did not buy project access.
       const listed = await ctx.client.as(noRole).get("/v1/projects/:projectId/apps", { params });
-      listed.status(403).body().has("$.code", "no_project_membership");
+      listed.status(403).body().has("$.code", "no_project_membership").has("$.action", "project.read");
     });
 
     await ctx.step("narrowing the policy to one group keeps that group's members in", async () => {
