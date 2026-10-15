@@ -1485,6 +1485,13 @@ describe('UserMessage pasted-text tiles', () => {
     expect(markup.indexOf('line one of the paste')).toBeLessThan(markup.indexOf('summarize this'));
   });
 
+  test('a paste with blank-line runs (an email copy) still draws the tile', () => {
+    const email = '\nSkip to content\n\n\n\nSubject line\n\n\n\nBody text\n\n\n';
+    const markup = renderText(sent('what does this say?', [{ id: 'abcd1234', text: email }]));
+    expect(markup).toContain('Skip to content');
+    expect(markup).not.toContain('pasted_content');
+  });
+
   test('a <file> ref inside a paste stays paste text, never an attachment tile', () => {
     const markup = renderText(sent('summarize this'));
     expect(markup).not.toContain('title="x.txt"');

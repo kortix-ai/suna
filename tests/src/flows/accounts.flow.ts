@@ -6,7 +6,7 @@ import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { Principal } from '../core/types';
-import { grantEnterpriseTrial } from '../fixtures/enterprise-access';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { waitFor } from '../core/poll';
 import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
 
@@ -482,7 +482,7 @@ flow(
     let groupId = '';
     let scim: ReturnType<typeof ctx.client.withBearer>;
     await ctx.step('enable groups and add the member to one', async () => {
-      await grantEnterpriseTrial(ctx, team.id);
+      await enableEnterpriseDemo(ctx, team.id);
       const created = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/accounts/:accountId/iam/groups',
         { name: ctx.fixtures.name('offboard') },
@@ -556,7 +556,7 @@ flow(
     const member = await team.addMember('member');
     let groupId = '';
     await ctx.step('the member is in a group', async () => {
-      await grantEnterpriseTrial(ctx, team.id);
+      await enableEnterpriseDemo(ctx, team.id);
       const created = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/accounts/:accountId/iam/groups',
         { name: ctx.fixtures.name('leaver') },

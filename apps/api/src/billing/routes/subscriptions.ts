@@ -1,3 +1,6 @@
+import { assertAuthorized } from '../../iam/authorize';
+import { actorOf } from '../../iam/actor';
+import { ACCOUNT_ACTIONS } from '../../iam/actions';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import {
@@ -52,6 +55,38 @@ subscriptionsRouter.openapi(
       locale: typeof body.locale === 'string' ? body.locale : undefined,
     });
     return c.json(result);
+  },
+);
+
+// "Talk to sales" from inside the app: one click, no form — the signed-in user
+// and the account are known (billing/services/enterprise-sales.ts).
+subscriptionsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/enterprise/contact',
+    tags: ['billing'],
+    summary: 'Ask Kortix sales to get in touch about Enterprise',
+    ...auth,
+    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
+    responses: {
+      200: json(z.object({ sent: z.boolean() }), 'Whether sales was emailed'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c) => {
+    const accountId = await resolveScopedAccountId(c, 'body');
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_READ);
+    const body = await readJsonObject(c);
+    const { resolveAccountBilling } = await import('../services/billing-cache');
+    const { notifySales } = await import('../services/enterprise-sales');
+    const sent = await notifySales({
+      accountId,
+      signal: 'contact',
+      userEmail: c.get('userEmail') ?? null,
+      enterprise: (await resolveAccountBilling(accountId)).enterprise,
+      note: typeof body.note === 'string' ? body.note : null,
+    });
+    return c.json({ sent }, 200);
   },
 );
 

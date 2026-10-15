@@ -135,7 +135,7 @@ export interface GrantMeter {
  * How much of this period's plan grant is gone.
  *
  * `tier.monthly_credits` is the STORED recurring grant (the API's own comment:
- * Stripe owns it, and a trial overlays entitlements without granting credits),
+ * Stripe owns it),
  * and `credits.monthly` is what is left of it. Anything the account bought or
  * earned daily sits in a different bucket, so the subtraction stays honest.
  *

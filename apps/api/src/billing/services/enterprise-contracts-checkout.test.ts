@@ -16,7 +16,7 @@ mock.module('../../shared/stripe', () => ({ getStripe: () => ({
 mock.module('./subscriptions', () => ({ getOrCreateStripeCustomer: async () => 'cus_synthetic' }));
 const { createOfferCheckout } = await import('./enterprise-contracts');
 
-test('offer checkout preserves annual prices and contract metadata while disabling Link on Basil', async () => {
+test('offer checkout charges the license only (a stale credits amount is ignored), keeps contract metadata and disables Link on Basil', async () => {
   expect(await createOfferCheckout({ accountId: offer.accountId, email: 'billing@example.test', successUrl: 'https://example.test/success', cancelUrl: 'https://example.test/cancel' }))
     .toEqual({ checkout_url: 'https://example.test/checkout', contract_id: offer.id });
   const metadata = { account_id: offer.accountId, plan_key: 'enterprise', contract_id: offer.id };
@@ -25,7 +25,6 @@ test('offer checkout preserves annual prices and contract metadata while disabli
       customer: 'cus_synthetic', mode: 'subscription',
       line_items: [
         { quantity: 1, price_data: { currency: 'usd', product: 'prod_license', unit_amount: 120050, recurring: { interval: 'month', interval_count: 12 } } },
-        { quantity: 1, price_data: { currency: 'usd', product: 'prod_credits', unit_amount: 30025, recurring: { interval: 'month', interval_count: 12 } } },
       ],
       success_url: 'https://example.test/success', cancel_url: 'https://example.test/cancel',
       payment_method_collection: 'always', subscription_data: { metadata }, metadata,

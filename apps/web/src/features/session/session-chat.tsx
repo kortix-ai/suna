@@ -816,6 +816,9 @@ export function SessionChat({
   });
   const composerAgentName = composerAgent.selected;
   const noAccessibleAgents = composerAgent.disabled;
+  // The slash menu lists only the commands the composer's agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentCommands } = useRuntimeCommands({ agent: composerAgentName ?? undefined });
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -3535,7 +3538,7 @@ export function SessionChat({
     questionPromptRef.current?.performAction();
   }, []);
 
-  const chatCommands = useMemo(() => commands || [], [commands]);
+  const chatCommands = useMemo(() => agentCommands || [], [agentCommands]);
 
   /**
    * Where this session's unsent draft is persisted.
@@ -4564,12 +4567,12 @@ export function SessionChat({
                 )}
               >
                 <Button
-                  variant="transparent"
+                  variant="outline"
                   size="icon-md"
                   aria-hidden={!showScrollButton}
                   tabIndex={showScrollButton ? undefined : -1}
                   className={cn(
-                    'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
+                    'hit-area-2 bg-background hover:bg-muted rounded-full',
                     'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
                     showScrollButton
                       ? 'duration-normal scale-100 opacity-100'

@@ -310,8 +310,9 @@ async function byokFeeFor(event: UsageEvent): Promise<number> {
       provider: event.provider,
       upstreamCostUsd: cost,
       monthToDateUsd,
-      // The BILLING plan: an Enterprise contract waives the fee, a trial does not.
-      enterpriseContract: billing.plan.family === 'enterprise',
+      // An entitlement, on by default: Enterprise turns it off, and an
+      // operator override turns it off (or on) for one account.
+      feeApplies: billing.entitlements.byokFee,
     });
     noteByokUsage(event.accountId, event.provider, cost);
     return fee;

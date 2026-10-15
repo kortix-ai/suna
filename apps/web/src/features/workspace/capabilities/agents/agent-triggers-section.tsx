@@ -136,12 +136,12 @@ export function AgentTriggersSection({
           entity,
           ...(res.session_id
             ? { actions: triggerRunActions(projectId, res.session_id, tI18nComplete.raw('textb205bb47f81a')) }
-            : { description: 'Getting a session ready' }),
+            : { description: tI18nComplete.raw('text747e9e0e8e92') }),
         });
       } else if (res.status === 'queued') {
         successToast(tI18nComplete.raw('text661ff40a07e0'), {
           entity,
-          description: res.reason ?? 'Busy right now — it will retry',
+          description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
         });
       } else {
         errorToast(tI18nComplete.raw('textfc56800b00af'), { entity, description: res.error });

@@ -6,7 +6,6 @@ import { WebhookError } from '../../errors';
 import { applyStripeSync } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
-import { markTrialConverted } from './trial-admin';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { getCustomerByStripeId } from '../repositories/customers';
 import { updatePurchaseStatus, getPurchaseByPaymentIntent } from '../repositories/transactions';
@@ -334,11 +333,6 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     updates.paymentStatus = 'active';
   }
 
-  const trialConvertedByThisSub =
-    account?.trialStatus === 'active' &&
-    !!updates.tier &&
-    (subscription.status === 'active' || subscription.status === 'trialing');
-
   // Every paid key is `credits` now, so "the tier this subscription granted" is
   // "this is the account's own subscription": a different id returned early
   // above as stale.
@@ -363,10 +357,6 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     mode: account ? 'update' : 'upsert',
     reason: 'customer.subscription.sync',
   });
-
-  if (trialConvertedByThisSub) {
-    await markTrialConverted(accountId);
-  }
 
   if (shouldGrantRecoveryCredits && resolvedTier) {
     const recoveryCredits = allowanceForSubscription(resolvedTier, subscription, account);

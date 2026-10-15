@@ -218,6 +218,32 @@ withDb('gateway usage settlement is idempotent per request', () => {
     expect(await usageRows(codex)).toHaveLength(1);
   });
 
+  // `byokFee` is an entitlement, on by default: an operator override off
+  // waives it for one account.
+  test('an account with the byokFee entitlement overridden off pays no BYOK fee', async () => {
+    await db
+      .update(creditAccounts)
+      .set({ entitlementOverrides: { byokFee: { value: false } } })
+      .where(eq(creditAccounts.accountId, accountId));
+    await db.insert(gatewayRequestLogs).values({
+      requestId: requestId('history-waived'),
+      accountId,
+      requestedModel: 'anthropic/claude',
+      resolvedModel: 'claude',
+      provider: 'anthropic',
+      status: 200,
+      ok: true,
+      billingMode: 'none',
+      upstreamCost: '1500',
+    });
+
+    const id = requestId('byok-waived');
+    await recordGatewayUsage(event(id, { billingMode: 'none', provider: 'anthropic', upstreamCost: 2, finalCost: 0 }));
+
+    expect(await usageRows(id)).toHaveLength(1);
+    expect(await ledger()).toEqual([]);
+  });
+
   test('distinct requests each write their own row', async () => {
     const a = requestId('a');
     const b = requestId('b');

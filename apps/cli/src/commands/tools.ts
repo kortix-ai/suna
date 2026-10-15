@@ -33,9 +33,11 @@ const HELP = help`Usage: kortix tools <subcommand> [options]
 
 The tools this project's sessions get, from ./kortix.yaml \`tools:\` and its
 imports. Kortix maintains these tools: ${KORTIX_TOOL_NAMES.join(', ')}.
-With no \`tools:\` key, every session gets all maintained tools. With a \`tools:\` key,
-sessions get only the Kortix tools it lists (\`<name>: kortix:<name>\`), plus
-the project's own tools (\`<name>: <path to a .ts or .js module>\`).
+kortix_version 3: every Kortix tool is always registered; \`tools:\` maps a
+name to a project module (\`<name>: <path to a .ts or .js module>\`), and a
+Kortix tool's name replaces that tool. kortix_version 2: with no \`tools:\`
+key, every session gets all maintained tools; with one, sessions get only the
+Kortix tools it lists (\`<name>: kortix:<name>\`) plus the project's modules.
 
 Subcommands:
   ls [--json]               List each tool the sessions get: name, kind
@@ -51,8 +53,8 @@ Options:
   --force       eject: overwrite tools/<name>.ts.
   -h, --help    Show this help.
 
-Remove a Kortix tool: delete its line under \`tools:\`, then \`kortix validate\`.
-Limit the tools of one agent: \`agents.<name>.tools\` in kortix.yaml.
+Limit the tools of one agent: \`agents.<name>.tools\` in kortix.yaml (v3:
+\`tools: { exclude: [web_search] }\`).
 `;
 
 type ToolKind = 'kortix' | 'kortix (overridden)' | 'project';
@@ -80,14 +82,16 @@ const isKortixTool = (name: string) => (KORTIX_TOOL_NAMES as readonly string[]).
  */
 export function listTools(raw: Record<string, unknown>): ToolList {
   const tools = raw.tools;
+  // v3 always registers every Kortix tool; `tools` holds project modules only.
+  const v3 = Number(raw.kortix_version) === 3;
   const map = tools && typeof tools === 'object' && !Array.isArray(tools) ? (tools as Record<string, unknown>) : {};
   const rows: ToolRow[] = [];
   const removed: string[] = [];
   for (const name of KORTIX_TOOL_NAMES) {
     const value = map[name];
     const path = safeToolFile(value);
-    if (tools === undefined || kortixToolRef(value) === name) rows.push({ name, kind: 'kortix', source: `kortix:${name}` });
-    else if (path) rows.push({ name, kind: 'kortix (overridden)', source: path });
+    if (path && (v3 || kortixToolRef(value) === null)) rows.push({ name, kind: 'kortix (overridden)', source: path });
+    else if (v3 || tools === undefined || kortixToolRef(value) === name) rows.push({ name, kind: 'kortix', source: `kortix:${name}` });
     else removed.push(name);
   }
   for (const [name, value] of Object.entries(map)) {
@@ -95,7 +99,7 @@ export function listTools(raw: Record<string, unknown>): ToolList {
     const reserved = (HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_');
     if (!isKortixTool(name) && path && TOOL_NAME_RE.test(name) && !reserved) rows.push({ name, kind: 'project', source: path });
   }
-  return { toolsKey: tools !== undefined, tools: rows, removed };
+  return { toolsKey: v3 || tools !== undefined, tools: rows, removed };
 }
 
 /** The local manifest, merged with its imports, or an exit code after printing why not. */
@@ -179,9 +183,11 @@ function toolsEject(name: string | undefined, force: boolean): number {
   const declaring = manifest.origins[name] ? resolve(root, manifest.origins[name]!) : manifest.file;
   const comment = `ejected from kortix:${name}`;
   const added: string[] = [];
-  if (manifest.raw.tools === undefined) {
-    // No `tools` key anywhere: creating one would drop the other Kortix
-    // tools, so it lists them too and the eject removes nothing.
+  const listAll = manifest.raw.tools === undefined && manifest.raw.kortix_version !== 3;
+  if (listAll) {
+    // v2 with no `tools` key anywhere: creating one would drop the other
+    // Kortix tools, so it lists them too and the eject removes nothing. v3
+    // always registers every Kortix tool: the module entry is the whole edit.
     for (const tool of KORTIX_TOOL_NAMES) {
       setYamlMapEntry(manifest.file, 'tools', tool, tool === name ? target : `kortix:${tool}`, tool === name ? comment : undefined);
       if (tool !== name) added.push(`${tool}: kortix:${tool}`);
@@ -190,7 +196,7 @@ function toolsEject(name: string | undefined, force: boolean): number {
     setYamlMapEntry(declaring, 'tools', name, target, comment);
   }
 
-  const edited = relative(root, manifest.raw.tools === undefined ? manifest.file : declaring);
+  const edited = relative(root, listAll || !manifest.origins[name] ? manifest.file : declaring);
   process.stdout.write(`${status.ok(`Ejected ${name}`)}\n`);
   process.stdout.write(`  ${C.dim}wrote${C.reset}   ${target} ${C.dim}(the Kortix source, now the project's to change)${C.reset}\n`);
   process.stdout.write(`  ${C.dim}set${C.reset}     ${edited}: tools.${name}: ${target}\n`);

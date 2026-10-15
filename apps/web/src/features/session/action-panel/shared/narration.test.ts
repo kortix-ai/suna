@@ -7,6 +7,13 @@ import { familyForTool } from './narration';
 // (`packages/sdk/src/core/turns/segments/narration.test.ts`). This file keeps
 // the one case that needs web's own tool registry.
 
+/**
+ * Registered tools that narrate under 'other' on purpose. pi's `codemode` is a
+ * script that calls other tools, so no family fits; `narrateStep('other', …)`
+ * says "Ran a script" for it (@kortix/sdk core/turns/segments/narration.ts).
+ */
+const OTHER_ON_PURPOSE = new Set(['codemode']);
+
 describe('registry coverage', () => {
   it('every registered tool resolves to a family, hidden, or the fallback', () => {
     // ToolRegistry exposes its keys for this check — see Step 7.
@@ -15,7 +22,7 @@ describe('registry coverage', () => {
       expect(family).toBeTruthy();
       // 'other' is legal, but a *registered* tool landing there means the map
       // has fallen behind — surface it loudly.
-      if (family === 'other') {
+      if (family === 'other' && !OTHER_ON_PURPOSE.has(key)) {
         throw new Error(
           `Registered tool "${key}" has no narration family — add it to @kortix/sdk core/turns/segments/narration.ts`,
         );

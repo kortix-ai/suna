@@ -14,7 +14,7 @@ import type {
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
 import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
-import { newPastedContentId, type PastedContent, splitPastedContent } from '@kortix/shared';
+import { newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
 import {
@@ -902,7 +902,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       if (kind === 'tile') {
         const id = newPastedContentId();
         pasteUndoRef.current.push(id);
-        setPasteList((current) => [...current, { id, text }]);
+        setPasteList((current) => [...current, { id, text: trimPastedText(text) }]);
         return;
       }
       const names = attachedFilesRef.current.map((af) =>
