@@ -23,6 +23,7 @@ import type { PgTable } from 'drizzle-orm/pg-core';
 import {
   accountModelPreferences,
   accountSecretResources,
+  accountSecretGrants,
   accountTokens,
   appArtifacts,
   apps,
@@ -64,6 +65,7 @@ import {
 } from '@kortix/db';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
+import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { maxProjectsForAccount } from '../../shared/account-limits';
 
 /**
@@ -172,8 +174,8 @@ export interface TransferProjectOwnershipInput {
 /**
  * Move `projectId` from `fromAccountId` to `toAccountId` in ONE transaction.
  *
- * Every statement is a re-point (UPDATE `account_id`), never a delete+insert,
- * so ids, timestamps and referential integrity survive untouched. Project-
+ * Owned rows are re-pointed, preserving ids and timestamps. Account-salted
+ * secrets are re-encrypted and source member grants are revoked atomically. Project-
  * scoped system role assignments follow the project; pending, custom-role
  * and group grants are removed: a group is a directory object of the source account and its
  * grant cannot be re-resolved inside the target (and keeping the row would
@@ -222,6 +224,20 @@ export async function transferProjectOwnership(
         AND (principal_type IN ('group', 'pending') OR role_id IN (
           SELECT role_id FROM ${iamRoles} WHERE account_id = ${fromAccountId}
         ))`);
+
+    // Lock credentials before reading their envelopes: concurrent refreshes must
+    // not overwrite a destination envelope with ciphertext salted by the source.
+    const secrets = await tx.select().from(accountSecretResources)
+      .where(sql`${accountSecretResources.projectId} = ${projectId} AND ${accountSecretResources.accountId} = ${fromAccountId}`)
+      .for('update');
+    for (const secret of secrets) {
+      // Member grants belong to the source directory, not the destination.
+      // Delete before changing the resource's composite FK identity.
+      await tx.delete(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId));
+      await tx.update(accountSecretResources).set({
+        valueEnc: encryptAccountSecret(toAccountId, decryptAccountSecret(fromAccountId, secret.valueEnc)),
+      }).where(eq(accountSecretResources.secretId, secret.secretId));
+    }
 
     for (const table of PROJECT_TRANSFER_TABLES) {
       await tx.execute(

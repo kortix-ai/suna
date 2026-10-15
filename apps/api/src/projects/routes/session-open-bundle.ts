@@ -62,6 +62,8 @@ import {
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
+import { loadSessionUserStates } from '../lib/session-user-state';
+import { personUserId } from './session-watch';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
@@ -166,7 +168,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models, runtime, audit, log] = await Promise.allSettled([
+    const personId = personUserId(c, loaded);
+    const [turn, queue, transcript, models, runtime, audit, log, listState] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
@@ -237,6 +240,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
       logEnabled
         ? readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value })
         : Promise.resolve(undefined),
+      // The person's pin and archive, as the read by id serves them (KRTX-2418).
+      personId ? loadSessionUserStates([sessionId], personId) : Promise.resolve(null),
     ]);
 
     const prompts =
@@ -272,6 +277,11 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         // Owner email is a second lookup for a display string the composer does
         // not need to paint. The session route still serves it.
         ownerEmail: null,
+        // A failed read omits the fields rather than claiming "not pinned".
+        userState:
+          listState.status === 'fulfilled' && listState.value
+            ? (listState.value.get(sessionId) ?? { pinnedAt: null, archivedAt: null })
+            : undefined,
       }),
 
       // = GET .../turn. `known: false` means the read failed — render UNKNOWN,

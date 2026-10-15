@@ -27,6 +27,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   accountMemberships,
+  accountSecretResources,
+  accountSecretGrants,
   accountTokens,
   accounts,
   drives,
@@ -40,6 +42,7 @@ import {
 import { and, eq, getTableName, getTableColumns, is, isNull, sql } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import { db } from '../../shared/db';
+import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { authorize } from '../../iam/authorize';
 import {
   PROJECT_TRANSFER_LEAVE_TABLES,
@@ -175,6 +178,77 @@ async function accountOf(kind: 'session' | 'drive' | 'token' | 'connection' | 'e
 withDb('project transfer', () => {
   beforeEach(seed);
   afterEach(cleanup);
+
+  async function seedSecret(withGrant = false, corrupt = false) {
+    const [secret] = await db.insert(accountSecretResources).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, label: 'Transfer secret',
+      name: 'TRANSFER_TEST', valueEnc: corrupt ? 'invalid-envelope' : encryptAccountSecret(SOURCE_ACCOUNT, 'synthetic-secret'),
+      consumer: 'llm_gateway', strategy: 'runtime', createdBy: OWNER_A,
+    }).returning();
+    if (!secret) throw new Error('secret fixture missing');
+    if (withGrant) await db.insert(accountSecretGrants).values({
+      accountId: SOURCE_ACCOUNT, secretId: secret.secretId, userId: PROJECT_MEMBER, grantedBy: OWNER_A,
+    });
+    return secret;
+  }
+
+  test('transfers a project secret with source-member grants without retaining source access', async () => {
+    const secret = await seedSecret(true);
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const [moved] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, secret.secretId));
+    expect(moved?.accountId).toBe(TARGET_ACCOUNT);
+    expect(await db.select().from(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId))).toEqual([]);
+  });
+
+  test('re-encrypts project secret for destination and leaves account-scoped ciphertext untouched', async () => {
+    const secret = await seedSecret();
+    const [accountSecret] = await db.insert(accountSecretResources).values({
+      accountId: SOURCE_ACCOUNT, label: 'Account secret', name: 'ACCOUNT_TEST',
+      valueEnc: encryptAccountSecret(SOURCE_ACCOUNT, 'account-only'), consumer: 'llm_gateway', strategy: 'runtime', createdBy: OWNER_A,
+    }).returning();
+    if (!accountSecret) throw new Error('account secret fixture missing');
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const [moved] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, secret.secretId));
+    expect(moved).toBeDefined();
+    expect(decryptAccountSecret(TARGET_ACCOUNT, moved?.valueEnc ?? '')).toBe('synthetic-secret');
+    expect(() => decryptAccountSecret(SOURCE_ACCOUNT, moved?.valueEnc ?? '')).toThrow();
+    const [unchanged] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, accountSecret.secretId));
+    expect(unchanged?.accountId).toBe(SOURCE_ACCOUNT);
+    expect(unchanged?.valueEnc).toBe(accountSecret.valueEnc);
+  });
+
+  test('an undecryptable project secret rolls back ownership, grants and all ciphertext', async () => {
+    const secret = await seedSecret();
+    await seedSecret(false, true);
+    await expect(transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT })).rejects.toThrow();
+    const [project] = await db.select().from(projects).where(eq(projects.projectId, PROJECT_ID));
+    expect(project?.accountId).toBe(SOURCE_ACCOUNT);
+    const [unchanged] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, secret.secretId));
+    expect(unchanged?.valueEnc).toBe(secret.valueEnc);
+    expect(unchanged?.accountId).toBe(SOURCE_ACCOUNT);
+    expect(await db.select().from(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId))).toHaveLength(0);
+    expect(await accountOf('session', SESSION_ID)).toBe(SOURCE_ACCOUNT);
+  });
+
+  test('a later write failure rolls back the re-encrypted secret and revoked grants', async () => {
+    const secret = await seedSecret(true);
+    await db.execute(sql`CREATE FUNCTION kortix.reject_transfer_test() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'synthetic late transfer failure'; END $$`);
+    await db.execute(sql`CREATE TRIGGER reject_transfer_test BEFORE UPDATE ON kortix.project_sessions
+      FOR EACH ROW EXECUTE FUNCTION kortix.reject_transfer_test()`);
+    try {
+      await expect(transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT })).rejects.toThrow();
+      const [project] = await db.select().from(projects).where(eq(projects.projectId, PROJECT_ID));
+      expect(project?.accountId).toBe(SOURCE_ACCOUNT);
+      const [unchanged] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, secret.secretId));
+      expect(unchanged?.valueEnc).toBe(secret.valueEnc);
+      expect(unchanged?.accountId).toBe(SOURCE_ACCOUNT);
+      expect(await db.select().from(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId))).toHaveLength(1);
+    } finally {
+      await db.execute(sql`DROP TRIGGER reject_transfer_test ON kortix.project_sessions`);
+      await db.execute(sql`DROP FUNCTION kortix.reject_transfer_test()`);
+    }
+  });
 
   test('moves the project and every project-scoped row to the target account', async () => {
     // The caller (OWNER_A) also holds the target account, so the route's
