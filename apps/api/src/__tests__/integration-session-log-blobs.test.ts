@@ -328,6 +328,21 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
     expect(bucket.uploads.length).toBe(before);
   });
 
+  test('a fifth upload while 4 are in flight on the replica → 429 with Retry-After; the 4 store', async () => {
+    bucket.slowUploads.ms = 500;
+    try {
+      const bodies = Array.from({ length: 5 }, (_, i) => Buffer.from(`synthetic concurrent upload ${i}`));
+      const answers = await Promise.all(bodies.map((b) => put(b, undefined, 'application/octet-stream')));
+      const statuses = answers.map((r) => r.status).sort();
+      expect(statuses).toEqual([200, 200, 200, 200, 429]);
+      expect(answers.find((r) => r.status === 429)!.headers.get('retry-after')).toBe('5');
+      // The slot is free again.
+      expect((await put(Buffer.from('synthetic after the burst'), undefined, 'application/octet-stream')).status).toBe(200);
+    } finally {
+      bucket.slowUploads.ms = 0;
+    }
+  });
+
   test('a text and an attachment with the same bytes share one object', async () => {
     const text = 'x'.repeat(300_000);
     const sha = sha256(text);
@@ -342,7 +357,7 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
   });
 
   test('session deletion removes the index rows (cascade) and account erasure the objects', async () => {
-    expect((await blobRows(box)).length).toBe(2);
+    expect((await blobRows(box)).length).toBe(7);
     await deleteAccountExternalStores(project.account_id);
     expect([...bucket.objects.keys()].filter((k) => k.startsWith(`${project.project_id}/${box}/`))).toEqual([]);
     await db.execute(sql`delete from kortix.project_sessions where session_id = ${box}`);

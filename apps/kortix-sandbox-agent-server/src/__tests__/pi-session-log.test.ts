@@ -210,9 +210,16 @@ describe('pi session-log export', () => {
     expect(image).toEqual({ type: 'attachment', id: 'msg_a-p1', ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, mime: 'image/png', name: 'shot.png' })
     expect(pdf).toMatchObject({ type: 'harness', id: 'msg_a-p2', kind: 'undelivered_file', model_visible: false, data: { mime: 'application/pdf', filename: 'notes.pdf' } })
     expect(JSON.stringify(pdf)).not.toContain('base64')
-    // P2.13: the port gives the journal the bytes behind the ref.
-    expect(createPiSessionLogPort(() => null).blob!(digest)).toEqual(bytes)
-    expect(createPiSessionLogPort(() => null).blob!('0'.repeat(64))).toBeNull()
+  })
+
+  test('P2.13: blob() gives the bytes behind each blob: ref the last changes() exported', async () => {
+    const bytes = Buffer.from(PNG, 'base64')
+    const digest = createHash('sha256').update(bytes).digest('hex')
+    const port = createPiSessionLogPort(fixture)
+    expect(port.blob!(digest)).toBeNull()
+    await port.changes([])
+    expect(port.blob!(digest)).toEqual(bytes)
+    expect(port.blob!('0'.repeat(64))).toBeNull()
   })
 
   test('a sub-agent child is a thread spawned by the task call', () => {

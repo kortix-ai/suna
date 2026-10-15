@@ -55,17 +55,21 @@
  * if a put of it went out; a removed part (`message.part.removed`) a fresh put.
  *
  * Attachment bytes (P2.13). An adapter exports an image or file as `ref: blob:<sha256>`; its
- * bytes are only in the native store. Before a collected message enters the dirty set, the
- * journal asks the API for each such sha256 (`GET …/log/blobs/<sha256>`) and uploads the
- * bytes `port.blob` returns when the API has none (`PUT`, at most 50 MiB). The ref the API
- * answers (`kortix-attachment://<project>/<session>/<id>`) replaces `blob:` in the record, so
- * a record names only an object that exists, and a fresh box's restore reads it back. Each
- * sha256 is asked once per boot (`blobRefs`); the API stores it once per session.
- * A failed ask or upload (network, 5xx, 503, 429, 401) never holds the message back: it goes
- * out with `blob:`, its cursor hash is cleared so the next collection exports it again and
- * retries, and no further upload runs in this collection. Bytes the store lost, a body over
- * 50 MiB, a 400 or 413, a 404 (an API without the route) and the dump directory keep `blob:`
- * for this boot: a retry cannot change them.
+ * bytes are only in the native store. Before the collected messages enter the dirty set, the
+ * journal asks the API for each new sha256 (`GET …/log/blobs/<sha256>`) and uploads the bytes
+ * `port.blob` returns when the API has none (`PUT`, at most 50 MiB), 4 sha256s at a time. The ref
+ * the API answers (`kortix-attachment://<project>/<session>/<id>`) replaces `blob:` in the
+ * record, so a record names only an object that exists, and a fresh box's restore reads it
+ * back. A stored sha256 is asked once per boot (`blobRefs`); the API stores it once per session.
+ * Nothing holds a message back: one whose attachment is not stored yet goes out with `blob:`,
+ * and its cursor hash is cleared, so the next collection exports it again and retries.
+ * - The API is down or busy (a failed lookup, a network error on it, a 429 or 401 on either
+ *   call): the collection stops asking. Nothing is counted against a sha256.
+ * - An upload of one sha256 fails (a 5xx, a network error or the 95 s deadline): only that sha256
+ *   waits for the next collection, and after 3 failed uploads it keeps `blob:` for the boot. Two
+ *   failed uploads in one collection stop that collection (a Storage outage).
+ * - A 400, 413 or 404 (an API without the route), a body over 50 MiB, bytes the store lost and the
+ *   dump directory keep `blob:` for the boot at once: a retry cannot change them.
  *
  * Debug: `KORTIX_SESSION_LOG_DUMP_DIR` (off by default) turns the API into a
  * directory. Each batch body is written there as JSON and acknowledged at
@@ -111,7 +115,12 @@ export const JOURNAL_ACK_TIMEOUT_MS = 3_000
 export const JOURNAL_UNACKED_RETRIES = 3
 /** The API's cap on one attachment (`MAX_SESSION_ATTACHMENT_BYTES` in `@kortix/shared`, the bucket's `file_size_limit`). */
 export const JOURNAL_MAX_BLOB_BYTES = 50 * 1024 * 1024
+/** Above the API's 95 s deadline for the upload. */
 const JOURNAL_BLOB_TIMEOUT_MS = 120_000
+/** Failed uploads of one sha256 before it keeps `blob:` for the boot. */
+export const JOURNAL_BLOB_ATTEMPTS = 3
+/** Lookups and uploads at once: the API takes 4 uploads per replica. */
+const JOURNAL_BLOB_CONCURRENCY = 4
 
 // The last rev this process issued. A rev follows the clock (1000 per ms), so
 // a later boot's revs exceed every rev an earlier boot issued.
@@ -164,10 +173,10 @@ export class SessionLogJournal {
   private waiters: Array<() => void> = []
   private readonly dumpDir = process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null
   private dumped = 0
-  /** The stored object's ref of each attachment sha256 this boot asked for; '' = keep `blob:` (see the header). */
+  /** The stored object's ref of each attachment sha256 this boot settled; '' = keep `blob:` (see the header). */
   private readonly blobRefs = new Map<string, string>()
-  /** An ask or upload failed in this collection: the rest wait for the next one. */
-  private blobsDown = false
+  /** Failed uploads per sha256 this boot. */
+  private readonly blobFailures = new Map<string, number>()
   /** The live turn's messages by id, in the order the v1 bus first named them. */
   private readonly live = new Map<string, LiveRow>()
   /** The v1 bus until `stop`: text deltas republished as `log.block.delta`, and the live turn's puts. */
@@ -321,7 +330,7 @@ export class SessionLogJournal {
 
   private async collectOnce(): Promise<void> {
     const changes = await this.port.changes([...this.cursors.values()])
-    this.blobsDown = false
+    await this.storeBlobs(changes.messages.filter(({ message: m, native_hash }) => this.cursors.get(m.thread_id)?.native_hashes[m.message_id] !== native_hash).map((m) => m.message))
     const messages: SessionLogMessageEvent[] = []
     const threads: SessionLogThreadUpsert[] = []
     for (const { message, native_hash } of changes.messages) {
@@ -330,7 +339,7 @@ export class SessionLogJournal {
       if (!cursor) this.cursors.set(message.thread_id, (cursor = { thread_id: message.thread_id, last_seq: -1, native_hashes: {} }))
       if (cursor.native_hashes[id] === native_hash) continue
       // An attachment not stored yet: '' makes the next collection export the message again.
-      cursor.native_hashes[id] = (await this.storeBlobs(message)) ? native_hash : ''
+      cursor.native_hashes[id] = this.withStoredRefs(message) ? native_hash : ''
       cursor.last_seq = Math.max(cursor.last_seq, message.seq)
       this.tombstoned.delete(id)
       const entry = { id, rev: nextRev(), message }
@@ -363,58 +372,85 @@ export class SessionLogJournal {
     for (const event of messages) sessionLogEventBus().publish('log.message', event, 'message' in event ? event.message.thread_id : undefined)
   }
 
-  /** Puts the stored object's ref on each `blob:` attachment of `message`. False when one must be retried. */
-  private async storeBlobs(message: SessionLogMessage): Promise<boolean> {
-    let stored = true
-    for (const a of attachmentsOf(message)) {
-      if (!a.ref?.startsWith('blob:')) continue
-      const sha256 = a.ref.slice(5)
-      const ref = this.blobRefs.get(sha256) ?? (this.blobsDown ? null : await this.storeBlob(sha256, a.mime))
-      if (ref === null) {
-        this.blobsDown = true
-        stored = false
-      } else if (ref) a.ref = ref
+  /** Settles the `blob:` attachments of `messages` this boot has not settled (see the header). */
+  private async storeBlobs(messages: SessionLogMessage[]): Promise<void> {
+    const pending = new Map<string, string>()
+    for (const a of messages.flatMap(attachmentsOf)) if (a.ref?.startsWith('blob:') && !this.blobRefs.has(a.ref.slice(5))) pending.set(a.ref.slice(5), a.mime)
+    const queue = [...pending]
+    let down = false
+    let failed = 0
+    const worker = async () => {
+      for (let next = queue.shift(); next && !down; next = queue.shift()) {
+        const outcome = await this.storeBlob(...next)
+        if (outcome === 'down' || (outcome === 'failed' && ++failed >= 2)) down = true
+      }
     }
-    return stored
+    await Promise.all(Array.from({ length: JOURNAL_BLOB_CONCURRENCY }, worker))
   }
 
-  /** The object's ref; '' to keep `blob:` for this boot; null to retry at the next collection. */
-  private async storeBlob(sha256: string, mime: string): Promise<string | null> {
+  /** Puts each settled ref on `message`. False when an attachment is not settled yet. */
+  private withStoredRefs(message: SessionLogMessage): boolean {
+    let settled = true
+    for (const a of attachmentsOf(message)) {
+      if (!a.ref?.startsWith('blob:')) continue
+      const ref = this.blobRefs.get(a.ref.slice(5))
+      if (ref === undefined) settled = false
+      else if (ref) a.ref = ref
+    }
+    return settled
+  }
+
+  /** One sha256: settled in `blobRefs`, 'failed' (its upload failed) or 'down' (the API cannot take it now). */
+  private async storeBlob(sha256: string, mime: string): Promise<'settled' | 'failed' | 'down'> {
+    const settle = (ref: string) => (this.blobRefs.set(sha256, ref), 'settled' as const)
     const ctx = sandboxRelayContext()
-    if (this.dumpDir || !ctx) return ''
-    if (sessionTokenPresumedDead()) return null
-    const keep = (ref: string) => (this.blobRefs.set(sha256, ref), ref)
+    if (this.dumpDir || !ctx) return settle('')
+    if (sessionTokenPresumedDead()) return 'down'
     const url = `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/blobs/${sha256}`
     const headers = { Authorization: `Bearer ${ctx.token}` }
     const refOf = async (r: Response) => ((await r.json().catch(() => null)) as { ref?: unknown } | null)?.ref
-    try {
-      const found = await fetch(url, { headers, signal: AbortSignal.timeout(JOURNAL_POST_TIMEOUT_MS) })
-      if (found.status === 404) return keep('')
-      if (!found.ok) {
-        noteControlPlaneResponse(found.status, await found.text().catch(() => ''))
-        logger.warn('[session-log] attachment lookup failed; the record keeps blob: until the next collection', { status: found.status })
-        return null
-      }
-      const known = await refOf(found)
-      if (typeof known === 'string') return keep(known)
-      const bytes = this.port.blob?.(sha256)
-      if (!bytes || bytes.byteLength > JOURNAL_MAX_BLOB_BYTES) return keep('')
-      const put = await fetch(url, {
-        method: 'PUT',
-        headers: { ...headers, 'Content-Type': mime },
-        body: bytes,
-        signal: AbortSignal.timeout(JOURNAL_BLOB_TIMEOUT_MS),
-      })
-      const ref = put.ok ? await refOf(put) : undefined
-      if (typeof ref === 'string') return keep(ref)
-      if (put.status === 400 || put.status === 404 || put.status === 413) return keep('')
-      if (!put.ok) noteControlPlaneResponse(put.status, await put.text().catch(() => ''))
-      logger.warn('[session-log] attachment upload failed; the record keeps blob: until the next collection', { status: put.status })
-      return null
-    } catch (err) {
-      logger.warn('[session-log] attachment upload failed; the record keeps blob: until the next collection', { err: (err as Error).message })
-      return null
+    const unhealthy = async (r: Response, what: string) => {
+      noteControlPlaneResponse(r.status, await r.text().catch(() => ''))
+      logger.warn(`[session-log] attachment ${what} failed; it keeps blob: until a later collection`, { status: r.status })
     }
+    let found: Response
+    try {
+      found = await fetch(url, { headers, signal: AbortSignal.timeout(JOURNAL_POST_TIMEOUT_MS) })
+    } catch (err) {
+      logger.warn('[session-log] attachment lookup failed; it keeps blob: until a later collection', { err: (err as Error).message })
+      return 'down'
+    }
+    if (found.status === 404) return settle('')
+    if (!found.ok) {
+      await unhealthy(found, 'lookup')
+      return 'down'
+    }
+    const known = await refOf(found)
+    if (typeof known === 'string') return settle(known)
+    const bytes = this.port.blob?.(sha256)
+    if (!bytes || bytes.byteLength > JOURNAL_MAX_BLOB_BYTES) return settle('')
+    let put: Response
+    try {
+      put = await fetch(url, { method: 'PUT', headers: { ...headers, 'Content-Type': mime }, body: bytes, signal: AbortSignal.timeout(JOURNAL_BLOB_TIMEOUT_MS) })
+    } catch (err) {
+      logger.warn('[session-log] attachment upload failed', { err: (err as Error).message })
+      return this.uploadFailed(sha256)
+    }
+    const ref = put.ok ? await refOf(put) : undefined
+    if (typeof ref === 'string') return settle(ref)
+    if (put.status === 400 || put.status === 404 || put.status === 413) return settle('')
+    await unhealthy(put, 'upload')
+    return put.status === 429 || put.status === 401 ? 'down' : this.uploadFailed(sha256)
+  }
+
+  private uploadFailed(sha256: string): 'failed' {
+    const n = (this.blobFailures.get(sha256) ?? 0) + 1
+    this.blobFailures.set(sha256, n)
+    if (n >= JOURNAL_BLOB_ATTEMPTS) {
+      this.blobRefs.set(sha256, '')
+      logger.warn('[session-log] attachment upload failed 3 times; it keeps blob: for this boot', { sha256 })
+    }
+    return 'failed'
   }
 
   private drain(): Promise<void> {

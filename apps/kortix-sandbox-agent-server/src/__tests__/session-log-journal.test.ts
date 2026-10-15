@@ -855,28 +855,32 @@ describe('session-log journal', () => {
 })
 
 describe('attachment bytes (P2.13)', () => {
-  const PNG = randomBytes(64)
   const shaOf = (b: Buffer) => createHash('sha256').update(b).digest('hex')
+  const PNG = randomBytes(64)
+  const BIG = randomBytes(256)
   const digest = shaOf(PNG)
-  const own = `kortix-attachment://project-1/session-1/obj-${digest}`
-  /** A store with one image message; `blob` serves its bytes. */
-  function imageAdapter() {
+  const own = (sha: string) => `kortix-attachment://project-1/session-1/obj-${sha}`
+  /** A store with one message per image (`msg_0`, `msg_1`, …); `blob` serves their bytes. */
+  function imageAdapter(images: Buffer[] = [PNG]) {
     const base = fakeAdapter()
-    base.put('msg_img', 1, 'see the image')
+    images.forEach((_, i) => base.put(`msg_${i}`, i + 1, `image ${i}`))
     const changes = base.port.changes.bind(base.port)
     const port: SessionLogPort = {
       ...base.port,
       async changes(cursors) {
         const out = await changes(cursors)
-        for (const { message } of out.messages) message.blocks.push({ type: 'attachment', id: 'img', ref: `blob:${digest}`, mime: 'image/png', bytes: PNG.length, sha256: digest })
+        for (const { message } of out.messages) {
+          const bytes = images[Number(message.message_id.slice(4))]!
+          message.blocks.push({ type: 'attachment', id: 'img', ref: `blob:${shaOf(bytes)}`, mime: 'image/png', bytes: bytes.length, sha256: shaOf(bytes) })
+        }
         return out
       },
-      blob: (sha256) => (sha256 === digest ? PNG : null),
+      blob: (sha256) => images.find((b) => shaOf(b) === sha256) ?? null,
     }
     return { ...base, port }
   }
-  /** A fake API: the blob routes answer by `blob` (a status or the stored object), the journal acknowledges. */
-  function blobApi(blob: (method: string, n: number) => number | 'store') {
+  /** A fake API: the blob routes answer by `blob(method, sha256)` (a status, or 'store'), the journal acknowledges. */
+  function blobApi(blob: (method: string, sha256: string) => number | 'store') {
     const posted: SessionLogJournalRequest[] = []
     const calls: string[] = []
     const objects = new Map<string, Buffer>()
@@ -890,14 +894,16 @@ describe('attachment bytes (P2.13)', () => {
           posted.push(body)
           return ack(body)
         }
-        calls.push(`${request.method} ${request.headers.get('content-type') ?? ''}`.trim())
-        const answer = blob(request.method, calls.length)
+        const sha256 = url.pathname.split('/').at(-1)!
+        const name = sha256 === digest ? 'PNG' : sha256 === shaOf(BIG) ? 'BIG' : sha256
+        calls.push(`${request.method} ${name}${request.method === 'PUT' ? ` ${request.headers.get('content-type')}` : ''}`)
+        const answer = blob(request.method, name)
         if (answer !== 'store') return new Response('no', { status: answer })
-        if (request.method === 'GET') return Response.json({ ref: objects.has(digest) ? own : null })
+        if (request.method === 'GET') return Response.json({ ref: objects.has(sha256) ? own(sha256) : null })
         const bytes = Buffer.from(await request.arrayBuffer())
-        if (shaOf(bytes) !== url.pathname.split('/').at(-1)) return new Response('mismatch', { status: 400 })
-        objects.set(digest, bytes)
-        return Response.json({ ref: own })
+        if (shaOf(bytes) !== sha256) return new Response('mismatch', { status: 400 })
+        objects.set(sha256, bytes)
+        return Response.json({ ref: own(sha256) })
       },
     })
     servers.push(server)
@@ -905,37 +911,70 @@ describe('attachment bytes (P2.13)', () => {
     return { posted, calls, objects }
   }
   const refsOf = (body: SessionLogJournalRequest) => body.puts.flatMap((p) => p.message.blocks.flatMap((b) => (b.type === 'attachment' ? [b.ref] : [])))
+  const lastRef = (api: ReturnType<typeof blobApi>, id: string) =>
+    api.posted.flatMap((b) => b.puts).filter((p) => p.message.message_id === id).map((p) => p.message.blocks.find((b) => b.type === 'attachment')!).at(-1)?.ref
 
   test('the journal uploads the bytes before the record goes out, and the record names the stored object', async () => {
     const api = blobApi(() => 'store')
     const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
     expect(await journal.flush()).toBe(true)
-    expect(api.calls).toEqual(['GET', 'PUT image/png'])
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png'])
     expect(api.objects.get(digest)).toEqual(PNG)
-    expect(refsOf(api.posted[0]!)).toEqual([own])
+    expect(refsOf(api.posted[0]!)).toEqual([own(digest)])
     // Asked once per boot: a later collection that re-exports the message sends nothing more.
     expect(await journal.flush()).toBe(true)
-    expect(api.calls).toEqual(['GET', 'PUT image/png'])
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png'])
   })
 
   test('a failed upload sends the record with blob: at once; the next collection retries and re-sends it with the stored ref', async () => {
-    const api = blobApi((method, n) => (method === 'PUT' && n === 2 ? 503 : 'store'))
+    let puts = 0
+    const api = blobApi((method) => (method === 'PUT' && ++puts === 1 ? 503 : 'store'))
     const journal = new SessionLogJournal(imageAdapter().port, { generation: 0, retryMs: 1 })
     expect(await journal.flush()).toBe(true)
     expect(refsOf(api.posted[0]!)).toEqual([`blob:${digest}`])
     expect(await journal.flush()).toBe(true)
-    expect(api.calls).toEqual(['GET', 'PUT image/png', 'GET', 'PUT image/png'])
-    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`], [own]])
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png', 'GET PNG', 'PUT PNG image/png'])
+    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`], [own(digest)]])
     expect(api.posted[1]!.puts[0]!.rev).toBeGreaterThan(api.posted[0]!.puts[0]!.rev)
   })
 
-  test('an API without the route (404) keeps blob: for the boot and is not asked again', async () => {
-    const api = blobApi(() => 404)
+  test('one sha256 whose upload always fails starves no other: it is tried 3 times, then keeps blob: for the boot', async () => {
+    const api = blobApi((method, name) => (method === 'PUT' && name === 'BIG' ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG]).port, { generation: 0 })
+    for (let i = 0; i < 5; i++) expect(await journal.flush()).toBe(true)
+    expect(api.calls.filter((c) => c.startsWith('PUT')).sort()).toEqual(['PUT BIG image/png', 'PUT BIG image/png', 'PUT BIG image/png', 'PUT PNG image/png'])
+    expect(lastRef(api, 'msg_1')).toBe(own(digest))
+    expect(lastRef(api, 'msg_0')).toBe(`blob:${shaOf(BIG)}`)
+    // Given up: no record of BIG is sent again.
+    const posts = api.posted.length
+    expect(await journal.flush()).toBe(true)
+    expect(api.posted.length).toBe(posts)
+  })
+
+  test('an outage (every lookup 503) asks at most once per sha256 per collection, counts nothing, and uploads once the API is back', async () => {
+    let down = true
+    const api = blobApi(() => (down ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG]).port, { generation: 0 })
+    for (let i = 0; i < 4; i++) expect(await journal.flush()).toBe(true)
+    expect(api.calls.filter((c) => c.startsWith('PUT'))).toEqual([])
+    expect(api.calls.length).toBeLessThanOrEqual(8)
+    expect(api.posted.flatMap(refsOf).every((r) => r!.startsWith('blob:'))).toBe(true)
+    down = false
+    expect(await journal.flush()).toBe(true)
+    expect([lastRef(api, 'msg_0'), lastRef(api, 'msg_1')]).toEqual([own(shaOf(BIG)), own(digest)])
+  })
+
+  test('a 413 (and an API without the route, 404) keep blob: for the boot at once', async () => {
+    const api = blobApi((method) => (method === 'PUT' ? 413 : 'store'))
     const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
-    expect(await journal.flush()).toBe(true)
-    expect(await journal.flush()).toBe(true)
-    expect(api.calls).toEqual(['GET'])
+    for (let i = 0; i < 3; i++) expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png'])
     expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`]])
+    const old = blobApi(() => 404)
+    const second = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+    expect(await second.flush()).toBe(true)
+    expect(await second.flush()).toBe(true)
+    expect(old.calls).toEqual(['GET PNG'])
   })
 
   test('the dump directory keeps blob: and asks nothing', async () => {

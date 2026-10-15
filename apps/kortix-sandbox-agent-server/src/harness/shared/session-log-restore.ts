@@ -97,7 +97,8 @@ export type BytesReader = (ref: string, signal?: AbortSignal) => Promise<Buffer 
  * The bytes of every attachment the log names (blocks and tool results), by `ref`, checked
  * against `sha256` (or the digest a `blob:` ref names). Null when `read` has no bytes for it,
  * they do not match, or the reads ran past their budget (60 s for all of them, separate from
- * the texts' budget). An adapter's restore writes what it gets and counts the rest.
+ * the texts' budget). Reads run 4 at a time: since P2.13 a log names an object per image and
+ * file, up to 50 MiB each. An adapter's restore writes what it gets and counts the rest.
  */
 export async function attachmentBytes(log: SessionLog, read: BytesReader | undefined, { budgetMs = 60_000 } = {}): Promise<Map<string, Buffer | null>> {
   const budget = AbortSignal.timeout(budgetMs)
@@ -109,11 +110,16 @@ export async function attachmentBytes(log: SessionLog, read: BytesReader | undef
     }
   }
   const out = new Map<string, Buffer | null>()
-  for (const [ref, digest] of refs) {
-    const bytes = read && !budget.aborted ? await read(ref, budget).catch(() => null) : null
-    const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
-    out.set(ref, bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null)
+  const queue = [...refs]
+  const worker = async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      const [ref, digest] = next
+      const bytes = read && !budget.aborted ? await read(ref, budget).catch(() => null) : null
+      const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
+      out.set(ref, bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null)
+    }
   }
+  await Promise.all(Array.from({ length: 4 }, worker))
   return out
 }
 

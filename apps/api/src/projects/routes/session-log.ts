@@ -71,6 +71,13 @@ const params = z.object({ projectId: z.string(), sessionId: z.string() });
 const blobParams = params.extend({ sha256: z.string().regex(/^[0-9a-f]{64}$/) });
 const BlobRefSchema = z.object({ ref: z.string().nullable() });
 const TOO_LARGE = 'Session-log attachments must be 50 MiB or smaller';
+/**
+ * Uploads one replica buffers at once. Each holds its body (up to 50 MiB) and Storage's copy, so 4 bound
+ * a replica at about 400 MiB of a 4 GiB task, when every box of a fleet sends its history at the first boot
+ * on a new daemon. Above it: 429, and the daemon tries the attachment again at its next collection.
+ */
+const MAX_BLOB_UPLOADS = 4;
+let blobUploads = 0;
 
 /** The calling box's scope, or null when the credential is not this session's sandbox credential. */
 function sandboxScope(c: Context<AppEnv>): SessionLogScope | null {
@@ -157,10 +164,11 @@ export function registerSessionLogRoutes(): void {
       summary: 'Store the bytes of a session-log attachment',
       description:
         'Body: the raw bytes, `Content-Type` = their MIME type, at most 50 MiB. Session sandbox credential only. ' +
-        'The body sha256 must equal the path sha256 (else 400). Stored once per session and sha256; answers the object `{ ref }`.',
+        'The body sha256 must equal the path sha256 (else 400). Stored once per session and sha256; answers the object `{ ref }`. ' +
+        '429 when 4 uploads are already in flight on this replica. Request deadline 95 s.',
       ...auth,
       request: { params: blobParams },
-      responses: { 200: json(BlobRefSchema.extend({ ref: z.string() }), 'The object ref'), ...errors(400, 403, 404, 413, 503) },
+      responses: { 200: json(BlobRefSchema.extend({ ref: z.string() }), 'The object ref'), ...errors(400, 403, 404, 413, 429, 503) },
     }),
     async (c) => {
       const scope = sandboxScope(c);
@@ -169,10 +177,19 @@ export function registerSessionLogRoutes(): void {
       const { sha256 } = c.req.valid('param');
       const mime = (c.req.header('content-type') || 'application/octet-stream').split(';')[0]!.trim().toLowerCase();
       if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mime)) return c.json({ error: 'Invalid Content-Type' }, 400);
-      const bytes = Buffer.from(await c.req.arrayBuffer());
-      if (createHash('sha256').update(bytes).digest('hex') !== sha256) return c.json({ error: 'The body sha256 does not match the path' }, 400);
-      if (!(await sessionExists(scope))) return c.json({ error: 'Session not found' }, 404);
-      return c.json({ ref: await storeSessionLogBlob(scope, sha256, mime, bytes) }, 200);
+      if (blobUploads >= MAX_BLOB_UPLOADS) {
+        c.header('Retry-After', '5');
+        return c.json({ error: 'Too many session-log uploads in flight' }, 429);
+      }
+      blobUploads++;
+      try {
+        const bytes = Buffer.from(await c.req.arrayBuffer());
+        if (createHash('sha256').update(bytes).digest('hex') !== sha256) return c.json({ error: 'The body sha256 does not match the path' }, 400);
+        if (!(await sessionExists(scope))) return c.json({ error: 'Session not found' }, 404);
+        return c.json({ ref: await storeSessionLogBlob(scope, sha256, mime, bytes) }, 200);
+      } finally {
+        blobUploads--;
+      }
     },
   );
 

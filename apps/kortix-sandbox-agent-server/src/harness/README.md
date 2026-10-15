@@ -103,15 +103,20 @@ enters the dirty set, the journal asks `GET …/log/blobs/<sha256>` for the
 session's object and, when there is none, uploads `blob(sha256)` with
 `PUT …/log/blobs/<sha256>` (at most 50 MiB; the API checks the digest and
 stores one object per sha256 per session, in the session's attachments folder
-and the `session_log_blobs` index). The `kortix-attachment://` ref both answer
+and the `session_log_blobs` index; 95 s request deadline, at most 4 uploads in
+flight per API replica, else 429). The `kortix-attachment://` ref both answer
 replaces `blob:` in the record: a record names only an object that exists, and
-`apiBytesReader` reads it back on a fresh box. Each sha256 is asked once per
-boot. A failed ask or upload never holds a message back: it goes out with
-`blob:`, the next collection exports it again and retries, and later uploads
-of that collection wait. A 404 (an API without the route), a 400 or 413, a
-body over 50 MiB and bytes the store lost keep `blob:` for the boot. A boot
-re-sends every message, so a session journaled before P2.13 gets its objects
-at its next boot on a new daemon, while its box still holds the bytes.
+`apiBytesReader` reads it back on a fresh box (4 reads at a time). The journal
+runs 4 sha256s at a time, and asks for a stored one once per boot. Nothing holds
+a message back: one whose attachment is not stored yet goes out with `blob:`, and
+the next collection exports it again and retries. A failed lookup, a 429 or a 401
+means the API cannot take uploads now: the collection stops and nothing is
+counted. A failed upload counts against its sha256 only; after 3 the sha256
+keeps `blob:` for the boot, and 2 failed uploads stop the collection. A 404 (an
+API without the route), a 400 or 413, a body over 50 MiB and bytes the store
+lost keep `blob:` for the boot at once. A boot re-sends every message, so a
+session journaled before P2.13 gets its objects at its next boot on a new
+daemon, while its box still holds the bytes.
 
 The pi boot starts the journal once the runtime is ready and a session is
 bound, before the first turn, at the generation and with the cursors the boot

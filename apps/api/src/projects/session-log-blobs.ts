@@ -38,7 +38,7 @@
 import { createHash } from 'node:crypto';
 import { parseSessionAttachmentRef, sessionAttachmentRef } from '@kortix/shared';
 import { sessionLogBlobs } from '@kortix/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { stableSessionAttachmentId } from './lib/session-attachment-identity';
@@ -114,7 +114,8 @@ async function storeOnce(object: Scope & { attachmentId: string }, sha256: strin
   await db
     .insert(sessionLogBlobs)
     .values({ sessionId: object.sessionId, sha256, objectKey: `${object.projectId}/${object.sessionId}/${object.attachmentId}`, bytes: bytes.byteLength, mime })
-    .onConflictDoUpdate({ target: [sessionLogBlobs.sessionId, sessionLogBlobs.sha256], set: { deletedAt: null, objectKey: sql`excluded.object_key`, mime } });
+    // A racing put of the same bytes under the other id keeps its row: a text's ref must stay indexed (restore `blobs`).
+    .onConflictDoUpdate({ target: [sessionLogBlobs.sessionId, sessionLogBlobs.sha256], set: { deletedAt: null } });
   return sessionAttachmentRef(object);
 }
 
