@@ -72,9 +72,10 @@ describe('ConnectorIcon', () => {
     });
     expect(() => renderer.root.findByType('img')).toThrow();
 
-    // A virtualizer slot reused for another record (or a late managed logo)
-    // swaps the URL with no remount; the latch is per URL, so the new URL
-    // renders fresh instead of inheriting the old failure.
+    // merge-search swaps a merged twin's icon to the managed logo as the
+    // catalogue pages stream in — a URL swap with no remount; the latch is
+    // per URL, so the new URL renders fresh instead of inheriting the old
+    // failure.
     const NEXT = 'https://integrations.sh/logo/github.com';
     act(() => {
       renderer.update(<ConnectorIcon icon={NEXT} />);

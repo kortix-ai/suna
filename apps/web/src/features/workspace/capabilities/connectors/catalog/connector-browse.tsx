@@ -107,8 +107,9 @@ function CatalogAffordance({
  * "unavailable" look identical. Mirrors `ConnectorAppIcon`'s broken state.
  *
  * The latch is per URL (`failedUrl`, not a boolean): a URL that failed stays
- * failed, while a reused virtualizer slot or a late-arriving logo — which
- * swaps the URL — gets a fresh try without any call-site key.
+ * failed, while a swapped URL gets a fresh try without any call-site key —
+ * merge-search swaps a merged twin's icon to the managed logo as catalogue
+ * pages stream in.
  */
 export function ConnectorIcon({
   icon,

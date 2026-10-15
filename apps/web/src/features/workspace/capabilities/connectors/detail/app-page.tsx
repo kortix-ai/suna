@@ -76,7 +76,7 @@ const surfaceLabel = (kind: string) => (kind === 'openapi' ? 'OpenAPI' : kind.to
  * favicon, or the glyph tile when the record has none — and the same glyph
  * tile when the URL fails to load, which used to render the browser's
  * broken-image glyph beside the title. Mirrors the catalogue card's
- * `ConnectorIcon`. The latch is per URL (`failedUrl`), so a late-arriving
+ * `ConnectorIcon`. The latch is per URL (`failedUrl`), so the late-arriving
  * managed logo — which swaps the URL — gets a fresh try without a call-site
  * key.
  */
