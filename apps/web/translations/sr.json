@@ -19694,7 +19694,12 @@
       "text282851365ab1": "Повезао Capture уређај са особом",
       "text53e7a07c14d4": "Прегледао неповезан Capture уређај",
       "texta67e3dc962e8": "Kortix Capture",
-      "textf12162aa6ac0": "capture snimanje ekran uređaji instalacija upis"
+      "textf12162aa6ac0": "capture snimanje ekran uređaji instalacija upis",
+      "text7193a9579bbc": "Grupa dugmadi",
+      "text0abba441f16e": "Horizontalno",
+      "text727cd3a64d79": "Vertikalno",
+      "textcecd0c56d299": "Poveži e-poštu",
+      "text07b547d6911c": "Članovi su razmaknuti 1px. Spoljni uglovi zadržavaju zaobljenje dugmeta; uglovi okrenuti susedu smanjuju se na 4px. Radi sa svakom varijantom Button, horizontalno ili"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

@@ -19694,7 +19694,12 @@
       "text282851365ab1": "Ha collegato un dispositivo Capture a una persona",
       "text53e7a07c14d4": "Ha visualizzato un dispositivo Capture non collegato",
       "texta67e3dc962e8": "Kortix Capture",
-      "textf12162aa6ac0": "capture registrazione schermo dispositivi installare registrazione"
+      "textf12162aa6ac0": "capture registrazione schermo dispositivi installare registrazione",
+      "text7193a9579bbc": "Gruppo di pulsanti",
+      "text0abba441f16e": "Orizzontale",
+      "text727cd3a64d79": "Verticale",
+      "textcecd0c56d299": "Collega email",
+      "text07b547d6911c": "I membri distano 1px. Gli angoli esterni mantengono il raggio del pulsante; quelli rivolti a un vicino si riducono a 4px. Funziona con ogni variante di Button, orizzontale o"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

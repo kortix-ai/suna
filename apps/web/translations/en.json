@@ -19705,7 +19705,12 @@
       "text282851365ab1": "Linked a capture device to a person",
       "text53e7a07c14d4": "Viewed an unlinked capture device",
       "texta67e3dc962e8": "Kortix Capture",
-      "textf12162aa6ac0": "capture recording screen devices install enrollment"
+      "textf12162aa6ac0": "capture recording screen devices install enrollment",
+      "text7193a9579bbc": "Button Group",
+      "text0abba441f16e": "Horizontal",
+      "text727cd3a64d79": "Vertical",
+      "textcecd0c56d299": "Connect email",
+      "text07b547d6911c": "Members sit 1px apart. Outer corners keep the button radius; corners that face a neighbour shrink to 4px. Works with every Button variant, horizontal or"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
