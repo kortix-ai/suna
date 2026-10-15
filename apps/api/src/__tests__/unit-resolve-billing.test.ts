@@ -77,7 +77,7 @@ describe('stored tier', () => {
 });
 
 describe('trial overlay', () => {
-  test('active trial behaves as the trial tier, not the stored tier', () => {
+  test('an Enterprise trial lends the Enterprise features and keeps the billing plan', () => {
     const r = resolveBillingFromRow(
       {
         tier: 'free',
@@ -87,10 +87,33 @@ describe('trial overlay', () => {
       },
       NOW,
     );
-    expect(r.plan.key).toBe('enterprise');
+    // What the account pays for: unchanged, so it can pick and pay for a plan.
+    expect(r.plan.key).toBe('free');
+    expect(r.display.label).toBe('Free');
+    // What it may do: Enterprise, with its limits.
+    expect(r.features.key).toBe('enterprise');
     expect(r.source).toBe('trial');
     expect(r.entitlements.sso).toBe(true);
     expect(r.entitlements.managedModels).toBe(true);
+  });
+
+  test('a Credits trial lends the Credits plan itself', () => {
+    const r = resolveBillingFromRow(
+      { tier: 'free', trialStatus: 'active', trialTier: 'credits', trialEndsAt: iso(HOUR) },
+      NOW,
+    );
+    expect(r.plan.key).toBe('credits');
+    expect(r.features.key).toBe('credits');
+    expect(r.source).toBe('trial');
+  });
+
+  test('a trial never lowers what the stored plan grants', () => {
+    const r = resolveBillingFromRow(
+      { tier: 'enterprise', trialStatus: 'active', trialTier: 'credits', trialEndsAt: iso(HOUR) },
+      NOW,
+    );
+    expect(r.plan.key).toBe('enterprise');
+    expect(r.features.key).toBe('enterprise');
   });
 
   test('expired trial falls back to the stored tier', () => {
@@ -157,7 +180,8 @@ describe('trial overlay', () => {
       },
       NOW,
     );
-    expect(r.plan.key).toBe('enterprise');
+    expect(r.plan.key).toBe('free');
+    expect(r.features.key).toBe('enterprise');
     expect(r.source).toBe('trial');
   });
 

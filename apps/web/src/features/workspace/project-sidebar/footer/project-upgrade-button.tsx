@@ -61,11 +61,13 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
 
   if (!show) return null;
 
+  // A trial is information, not a call to action: a quiet row like the other
+  // footer rows. Only a Free account without one gets the primary Upgrade.
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         type="button"
-        variant="primary"
+        variant={trial ? 'default' : 'primary'}
         className={cn(className)}
         onClick={handleClick}
       >
