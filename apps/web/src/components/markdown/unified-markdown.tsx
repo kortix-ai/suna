@@ -37,6 +37,7 @@ import { rehypeStreamWords, STREAM_WORD_CLASS, StreamWord } from '@/components/m
 import { SetupLinkButton, SetupLinkInlineContext } from '@/components/setup-links/setup-link-button';
 import { parsePendingSetupLinkHref, parseSetupLinkHref } from '@/components/setup-links/util';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
 import { ImageIcon } from '@phosphor-icons/react';
@@ -363,21 +364,13 @@ const MARKDOWN_COMPONENTS = {
   ),
 
   // GFM task-list checkbox.
-  input: ({
-    checked,
-    className: inputClassName,
-    node: _node,
-    ...props
-  }: React.InputHTMLAttributes<HTMLInputElement> & { node?: unknown }) => (
-    <input
-      {...props}
-      type="checkbox"
-      checked={checked}
-      readOnly
-      className={cn(
-        inputClassName,
-        'border-border accent-secondary relative -top-[1px] mr-2 size-4 cursor-default rounded-sm align-middle',
-      )}
+  // Read-only: the control is shown, never toggled.
+  input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement> & { node?: unknown }) => (
+    <Checkbox
+      checked={!!checked}
+      tabIndex={-1}
+      aria-readonly
+      className="pointer-events-none relative -top-px mr-2 inline-flex align-middle"
     />
   ),
 

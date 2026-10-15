@@ -25,8 +25,8 @@ const STACK_LIMIT = 2;
 const RING = 1.5;
 /** Web `-space-x-1.5`, measured between faces; the ring sits outside it. */
 const FACE_OVERLAP = webSpace(1.5) + 2 * RING;
-/** Faces and the count are circles and pills: the ring follows them. */
-const RING_RADIUS = 999;
+/** Web `rounded-sm` (6) plus the ring: faces and the count are tiles, never circles. */
+const RING_RADIUS = 6 + RING;
 /** Pill height, the sub-agent chip's. */
 const STACK_HEIGHT = 32;
 
@@ -46,12 +46,12 @@ export function SessionParticipantStack({ participants, onPress }: SessionPartic
     )),
     ...(stack.more > 0
       ? [
-          // Web `AvatarGroupCount`: a muted pill the height of a face.
+          // Web `AvatarGroupCount`: a muted `rounded-sm` tile the height of a face.
           <View
             key="more"
-            className="items-center justify-center rounded-full bg-muted"
+            className="items-center justify-center bg-muted"
             // Grows with the count (+97), never narrower than a face.
-            style={{ minWidth: PARTICIPANT_AVATAR_SIZE, height: PARTICIPANT_AVATAR_SIZE, paddingHorizontal: 6 }}>
+            style={{ minWidth: PARTICIPANT_AVATAR_SIZE, height: PARTICIPANT_AVATAR_SIZE, paddingHorizontal: 6, borderRadius: 6 }}>
             <Text
               className="text-muted-foreground"
               style={{ fontFamily: 'Roobert-Medium', fontSize: 11, fontVariant: ['tabular-nums'] }}
