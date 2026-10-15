@@ -157,13 +157,13 @@ describe('the starter is kortix.yaml v3', () => {
     expect(readFileSync(join(BASE_ROOT, 'extensions', 'pty', 'pty.ts'), 'utf8')).toContain("from './lib/tool'");
   });
 
-  test('keeps the pty extension dependency-light: zod only, no plugin SDK', () => {
+  test('keeps the pty extension dependency-light: bun-pty and zod, no plugin SDK', () => {
     const packageJson = JSON.parse(readFileSync(join(BASE_ROOT, 'extensions', 'pty', 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
     };
     const lock = readFileSync(join(BASE_ROOT, 'extensions', 'pty', 'bun.lock'), 'utf8');
 
-    expect(packageJson.dependencies).toEqual({ zod: '4.1.8' });
+    expect(packageJson.dependencies).toEqual({ 'bun-pty': '0.4.11', zod: '4.1.8' });
     expect(lock).not.toContain('"@opencode-ai/plugin"');
     expect(lock).not.toContain('"effect"');
   });
