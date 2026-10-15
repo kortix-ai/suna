@@ -1,0 +1,20 @@
+{
+  "source_hash": "32ea86d96696ca75d7ec477a6fd26a733531982ce59f9095178a637ab019f42a",
+  "diff_files": [
+    "apps/api/src/projects/routes/git-backend.ts",
+    "apps/web/src/features/workspace/new/advanced-fields.test.ts",
+    "apps/web/src/features/workspace/new/advanced-fields.tsx",
+    "packages/sdk/src/core/rest/projects-client/git-backend.test.ts",
+    "packages/sdk/src/core/rest/projects-client/git-backend.ts",
+    "tests/src/flows/git.flow.ts"
+  ],
+  "diff_hash": "feedbe70d9b97266c4911289483d1d133e5c5d98a062865d375d7a149a59d7da",
+  "head": "152aae078b552acd9fd53a3b7672655399337884",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T23:38:58.478Z"
+}
