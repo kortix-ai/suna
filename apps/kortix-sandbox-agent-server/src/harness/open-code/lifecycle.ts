@@ -132,6 +132,7 @@ import { opencodeTurnInFlight } from './opencode-turn-state'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 import { applyV3, compiledV3, v3OpencodeEnv } from './manifest-v3'
+import type { ExtensionDepsOptions } from './extension-deps'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -384,6 +385,8 @@ export async function buildOpencodeConfigContent(
     toolBridgeSpec?: string | null
     /** kortix.yaml v3: where registered skill folders and extensions resolve (the active release root, else /workspace). */
     configRoot?: string | null
+    /** Test seam: the baked tree and installer for v3 extension dependencies (extension-deps.ts). */
+    extensionDeps?: Omit<ExtensionDepsOptions, 'cacheRoot'>
   } = {},
 ): Promise<string | undefined> {
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
@@ -487,7 +490,7 @@ export async function buildOpencodeConfigContent(
   // The daemon's tool host reads the tool keys (tool-bridge.ts); OpenCode's schema has neither.
   delete out.project_tools
   delete out.kortix_tools
-  if (v3) applyV3(out, v3, env, opts.configRoot ?? null)
+  if (v3) await applyV3(out, v3, env, opts.configRoot ?? null, opts.extensionDeps)
 
   // Instruction files the platform contributes. Appended, never clobbering
   // what the project's own config declares.

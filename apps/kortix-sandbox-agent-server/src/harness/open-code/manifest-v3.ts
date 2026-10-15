@@ -11,6 +11,8 @@ import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { compiledSetV3 } from '@/lib/config/manifest-v3'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { logger } from '@/lib/log/logger'
+import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
+import { stageExtensionModule, type ExtensionDepsOptions } from './extension-deps'
 
 /** The v3 compiled set in `env`, or null for a v1/v2 session. */
 export function compiledV3(env: NodeJS.ProcessEnv = process.env): CompiledAgentSet | null {
@@ -43,10 +45,17 @@ export function sessionAgentName(set: CompiledAgentSet, env: NodeJS.ProcessEnv):
  * Rewrite a v3 set into OpenCode config, in place: the Kortix-only keys go,
  * `commands` becomes `command`, and `skills.paths` / `plugin` get the
  * registered skill folders and the session agent's extensions under
- * `configRoot`. A folder or plugin file that does not exist is logged and
- * skipped; it never fails a boot.
+ * `configRoot`. A folder or plugin file that does not exist, or an extension
+ * whose dependencies cannot be provided, is logged and skipped; it never
+ * fails a boot.
  */
-export function applyV3(out: Record<string, unknown>, set: CompiledAgentSet, env: NodeJS.ProcessEnv, configRoot: string | null): void {
+export async function applyV3(
+  out: Record<string, unknown>,
+  set: CompiledAgentSet,
+  env: NodeJS.ProcessEnv,
+  configRoot: string | null,
+  extensionDeps: Omit<ExtensionDepsOptions, 'cacheRoot'> = {},
+): Promise<void> {
   delete out.schema
   delete out.skills
   delete out.commands
@@ -81,8 +90,13 @@ export function applyV3(out: Record<string, unknown>, set: CompiledAgentSet, env
   for (const name of (agent && set.agent?.[agent]?.extensions) || []) {
     const module = set.extensions?.[name]?.opencode
     if (!module) continue
-    const file = existing(`extension "${name}"`, module)
-    if (file) plugins.push(`file://${file}`)
+    if (!existing(`extension "${name}"`, module)) continue
+    // A module with a package folder loads from a staged copy beside its node_modules (extension-deps.ts).
+    const spec = await stageExtensionModule(configRoot, module, {
+      cacheRoot: join(resolveKortixRuntimeStateDirectory(env), 'opencode', 'extensions'),
+      ...extensionDeps,
+    })
+    if (spec) plugins.push(spec)
   }
   if (plugins.length > 0) out.plugin = plugins
 }
