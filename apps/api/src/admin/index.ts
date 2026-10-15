@@ -18,6 +18,7 @@ import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { analyticsApp } from './analytics';
 import { isUuid } from '../shared/validate';
+import { isoValue } from '../shared/cost-values';
 import { readJsonObject } from '../shared/http-body';
 import { errorSqlstate } from '../shared/error-cause';
 import { logger } from '../lib/logger';
@@ -211,8 +212,8 @@ adminApp.openapi(
         trial: {
           status: r.trialStatus ?? 'none',
           tier: r.trialTier ?? null,
-          startedAt: r.trialStartedAt ?? null,
-          endsAt: r.trialEndsAt ?? null,
+          startedAt: isoValue(r.trialStartedAt),
+          endsAt: isoValue(r.trialEndsAt),
           note: r.trialNote ?? null,
         },
         // The active Enterprise contract. Null on every other account; an
@@ -223,7 +224,7 @@ adminApp.openapi(
               licenseUsd: Number(r.contractLicenseUsd),
               creditsUsd: Number(r.contractCreditsUsd),
               collection: r.contractCollection,
-              endsAt: r.contractEndsAt ?? null,
+              endsAt: isoValue(r.contractEndsAt),
               autoRenews: r.contractAutoRenews ?? false,
             }
           : null,
@@ -1018,14 +1019,14 @@ function serializeContract(row: ContractRecord) {
     creditsUsd: Number(row.creditsUsd),
     termMonths: row.termMonths,
     collection: row.collection,
-    startsAt: row.startsAt ?? null,
-    endsAt: row.endsAt ?? null,
+    startsAt: isoValue(row.startsAt),
+    endsAt: isoValue(row.endsAt),
     autoRenews: row.autoRenews,
     stripeSubscriptionId: row.stripeSubscriptionId ?? null,
     note: row.note ?? null,
     createdBy: row.createdBy ?? null,
-    createdAt: row.createdAt,
-    endedAt: row.endedAt ?? null,
+    createdAt: isoValue(row.createdAt),
+    endedAt: isoValue(row.endedAt),
   };
 }
 

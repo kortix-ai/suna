@@ -1,6 +1,7 @@
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { config } from '../../config';
 import { isPlatformAdmin } from '../../shared/platform-roles';
+import { isoValue } from '../../shared/cost-values';
 import type {
   AccountAccessGrace,
   AccountContract,
@@ -200,8 +201,8 @@ function trialOf(sub: CreditAccountRow, resolved: ResolvedBilling): AccountTrial
   if (!plan) return null;
   return {
     plan,
-    started_at: sub.trialStartedAt ?? null,
-    ends_at: sub.trialEndsAt,
+    started_at: isoValue(sub.trialStartedAt),
+    ends_at: isoValue(sub.trialEndsAt) ?? sub.trialEndsAt,
     days_left: Math.max(0, Math.ceil((new Date(sub.trialEndsAt).getTime() - Date.now()) / DAY_MS)),
   };
 }
@@ -214,8 +215,8 @@ function contractOf(row: ContractRow | null): AccountContract | null {
     credits_usd: Number(row.creditsUsd),
     term_months: row.termMonths,
     collection: row.collection as AccountContract['collection'],
-    starts_at: row.startsAt,
-    ends_at: row.endsAt,
+    starts_at: isoValue(row.startsAt),
+    ends_at: isoValue(row.endsAt),
     renews: row.autoRenews,
   };
 }

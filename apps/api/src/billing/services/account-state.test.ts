@@ -321,6 +321,19 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
 
     expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
   });
+
+  test('trial dates are ISO 8601, not the Postgres text form Safari cannot parse', async () => {
+    const ends = new Date(Date.now() + 9 * 86_400_000);
+    // What the driver returns for a timestamptz column: "2026-10-24 02:01:50.962+00".
+    const pgText = `${ends.toISOString().replace('T', ' ').replace('Z', '')}+00`;
+    account = trialing({ trialEndsAt: pgText, trialStartedAt: pgText });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.trial?.ends_at).toBe(ends.toISOString());
+    expect(state.trial?.started_at).toBe(ends.toISOString());
+    expect(state.trial?.days_left).toBe(9);
+  });
 });
 
 /**

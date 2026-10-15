@@ -175,6 +175,7 @@ enterprise_offer: {
 grace: { ends_at: string; reason: 'trial_ended' | 'contract_ended' } | null;
 ```
 
-`plan.label` stays the plan name. `plan.sublabel` carries the state:
-"Trial · 9 days left", "Annual contract · renews Mar 2027", "Trial ended ·
-SSO until Nov 3".
+Every timestamp is ISO 8601. `plan.label` stays the plan name and
+`plan.sublabel` stays null: each client builds the localized state line
+("Trial · 9 days left", "Annual contract · renews Mar 1, 2027", "SSO until
+Nov 3") from `trial`, `contract` and `grace`.

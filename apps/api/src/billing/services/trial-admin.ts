@@ -9,6 +9,7 @@
 import { creditAccounts } from '@kortix/db';
 import { and, eq, lte } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { isoValue } from '../../shared/cost-values';
 import { clearAccountLimitCache } from '../../shared/account-limits';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyAdminOverride } from './account-write-owner';
@@ -86,8 +87,8 @@ function trialSnapshotFromRow(row: Awaited<ReturnType<typeof getCreditAccount>>)
   return {
     status: row?.trialStatus ?? TRIAL_STATUS.NONE,
     tier: row?.trialTier ?? null,
-    startedAt: row?.trialStartedAt ?? null,
-    endsAt: row?.trialEndsAt ?? null,
+    startedAt: isoValue(row?.trialStartedAt),
+    endsAt: isoValue(row?.trialEndsAt),
     note: row?.trialNote ?? null,
   };
 }
