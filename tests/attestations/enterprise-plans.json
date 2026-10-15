@@ -1,5 +1,5 @@
 {
-  "source_hash": "11e5cde63ddc9d5d1a1798deef42f07432142d499b080b154cbfc880ebb450da",
+  "source_hash": "d27d3f060fe581d403c17bf565ad4e6ce6a51fdb57f21a8a2917d722894b73b8",
   "diff_files": [
     ".agents/skills/billing/SKILL.md",
     ".agents/skills/billing/references/plans-and-access.md",
@@ -28,6 +28,8 @@
     "apps/api/src/__tests__/unit-trial-admin-grants.test.ts",
     "apps/api/src/accounts/iam.ts",
     "apps/api/src/accounts/iam/enterprise-demo.ts",
+    "apps/api/src/admin/accounts-search.integration.test.ts",
+    "apps/api/src/admin/accounts-search.ts",
     "apps/api/src/admin/index.ts",
     "apps/api/src/admin/queries.ts",
     "apps/api/src/billing/index.ts",
@@ -77,8 +79,10 @@
     "apps/web/src/components/iam/enterprise-demo-card.tsx",
     "apps/web/src/components/iam/enterprise-upsell.test.ts",
     "apps/web/src/features/accounts/hub/account-hub-content.tsx",
+    "apps/web/src/features/accounts/settings/billing-tab.test.tsx",
     "apps/web/src/features/accounts/settings/billing-tab.tsx",
     "apps/web/src/features/billing/account-overview.tsx",
+    "apps/web/src/features/billing/billing-return.test.ts",
     "apps/web/src/features/billing/billing-return.tsx",
     "apps/web/src/features/billing/enterprise-access-row.tsx",
     "apps/web/src/features/billing/global-upgrade-modal.tsx",
@@ -87,6 +91,7 @@
     "apps/web/src/features/billing/plan-card.test.ts",
     "apps/web/src/features/billing/plan-card.tsx",
     "apps/web/src/features/marketing/security-page/content.ts",
+    "apps/web/src/features/session/session-error-banner-credits.test.tsx",
     "apps/web/src/features/workspace/project-sidebar/footer/project-upgrade-button.tsx",
     "apps/web/src/i18n/security-selfhost-translation-keys.generated.ts",
     "apps/web/translations/de.json",
@@ -98,10 +103,10 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
-    "packages/db/drizzle/meta/20261015003246_snapshot.json",
+    "packages/db/drizzle/meta/20261015021234_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261015003246449_enterprise_contracts.sql",
-    "packages/db/migrations/20261015003246450_billing_admins_trials_from_demo.sql",
+    "packages/db/migrations/20261015021234611_enterprise_contracts.sql",
+    "packages/db/migrations/20261015021234612_billing_admins_trials_from_demo.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/sdk/CHANGELOG.md",
@@ -119,6 +124,8 @@
     "packages/sdk/src/react/use-credits-billing-hooks.test.ts",
     "packages/shared/src/audit-event-labels.ts",
     "packages/shared/src/audit-route-labels.ts",
+    "scripts/check-blocked-terms.sh",
+    "scripts/check-blocked-terms.test.mjs",
     "tests/spec/end-to-end.md",
     "tests/spec/routes.generated.json",
     "tests/src/fixtures/enterprise-access.ts",
@@ -134,13 +141,13 @@
     "tests/src/flows/sso-identity.flow.ts",
     "tests/src/flows/triggers.flow.ts"
   ],
-  "diff_hash": "b9d96281e476fd8c7dd8a41d679b420d04d9e4f581bfdab69795548fed012bd7",
-  "head": "e41c8b8dc43e7cf11d042468e755cfa7bdda1d51",
+  "diff_hash": "bbbb0973bee16cd4618209878271c6e7dc10ce4f661ba21a86133d7b4cd5fc57",
+  "head": "ebd75258586b63766a6c92c98a73d6c94d2642f8",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T01:58:46.269Z"
+  "at": "2026-10-15T03:00:05.761Z"
 }
