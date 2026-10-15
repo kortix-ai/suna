@@ -721,6 +721,42 @@ runs on the session's agent, as on OpenCode. A pick of a subagent, a disabled
 agent or an unknown name is logged and runs on the session's agent. pi
 packages and extensions stay the ones the session booted with.
 
+### kortix.yaml v3
+
+A compiled set with `schema: 3` (`CompiledAgentSet`) is the only config input
+for a v3 session. Every rule below holds for the working tree and for a config
+release. v1 and v2 sessions keep the folder behavior the rest of this section
+describes.
+
+- **No harness folder.** pi reads no `pi.config_dir`, `harnesses/pi` or
+  `.kortix/pi`: no project `settings.json`, `extensions/` or `prompts/`
+  (`PiRuntime.projectConfigDir`, `config-release.ts` `piDirIn`). pi's own
+  discovery of `.pi/` and `.agents/skills` is off (`discoveryRoot: null`).
+- **Skills.** The managed `kortix-*` skills, then exactly the folders in
+  `compiled.skills`, under the config root: the active release root, else
+  `/workspace` (`resolvePiV3SkillDirectories`). The image default has no
+  project skill. pi does not scan `skills/` or the legacy dir. The agent's
+  `permission.skill` allowlist still hides every skill it does not grant.
+- **Subagents.** No built-in `general` or `explore`. The `task` tool offers
+  only declared, enabled agents with `mode` `subagent` or `all` that the
+  calling agent's `permission.task` rule does not deny. The rule's subject is
+  `subagent_type`, so a call to a denied name is refused before it runs.
+- **Commands.** `GET /command` lists every `compiled.commands` entry with its
+  `agents`. `POST /session/:id/command` runs on the body's `agent`, else the
+  session's agent. An agent outside `agents` gets `403 { error:
+  "command_not_enabled", command, agent }` and no turn runs. The runtime
+  expands the template as OpenCode does (`expandCommandTemplate`): `$1`…`$n`
+  take the words (a quoted string is one word), the highest placeholder takes
+  the rest, `$ARGUMENTS` takes the raw text, and a template with neither gets
+  the arguments appended. OpenCode's `` !`cmd` `` shell expansion is not
+  supported.
+- **Extensions.** The API sends the session agent's pi packages as
+  `KORTIX_PI_PACKAGES`; a repo entry is `./<path>` and resolves against the
+  config root. Extensions load once per runtime start, so an agent switch
+  later in the session keeps them.
+- **codemode.** `KORTIX_PI_CODEMODE`, else the session agent's compiled
+  `codemode`, else `on`. It is fixed at start, like the extensions.
+
 ### Config releases
 
 pi runs the base branch's current config release, exactly as OpenCode does
@@ -836,8 +872,9 @@ the hidden `kortix-nested-calls` gate and `codemode`.
 pi-coding-agent's `createCodemodeExtension()` (`pi/codemode.ts`): one tool, `codemode`, whose
 input is a JavaScript script that calls the other tools as `await tools.<name>(args)` in a
 QuickJS VM (no Node, file system, network or timers; 256 MB). Only the script's output
-returns to the model. kortix.yaml `harnesses.pi.codemode` (`KORTIX_PI_CODEMODE`, sent by
-the API at session start; an agent's value replaces the top-level one) picks `on` (the
+returns to the model. kortix.yaml `harnesses.pi.codemode` (v3: the agent's `codemode`;
+`KORTIX_PI_CODEMODE`, sent by the API at session start; an agent's value replaces the
+top-level one; without the variable the session agent's compiled `codemode`) picks `on` (the
 default: the other tools stay declared), `only` (requests declare codemode alone) or `off`
 (the extension is not loaded). `models` stays off: it would call providers past the LLM gateway.
 
@@ -877,7 +914,9 @@ own wire transcript served by `/session`, `/session/:id`,
 `/kortix/runtime/messages/:id`, and persisted in the root's dump so `task_id`
 resumes it after a restart. Types: `general` (all workspace and Kortix tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
-or `all`. A child gets no `task` (no nesting) and no `question`. Several task
+or `all`; v3 has only the declared agents. The calling agent's
+`permission.task` rule (subject: `subagent_type`) removes a denied type from
+the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. Several task
 calls in one message run concurrently; a batch that includes any other tool
 stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
@@ -922,7 +961,8 @@ provider and model only, so the restore gives a `kortix` message without `api`
 pi-ai then sees the same model and keeps its reasoning.
 
 `GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
-dir, and the templates of pi packages) as slash commands.
+dir, and the templates of pi packages) as slash commands. A v3 session lists
+its compiled commands instead (see "kortix.yaml v3").
 `POST /session/:id/command` runs one: it admits `/name arguments`, pi expands
 the template, and the user message on the wire becomes the expanded text, as
 on OpenCode. A command pi does not have is a 400. pi does not read OpenCode's
