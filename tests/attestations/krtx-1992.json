@@ -1,5 +1,5 @@
 {
-  "source_hash": "352453f40167f6da08f00d353064e3fb4832674da0af44bb1b7fe9d753773f02",
+  "source_hash": "fbd33fcf7cd7073c4d24d38c144a6a65cfd316b5c80977d03a394ccf15ce011b",
   "diff_files": [
     "apps/web/src/app/[locale]/presentations/decks/security-diagram-content.ts",
     "apps/web/src/app/[locale]/presentations/decks/security-localization.test.tsx",
@@ -139,13 +139,13 @@
     "packages/sdk/src/react/use-project-name.test.ts",
     "packages/sdk/src/react/use-project-name.ts"
   ],
-  "diff_hash": "3eecce8a18a8a1a7dc1bd623ea8d83a240cb282dce846f6e753208dc15931f10",
-  "head": "b1d137710c271755fc82924baf95fb55fcd22577",
+  "diff_hash": "cc138c443367b2fd2711e7c0c1a8a988d9ccac4653e5369e5ec47db25957426e",
+  "head": "57c990ffbc7b4e01e32e5d82d720ebac942d6481",
   "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "pass"
+    "packages": "pass",
+    "db-suites": "fail"
   },
-  "at": "2026-10-15T01:43:33.100Z"
+  "at": "2026-10-15T05:54:09.537Z"
 }

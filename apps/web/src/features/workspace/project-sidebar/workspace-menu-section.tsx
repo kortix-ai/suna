@@ -48,14 +48,11 @@ import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { captureHref } from '@/features/capture/area/use-capture-area';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import {
-  filterWorkspaceGroups,
-  groupWorkspacesByAccount,
-  resolveSwitcherAccountId,
   resolveWorkspaceRowNavigation,
   type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
+import { useWorkspaceMenuModel } from './workspace-menu-model';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
