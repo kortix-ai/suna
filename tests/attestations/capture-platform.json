@@ -1,5 +1,5 @@
 {
-  "source_hash": "fc90d7bde005f6aaa435df7be0205da5d6dfff38d60fa369159f65a0e63fd0a9",
+  "source_hash": "10429d49300147fa5f1acb84dadf55f21f23335aaee888d17597207fae511156",
   "diff_files": [
     ".agents/skills/genui/SKILL.md",
     ".agents/skills/kortix-capture/SKILL.md",
@@ -50,13 +50,14 @@
     "apps/api/src/capture/update-manifest.ts",
     "apps/api/src/capture/workers.ts",
     "apps/api/src/capture/workspace.ts",
+    "apps/api/src/config-releases/desired.ts",
+    "apps/api/src/config-releases/publish.ts",
     "apps/api/src/config.ts",
     "apps/api/src/iam/actions.ts",
     "apps/api/src/iam/catalog.ts",
     "apps/api/src/iam/denial-message.ts",
     "apps/api/src/mcp/cli.ts",
     "apps/api/src/middleware/auth-scope.ts",
-    "apps/api/src/middleware/cors.test.ts",
     "apps/api/src/middleware/request-deadline.ts",
     "apps/api/src/notifications/inbox-read.ts",
     "apps/api/src/notifications/notification-email.ts",
@@ -64,8 +65,8 @@
     "apps/api/src/notifications/push-payload.ts",
     "apps/api/src/object-store/s3.ts",
     "apps/api/src/projects/lib/sessions.error-docs.test.ts",
+    "apps/api/src/projects/routes/turn-stream.test.ts",
     "apps/api/src/projects/session-log-switch.ts",
-    "apps/api/src/sandbox-proxy/ws-wake-policy.test.ts",
     "apps/api/src/shared/job-queue.ts",
     "apps/api/src/workers/capture-health-worker.ts",
     "apps/api/src/workers/capture-worker.ts",
@@ -315,6 +316,7 @@
     "apps/web/src/app/[locale]/(app)/capture/[accountId]/settings/page.tsx",
     "apps/web/src/app/[locale]/(app)/capture/page.tsx",
     "apps/web/src/app/[locale]/(auth)/capture/authorize/page.tsx",
+    "apps/web/src/app/[locale]/(public)/(marketing)/design-system/page.tsx",
     "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
     "apps/web/src/components/iam/role-capability-matrix.test.ts",
@@ -358,12 +360,14 @@
     "apps/web/src/features/workspace/project-sidebar/workspace-menu-section.tsx",
     "apps/web/src/features/workspace/settings/tabs/sessions-tab.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/sessions-tab.tsx",
+    "apps/web/src/lib/code-theme.test.ts",
     "apps/web/src/lib/desktop.ts",
     "apps/web/src/lib/menu-registry.ts",
     "apps/web/src/lib/menu-translation-keys.generated.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/lib/web-notifications.ts",
     "apps/web/src/middleware.ts",
+    "apps/web/src/stores/user-preferences-store.ts",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -373,6 +377,7 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
+    "apps/web/true",
     "infra/terraform/environments/dev-us-east-2/main.tf",
     "infra/terraform/environments/prod/main.tf",
     "infra/terraform/environments/prod/outputs.tf",
@@ -439,11 +444,13 @@
     "tests/src/flows/notifications.flow.ts",
     "tests/unit/release-record-workflow.test.ts"
   ],
-  "diff_hash": "35402e018c407a5408c8f6d1675880d2d3bd45b42443fea4f5377651cb9babaa",
-  "head": "4845ea2e0ebd43fd2944ffd81a80615bbe0925ff",
-  "passed": false,
+  "diff_hash": "eb7154e579409900d66e0a538d67feda3887a971f49cef42762f1c670bac6785",
+  "head": "ebb16863a9601b4aa781d5249e5bb06587a5491e",
+  "passed": true,
   "lanes": {
-    "packages": "fail"
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-14T23:08:41.679Z"
+  "at": "2026-10-15T00:25:53.181Z"
 }
