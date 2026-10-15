@@ -26,7 +26,7 @@ import { Fragment } from 'react';
 /**
  * The one tier selector for the credits plan. /pricing, the upgrade modal and
  * the billing settings plan card all render it, so the three cannot disagree on
- * the ladder, the most-popular tier or the copy under it.
+ * the ladder, the tier it opens on or the copy under it.
  *
  * `value` may sit off the ladder (a legacy plan at $20, or an amount support
  * set by hand): the price line then shows it as the current amount and the
@@ -76,7 +76,6 @@ export function CreditTierSelect({
                 <span className="truncate font-medium tabular-nums">
                   {t('creditsPerMonth', { credits: formatCredits(credits!, { locale }) })}
                 </span>
-                {tier.popular ? <Badge variant="highlight">{t('popular')}</Badge> : null}
               </>
             ) : (
               <span className="text-muted-foreground truncate">{t('choose')}</span>
@@ -101,7 +100,6 @@ export function CreditTierSelect({
                           }),
                         })}
                       </span>
-                      {option.popular ? <Badge variant="highlight">{t('popular')}</Badge> : null}
                       {current === option.monthlyUsd ? (
                         <Badge variant="muted">{t('current')}</Badge>
                       ) : null}

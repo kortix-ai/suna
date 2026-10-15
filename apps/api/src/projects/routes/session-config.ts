@@ -8,7 +8,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -118,7 +118,7 @@ export function registerSessionConfigRoutes(): void {
       const visible = await timeConfigStage('session_access', () =>
         loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c)),
       );
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
       const project = {
@@ -278,7 +278,7 @@ export function registerSessionConfigRoutes(): void {
       );
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       // Same gate as re-scoping and changing the model: seeing a session is not
       // permission to restart the runtime underneath someone else's work.
       if (!mayChangeSessionModel(visible)) {
@@ -363,7 +363,7 @@ export function registerSessionConfigRoutes(): void {
       );
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       if (!mayChangeSessionModel(visible)) {
         return c.json(
           { error: 'Only the session owner or a project manager can reload this session' },

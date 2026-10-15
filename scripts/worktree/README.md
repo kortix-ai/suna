@@ -61,8 +61,11 @@ and `--db` use the primary Supabase ports; `--full-supabase` uses the strided Su
 | Supabase Inbucket (`--full-supabase` only) | 13324 | 13424 | 13524 |
 
 A slot keeps its ports for life (stable across `stop`/`start`); the index is only
-freed on `nuke`. Derived ports are probed at allocation — a foreign listener
-bumps the slot rather than colliding silently.
+freed on `nuke`. `create` takes the lowest slot that no registered worktree holds
+and whose whole port block is free: one `lsof` scan, then up to 100 unregistered
+slots. A foreign listener bumps the slot rather than colliding silently; the
+first 5 clashes are logged with their pid. `doctor` flags a slot that two
+worktrees share (allocators before 2026-10-15 could hand one out twice).
 
 ## How isolation works
 
