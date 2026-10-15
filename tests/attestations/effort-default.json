@@ -1,5 +1,5 @@
 {
-  "source_hash": "87c1f287ccd5141cbbd04d67b9d750999216e5c87a7a25eb3ca9a792651724ab",
+  "source_hash": "33c6abe28fae4fc81a0dbf56e0526f77747bea65a84c80576cdf28c489542fbd",
   "diff_files": [
     "apps/api/src/projects/lib/effort-default.test.ts",
     "apps/api/src/projects/lib/effort-default.ts",
@@ -35,18 +35,17 @@
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
     "packages/shared/src/audit-route-labels.ts",
-    "tests/e2e/shard-durations.json",
     "tests/spec/end-to-end.md",
     "tests/spec/routes.generated.json",
     "tests/src/flows/projects-misc.flow.ts"
   ],
-  "diff_hash": "aef7c134de17c13bcd602b7f393d671e6946475e5c06b35eb89beb51f3b0efd8",
-  "head": "cc36ae65b7493332e682ab8bee7be672cd6f33c4",
-  "passed": true,
+  "diff_hash": "39faac17f5fb15108d6674e39a5aa9e4fb69248e77ebfef503caa0a548273b8f",
+  "head": "bb43cfe1f4c9b633acb95a6e8f60e7903598003e",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T12:47:36.397Z"
+  "at": "2026-10-15T14:01:42.057Z"
 }
