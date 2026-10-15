@@ -1,0 +1,16 @@
+{
+  "source_hash": "9b7ea52ea5e9592b2f14b04d3b92ecf65bc1d54046c29f6e8675c6aaaf42bc91",
+  "diff_files": [
+    "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
+    "packages/llm-gateway/src/pipeline/simple-handler.ts"
+  ],
+  "diff_hash": "552033ac4603b89c017e356e5af8c7c21dcd78743d7b9d1f601b14f00872f58e",
+  "head": "f737277af3ce4575e9f4e2d4532a6ea79a419832",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T18:01:41.821Z"
+}
