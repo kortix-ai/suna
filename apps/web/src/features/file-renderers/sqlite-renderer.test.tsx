@@ -161,7 +161,12 @@ test('read-only query view still runs SELECT', async () => {
   await click(view, 'i18nComplete.text00d60e31a4e6');
   expect(queries).toContain('SELECT id FROM "a""table" ORDER BY id');
   expect(view.root.findAllByType('div').some((node) => node.children.includes('Database is open read-only'))).toBe(false);
-  await act(async () => {}); // flush the lazy query-results grid
+  // Flush until the lazy query-results grid mounts: one empty act() resolves
+  // the cached dynamic import and commits only when the event loop is quiet,
+  // and a loaded lane starves it long enough for a single flush to miss.
+  for (let flushes = 0; flushes < 100 && view.root.findAllByType(Grid).length === 0; flushes++) {
+    await act(async () => {});
+  }
   expect(view.root.findByType(Grid).props.rowData).toEqual([{ id: 1 }, { id: 2 }]);
 });
 
