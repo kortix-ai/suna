@@ -282,6 +282,30 @@ describe('AdvancedFields: the managed org is never an import source', () => {
     expect(code).toContain('if (!managedReposQuery.isSuccess) return null;');
   });
 
+  test('the managed import field mounts only when the caller is a self-host operator (KRTX-1892)', () => {
+    // Reported 2026-10-15: /new with the default "Kortix managed" source fired
+    // GET /git/backend/repositories for EVERY signed-in user and swallowed the
+    // 403 the operator-only route answers. The operator flag now arrives on
+    // GET /git/backend (any authenticated user), and the field — whose only
+    // content is that listing — mounts only for a flagged caller. The flag
+    // must default CLOSED (`?? false`) so an API without it hides the field
+    // instead of firing the 403 again.
+    // The unguarded mount (`selected?.kind === 'managed' ?` with no operator
+    // term on the same expression) is the regression this test exists for.
+    // Two conditionals key on the managed source — the description <p> under
+    // the option (any user) and the import block (operator only) — so anchor
+    // on the one that renders <ManagedImportField.
+    const mount = code.lastIndexOf("selected?.kind === 'managed'");
+    expect(mount).toBeGreaterThan(-1);
+    expect(code.slice(mount)).toContain('<ManagedImportField');
+    const block = code.slice(mount, code.indexOf(')}', mount));
+    expect(block).toContain('managedOperator');
+    expect(code).toContain('managedQuery.data?.operator ?? false');
+    // The unguarded mount (`selected?.kind === 'managed' ?` with no operator
+    // term on the same expression) is the regression this test exists for.
+    expect(code).not.toMatch(/selected\?\.kind === 'managed' \? \(\n\s*<ManagedImportField/);
+  });
+
   test('never names the instance backend selector in this screen', () => {
     // `source: 'managed'` is the selector `POST /projects/link-repository`
     // accepts to mean "through the INSTANCE git backend". It lives in
