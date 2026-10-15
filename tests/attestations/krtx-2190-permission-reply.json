@@ -7,12 +7,12 @@
     "packages/sdk/src/react/use-session.test.ts"
   ],
   "diff_hash": "fa0d82174b38e1d44a88c03267375c0f1c5d1e70708d4de1a4434bf5d170d3ae",
-  "head": "3ab83ff4633003aa620c942ee2c87076b8384cad",
-  "passed": false,
+  "head": "106e58114c0d28b5ce5381a261767d34119c5c3a",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T04:40:03.087Z"
+  "at": "2026-10-15T05:39:52.421Z"
 }
