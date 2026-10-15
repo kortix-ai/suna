@@ -3,11 +3,12 @@
 import { useTranslations } from '@/i18n/use-translations';
 // Upsell state for the enterprise-gated IAM surfaces (Audit, SAML SSO +
 // SCIM). Non-entitled accounts keep the tab/section visible for
-// discoverability, but its content is this card: what the feature does, and a
-// "Request a demo" CTA that opens the demo-request modal directly (no detour to
-// the marketing page). Mirrors the server-side gate — the create/update routes
-// 402 without the entitlement (requireEntitlement), so we never render controls
-// the backend would reject.
+// discoverability, but its content is this card: what the feature does, and
+// how to get it. An owner or admin turns on the Enterprise demo in one click
+// (the features switch on at once, sales is told); anyone may talk to sales in
+// one click, without a form. Mirrors the server-side gate: the create/update
+// routes 402 without the entitlement (requireEntitlement), so we never render
+// controls the backend would reject.
 //
 // Roles joined them on 2026-10-13 (Jay): an account without the `rbac`
 // entitlement sees this card instead of the read-only built-in role list,
@@ -21,10 +22,13 @@ import { CheckIcon as Check } from '@phosphor-icons/react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import Loading from '@/components/ui/loading';
+import { useEnterpriseDemo, useTalkToSales } from '@/features/billing/use-enterprise-sales';
+import { useAccountState } from '@/hooks/billing';
 import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
+import { canManageBilling } from '@kortix/sdk';
 
 type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding' | 'roles';
 
@@ -100,14 +104,19 @@ export function EnterpriseBadge({ className }: { className?: string }) {
 
 interface EnterpriseUpsellProps {
   feature: UpsellFeature;
+  accountId: string;
 }
 
-export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
+export function EnterpriseUpsell({ feature, accountId }: EnterpriseUpsellProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('billing.access');
   const copy = localizeUiCatalog(FEATURE_COPY, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS)[
     feature
   ];
-  const openDemo = useRequestDemo();
+  // Turning on the demo needs `billing.write` (owners and admins).
+  const manager = canManageBilling(useAccountState({ accountId }).data);
+  const demo = useEnterpriseDemo(accountId);
+  const sales = useTalkToSales(accountId);
 
   return (
     <section className="bg-popover rounded-md border">
@@ -127,14 +136,25 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
         </ul>
       </div>
       <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textc7bad0051b8a')}</p>
-        <Button
-          size="sm"
-          className="shrink-0"
-          onClick={() => openDemo({ source: `accounts-${feature}` })}
-        >
-          {tI18nComplete.raw('text1af2ef8f1409')}
-        </Button>
+        <p className="text-muted-foreground text-xs">
+          {manager ? t('upsellDemoHint') : t('upsellAskManager')}
+        </p>
+        <span className="flex shrink-0 flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={sales.isPending} onClick={sales.talk}>
+            {t('talkToSales')}
+          </Button>
+          {manager ? (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              disabled={demo.isPending}
+              onClick={() => demo.set(true)}
+            >
+              {demo.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              {t('demoTurnOnEnterprise')}
+            </Button>
+          ) : null}
+        </span>
       </div>
     </section>
   );
