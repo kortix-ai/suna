@@ -1,25 +1,16 @@
 {
-  "source_hash": "3315660e3c0cc8f37e6ff1b57682abeb8519b57b63ff532f70d0687cbc31376e",
+  "source_hash": "887128576c02870590f8ab116a77eb8bbe3446e9ea7b762038b87dc31e0002f3",
   "diff_files": [
-    "apps/api/src/edge/tls-check.test.ts",
-    "apps/api/src/projects/lib/triggers-fire-durable.test.ts",
-    "apps/api/src/projects/session-lifecycle/__tests__/continue-session.test.ts",
-    "apps/api/src/projects/session-lifecycle/__tests__/instance-scope-release.test.ts",
-    "apps/api/src/projects/session-lifecycle/__tests__/postprompt-idempotency-key.test.ts",
-    "apps/api/src/projects/session-lifecycle/__tests__/queued-continue-inbox-delivery.test.ts",
-    "apps/api/src/setup-links/connector-completion-watch.test.ts",
-    "apps/api/src/setup-links/public-app.test.ts",
     "apps/web/src/app/[locale]/game-of-life/game-of-life.test.tsx",
-    "apps/web/src/app/[locale]/game-of-life/game-of-life.tsx",
-    "apps/web/src/stores/persisted-store-coverage.test.ts"
+    "apps/web/src/app/[locale]/game-of-life/game-of-life.tsx"
   ],
-  "diff_hash": "ac3b0b6fdbac2aa66d49c6cd7f85e53d39153a936fec28098f803cb7851805e0",
-  "head": "d785539eabb3eeec1177ddd2a2b4b0d7b6fcf6c2",
+  "diff_hash": "dc113f02aa4ee7af4a8dca97002b81af1e45ef04b060c3a991de512b0471364a",
+  "head": "c84509ddb3ad1b638cb9215658461eb3946a14f3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T08:15:15.326Z"
+  "at": "2026-10-15T08:46:13.337Z"
 }
