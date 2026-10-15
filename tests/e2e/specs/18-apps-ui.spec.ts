@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo, setDatabaseProjectFeature } from '../../src/fixtures/database-project';
+import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -52,7 +52,7 @@ test.describe('18 — Kortix Apps UI', () => {
       const account = accounts.find((item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner');
       if (!account) throw new Error('test user has no personal account');
       await setDatabaseEnterpriseDemo(env, account.account_id, true);
-      const project = await createDatabaseProject(env, { accountId: account.account_id, userId: user.id, name: 'Preview geometry', appsEnabled: true });
+      const project = await createDatabaseProject(env, { accountId: account.account_id, userId: user.id, name: 'Preview geometry' });
       projectId = project.id;
       await api(session.access_token, 'POST', `/projects/${project.id}/apps`, { slug: `preview-${Date.now()}`, name: 'Seed App' }, 201);
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
@@ -106,7 +106,7 @@ test.describe('18 — Kortix Apps UI', () => {
     }
   });
 
-  test('gates Apps on its flag, enables it in place, and renders a read-only deployment index', async ({
+  test('renders the operational Apps index for every project', async ({
     context,
     page,
   }, testInfo) => {
@@ -162,83 +162,47 @@ test.describe('18 — Kortix Apps UI', () => {
       const group = await api<{ group_id: string }>(session.access_token, 'POST', `/accounts/${accountId}/iam/groups`, { name: `Apps subjects ${runId}` }, 201);
       groupId = group.group_id;
 
+      // Seed the legacy persisted override (`apps: false`) directly: since
+      // Apps went GA the key is no longer a flag and the override is ignored,
+      // exactly what the REST flow (APP-2) proves over the API.
       const project = await createDatabaseProject(env, {
         accountId: account.account_id,
         userId: user.id,
         name: `Apps UI ${runId}`,
-        appsEnabled: false,
+        metadata: { experimental: { apps: false } },
       });
       projectId = project.id;
 
       await api<Record<string, unknown>>(
         session.access_token,
-        'POST',
-        `/projects/${project.id}/apps`,
-        { slug: `blocked-${runId}`, name: 'Blocked App' },
-        403,
-      );
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, account.account_id);
 
-      const disabledAppRequests: string[] = [];
-      const recordDisabledRequest = (request: {
-        method(): string;
-        url(): string;
-      }) => {
-        if (
-          request.method() === 'GET' &&
-          request.url().endsWith(`/v1/projects/${project.id}/apps`)
-        ) {
-          disabledAppRequests.push(request.url());
-        }
-      };
-      page.on('request', recordDisabledRequest);
+      // Apps went GA (2026-10-14): a project that never opted in reaches the
+      // operational page. There is no gate screen, no enable lever, and the
+      // graduated key is no longer a flag — the owner's write answers the same
+      // 400 the REST flow asserts (APP-1).
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
       await dismissOnboarding(page);
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
-      // Apps is a STABLE flag: still opt-in per project, but no surface calls
-      // it experimental any more.
       await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toHaveCount(0);
-      // The gate screen never self-enables: it points at Settings →
-      // Feature flags and there is no Enable button on the feature's own page.
-      await expect(page.getByText('is off for this project')).toBeVisible();
+      await expect(page.getByText('is off for this project')).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Enable Apps' })).toHaveCount(0);
-      expect(disabledAppRequests).toEqual([]);
-      page.off('request', recordDisabledRequest);
-
-      // Apps is internal-only (catalogHidden): the gate names no toggle and
-      // links nowhere, because Settings → Feature flags does not list it.
-      await expect(page.getByText('Contact Kortix to enable it.', { exact: true })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Feature flags' })).toHaveCount(0);
-      // A project owner cannot enable it: only a Kortix operator writes it.
+      await expect(page.getByText('Apps you publish will show up here', { exact: true })).toBeVisible();
       await api(
         session.access_token,
         'PATCH',
         `/projects/${project.id}/features`,
         { feature: 'apps', enabled: true },
-        403,
+        400,
       );
-      // The operator writes the same override (PUT /v1/admin/api/projects/:id/features).
-      await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', true);
-      await page.goto(`/projects/${project.id}/apps`, {
-        waitUntil: 'domcontentloaded',
-      });
-      // A feature mutation can leave this client route mounted without starting
-      // its newly-enabled query. Reload and require the exact list response
-      // before asserting the empty state.
-      const emptyListResponse = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'GET' &&
-          response.url().endsWith(`/v1/projects/${project.id}/apps`),
-      );
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      expect((await emptyListResponse).status()).toBe(200);
-      await dismissOnboarding(page);
-      await expect(page.getByText('Apps you publish will show up here', { exact: true })).toBeVisible();
 
+      // The empty-state page shows the page is live; the browser itself never
+      // creates an App (asserted at the end through appsCreateRequests).
       const seeded = await api<AppResponse>(
         session.access_token,
         'POST',
@@ -279,7 +243,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       expect((await listResponse).status()).toBe(200);
 
-      // First-run onboarding can remount after the feature mutation.
+      // First-run onboarding can remount after a reload.
       await dismissOnboarding(page);
 
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
