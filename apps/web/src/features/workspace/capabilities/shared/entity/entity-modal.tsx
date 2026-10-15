@@ -425,7 +425,7 @@ export function EntityFilePane({
         </div>
       ) : isMarkdownPath(path) ? (
         <div className="p-4">
-          <MarkdownWithFrontmatter content={content ?? ''} />
+          <MarkdownWithFrontmatter content={content ?? ''} documentPath={path} />
         </div>
       ) : (
         <pre
