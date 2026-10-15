@@ -1,0 +1,23 @@
+{
+  "source_hash": "14a5827b44a16d43694b1ad4064ebcbfdd3fb9ba2806d11c092207a95950bf68",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-connector-slack-single-entry.test.ts",
+    "apps/api/src/__tests__/unit-channel-consolidation.test.ts",
+    "apps/api/src/__tests__/unit-slack-oauth.test.ts",
+    "apps/api/src/__tests__/unit-teams-oauth.test.ts",
+    "apps/api/src/channels/slack-oauth.ts",
+    "apps/api/src/channels/teams-oauth.ts",
+    "apps/api/src/connectors/channel-rules.ts",
+    "apps/api/src/connectors/composio-catalog-search.test.ts",
+    "apps/api/src/connectors/composio-catalog-search.ts"
+  ],
+  "diff_hash": "48b1274e1541f7ef1fa756674546c703b2d3be634a3565b0d7eedc31ceff19fb",
+  "head": "9a3eacd3f86ecfbfdf6fb4ae2a16ee6fe1955fc1",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-15T01:07:27.612Z"
+}
