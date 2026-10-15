@@ -1655,3 +1655,78 @@ describe('trace timing segments', () => {
     expect(timing.admit_ms + timing.route_ms + timing.resolve_ms + timing.billing_ms).toBeLessThanOrEqual(timing.prep_ms);
   });
 });
+
+describe('refused requests are traced', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const logger = { info() {}, warn() {}, error() {} };
+  async function firstTrace(traces: GatewayTrace[]): Promise<GatewayTrace | undefined> {
+    for (let i = 0; i < 50 && traces.length === 0; i++) await sleep(10);
+    return traces[0];
+  }
+
+  test('a resolution refusal (plan_upgrade_required) leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          resolveUpstream: async () => {
+            throw new GatewayResolutionError('plan_upgrade_required', 'Upgrade your plan to use this model.', 'Upgrade your plan.');
+          },
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('plan_upgrade_required');
+    const trace = await firstTrace(traces);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(400);
+    expect(trace?.errorCode).toBe('plan_upgrade_required');
+    expect(trace?.accountId).toBe('account');
+    expect(trace?.projectId).toBe('project');
+    expect(trace?.requestedModel).toBe('requested-model');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
+  test('an admission refusal with a principal leaves one failed trace', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], traces),
+          authorize: async () => ({ ok: false, status: 402, errorCode: 'budget_exceeded', message: 'Budget exceeded', principal }),
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(402);
+    const trace = await firstTrace(traces);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(402);
+    expect(trace?.errorCode).toBe('budget_exceeded');
+    expect(trace?.accountId).toBe('account');
+  });
+
+  test('an admission refusal without a principal (invalid token) leaves no trace', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], traces),
+          authorize: async () => ({ ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' }),
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(401);
+    await sleep(120);
+    expect(traces).toHaveLength(0);
+  });
+});
