@@ -1272,10 +1272,11 @@
       "oneOffDescription": "Décrivez plutôt une seule modification. Une session l’effectue, la valide et ouvre une demande de modification.",
       "oneOffPlaceholder": "p. ex. Renommer partout l’agent release-bot en deploy-bot",
       "runUpgrade": "Exécuter la mise à niveau",
-      "manifestV2": {
-        "title": "Migrer le manifeste vers v2 (kortix.yaml)",
-        "description": "Convertit le fichier kortix.toml v1 en kortix.yaml orienté gouvernance, actualise les compétences gérées par la plateforme et ouvre une demande de modification à examiner."
-      }
+      "manifestV3": {
+        "title": "Mettre à niveau le manifeste vers v3 (kortix.yaml)",
+        "description": "Fait passer kortix.toml ou un kortix.yaml de version 2 à la version 3 : le projet enregistre les compétences, outils, commandes et extensions, et chaque agent les active par leur nom. Actualise les compétences gérées par la plateforme et ouvre une demande de modification à examiner."
+      },
+      "agentEditorHint": "Ce projet utilise un manifeste de version 1. Passez à <code>kortix.yaml</code> version 3 pour modifier ici les instructions, le modèle, les permissions d’outils et les accès de cet agent."
     },
     "plan": {
       "managedByAdmin": "Géré par un administrateur du compte",
@@ -1592,8 +1593,8 @@
       "localComputer": "Votre ordinateur"
     },
     "manifestUpgrade": {
-      "title": "Passer à la v2",
-      "description": "Ce projet utilise encore <toml>kortix.toml</toml>. Un agent le convertit en <yaml>kortix.yaml</yaml>, actualise les compétences gérées et ouvre une demande de modification. Aucun changement ne prend effet avant votre approbation.",
+      "title": "Passer à la v3",
+      "description": "Ce projet utilise un ancien manifeste. Un agent le fait passer à <yaml>kortix.yaml</yaml> version 3, actualise les compétences gérées et ouvre une demande de modification. Aucun changement ne prend effet avant votre approbation.",
       "start": "Démarrer la mise à niveau"
     },
     "filter": {
@@ -1989,7 +1990,27 @@
     "model": "Modèle",
     "systemPrompt": "Prompt Système",
     "systemPromptPlaceholder": "Définis comment ton Worker doit se comporter...",
-    "customizeIcon": "Clique pour personnaliser l'icône du Worker"
+    "customizeIcon": "Clique pour personnaliser l'icône du Worker",
+    "grants": {
+      "subagents": {
+        "title": "Sous-agents",
+        "description": "Agents que cet agent peut lancer pour une sous-tâche.",
+        "all": "Chaque sous-agent de ce projet, y compris ceux ajoutés plus tard.",
+        "empty": "Aucun sous-agent n’est encore déclaré dans ce projet."
+      },
+      "commands": {
+        "title": "Commandes",
+        "description": "Commandes slash que cet agent peut exécuter.",
+        "all": "Chaque commande de ce projet, y compris celles ajoutées plus tard.",
+        "empty": "Aucune commande n’est encore enregistrée dans ce projet."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Plugins et paquets qu’une session de cet agent charge.",
+        "all": "Chaque extension de ce projet, y compris celles ajoutées plus tard.",
+        "empty": "Aucune extension n’est encore enregistrée dans ce projet."
+      }
+    }
   },
   "home": {
     "heroPlaceholder": "Décris la tâche que tu veux que ton Worker accomplisse..."
@@ -14211,7 +14232,6 @@
       "text7ea05ee375a0": "Aucun prompt enregistré n’est disponible.",
       "text7ea27c63aff1": "Gérer la facturation",
       "text7ea4733fb624": "Disponible avec Enterprise et sur une instance auto-hébergée disposant d’une licence Enterprise. Les rôles intégrés ci-dessus sont gratuits sur tous les plans.",
-      "text7ead9bf84af8": "Migrer vers la v2",
       "text7ebef26162b5": "| * s_9a04",
       "text7ec0261b8e8a": "Mettre à niveau",
       "text7eca5e05f915": "{value0} téléchargé",
@@ -16624,7 +16644,7 @@
       "textc3bf78fdd3b9": "Impossible d’envoyer votre candidature",
       "textc3c25857485f": "Fait",
       "textc3c709a999c1": "Lecture de la mémoire…",
-      "textc3d1545dd522": "Convertit le kortix.toml v1 en kortix.yaml axé sur la gouvernance, actualise les compétences gérées par la plateforme selon la dernière base du marketplace et ouvre une demande de modification pour révision.",
+      "text7823a1f3af93": "Fait passer kortix.toml ou un kortix.yaml de version 2 à la version 3 : le projet enregistre les compétences, outils, commandes et extensions, et chaque agent les active par leur nom. Actualise les compétences gérées par la plateforme et ouvre une demande de modification à examiner.",
       "textc3d2e79ebdd0": "Connecteurs",
       "textc3e3a6edeaa5": "Conditions générales",
       "textc3e58a73609d": "Destructif",
@@ -17366,7 +17386,7 @@
       "textd83a0d814c59": "API Status affiche « Enabled » en vert, le paramètre « SCIM Username » est mappé sur Email et le provisioning est activé sans blocage par approbation administrateur.",
       "textd84b8be91e7b": "Kortix — Présentations",
       "textd84ee1e1e08b": "essayez kortix init, ou / pour afficher les commandes",
-      "textd85a383e851d": "Migrer le manifeste vers la v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Mettre à niveau le manifeste vers v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init la structure, kortix ship la met en ligne. C’est le même dépôt qui fait la même chose : le développement local et le système en production ne sont plus deux catégories différentes.",
       "textd864380a766f": "Le sandbox contient un token Kortix limité au projet et aucune clé tierce. Les identifiants du tracker et du helpdesk sont déchiffrés côté serveur et joints à l’appel sortant.",
       "textd8707d411d99": "Secrets",
@@ -18422,7 +18442,6 @@
       "textf7243551e2b7": "Vérifiez votre saisie",
       "textf730dd4bb7fb": "go-to-market.md",
       "textf748e0b183a3": "Il signale ce qu’il ne peut pas étayer",
-      "textf74efe18842d": "Ce projet utilise un manifeste v1. Migrez vers",
       "textf75481058771": "Cet utilisateur n’est pas membre de ce compte.",
       "textf7552f3489ab": "prop ou utilisez le contrôle d’importation.",
       "textf7571d57f984": "Cet élément a été déplacé ou supprimé.",
@@ -20011,7 +20030,8 @@
       "text139479653231": "Démo Enterprise désactivée",
       "text111b159de1cc": "Impossible de modifier la démo Enterprise",
       "textc3371113b9c5": "Une licence active toutes les fonctionnalités Enterprise pendant sa durée. Elle n'inclut aucun crédit.",
-      "text81e6bf495c98": "Forfaits, crédits, Enterprise, droits, membres et état de facturation, par compte."
+      "text81e6bf495c98": "Forfaits, crédits, Enterprise, droits, membres et état de facturation, par compte.",
+      "textfe3436af86b4": "Extensions"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

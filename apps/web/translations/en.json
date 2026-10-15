@@ -1094,10 +1094,11 @@
       "oneOffDescription": "Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request.",
       "oneOffPlaceholder": "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
       "runUpgrade": "Run upgrade",
-      "manifestV2": {
-        "title": "Migrate manifest to v2 (kortix.yaml)",
-        "description": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review."
-      }
+      "manifestV3": {
+        "title": "Upgrade manifest to v3 (kortix.yaml)",
+        "description": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review."
+      },
+      "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
     },
     "plan": {
       "managedByAdmin": "Managed by an account admin",
@@ -1592,8 +1593,8 @@
       "localComputer": "Your computer"
     },
     "manifestUpgrade": {
-      "title": "Upgrade to v2",
-      "description": "This project still runs <toml>kortix.toml</toml>. An agent converts it to <yaml>kortix.yaml</yaml>, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
+      "title": "Upgrade to v3",
+      "description": "This project runs an older manifest. An agent moves it to <yaml>kortix.yaml</yaml> version 3, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
       "start": "Start upgrade"
     },
     "filter": {
@@ -1989,7 +1990,27 @@
     "model": "Model",
     "systemPrompt": "System Prompt",
     "systemPromptPlaceholder": "Define how your Worker should behave...",
-    "customizeIcon": "Click to customize Worker icon"
+    "customizeIcon": "Click to customize Worker icon",
+    "grants": {
+      "subagents": {
+        "title": "Subagents",
+        "description": "Agents this agent can start for a subtask.",
+        "all": "Every subagent in this project, including ones added later.",
+        "empty": "No subagents declared in this project yet."
+      },
+      "commands": {
+        "title": "Commands",
+        "description": "Slash commands this agent can run.",
+        "all": "Every command in this project, including ones added later.",
+        "empty": "No commands registered in this project yet."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Plugins and packages a session of this agent loads.",
+        "all": "Every extension in this project, including ones added later.",
+        "empty": "No extensions registered in this project yet."
+      }
+    }
   },
   "home": {
     "heroPlaceholder": "Describe the task you want your Worker to complete..."
@@ -14222,7 +14243,6 @@
       "text7ea05ee375a0": "No saved prompt is available.",
       "text7ea27c63aff1": "Manage billing",
       "text7ea4733fb624": "Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.",
-      "text7ead9bf84af8": "Migrate to v2",
       "text7ebef26162b5": "| * s_9a04",
       "text7ec0261b8e8a": "Upgrade",
       "text7eca5e05f915": "Downloaded {value0}",
@@ -16635,7 +16655,7 @@
       "textc3bf78fdd3b9": "Could not send your application",
       "textc3c25857485f": "Does",
       "textc3c709a999c1": "Reading memory…",
-      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
+      "text7823a1f3af93": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -17377,7 +17397,7 @@
       "textd83a0d814c59": "API Status shows a green \"Enabled\", the \"SCIM Username\" parameter maps to Email, and provisioning is enabled without the admin-approval hold.",
       "textd84b8be91e7b": "Kortix — Presentations",
       "textd84ee1e1e08b": "try kortix init, or / for commands",
-      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Upgrade manifest to v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init scaffolds it, kortix ship brings it live. It is the same repo doing the same thing, so local development and the live system stopped being different categories.",
       "textd864380a766f": "The sandbox carries one project-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.",
       "textd8707d411d99": "Secrets",
@@ -18433,7 +18453,6 @@
       "textf7243551e2b7": "Check your input",
       "textf730dd4bb7fb": "go-to-market.md",
       "textf748e0b183a3": "It flags what it cannot substantiate",
-      "textf74efe18842d": "This project uses a v1 manifest. Migrate to",
       "textf75481058771": "This user is not a member of this account.",
       "textf7552f3489ab": "prop or use the upload control.",
       "textf7571d57f984": "This has been moved or deleted.",
@@ -20022,7 +20041,8 @@
       "text139479653231": "Enterprise demo off",
       "text111b159de1cc": "Could not change the Enterprise demo",
       "textc3371113b9c5": "A license turns on every Enterprise feature for its term. It carries no credits.",
-      "text81e6bf495c98": "Plans, credits, Enterprise, entitlements, members and billing state, per account."
+      "text81e6bf495c98": "Plans, credits, Enterprise, entitlements, members and billing state, per account.",
+      "textfe3436af86b4": "Extensions"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

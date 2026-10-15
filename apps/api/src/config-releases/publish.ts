@@ -126,7 +126,13 @@ export async function publishConfigRelease(
     sourceCommit: tip,
     configTreeId: descriptor.config_tree_id,
     descriptorKey,
-    roster: { enabled: [...roster.enabled], defaultAgent: roster.defaultAgent, readable: roster.readable, governed: roster.governed },
+    roster: {
+      enabled: [...roster.enabled],
+      defaultAgent: roster.defaultAgent,
+      readable: roster.readable,
+      governed: roster.governed,
+      ...(roster.onlyDeclared ? { onlyDeclared: true } : {}),
+    },
     resolvedAt,
     publishedAt: resolvedAt,
   };

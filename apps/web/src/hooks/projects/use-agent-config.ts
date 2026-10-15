@@ -52,6 +52,15 @@ export function prefetchAgentConfig(queryClient: QueryClient, projectId: string,
   });
 }
 
+/**
+ * The agent page offers the manifest upgrade only on a v1 project, where the
+ * full editor does not exist. A v2 or v3 manifest is editable (the server
+ * answers `editable`); a read-only v3 answer never reads as "upgrade to v2".
+ */
+export function agentConfigNeedsUpgrade(response: AgentConfigResponse | undefined): boolean {
+  return response !== undefined && response.editable !== true && response.schema_version === 1;
+}
+
 type AgentConfigSaveResponse = Awaited<ReturnType<typeof updateAgentConfig>>;
 
 export function applyAgentConfigSaveResponse(
@@ -65,7 +74,8 @@ export function applyAgentConfigSaveResponse(
     (current) => ({
       agent: response.agent,
       schema_version: response.schema_version,
-      editable: current?.editable ?? response.schema_version === 2,
+      // A save succeeds only on an editable manifest (v2 or v3); the server decides.
+      editable: current?.editable ?? true,
       default_agent: current?.default_agent ?? null,
       block: response.block,
     }),

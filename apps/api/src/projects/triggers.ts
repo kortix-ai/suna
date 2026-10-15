@@ -7,7 +7,7 @@
  *
  * Example shape (kortix.yaml):
  *
- *   kortix_version: 2
+ *   kortix_version: 3
  *
  *   project:
  *     name: example

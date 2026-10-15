@@ -52,7 +52,7 @@ mock.module('@/lib/use-project-can', () => ({
   projectPermissionProbes: () => [],
 }));
 
-mock.module('@/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
+mock.module('@/features/workspace/customize/migrate-to-v3/manifest-version', () => ({
   useProjectManifestVersion: () => ({ version: 2, isLoading: false }),
 }));
 

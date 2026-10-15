@@ -366,14 +366,17 @@ function respond(
  * still converge.
  */
 export function noteRunningConfig(
-  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'> & { agent_repoint_reason?: string | null },
+  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'> & {
+    agent_repoint_reason?: string | null
+    compiled_governance?: string | null
+  },
   releaseDirPath: string | null = null,
   sessionId: string | null = process.env.KORTIX_SESSION_ID ?? null,
 ): 'written' | 'unchanged' | 'failed' {
   try {
     return writeConfigReleaseNotice({
       sourceCommit: descriptor.source_commit,
-      sourcePaths: releaseSourcePaths(descriptor.config_dir),
+      sourcePaths: releaseSourcePaths(descriptor.config_dir, descriptor.compiled_governance ?? null),
       releaseDir: releaseDirPath,
       sessionId,
       agentRepoint: descriptor.agent_repoint_reason ?? null,

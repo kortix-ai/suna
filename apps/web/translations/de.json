@@ -1272,10 +1272,11 @@
       "oneOffDescription": "Beschreiben Sie stattdessen eine einzelne Änderung. Eine Sitzung führt sie aus, prüft sie und öffnet eine Änderungsanfrage.",
       "oneOffPlaceholder": "z. B. Den Agenten release-bot überall in deploy-bot umbenennen",
       "runUpgrade": "Upgrade ausführen",
-      "manifestV2": {
-        "title": "Manifest auf v2 migrieren (kortix.yaml)",
-        "description": "Konvertiert die v1-Datei kortix.toml in die governance-orientierte kortix.yaml, aktualisiert plattformverwaltete Skills und öffnet eine Änderungsanfrage zur Prüfung."
-      }
+      "manifestV3": {
+        "title": "Manifest auf v3 aktualisieren (kortix.yaml)",
+        "description": "Überführt kortix.toml oder eine kortix.yaml der Version 2 in Version 3: Das Projekt registriert Skills, Tools, Befehle und Erweiterungen, und jeder Agent aktiviert sie namentlich. Aktualisiert plattformverwaltete Skills und öffnet eine Änderungsanfrage zur Prüfung."
+      },
+      "agentEditorHint": "Dieses Projekt verwendet ein Manifest der Version 1. Aktualisiere es auf <code>kortix.yaml</code> Version 3, um Anweisungen, Modell, Tool-Berechtigungen und Zugriff dieses Agenten hier zu bearbeiten."
     },
     "plan": {
       "managedByAdmin": "Von einem Kontoadministrator verwaltet",
@@ -1592,8 +1593,8 @@
       "localComputer": "Dein Computer"
     },
     "manifestUpgrade": {
-      "title": "Auf v2 aktualisieren",
-      "description": "Dieses Projekt verwendet noch <toml>kortix.toml</toml>. Ein Agent konvertiert die Datei in <yaml>kortix.yaml</yaml>, aktualisiert verwaltete Skills und öffnet eine Änderungsanfrage. Nichts ändert sich, bis du sie genehmigst.",
+      "title": "Auf v3 aktualisieren",
+      "description": "Dieses Projekt verwendet ein älteres Manifest. Ein Agent überführt es in <yaml>kortix.yaml</yaml> Version 3, aktualisiert verwaltete Skills und öffnet eine Änderungsanfrage. Nichts ändert sich, bis du sie genehmigst.",
       "start": "Upgrade starten"
     },
     "filter": {
@@ -1989,7 +1990,27 @@
     "model": "Modell",
     "systemPrompt": "System-Prompt",
     "systemPromptPlaceholder": "Definiere, wie sich dein Worker verhalten soll...",
-    "customizeIcon": "Klicke, um das Worker-Icon anzupassen"
+    "customizeIcon": "Klicke, um das Worker-Icon anzupassen",
+    "grants": {
+      "subagents": {
+        "title": "Subagenten",
+        "description": "Agenten, die dieser Agent für eine Teilaufgabe starten kann.",
+        "all": "Jeder Subagent in diesem Projekt, auch später hinzugefügte.",
+        "empty": "In diesem Projekt sind noch keine Subagenten deklariert."
+      },
+      "commands": {
+        "title": "Befehle",
+        "description": "Slash-Befehle, die dieser Agent ausführen kann.",
+        "all": "Jeder Befehl in diesem Projekt, auch später hinzugefügte.",
+        "empty": "In diesem Projekt sind noch keine Befehle registriert."
+      },
+      "extensions": {
+        "title": "Erweiterungen",
+        "description": "Plugins und Pakete, die eine Sitzung dieses Agenten lädt.",
+        "all": "Jede Erweiterung in diesem Projekt, auch später hinzugefügte.",
+        "empty": "In diesem Projekt sind noch keine Erweiterungen registriert."
+      }
+    }
   },
   "home": {
     "heroPlaceholder": "Beschreibe die Aufgabe, die dein Worker erledigen soll..."
@@ -14211,7 +14232,6 @@
       "text7ea05ee375a0": "Keine gespeicherte Eingabe verfügbar.",
       "text7ea27c63aff1": "Abrechnung verwalten",
       "text7ea4733fb624": "Verfügbar in Enterprise und in einer selbst gehosteten Instanz mit Enterprise-Lizenz. Die oben aufgeführten integrierten Rollen sind in jedem Tarif kostenlos.",
-      "text7ead9bf84af8": "Auf v2 migrieren",
       "text7ebef26162b5": "| * s_9a04",
       "text7ec0261b8e8a": "Upgrade",
       "text7eca5e05f915": "{value0} heruntergeladen",
@@ -16624,7 +16644,7 @@
       "textc3bf78fdd3b9": "Deine Bewerbung konnte nicht gesendet werden",
       "textc3c25857485f": "Kann",
       "textc3c709a999c1": "Speicher wird gelesen …",
-      "textc3d1545dd522": "Konvertiert die v1 kortix.toml in die Governance-orientierte kortix.yaml, aktualisiert plattformverwaltete Skills auf den neuesten Marketplace-Stand und eröffnet eine Änderungsanfrage zur Überprüfung.",
+      "text7823a1f3af93": "Überführt kortix.toml oder eine kortix.yaml der Version 2 in Version 3: Das Projekt registriert Skills, Tools, Befehle und Erweiterungen, und jeder Agent aktiviert sie namentlich. Aktualisiert plattformverwaltete Skills und öffnet eine Änderungsanfrage zur Prüfung.",
       "textc3d2e79ebdd0": "Konnektoren",
       "textc3e3a6edeaa5": "Allgemeine Geschäftsbedingungen",
       "textc3e58a73609d": "Destruktiv",
@@ -17366,7 +17386,7 @@
       "textd83a0d814c59": "API Status zeigt ein grünes „Enabled“, der Parameter „SCIM Username“ ist Email zugeordnet und die Bereitstellung ist ohne Zurückhaltung zur Admin-Genehmigung aktiviert.",
       "textd84b8be91e7b": "Kortix — Präsentationen",
       "textd84ee1e1e08b": "Versuche kortix init oder / für Befehle",
-      "textd85a383e851d": "Manifest auf v2 migrieren (kortix.yaml)",
+      "text08edd5b6dcdc": "Manifest auf v3 aktualisieren (kortix.yaml)",
       "textd861cc0af73c": "kortix init erstellt das Grundgerüst, kortix ship schaltet es live. Es ist dasselbe Repo, das dasselbe tut – lokale Entwicklung und Live-System gehören damit nicht mehr zu unterschiedlichen Kategorien.",
       "textd864380a766f": "Die Sandbox enthält ein auf das Projekt begrenztes Kortix-Token und keine Drittanbieter-Schlüssel. Deine Zugangsdaten für Tracker und Helpdesk werden serverseitig entschlüsselt und an den ausgehenden Aufruf angehängt.",
       "textd8707d411d99": "Geheimnisse",
@@ -18422,7 +18442,6 @@
       "textf7243551e2b7": "Überprüfe deine Eingabe",
       "textf730dd4bb7fb": "go-to-market.md",
       "textf748e0b183a3": "Markiert, was es nicht belegen kann",
-      "textf74efe18842d": "Dieses Projekt verwendet ein v1-Manifest. Migriere zu",
       "textf75481058771": "Dieser Benutzer ist kein Mitglied dieses Kontos.",
       "textf7552f3489ab": "-Eigenschaft oder verwenden Sie die Upload-Steuerung.",
       "textf7571d57f984": "Dies wurde verschoben oder gelöscht.",
@@ -20011,7 +20030,8 @@
       "text139479653231": "Enterprise-Demo deaktiviert",
       "text111b159de1cc": "Enterprise-Demo konnte nicht geändert werden",
       "textc3371113b9c5": "Eine Lizenz aktiviert alle Enterprise-Funktionen für ihre Laufzeit. Sie enthält keine Credits.",
-      "text81e6bf495c98": "Tarife, Credits, Enterprise, Berechtigungen, Mitglieder und Abrechnungsstatus pro Konto."
+      "text81e6bf495c98": "Tarife, Credits, Enterprise, Berechtigungen, Mitglieder und Abrechnungsstatus pro Konto.",
+      "textfe3436af86b4": "Erweiterungen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

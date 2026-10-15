@@ -474,7 +474,7 @@ export function registerProjectFromRepositoryRoutes(): void {
       // and made project deletion delete the user's repository.
       managed: false,
       // The starter just committed above (buildStarterFiles) ships kortix.yaml
-      // (kortix_version 2) — record that path so it's never stale from birth.
+      // (kortix_version 3) — record that path so it's never stale from birth.
       manifestPath: 'kortix.yaml',
       ...(iconGlyph
         ? { projectMetadata: { icon_glyph: iconGlyph } }

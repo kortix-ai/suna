@@ -86,14 +86,15 @@ function localLayout(repoRoot: string): LocalLayout {
     : { skills: SKILLS_DIR, agents: AGENTS_DIR, opencode: OPENCODE_CONFIG_DIR };
 }
 
-function agentLinks(layout: LocalLayout): Partial<Record<CodingAgent, readonly AgentLink[]>> {
+function agentLinks(layout: LocalLayout, has: (path: string) => boolean): Partial<Record<CodingAgent, readonly AgentLink[]>> {
   const sharedSkills: AgentLink = { path: '.agents/skills', target: `../${layout.skills}` };
+  // A kortix_version 3 project has no OpenCode config dir: link it only when it exists.
   return {
-    opencode: [{ path: '.opencode', target: layout.opencode }, sharedSkills],
+    opencode: [...(has(layout.opencode) ? [{ path: '.opencode', target: layout.opencode }] : []), sharedSkills],
     claude: [
       { path: '.claude/skills', target: `../${layout.skills}` },
       { path: '.claude/agents', target: `../${layout.agents}` },
-      { path: '.claude/commands', target: `../${layout.opencode}/commands` },
+      ...(has(`${layout.opencode}/commands`) ? [{ path: '.claude/commands', target: `../${layout.opencode}/commands` }] : []),
     ],
     codex: [sharedSkills],
     pi: [{ path: '.pi/skills', target: `../${layout.skills}` }],
@@ -121,7 +122,7 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const skipped: string[] = [];
   let wantAgentsMd = false;
   const layout = localLayout(input.repoRoot);
-  const links = agentLinks(layout);
+  const links = agentLinks(layout, (path) => existsSync(resolve(input.repoRoot, path)));
   // `.agents/skills` serves both OpenCode and Codex: wire it once.
   const seen = new Set<string>();
 
@@ -156,7 +157,7 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   if (wantAgentsMd) {
     const abs = resolve(input.repoRoot, 'AGENTS.md');
     if (handleExisting(abs, input.overwrite)) {
-      writeFileSync(abs, agentsPointer(layout), 'utf8');
+      writeFileSync(abs, agentsPointer(layout, existsSync(resolve(input.repoRoot, layout.opencode))), 'utf8');
       written.push('AGENTS.md');
     } else {
       skipped.push('AGENTS.md');
@@ -184,19 +185,19 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
   return false;
 }
 
-function agentsPointer(layout: LocalLayout): string {
-  const canonicalSkill = `${layout.skills}/kortix-cli/SKILL.md`;
+function agentsPointer(layout: LocalLayout, hasOpencodeDir: boolean): string {
   return `# Kortix project
 
 This repository is a [Kortix](https://kortix.ai) project. The manifest is
-\`kortix.yaml\`; agents live in \`${layout.agents}/\`, skills in \`${layout.skills}/\`,
-and OpenCode's own files in \`${layout.opencode}/\`.
+\`kortix.yaml\`: it registers the skills, tools, commands and extensions, and
+declares each agent. Agent prompts live in \`${layout.agents}/\`, skills in
+\`${layout.skills}/\`${hasOpencodeDir ? `, and OpenCode's own files in \`${layout.opencode}/\`` : ''}.
 The skills are available through each wired tool's native discovery location.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
 sandbox image, sessions, connectors, or OpenCode,
-Claude Code, Codex, and Pi configuration — read \`${canonicalSkill}\` first.
-It is the canonical reference.
+Claude Code, Codex, and Pi configuration — run \`kortix skills get kortix-cli\`
+first. It is the canonical reference.
 
 For any other task, proceed normally.
 `;

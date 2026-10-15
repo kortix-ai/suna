@@ -1272,10 +1272,11 @@
       "oneOffDescription": "Descreva uma única alteração. Uma sessão a realiza, valida e abre uma solicitação de alteração.",
       "oneOffPlaceholder": "ex. Renomeie o agente release-bot para deploy-bot em todas as referências",
       "runUpgrade": "Executar atualização",
-      "manifestV2": {
-        "title": "Migrar o manifesto para v2 (kortix.yaml)",
-        "description": "Converte o kortix.toml v1 no kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
-      }
+      "manifestV3": {
+        "title": "Atualizar o manifesto para v3 (kortix.yaml)",
+        "description": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
+      },
+      "agentEditorHint": "Este projeto usa um manifesto da versão 1. Atualize-o para <code>kortix.yaml</code> versão 3 para editar aqui as instruções, o modelo, as permissões de ferramentas e o acesso deste agente."
     },
     "plan": {
       "managedByAdmin": "Gerenciado por um administrador da conta",
@@ -1592,8 +1593,8 @@
       "localComputer": "Seu computador"
     },
     "manifestUpgrade": {
-      "title": "Atualizar para v2",
-      "description": "Este projeto ainda usa <toml>kortix.toml</toml>. Um agente converte-o em <yaml>kortix.yaml</yaml>, atualiza as competências geridas e abre um pedido de alteração. Nada muda até à sua aprovação.",
+      "title": "Atualizar para v3",
+      "description": "Este projeto usa um manifesto anterior. Um agente leva-o para <yaml>kortix.yaml</yaml> versão 3, atualiza as competências geridas e abre um pedido de alteração. Nada muda até à sua aprovação.",
       "start": "Iniciar atualização"
     },
     "filter": {
@@ -1989,7 +1990,27 @@
     "model": "Modelo",
     "systemPrompt": "Prompt do Sistema",
     "systemPromptPlaceholder": "Define como teu Worker deve se comportar...",
-    "customizeIcon": "Clica para personalizar ícone do Worker"
+    "customizeIcon": "Clica para personalizar ícone do Worker",
+    "grants": {
+      "subagents": {
+        "title": "Subagentes",
+        "description": "Agentes que este agente pode iniciar para uma subtarefa.",
+        "all": "Todos os subagentes deste projeto, incluindo os adicionados depois.",
+        "empty": "Este projeto ainda não declara subagentes."
+      },
+      "commands": {
+        "title": "Comandos",
+        "description": "Comandos de barra que este agente pode executar.",
+        "all": "Todos os comandos deste projeto, incluindo os adicionados depois.",
+        "empty": "Este projeto ainda não regista comandos."
+      },
+      "extensions": {
+        "title": "Extensões",
+        "description": "Plugins e pacotes que uma sessão deste agente carrega.",
+        "all": "Todas as extensões deste projeto, incluindo as adicionadas depois.",
+        "empty": "Este projeto ainda não regista extensões."
+      }
+    }
   },
   "home": {
     "heroPlaceholder": "Descreve a tarefa que queres que teu Worker complete..."
@@ -14211,7 +14232,6 @@
       "text7ea05ee375a0": "Nenhum prompt salvo está disponível.",
       "text7ea27c63aff1": "Gerenciar cobrança",
       "text7ea4733fb624": "Disponível no Enterprise e em uma instância auto-hospedada com uma licença Enterprise. As funções integradas acima são gratuitas em todos os planos.",
-      "text7ead9bf84af8": "Migrar para a v2",
       "text7ebef26162b5": "| * s_9a04",
       "text7ec0261b8e8a": "Fazer upgrade",
       "text7eca5e05f915": "{value0} baixado",
@@ -16624,7 +16644,7 @@
       "textc3bf78fdd3b9": "Não foi possível enviar sua inscrição",
       "textc3c25857485f": "Faz",
       "textc3c709a999c1": "Lendo a memória…",
-      "textc3d1545dd522": "Converte o kortix.toml v1 em kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma para a versão mais recente do marketplace e abre uma solicitação de alteração para revisão.",
+      "text7823a1f3af93": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Termos e condições",
       "textc3e58a73609d": "Destrutivo",
@@ -17366,7 +17386,7 @@
       "textd83a0d814c59": "API Status mostra um \"Enabled\" verde, o parâmetro \"SCIM Username\" está mapeado para Email e o provisionamento está ativado sem a retenção de aprovação do administrador.",
       "textd84b8be91e7b": "Kortix — Apresentações",
       "textd84ee1e1e08b": "tente kortix init ou / para ver os comandos",
-      "textd85a383e851d": "Migrar o manifesto para v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Atualizar o manifesto para v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init cria a estrutura, e kortix ship coloca tudo no ar. É o mesmo repo fazendo a mesma coisa, então o desenvolvimento local e o sistema em produção deixaram de ser categorias diferentes.",
       "textd864380a766f": "O sandbox usa um token Kortix com escopo de projeto e nenhuma chave de terceiros. As credenciais do tracker e do helpdesk são descriptografadas no servidor e anexadas à chamada de saída.",
       "textd8707d411d99": "Segredos",
@@ -18422,7 +18442,6 @@
       "textf7243551e2b7": "Verifique o que você digitou",
       "textf730dd4bb7fb": "go-to-market.md",
       "textf748e0b183a3": "Ele sinaliza o que não consegue comprovar",
-      "textf74efe18842d": "Este projeto usa um manifesto v1. Migre para",
       "textf75481058771": "Este usuário não é membro desta conta.",
       "textf7552f3489ab": "prop ou use o controle de envio.",
       "textf7571d57f984": "Isto foi movido ou excluído.",
@@ -20011,7 +20030,8 @@
       "text139479653231": "Demonstração Enterprise desativada",
       "text111b159de1cc": "Não foi possível alterar a demonstração Enterprise",
       "textc3371113b9c5": "Uma licença ativa todos os recursos Enterprise durante a vigência. Não inclui créditos.",
-      "text81e6bf495c98": "Planos, créditos, Enterprise, direitos, membros e estado de cobrança, por conta."
+      "text81e6bf495c98": "Planos, créditos, Enterprise, direitos, membros e estado de cobrança, por conta.",
+      "textfe3436af86b4": "Extensões"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
