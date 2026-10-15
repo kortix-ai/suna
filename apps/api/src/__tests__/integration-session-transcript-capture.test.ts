@@ -385,6 +385,62 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
   }
 }, 20_000);
 
+// One turn that starts more sub-agents than one capture reads (`MAX_CHILD_READS_PER_CAPTURE`,
+// 12): on dev a pi turn with 22 left 10 of them unsaved until a next turn end that may never
+// come. The capture that leaves some unread queues the next one, which saves the rest.
+test('a capture that leaves sub-agents unread queues the next capture, which saves them', async () => {
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject('transcript-capture-more-children-test');
+    const sessionId = await seedSession(project, randomUUID());
+    const root = 'ses_fanout';
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [sessionId, root]);
+    const message = (session: string, id: string) => ({
+      info: { id, sessionID: session, role: 'user', time: { created: 1 } },
+      parts: [{ id: `p_${id}`, type: 'text', text: 'Synthetic task.' }],
+    });
+    const child = (id: string) => ({ opencodeSessionId: id, payload: [message(id, `msg_${id}`)], complete: true });
+    const reads: number[] = [];
+    // The first read reaches one sub-agent and reports more; the second reaches the last one.
+    const readMessages = async () => {
+      reads.push(reads.length);
+      const first = reads.length === 1;
+      return {
+        opencodeSessionId: root,
+        payload: [message(root, 'msg_root')],
+        headComplete: true,
+        complete: true,
+        children: [child(first ? 'ses_first' : 'ses_second')],
+        moreChildren: first,
+      };
+    };
+    const saved = async () =>
+      (
+        await db.query(
+          'SELECT DISTINCT opencode_session_id AS id FROM kortix.session_transcript_messages WHERE session_id = $1 ORDER BY 1',
+          [sessionId],
+        )
+      ).rows.map((row: { id: string }) => row.id);
+
+    await captureSessionTranscriptMirror(sessionId, { readMessages });
+    for (let i = 0; i < 100 && (await saved()).length < 3; i += 1) await new Promise((r) => setTimeout(r, 50));
+    expect(await saved()).toEqual(['ses_fanout', 'ses_first', 'ses_second']);
+    // The second capture reported nothing more: no third read.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(reads.length).toBe(2);
+
+    // A stop's `tail` capture never queues another: the box powers off next.
+    await captureSessionTranscriptMirror(sessionId, { readMessages: async () => ({ ...(await readMessages()), moreChildren: true }) }, { scope: 'tail' });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(reads.length).toBe(3);
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}, 20_000);
+
 test('a complete read of an empty conversation is saved and served as complete and empty', async () => {
   const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();

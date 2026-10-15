@@ -7510,6 +7510,7 @@
       "treeMessages": "поруке",
       "subAgentsLoaded": "Учитано {loaded} од {total} подагената",
       "loadAll": "Учитај све",
+      "subAgentLoadFailed": "Учитавање није успело",
       "detailInput": "Уносни токени",
       "detailOutput": "Излазни токени",
       "detailReasoning": "Жетони за расуђивање",

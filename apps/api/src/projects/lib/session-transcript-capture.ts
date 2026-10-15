@@ -91,12 +91,17 @@ export interface CaptureDeps {
      *  `childSessionsToCapture`). Written only when `complete`: a sub-agent's
      *  saved transcript is whole or absent. */
     children?: Array<{ opencodeSessionId: string; payload: unknown; complete?: boolean }>;
+    /** Sub-agents this capture did not reach (`MAX_CHILD_READS_PER_CAPTURE`), and it saved
+     *  one never saved before: another capture saves more. */
+    moreChildren?: boolean;
   } | null>;
 }
 
 /** Sub-agent transcripts one capture reads at most. A finished sub-agent is
- *  read once in its life, so this bounds only a backlog (a history captured
- *  before sub-agents were saved), which later captures work through. */
+ *  read once in its life. A capture that leaves sub-agents unread (one turn
+ *  that started more than this, or a history captured before sub-agents were
+ *  saved) queues the next capture at once (`moreChildren`), so the rest are
+ *  saved without waiting for another turn end. */
 const MAX_CHILD_READS_PER_CAPTURE = 12;
 /** Only an OpenCode session id may reach a URL or a row. */
 const OPENCODE_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
@@ -228,9 +233,10 @@ const liveCaptureDeps: CaptureDeps = {
     const queue = childSessionsToCapture({
       references: childSessionReferences([...result.rows, ...previous]),
       stored: savedChildren,
-      limit: MAX_CHILD_READS_PER_CAPTURE,
+      limit: Infinity,
     });
-    while (queue.length > 0 && children.length < MAX_CHILD_READS_PER_CAPTURE) {
+    // `seen` holds the root and every sub-agent this capture tried: at most the cap, read or not.
+    while (queue.length > 0 && seen.size <= MAX_CHILD_READS_PER_CAPTURE) {
       const child = queue.shift()!;
       if (seen.has(child) || !OPENCODE_SESSION_ID.test(child)) continue;
       seen.add(child);
@@ -245,7 +251,7 @@ const liveCaptureDeps: CaptureDeps = {
           ...childSessionsToCapture({
             references: childSessionReferences(walk.rows),
             stored: savedChildren,
-            limit: MAX_CHILD_READS_PER_CAPTURE,
+            limit: Infinity,
           }),
         );
       } catch (err) {
@@ -257,6 +263,10 @@ const liveCaptureDeps: CaptureDeps = {
       }
     }
 
+    // Progress, not only a backlog: each next capture saves at least one new sub-agent, so a
+    // sub-agent that never reads whole cannot queue captures forever.
+    const unread = queue.some((child) => !seen.has(child) && OPENCODE_SESSION_ID.test(child));
+    const savedNew = children.some((child) => child.complete && !savedChildren.has(child.opencodeSessionId));
     return {
       opencodeSessionId: resolved.opencodeSessionId,
       payload: result.rows,
@@ -264,6 +274,7 @@ const liveCaptureDeps: CaptureDeps = {
       complete: result.complete,
       caughtUp: result.caughtUp,
       children,
+      moreChildren: unread && savedNew,
     };
   },
 };
@@ -301,6 +312,7 @@ async function captureSessionTranscript(
     if (!session) return null;
 
     const fullHistory = options?.scope !== 'tail';
+    let moreChildren = false;
     const capture = async (): Promise<CaptureResult | null> => {
       const startedAt = new Date();
       const read = await deps.readMessages(sessionId, {
@@ -410,12 +422,16 @@ async function captureSessionTranscript(
           const childRows = mirrorRowsFromOpencodePayload(child.payload);
           await upsertMirrorRows(tx, sessionId, child.opencodeSessionId, childRows, now);
         }
+        moreChildren = read.moreChildren === true;
         return { captured: rows.length, head_complete: headComplete };
       });
     };
     const result = fullHistory ? await retryTranscriptCapture(capture) : await capture();
     // P2.7: a box without a journal also gets its v2 log, from the mirror just written. Never throws.
     if (result) await writeSessionLogFromMirror(sessionId);
+    // Queued behind this one (`captureSessionTranscriptMirror` runs one capture per session at a
+    // time). Not for a `tail`: the stop that asked for it powers the box off next.
+    if (result && fullHistory && moreChildren) void captureSessionTranscriptMirror(sessionId, deps, options);
     return result;
   } catch (err) {
     console.warn(

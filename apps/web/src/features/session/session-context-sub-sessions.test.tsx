@@ -321,3 +321,92 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
     }
   });
 });
+
+describe('SubSessionSection with sub-agents the server never saved', () => {
+  // A pi session's sub-agents (threads, not child sessions). The saved window answers
+  // `available: false` for every one, as for a sub-agent the turn-end capture did not reach;
+  // the runtime holds them all, except one it answers 404 for.
+  const ROOT = 'ses_unsaved_root', GONE = 'ses_unsaved_gone';
+  const kids = Array.from({ length: 24 }, (_, i) => `ses_unsaved_${i}`);
+  const sessions = [
+    { id: ROOT, title: 'Root' },
+    ...[...kids, GONE].map((id) => ({ id, parentID: ROOT, title: `Agent ${id}` })),
+  ] as unknown as Session[];
+  const message = (sessionID: string, id: string) => ({
+    info: { id, sessionID, role: 'user', time: { created: 1_700_000_000_000 } },
+    parts: [],
+  });
+
+  test('"Load all" reads every row from the runtime; a row that cannot load says so, never "0 messages"', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const { createKortix } = await import('@kortix/sdk');
+    const originalFetch = globalThis.fetch;
+    const originalObserver = globalThis.IntersectionObserver;
+    const runtimeReads = new Set<string>();
+    globalThis.fetch = (async (input: unknown) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const runtime = /\/session\/(ses_[a-z0-9_]+)\/message/.exec(url)?.[1];
+      if (runtime) {
+        runtimeReads.add(runtime);
+        if (runtime === GONE) return Response.json({ message: 'session not found' }, { status: 404 });
+        // Every sub-agent has 2 messages; the saved window has none of them.
+        return Response.json([message(runtime, `m_${runtime}_a`), message(runtime, `m_${runtime}_b`)]);
+      }
+      return Response.json({ available: false, complete: false, message_count: 0, reason: 'no server-side transcript has been captured for this session yet' });
+    }) as unknown as typeof fetch;
+    // No row is ever in view: only "Load all" requests them.
+    globalThis.IntersectionObserver = class { observe() {} disconnect() {} } as unknown as typeof IntersectionObserver;
+    const kortix = createKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+    // The session's running row: the runtime of this session, without a `/start`.
+    await kortix.session('p_unsaved', 's_unsaved').ensureReady({
+      session: {
+        session_id: 's_unsaved', project_id: 'p_unsaved', account_id: 'a', status: 'running',
+        sandbox_id: 'sbx_unsaved', sandbox_provider: 'synthetic', sandbox_url: 'http://test.local/v1/p/sbx-unsaved/8000/',
+        runtime_session_id: ROOT,
+      } as never,
+    });
+    useSessionStateStore.getState().hydrate(ROOT, [message(ROOT, 'm_root')] as never);
+    let renderer: ReturnType<typeof create>;
+    const text = () => JSON.stringify(renderer!.toJSON());
+    try {
+      await act(async () => {
+        renderer = create(
+          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+            <SubSessionSection
+              source={{ projectId: 'p_unsaved', sessionId: 's_unsaved', runtimeSessionId: ROOT }}
+              session={sessions[0]}
+              allSessions={sessions}
+              pricingLookup={() => null}
+              fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
+            />
+          </NextIntlClientProvider>,
+          { createNodeMock: () => ({}) },
+        );
+      });
+      // Nothing loaded yet: no row claims a count.
+      expect(text()).toContain('0 of 25 sub-agents loaded');
+      expect(text()).not.toContain('"0"," ","messages"');
+
+      const button = renderer!.root.findAll((n) => typeof n.props.onClick === 'function' && n.props.children === 'Load all')[0]!;
+      await act(async () => { button.props.onClick(); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+
+      // Every requested row went to the runtime, past the registry's 20 controllers.
+      expect([...runtimeReads].sort()).toEqual([...kids, GONE].sort());
+      // 24 rows show their runtime count; the 404 row says it could not load.
+      expect(text().match(/"2"," ","messages"/g)?.length).toBe(24);
+      expect(text()).not.toContain('"0"," ","messages"');
+      expect(text()).toContain('Could not load');
+      // The label counts loaded threads, not requested ones: 24 of 25.
+      expect(text()).toContain('24 of 25 sub-agents loaded');
+      expect(text()).not.toContain('Load all');
+      // Combined messages: the root's 1 plus 24 × 2.
+      expect(text()).toContain('"49"');
+    } finally {
+      await act(async () => { renderer!.unmount(); });
+      globalThis.fetch = originalFetch;
+      globalThis.IntersectionObserver = originalObserver;
+      for (const id of [ROOT, GONE, ...kids]) useSessionStateStore.getState().clearSession(id);
+    }
+  });
+});

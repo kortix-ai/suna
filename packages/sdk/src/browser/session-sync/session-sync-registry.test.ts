@@ -301,6 +301,31 @@ describe('session sync controller eviction', () => {
     expect(getSessionSyncController('session-0')).not.toBe(retained[0]?.controller);
     for (const entry of retained.slice(1)) entry.release();
   });
+
+  // React renders every sibling (each `useSessionSync` gets its controller) before it runs any
+  // effect (each retains it). A sub-agent list that mounts 25 rows at once ("Load all") had
+  // the first rows' retains evict the later rows' controllers, so their initial read went to a
+  // destroyed controller and never left the browser.
+  test("a controller a render handed out survives its siblings' retains until its own", () => {
+    const ids = Array.from({ length: 25 }, (_, index) => `sub-agent-${index}`);
+    const rendered = ids.map((id) => getSessionSyncController(id));
+    const releases = ids.map((id) => retainSessionSyncController(id));
+
+    ids.forEach((id, index) => expect(getSessionSyncController(id)).toBe(rendered[index]!));
+    for (const release of releases) release();
+  });
+
+  test('a controller a render handed out and nothing retained is evicted after the hold', () => {
+    const realNow = Date.now;
+    try {
+      const orphan = getSessionSyncController('orphan');
+      Date.now = () => realNow() + 60_000;
+      for (let index = 0; index < 21; index += 1) getSessionSyncController(`later-${index}`);
+      expect(getSessionSyncController('orphan')).not.toBe(orphan);
+    } finally {
+      Date.now = realNow;
+    }
+  });
 });
 
 /**

@@ -51,9 +51,19 @@ interface RegistryEntry {
   client?: SessionMessageClient;
   runtimeUrl?: string;
   prefetchedSource?: SessionPrefetchSource;
+  /** A consumer retained it at least once. Until then a render may hold it (see `RENDER_HOLD_MS`). */
+  retained?: boolean;
 }
 
 const MAX_CONTROLLERS = 20;
+/**
+ * How long a controller a render handed out, and nothing retained yet, is safe from eviction.
+ * React renders every sibling before it runs any effect, so a list that mounts more than
+ * `MAX_CONTROLLERS` hooks in one commit (the sub-agent rows' "Load all") had the first rows'
+ * retains destroy the later rows' controllers, whose initial read then never ran. Past the
+ * hold, a render that never committed leaves nothing behind.
+ */
+const RENDER_HOLD_MS = 30_000;
 const controllers = new Map<string, RegistryEntry>();
 
 function runtimeScopeKey(runtimeScope?: string): string {
@@ -247,8 +257,14 @@ function createController(sessionId: string, key: string): SessionSyncController
 
 function evictInactiveControllers(protectedKey?: string): void {
   if (controllers.size <= MAX_CONTROLLERS) return;
+  const now = Date.now();
   const inactive = [...controllers.entries()]
-    .filter(([key, entry]) => entry.consumers === 0 && key !== protectedKey)
+    .filter(
+      ([key, entry]) =>
+        entry.consumers === 0 &&
+        key !== protectedKey &&
+        (entry.retained || now - entry.lastUsedAt > RENDER_HOLD_MS),
+    )
     .sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
   for (const [key, entry] of inactive) {
     entry.controller.destroy();
@@ -336,6 +352,7 @@ export function retainSessionSyncController(sessionId: string, runtimeScope?: st
   } else {
     entry = getOrCreateRegistryEntry(sessionId, undefined, 1, runtimeScope);
   }
+  entry.retained = true;
   evictInactiveControllers();
   const controller = entry.controller;
   return () => {
