@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
+import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
@@ -358,7 +359,8 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-mock.module('../sandbox-proxy', () => ({
+mock.module('../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
