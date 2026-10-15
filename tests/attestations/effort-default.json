@@ -1,5 +1,5 @@
 {
-  "source_hash": "33c6abe28fae4fc81a0dbf56e0526f77747bea65a84c80576cdf28c489542fbd",
+  "source_hash": "1b6cd95a15909286589e9bbf777996e292d98316bf37bf1f699763056d83badd",
   "diff_files": [
     "apps/api/src/projects/lib/effort-default.test.ts",
     "apps/api/src/projects/lib/effort-default.ts",
@@ -39,13 +39,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/projects-misc.flow.ts"
   ],
-  "diff_hash": "39faac17f5fb15108d6674e39a5aa9e4fb69248e77ebfef503caa0a548273b8f",
-  "head": "4b454c50f898b2b412ea91a0649474f98d9ac178",
-  "passed": true,
+  "diff_hash": "899aa46323bde184a3e2383d636327bb69eb4819efa2568813f7f8e15b0fa080",
+  "head": "c075652a0363a6401c1bc2d0f42ae8fdbbf8f500",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T14:04:35.723Z"
+  "at": "2026-10-15T18:01:02.263Z"
 }
