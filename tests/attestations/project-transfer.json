@@ -1,16 +1,17 @@
 {
-  "source_hash": "166c0042396816299c4e4eb0b0d420ff15c2077f715c28a239ab36fea2235914",
+  "source_hash": "02188350f16cb86beb9b003b9a7068d38edc4808c4345d6ceb36460cbba697f2",
   "diff_files": [
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
     "apps/api/src/projects/routes/project-settings.ts",
     "apps/api/src/projects/routes/project-transfer.test.ts",
+    "apps/mobile/components/icons/teams-icon.test.ts",
     "apps/mobile/components/session/tool/tools/bash-tool.tsx",
     "apps/web/content/docs/audit-actions.mdx",
+    "apps/web/scripts/audit-i18n.mjs",
     "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
-    "apps/web/src/features/apps/app-releases.tsx",
-    "apps/web/src/features/workspace/capabilities/agents/agent-triggers-section.tsx",
+    "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
     "apps/web/src/features/workspace/settings/tabs/general-tab.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.tsx",
     "apps/web/src/features/workspace/settings/tabs/transfer-workspace-dialog.test.tsx",
@@ -36,13 +37,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "48a5849aedef2d671bd1fc5a78aebefb8b8df5ccf80394f228c542f2410ef581",
-  "head": "c2c7b4f6a1b7828042dbc0fdfe41d4821d7b824a",
-  "passed": true,
+  "diff_hash": "41223843f4849240006ab69af70f7f6a650dfd30749e229a513a7ed91ee979fa",
+  "head": "86a0c0d42cc14e457af0e3616ba41806b762205d",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T18:14:09.551Z"
+  "at": "2026-10-15T22:01:19.663Z"
 }
