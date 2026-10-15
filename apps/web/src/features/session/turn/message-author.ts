@@ -80,6 +80,21 @@ export function showAuthorName(
   return author.kind === 'session' || author.user_id !== viewerId;
 }
 
+/**
+ * Who to name under a turn someone ELSE stopped: "Stopped by <name>". Null
+ * when nobody is recorded, when the stop came from an agent session, and when
+ * the viewer stopped it: a stop you asked for is not news.
+ */
+export function stoppedByName(
+  data: SessionMessageAuthors | undefined,
+  messageId: string,
+  viewerId: string | undefined,
+): string | null {
+  const stopper = data?.stops?.[messageId];
+  if (stopper?.kind !== 'member' || stopper.user_id === viewerId) return null;
+  return stopper.name || stopper.email || null;
+}
+
 /** A prompt an agent will answer. A `no_reply` prompt runs no turn. */
 export function awaitsAgent(prompt: { no_reply?: boolean }): boolean {
   return !prompt.no_reply;

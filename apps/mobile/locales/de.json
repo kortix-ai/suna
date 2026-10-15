@@ -1198,7 +1198,9 @@
     "undo": "Rückgängig",
     "pinnedSection": "Angeheftet",
     "archivedView": "Archiviert",
-    "archivedEmpty": "Sitzungen, die du archivierst, erscheinen hier."
+    "archivedEmpty": "Sitzungen, die du archivierst, erscheinen hier.",
+    "stoppedBy": "Gestoppt von {{name}}",
+    "stopNotAllowed": "Nur das Mitglied, das diesen Lauf gestartet hat, der Inhaber der Sitzung oder ein Manager des Projekts kann ihn stoppen."
   },
   "genui": {
     "chartTapHint": "Tippen, um einen Wert zu lesen",

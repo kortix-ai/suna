@@ -77,10 +77,10 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves an INTERNAL-ONLY surface (`apps`):
- * not offered in Settings, enabled per project by a Kortix operator on
- * request. Its 403 says "contact Kortix" instead of naming a toggle the caller
- * cannot see (gate.ts).
+ * The same state also serves INTERNAL-ONLY surfaces (`session_log`,
+ * `session_log_restore`): not offered in Settings, enabled per project by a
+ * Kortix operator on request. Their 403 says "contact Kortix" instead of
+ * naming a toggle the caller cannot see (gate.ts).
  */
 import { config } from '../config';
 import { platinumUsRegion } from '../shared/platinum-region';
@@ -211,19 +211,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
       'the default for new sessions (projects/lib/platform-meta-agent.ts).',
   },
-  {
-    key: 'apps',
-    name: 'Apps',
-    description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
-    stability: 'stable',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'routes',
-    // Internal-only (2026-10-06): not offered in Settings.
-    // Projects already on keep it; Kortix enables others on request.
-    catalogHidden: true,
-  },
+  // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
+  // every project can create and deploy Apps and there is no flag, no row and
+  // no operator lever. A stored `experimental.apps` override is inert.
   {
     key: 'monitors',
     name: 'Monitors',

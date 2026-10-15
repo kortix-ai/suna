@@ -106,6 +106,7 @@ interface LadderState {
 import { onSessionChanged, onSessionPromptsChanged } from '../../shared/pg-broadcast';
 import {
   publishControlEvent,
+  TURN_FRAME_STOP_PROMPTER,
   type ControlEvent,
   type ControlEventType,
 } from './session-control-events';
@@ -175,6 +176,12 @@ interface Reconciler {
   projectId: string | null;
   /** The last turn read, so a runtime turn end can re-decide `working` without a read. */
   lastTurn: SessionTurnStatus | null;
+  /**
+   * Who prompted the newest running turn, read once per turn. The stream turns
+   * it into each viewer's own `can_stop` (`session-stream.ts`): the frame is one
+   * broadcast, the answer is per person.
+   */
+  stopPrompter: { messageId: string; userId: string | null } | null;
   /** The last queue read, for the same reason. */
   lastPrompts: Array<{ state: string; reason: string | null; client_sent_at_ms?: number | null }>;
   /** Newest `kortix.turn` end per runtime session id, seen on this replica's streams. */
@@ -237,6 +244,7 @@ export function acquireControlReconciler(
       idleSince: null,
       projectId,
       lastTurn: null,
+      stopPrompter: null,
       lastPrompts: [],
       runtimeTurnEnds: new Map(),
       lastRuntime: null,
@@ -383,6 +391,7 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     if (queue.status === 'fulfilled') reconciler.lastPrompts = queue.value.map(serializePrompt);
     if (full && turn.status === 'fulfilled' && turn.value) {
       reconciler.lastTurn = turn.value;
+      await readStopPrompter(sessionId, reconciler);
       emitTurn(sessionId, reconciler);
     }
     if (queue.status === 'fulfilled') {
@@ -568,12 +577,32 @@ async function driveWakeLadder(sessionId: string, reconciler: Reconciler): Promi
   }
 }
 
+/** The prompter of the newest running turn, cached by its message id. Never throws. */
+async function readStopPrompter(sessionId: string, reconciler: Reconciler): Promise<void> {
+  const messageId = reconciler.lastTurn?.turns[0]?.message_id ?? null;
+  if (!messageId) {
+    reconciler.stopPrompter = null;
+    return;
+  }
+  if (reconciler.stopPrompter?.messageId === messageId) return;
+  try {
+    // Loaded on first use: the stop authority's module graph (admission, the
+    // inbox) stays out of every module that only imports the reconciler.
+    const { turnPrompterOf } = await import('../session-lifecycle/turn-stop-authority');
+    reconciler.stopPrompter = { messageId, userId: await turnPrompterOf(sessionId, messageId) };
+  } catch {
+    // Unknown prompter: only the owner or a manager reads `can_stop: true`.
+    reconciler.stopPrompter = { messageId, userId: null };
+  }
+}
+
 /** The turn frame: the last turn read plus the server's `working` verdict. */
 function emitTurn(sessionId: string, reconciler: Reconciler): void {
   if (!reconciler.lastTurn) return;
   emit(sessionId, reconciler, 'kortix.control.turn', {
     known: true,
     ...reconciler.lastTurn,
+    [TURN_FRAME_STOP_PROMPTER]: reconciler.stopPrompter?.userId ?? null,
     working: deriveSessionWorking(
       reconciler.lastTurn,
       reconciler.lastPrompts,

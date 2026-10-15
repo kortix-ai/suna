@@ -1194,10 +1194,6 @@
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
         },
-        "apps": {
-          "name": "Aplicaciones",
-          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
-        },
         "monitors": {
           "name": "Monitores",
           "description": "Ejecuta observadores persistentes de registros, fuentes o API que inician sesiones de agente ante eventos."
@@ -2090,6 +2086,7 @@
     "expandQuotes": "Expandir citas",
     "collapseQuotes": "Contraer citas",
     "stopUnconfirmed": "No se pudo confirmar la detención. El agente podría seguir ejecutándose. Inténtalo de nuevo.",
+    "stoppedBy": "Detenido por {name}",
     "queued": "En cola",
     "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}",
     "queuedCount": "{count} en cola",
@@ -11184,6 +11181,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Error desconocido",
       "text27d628c8b427": "{label} ha terminado.",
+      "textc0589750863c": "{count} tareas terminadas",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Vuelve a la aplicación (Applications → tu aplicación) y asegúrate de que la pestaña \"Sign On\" esté seleccionada.",

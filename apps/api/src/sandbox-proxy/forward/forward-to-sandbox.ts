@@ -1,4 +1,5 @@
 import { clientAbortTarget } from '../client-abort';
+import { NOT_TURN_PROMPTER, NOT_TURN_PROMPTER_MESSAGE } from '../../shared/turn-stop-refusal';
 import { extractTurnIdentity, markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { agentLaunchableInProject } from '../../projects/lib/session-token-grant';
@@ -22,6 +23,7 @@ import {
   refuseSessionOrControlAccess,
   type PreviewProxyAccess,
 } from './access';
+import { decideClientAbort } from './abort-authority';
 import { forwardWithRetry } from './retry';
 import { claimPromptDeliveryOnce, convergeTurnStartRuntime, createTurnLifecycle } from './turn-start';
 import { wakeOrRefuseInactiveSandbox } from './wake';
@@ -169,13 +171,24 @@ export async function forwardToSandbox(
   // the open turn before the abort is forwarded: the end frame that follows is
   // the same "Aborted" as an abort nobody asked for. A sandbox-authored call is
   // the agent acting, not a person, so it is left to read as what it is.
+  //
+  // Only the turn's prompter, the session owner or a project manager may stop
+  // a running turn (`abort-authority.ts`). A refusal forwards nothing and
+  // stamps nothing. `by` names the person on the stamp ("Stopped by <name>").
   const abortedOpencodeSessionId = sandboxAuthored
     ? null
     : clientAbortTarget(upstreamPort, method, remainingPath);
   if (abortedOpencodeSessionId) {
-    await markTurnStopRequested(record.sessionId, 'UserStop', {
-      opencodeSessionId: abortedOpencodeSessionId,
-    });
+    const stop = await decideClientAbort(access, record);
+    if (!stop.allowed) {
+      return jsonProxyError({ error: NOT_TURN_PROMPTER_MESSAGE, code: NOT_TURN_PROMPTER }, 403, origin);
+    }
+    await markTurnStopRequested(
+      record.sessionId,
+      'UserStop',
+      { opencodeSessionId: abortedOpencodeSessionId },
+      stop.by,
+    );
   }
 
   if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {

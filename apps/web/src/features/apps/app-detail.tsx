@@ -133,6 +133,7 @@ export function AppDetailModal({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent
         side="fullscreen"
+        animation="none"
         showCloseButton={false}
         // Radix focuses the first focusable descendant on open, which is an
         // action in the bar — and a focused icon button shows its Hint, so the
@@ -143,10 +144,11 @@ export function AppDetailModal({
           event.preventDefault();
           (event.currentTarget as HTMLElement | null)?.focus?.();
         }}
-        className="border-border bg-background! inset-0! h-dvh! max-h-none! min-h-dvh! w-auto! max-w-none! translate-x-0! translate-y-0! gap-0! space-y-0! overflow-hidden! rounded-none! border-0! focus:outline-none focus-visible:outline-none md:inset-4! md:h-auto! md:min-h-0! md:rounded-md! md:border!"
+        className="border-border bg-background! inset-0! h-dvh! max-h-none! min-h-dvh! w-auto! max-w-none! translate-x-0! translate-y-0! gap-0! space-y-0! overflow-hidden! rounded-none! border-0! focus:outline-none focus-visible:outline-none"
         aria-label={`${app.name} App`}
       >
         <div className="flex h-full min-h-0 flex-col">
+          <div className="kx-titlebar-spacer" aria-hidden />
           {/* Name, and what the name needs qualifying with — nothing else.
               This row carried five things: a dot, the name, the status word, a
               raw pipeline-stage badge, an access-mode badge, and the hostname

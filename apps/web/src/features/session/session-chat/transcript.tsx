@@ -46,6 +46,7 @@ import {
   CheckIcon,
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
+  StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -373,6 +374,9 @@ interface SessionTurnProps {
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
+  /** The member who stopped this turn, when it was not the viewer
+   *  (`stoppedByName`). Null or absent: nothing to say. */
+  stoppedBy?: string | null;
   /** The models that answered this turn and what Kortix billed for it, from
    *  the gateway's request record. Keep its identity stable: the row is memoized. */
   servedModel?: TurnServedModel;
@@ -1892,10 +1896,21 @@ function TurnSettledResponse({
   );
 }
 
+/** A turn someone else stopped names them, quietly, in the activity lane. */
+function TurnStoppedBy({ name }: { name: string }) {
+  const t = useTranslations('threads');
+  return (
+    <div role="note" className="flex w-full items-center gap-3 text-left text-sm">
+      <StopCircleIcon className="text-muted-foreground size-4 flex-none" />
+      <span className="text-muted-foreground min-w-0 wrap-anywhere">{t('stoppedBy', { name })}</span>
+    </div>
+  );
+}
+
 /** The turn's footer: the working row, the error banner, the outcomes, the
- *  action bar, and the connect-provider dialog. */
+ *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1909,7 +1924,7 @@ function TurnFooter(
 ) {
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
-    connectProviderOpen, onConnectProviderOpenChange, servedModel,
+    connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -1933,6 +1948,8 @@ function TurnFooter(
         isAbort={turnErrorRow.isAbort}
       />
     )}
+    {/* ── Who stopped it, when it was someone else: an own stop is not news ── */}
+    {!working && stoppedBy && <TurnStoppedBy name={stoppedBy} />}
     {/* ── Outcomes — what this turn left behind ──
         Always visible, unlike the hover-revealed action bar below. A hidden
         record of a change request is a trust bug: the point of

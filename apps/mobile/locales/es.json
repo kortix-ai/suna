@@ -1198,7 +1198,9 @@
     "undo": "Deshacer",
     "pinnedSection": "Fijadas",
     "archivedView": "Archivadas",
-    "archivedEmpty": "Las sesiones que archives aparecerán aquí."
+    "archivedEmpty": "Las sesiones que archives aparecerán aquí.",
+    "stoppedBy": "Detenido por {{name}}",
+    "stopNotAllowed": "Solo el miembro que inició esta ejecución, el propietario de la sesión o un gestor del proyecto puede detenerla."
   },
   "genui": {
     "chartTapHint": "Toca para ver un valor",

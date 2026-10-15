@@ -215,7 +215,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'apps',
             args: '<subcommand>',
-            blurb: 'Experimental: deploy Apps (sites and servers) with stable Kortix URLs',
+            blurb: 'Deploy Apps (sites and servers) with stable Kortix URLs',
           },
           {
             name: 'marketplace',

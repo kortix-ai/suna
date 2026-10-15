@@ -1194,10 +1194,6 @@
           "name": "Мета агент",
           "description": "Додајте координатора који управља специјализованим сесијама и пословима у више корака у оквиру пројекта."
         },
-        "apps": {
-          "name": "Апликације",
-          "description": "Поставите статичке сајтове, JavaScript пакете, Dockerfile датотеке и OCI слике на стабилне адресе и покрените бекенде: базу података, серверске функције, упите у реалном времену, складиште датотека, заказивање и претрагу на машини која стално ради."
-        },
         "monitors": {
           "name": "Надгледања",
           "description": "Покрените трајна надгледања дневника, извора или API-ја која покрећу сесије агента на основу догађаја."
@@ -2090,6 +2086,7 @@
     "expandQuotes": "Прошири цитате",
     "collapseQuotes": "Скупи цитате",
     "stopUnconfirmed": "Zaustavljanje nije potvrđeno. Agent je možda i dalje aktivan. Pokušajte ponovo da ga zaustavite.",
+    "stoppedBy": "Zaustavio {name}",
     "queued": "На чекању",
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
     "queuedCount": "{count} u redu",
@@ -11184,6 +11181,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Непозната грешка",
       "text27d628c8b427": "{label} је завршио.",
+      "textc0589750863c": "Završeno zadataka: {count}",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Вратите се у апликацију (Applications → ваша апликација) и проверите да је изабрана картица „Sign On“.",

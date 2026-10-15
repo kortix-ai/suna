@@ -340,13 +340,13 @@ describe('kortix apps set', () => {
     expect(r.stderr).toContain('idle_timeout_seconds must be >= 120');
   });
 
-  test('set is refused when the Apps flag is off for the project', async () => {
+  test('set is not gated client-side on the flag (the flag is gone)', async () => {
+    // Apps went GA: `apps set` reaches the API on a project whose stored flag
+    // is off; the API decides, the CLI does not pre-check.
     appsEnabled = false;
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--cpu', '2'], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Apps is not enabled for this project');
-    expect(patchCall()).toBeUndefined();
+    expect(patchCall()?.body).toMatchObject({ cpu: 2 });
   });
 });
 
