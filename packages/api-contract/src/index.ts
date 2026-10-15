@@ -1148,6 +1148,11 @@ export const ProjectSessionSchema = z.object({
     .optional(),
   deleted_at: z.string().nullable().optional(),
   deleted_by: z.string().nullable().optional(),
+  /** When the requesting person pinned / archived it (KRTX-2418). Present on
+   *  the list and the read by id for a person; absent for an agent, an API
+   *  key or a service account, and on other responses. */
+  pinned_at: z.string().nullable().optional(),
+  archived_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });

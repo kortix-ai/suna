@@ -113,6 +113,9 @@ mock.module('../../../sandbox-proxy/backend', () => ({
     effectivePort: 8000,
     websocket: false,
   }),
+  invalidateSandbox: (externalId: string) => {
+    cacheInvalidations.push(externalId);
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -125,12 +128,6 @@ mock.module('../../../billing/services/compute-metering', () => ({
     pausedCompute.push(sandboxId);
   },
   endComputeSession: async () => {},
-}));
-
-mock.module('../../../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
-    cacheInvalidations.push(externalId);
-  },
 }));
 
 mock.module('../../lib/session-transcript-capture', () => ({

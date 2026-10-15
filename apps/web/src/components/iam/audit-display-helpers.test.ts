@@ -264,6 +264,18 @@ describe('describeAuditAction — HTTP routes', () => {
     expect(r.kind).toBe('update');
   });
 
+  // KRTX-2400: these titles came back as English literals in every locale.
+  test('the four secret titles render in German', () => {
+    for (const [action, title] of [
+      [`PUT /v1/projects/${UID}/secrets/X`, 'Gemeinsames Secret gesetzt'],
+      [`PUT /v1/projects/${UID}/secrets/X/personal`, 'Persönliches Secret gesetzt'],
+      [`DELETE /v1/projects/${UID}/secrets/X`, 'Gemeinsames Secret entfernt'],
+      [`DELETE /v1/projects/${UID}/secrets/X/personal`, 'Persönliches Secret entfernt'],
+    ] as const) {
+      expect(describeAuditAction(action, deUiTranslator).title).toBe(title);
+    }
+  });
+
   test('DELETE personal secret', () => {
     expect(
       describeAuditAction(`DELETE /v1/projects/${UID}/secrets/X/personal`, testUiTranslator),

@@ -1,13 +1,12 @@
-import { config } from '../config';
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';
 import { getAuthToken } from './routes/auth';
 import { previewConfig } from './routes/preview-config';
 import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
+import { isCookieCsrfRefused } from './cookie-csrf';
 import { prefetchSandbox } from './http-prefetch';
 import { createSandboxProxyRateLimitMiddleware } from '../middleware/rate-limit';
-import { isCookieCsrfRefused } from './cookie-csrf';
 import { makeOpenApiApp } from '../openapi';
 import type { Context, Next } from 'hono';
 
@@ -68,15 +67,6 @@ async function prefetchSandboxRow(c: Context, next: Next) {
   }
   await next();
 }
-
-// ── Provider resolution (share endpoints) ───────────────────────────────
-// `resolveProvider` — the thin policy layer the share routes use to proxy only
-// to *active* sandboxes on an allowed provider — lives in `routes/share.ts`,
-// its only consumer. Keeping it there (and `invalidateProviderCache` in
-// backend.ts) is load-bearing: `routes/share.ts` importing `../index` made the
-// module graph cyclic, and any entry that loaded a sub-route before this file
-// hit a TDZ (`Cannot access 'shareApp'/'preview'/'publicShareApp' before
-// initialization`) — the packages lane red on dev, 2026-10-15.
 
 // Every sandbox serves from a per-sandbox URL — the preview handler reads it
 // from the row (`baseUrl`) or fetches it from Daytona's SDK. No per-provider

@@ -20,7 +20,7 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -562,7 +562,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
       {/* Edit only. A provider is CREATED in the guided wizard
           (features/sso-setup) — the dialog has no create branch to reach. */}
-      {provider && (
+      {provider && editOpen && (
         <EditProviderDialog
           accountId={accountId}
           open={editOpen}
@@ -575,14 +575,16 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         />
       )}
 
-      <AddMappingDialog
-        accountId={accountId}
-        open={mapOpen}
-        onOpenChange={setMapOpen}
-        onCreated={() =>
-          queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] })
-        }
-      />
+      {mapOpen && (
+        <AddMappingDialog
+          accountId={accountId}
+          open={mapOpen}
+          onOpenChange={setMapOpen}
+          onCreated={() =>
+            queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] })
+          }
+        />
+      )}
 
       <ConfirmDialog
         open={deleteOpen}
@@ -628,7 +630,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 // provider exists. The dialog's old create branch was unreachable from the
 // UI and duplicated the wizard's form verbatim — it is gone.
 
-function EditProviderDialog({
+export function EditProviderDialog({
   accountId,
   open,
   onOpenChange,
@@ -653,17 +655,9 @@ function EditProviderDialog({
   const [claim, setClaim] = useState(existing.group_claim_name);
   const [autoCreate, setAutoCreate] = useState(existing.auto_create_members);
   const [autoProvision, setAutoProvision] = useState(existing.auto_provision_groups);
-
-  // Hydrate when opening for edit; reset when closing.
-  useMemo(() => {
-    if (open) {
-      setName(existing.name);
-      setDomain(existing.primary_domain);
-      setClaim(existing.group_claim_name);
-      setAutoCreate(existing.auto_create_members);
-      setAutoProvision(existing.auto_provision_groups);
-    }
-  }, [open, existing]);
+  // The fields take the provider once: the card mounts this dialog when it
+  // opens. A refetch while it is open must not wipe what the admin typed
+  // (KRTX-2401).
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -837,14 +831,7 @@ function AddMappingDialog({
   const [principal, setPrincipal] = useState<PrincipalSelection>(EMPTY_PRINCIPAL_SELECTION);
   const selected = singlePrincipal(principal);
   const groupId = selected?.kind === 'group' ? selected.id : '';
-
-  // Reset on open so re-opening doesn't leak the previous selection.
-  useMemo(() => {
-    if (open) {
-      setClaimValue('');
-      setPrincipal(EMPTY_PRINCIPAL_SELECTION);
-    }
-  }, [open]);
+  // Starts empty on every opening: the card mounts this dialog when it opens.
 
   const mutation = useMutation({
     mutationFn: () =>

@@ -586,6 +586,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Set project feature flag as admin': 'textde3486cdebb5',
   'Set project secret': 'textb61c8415b2b6',
   'Set session prompt queue hold': 'text520f1939d072',
+  'Set shared secret': 'textc250b6a5f8c8',
   'Set super-admin status': 'text2bc95eda6944',
   'Shared a folder': 'text59fd4dcb9848',
   'Shared a private connector account': 'texte817b7da7436',

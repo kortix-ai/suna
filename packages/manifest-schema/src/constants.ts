@@ -417,7 +417,7 @@ export const HARNESS_TOOL_NAMES = [
  * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
  * with its own module under the same name.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] as const;
 /** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 

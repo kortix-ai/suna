@@ -2858,6 +2858,11 @@
       "count": 1
     }
   },
+  "src/sandbox-proxy/provider.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
   "src/sandbox-proxy/routes/preview.ts": {
     "kortix-api/projects-surface": {
       "count": 1

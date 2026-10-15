@@ -10,38 +10,14 @@
 
 import { createRoute, z } from '@hono/zod-openapi'
 import type { Context } from 'hono'
-import { config, type SandboxProviderName } from '../../config'
-import { loadSandbox } from '../backend'
+import { resolveProvider } from '../provider'
 import { combinedAuth } from '../../middleware/auth'
 import { canAccessPreviewSandbox } from '../../shared/preview-ownership'
 import { makeOpenApiApp, json, errors, auth } from '../../openapi'
 import { shareUpstreamResult } from '../share-upstream'
 
 const shareApp = makeOpenApiApp()
-
-export type ResolvedProvider = {
-  provider: SandboxProviderName;
-  baseUrl: string;
-  serviceKey: string;
-};
-
-export async function resolveProvider(externalId: string): Promise<ResolvedProvider | null> {
-  try {
-    const record = await loadSandbox(externalId);
-    if (!record || record.status !== 'active') return null;
-    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(record.provider)) {
-      return null;
-    }
-    return {
-      provider: record.provider as SandboxProviderName,
-      baseUrl: record.baseUrl,
-      serviceKey: record.serviceKey ?? '',
-    };
-  } catch (err) {
-    console.error(`[PREVIEW] Provider lookup failed for ${externalId}:`, err);
-    return null;
-  }
-}
+type ResolvedProvider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>
 
 // Share results are whatever the sandbox daemon's /kortix/share endpoint
 // returns (opaque), or our own { error } envelope — model permissively.

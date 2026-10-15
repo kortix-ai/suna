@@ -736,6 +736,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/sessions/:sessionId/turn': { action: 'session.turn.read', title: 'Viewed session turn state' },
   'GET /v1/projects/:projectId/sessions/:sessionId/watch': { action: 'session.watch.read', title: 'Viewed session notification setting' },
   'PUT /v1/projects/:projectId/sessions/:sessionId/watch': { action: 'session.watch.update', title: 'Changed session notification setting' },
+  'PUT /v1/projects/:projectId/sessions/:sessionId/pin': { action: 'session.pin.update', title: 'Pinned or unpinned session' },
+  'PUT /v1/projects/:projectId/sessions/:sessionId/archive': { action: 'session.archive.update', title: 'Archived or unarchived session' },
   'POST /v1/projects/:projectId/sessions/warm': { action: 'session.warm.create', title: 'Warmed session sandbox' },
   'POST /v1/projects/:projectId/sessions/warm/claim': { action: 'session.warm.claim', title: 'Claimed warm session sandbox' },
   'GET /v1/projects/:projectId/snapshots': { action: 'snapshot.list', title: 'Listed sandbox snapshots' },

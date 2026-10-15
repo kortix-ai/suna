@@ -16,6 +16,9 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
+// A person's pins and archive (consumed by account erasure and offboarding).
+export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
+
 // Session helpers (consumed by channels and provisioning).
 export {
   buildSessionSandboxEnvVars,

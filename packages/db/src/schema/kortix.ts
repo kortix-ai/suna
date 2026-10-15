@@ -1515,6 +1515,34 @@ export const projectSessionGrants = kortixSchema.table(
   ],
 );
 
+/**
+ * One person's own list state for one session: pinned to the top of their
+ * list, or archived out of it. Per person, so a shared session can be pinned
+ * by one member and archived by another. Neither write moves the session's
+ * `updated_at`. Archiving clears the pin and pinning clears the archive.
+ * `user_id` has no FK to auth.users: account erasure and member offboarding
+ * delete the rows (`projects/lib/session-user-state.ts`).
+ */
+export const projectSessionUserStates = kortixSchema.table(
+  'project_session_user_states',
+  {
+    sessionId: text('session_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.userId] }),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_session_user_states_session_fk',
+    }).onDelete('cascade'),
+    index('idx_project_session_user_states_user').on(table.userId),
+  ],
+);
+
 export const projectSessionPublicShares = kortixSchema.table(
   'project_session_public_shares',
   {

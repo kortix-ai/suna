@@ -361,7 +361,7 @@ mock.module('../platform/providers', () => ({
 
 mock.module('../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
-  invalidateProviderCache: (externalId: string) => {
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));
