@@ -39,11 +39,11 @@ import {
   MIRROR_CAPTURE_LIMIT,
   capturedMessageIndex,
   childSessionReferences,
-  childSessionsToCapture,
   capturedPageGate,
   headCompleteAfterCapture,
   mirrorHoldsStrippedRows,
   mirrorRowsFromOpencodePayload,
+  readChildTranscripts,
 } from './session-transcript-mirror';
 
 const CAPTURE_TIMEOUT_MS = 8_000;
@@ -66,6 +66,8 @@ export interface CaptureOptions {
   scope?: 'auto' | 'tail';
   /** Use the authenticated caller for a manual stop, not a possibly revoked creator. */
   actorUserId?: string;
+  /** Internal: this capture was queued by the one before it (`moreChildren`). */
+  chain?: { step: number; startedAt: number };
 }
 
 export interface CaptureDeps {
@@ -91,20 +93,21 @@ export interface CaptureDeps {
      *  `childSessionsToCapture`). Written only when `complete`: a sub-agent's
      *  saved transcript is whole or absent. */
     children?: Array<{ opencodeSessionId: string; payload: unknown; complete?: boolean }>;
-    /** Sub-agents this capture did not reach (`MAX_CHILD_READS_PER_CAPTURE`), and it saved
-     *  one never saved before: another capture saves more. */
+    /** Another capture saves more sub-agents: this one left some unread and saved rows of one
+     *  never saved before (`readChildTranscripts`). */
     moreChildren?: boolean;
   } | null>;
 }
 
-/** Sub-agent transcripts one capture reads at most. A finished sub-agent is
- *  read once in its life. A capture that leaves sub-agents unread (one turn
- *  that started more than this, or a history captured before sub-agents were
- *  saved) queues the next capture at once (`moreChildren`), so the rest are
- *  saved without waiting for another turn end. */
+/** Sub-agent transcripts with rows one capture saves at most. A finished
+ *  sub-agent is read once in its life. A capture that leaves sub-agents unread
+ *  (one turn that started more than this, or a history captured before
+ *  sub-agents were saved) queues the next capture at once (`moreChildren`), up
+ *  to `MAX_CAPTURE_CHAIN` in a row, so the rest are saved without waiting for
+ *  another turn end. */
 const MAX_CHILD_READS_PER_CAPTURE = 12;
-/** Only an OpenCode session id may reach a URL or a row. */
-const OPENCODE_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
+/** Captures one capture may queue in a row: a hard stop under `moreChildren`'s progress rule. */
+const MAX_CAPTURE_CHAIN = 8;
 
 const liveCaptureDeps: CaptureDeps = {
   async readMessages(sessionId, options) {
@@ -221,7 +224,6 @@ const liveCaptureDeps: CaptureDeps = {
       reached is read too. A finished sub-agent is final and is never read
       again; its own sub-agents are followed the same way.
     */
-    const children: Array<{ opencodeSessionId: string; payload: unknown; complete: boolean }> = [];
     const savedChildren = new Map<string, { settled: boolean }>();
     for (const row of stored) {
       if (!row.opencodeSessionId || row.opencodeSessionId === resolved.opencodeSessionId) continue;
@@ -229,44 +231,25 @@ const liveCaptureDeps: CaptureDeps = {
       entry.settled &&= row.role !== 'assistant' || row.messageCompletedAt !== null;
       savedChildren.set(row.opencodeSessionId, entry);
     }
-    const seen = new Set([resolved.opencodeSessionId]);
-    const queue = childSessionsToCapture({
+    const { children, more } = await readChildTranscripts({
       references: childSessionReferences([...result.rows, ...previous]),
       stored: savedChildren,
-      limit: Infinity,
-    });
-    // `seen` holds the root and every sub-agent this capture tried: at most the cap, read or not.
-    while (queue.length > 0 && seen.size <= MAX_CHILD_READS_PER_CAPTURE) {
-      const child = queue.shift()!;
-      if (seen.has(child) || !OPENCODE_SESSION_ID.test(child)) continue;
-      seen.add(child);
-      try {
-        const walk = await readTranscriptPages(
+      cap: MAX_CHILD_READS_PER_CAPTURE,
+      root: resolved.opencodeSessionId,
+      read: (child) =>
+        readTranscriptPages(
           pageOf(child),
           true,
           recoveryFor(partsById(stored.filter((row) => row.opencodeSessionId === child))),
-        );
-        children.push({ opencodeSessionId: child, payload: walk.rows, complete: walk.complete });
-        queue.push(
-          ...childSessionsToCapture({
-            references: childSessionReferences(walk.rows),
-            stored: savedChildren,
-            limit: Infinity,
-          }),
-        );
-      } catch (err) {
-        // One unreadable sub-agent never costs the conversation its capture.
+        ),
+      // One unreadable sub-agent never costs the conversation its capture.
+      onError: (_child, err) =>
         console.warn('[transcript-mirror] sub-agent read failed', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
+        }),
+    });
 
-    // Progress, not only a backlog: each next capture saves at least one new sub-agent, so a
-    // sub-agent that never reads whole cannot queue captures forever.
-    const unread = queue.some((child) => !seen.has(child) && OPENCODE_SESSION_ID.test(child));
-    const savedNew = children.some((child) => child.complete && !savedChildren.has(child.opencodeSessionId));
     return {
       opencodeSessionId: resolved.opencodeSessionId,
       payload: result.rows,
@@ -274,7 +257,7 @@ const liveCaptureDeps: CaptureDeps = {
       complete: result.complete,
       caughtUp: result.caughtUp,
       children,
-      moreChildren: unread && savedNew,
+      moreChildren: more,
     };
   },
 };
@@ -312,6 +295,8 @@ async function captureSessionTranscript(
     if (!session) return null;
 
     const fullHistory = options?.scope !== 'tail';
+    // A chain is as old as its first capture: a stop asked for after that drops the rest of it.
+    const chainStartedAt = options?.chain?.startedAt ?? Date.now();
     let moreChildren = false;
     const capture = async (): Promise<CaptureResult | null> => {
       const startedAt = new Date();
@@ -431,7 +416,13 @@ async function captureSessionTranscript(
     if (result) await writeSessionLogFromMirror(sessionId);
     // Queued behind this one (`captureSessionTranscriptMirror` runs one capture per session at a
     // time). Not for a `tail`: the stop that asked for it powers the box off next.
-    if (result && fullHistory && moreChildren) void captureSessionTranscriptMirror(sessionId, deps, options);
+    const step = options?.chain?.step ?? 0;
+    if (result && fullHistory && moreChildren && step < MAX_CAPTURE_CHAIN) {
+      void captureSessionTranscriptMirror(sessionId, deps, {
+        ...options,
+        chain: { step: step + 1, startedAt: chainStartedAt },
+      });
+    }
     return result;
   } catch (err) {
     console.warn(
@@ -709,14 +700,26 @@ export function resetTranscriptBackfillMemoForTests(): void {
 }
 
 const captures = new Map<string, Promise<CaptureResult | null>>();
+/** replica-local: when a stop last asked for a `tail` capture, per session. A queued chain
+ *  capture started before it is dropped: it would sit ahead of the next stop's tail, then
+ *  read a box that is off. Bounded like `backfillAttempts`. */
+const tailRequestedAt = new Map<string, number>();
 
 export function captureSessionTranscriptMirror(
   sessionId: string,
   deps: CaptureDeps = liveCaptureDeps,
   options?: CaptureOptions,
 ): Promise<CaptureResult | null> {
+  if (options?.scope === 'tail') {
+    if (tailRequestedAt.size >= BACKFILL_MEMO_MAX) tailRequestedAt.clear();
+    tailRequestedAt.set(sessionId, Date.now());
+  }
   const previous = captures.get(sessionId) ?? Promise.resolve(null);
-  const pending = previous.then(() => captureSessionTranscript(sessionId, deps, options));
+  const pending = previous.then(() => {
+    const chain = options?.chain;
+    if (chain && (tailRequestedAt.get(sessionId) ?? -Infinity) >= chain.startedAt) return null;
+    return captureSessionTranscript(sessionId, deps, options);
+  });
   captures.set(sessionId, pending);
   void pending.finally(() => {
     if (captures.get(sessionId) === pending) captures.delete(sessionId);

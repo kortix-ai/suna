@@ -435,6 +435,47 @@ test('a capture that leaves sub-agents unread queues the next capture, which sav
     await captureSessionTranscriptMirror(sessionId, { readMessages: async () => ({ ...(await readMessages()), moreChildren: true }) }, { scope: 'tail' });
     await new Promise((r) => setTimeout(r, 200));
     expect(reads.length).toBe(3);
+
+    // A box that always reports more: the run stops after 8 queued captures (9 reads).
+    let always = 0;
+    const settle = async (count: () => number) => {
+      for (let last = -1; last !== count(); ) {
+        last = count();
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    };
+    const alwaysMore = async () => {
+      always += 1;
+      return { ...(await readMessages()), children: [child(`ses_always${always}`)], moreChildren: true };
+    };
+    await captureSessionTranscriptMirror(sessionId, { readMessages: alwaysMore });
+    await settle(() => always);
+    expect(always).toBe(9);
+
+    // A stop asked for while a run is going drops the run's queued capture: the tail runs next,
+    // and nothing reads the box after it.
+    let gate!: () => void;
+    const opened = new Promise<void>((r) => (gate = r));
+    const order: string[] = [];
+    const first = captureSessionTranscriptMirror(sessionId, {
+      readMessages: async () => {
+        order.push('first');
+        await opened;
+        return { ...(await readMessages()), moreChildren: true };
+      },
+    });
+    // The stop arrives while the run's first capture reads the box.
+    while (!order.includes('first')) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 5));
+    const tail = captureSessionTranscriptMirror(
+      sessionId,
+      { readMessages: async () => (order.push('tail'), readMessages()) },
+      { scope: 'tail' },
+    );
+    gate();
+    await Promise.all([first, tail]);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(order).toEqual(['first', 'tail']);
   } finally {
     if (project) await removeSeeded([project]);
     await db.end();

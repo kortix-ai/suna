@@ -98,12 +98,15 @@ function WithOneThread({
  * Loads a sub-agent's thread into the store, as the sub-agent's own view does (`useSessionSync`
  * with `savedChild`): its saved window, then the runtime's. The section mounts one per requested
  * id (a row that scrolled into view, or "Load all"), outside the tree, so collapsing a row
- * does not unload its children. Reports whether the runtime read failed.
+ * does not unload its children. Reports whether its last runtime read failed.
  */
 function LoadSubAgentThread({ id, scope, onFailed }: { id: string; scope: string | undefined; onFailed: (id: string, failed: boolean) => void }) {
   const { freshness } = useSessionSync(id, { kortixSessionScope: scope, savedChild: true, subscribeMessages: false });
-  const failed = freshness === 'error';
-  useEffect(() => onFailed(id, failed), [id, failed, onFailed]);
+  // Latched: a retry after a failure reads `stale`/`loading` until it lands, so only an error or
+  // a fresh read changes the row.
+  useEffect(() => {
+    if (freshness === 'error' || freshness === 'fresh') onFailed(id, freshness === 'error');
+  }, [id, freshness, onFailed]);
   return null;
 }
 

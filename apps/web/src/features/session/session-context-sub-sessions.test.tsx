@@ -325,12 +325,13 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
 describe('SubSessionSection with sub-agents the server never saved', () => {
   // A pi session's sub-agents (threads, not child sessions). The saved window answers
   // `available: false` for every one, as for a sub-agent the turn-end capture did not reach;
-  // the runtime holds them all, except one it answers 404 for.
-  const ROOT = 'ses_unsaved_root', GONE = 'ses_unsaved_gone';
+  // the runtime holds them all, except one it answers 404 for and one whose read fails once
+  // (500) and then never answers.
+  const ROOT = 'ses_unsaved_root', GONE = 'ses_unsaved_gone', FLAKY = 'ses_unsaved_flaky';
   const kids = Array.from({ length: 24 }, (_, i) => `ses_unsaved_${i}`);
   const sessions = [
     { id: ROOT, title: 'Root' },
-    ...[...kids, GONE].map((id) => ({ id, parentID: ROOT, title: `Agent ${id}` })),
+    ...[...kids, GONE, FLAKY].map((id) => ({ id, parentID: ROOT, title: `Agent ${id}` })),
   ] as unknown as Session[];
   const message = (sessionID: string, id: string) => ({
     info: { id, sessionID, role: 'user', time: { created: 1_700_000_000_000 } },
@@ -343,12 +344,17 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
     const originalFetch = globalThis.fetch;
     const originalObserver = globalThis.IntersectionObserver;
     const runtimeReads = new Set<string>();
+    let flakyReads = 0;
     globalThis.fetch = (async (input: unknown) => {
       const url = input instanceof Request ? input.url : String(input);
       const runtime = /\/session\/(ses_[a-z0-9_]+)\/message/.exec(url)?.[1];
       if (runtime) {
         runtimeReads.add(runtime);
         if (runtime === GONE) return Response.json({ message: 'session not found' }, { status: 404 });
+        if (runtime === FLAKY) {
+          flakyReads += 1;
+          return flakyReads === 1 ? Response.json({ message: 'upstream failed' }, { status: 500 }) : new Promise<Response>(() => {});
+        }
         // Every sub-agent has 2 messages; the saved window has none of them.
         return Response.json([message(runtime, `m_${runtime}_a`), message(runtime, `m_${runtime}_b`)]);
       }
@@ -384,7 +390,7 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
         );
       });
       // Nothing loaded yet: no row claims a count.
-      expect(text()).toContain('0 of 25 sub-agents loaded');
+      expect(text()).toContain('0 of 26 sub-agents loaded');
       expect(text()).not.toContain('"0"," ","messages"');
 
       const button = renderer!.root.findAll((n) => typeof n.props.onClick === 'function' && n.props.children === 'Load all')[0]!;
@@ -392,21 +398,26 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
       await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
 
       // Every requested row went to the runtime, past the registry's 20 controllers.
-      expect([...runtimeReads].sort()).toEqual([...kids, GONE].sort());
-      // 24 rows show their runtime count; the 404 row says it could not load.
+      expect([...runtimeReads].sort()).toEqual([...kids, GONE, FLAKY].sort());
+      // 24 rows show their runtime count; the 404 row and the 500 row say they could not load.
       expect(text().match(/"2"," ","messages"/g)?.length).toBe(24);
       expect(text()).not.toContain('"0"," ","messages"');
-      expect(text()).toContain('Could not load');
-      // The label counts loaded threads, not requested ones: 24 of 25.
-      expect(text()).toContain('24 of 25 sub-agents loaded');
+      expect(text().match(/Could not load/g)?.length).toBe(2);
+      // The label counts loaded threads, not requested ones: 24 of 26.
+      expect(text()).toContain('24 of 26 sub-agents loaded');
       expect(text()).not.toContain('Load all');
       // Combined messages: the root's 1 plus 24 × 2.
       expect(text()).toContain('"49"');
+
+      // The 500 row's retry (after 1 s) is in flight: the row still says it could not load.
+      await act(async () => { await new Promise((r) => setTimeout(r, 1_300)); });
+      expect(flakyReads).toBe(2);
+      expect(text().match(/Could not load/g)?.length).toBe(2);
     } finally {
       await act(async () => { renderer!.unmount(); });
       globalThis.fetch = originalFetch;
       globalThis.IntersectionObserver = originalObserver;
-      for (const id of [ROOT, GONE, ...kids]) useSessionStateStore.getState().clearSession(id);
+      for (const id of [ROOT, GONE, FLAKY, ...kids]) useSessionStateStore.getState().clearSession(id);
     }
   });
 });

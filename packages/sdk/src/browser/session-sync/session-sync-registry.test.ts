@@ -325,6 +325,35 @@ describe('session sync controller eviction', () => {
     for (const release of releases) release();
   });
 
+  // Eviction ran only inside get/retain/release, so with nothing else calling the registry a
+  // released overflow controller lived on, and one whose read failed kept retrying.
+  test('a released overflow controller is evicted by its own timer once idle past the hold', () => {
+    const realNow = Date.now;
+    const realSetTimeout = globalThis.setTimeout;
+    const timers: Array<{ run: () => void; ms: number }> = [];
+    globalThis.setTimeout = ((run: () => void, ms: number) => {
+      timers.push({ run, ms });
+      return { unref() {} } as never;
+    }) as unknown as typeof setTimeout;
+    try {
+      const releases = Array.from({ length: 22 }, (_, index) => {
+        getSessionSyncController(`idle-${index}`);
+        return retainSessionSyncController(`idle-${index}`);
+      });
+      const first = getSessionSyncController('idle-0');
+      for (const release of releases) release();
+      const evict = timers.filter((timer) => timer.ms > 30_000);
+      expect(evict).toHaveLength(1);
+      Date.now = () => realNow() + 60_000;
+      evict[0]!.run();
+      Date.now = realNow;
+      expect(getSessionSyncController('idle-0')).not.toBe(first);
+    } finally {
+      Date.now = realNow;
+      globalThis.setTimeout = realSetTimeout;
+    }
+  });
+
   test('a controller a render handed out and nothing retained is evicted after the hold', () => {
     const realNow = Date.now;
     try {

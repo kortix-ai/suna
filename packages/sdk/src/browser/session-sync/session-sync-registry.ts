@@ -271,6 +271,18 @@ function evictInactiveControllers(protectedKey?: string): void {
   }
 }
 
+let evictionTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** One pending pass that evicts what has been idle past the hold, when nothing else calls the registry. */
+function scheduleEviction(): void {
+  if (evictionTimer !== undefined) return;
+  evictionTimer = setTimeout(() => {
+    evictionTimer = undefined;
+    evictInactiveControllers();
+  }, IDLE_BEFORE_EVICT_MS + 1);
+  (evictionTimer as { unref?: () => void }).unref?.();
+}
+
 function getOrCreateRegistryEntry(
   sessionId: string,
   client?: SessionMessageClient,
@@ -357,7 +369,10 @@ export function retainSessionSyncController(sessionId: string, runtimeScope?: st
     if (!current || current.controller !== controller) return;
     current.consumers = Math.max(0, current.consumers - 1);
     current.lastUsedAt = Date.now();
-    if (current.consumers === 0) controller.setBusy(false);
+    if (current.consumers === 0) {
+      controller.setBusy(false);
+      scheduleEviction();
+    }
     evictInactiveControllers();
   };
 }
@@ -450,6 +465,8 @@ export function noteSessionSyncEvent(event: {
 export function resetSessionSyncControllers(): void {
   for (const entry of controllers.values()) entry.controller.destroy();
   controllers.clear();
+  clearTimeout(evictionTimer);
+  evictionTimer = undefined;
 }
 
 /** Retire controllers for one wire id after a different sandbox claims it. */
