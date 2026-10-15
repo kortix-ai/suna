@@ -402,7 +402,7 @@ both the pool list and the session's provider-specific query cache.
 
 ### Apps
 
-`kortix.project(projectId).apps` deploys immutable App releases behind one stable URL: releases, machines per process group, persistent volumes. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+`kortix.project(projectId).apps` deploys immutable App releases behind one stable URL: releases, machines per process group, persistent volumes. New Apps use `private` access. Apps is generally available: every project can create and deploy them.
 
 ```ts
 const apps = kortix.project(projectId).apps;
@@ -476,7 +476,15 @@ most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 `kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns
 `{ authors, initial_author }`: `authors` maps a runtime message id to a `SessionMessageAuthor`,
 `{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name, agent? }`.
+`stops` maps the user message that started a turn to the member who stopped that turn.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
+
+### Who may stop a turn
+
+In a shared session only the member who started the running turn, the session owner or a
+project manager may stop it. `GET .../turn` answers per caller in `can_stop`, and
+`useSession().canStop` reads it with no extra request: `false` means show no Stop and let a
+send queue. Any other stop answers 403 with `code: 'not_turn_prompter'`.
 
 ### Which model answered a turn
 

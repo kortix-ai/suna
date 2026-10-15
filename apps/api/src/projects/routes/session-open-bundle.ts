@@ -73,6 +73,8 @@ import { sessionApprovalVerdict } from '../lib/http-approval-caller';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
+import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
@@ -171,7 +173,16 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // by a box that is asleep.
     const personId = personUserId(c, loaded);
     const [turn, queue, transcript, models, runtime, audit, log, listState] = await Promise.allSettled([
-      readSessionTurnState(sessionId),
+      // = GET .../turn, `can_stop` included: one prompter read, only while a
+      // turn runs for a caller who is not the owner or a manager.
+      readSessionTurnState(sessionId).then(async (state) => ({
+        ...state,
+        can_stop: await canStopTurns(state, {
+          sessionId,
+          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+          canManageLifecycle: visible.canManageLifecycle,
+        }),
+      })),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
         ? Promise.resolve(null)

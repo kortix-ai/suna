@@ -157,8 +157,10 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(staticState?.deployment?.hostingType).toBe('static');
     expect(staticState?.runtime).toBeNull();
 
-    await testDb().update(projects).set({ metadata: {} }).where(eq(projects.projectId, PROJECT_ID));
-    expect(await loadPublicAppState(ROUTE_KEY)).toBeNull();
+    // Apps is generally available: the flag left the registry, so a stored
+    // override — even `apps: false` — no longer gates the public proxy.
+    await testDb().update(projects).set({ metadata: { experimental: { apps: false } } }).where(eq(projects.projectId, PROJECT_ID));
+    expect((await loadPublicAppState(ROUTE_KEY))?.deployment?.deploymentId).toBe(DEPLOYMENT_ID);
   });
 
   test('public handler rejects an unsigned edge request before loading the App', async () => {

@@ -99,7 +99,7 @@ import {
   readProjectFile,
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   BookOpenTextIcon,
@@ -125,7 +125,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
@@ -648,17 +648,6 @@ function AgentHeader({
 
 const EDITABLE_SECTIONS: readonly AgentConfigSectionKey[] = AGENT_CONFIG_SECTIONS.map((s) => s.key);
 
-/**
- * The rail's topics for one project. Apps is a flagged product: a project
- * without the `apps` flag has no Apps page, no Apps in the sidebar, and no way
- * to create one — so a grant page for them would be a dead tab. Dropping the
- * key here also drops it from `useAgentSection`'s allow-list, so a stale
- * `?section=apps` link falls back to Overview instead of rendering an empty
- * pane.
- */
-export function editableAgentSections(appsEnabled: boolean): readonly AgentConfigSectionKey[] {
-  return appsEnabled ? EDITABLE_SECTIONS : EDITABLE_SECTIONS.filter((key) => key !== 'apps');
-}
 /** What a v1 project, or a reader without write, can still see. */
 const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
   'overview',
@@ -694,8 +683,7 @@ function EditableAgentPage({
     description: skill.description ?? undefined,
   }));
   const pathname = usePathname();
-  const appsEnabled = useFeatureFlag(projectId, 'apps').enabled;
-  const sections = useMemo(() => editableAgentSections(appsEnabled), [appsEnabled]);
+  const sections = EDITABLE_SECTIONS;
   const section = useAgentSection(sections);
 
   const onSave = useCallback(async () => {

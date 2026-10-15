@@ -1200,7 +1200,9 @@
     "undo": "Undo",
     "pinnedSection": "Pinned",
     "archivedView": "Archived",
-    "archivedEmpty": "Sessions you archive will show up here."
+    "archivedEmpty": "Sessions you archive will show up here.",
+    "stoppedBy": "Stopped by {{name}}",
+    "stopNotAllowed": "Only the member who started this run, the session owner or a project manager can stop it."
   },
   "genui": {
     "chartTapHint": "Tap to read a value",

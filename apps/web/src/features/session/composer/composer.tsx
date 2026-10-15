@@ -100,7 +100,6 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
-import type { ComputerAwakeLine } from './computer-awake';
 import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
@@ -166,6 +165,8 @@ export interface SessionChatInputProps {
   runtimeReady?: boolean;
   onStop?: () => void;
   stopDisabled?: boolean;
+  /** See `SendStopControl`. Default true. */
+  canStop?: boolean;
   isSending?: boolean;
   /**
    * The session sits on a rewound path: sending commits it, restoring keeps
@@ -323,12 +324,6 @@ export interface SessionChatInputProps {
   /** The newest answer came from a fallback model instead of the selected
    *  one: the toolbar names it beside the model selector. */
   servedModel?: ServedModelNotice | null;
-  /**
-   * The session's computer stays on while the person is here (KRTX-1729):
-   * a strip above the card, decided by `computerAwakeLine`. The "still
-   * waking" notice outranks it.
-   */
-  computerAwake?: ComputerAwakeLine | null;
   /**
    * Where the under-row's controls live — attach, the agent picker and the
    * context ring.

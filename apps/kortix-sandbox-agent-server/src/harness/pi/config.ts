@@ -43,6 +43,8 @@ const EnvironmentSchema = z.object({
   KORTIX_PI_NO_PROGRESS_MS: z.coerce.number().int().positive().optional(),
   // pi compacts a context past this many tokens, whatever the model window (model.ts `compactionSettings`).
   KORTIX_PI_COMPACT_AT_TOKENS: z.coerce.number().int().positive().optional(),
+  // kortix.yaml `harnesses.pi.codemode`: `off`, `on` (the default) or `only` (codemode.ts). Anything else reads as the default.
+  KORTIX_PI_CODEMODE: z.enum(['off', 'on', 'only']).optional().catch(undefined),
 })
 
 export interface PiEnvironment {
@@ -56,6 +58,7 @@ export interface PiEnvironment {
   piTurnRetryBaseMs: number
   piNoProgressMs: number
   piCompactAtTokens: number
+  piCodemode: 'off' | 'on' | 'only'
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -72,6 +75,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
     KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
     KORTIX_PI_COMPACT_AT_TOKENS: env.KORTIX_PI_COMPACT_AT_TOKENS?.trim() || undefined,
+    KORTIX_PI_CODEMODE: env.KORTIX_PI_CODEMODE?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -85,6 +89,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
     // Every request re-sends the whole context: a 1M window left to fill costs ~6x a 160k one per turn.
     piCompactAtTokens: parsed.KORTIX_PI_COMPACT_AT_TOKENS ?? 160_000,
+    piCodemode: parsed.KORTIX_PI_CODEMODE ?? 'on',
   }
 }
 

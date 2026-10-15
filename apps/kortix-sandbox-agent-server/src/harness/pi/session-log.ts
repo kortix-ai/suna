@@ -147,7 +147,59 @@ const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const
 /** What pi-ai sends for a call whose result is missing. */
 export const PI_NO_RESULT = 'No result provided'
 const DIALECT: Record<string, string> = { 'openai-completions': 'openai-chat', 'openai-responses': 'openai-responses', 'anthropic-messages': 'anthropic-messages' }
-const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', task: 'task', question: 'question', web_search: 'web_search' }
+const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', task: 'task', question: 'question', web_search: 'web_search', codemode: 'code' }
+const toolKind = (name: string) => KIND[name] ?? (name.includes('__') || name.startsWith('mcp_') ? 'mcp' : 'other')
+
+/**
+ * A codemode script's tool calls, harness-neutral (`result.details.calls`): pi's bounded
+ * `nestedCalls` record on the result message (256 calls, 8 kB of input each, 32 kB in all,
+ * 500-character errors, no outputs). The model never saw them, so they are display data,
+ * never tool_call blocks: a restore would present calls the model did not make.
+ */
+export type CodemodeCall = { call_id: string; name: string; kind: string; status: 'complete' | 'error' | 'interrupted'; input?: unknown; input_bytes?: number; duration_ms?: number; error?: string }
+const NESTED_STATUS: Record<string, CodemodeCall['status']> = { ok: 'complete', error: 'error', unfinished: 'interrupted' }
+
+export function codemodeDetails(nested: J): { calls: CodemodeCall[]; complete: boolean } {
+  const calls = (Array.isArray(nested.calls) ? nested.calls : []).map((c: J): CodemodeCall => ({
+    call_id: c.id,
+    name: c.name,
+    kind: toolKind(c.name),
+    status: NESTED_STATUS[c.status] ?? 'interrupted',
+    ...(c.arguments !== undefined ? { input: c.arguments } : {}),
+    ...(typeof c.argumentsBytes === 'number' ? { input_bytes: c.argumentsBytes } : {}),
+    ...(typeof c.durationMs === 'number' ? { duration_ms: c.durationMs } : {}),
+    ...(typeof c.error === 'string' ? { error: c.error } : {}),
+  }))
+  return { calls, complete: nested.complete !== false }
+}
+
+/** The inverse of `codemodeDetails`: pi's `nestedCalls`, for a restore. */
+export function piNestedCalls(details: { calls: CodemodeCall[]; complete: boolean }): J {
+  const status = Object.fromEntries(Object.entries(NESTED_STATUS).map(([k, v]) => [v, k]))
+  return {
+    calls: details.calls.map((c) => ({
+      id: c.call_id,
+      name: c.name,
+      status: status[c.status],
+      ...(c.input !== undefined ? { arguments: c.input } : {}),
+      ...(c.input_bytes !== undefined ? { argumentsBytes: c.input_bytes } : {}),
+      ...(c.duration_ms !== undefined ? { durationMs: c.duration_ms } : {}),
+      ...(c.error !== undefined ? { error: c.error } : {}),
+    })),
+    complete: details.complete,
+  }
+}
+
+/** pi's `codemode-store` entries on a branch, folded: the values a script's `load()` reads. */
+export function codemodeStore(branch: J[]): Record<string, unknown> {
+  const store: Record<string, unknown> = {}
+  for (const e of branch) {
+    if (e.type !== 'custom' || e.customType !== 'codemode-store') continue
+    Object.assign(store, e.data?.set ?? {})
+    for (const key of e.data?.delete ?? []) delete store[key]
+  }
+  return store
+}
 
 /** The manifest (C12, F9) lives in `@kortix/api-contract/session-log` (`capabilities.ts`): apps/api reads it for the switch preflight. */
 export { PI_CAPABILITIES }
@@ -381,7 +433,7 @@ function toolCall(c: J, part: J | undefined, result: J | undefined, edits: Map<s
     id: (part?.id as string | undefined) ?? fallbackId,
     call_id: c.id,
     name: c.name,
-    kind: KIND[c.name] ?? (c.name.includes('__') || c.name.startsWith('mcp_') ? 'mcp' : 'other'),
+    kind: toolKind(c.name),
     input: c.arguments,
     status: 'pending',
     ...(typeof part?.state?.title === 'string' && part.state.title ? { title: part.state.title } : {}),
@@ -400,6 +452,7 @@ function toolCall(c: J, part: J | undefined, result: J | undefined, edits: Map<s
     block.result.model_content = edit.replacement === null ? [{ type: 'text', text: PI_NO_RESULT }] : resultContent(edit.replacement.content)
     block.result.cleared_at = isoOf(edit.timestamp)
   }
+  if (r.nestedCalls) block.result.details = codemodeDetails(r.nestedCalls)
   if (r.details !== undefined) block.ext = { pi: { version: PI_VERSION, native_id: result.id, data: { ...((block.ext?.pi?.data as J) ?? {}), details: r.details } } }
   return block
 }
@@ -421,10 +474,12 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     })
   const all = s.entries as J[]
   const seqOf = rootSeqs(s)
-  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: activeBranch(all, s.leafId), ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => seqOf(e.id), createdAt: Date.parse(created) }))
+  const branch = activeBranch(all, s.leafId)
+  const store = codemodeStore(branch)
+  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: branch, ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => seqOf(e.id), createdAt: Date.parse(created) }))
   const root: SessionLogThread = {
     ...V, thread_id: s.rootId, parent_thread_id: null, spawned_by: null, agent: s.agent, title: s.title, created_at: created, messages: rootMessages,
-    ...(s.header ? { ext: { pi: { version: PI_VERSION, native_id: s.header.id, data: { cwd: s.header.cwd, header_version: s.header.version ?? null } } } } : {}),
+    ...(s.header ? { ext: { pi: { version: PI_VERSION, native_id: s.header.id, data: { cwd: s.header.cwd, header_version: s.header.version ?? null, ...(Object.keys(store).length ? { codemode_store: store } : {}) } } } } : {}),
   }
   const children = s.children.map((child): SessionLogThread => {
     const entries = child.agentMessages.map((m, i) => ({ type: 'message', id: `${child.id}:s${child.seqs[i]}`, index: i, message: m }))

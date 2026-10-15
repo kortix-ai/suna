@@ -100,6 +100,7 @@ beforeAll(async () => {
     { accountId: project.account_id, projectId: project.project_id, userId: JOINER, projectRole: 'member' },
   ]);
   await db.insert(chatUserIdentities).values([
+    { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-owner', userId: OWNER },
     { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-member', userId: MEMBER },
     { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-joiner', userId: JOINER },
     { platform: 'teams', workspaceId: TENANT, platformUserId: 'aad-outsider', userId: OUTSIDER },
@@ -138,12 +139,26 @@ test('Stop: the sender, a project member, stops their run', async () => {
   expect(stopped).toEqual([currentSession]);
 });
 
-test('Stop: a participant approved on THIS session may; one approved on an earlier session may not', async () => {
-  await approve(earlierSession, 'aad-joiner', JOINER);
-  expect((await stopTeamsTurn({ sessionId: currentSession, teamsUserId: 'aad-joiner' })).stopped).toBe(false);
-
+test('Stop: a participant approved on this session may not stop a run they did not start', async () => {
+  // Approval lets the joiner prompt the session. Ending the member's run is
+  // the prompter's, the session owner's or a project manager's call.
   await approve(currentSession, 'aad-joiner', JOINER);
-  expect((await stopTeamsTurn({ sessionId: currentSession, teamsUserId: 'aad-joiner' })).stopped).toBe(true);
+  expect(await stopTeamsTurn({ sessionId: currentSession, teamsUserId: 'aad-joiner' })).toEqual({
+    stopped: false,
+    notice: 'Only the person who started this run, the session owner or a project manager can stop it.',
+  });
+  expect(stopped).toEqual([]);
+});
+
+test('Stop: the session owner and a project manager may stop a run someone else started', async () => {
+  liveTurn = {
+    ...liveTurn,
+    originatingActivity: { from: { id: '29:joiner', aadObjectId: 'aad-joiner', name: 'Joiner' } },
+  };
+  // MEMBER created the session; OWNER owns the account, which manages every project in it.
+  expect((await stopTeamsTurn({ sessionId: currentSession, teamsUserId: 'aad-member' })).stopped).toBe(true);
+  expect((await stopTeamsTurn({ sessionId: currentSession, teamsUserId: 'aad-owner' })).stopped).toBe(true);
+  expect(stopped).toEqual([currentSession, currentSession]);
 });
 
 test('Stop: an approved participant without project access may not', async () => {

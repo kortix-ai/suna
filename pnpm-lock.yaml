@@ -403,6 +403,9 @@ importers:
       '@earendil-works/pi-ai':
         specifier: 1.2.0
         version: 1.2.0(undici@8.10.2)(ws@8.21.3)(zod@3.25.76)
+      '@earendil-works/pi-codemode':
+        specifier: 1.2.0
+        version: 1.2.0
       '@earendil-works/pi-coding-agent':
         specifier: 1.2.0
         version: 1.2.0(ws@8.21.3)(zod@3.25.76)
@@ -415,6 +418,9 @@ importers:
       node-forge:
         specifier: ^1.4.0
         version: 1.4.0
+      quickjs-wasi:
+        specifier: 3.6.2
+        version: 3.6.2
       tar:
         specifier: ^7.5.22
         version: 7.5.22

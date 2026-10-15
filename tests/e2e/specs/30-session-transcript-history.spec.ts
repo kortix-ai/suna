@@ -158,10 +158,14 @@ for (const store of STORES) {
         await route.continue().catch(() => {});
       });
       // The saved-history read waits for the held snapshot for 2 s at most,
-      // then asks its own route (KRTX-189).
+      // then asks its own route (KRTX-189). This can be the lane's first visit
+      // to the session route: its dev-server compile alone took 18.5 s on CI
+      // (run 38757745665), past the 20 s action default, so the wait gets the
+      // first-visit budget journey 40 gives the same route.
       const history = page.waitForResponse(
         (r) =>
           r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
+        { timeout: 120_000 },
       );
       await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
         waitUntil: 'domcontentloaded',

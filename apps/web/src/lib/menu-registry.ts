@@ -760,7 +760,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
-    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`

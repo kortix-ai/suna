@@ -18,8 +18,9 @@ import { wireMessageIdMatches } from './wire-id-match';
  * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
  * A prompt sits in `session_lifecycle_commands` until the session's turn is
  * over AND every older prompt has left the delivery path. The first Quick
- * Queue prompt may end that turn after its current tool call finishes. Queue
- * List prompts wait for natural turn completion.
+ * Queue prompt may end that turn after its current tool call finishes, when
+ * its sender may stop that turn (`rowMayEndTurn`). Queue List prompts wait for
+ * natural turn completion.
  *
  * ONE EXCEPTION (KRTX-683): prompts released from a Stop hold. The release
  * stamps them with one `releasedBatchId`, and they share ONE answer. They are
@@ -147,6 +148,10 @@ export interface InboxAdmissionDeps {
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
+  /** The person who prompted the turn behind `messageId` (`turnPrompterOf`).
+   *  Read only for a head Quick Queue row while a turn runs. Absent: no row is
+   *  its prompter, so only a `mayStopAnyTurn` row arms the interrupt. */
+  turnPrompter?: (sessionId: string, messageId: string) => Promise<string | null>;
   /** The reads a `steer` row needs. Absent: a steer row is admitted as a queue row. */
   steer?: SteerAdmissionDeps;
 }
@@ -249,6 +254,9 @@ const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
 
 export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
+  // Dynamic: `turn-stop-authority.ts` imports this module.
+  turnPrompter: async (sessionId, messageId) =>
+    (await import('./turn-stop-authority')).turnPrompterOf(sessionId, messageId),
   async readSandbox(sessionId) {
     const [box] = await db
       .select({
@@ -386,6 +394,29 @@ async function admitSteer(
   return { admit: true, steerInto: active.messageId };
 }
 
+/**
+ * May this Quick Queue row end the running turn behind `messageId`? Only when
+ * its sender may stop that turn (`turn-stop-authority.ts`): they prompted it,
+ * or they were the session owner or a project manager when they sent the row
+ * (`mayStopAnyTurn`). An agent session's row is never the prompter. Any other
+ * row waits for the turn to end, like a Queue List row.
+ */
+async function rowMayEndTurn(
+  row: SessionLifecycleCommandRow,
+  messageId: string,
+  deps: InboxAdmissionDeps,
+): Promise<boolean> {
+  const payload = (row.payload ?? {}) as {
+    mayStopAnyTurn?: unknown;
+    bindTurnIdentity?: unknown;
+    authorSessionId?: unknown;
+  };
+  if (payload.mayStopAnyTurn === true) return true;
+  const sentByPerson = payload.bindTurnIdentity === true && payload.authorSessionId == null;
+  if (!row.actorUserId || !sentByPerson || !deps.turnPrompter) return false;
+  return (await deps.turnPrompter(row.sessionId!, messageId)) === row.actorUserId;
+}
+
 export async function admitInboxPrompt(
   row: SessionLifecycleCommandRow,
   deps: InboxAdmissionDeps = liveInboxAdmissionDeps,
@@ -446,11 +477,14 @@ export async function admitInboxPrompt(
     if (sessionHoldsTurnAuthority(sandbox)) {
       const turns = storedSandboxTurns(sandbox?.metadata);
       const active = newestStoredTurn(turns);
+      // The sender check reads the database, so it runs last: only for the
+      // head Quick Queue row while a turn is active.
       const interruptAtBoundary =
         isHead &&
         (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
         active?.state === 'active' &&
-        active.messageId
+        active.messageId &&
+        (await rowMayEndTurn(row, active.messageId, deps))
           ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
           : undefined;
       return {

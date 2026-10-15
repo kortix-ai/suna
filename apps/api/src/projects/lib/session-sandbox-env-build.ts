@@ -39,7 +39,7 @@ import { resolveSessionSecretGrant } from './secret-grant';
 import { AmbiguousSecretGrantError, intersectSecretGrants, listProjectSecretsSnapshotForUser } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { piPackageBundleForSession } from '../../pi-packages/bundle';
-import { manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession, selectSessionHarness } from './compile-agent-config';
+import { manifestPiCodemode, manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession, selectSessionHarness } from './compile-agent-config';
 
 
 
@@ -142,6 +142,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   compiledAgentConfig: string | null;
   manifestHarness: 'opencode' | 'pi' | null;
   manifestPackages: unknown[];
+  manifestCodemode: 'off' | 'on' | 'only' | null;
 }> {
   let agentGrantEnv: string[] | 'all' | undefined;
 
@@ -164,6 +165,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   // on pi across the session's whole life.
   let manifestHarness: 'opencode' | 'pi' | null = null;
   let manifestPackages: unknown[] = [];
+  let manifestCodemode: 'off' | 'on' | 'only' | null = null;
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
       projectId: input.projectId,
@@ -175,6 +177,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
     const onManifest = (raw: Record<string, unknown>) => {
       manifestHarness = manifestRuntime(raw);
       manifestPackages = manifestPiPackages(raw, input.agentName);
+      manifestCodemode = manifestPiCodemode(raw, input.agentName);
     };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
@@ -211,7 +214,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       sessionAgent: input.agentName,
     });
   }
-  return { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages };
+  return { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages, manifestCodemode };
 }
 
 /**
@@ -331,7 +334,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // value to the sandbox. Every OTHER secret is project-wide (secret
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
-  const { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages } =
+  const { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages, manifestCodemode } =
     await resolveSessionAgentConfig(input);
   const { harness, sessionLogRestore } = await resolveSessionHarness(input, manifestHarness);
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
@@ -478,6 +481,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       compiledAgentConfig,
       harness,
       piPackages: manifestPackages,
+      piCodemode: manifestCodemode,
       piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
       freshSession: input.freshSession,
