@@ -1,0 +1,22 @@
+{
+  "source_hash": "68dda76193b690638c6e1003f28e73bab0b175422c060d406283fe9e719c95b2",
+  "diff_files": [
+    "apps/api/src/billing/routes/payments-checkout.test.ts",
+    "apps/api/src/billing/routes/payments.ts",
+    "apps/api/src/billing/services/enterprise-contracts-checkout.test.ts",
+    "apps/api/src/billing/services/enterprise-contracts.ts",
+    "apps/api/src/billing/services/hosted-checkout.test.ts",
+    "apps/api/src/billing/services/hosted-checkout.ts",
+    "apps/api/src/billing/services/set-plan.test.ts",
+    "apps/api/src/billing/services/subscriptions.ts"
+  ],
+  "diff_hash": "281212152d6ec4fcd7a8391a7ca8f03081ad93d1fd220fd536d8e4c0165788e5",
+  "head": "24d44cdeb1a29b662209d5d6b0637c66a5904280",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "pass",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-15T12:33:56.781Z"
+}
