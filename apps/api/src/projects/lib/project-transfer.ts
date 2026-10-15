@@ -18,7 +18,7 @@
  * schema table carrying both columns is in neither list, so a future table
  * cannot be silently forgotten here.
  */
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
   accountModelPreferences,
@@ -45,6 +45,8 @@ import {
   projectSnapshotBuilds,
   projectTriggerEventSubscriptions,
   projects,
+  accounts,
+  iamRoles,
   promptAttachments,
   providerTransitions,
   reviewItems,
@@ -62,6 +64,7 @@ import {
 } from '@kortix/db';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
+import { maxProjectsForAccount } from '../../shared/account-limits';
 
 /**
  * Tables the transfer UPDATES (`account_id` → the target account) for the
@@ -145,7 +148,8 @@ export type ProjectTransferErrorCode =
   | 'not_active'
   | 'same_account'
   | 'target_missing'
-  | 'concurrent_move';
+  | 'concurrent_move'
+  | 'project_limit_reached';
 
 export class ProjectTransferError extends Error {
   constructor(
@@ -170,8 +174,8 @@ export interface TransferProjectOwnershipInput {
  *
  * Every statement is a re-point (UPDATE `account_id`), never a delete+insert,
  * so ids, timestamps and referential integrity survive untouched. Project-
- * scoped role assignments follow the project — except `group` grants, which
- * are DELETED: a group is a directory object of the source account and its
+ * scoped system role assignments follow the project; pending, custom-role
+ * and group grants are removed: a group is a directory object of the source account and its
  * grant cannot be re-resolved inside the target (and keeping the row would
  * hand the source group's members access through the target's assignment).
  */
@@ -186,10 +190,8 @@ export async function transferProjectOwnership(
 
   return db.transaction(async (tx) => {
     // Lock the row: the CAS against a concurrent move happens under this lock.
-    const locked = await tx.execute(
-      sql`SELECT account_id, status FROM ${projects} WHERE project_id = ${projectId} FOR UPDATE`,
-    );
-    const row = (locked as unknown as Array<{ account_id: string; status: string }>)[0];
+    const [row] = await tx.select({ account_id: projects.accountId, status: projects.status })
+      .from(projects).where(eq(projects.projectId, projectId)).for('update');
     if (!row) throw new ProjectTransferError('project_missing', 'Project not found');
     if (row.status !== 'active') {
       throw new ProjectTransferError('not_active', 'Archived projects cannot be transferred');
@@ -202,12 +204,24 @@ export async function transferProjectOwnership(
       throw new ProjectTransferError('concurrent_move', 'Project moved while the transfer was prepared');
     }
 
-    const target = await tx.execute(
-      sql`SELECT 1 FROM kortix.accounts WHERE account_id = ${toAccountId}`,
-    );
-    if (!(target as unknown as unknown[]).length) {
-      throw new ProjectTransferError('target_missing', 'Target account not found');
+    const [target] = await tx.select({ accountId: accounts.accountId }).from(accounts)
+      .where(eq(accounts.accountId, toAccountId)).for('update');
+    if (!target) throw new ProjectTransferError('target_missing', 'Target account not found');
+
+    const limit = await maxProjectsForAccount(toAccountId);
+    const [counted] = await tx.select({ count: sql<number>`count(*)::int` }).from(projects)
+      .where(sql`${projects.accountId} = ${toAccountId} AND ${projects.status} = 'active'`);
+    if ((counted?.count ?? 0) >= limit) {
+      throw new ProjectTransferError('project_limit_reached', 'Target account project limit reached');
     }
+
+    // Source directory objects and invitation activation remain account-scoped.
+    // Custom roles must not let source admins retain control after the move.
+    await tx.execute(sql`DELETE FROM ${roleAssignments}
+      WHERE account_id = ${fromAccountId} AND scope_type = 'project' AND scope_id = ${projectId}
+        AND (principal_type IN ('group', 'pending') OR role_id IN (
+          SELECT role_id FROM ${iamRoles} WHERE account_id = ${fromAccountId}
+        ))`);
 
     for (const table of PROJECT_TRANSFER_TABLES) {
       await tx.execute(
@@ -222,13 +236,7 @@ export async function transferProjectOwnership(
       sql`UPDATE ${roleAssignments} SET account_id = ${toAccountId}
            WHERE account_id = ${fromAccountId}
              AND scope_type = 'project' AND scope_id = ${projectId}
-             AND principal_type IN ('user', 'service_account', 'pending', 'project')`,
-    );
-    await tx.execute(
-      sql`DELETE FROM ${roleAssignments}
-           WHERE account_id = ${fromAccountId}
-             AND scope_type = 'project' AND scope_id = ${projectId}
-             AND principal_type = 'group'`,
+             AND principal_type IN ('user', 'service_account', 'project')`,
     );
 
     logger.info('[project-transfer] project moved', {

@@ -253,8 +253,7 @@ export async function assertLlmBillingActive(
  * — this reconciles it to the real `finalCost` instead of a flat deduct: tops
  * up the remainder if the real cost exceeds the hold, refunds the unused
  * portion otherwise (always the case for a pure hold-refund, where finalCost
- * is 0). Otherwise (no hold — billing disabled, self-host, or an active
- * per-seat subscription that bypasses the wallet floor) falls back to the
+ * is 0). Otherwise (no hold — billing disabled or self-host) falls back to the
  * original flat deduct, skipped entirely when the route isn't billable
  * (billingMode === 'none').
  */

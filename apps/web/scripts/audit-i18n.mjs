@@ -137,6 +137,9 @@ const ignoredPathParts = [
   '/src/components/ui/',
   '/src/app/fonts/',
   '/src/app/[locale]/(system)/debug/',
+  // Tool-call fixtures (#9815): sample harness output rendered only by the tool
+  // tests and /debug/session-fixture, never product copy.
+  '/src/features/session/tool/foreign-tool-calls.ts',
   '/src/types/',
   '/__harness__/',
   // Unannounced, noindex launch film and /launch page (#8023, #8045): the copy

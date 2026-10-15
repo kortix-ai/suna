@@ -35,7 +35,6 @@ import { registerIamResourceGrantsRoutes } from './iam/resource-grants'; // acco
 import { registerIamMfaRoutes } from './iam/mfa'; // account-wide MFA enforcement
 import { registerIamScimTokensRoutes } from './iam/scim-tokens'; // SCIM provisioning tokens
 import { registerIamSsoRoutes } from './iam/sso'; // SAML SSO provider + group mappings
-import { registerIamEnterpriseDemoRoutes } from './iam/enterprise-demo'; // self-serve enterprise-preview toggle
 import { registerIamPoliciesRoutes } from './iam/policies'; // session policy, active sessions / revoke, PAT policy
 import { registerIamServiceAccountsRoutes } from './iam/service-accounts'; // service accounts (non-human IAM principals)
 import { registerIamOauthClientsRoutes } from './iam/oauth-clients'; // Sign in with Kortix: OAuth client registry
@@ -59,7 +58,6 @@ export function registerIamRoutes(): void {
   registerIamMfaRoutes();
   registerIamScimTokensRoutes();
   registerIamSsoRoutes();
-  registerIamEnterpriseDemoRoutes();
   registerIamPoliciesRoutes();
   registerIamServiceAccountsRoutes();
   registerIamOauthClientsRoutes();

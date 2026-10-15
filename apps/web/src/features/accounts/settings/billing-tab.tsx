@@ -1,14 +1,14 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AccountOverviewTab, AccountOverviewView } from '@/features/billing/account-overview';
-import { ClaimPerSeatCard } from '@/features/billing/claim-per-seat-card';
-import { PlanCard } from '@/features/billing/plan-card';
-import { SeatManagementCard } from '@/features/billing/seat-management-card';
+import { AccountOverviewTab } from '@/features/billing/account-overview';
+import { PlanCard, PlanChanger } from '@/features/billing/plan-card';
+import { PlanAccessNotice } from '@/features/billing/plan-access-notice';
 import { TopupControls } from '@/features/billing/topup-controls';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
@@ -19,30 +19,26 @@ import {
   useCreatePortalSession,
   useReactivateSubscription,
 } from '@/hooks/billing';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { isBillingEnabled } from '@/lib/config';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useEffect, useRef, useState } from 'react';
 
 /**
  * `showWallet` — whether this pane leads with the WALLET or with the PLAN.
  *
- * `true` (the default, and what `/accounts/[id]?tab=billing` uses): unchanged
- * since 2026-08-13 — the balance card, this period's spend, the limits, and
- * the seat card under them.
+ * `true` (the default, and what `/accounts/[id]?tab=billing` uses): the
+ * balance card, this period's spend, the limits, and the plan changer under
+ * them.
  *
  * `false` (the settings overlay's Plan tab, 2026-09-03): the wallet blocks are
  * dropped and `PlanCard` leads instead. Every number they showed — balance,
  * credit composition, compute/LLM spend, limits — is the subject of the
  * Credits pane beside it (`settings/tabs/credits-tab.tsx`), so on Plan they
- * were a duplicate. `SeatManagementCard` goes with them: `PlanCard` prints the
- * same three seat figures as properties, and rendering both states the seat
- * count three times across two boxes.
+ * were a duplicate. `PlanCard` carries the plan changer itself.
  *
  * What does NOT vary: buying credits, auto top-up, and the Stripe portal stay
  * on both. They are the actions this pane exists to offer, and the Credits
@@ -65,7 +61,6 @@ export function BillingTab({
   const locale = useLocale();
   const { session, isLoading: authLoading } = useAuth();
   const highlight = useUserSettingsModalStore((s) => s.highlight);
-  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const queryClient = useQueryClient();
   const billingAccountId = useBillingAccountId();
 
@@ -81,14 +76,6 @@ export function BillingTab({
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
     refetchOnMount: true,
-    refetchInterval: (query) => {
-      const data = query.state.data as AccountState | undefined;
-      const hasProvisioning = data?.instances?.some(
-        (i: { status: string }) => i.status === 'provisioning',
-      );
-      return hasProvisioning ? 5000 : false;
-    },
-    refetchIntervalInBackground: false,
   });
 
   const createPortalSessionMutation = useCreatePortalSession();
@@ -132,10 +119,7 @@ export function BillingTab({
 
   const subscription = accountState?.subscription;
   const canPurchaseCredits = subscription?.can_purchase_credits || false;
-  const isPerSeat = accountState?.billing_model === 'per_seat';
   const hasActiveSubscription = Boolean(subscription?.subscription_id);
-  const subscribedToTeam = isPerSeat && hasActiveSubscription;
-  const showTeamCheckout = isBillingEnabled() && !hasActiveSubscription;
   const subscriptionCancelling = subscription?.cancel_at_period_end === true;
   // The cancel control lives on the pane a paying customer manages their
   // subscription from. A pending cancellation renders Reactivate instead of a
@@ -150,63 +134,32 @@ export function BillingTab({
 
   return (
     <div className="space-y-8">
-      {!hasActiveSubscription && (!showWallet || showTeamCheckout) && accountState ? (
-        <AccountOverviewView state={accountState} />
-      ) : null}
-      {showTeamCheckout ? (
-        // Linear's settings shape: one row, the label and its rule on the
-        // left, the actions on the right. No section heading over a box that
-        // only holds two buttons.
-        <SettingsRowGroup>
-          <SettingsRow label={t('teamTitle')} description={t('teamDescription')}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground gap-1.5"
-              onClick={handleManageSubscription}
-              disabled={createPortalSessionMutation.isPending}
-            >
-              {createPortalSessionMutation.isPending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : null}
-              {t('manageBilling')}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() =>
-                openUpgradeDialog({
-                  reason: 'subscription_required',
-                  accountId: billingAccountId,
-                })
-              }
-            >
-              {t('subscribe')}
-            </Button>
-          </SettingsRow>
-        </SettingsRowGroup>
-      ) : (
+      {/* The out-of-credits warning is a WALLET message and stays with the
+          wallet. On the Plan tab the same account reads its balance on the
+          Credits pane, which shows the shortfall in the number itself rather
+          than in a banner over a pane about subscriptions. */}
+      {showWallet && highlight === 'credits' && totalCredits <= 0 && (
+        <InfoBanner tone="warning" title={t('outOfCredits')}>
+          {canPurchaseCredits ? t('buyCreditsHint') : t('topupWalletHint')}
+        </InfoBanner>
+      )}
+
+      {/* A trial, an Enterprise offer, or the grace after Enterprise ended:
+          stated before anything else, with the upgrade at hand. */}
+      {accountState ? <PlanAccessNotice state={accountState} /> : null}
+
+      {showWallet ? (
         <>
-          {/* The out-of-credits warning is a WALLET message and stays with
-              the wallet. On the Plan tab the same account reads its balance on
-              the Credits pane, which shows the shortfall in the number itself
-              rather than in a banner over a pane about subscriptions. */}
-          {showWallet && highlight === 'credits' && totalCredits <= 0 && (
-            <InfoBanner tone="warning" title={t('outOfCredits')}>
-              {canPurchaseCredits ? t('buyCreditsHint') : t('topupWalletHint')}
-            </InfoBanner>
-          )}
-
-          {showWallet ? (
-            <AccountOverviewTab accountId={billingAccountId} />
-          ) : accountState ? (
-            <PlanCard state={accountState} />
+          <AccountOverviewTab accountId={billingAccountId} />
+          {accountState ? (
+            <PlanChanger state={accountState} className="bg-popover rounded-md border" />
           ) : null}
+        </>
+      ) : accountState ? (
+        <PlanCard state={accountState} />
+      ) : null}
 
-          {accountState?.can_claim_per_seat && <ClaimPerSeatCard accountState={accountState} />}
-
-          {showWallet && subscribedToTeam && <SeatManagementCard accountState={accountState} />}
-
-          {/* Add credits and Auto top-up share one card, matching the settings
+      {/* Add credits and Auto top-up share one card, matching the settings
               pane. Both components carry their own heading and no chrome
               (see `credit-topup-section.tsx` / `auto-topup-card.tsx`), so the
               outer headings this section used to draw would now read twice.
@@ -218,94 +171,92 @@ export function BillingTab({
               changes, not on a pane about a subscription. `TopupControls`
               renders them only when the plan may buy credits and this person
               may change billing (KRTX-1720). */}
-          {showWallet ? <TopupControls state={accountState} heading={t('addCredits')} /> : null}
+      {showWallet ? <TopupControls state={accountState} heading={t('addCredits')} /> : null}
 
-          {/* The Stripe billing portal doesn't exist without billing enabled
+      {/* The Stripe billing portal doesn't exist without billing enabled
               (self-host with KORTIX_BILLING_INTERNAL_ENABLED=false) — hide the
               button rather than let it 404/error on click. */}
-          {isBillingEnabled() ? (
-            <section>
-              {/* One row, Linear's shape: what the portal is on the left,
+      {isBillingEnabled() ? (
+        <section>
+          {/* One row, Linear's shape: what the portal is on the left,
                   every subscription action on the right. The commitment hint
                   joins the description instead of a third line in a box. */}
-              <SettingsRowGroup>
-                <SettingsRow
-                  label={t('billingPortal')}
-                  description={
-                    <>
-                      {t('portalDescription')}
-                      {hasActiveSubscription && !canCancelSubscription && commitmentEnd ? (
-                        <span className="mt-1 block">
-                          {t('commitmentCancelHint', {
-                            date: commitmentEnd.toLocaleDateString(locale, {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            }),
-                          })}
-                        </span>
-                      ) : null}
-                    </>
-                  }
-                >
-                  {subscriptionCancelling ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="gap-1.5"
-                      onClick={() => reactivateSubscriptionMutation.mutate()}
-                      disabled={reactivateSubscriptionMutation.isPending}
-                    >
-                      {reactivateSubscriptionMutation.isPending ? (
-                        <Loading className="size-4 shrink-0" />
-                      ) : null}
-                      {t('reactivateSubscription')}
-                    </Button>
-                  ) : hasActiveSubscription ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => setConfirmingCancel(true)}
-                      disabled={!canCancelSubscription}
-                    >
-                      {t('cancelSubscription')}
-                    </Button>
+          <SettingsRowGroup>
+            <SettingsRow
+              label={t('billingPortal')}
+              description={
+                <>
+                  {t('portalDescription')}
+                  {hasActiveSubscription && !canCancelSubscription && commitmentEnd ? (
+                    <span className="mt-1 block">
+                      {t('commitmentCancelHint', {
+                        date: commitmentEnd.toLocaleDateString(locale, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        }),
+                      })}
+                    </span>
                   ) : null}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={handleManageSubscription}
-                    disabled={createPortalSessionMutation.isPending}
-                  >
-                    {createPortalSessionMutation.isPending ? (
-                      <Loading className="size-4 shrink-0" />
-                    ) : null}
-                    {t('manageBilling')}
-                  </Button>
-                </SettingsRow>
-              </SettingsRowGroup>
-              {hasActiveSubscription ? (
-                <ConfirmDialog
-                  open={confirmingCancel}
-                  onOpenChange={setConfirmingCancel}
-                  title={t('cancelSubscription')}
-                  description={t('cancelSubscriptionDescription')}
-                  confirmLabel={t('cancelSubscription')}
-                  cancelLabel={tBillingDialog('keepSubscription')}
-                  confirmVariant="destructive"
-                  isPending={cancelSubscriptionMutation.isPending}
-                  onConfirm={() => {
-                    setConfirmingCancel(false);
-                    cancelSubscriptionMutation.mutate();
-                  }}
-                />
+                </>
+              }
+            >
+              {subscriptionCancelling ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1.5"
+                  onClick={() => reactivateSubscriptionMutation.mutate()}
+                  disabled={reactivateSubscriptionMutation.isPending}
+                >
+                  {reactivateSubscriptionMutation.isPending ? (
+                    <Loading className="size-4 shrink-0" />
+                  ) : null}
+                  {t('reactivateSubscription')}
+                </Button>
+              ) : hasActiveSubscription ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setConfirmingCancel(true)}
+                  disabled={!canCancelSubscription}
+                >
+                  {t('cancelSubscription')}
+                </Button>
               ) : null}
-            </section>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={handleManageSubscription}
+                disabled={createPortalSessionMutation.isPending}
+              >
+                {createPortalSessionMutation.isPending ? (
+                  <Loading className="size-4 shrink-0" />
+                ) : null}
+                {t('manageBilling')}
+              </Button>
+            </SettingsRow>
+          </SettingsRowGroup>
+          {hasActiveSubscription ? (
+            <ConfirmDialog
+              open={confirmingCancel}
+              onOpenChange={setConfirmingCancel}
+              title={t('cancelSubscription')}
+              description={t('cancelSubscriptionDescription')}
+              confirmLabel={t('cancelSubscription')}
+              cancelLabel={tBillingDialog('keepSubscription')}
+              confirmVariant="destructive"
+              isPending={cancelSubscriptionMutation.isPending}
+              onConfirm={() => {
+                setConfirmingCancel(false);
+                cancelSubscriptionMutation.mutate();
+              }}
+            />
           ) : null}
-        </>
-      )}
+        </section>
+      ) : null}
     </div>
   );
 }

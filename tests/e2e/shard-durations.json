@@ -36,6 +36,8 @@
     "e2e/specs/35-review-center-no-risk-label.spec.ts": 16.5,
     "e2e/specs/36-reminders-ui.spec.ts": 34.1,
     "e2e/specs/37-new-user-lands-on-projects.spec.ts": 28,
+
+    "e2e/specs/38-capture-ui.spec.ts": 0,
     "e2e/specs/38-member-customize-read-only.spec.ts": 96,
     "e2e/specs/39-boot-shell-queued-edit.spec.ts": 27.7,
     "e2e/specs/40-session-lifecycle-permissions.spec.ts": 38.4,
@@ -95,6 +97,8 @@
     "e2e/specs/35-review-center-no-risk-label.spec.ts": 7.3,
     "e2e/specs/36-reminders-ui.spec.ts": 23.5,
     "e2e/specs/37-new-user-lands-on-projects.spec.ts": 8.1,
+
+    "e2e/specs/38-capture-ui.spec.ts": 0,
     "e2e/specs/38-member-customize-read-only.spec.ts": 44.8,
     "e2e/specs/39-boot-shell-queued-edit.spec.ts": 22,
     "e2e/specs/40-session-lifecycle-permissions.spec.ts": 28.1,

@@ -18,13 +18,7 @@
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { SettingsRow } from '@/components/ui/settings-row';
 import {
   Select,
@@ -130,52 +124,53 @@ function TransferWorkspaceDialog({
 
   const targetName = targetOptions.find((account) => account.account_id === targetId)?.name;
 
+  const changeOpen = (next: boolean) => {
+    if (transferMutation.isPending) return;
+    if (!next) {
+      setTargetId('');
+      transferMutation.reset();
+    }
+    onOpenChange(next);
+  };
+
   return (
-    <Dialog
+    <ConfirmDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          setTargetId('');
-          transferMutation.reset();
-        }
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogTitle>{t('transferTitle')}</DialogTitle>
-        <DialogDescription>{t('transferDialog')}</DialogDescription>
-        {accountsQuery.isLoading ? (
-          <p className="text-muted-foreground text-sm">{t('transferLoadingTargets')}</p>
-        ) : targetOptions.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('transferNoTargets')}</p>
-        ) : (
-          <Select value={targetId} onValueChange={setTargetId}>
-            <SelectTrigger className="w-full" aria-label={t('transferTargetLabel')}>
-              <SelectValue placeholder={t('transferTargetPlaceholder')} />
-            </SelectTrigger>
-            <SelectContent>
-              {targetOptions.map((account) => (
-                <SelectItem key={account.account_id} value={account.account_id}>
-                  {account.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            {t('keepWorkspace')}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={!targetId || transferMutation.isPending}
-            onClick={() => transferMutation.mutate()}
-          >
-            {targetName ? t('transferMoveTo', { name: targetName }) : t('transferMove')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      onOpenChange={changeOpen}
+      title={t('transferTitle')}
+      description={
+        <div className="space-y-4">
+          <p>{t('transferDialog')}</p>
+          {accountsQuery.isLoading ? (
+            <p>{t('transferLoadingTargets')}</p>
+          ) : accountsQuery.isError ? (
+            <Button variant="outline" onClick={() => accountsQuery.refetch()}>
+              {t('retry')}
+            </Button>
+          ) : targetOptions.length === 0 ? (
+            <p>{t('transferNoTargets')}</p>
+          ) : (
+            <Select value={targetId} onValueChange={setTargetId}>
+              <SelectTrigger className="w-full" aria-label={t('transferTargetLabel')}>
+                <SelectValue placeholder={t('transferTargetPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {targetOptions.map((account) => (
+                  <SelectItem key={account.account_id} value={account.account_id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      }
+      cancelLabel={t('keepWorkspace')}
+      confirmLabel={targetName ? t('transferMoveTo', { name: targetName }) : t('transferMove')}
+      confirmVariant="destructive"
+      confirmDisabled={!targetName || accountsQuery.isError}
+      isPending={transferMutation.isPending}
+      onConfirm={() => transferMutation.mutate()}
+    />
   );
 }

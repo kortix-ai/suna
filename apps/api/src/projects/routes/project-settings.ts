@@ -380,7 +380,9 @@ export function registerProjectSettingsRoutes(): void {
           const status =
             error.code === 'project_missing' || error.code === 'target_missing'
               ? 404
-              : error.code === 'same_account'
+              : error.code === 'project_limit_reached'
+                ? 403
+                : error.code === 'same_account'
                 ? 400
                 : 409; // not_active, concurrent_move
           logger.warn('[projects] transfer refused', { projectId, code: error.code });

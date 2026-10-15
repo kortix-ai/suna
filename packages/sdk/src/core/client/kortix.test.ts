@@ -884,12 +884,30 @@ test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/pror
   const downgrade = await kortix.billing.subscription.scheduleDowngrade('starter').catch((e: unknown) => e);
   expect((downgrade as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.subscription.cancelScheduledChange();
-  expect(last().url).toContain('/billing/cancel-scheduled-change');
+  const cancelChange = await kortix.billing.subscription.cancelScheduledChange().catch((e: unknown) => e);
+  expect((cancelChange as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.subscription.prorationPreview('price_123');
-  expect(last().url).toContain('/billing/proration-preview?new_price_id=price_123');
-  expect(last().method).toBe('GET');
+  const proration = await kortix.billing.subscription.prorationPreview('price_123').catch((e: unknown) => e);
+  expect((proration as ApiError).code).toBe('ENDPOINT_RETIRED');
+});
+
+test('kortix.billing.setPlan posts the monthly amount to /billing/plan', async () => {
+  await kortix.billing.setPlan({
+    monthlyUsd: 100,
+    successUrl: 'https://app.example.com/ok',
+    cancelUrl: 'https://app.example.com/no',
+  });
+  expect(last().url).toContain('/billing/plan');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.billing.acceptEnterpriseOffer posts to /billing/enterprise-offer/checkout', async () => {
+  await kortix.billing.acceptEnterpriseOffer({
+    successUrl: 'https://app.example.com/ok',
+    cancelUrl: 'https://app.example.com/no',
+  });
+  expect(last().url).toContain('/billing/enterprise-offer/checkout');
+  expect(last().method).toBe('POST');
 });
 
 test('kortix.billing.credits covers purchase + auto-topup get/configure', async () => {

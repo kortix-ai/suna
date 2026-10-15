@@ -166,9 +166,9 @@ async function cleanup(): Promise<void> {
 async function accountOf(kind: 'session' | 'drive' | 'token' | 'connection' | 'event', id: string): Promise<string | null> {
   const table = { session: 'project_sessions', drive: 'drives', token: 'account_tokens', connection: 'project_git_connections', event: 'usage_events' }[kind];
   const pk = { session: 'session_id', drive: 'drive_id', token: 'token_id', connection: 'connection_id', event: 'event_id' }[kind];
-  const result = await db.execute(
+  const result = await db.execute<{ account_id: string }>(
     sql`SELECT account_id FROM kortix.${sql.raw(table)} WHERE ${sql.raw(pk)} = ${id}`,
-  ) as unknown as Array<{ account_id: string }>;
+  );
   return result[0]?.account_id ?? null;
 }
 
@@ -197,7 +197,7 @@ withDb('project transfer', () => {
     // Settings survive the move: name, icon, manifest, repo.
     expect(project?.name).toBe('Transferable workspace');
     expect(project?.repoUrl).toBe('https://github.com/acme/transferable.git');
-    expect((project?.metadata as Record<string, unknown>).icon).toBe('🚚');
+    expect(project?.metadata?.icon).toBe('🚚');
 
     expect(await accountOf('session', SESSION_ID)).toBe(TARGET_ACCOUNT);
     expect(await accountOf('drive', DRIVE_ID)).toBe(TARGET_ACCOUNT);
@@ -209,7 +209,7 @@ withDb('project transfer', () => {
     expect(event?.accountId).toBe(SOURCE_ACCOUNT);
   });
 
-  test('re-points project-scoped role assignments and drops group grants', async () => {
+  test('re-points system user grants and drops source-directory and pending grants', async () => {
     await db.insert(accountMemberships).values({ userId: OWNER_A, accountId: TARGET_ACCOUNT });
     const ownerAccount = await systemRoleId('owner', 'account');
     await db.insert(roleAssignments).values({
@@ -238,11 +238,29 @@ withDb('project transfer', () => {
     const byPrincipal = new Map(assignments.map((a) => [`${a.principalType}:${a.principalId}`, a]));
     // The user grant followed the project into the target account…
     expect(byPrincipal.get(`user:${PROJECT_MEMBER}`)?.accountId).toBe(TARGET_ACCOUNT);
-    // …the pending invite followed too…
-    expect(byPrincipal.get(`pending:${pendingPrincipal}`)?.accountId).toBe(TARGET_ACCOUNT);
+    // Source account invitations cannot activate grants in the target.
+    expect(byPrincipal.has(`pending:${pendingPrincipal}`)).toBe(false);
     // …and the group grant is gone: the group is a directory object of the
     // SOURCE account and its grant cannot be re-resolved in the target.
     expect(byPrincipal.has(`group:${groupId}`)).toBe(false);
+  });
+
+  test('does not retain a custom role owned by the source account', async () => {
+    const [role] = await db.insert(iamRoles).values({
+      accountId: SOURCE_ACCOUNT, key: 'transfer_custom', name: 'Transfer custom', scopeType: 'project',
+    }).returning();
+    if (!role) throw new Error('custom role fixture missing');
+    await db.insert(roleAssignments).values({
+      accountId: SOURCE_ACCOUNT, principalType: 'user', principalId: OWNER_A,
+      roleId: role.roleId, scopeType: 'project', scopeId: PROJECT_ID,
+    });
+    await transferProjectOwnership({
+      projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT,
+    });
+    const retained = await db.select().from(roleAssignments).where(and(
+      eq(roleAssignments.scopeId, PROJECT_ID), eq(roleAssignments.roleId, role.roleId),
+    ));
+    expect(retained).toEqual([]);
   });
 
   test('a caller who is not a member of the target account cannot trigger the transfer', async () => {
@@ -250,7 +268,7 @@ withDb('project transfer', () => {
     // a member of the target. The route gates the transfer on `project.create`
     // in the TARGET account — exactly what a non-member lacks.
     const actor = { userId: OWNER_A, accountId: TARGET_ACCOUNT, credential: { kind: 'jwt' as const }, ctx: {} };
-    const verdict = await authorize(actor as never, 'project.create');
+    const verdict = await authorize(actor, 'project.create');
     expect(verdict.allowed).toBe(false);
     expect(verdict.reason).toBe('not_a_member');
 
@@ -265,7 +283,7 @@ withDb('project transfer', () => {
       accountId: TARGET_ACCOUNT, principalType: 'user', principalId: OWNER_A, roleId: ownerAccount, scopeType: 'account',
     });
     const actor = { userId: OWNER_A, accountId: TARGET_ACCOUNT, credential: { kind: 'jwt' as const }, ctx: {} };
-    const verdict = await authorize(actor as never, 'project.create');
+    const verdict = await authorize(actor, 'project.create');
     expect(verdict.allowed).toBe(true);
   });
 
@@ -312,11 +330,10 @@ withDb('project transfer', () => {
     const both: string[] = [];
     for (const exported of Object.values(schema)) {
       if (!exported || typeof exported !== 'object') continue;
-      const table = exported as Record<symbol, unknown>;
       if (!is(exported, PgTable)) continue; // views are derived — nothing to re-point
-      const columns = getTableColumns(exported as PgTable);
-      const name = getTableName(exported as PgTable);
-      if (columns.accountId && columns.projectId) both.push(name);
+      const columns = getTableColumns(exported);
+      const name = getTableName(exported);
+      if ('accountId' in columns && 'projectId' in columns) both.push(name);
     }
     expect(both.length).toBeGreaterThan(30);
     for (const name of both) {

@@ -4,8 +4,8 @@
  * Single hook for all billing data with proper invalidation
  */
 
-import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
-import { cancelScheduledChange, getAccountState } from '@kortix/sdk';
+import { useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { getAccountState } from '@kortix/sdk';
 import { accountStateSelectors, type AccountState } from './api';
 
 export type { AccountState };
@@ -82,21 +82,6 @@ export function useAccountState(options?: UseAccountStateOptions) {
     refetchOnMount: options?.refetchOnMount ?? false,
     refetchOnReconnect: true,
     retry: enabled ? shouldRetry : false,
-  });
-}
-
-// =============================================================================
-// MUTATION HOOKS - All invalidate account state after success
-// =============================================================================
-
-export function useCancelScheduledChange() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => cancelScheduledChange(),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
   });
 }
 
@@ -322,27 +307,3 @@ export function useSubscriptionCommitment(
     refetch: async () => {},
   };
 }
-
-/**
- * Scheduled changes hook - placeholder for now
- */
-export function useScheduledChanges(options?: { enabled?: boolean }) {
-  const { data: accountState } = useAccountState({ enabled: options?.enabled });
-
-  return {
-    data: accountState?.subscription.scheduled_change
-      ? {
-          scheduled_change: accountState.subscription.scheduled_change,
-          has_scheduled_change: accountState.subscription.has_scheduled_change,
-        }
-      : null,
-    isLoading: false,
-    error: null,
-    refetch: async () => {},
-  };
-}
-
-// =============================================================================
-// REVENUECAT PRICING HOOK
-// =============================================================================
-export { useRevenueCatPricing } from '../../hooks/billing/useRevenueCatPricing';

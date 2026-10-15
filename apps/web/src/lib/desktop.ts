@@ -350,9 +350,14 @@ async function desktopAction<T>(cmd: string, args?: Record<string, unknown>): Pr
 
 /** Pause/resume answer `{ ok, error?, status }` (X5). */
 async function desktopServiceVerb(cmd: string): Promise<DesktopComputerStatus | null> {
-  const result = await desktopAction<{ ok: boolean; error?: string; status: DesktopComputerStatus }>(cmd);
+  const result = await desktopAction<{
+    ok: boolean;
+    error?: string;
+    status: DesktopComputerStatus;
+  }>(cmd);
   if (!result) return null;
-  if (!result.ok) throw new Error(result.error || 'The desktop app could not change computer access.');
+  if (!result.ok)
+    throw new Error(result.error || 'The desktop app could not change computer access.');
   return result.status;
 }
 
