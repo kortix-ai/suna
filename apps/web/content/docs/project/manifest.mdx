@@ -76,7 +76,7 @@ It lints each template Dockerfile. It warns when the files in Git exceed 512 MiB
 | --- | --- | --- | --- |
 | `1` | `kortix.toml` or YAML | In the agent `.md` | Legacy. Reads and runs. See [Migrate from kortix.toml](#migrate-from-kortixtoml). |
 | `2` | YAML only | In `agents/<name>.md` (prompt and frontmatter) | `kortix init` and **Create project** write v2. The dashboard agent editor writes v2. An omitted grant means none. |
-| `3` | YAML only | Inline in `kortix.yaml`: `prompt` or `prompt_file`, `model`, `mode`, `permission`, `description`. The top-level `permission` and `commands` replace the OpenCode harness folder. | Rejects `agents.<name>.file`, `agents.<name>.disable` and the top-level `opencode` key. Write and edit it by hand. The dashboard agent editor edits only v2 manifests and shows a v3 agent read-only. |
+| `3` | YAML only | Inline in `kortix.yaml`: `prompt` or `prompt_file`, `model`, `mode`, `permission`, `description` | Rejects `agents.<name>.file`, `agents.<name>.disable` and the top-level `opencode` key. Write and edit it by hand. The dashboard agent editor edits only v2 manifests and shows a v3 agent read-only. |
 
 A version above `3` is an error. A `kortix.toml` that declares version `2` or `3` is an error. No automatic migration from v2 to v3 exists.
 
@@ -97,31 +97,6 @@ agents:
 
 A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`, `hidden` and `options`. `prompt_file` is a repository-relative `.md` path.
 
-A v3 project needs no `harnesses/opencode/` folder. Two top-level keys hold what `opencode.jsonc` and `commands/` held:
-
-```yaml
-kortix_version: 3
-default_agent: support
-permission: allow                       # every agent starts from this policy
-agents:
-  support:
-    prompt_file: prompts/support.md
-    permission:
-      bash: ask                         # applied over the default
-commands:
-  weekly-report:
-    description: Write the weekly support report.
-    prompt_file: commands/weekly-report.md   # or prompt: "…", not both
-    agent: support                      # optional: the agent that runs it
-    model: kortix/glm-5.3-flash         # optional
-    subtask: false                      # optional: OpenCode runs it as a subagent task
-```
-
-- **`permission`** is the tool policy every agent starts from, OpenCode's built-in `general` and `explore` agents included. Same shape as an agent's `permission`. An agent's own `permission` applies over it: a whole action (`deny`) replaces it; a rule for one tool replaces that tool's rule; two pattern maps merge, the agent's patterns last. It stays in the root `kortix.yaml`.
-- **`commands`** maps a slash command name (lowercase letters, digits, `-`, `_`) to its prompt. `$ARGUMENTS` takes the arguments; `$1`, `$2`, … take them one word at a time, and the last one takes the rest. `agent` names a declared agent. Both harnesses serve them. pi runs a `subtask` command in the session. An imported file may declare commands.
-
-Agent prompts travel to the sandbox with the session. There is no size limit you need to plan for: a set of agents over 128 KiB is sent compressed.
-
 ## Top-level keys
 
 | Key | Type | Default | Rule |
@@ -136,8 +111,6 @@ Agent prompts travel to the sandbox with the session. There is no size limit you
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
-| `permission` | action or map | harness default | v3 only. The tool policy every agent starts from. See [Versions](#versions). |
-| `commands` | map | none | v3 only. Slash command name to `prompt` or `prompt_file`, with optional `description`, `agent`, `model`, `subtask`. |
 | `tools` | map | all seven Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
 | `sandbox` | map | platform image | `templates`, `default`. See [sandbox](#sandbox). |
 | `triggers` | list | none | Schedules, webhooks, monitors, app events. |
@@ -176,7 +149,7 @@ triggers:
 
 1. A path is relative to the repository root. `..`, absolute paths and globs are errors. A path that matches no `.yaml` or `.yml` file is an error.
 2. A directory import takes every `.yaml` and `.yml` file below it, at any depth, sorted by path.
-3. An imported file declares `triggers`, `connectors`, `agents`, `apps`, `tools`, `commands` and `imports`. `kortix_version`, `default_agent`, `runtime`, `project`, `env`, `opencode`, `permission`, `sandbox`, `policy` and `policies` in an imported file are errors. Kortix drops any other key in an imported file, for example `harnesses`.
+3. An imported file declares `triggers`, `connectors`, `agents`, `apps`, `tools` and `imports`. `kortix_version`, `default_agent`, `runtime`, `project`, `env`, `opencode`, `sandbox`, `policy` and `policies` in an imported file are errors. Kortix drops any other key in an imported file, for example `harnesses`.
 4. Imports nest up to 8 levels and 200 files. A cycle is an error. A file reached twice merges once.
 5. One name, one file. A trigger slug, connector slug, agent name, App slug or tool name declared in two files is an error that names both files.
 6. Entries merge in order: the importing file first, then its imports as listed.

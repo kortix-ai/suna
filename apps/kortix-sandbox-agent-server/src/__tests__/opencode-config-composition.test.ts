@@ -305,15 +305,6 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
     expect(config.agent.support).toEqual({ mode: 'primary', prompt })
   })
 
-  // kortix.yaml v3 `permission` and `commands`: what opencode.jsonc and `commands/` held.
-  test('a v3 default permission and commands reach OpenCode as its own permission and command keys', async () => {
-    const command = { daily: { template: 'Run the daily report for $ARGUMENTS.', description: 'Daily report', agent: 'support' } }
-    const compiled = JSON.stringify({ permission: 'allow', command, agent: { support: { mode: 'primary', prompt: 'Help.', permission: 'allow' } } })
-    const config = JSON.parse((await buildOpencodeConfigContent({ KORTIX_COMPILED_AGENT_CONFIG: compiled }))!)
-    expect(config.command).toEqual(command)
-    expect(config.permission).toMatchObject({ '*': 'allow' })
-  })
-
   test('a damaged gzip form composes no compiled agents rather than failing the boot', async () => {
     const env = { KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS: '2', KORTIX_COMPILED_AGENT_CONFIG_GZ_0: 'H4sI' }
     const config = JSON.parse((await buildOpencodeConfigContent(env))!)

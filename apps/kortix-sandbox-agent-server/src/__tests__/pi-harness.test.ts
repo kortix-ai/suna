@@ -637,17 +637,6 @@ describe('pi harness', () => {
     ])
   })
 
-  test('a session with no declared agent runs under the kortix.yaml default permission', async () => {
-    const r = await boot({
-      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
-      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ permission: { bash: 'ask' }, agent: {} }) },
-    })
-    const root = r.service.runtime()!.rootId
-    expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
-    await waitFor(() => r.service.runtime()!.permissions.list().length === 1)
-    expect(r.service.runtime()!.permissions.list()[0]).toMatchObject({ permission: 'bash' })
-  })
-
   test('a permission policy of ask pauses the tool until the product replies', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
@@ -2838,27 +2827,6 @@ describe('pi slash commands', () => {
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const user = page.messages.find((m) => m.info.id === messageID)!
     expect(user.parts.map((p) => p.text)).toEqual([expanded])
-  })
-
-  // kortix.yaml v3 `commands`: the compiled config carries them; no prompts/ folder.
-  test('a kortix.yaml command runs from the compiled config, with its agent and model', async () => {
-    const compiled = {
-      agent: { coder: { mode: 'primary', prompt: 'You code.' }, reviewer: { mode: 'primary', prompt: 'You review.' } },
-      command: { audit: { template: 'Audit $1 for $ARGUMENTS.', description: 'Audit a module', agent: 'reviewer' } },
-    }
-    const r = await boot({ script: [{ text: 'Audited.' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled) } })
-    expect(await r.user('/command').then((res) => res.json())).toEqual([
-      { name: 'audit', description: 'Audit a module', source: 'command', template: 'Audit $1 for $ARGUMENTS.', hints: ['$1', '$ARGUMENTS'] },
-    ])
-    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as { commands: { value: unknown[] } }
-    expect(state.commands.value).toEqual([
-      { name: 'audit', description: 'Audit a module', agent: 'reviewer', model: null, source: 'command', subtask: null, hints: ['$1', '$ARGUMENTS'], template_bytes: 24 },
-    ])
-    const root = r.service.runtime()!.rootId
-    const messageID = 'msg_0198e2a4b0e3ABCDEFGHIJKLAA'
-    expect((await command(r, root, { command: 'audit', arguments: 'billing', messageID })).status).toBe(200)
-    expect(sentText(gateway.sent.at(-1)!)).toContain('Audit billing for billing.')
-    expect(sentText(gateway.sent.at(-1)!)).toContain('You review.')
   })
 
   test('a command pi does not have is refused with 400 and runs no turn', async () => {

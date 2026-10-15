@@ -409,34 +409,6 @@ authorization. Re-scoping always means: authorize-new → re-pin → revoke-old.
 `kortix_version` is the schema version. Version 2 is YAML-only and requires
 `default_agent` and `agents`.
 
-Version 3 keeps the version 2 governance and puts agent behavior in
-`kortix.yaml`: each agent takes `prompt` or `prompt_file`, `model`, `mode`,
-`variant`, `permission` and `description`. A v3 project needs no
-`harnesses/opencode/` folder: the top-level `permission` is the tool policy
-every agent starts from (an agent's own `permission` applies over it), and
-`commands` holds the slash commands:
-
-```yaml
-kortix_version: 3
-default_agent: support
-permission: allow
-agents:
-  support:
-    prompt_file: prompts/support.md
-  reviewer:
-    mode: subagent
-    model: kortix/glm-5.3-flash
-    prompt_file: prompts/reviewer.md
-commands:
-  weekly-report:
-    description: Write the weekly report.
-    prompt_file: commands/weekly-report.md   # $ARGUMENTS, $1, $2 take the arguments
-    agent: support
-```
-
-v3 rejects `agents.<name>.file`, `agents.<name>.disable` and the top-level
-`opencode:` key. Agent prompts of any total size reach the sandbox.
-
 A manifest declaring a version higher than
 the platform knows about is rejected outright — the platform won't
 silently misread future fields.
