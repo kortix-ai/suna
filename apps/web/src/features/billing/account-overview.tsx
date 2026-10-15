@@ -204,6 +204,16 @@ export interface PlanStatusCopy {
   active: string;
   noSubscription: string;
   status: (status: string) => string;
+  /** `Trial · 9 days left`. Optional so an older caller keeps compiling. */
+  trialDaysLeft?: (days: number) => string;
+  /** `Trial · ends today`. */
+  trialEndsToday?: string;
+  /** `Ends Nov 14` — a trial or a contract that does not renew. */
+  ends?: (date: string) => string;
+  /** `Annual contract` — an Enterprise contract. */
+  annualContract?: string;
+  /** `SSO stays on until Nov 28` — the grace after Enterprise access ended. */
+  graceUntil?: (date: string) => string;
 }
 
 const DEFAULT_PLAN_STATUS_COPY: PlanStatusCopy = {
@@ -215,7 +225,20 @@ const DEFAULT_PLAN_STATUS_COPY: PlanStatusCopy = {
   active: 'Active',
   noSubscription: 'No subscription',
   status: (status) => status.replace(/_/g, ' '),
+  trialDaysLeft: (days) => `Trial · ${days} ${days === 1 ? 'day' : 'days'} left`,
+  trialEndsToday: 'Trial · ends today',
+  ends: (date) => `Ends ${date}`,
+  annualContract: 'Annual contract',
+  graceUntil: (date) => `SSO stays on until ${date}`,
 };
+
+/** `Nov 14, 2026` — a calendar date from an ISO timestamp. */
+function formatIsoDate(iso: string | null | undefined, locale?: string): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export function describePlanStatus(
   state: AccountState,
@@ -223,30 +246,61 @@ export function describePlanStatus(
 ): PlanStatus {
   const plan = resolvedPlan(state);
   const sub = state.subscription;
+  const text = { ...DEFAULT_PLAN_STATUS_COPY, ...copy };
+
+  // A trial and an Enterprise contract are not Stripe subscriptions: say what
+  // they are and until when, before the subscription lines below.
+  const trial = state.trial;
+  if (trial) {
+    const ends = formatIsoDate(trial.ends_at, text.locale);
+    return {
+      name: plan.label,
+      sublabel: trial.days_left > 0 ? text.trialDaysLeft!(trial.days_left) : text.trialEndsToday!,
+      detail: ends ? text.ends!(ends) : text.trialEndsToday!,
+      isActive: true,
+      isWindingDown: true,
+    };
+  }
+  if (plan.family === 'enterprise') {
+    const contract = state.contract;
+    const ends = formatIsoDate(contract?.ends_at, text.locale);
+    return {
+      name: plan.label,
+      // With no term on file the detail already says "Annual contract".
+      sublabel: contract && ends ? text.annualContract! : null,
+      detail: ends ? (contract?.renews ? text.renews(ends) : text.ends!(ends)) : text.annualContract!,
+      isActive: true,
+      isWindingDown: Boolean(contract && ends && !contract.renews),
+    };
+  }
+
   const periodEnd = sub?.current_period_end
-    ? formatDate(sub.current_period_end, copy.locale)
+    ? formatDate(sub.current_period_end, text.locale)
     : null;
   const isActive = sub?.status === 'active';
+  const graceEnds = formatIsoDate(state.grace?.ends_at, text.locale);
 
   return {
     name: plan.label,
     sublabel:
       plan.monthlyUsd != null
-        ? copy.perMonth(formatWholeUsd(plan.monthlyUsd, copy.locale))
+        ? text.perMonth(formatWholeUsd(plan.monthlyUsd, text.locale))
         : plan.sublabel,
-    detail: sub?.cancel_at_period_end
-      ? periodEnd
-        ? copy.cancels(periodEnd)
-        : copy.cancelsAtPeriodEnd
-      : isActive && periodEnd
-        ? copy.renews(periodEnd)
-        : isActive
-          ? copy.active
-          : // Raw Stripe statuses are snake_case ('past_due', 'incomplete_expired').
-            // Shown to a person, so they read as words.
-            sub?.status
-            ? copy.status(sub.status)
-            : copy.noSubscription,
+    detail: graceEnds
+      ? text.graceUntil!(graceEnds)
+      : sub?.cancel_at_period_end
+        ? periodEnd
+          ? text.cancels(periodEnd)
+          : text.cancelsAtPeriodEnd
+        : isActive && periodEnd
+          ? text.renews(periodEnd)
+          : isActive
+            ? text.active
+            : // Raw Stripe statuses are snake_case ('past_due', 'incomplete_expired').
+              // Shown to a person, so they read as words.
+              sub?.status
+              ? text.status(sub.status)
+              : text.noSubscription,
     isActive,
     isWindingDown: Boolean(sub?.cancel_at_period_end),
   };

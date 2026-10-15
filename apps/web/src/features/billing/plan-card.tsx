@@ -77,6 +77,11 @@ export function PlanCard({ state }: { state: AccountState }) {
     renews: (date: string) => t('renews', { date }),
     active: t('active'),
     noSubscription: t('noSubscription'),
+    trialDaysLeft: (days: number) => t('trialDaysLeft', { days }),
+    trialEndsToday: t('trialEndsToday'),
+    ends: (date: string) => t('ends', { date }),
+    annualContract: t('annualContract'),
+    graceUntil: (date: string) => t('graceUntil', { date }),
     status: (status: string) =>
       t.has(`statuses.${status}`)
         ? t(`statuses.${status}`)

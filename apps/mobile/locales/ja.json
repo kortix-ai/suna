@@ -1165,10 +1165,12 @@
     "current": "現在",
     "currentPlan": "現在のプラン",
     "includes": "{{plan}}に含まれるもの",
-    "askOwner": "アカウントのオーナーにアップグレードを依頼してください",
+    "askOwner": "アカウントのオーナーまたは管理者にアップグレードを依頼してください",
     "contactSales": "営業に問い合わせる",
     "upgradeTo": "{{plan}}にアップグレード",
-    "switchTo": "{{plan}}に切り替え"
+    "switchTo": "{{plan}}に切り替え",
+    "trialLabel_one": "{{plan}} トライアル · 残り {{count}} 日",
+    "trialLabel_other": "{{plan}} トライアル · 残り {{count}} 日"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",

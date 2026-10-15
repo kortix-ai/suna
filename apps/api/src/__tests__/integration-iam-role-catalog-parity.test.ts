@@ -134,19 +134,19 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const owner = await systemRoleActions('owner', 'account');
     const admin = await systemRoleActions('admin', 'account');
     const member = await systemRoleActions('member', 'account');
-    expect([owner.length, admin.length, member.length]).toEqual([29, 26, 5]);
+    expect([owner.length, admin.length, member.length]).toEqual([29, 27, 5]);
     // A plain member does not read the whole directory (20261013172952181):
     // they see the people and groups they share access with.
     expect(member).not.toContain('member.read');
     expect(member).not.toContain('group.read');
     expect(member.filter((a) => !admin.includes(a))).toEqual([]);
     expect(admin.filter((a) => !owner.includes(a))).toEqual([]);
-    // The four owner-only powers, named.
+    // The owner-only powers, named. Admins manage billing (20261015003246450).
     expect(owner.filter((a) => !admin.includes(a)).sort()).toEqual([
       'account.delete',
-      'billing.write',
       'member.super_admin.grant',
     ]);
+    expect(admin).toContain('billing.write');
     // A plain account member has NO write surface over the account. Its only
     // non-read leaves act on the member's OWN personal tokens, which carry no
     // more than the member's own roles.

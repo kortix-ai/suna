@@ -1086,6 +1086,13 @@
       "when": 1792021625676,
       "tag": "20261014234705_credit_accounts_plan_monthly_usd",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1792024366356,
+      "tag": "20261015003246_enterprise_contracts",
+      "breakpoints": true
     }
   ]
 }

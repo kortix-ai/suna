@@ -10,14 +10,13 @@
  * Source of truth: apps/api/src/accounts/iam.ts (mounted on accountsRouter
  * at '/', i.e. under /v1/accounts).
  *
- * Entitlement-gated routes (rbac/sso/scim) need the fixture account unlocked
- * first. The enterprise-demo PUT that does the unlock is platform-admin-only,
- * so the unlock runs as the run-scoped platform admin — see
- * fixtures/enterprise-demo.ts.
+ * Entitlement-gated routes (rbac/sso/scim) need the fixture account on the
+ * Enterprise plan first. A platform admin grants it an Enterprise trial — see
+ * fixtures/enterprise-access.ts.
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { grantEnterpriseTrial } from '../fixtures/enterprise-access';
 import { createDatabaseSession } from '../fixtures/database-project';
 
 // ─── Groups ──────────────────────────────────────────────────────────────
@@ -31,9 +30,9 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for rbac-gated group creation)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
     await ctx.step('OWNER lists groups → 200', async () => {
@@ -85,9 +84,9 @@ flow(
     const team = await ctx.fixtures.team();
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for rbac-gated group creation)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
     await ctx.step('create a group to operate on', async () => {
@@ -161,9 +160,9 @@ flow(
     const member = await team.addMember('member');
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group/member management)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for rbac-gated group/member management)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
     await ctx.step('create a group', async () => {
@@ -244,9 +243,9 @@ flow(
     const team = await ctx.fixtures.team();
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for rbac-gated group creation)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
     await ctx.step('create a group', async () => {
@@ -695,9 +694,9 @@ flow(
     const team = await ctx.fixtures.team();
     let tokenId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for scim-gated token minting)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for scim-gated token minting)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
     await ctx.step('mint SCIM token → 201 secret once', async () => {
@@ -855,9 +854,9 @@ flow(
     const supabaseProviderId = crypto.randomUUID();
     const primaryDomain = `${ctx.fixtures.name('sso')}.test`;
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for sso-gated provider writes)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for sso-gated provider writes)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
     await ctx.step('GET provider (none configured) → 200 null', async () => {
@@ -938,9 +937,9 @@ flow(
     let groupId = '';
     let mappingId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for sso-gated mapping writes)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for sso-gated mapping writes)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
     await ctx.step('list mappings (empty) → 200', async () => {
@@ -1049,9 +1048,9 @@ flow(
     let roleId = '';
 
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated custom-role writes)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for rbac-gated custom-role writes)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
 
@@ -1184,9 +1183,9 @@ flow(
     let policyId = '';
 
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated role/policy writes)',
+      'platform admin grants an Enterprise trial (entitles this fresh account for rbac-gated role/policy writes)',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
 
@@ -1474,7 +1473,7 @@ flow(
     });
 
     await ctx.step('an account role is held by a person — granting one to a group → 400', async () => {
-      await enableEnterpriseDemo(ctx, team.id);
+      await grantEnterpriseTrial(ctx, team.id);
       const g = await ctx.client
         .as(ctx.P.OWNER)
         .post(

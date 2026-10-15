@@ -1165,10 +1165,12 @@
     "current": "Actuelle",
     "currentPlan": "Offre actuelle",
     "includes": "{{plan}} comprend",
-    "askOwner": "Demandez à un propriétaire du compte de changer d'offre",
+    "askOwner": "Demandez à un propriétaire ou un admin du compte de passer à un plan supérieur",
     "contactSales": "Contacter les ventes",
     "upgradeTo": "Passer à {{plan}}",
-    "switchTo": "Basculer vers {{plan}}"
+    "switchTo": "Basculer vers {{plan}}",
+    "trialLabel_one": "Essai {{plan}} · {{count}} jour restant",
+    "trialLabel_other": "Essai {{plan}} · {{count}} jours restants"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",

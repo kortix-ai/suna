@@ -901,6 +901,15 @@ test('kortix.billing.setPlan posts the monthly amount to /billing/plan', async (
   expect(last().method).toBe('POST');
 });
 
+test('kortix.billing.acceptEnterpriseOffer posts to /billing/enterprise-offer/checkout', async () => {
+  await kortix.billing.acceptEnterpriseOffer({
+    successUrl: 'https://app.example.com/ok',
+    cancelUrl: 'https://app.example.com/no',
+  });
+  expect(last().url).toContain('/billing/enterprise-offer/checkout');
+  expect(last().method).toBe('POST');
+});
+
 test('kortix.billing.credits covers purchase + auto-topup get/configure', async () => {
   await kortix.billing.credits.purchase({ amount: 20 });
   expect(last().url).toContain('/billing/purchase-credits');

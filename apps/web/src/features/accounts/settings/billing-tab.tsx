@@ -8,6 +8,7 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { PlanCard, PlanChanger } from '@/features/billing/plan-card';
+import { PlanAccessNotice } from '@/features/billing/plan-access-notice';
 import { TopupControls } from '@/features/billing/topup-controls';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
@@ -142,6 +143,10 @@ export function BillingTab({
           {canPurchaseCredits ? t('buyCreditsHint') : t('topupWalletHint')}
         </InfoBanner>
       )}
+
+      {/* A trial, an Enterprise offer, or the grace after Enterprise ended:
+          stated before anything else, with the upgrade at hand. */}
+      {accountState ? <PlanAccessNotice state={accountState} /> : null}
 
       {showWallet ? (
         <>

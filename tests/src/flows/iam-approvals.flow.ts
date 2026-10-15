@@ -1,13 +1,12 @@
 /**
  * IAM approval control-plane: project access-requests, the connector
  * approval inbox/resolve routes, per-agent secret/connector scoping, the
- * enterprise-demo state read + operator-only toggle, and self-serve SSO
- * metadata import. Maps to spec §5 (IAM-27..IAM-34).
+ * operator-only Enterprise access, and self-serve SSO metadata import. Maps to spec §5 (IAM-27..IAM-34).
  *
  * These live under /v1/projects/:id/* and /v1/accounts/:id/iam/* but are
  * grouped here as the "approval control plane" — the human-in-the-loop
  * surface an agent's write/destructive tool calls gate on, plus its adjacent
- * per-agent scoping and enterprise-preview toggle. Per PR #4117 (a prior 402
+ * per-agent scoping and the Enterprise access gate. Per PR #4117 (a prior 402
  * regression on the per-session audit poll): the project-level approval
  * reads below (GET /approvals, /approvals/needs-input, POST /approvals/:id)
  * gate on plain IAM capability (project.members.manage / project.read),
@@ -15,7 +14,7 @@
  */
 import { flow } from '../core/flow';
 import { deepStrictEqual } from 'node:assert/strict';
-import { asPlatformAdmin, enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { grantEnterpriseTrial } from '../fixtures/enterprise-access';
 
 const UNKNOWN_UUID = '00000000-0000-4000-a000-000000000000';
 
@@ -449,100 +448,53 @@ flow(
   },
 );
 
-// ─── Enterprise-demo state (account read) + operator-only toggle ─────────────
-// The PUT used to be self-serve (`account.write`), which made the Enterprise
-// preview an entitlement any account member could grant themselves. It is now
-// platform-admin-only: the OWNER gets 403 {code:'admin_required'} and the
-// enable is an operator action from the admin console. The GET stays
-// `account.read` so the account page can still render the state.
+// ─── Enterprise access: operator-only, plan-based ───────────────────────────
+// The self-serve Enterprise preview is gone (2026-10-15). Enterprise features
+// come from the Enterprise plan: a contract, or an Enterprise trial a platform
+// admin grants. An account OWNER cannot grant either.
 
 flow(
   'IAM-32',
   {
     domain: 'iam',
-    routes: [
-      'GET /v1/accounts/:accountId/iam/enterprise-demo',
-      'PUT /v1/accounts/:accountId/iam/enterprise-demo',
-    ],
+    routes: ['POST /v1/admin/api/accounts/:id/trial', 'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const member = await team.addMember('member');
 
-    await ctx.step('a fresh account starts with the demo off → 200 false', async () => {
+    await ctx.step('OWNER (has account.write, is not a platform admin) cannot grant Enterprise → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
-      r.status(200).body().has('$.enabled', false);
-    });
-
-    await ctx.step('OWNER (has account.write, is not a platform admin) → 403 admin_required', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: true },
-          { params: { accountId: team.id } },
+        .post(
+          '/v1/admin/api/accounts/:id/trial',
+          { tier_key: 'enterprise', duration_days: 30, credit_grant: 0 },
+          { params: { id: team.id } },
         );
-      r.status(403).body().has('$.code', 'admin_required');
-    });
-
-    await ctx.step('the rejected OWNER write changed nothing → 200 false', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
-      r.status(200).body().has('$.enabled', false);
-    });
-
-    await ctx.step('an account MEMBER reads the state (account.read) → 200', async () => {
-      const r = await ctx.client
-        .as(member)
-        .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
-      r.status(200).body().has('$.enabled', false);
-    });
-
-    await ctx.step('NONMEMBER → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
       r.status(403);
     });
 
+    await ctx.step('before Enterprise, an SSO write is a clean 402 upsell', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+          { name: 'Acme', primary_domain: 'acme-e2e-iam32.com', metadata_xml: '<x/>' },
+          { params: { accountId: team.id } },
+        );
+      r.status(402).body().has('$.code', 'entitlement_required').has('$.entitlement', 'sso');
+    });
+
     if (ctx.env.capabilities.admin) {
-      const admin = asPlatformAdmin(ctx);
-
-      await ctx.step('platform admin enables the demo → 200 true', async () => {
-        const r = await admin.put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: true },
-          { params: { accountId: team.id } },
-        );
-        r.status(200).body().has('$.enabled', true);
-      });
-
-      await ctx.step('the MEMBER read reflects the operator toggle → 200 true', async () => {
+      await ctx.step('platform admin grants an Enterprise trial → the same SSO write is no longer a 402', async () => {
+        await grantEnterpriseTrial(ctx, team.id);
         const r = await ctx.client
-          .as(member)
-          .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
-        r.status(200).body().has('$.enabled', true);
-      });
-
-      await ctx.step('platform admin: non-boolean enabled → 400', async () => {
-        const r = await admin.put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: 'yes' },
-          { params: { accountId: team.id } },
-        );
-        r.status(400);
-      });
-
-      await ctx.step('platform admin disables the demo again (cleanup) → 200 false', async () => {
-        const r = await admin.put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: false },
-          { params: { accountId: team.id } },
-        );
-        r.status(200).body().has('$.enabled', false);
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+            { name: 'Acme', primary_domain: 'acme-e2e-iam32.com', metadata_xml: '<x/>' },
+            { params: { accountId: team.id } },
+          );
+        if (r.statusCode === 402) throw new Error(`still gated after the Enterprise trial: ${r.text()}`);
       });
     }
   },
@@ -574,9 +526,9 @@ flow(
     );
 
     await ctx.step(
-      'the platform admin enables the enterprise-demo preview, which unlocks the surface',
+      'the platform admin grants an Enterprise trial, which unlocks the surface',
       async () => {
-        await enableEnterpriseDemo(ctx, team.id);
+        await grantEnterpriseTrial(ctx, team.id);
       },
     );
 

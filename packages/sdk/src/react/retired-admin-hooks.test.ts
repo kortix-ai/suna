@@ -94,6 +94,10 @@ const RETIRED_HOOKS: Array<[name: string, hook: () => unknown]> = [
   ['useUpdateTechnicalIssue', () => systemStatus.useUpdateTechnicalIssue()],
   ['useClearSystemStatus', () => systemStatus.useClearSystemStatus()],
   ['useAdminAccountSandboxes', () => accounts.useAdminAccountSandboxes('account-1')],
+  // One plan system (2026-10-15): the flag routes answer 410.
+  ['useAdminSetManagedModels', () => accounts.useAdminSetManagedModels()],
+  ['useAdminSetEnterpriseDemo', () => accounts.useAdminSetEnterpriseDemo()],
+  ['useAdminSetEnterpriseEntitled', () => accounts.useAdminSetEnterpriseEntitled()],
 ];
 
 test.each(RETIRED_HOOKS)('%s fails with ENDPOINT_RETIRED and sends no request', async (name, hook) => {

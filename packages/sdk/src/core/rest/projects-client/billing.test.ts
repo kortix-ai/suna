@@ -20,6 +20,7 @@ import {
   getBillingTierConfigurations,
   getDefaultAccountState,
   setBillingPlan,
+  acceptEnterpriseOffer,
   purchaseCredits,
   reactivateSubscription,
   requestTopUp,
@@ -190,6 +191,41 @@ test('setBillingPlan surfaces the 400 for an out-of-range amount', async () => {
   await expect(
     setBillingPlan({ monthlyUsd: 5, successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' }),
   ).rejects.toMatchObject({ status: 400 });
+});
+
+test('acceptEnterpriseOffer posts to /billing/enterprise-offer/checkout and returns the checkout link', async () => {
+  nextResponse = { status: 200, body: { checkout_url: 'https://checkout.stripe.test/e', contract_id: 'ctr-1' } };
+  const result = await acceptEnterpriseOffer({
+    successUrl: 'https://example.com/ok',
+    cancelUrl: 'https://example.com/no',
+    accountId: 'acc-1',
+  });
+  expect(last().url).toContain('/billing/enterprise-offer/checkout');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    success_url: 'https://example.com/ok',
+    cancel_url: 'https://example.com/no',
+    account_id: 'acc-1',
+  });
+  expect(result).toEqual({ checkout_url: 'https://checkout.stripe.test/e', contract_id: 'ctr-1' });
+});
+
+test('acceptEnterpriseOffer surfaces the 404 when there is no open offer', async () => {
+  nextResponse = { status: 404, body: { error: 'the account has no open Enterprise offer' } };
+  await expect(
+    acceptEnterpriseOffer({ successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' }),
+  ).rejects.toMatchObject({ status: 404 });
+});
+
+test('account state carries the trial, contract, offer and grace the API sends', () => {
+  const state = {
+    trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+    contract: null,
+    enterprise_offer: { id: 'ctr-1', license_usd: 25000, credits_usd: 15000, term_months: 12, collection: 'checkout' },
+    grace: null,
+  } satisfies Partial<AccountState>;
+  expect(state.trial.days_left).toBe(9);
+  expect(state.enterprise_offer.collection).toBe('checkout');
 });
 
 test('tier configurations expose the purchasable range', async () => {

@@ -12,7 +12,6 @@ import { getCustomerByStripeId } from '../repositories/customers';
 import { updatePurchaseStatus, getPurchaseByPaymentIntent } from '../repositories/transactions';
 import { billingPeriodForSubscription, canonicalTier, monthlyCreditsForSubscription, planForSubscription, planMonthlyUsd } from './tiers';
 import { grantTopUpBonus } from './top-up-bonus';
-import { enterpriseEntitledFromRow } from './resolve-billing';
 import { grantForPaidProrationInvoice } from './proration-grants';
 import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
@@ -163,6 +162,14 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   }
 
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);
+
+  // An Enterprise contract's events never reach the credits handlers below:
+  // they would refuse to write Enterprise (applyStripeSync).
+  const { routeContractEvent } = await import('./enterprise-contracts');
+  if (await routeContractEvent(event)) {
+    await recordWebhookEvent(event.id, event.type);
+    return { received: true, event_type: event.type };
+  }
 
   switch (event.type) {
     case 'checkout.session.completed':
@@ -320,7 +327,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     subscription.status === 'incomplete_expired' &&
     account &&
     account.stripeSubscriptionId === subscription.id &&
-    !enterpriseEntitledFromRow(account) &&
+    account.tier !== 'enterprise' &&
     account.tier &&
     !['free', 'none'].includes(account.tier);
 

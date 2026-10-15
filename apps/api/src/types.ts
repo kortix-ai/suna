@@ -124,6 +124,46 @@ export interface TierConfig {
 
 // ─── Account State (API response) ───────────────────────────────────────────
 
+/** A dated grant of a plan (`credit_accounts.trial_*`). */
+export interface AccountTrial {
+  plan: 'credits' | 'enterprise';
+  started_at: string | null;
+  ends_at: string;
+  /** Whole days until `ends_at`, rounded up; 0 on the last day. */
+  days_left: number;
+}
+
+/** An Enterprise contract (`kortix.enterprise_contracts`). */
+export interface AccountContract {
+  id: string;
+  /** Annual platform fee, USD. */
+  license_usd: number;
+  /** Annual credit commitment, USD, granted as one pool per term. */
+  credits_usd: number;
+  term_months: number;
+  collection: 'checkout' | 'invoice' | 'manual';
+  starts_at: string | null;
+  /** End of the current term. Null for an open-ended contract. */
+  ends_at: string | null;
+  /** True when the term renews on its own (a Stripe subscription not set to cancel). */
+  renews: boolean;
+}
+
+export interface AccountEnterpriseOffer {
+  id: string;
+  license_usd: number;
+  credits_usd: number;
+  term_months: number;
+  /** `checkout`: a billing manager accepts and pays by card in the app
+   *  (`POST /v1/billing/enterprise-offer/checkout`). */
+  collection: 'checkout' | 'invoice' | 'manual';
+}
+
+export interface AccountAccessGrace {
+  reason: 'trial_ended' | 'contract_ended';
+  ends_at: string;
+}
+
 export interface AccountStateResponse {
   credits: {
     total: number;
@@ -216,19 +256,22 @@ export interface AccountStateResponse {
     entitlements: TierEntitlements;
   };
   /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
-   *  forces every enterprise entitlement on platform-wide. When true, the
-   *  frontend hides the self-serve "Enterprise features — Demo" toggle and
-   *  any "Request enterprise access" upsell — there's nothing to demo-enable
-   *  or upsell when the license already turned it on unconditionally. */
+   *  forces every enterprise entitlement on platform-wide. The frontend then
+   *  hides every Enterprise upsell. */
   enterprise_license_available: boolean;
-  /** True when an operator has flagged this account as a contracted cloud
-   *  Enterprise customer via `credit_accounts.enterprise_entitled`. The
-   *  account then resolves all enterprise entitlements (SSO/SCIM/RBAC/audit)
-   *  regardless of its billing tier, so a deal that is BOTH Enterprise
-   *  (entitlements) AND a credits subscription (billing) can hold both at once. Surfaced
-   *  for the admin console and for the frontend to hide the self-serve demo
-   *  toggle (a real Enterprise contract supersedes the demo). */
+  /** @deprecated Read `plan.family === 'enterprise'`. True on the Enterprise
+   *  plan (a contract or an Enterprise trial). */
   enterprise_entitled: boolean;
+  /** The active trial: a dated grant of a plan. Null when there is none. */
+  trial: AccountTrial | null;
+  /** The active Enterprise contract. Null when there is none. */
+  contract: AccountContract | null;
+  /** An Enterprise contract offered and not yet accepted. Billing managers see
+   *  it with an Accept button. Null when there is none. */
+  enterprise_offer: AccountEnterpriseOffer | null;
+  /** SSO and SCIM stay on after an Enterprise trial or contract ends, until
+   *  `ends_at`, so nobody is locked out. Null outside that window. */
+  grace: AccountAccessGrace | null;
   /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
   models: ModelInfo[];
   auto_topup: {

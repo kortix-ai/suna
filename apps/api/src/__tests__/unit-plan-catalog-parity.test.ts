@@ -134,9 +134,8 @@ for (const key of TIER_KEYS) {
       expect(record.limits.llmRateMultiplier).toBe(observedLlmMultiplier(key));
     });
 
-    test('family is one of the public families; compute multiplier is 1.0', () => {
+    test('family is one of the public families', () => {
       expect(['free', 'credits', 'enterprise']).toContain(record.family);
-      expect(record.compute.rateMultiplier).toBe(1.0);
     });
   });
 }

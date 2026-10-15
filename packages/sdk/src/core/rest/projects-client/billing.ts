@@ -34,6 +34,48 @@ export type BillingState =
  */
 export type PlanFamily = 'free' | 'credits' | 'enterprise';
 
+/** A dated grant of a plan. `days_left` counts whole days, rounded up; 0 on the last day. */
+export interface AccountTrial {
+  plan: 'credits' | 'enterprise';
+  started_at: string | null;
+  ends_at: string;
+  days_left: number;
+}
+
+/** How an Enterprise contract is paid: Stripe Checkout by card, a Stripe invoice, or outside Stripe. */
+export type EnterpriseContractCollection = 'checkout' | 'invoice' | 'manual';
+
+/** An active Enterprise contract: an annual license plus a prepaid credit pool. */
+export interface AccountContract {
+  id: string;
+  /** Annual platform fee, USD. */
+  license_usd: number;
+  /** Annual credit commitment, USD, granted as one pool per term. */
+  credits_usd: number;
+  term_months: number;
+  collection: EnterpriseContractCollection;
+  starts_at: string | null;
+  /** End of the current term. Null for an open-ended contract. */
+  ends_at: string | null;
+  /** True when the term renews on its own. */
+  renews: boolean;
+}
+
+/** An Enterprise contract offered and not yet accepted. */
+export interface AccountEnterpriseOffer {
+  id: string;
+  license_usd: number;
+  credits_usd: number;
+  term_months: number;
+  collection: EnterpriseContractCollection;
+}
+
+/** SSO/SCIM kept after an Enterprise trial or contract ended. */
+export interface AccountAccessGrace {
+  reason: 'trial_ended' | 'contract_ended';
+  ends_at: string;
+}
+
 export interface AccountState {
   credits: {
     total: number;
@@ -179,16 +221,25 @@ export interface AccountState {
   };
   /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
    *  forces every enterprise entitlement on platform-wide — the frontend
-   *  hides the self-serve "Enterprise features — Demo" toggle and any
-   *  "Request enterprise access" upsell when this is true. */
+   *  hides every Enterprise upsell when this is true. */
   enterprise_license_available?: boolean;
-  /** True when an operator flagged this account as a contracted cloud
-   *  Enterprise customer (`credit_accounts.enterprise_entitled`). The account
-   *  then resolves all enterprise entitlements regardless of billing tier, so
-   *  an account can hold a paid credits plan AND enterprise at once. The
-   *  frontend uses this to hide the self-serve demo toggle (a real contract
-   *  supersedes the demo). */
+  /** @deprecated Read `plan.family === 'enterprise'`. True on the Enterprise
+   *  plan (a contract or an Enterprise trial). */
   enterprise_entitled?: boolean;
+  /** The active trial: a dated grant of a plan. Null when there is none.
+   *  Absent on an older server. */
+  trial?: AccountTrial | null;
+  /** The active Enterprise contract. Null when there is none. Absent on an
+   *  older server. */
+  contract?: AccountContract | null;
+  /** An Enterprise contract offered and not yet accepted. A billing manager
+   *  accepts a `checkout` offer with {@link acceptEnterpriseOffer}. Null when
+   *  there is none. Absent on an older server. */
+  enterprise_offer?: AccountEnterpriseOffer | null;
+  /** SSO and SCIM stay on after an Enterprise trial or contract ends, until
+   *  `ends_at`, so nobody is locked out. Null outside that window. Absent on
+   *  an older server. */
+  grace?: AccountAccessGrace | null;
   auto_topup?: {
     enabled: boolean;
     threshold: number;
@@ -902,6 +953,38 @@ export async function setBillingPlan(params: SetBillingPlanParams): Promise<SetB
       account_id: params.accountId,
     }),
     'Failed to set billing plan',
+  );
+}
+
+export interface AcceptEnterpriseOfferParams {
+  successUrl: string;
+  cancelUrl: string;
+  /** Defaults to the caller's active account. */
+  accountId?: string;
+}
+
+export interface AcceptEnterpriseOfferResult {
+  /** Stripe Checkout for the offered contract. Expires within 24 h: create one per click. */
+  checkout_url: string;
+  contract_id: string;
+}
+
+/**
+ * Accept the account's open Enterprise offer (`POST /billing/enterprise-offer/checkout`):
+ * returns a Stripe Checkout link that pays the annual license and credit
+ * commitment by card. Needs `billing.write` (owners and admins). Rejects with
+ * 404 when there is no open offer and 409 when the offer is invoiced instead.
+ */
+export async function acceptEnterpriseOffer(
+  params: AcceptEnterpriseOfferParams,
+): Promise<AcceptEnterpriseOfferResult> {
+  return unwrap(
+    await backendApi.post<AcceptEnterpriseOfferResult>('/billing/enterprise-offer/checkout', {
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      account_id: params.accountId,
+    }),
+    'Failed to start the Enterprise checkout',
   );
 }
 

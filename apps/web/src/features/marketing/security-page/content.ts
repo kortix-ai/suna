@@ -210,7 +210,7 @@ export const identity = {
     label: 'Built-in roles — on every plan',
     account: [
       { k: 'Owner', v: 'Full account control.' },
-      { k: 'Admin', v: 'Manage members, groups, roles and tokens.' },
+      { k: 'Admin', v: 'Manage members, groups, roles, tokens and billing.' },
       { k: 'Member', v: 'Baseline account membership.' },
     ],
     project: [
