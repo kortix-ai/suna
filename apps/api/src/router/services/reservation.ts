@@ -2,6 +2,7 @@ import { HTTPException } from 'hono/http-exception';
 import { wallet } from '../../billing/wallet';
 import type { ActorContext } from '../../shared/actor-context';
 import { dollarsToCents, refundActorSpend, reserveActorSpend } from './member-spend';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 /** The account, amount and member share a refund needs; both reservation types satisfy it. */
 export interface Reservation {
@@ -33,7 +34,7 @@ export async function reserveActorCost(
     console.error(`[${logPrefix}] Credit refund after member cap failure failed:`, error);
   });
   const cap =
-    reserved.capCents === null ? 'configured' : `$${(reserved.capCents / 100).toFixed(2)} / cycle`;
+    reserved.capCents === null ? 'configured' : `${formatUsdAsCredits(reserved.capCents / 100)} credits / cycle`;
   throw new HTTPException(402, {
     message: `Spending cap reached (${cap}). Ask the instance owner to raise or remove the cap.`,
   });
