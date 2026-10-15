@@ -249,6 +249,21 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     }
   });
 
+  test('session_log_restore follows the deployment default while a stored project value wins', () => {
+    const previous = config.SESSION_LOG_RESTORE_DEFAULT_ENABLED;
+    try {
+      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = false;
+      expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(false);
+      expect(resolveFeatureFlag({ experimental: { session_log_restore: true } }, 'session_log_restore')).toBe(true);
+
+      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = true;
+      expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(true);
+      expect(resolveFeatureFlag({ experimental: { session_log_restore: false } }, 'session_log_restore')).toBe(false);
+    } finally {
+      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = previous;
+    }
+  });
+
   test('non-boolean stored values are treated as "no override"', () => {
     for (const garbage of ['true', 1, 0, null, [], {}, 'yes']) {
       expect(resolveFeatureFlag({ experimental: { monitors: garbage } }, 'monitors')).toBe(

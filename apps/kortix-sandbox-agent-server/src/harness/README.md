@@ -328,8 +328,10 @@ root. No turn runs at either point.
   is operator-only; the API holds the same answer in memory once per claim.
   Before default-on, cap it (413 above a stored size, or paging).
 
-Default-on blocker (do not turn `session_log_restore` on by default before it
-is fixed): the restore memory above has no cap. Attachment bytes are no longer
+Default-on blocker (do not turn `session_log_restore` on by default in prod
+before it is fixed): the restore memory above has no cap. Dev turns it on for
+every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
+`deploy-dev.yml`, 2026-10-15). Attachment bytes are no longer
 a blocker (P2.13): the journal uploads them, and a fresh box drops only an
 attachment whose record still says `blob:` (see the restore limits below).
 
