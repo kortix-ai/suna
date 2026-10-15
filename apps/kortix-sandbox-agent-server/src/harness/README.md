@@ -324,8 +324,10 @@ root. No turn runs at either point.
   sends its adapter's one-entry history, which replaces the stored one.
 - **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
   all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
-  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the flag
-  is operator-only; the API holds the same answer in memory once per claim.
+  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the API
+  holds the same answer in memory once per claim. Dev accepts this risk (the flag
+  is on by default there since 2026-10-15) until the cap lands; elsewhere the
+  flag is operator-only.
   Before default-on, cap it (413 above a stored size, or paging).
 
 Default-on blocker (do not turn `session_log_restore` on by default in prod

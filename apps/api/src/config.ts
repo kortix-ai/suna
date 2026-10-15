@@ -300,6 +300,7 @@ const envSchema = z.object({
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
   // Default of the project flag `session_log_restore` for a project with no stored value. Off by
   // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
+  // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
   // How long `PUT …/log/blobs/<sha256>` waits for its body (P2.13): a body not read by then is
   // cancelled with 408 and its upload slot freed. Under the route's 95 s request deadline.
