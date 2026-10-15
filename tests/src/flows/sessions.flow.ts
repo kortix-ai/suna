@@ -1493,6 +1493,7 @@ flow(
       'PUT /v1/projects/:projectId/sessions/:sessionId/archive',
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
       'DELETE /v1/projects/:projectId/sessions/:sessionId',
       'POST /v1/accounts/tokens',
     ],
@@ -1561,6 +1562,9 @@ flow(
       if (rows.find((row) => row.session_id === s1)?.pinned_at !== first.pinned_at) throw new Error('the list row has no pinned_at');
       (await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params: params(s1) }))
         .status(200).body().has('$.pinned_at', first.pinned_at).has('$.archived_at', null);
+      // The session open bundle serves the same row as the read by id.
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', { params: params(s1), query: { transcript: '0' } }))
+        .status(200).body().has('$.session.pinned_at', first.pinned_at).has('$.session.archived_at', null);
     });
 
     await ctx.step('PUT …/archive {archived:true} → 200; the default list leaves it out, archived=only lists it', async () => {
