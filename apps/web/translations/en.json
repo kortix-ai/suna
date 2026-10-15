@@ -19197,6 +19197,7 @@
       "text724364ae40e3": "Set connector sensitive flag",
       "text8683950d26a1": "Set default connector account",
       "textaada5aeaaa50": "Set personal secret",
+      "textc250b6a5f8c8": "Set shared secret",
       "textbc023fc623a3": "Set pooled provider key access",
       "textac7fd4684634": "Set project Git credential",
       "text520f1939d072": "Set session prompt queue hold",
