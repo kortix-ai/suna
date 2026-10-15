@@ -54,22 +54,17 @@ const EXEMPT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
     join(WEB_ROOT, 'src/components/markdown/code/shiki-highlighter.test.ts'),
     new Set(['github-dark']),
   ],
-  // command-palette-search.test.ts filters TERMINAL_THEMES by a real family
-  // name, 'tokyo-night', to prove a family search finds every variant of that
-  // family. The id is data under test there, not a second code palette; every
-  // other forbidden id stays a hit in that file.
+  // This file quotes 'pierre-dark' / 'pierre-light' as literals while building
+  // FORBIDDEN above, and 'github-dark' while explaining the entry above this
+  // one — so it always matches its own source. That is this guard quoting
+  // itself, not app code naming a second palette. Every other forbidden id is
+  // still a hit here too.
+  [import.meta.path, new Set(['pierre-dark', 'pierre-light', 'github-dark', 'tokyo-night'])],
+  // The command palette searches terminal themes by family; 'tokyo-night' is a terminal
+  // theme family (TERMINAL_THEMES), not a Shiki code theme.
   [
     join(WEB_ROOT, 'src/features/workspace/command-palette-search.test.ts'),
     new Set(['tokyo-night']),
-  ],
-  // This file quotes 'pierre-dark' / 'pierre-light' as literals while building
-  // FORBIDDEN above, and 'github-dark' and 'tokyo-night' while explaining the
-  // entries above this one — so it always matches its own source. That is this
-  // guard quoting itself, not app code naming a second palette. Every other
-  // forbidden id is still a hit here too.
-  [
-    import.meta.path,
-    new Set(['pierre-dark', 'pierre-light', 'github-dark', 'tokyo-night']),
   ],
 ]);
 

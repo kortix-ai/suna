@@ -9,7 +9,7 @@ import { getProvider, type ProviderName } from '../../platform/providers';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { readFileSync } from 'node:fs';
 import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
-import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
+import { runtimeAssetsManifest, runtimeEntrypointPath, type RuntimeAssetsManifest } from '../../runtime-assets/manifest';
 import { projectSessions, projects } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { createAccountToken, revokeAccountToken } from '../../repositories/account-tokens';
@@ -21,9 +21,12 @@ import { OPENCODE_PRIMARY_PORT } from '../../shared/opencode-ports';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
   bootstrapLegacyRuntime,
+  bootstrapWouldSkip,
+  updatesItself,
   classifyDaemonHealth,
   describeLegacyBootstrapRetry,
   opencodeIdle,
+  type ExpectedRunningAssets,
   type LegacyBootstrapDeps,
   type LegacyBootstrapResult,
   type LegacyBootstrapRetrySummary,
@@ -259,12 +262,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
     // this deploy's own manifest, never the box's opinion of itself.
     expectedRunningAssets: async () => {
       try {
-        const manifest = await runtimeAssetsManifest();
-        return {
-          cli_sha256: manifest.cli_sha256,
-          managed_skills_hash: manifest.managed_skills_hash,
-          agent_sha256: manifest.components.agent?.sha256 ?? null,
-        };
+        return expectedRunningAssetsFrom(await runtimeAssetsManifest());
       } catch {
         return null;
       }
@@ -392,6 +390,20 @@ export function __resetLegacyBootstrapInFlightForTests(): void {
 }
 
 /**
+ * The shas a box must run for this deploy. With `policy.agent_self_update`
+ * off no box stages the agent, so the agent is not compared (as
+ * `runningAssetsVerdict` does): a frozen fleet reads current, and the repair
+ * script never installs the agent past the kill switch.
+ */
+export function expectedRunningAssetsFrom(manifest: RuntimeAssetsManifest): ExpectedRunningAssets {
+  return {
+    cli_sha256: manifest.cli_sha256,
+    managed_skills_hash: manifest.managed_skills_hash,
+    agent_sha256: manifest.policy.agent_self_update === false ? null : manifest.components.agent?.sha256 ?? null,
+  };
+}
+
+/**
  * Reaper entry point: fire-and-forget with a per-replica concurrency cap. The
  * policy's own gates (recent-check TTL, cooldown, budget, busy) make this
  * cheap on a converged fleet — one health probe per box per 6 h.
@@ -489,6 +501,23 @@ export async function guaranteeCurrentRuntimeOnOpen(
     return { action: 'proceed', classification };
   }
 
+  if (updatesItself(health, classification)) {
+    // Behind only on its own pending update, on a daemon that installs it
+    // itself: serve the box. The same predicate keeps the reaper off it.
+    return { action: 'proceed', classification };
+  }
+
+  const manifestBuild = await deps.manifestBuild();
+  if (bootstrapWouldSkip(row.metadata, manifestBuild, deps.now(), row.externalId)) {
+    // The scheduled repair would return without touching the box: a
+    // `current` check from before this deploy (6 h TTL), or an agent already
+    // staged for this build. Reporting `repairing` held idle, serving boxes in
+    // `starting` for 122-390 s after each dev deploy on 2026-10-14, until the
+    // daemon swapped itself. Serve the box; the daemon converges at its idle
+    // boundary, and the reaper repairs it once the check expires.
+    return { action: 'proceed', classification, retry: describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now()) };
+  }
+
   const status = await deps.fetchOpencodeStatus();
   if (!opencodeIdle(status)) {
     // A live turn owns this box. Relaunching would kill it. The reaper's own
@@ -497,7 +526,6 @@ export async function guaranteeCurrentRuntimeOnOpen(
     return { action: 'defer_turn_running', classification };
   }
 
-  const manifestBuild = await deps.manifestBuild();
   const retry = describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now());
   if (retry.status === 'exhausted') {
     return { action: 'exhausted', classification, retry };

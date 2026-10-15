@@ -16,6 +16,7 @@ const sidebar = [
     label: 'Connect',
     items: ['connect/connectors', 'connect/channels', 'connect/triggers', 'connect/computers', 'connect/mcp'],
   },
+  { label: 'Kortix Capture', items: ['capture', 'capture/rollout'] },
   { label: 'Ship', items: ['apps'] },
   { label: 'Administer', items: ['accounts', 'accounts/identity', 'audit-actions', 'credits'] },
   { label: 'Self-host', items: ['host'] },

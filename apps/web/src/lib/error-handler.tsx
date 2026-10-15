@@ -270,10 +270,10 @@ export const handleApiError = (
     typeof v2Detail?.account_id === 'string' ? v2Detail.account_id : undefined;
 
   // Billing block on a user action (session start, send, purchase). One modal
-  // handles both shapes and picks the right view off the 402's billing_model +
-  // has_subscription: a genuinely-free/no-plan account gets the subscribe pitch;
-  // a paying Team account whose wallet ran dry gets the top-up view (packages +
-  // custom amount + auto-top-up) — never the wrong "you're on Free" pitch.
+  // handles both shapes and picks the right view off the 402's billing_state +
+  // has_subscription: a free/no-plan account gets the plan picker; a paying
+  // account whose wallet ran dry gets the top-up view (packages + custom amount
+  // + auto-top-up) — never the wrong "you're on Free" pitch.
   if (
     isBillingEnabled() &&
     v2Status === 402 &&
@@ -286,8 +286,6 @@ export const handleApiError = (
       message: v2Message ?? '',
       balance: v2Balance,
       accountId: v2AccountId,
-      billingModel:
-        typeof v2Detail?.billing_model === 'string' ? v2Detail.billing_model : undefined,
       hasSubscription:
         typeof v2Detail?.has_subscription === 'boolean' ? v2Detail.has_subscription : undefined,
       // The unambiguous state (billing-state.ts). Preferred over `code`, which

@@ -17,22 +17,19 @@
 // with an uncovered name, or one that never registers itself, fails a
 // generated test by name.
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { isAppOwnedStorageKey, isKeptStorageKey } from '@/lib/utils/clear-local-storage';
 
 const STORES_DIR = resolve(import.meta.dir);
-const SRC_DIR = dirname(STORES_DIR);
 
 /**
  * Every name a call matching `pattern` resolves to in `source`. `pattern`
  * must capture three groups: [1] the opening quote of a string literal (a
  * backreference anchor, discarded), [2] the literal's own text, [3] a bare
  * identifier — exactly one of [2] / [3] is set per match. A bare identifier
- * resolves against a `const <identifier> = '...'` declared in the SAME file,
- * or — when the file imports it — against the `export const` in the local
- * module the import names (the interface-themes key moved there in #9904).
+ * resolves against a `const <identifier> = '...'` declared in the SAME file.
  *
  * Shared by the `persist(` and `registerPersistedStore(` walks below — both
  * name a store the same two ways in this codebase (an inline literal, or a
@@ -59,58 +56,14 @@ function extractNames(
       new RegExp(`const\\s+${identifier}\\s*=\\s*(['"])((?:(?!\\1).)*)\\1`),
     );
     if (!constMatch) {
-      const imported = importedConst(source, file, identifier);
-      if (!imported) {
-        throw new Error(
-          `${file}: ${callDescription} names '${identifier}' but no matching ` +
-            `'const ${identifier} = "..."' was found in the same file or its imports`,
-        );
-      }
-      names.push(imported);
-      continue;
+      throw new Error(
+        `${file}: ${callDescription} names '${identifier}' but no matching ` +
+          `'const ${identifier} = "..."' was found in the same file`,
+      );
     }
     names.push(constMatch[2]);
   }
   return names;
-}
-
-/**
- * The string value an identifier imported into `file` holds in the local
- * module it comes from: `import { X } from '@/lib/y'` reads that module and
- * returns the literal of its `export const X = '...'`. Modules resolve like
- * the app's own aliases (`@/` → `src/`), with the explicit extensions the
- * repo writes. Cached per path — the walk re-reads the same module for every
- * store that imports it. Returns null when nothing resolves, so the caller
- * throws: a name this walker cannot read stays a hole in the guarantee.
- */
-const importedModuleCache = new Map<string, string | null>();
-
-function importedConst(source: string, file: string, identifier: string): string | null {
-  const spec = source.match(
-    new RegExp(
-      `import\\s*\\{[^}]*\\b${identifier}\\b[^}]*\\}\\s*from\\s*(['"])([^'"]+)\\1`,
-    ),
-  )?.[2];
-  if (!spec) return null;
-  const importerDir = dirname(resolve(STORES_DIR, file));
-  const base = spec.startsWith('@/') ? resolve(SRC_DIR, spec.slice(2)) : resolve(importerDir, spec);
-  if (importedModuleCache.has(base)) return readExportedConst(importedModuleCache.get(base)!, identifier);
-  let moduleSource: string | null = null;
-  for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) {
-      moduleSource = readFileSync(candidate, 'utf8');
-      break;
-    }
-  }
-  importedModuleCache.set(base, moduleSource);
-  return readExportedConst(moduleSource, identifier);
-}
-
-function readExportedConst(moduleSource: string | null, identifier: string): string | null {
-  if (!moduleSource) return null;
-  return moduleSource.match(
-    new RegExp(`export\\s+const\\s+${identifier}\\s*=\\s*(['"])((?:(?!\\1).)*)\\1`),
-  )?.[2];
 }
 
 /**
@@ -211,13 +164,6 @@ describe('extractPersistNames resolves both spellings a persist() config uses he
   test('a module-level const reference', () => {
     const source = `const STORAGE_KEY = 'const-key';\npersist((set) => ({}), { name: STORAGE_KEY })`;
     expect(extractPersistNames(source, 'fixture.ts')).toEqual(['const-key']);
-  });
-
-  test('an identifier imported from a local module resolves through that module', () => {
-    const source =
-      `import { USER_PREFERENCES_STORAGE_KEY } from '@/lib/interface-themes';\n` +
-      `persist((set) => ({}), { name: USER_PREFERENCES_STORAGE_KEY })`;
-    expect(extractPersistNames(source, 'fixture.ts')).toEqual(['kortix-user-preferences']);
   });
 
   test('a file with no persist() call yields no names, instead of throwing', () => {

@@ -1,20 +1,27 @@
-import { backendApi } from '../../http/api-client';
-import { iamGet, iamUnwrap as unwrap } from './iam-shared';
+import { retiredEndpointError } from '../../http/api/errors';
 
-// ─── Enterprise demo toggle ───────────────────────────────────────────────
-// Self-serve preview of the enterprise surface (SSO, SCIM, …). Backed by
-// GET/PUT /accounts/:id/iam/enterprise-demo. Off by default; flipping it on
-// unlocks the enterprise features for evaluation — NOT a real Enterprise plan.
+// ─── Enterprise preview (retired) ─────────────────────────────────────────
+// The self-serve Enterprise preview is gone (2026-10-15). Enterprise features
+// come from the Enterprise plan — a contract or an Enterprise trial an operator
+// grants — and the account reads them from `getAccountState()`: `plan.family`,
+// `trial` and `tier.entitlements`.
 
-export async function getEnterpriseDemo(accountId: string): Promise<boolean> {
-  return unwrap(await iamGet<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`))
-    .enabled;
+const PLAN_INSTEAD = "Read plan.family, trial and tier.entitlements from getAccountState().";
+
+/**
+ * @deprecated The Enterprise preview is retired: the API answers 410 on its
+ * route. Always rejects with `ENDPOINT_RETIRED` and sends no request. Read the
+ * Enterprise plan from `getAccountState()`. Removed in the next major.
+ */
+export async function getEnterpriseDemo(_accountId: string): Promise<boolean> {
+  throw retiredEndpointError('getEnterpriseDemo', PLAN_INSTEAD);
 }
 
-export async function setEnterpriseDemo(accountId: string, enabled: boolean): Promise<boolean> {
-  return unwrap(
-    await backendApi.put<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`, {
-      enabled,
-    }),
-  ).enabled;
+/**
+ * @deprecated The Enterprise preview is retired: the API answers 410 on its
+ * route. Always rejects with `ENDPOINT_RETIRED` and sends no request. An
+ * operator grants Enterprise as a trial or a contract. Removed in the next major.
+ */
+export async function setEnterpriseDemo(_accountId: string, _enabled: boolean): Promise<boolean> {
+  throw retiredEndpointError('setEnterpriseDemo', PLAN_INSTEAD);
 }

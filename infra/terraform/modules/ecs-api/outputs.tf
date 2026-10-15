@@ -27,3 +27,8 @@ output "log_group" {
 output "task_definition_arn" {
   value = aws_ecs_task_definition.this.arn
 }
+
+output "task_role_arn" {
+  description = "The API task role: the only principal a capture device role trusts (modules/capture-store)."
+  value       = aws_iam_role.task.arn
+}

@@ -352,26 +352,30 @@ function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: num
 
 /**
  * Platinum refuses a create in a region that does not hold the template yet:
- * `409 template_not_resident`, with `state` 'absent', 'replicating' or
- * 'failed'. Platinum copies the template there on its own (the copy's progress
- * is what `state` reports), so this is the "image still building" condition in
- * another form, and it gets the same patient retry window: it throws the
- * `SnapshotStillBuildingError` that sandbox-init-state.ts waits out.
+ * `409 template_not_resident`. The create itself asks Platinum to copy the
+ * template there (platinum templateResidency.ts requestResidency), so `state`
+ * says whether waiting can help:
+ *   - 'replicating': a copy runs (or was just queued) ⇒ wait, like an image
+ *     that is still building.
+ *   - 'failed': the last copy failed under 2 min ago; the next create after
+ *     that cooldown requeues it. `error` carries Platinum's reason.
+ *   - 'absent': this control plane cannot copy the template at all.
+ * Null for any other error.
  */
-function regionalTemplateNotReady(error: unknown, template: string): Error | null {
+function regionalTemplateRefusal(error: unknown): { region: string; state: string; reason: string } | null {
   const http = platinumHttp(error);
   if (http.status !== 409 || http.code !== 'template_not_resident') return null;
-  let body: { region?: unknown; state?: unknown } = {};
+  let body: { region?: unknown; state?: unknown; error?: unknown } = {};
   try {
     body = JSON.parse(http.body ?? '') as typeof body;
   } catch {
     // code parsed from this body, so it is JSON; keep the defaults if not
   }
-  const region = typeof body.region === 'string' ? body.region : 'the requested region';
-  const state = typeof body.state === 'string' ? body.state : 'absent';
-  return new SnapshotStillBuildingError(
-    `Sandbox image snapshot ${template} is building in ${region}: Platinum is copying the template there (state=${state})`,
-  );
+  return {
+    region: typeof body.region === 'string' ? body.region : 'the requested region',
+    state: typeof body.state === 'string' ? body.state : 'absent',
+    reason: typeof body.error === 'string' ? body.error : 'no reason given',
+  };
 }
 
 /**
@@ -579,8 +583,40 @@ export class PlatinumProvider implements SandboxProvider {
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );
       }
-      const notYetInRegion = regionalTemplateNotReady(err, template);
-      if (notYetInRegion) throw notYetInRegion;
+      const regional = regionalTemplateRefusal(err);
+      if (regional?.state === 'replicating') {
+        // sandbox-init-state.ts waits this class out (~5 min).
+        throw new SnapshotStillBuildingError(
+          `Sandbox image snapshot ${template} is building in ${regional.region}: Platinum is copying the template there (state=replicating)`,
+        );
+      }
+      if (regional && opts.location) {
+        // No copy is running, so waiting cannot help. `us_region` chooses
+        // compute placement only: boot this session in the home region now.
+        // The next regional create after Platinum's cooldown retries the copy.
+        // A speculative (warm) box must match its project's region, so it
+        // fails fast instead (warm-sessions.ts warmSessionPlacement).
+        // The recursion sends no region, so it cannot come back here.
+        // ponytail: an ambiguous home create that fails, followed by a later
+        // regional create that succeeds, leaves the home box orphaned for the
+        // orphan reaper: the two creates use different Idempotency-Keys.
+        const fallback = { requested: regional.region, state: regional.state, at: new Date().toISOString() };
+        if (opts.locationRequired) {
+          throw new Error(
+            `[platinum] template ${template} is not usable in ${regional.region} (state=${regional.state}: ${regional.reason}); this box must run there, so it does not start`,
+          );
+        }
+        // Stable message: alert on it. The fields say which region and why.
+        logger.warn('[platinum] region fallback: the template is not usable in the requested region; the box boots in the home region', {
+          ...fallback,
+          reason: regional.reason,
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+        });
+        const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
+        // Durable record on the session box row: a US-flag project on home compute.
+        return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
+      }
       if (!dedup || !isNameTakenConflict(err)) throw err;
       // See isNameTakenConflict + the module doc: the name is exclusively
       // ours, so this can only be our own prior commit under this same

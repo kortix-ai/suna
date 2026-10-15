@@ -10,18 +10,15 @@ import { markTrialConverted } from './trial-admin';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { getCustomerByStripeId } from '../repositories/customers';
 import { updatePurchaseStatus, getPurchaseByPaymentIntent } from '../repositories/transactions';
-import { getBillingPeriodByPriceId, getTier, getTierByPriceId, getMonthlyCredits, grantForSeats, defaultAutoTopupForSeats, isPerSeatAccount, resolveRenewalGrant, resolvePerSeatPriceId } from './tiers';
+import { billingPeriodForSubscription, canonicalTier, monthlyCreditsForSubscription, planForSubscription, planMonthlyUsd } from './tiers';
+import { grantTopUpBonus } from './top-up-bonus';
 import { grantForPaidProrationInvoice } from './proration-grants';
 import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isUuid } from '../../shared/validate';
 import { handleChargeRefunded, handleDisputeClosed, handleDisputeCreated } from './refund-clawback';
-import { planKeyFromMetadata, activateSubscriptionForAccount } from './stripe-checkout-webhooks';
-
-function planKeyMetadata(planKey: string): { tier_key: string; plan_key: string } {
-  return { tier_key: planKey, plan_key: planKey };
-}
+import { planKeyFromMetadata, activateSubscriptionForAccount, allowanceForSubscription } from './stripe-checkout-webhooks';
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const accountId = session.metadata?.account_id;
@@ -86,6 +83,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     expiring: false,
     key: { event: session.id },
   });
+  await grantTopUpBonus(accountId, amountTotal, `${session.id}:bonus`);
 
   await markCreditPurchase(session, 'completed');
 
@@ -108,13 +106,14 @@ async function handleSubscriptionCheckout(
   accountId: string,
   subscription: Stripe.Subscription | null,
 ) {
-  const tierKey = planKeyFromMetadata(session.metadata);
-  if (!tierKey) return;
+  if (!planKeyFromMetadata(session.metadata)) return;
 
   const subscriptionId = typeof session.subscription === 'string'
     ? session.subscription
     : session.subscription?.id;
   if (!subscriptionId || !subscription) return;
+  const tierKey = planForSubscription(subscription);
+  if (!tierKey) return;
 
   if (session.payment_status !== 'paid') {
     await applyStripeSync(
@@ -143,9 +142,24 @@ async function handleSubscriptionCheckout(
       ? session.customer
       : session.customer?.id ?? null,
     customerEmail: session.customer_email ?? null,
-    serverType: session.metadata?.server_type ?? null,
-    location: session.metadata?.location ?? null,
   });
+}
+
+/**
+ * The Enterprise contract an event belongs to, from the metadata the contract
+ * put on its Checkout session and subscription (Stripe copies subscription
+ * metadata onto each invoice). Null for every other event.
+ */
+function contractIdOfEvent(event: Stripe.Event): string | null {
+  const object = event.data.object as {
+    metadata?: Stripe.Metadata | null;
+    subscription_details?: { metadata?: Stripe.Metadata | null } | null;
+  };
+  if (event.type.startsWith('invoice.')) return object.subscription_details?.metadata?.contract_id || null;
+  if (event.type.startsWith('checkout.session.') || event.type.startsWith('customer.subscription.')) {
+    return object.metadata?.contract_id || null;
+  }
+  return null;
 }
 
 export async function processStripeWebhook(rawBody: string, signature: string) {
@@ -165,6 +179,16 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   }
 
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);
+
+  // An Enterprise contract's events never reach the credits handlers below:
+  // they would refuse to write Enterprise (applyStripeSync). The contract
+  // module loads only for an event that carries a contract_id.
+  if (contractIdOfEvent(event)) {
+    const { routeContractEvent } = await import('./enterprise-contracts');
+    await routeContractEvent(event);
+    await recordWebhookEvent(event.id, event.type);
+    return { received: true, event_type: event.type };
+  }
 
   switch (event.type) {
     case 'checkout.session.completed':
@@ -203,10 +227,6 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
       await handleInvoiceFailed(event.data.object as Stripe.Invoice);
       break;
 
-    case 'subscription_schedule.completed':
-      await handleScheduleCompleted(event.data.object as any);
-      break;
-
     case 'charge.refunded':
       await handleChargeRefunded(
         event.data.object as Stripe.Charge,
@@ -220,10 +240,6 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
 
     case 'charge.dispute.closed':
       await handleDisputeClosed(event.data.object as Stripe.Dispute);
-      break;
-
-    case 'subscription_schedule.released':
-      console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
       break;
 
     default:
@@ -247,39 +263,29 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
 
 async function syncSubscriptionState(accountId: string, subscription: Stripe.Subscription) {
   const account = await getCreditAccount(accountId);
+  const resolvedTier = planForSubscription(subscription);
   if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
     const previousSubId = subscription.metadata?.previous_subscription_id;
     const currentTier = account.tier ?? 'free';
-    const incomingTier = planKeyFromMetadata(subscription.metadata);
+    const incomingSubIsLive = subscription.status === 'active' || subscription.status === 'trialing';
     const isFreeUpgrade =
       currentTier === 'free' &&
-      incomingTier &&
-      incomingTier !== 'free' &&
+      resolvedTier === 'credits' &&
       subscription.status === 'active' &&
       previousSubId === account.stripeSubscriptionId;
-
-    const perSeatPriceId = resolvePerSeatPriceId();
-    const isPerSeatActivation =
-      (subscription.status === 'active' || subscription.status === 'trialing') &&
-      (subscription.metadata?.billing_model === 'per_seat' ||
-        subscription.items.data.some((item) => perSeatPriceId && item.price?.id === perSeatPriceId));
 
     const deadStatuses = ['canceled', 'unpaid', 'incomplete_expired'];
     const currentSubIsDead = deadStatuses.includes(account.stripeSubscriptionStatus ?? '')
       || account.paymentStatus === 'cancelling';
-    const incomingSubIsLive = subscription.status === 'active' || subscription.status === 'trialing';
+    // A legacy machine subscription (`server_type`) never stands in for a plan.
     const isOrphanedPlanRecovery =
-      incomingSubIsLive &&
-      currentSubIsDead &&
-      !!incomingTier && incomingTier !== 'free' && !subscription.metadata?.server_type;
+      incomingSubIsLive && currentSubIsDead && resolvedTier === 'credits' && !subscription.metadata?.server_type;
 
     if (isFreeUpgrade) {
       console.log(
-        `[Webhook] syncSubscriptionState: detected free→${incomingTier} upgrade for ${accountId}, cancelling old free sub ${account.stripeSubscriptionId}`,
+        `[Webhook] syncSubscriptionState: detected free→credits upgrade for ${accountId}, cancelling old free sub ${account.stripeSubscriptionId}`,
       );
       await cancelFreeSubscriptionForUpgrade(account.stripeSubscriptionId, accountId);
-    } else if (isPerSeatActivation) {
-      console.log(`[Webhook] syncSubscriptionState: adopting per-seat subscription ${subscription.id} superseding ${account.stripeSubscriptionId} for ${accountId}`);
     } else if (isOrphanedPlanRecovery) {
       console.log(
         `[Webhook] syncSubscriptionState: adopting orphaned-plan subscription ${subscription.id} for ${accountId} (stored sub ${account.stripeSubscriptionId} is dead, status=${account.stripeSubscriptionStatus}, paymentStatus=${account.paymentStatus})`,
@@ -290,17 +296,14 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     }
   }
 
-  const tierKey = planKeyFromMetadata(subscription.metadata);
-  const priceId = subscription.items.data[0]?.price?.id;
-  const resolvedTier = tierKey ?? getTierByPriceId(priceId ?? '')?.name ?? null;
-  const billingPeriod = getBillingPeriodByPriceId(priceId ?? '') ?? (subscription.metadata?.commitment_type as any) ?? 'monthly';
+  const billingPeriod = billingPeriodForSubscription(subscription);
   const subIsPaying = isPayingSubscriptionStatus(subscription.status);
   const shouldGrantRecoveryCredits =
     !!resolvedTier &&
     subIsPaying &&
     (!account || (!account.stripeSubscriptionId && (!account.tier || account.tier === 'free' || account.tier === 'none')));
 
-  console.log(`[Webhook] syncSubscriptionState: account=${accountId} tier_meta=${tierKey} price=${priceId} resolved=${resolvedTier} status=${subscription.status} paying=${subIsPaying}`);
+  console.log(`[Webhook] syncSubscriptionState: account=${accountId} resolved=${resolvedTier} status=${subscription.status} paying=${subIsPaying}`);
 
   const updates: Record<string, any> = {
     stripeSubscriptionId: subscription.id,
@@ -314,6 +317,13 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       : null,
   };
 
+  // The amount follows the subscription even before it pays, so the plan page
+  // shows what the customer is about to be billed. The tier needs payment.
+  // A comped $0 subscription leaves the stored amount alone.
+  const subscriptionUsd = monthlyCreditsForSubscription(subscription);
+  if (resolvedTier === 'credits' && subscriptionUsd > 0) {
+    updates.planMonthlyUsd = String(subscriptionUsd);
+  }
   if (resolvedTier && subIsPaying) {
     updates.tier = resolvedTier;
   }
@@ -324,50 +334,28 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     updates.paymentStatus = 'active';
   }
 
-  const perSeatPriceId = resolvePerSeatPriceId();
-  const perSeatItem = subscription.items.data.find(
-    (item) =>
-      (perSeatPriceId && item.price?.id === perSeatPriceId) ||
-      subscription.metadata?.billing_model === 'per_seat',
-  );
-  let perSeatNewSeats = 0;
-  if (perSeatItem && subIsPaying) {
-    const newSeats = Math.max(1, Math.floor(perSeatItem.quantity ?? 1));
-    perSeatNewSeats = newSeats;
-    updates.billingModel = 'per_seat';
-    updates.seatCount = newSeats;
-    updates.seatSubscriptionItemId = perSeatItem.id;
-    updates.tier = 'per_seat';
-
-    if (!account?.autoTopupCustomized) {
-      const defaults = defaultAutoTopupForSeats(newSeats);
-      updates.autoTopupThreshold = String(defaults.threshold);
-      updates.autoTopupAmount = String(defaults.amount);
-    }
-  }
-
   const trialConvertedByThisSub =
     account?.trialStatus === 'active' &&
-    !!(updates.tier || perSeatItem) &&
+    !!updates.tier &&
     (subscription.status === 'active' || subscription.status === 'trialing');
 
+  // Every paid key is `credits` now, so "the tier this subscription granted" is
+  // "this is the account's own subscription": a different id returned early
+  // above as stale.
   const neverPaidTierGrantedByThisSub =
     subscription.status === 'incomplete_expired' &&
     account &&
     account.stripeSubscriptionId === subscription.id &&
-    !account.enterpriseEntitled &&
+    account.tier !== 'enterprise' &&
     account.tier &&
-    !['free', 'none'].includes(account.tier) &&
-    (account.tier === resolvedTier || (!!perSeatItem && account.tier === 'per_seat'));
+    !['free', 'none'].includes(account.tier);
 
   if (neverPaidTierGrantedByThisSub) {
     console.log(
       `[Webhook] syncSubscriptionState: revoking never-paid tier '${account!.tier}' for ${accountId} (sub=${subscription.id} is incomplete_expired — first invoice was never paid)`,
     );
     updates.tier = 'free';
-    if (account!.billingModel === 'per_seat') {
-      updates.billingModel = 'legacy';
-    }
+    updates.planMonthlyUsd = null;
   }
 
   await applyStripeSync(accountId, updates, {
@@ -380,28 +368,16 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     await markTrialConverted(accountId);
   }
 
-  const recoveryCredits = resolvedTier
-    ? perSeatItem
-      ? grantForSeats(perSeatNewSeats)
-      : getMonthlyCredits(resolvedTier)
-    : 0;
-
   if (shouldGrantRecoveryCredits && resolvedTier) {
+    const recoveryCredits = allowanceForSubscription(resolvedTier, subscription, account);
     if (recoveryCredits > 0) {
       await wallet.reset({
         accountId,
         amount: recoveryCredits,
-        description: `Recovered Stripe subscription: ${recoveryCredits} credits`,
+        description: `Recovered Stripe subscription: ${Math.round(recoveryCredits * 100)} credits`,
         key: { event: `subscription_activation:${subscription.id}` },
       });
     }
-  }
-
-  if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
-    const { mintYoloTokensForAllMembers } = await import('./seat-management');
-    void mintYoloTokensForAllMembers(accountId).catch((err) =>
-      console.warn(`[Webhook] mint YOLO tokens for existing members failed for ${accountId}:`, err),
-    );
   }
 }
 
@@ -451,19 +427,14 @@ async function tryRestoreOtherActiveSubscription(
 
   if (otherSubs.length === 0) return false;
 
-  const planSub = otherSubs.find((s) => {
-    const key = planKeyFromMetadata(s.metadata);
-    return !!key && key !== 'free' && !s.metadata?.server_type;
-  });
-  const target = planSub ?? otherSubs[0];
+  const target =
+    otherSubs.find((s) => planForSubscription(s) === 'credits' && !s.metadata?.server_type) ?? otherSubs[0];
+  const resolvedTier = planForSubscription(target);
 
   console.log(
-    `[Webhook] handleSubscriptionDeleted: restoring ${accountId} to other active subscription ${target.id} (tier=${planKeyFromMetadata(target.metadata) ?? 'unknown'}) instead of reverting to free`,
+    `[Webhook] handleSubscriptionDeleted: restoring ${accountId} to other active subscription ${target.id} (tier=${resolvedTier ?? 'unknown'}) instead of reverting to free`,
   );
-  const targetTierKey = planKeyFromMetadata(target.metadata);
-  const targetPriceId = target.items?.data?.[0]?.price?.id;
-  const resolvedTier = targetTierKey ?? getTierByPriceId(targetPriceId ?? '')?.name ?? null;
-  const billingPeriod = getBillingPeriodByPriceId(targetPriceId ?? '') ?? (target.metadata?.commitment_type as any) ?? 'monthly';
+  const billingPeriod = billingPeriodForSubscription(target);
 
   const updates: Record<string, any> = {
     stripeSubscriptionId: target.id,
@@ -479,6 +450,9 @@ async function tryRestoreOtherActiveSubscription(
   };
   if (resolvedTier) {
     updates.tier = resolvedTier;
+    const targetUsd = monthlyCreditsForSubscription(target);
+    if (resolvedTier !== 'credits') updates.planMonthlyUsd = null;
+    else if (targetUsd > 0) updates.planMonthlyUsd = String(targetUsd);
   }
   await applyStripeSync(accountId, updates, {
     account,
@@ -499,6 +473,7 @@ async function revertToFree(
     accountId,
     {
       tier: 'free',
+      planMonthlyUsd: null,
       stripeSubscriptionStatus: 'canceled',
       scheduledTierChange: null,
       scheduledTierChangeDate: null,
@@ -551,21 +526,24 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     return;
   }
 
-  if (account.scheduledTierChange) {
-    await applyScheduledDowngrade(accountId, account.scheduledTierChange, account);
-  }
-
-  const tierName = account.scheduledTierChange ?? account.tier ?? 'free';
-
-  const { credits, description: renewalDesc } = resolveRenewalGrant({
-    tierName,
-    billingModel: account.billingModel,
-    seatCount: account.seatCount,
-    amountPaidUsd: (invoice.amount_paid ?? 0) / 100,
-  });
+  // The allowance comes from the subscription that was billed, not from the
+  // stored row: a quantity change since the last renewal takes effect here.
+  const tierName = planForSubscription(subscription) ?? canonicalTier(account.tier ?? 'free');
+  const allowance = allowanceForSubscription(tierName, subscription, account);
+  // Rollover (paid plan only): the unused part of LAST month's allowance
+  // carries one month. It is capped at last month's allowance, so a carry
+  // never compounds. Free resets to its $2.
+  // ponytail: reads the balance outside the wallet's row lock; a debit landing
+  // between the read and the reset can carry a few cents too many.
+  const expiringNow = tierName === 'credits' ? (await wallet.balance(accountId))?.expiring ?? 0 : 0;
+  const carried = Math.max(0, Math.min(expiringNow, planMonthlyUsd(account)));
+  const credits = Math.round((allowance + carried) * 100) / 100;
 
   if (credits > 0) {
-    await wallet.reset({ accountId, amount: credits, description: renewalDesc, key: { event: invoice.id } });
+    const description = carried > 0
+      ? `Monthly renewal: ${Math.round(allowance * 100)} credits + ${Math.round(carried * 100)} rolled over`
+      : `Monthly renewal: ${Math.round(allowance * 100)} credits`;
+    await wallet.reset({ accountId, amount: credits, description, key: { event: invoice.id } });
   }
 
   const planType = account.planType ?? 'monthly';
@@ -576,6 +554,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   await applyStripeSync(
     accountId,
     {
+      ...(tierName === 'credits' ? { planMonthlyUsd: String(allowance) } : {}),
       lastRenewalPeriodStart: periodStart,
       lastProcessedInvoiceId: invoice.id,
       lastGrantDate: new Date().toISOString(),
@@ -599,11 +578,10 @@ async function activateOnFirstInvoicePaid(
     return;
   }
 
-  const priceId = subscription.items.data[0]?.price?.id;
-  const tierKey = planKeyFromMetadata(subscription.metadata) ?? getTierByPriceId(priceId ?? '')?.name;
+  const tierKey = planForSubscription(subscription);
   if (!tierKey) {
     console.warn(
-      `[Webhook] invoice.paid(subscription_create): no tier for ${accountId} (sub=${subscriptionId} price=${priceId ?? 'none'})`,
+      `[Webhook] invoice.paid(subscription_create): no plan for ${accountId} (sub=${subscriptionId} price=${subscription.items.data[0]?.price?.id ?? 'none'})`,
     );
     return;
   }
@@ -620,91 +598,8 @@ async function activateOnFirstInvoicePaid(
         ? subscription.customer
         : subscription.customer?.id ?? null,
       customerEmail: null,
-      serverType: null,
-      location: null,
     }),
   );
-}
-
-async function applyScheduledDowngrade(accountId: string, targetTier: string, account: any) {
-  const tier = getTier(targetTier);
-  if (account.stripeSubscriptionId && account.scheduledPriceId) {
-    try {
-      const stripe = getStripe();
-      const subscription = await stripe.subscriptions.retrieve(account.stripeSubscriptionId);
-      const currentPriceId = subscription.items.data[0]?.price?.id;
-
-      if (currentPriceId === account.scheduledPriceId) {
-        await stripe.subscriptions.update(account.stripeSubscriptionId, {
-          metadata: { ...subscription.metadata, ...planKeyMetadata(targetTier), downgrade: '', target_tier: '' },
-        });
-        console.log(`[Webhook] Price already correct (schedule applied), updated metadata for ${accountId}`);
-      } else {
-        await stripe.subscriptions.update(account.stripeSubscriptionId, {
-          items: [{ id: subscription.items.data[0].id, price: account.scheduledPriceId }],
-          proration_behavior: 'none',
-          metadata: { ...subscription.metadata, ...planKeyMetadata(targetTier), downgrade: '', target_tier: '' },
-        });
-        console.log(`[Webhook] Stripe price updated to ${account.scheduledPriceId} for ${accountId}`);
-      }
-    } catch (err) {
-      console.error(`[Webhook] Failed to update Stripe subscription for ${accountId}:`, err);
-    }
-  }
-
-  await applyStripeSync(
-    accountId,
-    {
-      tier: targetTier,
-      scheduledTierChange: null,
-      scheduledTierChangeDate: null,
-      scheduledPriceId: null,
-    },
-    { account, mode: 'update', reason: 'invoice.paid:scheduled_downgrade' },
-  );
-
-  console.log(`[Webhook] Applied scheduled downgrade to ${tier.displayName} for ${accountId}`);
-}
-
-async function handleScheduleCompleted(schedule: any) {
-  const accountId = schedule.metadata?.account_id;
-  if (!accountId) {
-    console.log(`[Webhook] subscription_schedule.completed: no account_id in metadata`);
-    return;
-  }
-
-  const targetTier = schedule.metadata?.target_tier;
-  const isDowngrade = schedule.metadata?.downgrade === 'true';
-
-  if (targetTier && isDowngrade) {
-    console.log(`[Webhook] Schedule completed: downgrade to ${targetTier} for ${accountId}`);
-
-    await applyStripeSync(
-      accountId,
-      {
-        tier: targetTier,
-        scheduledTierChange: null,
-        scheduledTierChangeDate: null,
-        scheduledPriceId: null,
-      },
-      { mode: 'update', reason: 'subscription_schedule.completed' },
-    );
-
-    const subscriptionId = typeof schedule.subscription === 'string'
-      ? schedule.subscription
-      : schedule.subscription?.id;
-
-    if (subscriptionId) {
-      const stripe = getStripe();
-      try {
-        await stripe.subscriptions.update(subscriptionId, {
-          metadata: { ...planKeyMetadata(targetTier), downgrade: '', target_tier: '', scheduled_change: '' },
-        });
-      } catch (err) {
-        console.error(`[Webhook] Failed to update subscription metadata after schedule completion:`, err);
-      }
-    }
-  }
 }
 
 async function handleInvoiceFailed(invoice: Stripe.Invoice) {
