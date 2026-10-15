@@ -43,9 +43,11 @@ let turnAbandonError: Error | null = null;
 let upstreamPort = 3000;
 
 // The real module namespaces, captured the way this file captures its other real
-// modules (top-level await): `mock.module` does not override a module that a
-// static import already evaluated, so these MUST stay dynamic — a static import
-// here silently turns every mock below into a dead no-op. The spreads keep each
+// modules (top-level await), so the captures themselves are not what the mocks
+// must control. A static import would evaluate this file's whole graph before
+// any mock is registered, and modules in that graph that freeze their own
+// collaborators at eval time (e.g. `forward/turn-start.ts`) would keep the real
+// ones — a silent bypass no mock below can undo. The spreads keep each
 // stub wholesale-complete: an omitted export deletes the name for every later
 // importer in this worker and the failure lands elsewhere, attributed to no test.
 const realRequestContext = await import('../../lib/request-context');
