@@ -14,7 +14,7 @@ import type {
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
 import { resolveAccountBilling } from './billing-cache';
-import { ACCESS_GRACE_DAYS, type ResolvedBilling } from './resolve-billing';
+import { ACCESS_GRACE_DAYS, type ResolvedBilling, trialIsActive } from './resolve-billing';
 import { type ContractRow, getContractState } from './enterprise-contracts';
 import { trialPlanFor } from './trial-admin';
 import {
@@ -140,7 +140,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       rank: resolved.plan.rank,
       // The monthly amount of a paid plan, in USD (1 credit = $0.01). Null for
       // free, enterprise and a trial: they carry no self-serve amount.
-      monthly_usd: resolved.plan.key === 'credits' && resolved.source === 'stored' ? monthlyUsd : null,
+      monthly_usd: resolved.plan.key === 'credits' && tierName === 'credits' ? monthlyUsd : null,
     },
     subscription: {
       // STORED, not resolved: this block describes the Stripe subscription, so
@@ -149,6 +149,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       // the billing UI to render a subscription that does not exist.
       tier_key: tierName,
       tier_display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
+      // STORED, like the rest of this block: what the account pays, also while
+      // a trial overlays `plan` (whose monthly_usd is null then).
+      monthly_usd: monthlyUsd,
       status: subscriptionStatus,
       billing_period: billingPeriod,
       provider,
@@ -169,8 +172,8 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     tier: {
       // RESOLVED: what the account behaves as, so this matches what every gate
       // enforces. `subscription.tier_key` above still carries the stored key.
-      name: resolved.plan.key,
-      display_name: isAdmin && tierName === 'none' ? 'Admin' : resolved.plan.displayName,
+      name: resolved.features.key,
+      display_name: isAdmin && tierName === 'none' ? 'Admin' : resolved.features.displayName,
       // STORED: `monthly_credits` is the recurring GRANT, which Stripe owns. A
       // trial is an entitlement overlay and grants no credits, so the number
       // here must keep describing the subscription, not the trial.
@@ -179,8 +182,8 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       entitlements,
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
-    enterprise_entitled: resolved.plan.family === 'enterprise',
-    trial: trialOf(sub, resolved),
+    enterprise_entitled: resolved.features.family === 'enterprise',
+    trial: trialOf(sub),
     contract: contractOf(contract),
     enterprise_offer: offerOf(offer),
     grace: graceOf(resolved, lastEnded),
@@ -195,8 +198,8 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The active trial, as the account sees it. */
-function trialOf(sub: CreditAccountRow, resolved: ResolvedBilling): AccountTrial | null {
-  if (resolved.source !== 'trial' || !sub?.trialEndsAt) return null;
+function trialOf(sub: CreditAccountRow): AccountTrial | null {
+  if (!sub || !trialIsActive(sub, Date.now()) || !sub.trialEndsAt) return null;
   const plan = trialPlanFor(sub.trialTier ?? '');
   if (!plan) return null;
   return {
@@ -235,7 +238,7 @@ function offerOf(row: ContractRow | null): AccountEnterpriseOffer | null {
 /** SSO/SCIM grace after an Enterprise trial (resolved) or a contract (its end date) ended. */
 function graceOf(resolved: ResolvedBilling, lastEnded: ContractRow | null): AccountAccessGrace | null {
   if (resolved.grace) return { reason: resolved.grace.reason, ends_at: resolved.grace.endsAt };
-  if (resolved.plan.family === 'enterprise' || !lastEnded?.endedAt) return null;
+  if (resolved.features.family === 'enterprise' || !lastEnded?.endedAt) return null;
   const endsMs = new Date(lastEnded.endedAt).getTime() + ACCESS_GRACE_DAYS * DAY_MS;
   return endsMs > Date.now() ? { reason: 'contract_ended', ends_at: new Date(endsMs).toISOString() } : null;
 }
@@ -276,6 +279,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     subscription: {
       tier_key: 'free',
       tier_display_name: 'Free',
+      monthly_usd: null,
       status: 'active',
       billing_period: null,
       provider: 'stripe',

@@ -9,7 +9,7 @@
  * and object keys change; every data object is byte-identical, so each size and
  * SHA-256 in the manifests still holds. The fixture's own index files are skipped; the
  * index lines are built from the manifests (index-line.schema.json), and
- * `status.json` is restamped so the device reads as live.
+ * `status.json` is restamped (reported and app started now) so the device reads as live.
  *
  * `captureSchemas` validates any object against the vendored schemas (ajv,
  * draft 2020-12).
@@ -153,7 +153,10 @@ export function vendoredDevice(input: { prefix: string; deviceId: string; machin
   const now = Date.now();
   const indexObjects = [...index].map(([day, lines]) => ({ key: `${folder}/index/${day}.jsonl`, body: text(lines.join("\n") + "\n"), contentType: "application/x-ndjson" }));
   const deviceDoc = { ...device, device_id: input.deviceId, ...(input.machineKeySha256 ? { machine_key_sha256: input.machineKeySha256 } : {}), ...(input.displays === 2 ? { displays: FIXTURE_DISPLAYS } : {}), updated_at_ms: now };
-  const statusDoc = { ...status, reportedAtMs: now };
+  // Live = reporting now, and the app started now (host.awakeSinceMs): the
+  // fleet health rules count a stalled recorder from the newer of the last frame
+  // and the wake, so the fixture day's old last frame does not read as stuck.
+  const statusDoc = { ...status, host: { ...(status.host as object | undefined), awakeSinceMs: now }, reportedAtMs: now };
   return {
     objects: [
       ...data,

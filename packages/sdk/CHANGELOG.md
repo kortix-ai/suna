@@ -5,6 +5,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (BYOK fee entitlement)
+- `ADMIN_OVERRIDE_KEYS` and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS` add `'byokFee'`
+  (additive union member): the BYOK platform fee is an entitlement, on by
+  default for Free and Credits, off on Enterprise, and an operator override
+  switches it per account.
+
+### Changed (Enterprise is a feature layer)
+- An Enterprise trial no longer sets `AccountState.plan` to Enterprise: `plan`
+  stays the billing plan (what the account pays for), and the trial lends the
+  Enterprise features only (`trial.plan === 'enterprise'`, `tier.entitlements`).
+  A Credits trial still overlays `plan`. `plan.family === 'enterprise'` now
+  means an Enterprise contract.
+- `AccountState.subscription.monthly_usd` (optional, additive): the credits
+  plan's monthly amount the account pays, kept during a trial.
+
 ### Added (Enterprise contracts and trials)
 One plan system (2026-10-15): the plan decides features; a trial is a dated
 grant of a plan; Enterprise is an annual contract (license + credit pool).

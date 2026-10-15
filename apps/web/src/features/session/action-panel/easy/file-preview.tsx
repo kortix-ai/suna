@@ -132,7 +132,10 @@ function PreviewShell({
             shareInput={fileShareInput(path, fileName)}
           />
         </ViewerPathPill>
-        <ButtonGroup className="shrink-0">
+        {/* `*:size-8`: every member matches the `h-8` path pill beside it. The
+            shared buttons default to `size-7` for the shorter app and detail
+            headers. */}
+        <ButtonGroup className="shrink-0 *:size-8">
           {/* Present is not a way of taking the deck with you — it changes what
               you are looking at — so it stays its own control outside the pill. */}
           {onPresent && (
@@ -142,7 +145,7 @@ function PreviewShell({
                 size="icon"
                 aria-label={tI18nComplete.raw('text43f9b89c0b9d')}
                 onClick={onPresent}
-                className="size-7 active:scale-[0.96]"
+                className="active:scale-[0.96]"
               >
                 <Presentation className="size-3.5" />
               </Button>

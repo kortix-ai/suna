@@ -12,10 +12,6 @@
  * A tool's `details` is the part's `state.metadata`. Renderers read these
  * through the SDK's `inputPath` and `toToolView`, so the rows must name the
  * file, draw the patch, and show the answers exactly as they do for OpenCode.
- * `codemode` is pi's own scripting tool: a script the model wrote that calls
- * the other tools. Its live record (`id`, `args` as JSON text, `ok`) and its
- * at-rest record (`call_id`, `input`, `complete`) both land in the metadata,
- * so the spec carries both shapes.
  */
 
 import type { FixtureToolGroup } from '../types';
@@ -108,23 +104,23 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
       renderer: 'codemode-tool.tsx',
       tool: 'codemode',
       input: {
-        code: "const hits = await grep({ pattern: 'formatCurrency', include: '*.ts' });\nawait write({ path: 'docs/currency.md', content: `Found ${hits.length} call sites.` });\nreturn hits.length;",
+        code: "const usages = await tools.grep({ pattern: 'formatCurrency', path: 'src' });\nconst checked = await tools.bash({ command: 'bun test src/lib/format.test.ts' });\nreturn [usages, checked];",
       },
-      output: 'Script completed\nWall time 1.4 s\nOutput:\n2',
+      output: 'Script completed\nWall time 1.2 seconds\nOutput:\n==> text 1/2 <==\nsrc/lib/format.ts:1\nsrc/components/RevenueCard.tsx:4\n==> text 2/2 <==\n3 pass, 0 fail',
       metadata: {
         calls: [
-          { call_id: 'cm1', name: 'grep', input: { pattern: 'formatCurrency' }, status: 'complete', duration_ms: 240 },
-          { call_id: 'cm2', name: 'write', input: { path: 'docs/currency.md' }, status: 'complete', duration_ms: 110 },
+          { call_id: 'call_codemode/1', name: 'grep', kind: 'search', input: { pattern: 'formatCurrency', path: 'src' }, status: 'complete', duration_ms: 40 },
+          { call_id: 'call_codemode/2', name: 'bash', kind: 'shell', input: { command: 'bun test src/lib/format.test.ts' }, status: 'complete', duration_ms: 1100 },
         ],
       },
       runningMetadata: {
         calls: [
-          { id: 'cm1', name: 'grep', args: '{"pattern":"formatCurrency"}', status: 'ok', durationMs: 240 },
-          { id: 'cm2', name: 'write', args: '{"path":"docs/currency.md"}', status: 'running' },
+          { id: 'call_codemode/1', name: 'grep', args: '{"pattern":"formatCurrency","path":"src"}', status: 'ok', durationMs: 40 },
+          { id: 'call_codemode/2', name: 'bash', args: '{"command":"bun test src/lib/format.test.ts"}', status: 'running' },
         ],
       },
-      error: 'Script failed\nWall time 0.3 s\nOutput:\nError: the grep call returned no matches',
-      note: "pi's codemode: a script the model wrote that calls the other tools; its row lists them. The live record and the at-rest record are both real shapes.",
+      error: 'Script failed\nWall time 0.1 seconds\nOutput:\nScript error:\nThe project policy denies this bash call.',
+      note: "pi's codemode: one script that calls other tools. Running, the calls come from pi's live record (`id`, `args` as JSON text); at rest, from the session log's record (`call_id`, `input`). The result drops pi's `Script completed` / `Wall time` / `Output:` header.",
     },
   ],
 };

@@ -282,3 +282,9 @@ runtime version, and the channel. Confirm with
 3. Open the app, close it, and open it again with the update available. A
    device downloads the update on launch and runs it on the next launch.
 4. Expected: the same reply now renders the two option cards.
+5. A build that already renders genui but predates Steps and Checklist (its bundled
+   SDK has no Steps spec) shows *This content could not be displayed.* in place of
+   a Steps or Checklist block. It does not show their markdown: the parser drops an
+   unknown component (`unknown-component`, `no-root`). Send this OTA, and publish
+   the CLI on the same SDK, before the regenerated `kortix-genui` skill reaches
+   sandboxes (genui `SKILL.md` rule 12).

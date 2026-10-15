@@ -33,6 +33,31 @@ describe('markdown fallback', () => {
     expect(md).toContain('Source: places tool');
   });
 
+  test('Steps become a numbered list without photos; text lines collapse to one line', () => {
+    const md = genuiToMarkdown(
+      '```openui\nroot = Steps([a, b, c])\na = Step("Home → Central Station", "Take a taxi or the bus.", "https://example.com/p/a.jpg", "about 20 min")\nb = Step("Central Station → Airport One", "Take the airport train\\nto Terminal 2.", null, "about 35 min")\nc = Step("Hub Airport", "Change planes inside the international transfer area.")\n```',
+    );
+    expect(md).toBe(
+      [
+        '1. **Home → Central Station** — Take a taxi or the bus. (about 20 min)',
+        '2. **Central Station → Airport One** — Take the airport train to Terminal 2. (about 35 min)',
+        '3. **Hub Airport** — Change planes inside the international transfer area.',
+      ].join('\n'),
+    );
+  });
+
+  test('a Checklist becomes an unticked task list under its title', () => {
+    expect(genuiToMarkdown('```openui\nroot = Checklist("Your travel checklist", ["Valid passport", "Visa or entry permit"])\n```')).toBe(
+      '**Your travel checklist**\n\n- [ ] Valid passport\n- [ ] Visa or entry permit',
+    );
+  });
+
+  test('an Image with text keeps the text under the picture', () => {
+    expect(
+      genuiToMarkdown('```openui\nroot = Image("https://example.com/photo.jpg", "A valid photo", null, "Plain light background, face forward.")\n```'),
+    ).toBe('![A valid photo](https://example.com/photo.jpg)\n\nPlain light background, face forward.');
+  });
+
   test('tabs and accordion expand every panel', () => {
     const md = genuiToMarkdown(
       '```openui\nroot = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [b1])\ny = Tab("Two", [b2])\nb1 = Badge("first")\nb2 = Badge("second")\n```',

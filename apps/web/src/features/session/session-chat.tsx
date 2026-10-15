@@ -266,7 +266,6 @@ import {
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
-import { useComputerAwakeLine } from './composer/computer-awake-bar';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import { downloadBlob } from '@/lib/utils/download';
 import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
@@ -1178,12 +1177,6 @@ export function SessionChat({
     [modelUsage, local.model.list],
   );
   const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
-
-  // KRTX-1729: the computer stays on while this person is here, up to a cap.
-  // `presenceAwake` is the server's answer to this tab's presence lease. The
-  // clock runs only while there is a window, and the line keeps its identity
-  // until its text changes: the composer is memo-wrapped.
-  const computerAwake = useComputerAwakeLine(sessionState?.presenceAwake ?? null, effectiveBusy);
 
   // WHICH INBOX ROWS ARE ALREADY ON SCREEN — the queued list above the composer
   // (`projectQueueRows`, `QueuedPromptList`) lists only the rest.
@@ -4691,7 +4684,6 @@ export function SessionChat({
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
                 servedModel={servedNotice}
-                computerAwake={computerAwake}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.

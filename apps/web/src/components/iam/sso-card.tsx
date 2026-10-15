@@ -24,6 +24,7 @@ import { useState, useSyncExternalStore } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Input } from '@/components/ui/input';
@@ -754,12 +755,11 @@ export function EditProviderDialog({
           </div>
 
           <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={autoCreate}
-              onChange={(e) => setAutoCreate(e.target.checked)}
-              className="border-border accent-primary mt-0.5 size-3.5 rounded-sm"
+              onCheckedChange={(v) => setAutoCreate(v === true)}
               disabled={mutation.isPending}
+              className="mt-0.5"
             />
             <span>
               <span className="font-medium">{tI18nComplete.raw('text33e17e895ebc')}</span>
@@ -770,12 +770,11 @@ export function EditProviderDialog({
           </label>
 
           <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={autoProvision}
-              onChange={(e) => setAutoProvision(e.target.checked)}
-              className="border-border accent-primary mt-0.5 size-3.5 rounded-sm"
+              onCheckedChange={(v) => setAutoProvision(v === true)}
               disabled={mutation.isPending}
+              className="mt-0.5"
             />
             <span>
               <span className="font-medium">{tI18nComplete.raw('text459ff8f45278')}</span>

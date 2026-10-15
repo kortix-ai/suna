@@ -413,7 +413,7 @@ describe('convergeConfigRelease — follow-base', () => {
     expect(prepared).toEqual([expect.stringMatching(new RegExp(`${id}\\.[0-9a-f-]+\\.tmp/\\.kortix/opencode$`))])
     expect(git(work, 'status', '--porcelain')).toBe('')
     // The descriptor request has no inputs that pick the release; it asks for v3.
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'] })
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'], capabilities: ['agent-config.env-gz.v1'] })
   })
 
   test('the pointer is written only after the proof', async () => {
@@ -826,7 +826,7 @@ describe('convergeConfigRelease — other sources', () => {
     expect(response.config).toMatchObject({ source: 'release', mode: 'follow-base', proven: true })
     expect(await servingDir()).toBe(join(dir, DIR))
     // The descriptor request carries no inputs that pick the release; it asks for v3.
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'] })
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'], capabilities: ['agent-config.env-gz.v1'] })
 
     // The edit reaches the box by being pushed to the base branch.
     write(origin, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')

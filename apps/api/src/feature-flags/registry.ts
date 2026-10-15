@@ -436,20 +436,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'session_log_restore',
     name: 'Session log restore',
     description:
-      'Rebuild a session from its saved session log when its computer lost the conversation. Off by default and not offered in Settings: Kortix enables it per project.',
+      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: Kortix enables it per project, or for a whole deployment (on by default on dev).',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
-    // Internal-only (2026-10-13): not offered in Settings.
-    // A Kortix operator enables it per project.
+    // Off unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev does, 2026-10-15).
+    platformDefault: () => config.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+    // Internal-only (2026-10-13): not a Settings toggle. A Kortix operator sets it per project
+    // (PUT /v1/admin/api/projects/:id/features). While on, Settings lists it read-only.
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only. Session provisioning sets KORTIX_SESSION_LOG_RESTORE=1 in the box env ' +
       '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
       'from the session log at boot when the store is missing or behind the log ' +
-      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. Not default-on ' +
-      'before the journal uploads pi images and OpenCode attachment bytes.',
+      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
+      'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
+      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). Not default-on in prod before the ' +
+      'restore memory is capped (harness/README.md).',
   },
 ];
 

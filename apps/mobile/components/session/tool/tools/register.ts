@@ -7,4 +7,3 @@ import './register-files';
 import './register-web';
 import './register-agents';
 import './register-projects';
-import './codemode-tool';

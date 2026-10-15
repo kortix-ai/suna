@@ -49,7 +49,7 @@ function enterpriseLicenseGates(): TierEntitlements {
  * which is what `getTier()` already did to it at every downstream use.
  */
 export async function getAccountTier(accountId: string): Promise<string> {
-  return (await resolveAccountBilling(accountId, { fresh: true })).plan.key;
+  return (await resolveAccountBilling(accountId, { fresh: true })).features.key;
 }
 
 /**
@@ -70,7 +70,7 @@ export async function getCachedAccountTier(
   accountId: string,
   now: number = Date.now(),
 ): Promise<string> {
-  return (await resolveAccountBilling(accountId, { now })).plan.key;
+  return (await resolveAccountBilling(accountId, { now })).features.key;
 }
 
 /**

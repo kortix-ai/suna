@@ -1,241 +1,255 @@
 /**
- * `codemode`. Port of apps/web `tool/tools/codemode-tool.tsx`:
- * - trigger: the status title (`codemodeTitle`: "Running script" live /
- *   "Script failed" / "Ran script") + the summary ("N tool calls · names",
- *   `codemodeSummary`); the row shimmers its subtitle while the call runs;
- * - card: the script's calls first — one row per call (mark, name, argument,
- *   duration, error), the list that sets a script apart from every other row —
- *   then the script source (`HighlightedCode`, javascript, `max-h` capped,
- *   copy), then the output under a hairline (`codemodeResult` strips pi's
- *   `Script completed|failed` header lines) or "No output" once settled.
- *
- * Every decision lives in `@/lib/session/tools/codemode` (tested).
+ * `codemode` (pi): one JavaScript script that calls other tools. Port of apps/web
+ * `tool/tools/codemode-tool.tsx`:
+ * - trigger: "Running script" (shimmer) / "Script failed" / "Ran script", and,
+ *   closed, "N tool calls · name · name";
+ * - card: the script's tool calls first (status mark, name, main argument,
+ *   duration, a failed call's error), then the script (Shiki javascript), then
+ *   its result without pi's `Script completed` / `Wall time` / `Output:` header.
  */
 
+import { getToolPrimaryArg } from '@kortix/sdk';
+import { useContext } from 'react';
+import { View } from 'react-native';
+import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
-import { CheckIcon, CodeSimpleIcon, MinusIcon, ProhibitIcon, WarningIcon } from '@/lib/icons';
+import { CheckIcon, FileCodeIcon, MinusIcon, ProhibitIcon, WarningIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import {
-  type CodemodeCall,
-  codemodeCalls,
-  codemodeResult,
-  codemodeSummary,
-  codemodeTitle,
-} from '@/lib/session/tools/codemode';
+import { BASH_PANE, bashPaneInset } from '@/lib/session/tools/files-bash';
 import { webSpace } from '@/lib/session/user-message';
 import { THEME } from '@/lib/utils/theme';
-import { useContext, useMemo } from 'react';
-import { View } from 'react-native';
 import {
   BasicTool,
   HighlightedCode,
-  RunningLoader,
-  ToolCopyButton,
-  ToolRunningContext,
   partError,
   partInput,
   partMetadata,
   partOutput,
   partStatus,
+  RunningLoader,
+  ToolCopyButton,
+  ToolRunningContext,
+  ToolScroll,
   useToolCardFrame,
   useToolCardPad,
   useToolIndent,
+  useToolOpen,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
-import { ToolScroll } from '../shared/surface';
 import type { ToolProps } from '../shared/types';
 
-/** Web `max-h-64` (code) and `max-h-80` (output) — two scrollers, never one. */
-const CODEMODE_PANE = {
-  codeMaxHeight: webSpace(64),
-  outputMaxHeight: webSpace(80),
+const TEXT = {
+  ran: 'Ran script',
+  running: 'Running script',
+  failed: 'Script failed',
+  noOutput: 'No output',
+  calls: (count: number) => (count === 1 ? '1 tool call' : `${count} tool calls`),
 } as const;
 
-/** Web `paneInset = pad || 'py-2'` plus the `pr-11` copy reserve. */
-function paneInset(pad: number): {
-  padding?: number;
-  paddingVertical?: number;
-  paddingRight: number;
-} {
-  return pad
-    ? { padding: pad, paddingRight: webSpace(11) }
-    : { paddingVertical: webSpace(2), paddingRight: webSpace(11) };
+/** One tool call a codemode script made. */
+export interface ScriptCall {
+  id: string;
+  name: string;
+  arg: string;
+  status: 'running' | 'ok' | 'error' | 'refused' | 'cancelled';
+  durationMs?: number;
+  error?: string;
 }
 
-/** The mark for one call's outcome: a running call keeps the loader, ok/error/refused carry their hue, else the quiet dash. */
-function CallMark({ status }: { status: CodemodeCall['status'] }) {
-  const palette = useTurnPalette();
-  if (status === 'running') return <RunningLoader size={TURN_SPACE.statusIcon} />;
-  if (status === 'ok') return <CheckIcon size={TURN_SPACE.statusIcon} color={palette.success} />;
-  if (status === 'error')
-    return <WarningIcon weight="fill" size={TURN_SPACE.statusIcon} color={THEME.accent.red} />;
-  if (status === 'refused')
-    return <ProhibitIcon weight="fill" size={TURN_SPACE.statusIcon} color={THEME.accent.orange} />;
-  return <MinusIcon size={TURN_SPACE.statusIcon} color={palette.mutedForeground} />;
+const STATUS: Record<string, ScriptCall['status']> = {
+  running: 'running',
+  ok: 'ok',
+  complete: 'ok',
+  error: 'error',
+  cancelled: 'cancelled',
+  interrupted: 'cancelled',
+};
+
+/** The reasons the pi runtime blocks a call with (kortixd `pi/runtime.ts`). */
+const REFUSED = /^(The project policy denies|The user rejected|Call \S+ directly, not from a script)/;
+
+function callArg(name: string, input: unknown): string {
+  if (input === undefined || input === '') return '';
+  let value = input;
+  if (typeof input === 'string') {
+    try {
+      value = JSON.parse(input);
+    } catch {
+      return input;
+    }
+  }
+  const primary =
+    value && typeof value === 'object'
+      ? getToolPrimaryArg({ type: 'tool', tool: name, state: { status: 'completed', input: value } } as never)
+      : '';
+  return primary || (typeof value === 'string' ? value : JSON.stringify(value));
+}
+
+/** The calls a script made: pi's live record (`id`, `args`) or the session log's (`call_id`, `input`). */
+export function scriptCalls(metadata: Record<string, unknown>): ScriptCall[] {
+  const calls = Array.isArray(metadata.calls) ? (metadata.calls as Array<Record<string, unknown>>) : [];
+  return calls.map((c) => {
+    const status = STATUS[String(c.status)] ?? 'cancelled';
+    const duration = c.durationMs ?? c.duration_ms;
+    return {
+      id: String(c.id ?? c.call_id ?? ''),
+      name: String(c.name ?? ''),
+      arg: callArg(String(c.name ?? ''), c.args ?? c.input),
+      status: status === 'error' && typeof c.error === 'string' && REFUSED.test(c.error) ? 'refused' : status,
+      ...(typeof duration === 'number' ? { durationMs: duration } : {}),
+      ...(typeof c.error === 'string' && c.error ? { error: c.error } : {}),
+    };
+  });
+}
+
+/** The script's result without pi's `Script completed|failed`, `Wall time` and `Output:` header lines. */
+export function scriptResult(text: string): string {
+  return text.replace(/^Script (?:completed|failed)\n(?:Wall time [^\n]*\n)?(?:Output:\n)?/, '').trim();
 }
 
 function formatDuration(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-/**
- * The script's tool calls, one row each: what ran, its main argument, how long
- * it took. pi keeps no output per call; a failed call shows its error.
- */
-function CallRows({ calls }: { calls: CodemodeCall[] }) {
+function CallMark({ status }: { status: ScriptCall['status'] }) {
+  const palette = useTurnPalette();
+  const size = TURN_SPACE.statusIcon;
+  if (status === 'running') return <RunningLoader size={size} />;
+  if (status === 'ok') return <CheckIcon size={size} color={THEME.accent.green} />;
+  if (status === 'error') return <WarningIcon weight="fill" size={size} color={THEME.accent.red} />;
+  if (status === 'refused') return <ProhibitIcon weight="fill" size={size} color={THEME.accent.orange} />;
+  return <MinusIcon size={size} color={palette.mutedForeground} />;
+}
+
+function CallList({ calls }: { calls: ScriptCall[] }) {
   const palette = useTurnPalette();
   return (
-    <View style={{ rowGap: webSpace(1) }}>
+    <View style={{ gap: webSpace(1) }}>
       {calls.map((call, index) => (
-        <View key={call.id || index} style={{ rowGap: 2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(2) }}>
+        <View key={call.id || index}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2, minWidth: 0 }}>
             <CallMark status={call.status} />
-            <Text
-              numberOfLines={1}
-              style={[
-                TURN_TYPE.xs,
-                { fontFamily: monoFont, color: palette.foreground, flexShrink: 0 },
-              ]}
-            >
+            <Text style={[TURN_TYPE.xsRelaxed, { flexShrink: 0, fontFamily: monoFont, color: palette.foreground }]}>
               {call.name}
             </Text>
             <Text
               numberOfLines={1}
-              style={[
-                TURN_TYPE.xs,
-                { fontFamily: monoFont, color: palette.mutedForeground, flex: 1 },
-              ]}
+              style={[TURN_TYPE.xsRelaxed, { flex: 1, minWidth: 0, fontFamily: monoFont, color: palette.mutedForeground }]}
             >
               {call.arg}
             </Text>
-            {call.durationMs !== undefined && (
-              <Text
-                style={[
-                  TURN_TYPE.xs,
-                  {
-                    fontFamily: monoFont,
-                    fontVariant: ['tabular-nums'],
-                    color: palette.mutedForeground,
-                    flexShrink: 0,
-                  },
-                ]}
-              >
+            {call.durationMs !== undefined ? (
+              <Text style={[TURN_TYPE.xsRelaxed, { flexShrink: 0, fontVariant: ['tabular-nums'], color: palette.mutedForeground }]}>
                 {formatDuration(call.durationMs)}
               </Text>
-            )}
+            ) : null}
           </View>
-          {call.error && (
+          {call.error ? (
             <Text
               selectable
-              style={[
-                TURN_TYPE.xs,
-                { fontFamily: monoFont, color: palette.mutedForeground, marginLeft: webSpace(5) },
-              ]}
+              style={[TURN_TYPE.xsRelaxed, { paddingLeft: webSpace(5), fontFamily: monoFont, color: palette.mutedForeground }]}
             >
               {call.error}
             </Text>
-          )}
+          ) : null}
         </View>
       ))}
     </View>
   );
 }
 
+/** The row's words stay ink: the outcome mark `BasicTool` draws carries a failure's hue. */
+function ScriptTrigger({ title, live, summary }: { title: string; live: boolean; summary: string }) {
+  const palette = useTurnPalette();
+  const open = useToolOpen();
+  return (
+    <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5, overflow: 'hidden' }}>
+      {live ? (
+        <TextShimmer duration={1} spread={2} style={TURN_TYPE.xs} numberOfLines={1}>
+          {title}
+        </TextShimmer>
+      ) : (
+        <Text numberOfLines={1} style={[TURN_TYPE.xs, { flexShrink: 0, color: palette.foreground }]}>
+          {title}
+        </Text>
+      )}
+      {!open && summary ? (
+        <Text numberOfLines={1} style={[TURN_TYPE.xs, { flexShrink: 1, color: palette.mutedForeground }]}>
+          {summary}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 export function CodemodeTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const palette = useTurnPalette();
   const running = useContext(ToolRunningContext);
   const frame = useToolCardFrame();
   const pad = useToolCardPad();
   const indent = useToolIndent();
-  const palette = useTurnPalette();
+  const inset = bashPaneInset(pad);
 
   const input = partInput(call);
-  const code = typeof input.code === 'string' ? (input.code as string).trim() : '';
-  const calls = useMemo(() => codemodeCalls(partMetadata(call)), [call]);
+  const code = typeof input.code === 'string' ? input.code.trim() : '';
+  const calls = scriptCalls(partMetadata(call));
   const status = partStatus(call);
   const failed = status === 'error';
-  const result = codemodeResult(failed ? (partError(call) ?? '') : (partOutput(call) ?? ''));
-  const summary = codemodeSummary(calls);
+  const live = running && !failed && status !== 'completed';
+  const result = scriptResult(failed ? (partError(call) ?? '') : partOutput(call));
+  const names = [...new Set(calls.map((c) => c.name))].join(' · ');
+  const summary = calls.length ? `${TEXT.calls(calls.length)}${names ? ` · ${names}` : ''}` : '';
 
   return (
     <BasicTool
       disclosureId={disclosureKey('tool', call.id)}
-      icon={CodeSimpleIcon}
-      trigger={{ title: codemodeTitle(status, running), subtitle: summary || undefined }}
+      icon={FileCodeIcon}
+      trigger={<ScriptTrigger title={live ? TEXT.running : failed ? TEXT.failed : TEXT.ran} live={live} summary={summary} />}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
     >
-      <View
-        style={[
-          indent ? { marginTop: TURN_SPACE.gap1_5, marginLeft: indent } : null,
-          { overflow: 'hidden' },
-          frame,
-        ]}
-      >
-        {calls.length > 0 && (
-          <View
-            style={{
-              borderBottomWidth: 1,
-              borderBottomColor: palette.border60,
-              ...(pad ? { padding: pad } : { paddingVertical: webSpace(2) }),
-            }}
-          >
-            <CallRows calls={calls} />
-          </View>
-        )}
-        {code && (
-          <View style={{ position: 'relative' }}>
-            <ToolScroll
-              maxHeight={CODEMODE_PANE.codeMaxHeight}
-              style={{ backgroundColor: frame ? palette.muted40Bg : undefined }}
-            >
-              <View style={paneInset(pad ?? 0)}>
-                <HighlightedCode
-                  code={code}
-                  language="javascript"
-                  typeStyle={TURN_TYPE.xsRelaxed}
-                  color={palette.foreground90}
-                />
-              </View>
-            </ToolScroll>
-            <ToolCopyButton text={code} />
-          </View>
-        )}
-        {(result || status === 'completed') && (
-          <View style={{ borderTopWidth: 1, borderTopColor: palette.border60 }}>
-            {result ? (
-              <View style={{ position: 'relative' }}>
-                <ToolScroll maxHeight={CODEMODE_PANE.outputMaxHeight}>
-                  <View style={paneInset(pad ?? 0)}>
-                    <Text
-                      variant="muted"
-                      selectable
-                      style={[
-                        TURN_TYPE.xsRelaxed,
-                        { fontFamily: monoFont, color: palette.mutedForeground },
-                      ]}
-                    >
-                      {result}
-                    </Text>
-                  </View>
-                </ToolScroll>
-                <ToolCopyButton text={result} />
-              </View>
-            ) : (
-              <Text
-                variant="muted"
-                style={[
-                  TURN_TYPE.xsRelaxed,
-                  pad ? { padding: pad } : { paddingVertical: webSpace(2) },
-                  { color: palette.muted50 },
-                ]}
+      <View style={indent ? { marginTop: TURN_SPACE.gap1_5, marginLeft: indent } : undefined}>
+        <View style={[{ position: 'relative', overflow: 'hidden' }, frame]}>
+          {calls.length > 0 ? (
+            <View style={[inset, { borderBottomWidth: 1, borderBottomColor: palette.border60 }]}>
+              <CallList calls={calls} />
+            </View>
+          ) : null}
+          {code ? (
+            <View style={{ position: 'relative' }}>
+              <ToolScroll
+                maxHeight={BASH_PANE.commandMaxHeight}
+                style={{ backgroundColor: frame ? palette.muted40Bg : undefined }}
+                showsVerticalScrollIndicator
               >
-                No output
-              </Text>
-            )}
-          </View>
-        )}
+                <View style={inset}>
+                  <HighlightedCode code={code} language="javascript" typeStyle={TURN_TYPE.xsRelaxed} color={palette.foreground90} />
+                </View>
+              </ToolScroll>
+              <ToolCopyButton text={code} />
+            </View>
+          ) : null}
+          {result || status === 'completed' ? (
+            <View style={{ position: 'relative', borderTopWidth: 1, borderTopColor: palette.border60 }}>
+              <ToolScroll maxHeight={BASH_PANE.outputMaxHeight} showsVerticalScrollIndicator>
+                <View style={inset}>
+                  <Text
+                    selectable
+                    style={[
+                      TURN_TYPE.xsRelaxed,
+                      { fontFamily: monoFont, color: failed ? palette.foreground : palette.mutedForeground },
+                    ]}
+                  >
+                    {result || TEXT.noOutput}
+                  </Text>
+                </View>
+              </ToolScroll>
+              {result ? <ToolCopyButton text={result} /> : null}
+            </View>
+          ) : null}
+        </View>
       </View>
     </BasicTool>
   );

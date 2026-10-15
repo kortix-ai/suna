@@ -13,6 +13,7 @@ import { initModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
 import { primeDaytonaTransientClassifier } from './shared/daytona-transient';
+import { primeComposioTransientClassifier } from './shared/composio-transient';
 import { ensureSchema } from './ensure-schema';
 import { dispatchInbound } from './inbound-dispatch';
 import { bootServices, markSchemaReady, shutdown } from './bootstrap';
@@ -44,6 +45,14 @@ void primeDaytonaRateLimitClassifier();
 // transient failure throws before this resolves, so we never block startup on
 // it.
 void primeDaytonaTransientClassifier();
+
+// Same for the Composio client's `InternalServerError` / `APIConnectionError`
+// classes so `isComposioTransientProviderError` (global `app.onError`) has
+// its instanceof signal from the first transient Composio failure on — see
+// shared/composio-transient.ts. Fire-and-forget, never blocks startup; an
+// error thrown before this resolves classifies `false` (identical to the
+// pre-classifier behavior) and cannot occur before a Composio call has run.
+void primeComposioTransientClassifier();
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗

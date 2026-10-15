@@ -230,6 +230,8 @@ export interface AccountStateResponse {
      *  the plan the account behaves as (trial applied), read `plan`. */
     tier_key: string;
     tier_display_name: string;
+    /** The credits plan's monthly amount the account pays (USD), kept during a trial. */
+    monthly_usd: number | null;
     status: string;
     billing_period: 'monthly' | 'yearly' | 'yearly_commitment' | null;
     provider: 'stripe' | 'revenuecat' | 'local';

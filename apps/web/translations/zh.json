@@ -2200,7 +2200,8 @@
         "updateAction": "更改为每月 {amount}",
         "chooseAction": "更新套餐",
         "ownerOnly": "只有账户所有者和管理员可以更改套餐。",
-        "enterpriseNote": "企业版套餐由你的客户团队负责管理。"
+        "enterpriseNote": "企业版套餐由你的客户团队负责管理。",
+        "keepEnterprise": "试用结束后如需继续使用 Enterprise，请联系销售。"
       },
       "modal": {
         "title": "选择你的积分档位",
@@ -2432,11 +2433,11 @@
         },
         "credit": {
           "question": "一个积分能买到什么？",
-          "answer": "1 个积分等于 0.01 美元。积分用于支付智能体计算机，按秒、按资源计费：每 vCPU 每小时 {vcpuRate}，每 GB 内存每小时 {memoryRate}，每 GB 存储每月 {diskRate}，每 GiB 存储 0.000000036 美元。默认的 {spec} 机器每小时约消耗 {creditsPerHour} 个积分，因此 1 个积分约等于 {minutes} 分钟。停止的计算机不收费。积分也用于支付 Kortix 模型，价格为提供商基础价格加 {fee}% 平台费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。"
+          "answer": "1 个积分等于 0.01 美元。积分用于支付智能体计算机，按秒、按资源计费：每 vCPU 每小时 {vcpuRate}，每 GB 内存每小时 {memoryRate}，每 GB 存储每月 {diskRate}，每 GiB 存储 0.000000036 美元。默认的 {spec} 机器每小时约消耗 {creditsPerHour} 个积分，因此 1 个积分约等于 {minutes} 分钟。停止的计算机不收费。积分也用于支付 Kortix 模型，价格为提供商基础价格加 {fee}% 平台费。使用你自己的 API 密钥时，每月前 1,000 美元的模型用量免费，超出部分按提供商价格的 5% 用积分支付。ChatGPT 订阅不消耗积分。"
         },
         "amounts": {
           "question": "我每月需要支付多少？",
-          "answer": "可选择每月 50 美元（5,000 个积分）到每月 10,000 美元（1,000,000 个积分）的档位。每月 200 美元（20,000 个积分）最受欢迎。所有档位的积分费率相同：每美元 100 个积分。每月超过 10,000 美元请联系销售。"
+          "answer": "可选择每月 50 美元（5,000 个积分）到每月 10,000 美元（1,000,000 个积分）的档位。所有档位的积分费率相同：每美元 100 个积分。每月超过 10,000 美元请联系销售。"
         },
         "members": {
           "question": "成员需要付费吗？",
@@ -2448,7 +2449,7 @@
         },
         "models": {
           "question": "模型会消耗积分吗？",
-          "answer": "只有 Kortix 模型会。其费用为提供商基础价格加 {fee}% 平台费，用积分支付，应用中显示基础价格。使用你自己的 API 密钥或已连接的 ChatGPT 订阅时，模型用量记到你的提供商，不消耗积分。这时积分只用于支付智能体计算机。"
+          "answer": "Kortix 模型会；你自己的 API 密钥在每月模型用量超过 1,000 美元后也会。Kortix 模型的费用为提供商基础价格加 {fee}% 平台费，用积分支付，应用中显示基础价格。使用你自己的 API 密钥时，模型用量记到你的提供商：每月前 1,000 美元免费，超出部分按提供商价格的 5% 用积分支付。已连接的 ChatGPT 订阅不消耗积分。"
         },
         "topup": {
           "question": "月中可以追加积分吗？",
@@ -2513,9 +2514,9 @@
         "title": "模型与智能体计算机分开计费",
         "description": "积分用于支付智能体计算机。模型调用的费用取决于模型的来源。",
         "keys": {
-          "tag": "不用积分",
+          "tag": "每月 1,000 美元内免费",
           "title": "你自己的 API 密钥",
-          "body": "添加 Anthropic、OpenAI 或任何其他提供商的密钥。模型用量直接记到你的提供商，不消耗积分。"
+          "body": "添加 Anthropic、OpenAI 或任何其他提供商的密钥。模型用量直接记到你的提供商。每月前 1,000 美元免费，超出后 Kortix 加收 5%，用积分支付。"
         },
         "chatgpt": {
           "tag": "不用积分",
@@ -2527,7 +2528,7 @@
           "title": "Kortix 模型",
           "body": "无需管理密钥。每次调用的费用为提供商基础价格加 {fee}% 平台费，用积分支付。应用中显示的是基础价格。"
         },
-        "summary": "使用你自己的密钥时，积分只用于支付智能体计算机。"
+        "summary": "使用你自己的密钥时，积分用于支付智能体计算机，以及每月超过 1,000 美元部分模型用量的 5%。"
       }
     },
     "access": {
@@ -2535,7 +2536,7 @@
       "credits": "积分版",
       "trialTitle": "{plan}试用 · {days, plural, =0 {今天结束} other {剩余 # 天}}",
       "trialBody": "此账户正在试用{plan}，至 {date} 为止。之后将恢复为已付费的套餐。随时升级即可保留。",
-      "trialBodyEnterprise": "此账户正在试用企业版，至 {date} 为止：SSO、SCIM、高级角色和审计日志已开启。之后将恢复为已付费的套餐，SSO 和 SCIM 再保持开启 14 天。随时可以升级。",
+      "trialBodyEnterprise": "此账户正在试用企业版，至 {date} 为止：SSO、SCIM、高级角色和审计日志已开启。之后将恢复为已付费的套餐，SSO 和 SCIM 再保持开启 14 天。如需继续使用 Enterprise，请联系销售。",
       "upgrade": "升级",
       "talkToSales": "联系销售",
       "askManager": "请让账户所有者或管理员升级套餐。",
@@ -3346,7 +3347,7 @@
       "contactGeneral": "一般咨询",
       "contactSecurity": "安全问题",
       "faqWhatCreditsQuestion": "什么是积分，费用是多少？",
-      "faqWhatCreditsAnswerBefore": "积分用于支付智能体计算机和 Kortix 模型。1 积分为 $0.01，默认智能体计算机每小时约消耗 11 积分。Kortix 模型按提供商基础价格加 5.5% 平台费计费。使用你自己的 API 密钥或 ChatGPT 订阅不消耗积分。套餐、充值以及如何让余额更持久，请见",
+      "faqWhatCreditsAnswerBefore": "积分用于支付智能体计算机和 Kortix 模型。1 积分为 $0.01，默认智能体计算机每小时约消耗 11 积分。Kortix 模型按提供商基础价格加 5.5% 平台费计费。使用你自己的 API 密钥时，每月前 1,000 美元的模型用量免费，之后收取 5%。ChatGPT 订阅不消耗积分。套餐、充值以及如何让余额更持久，请见",
       "faqWhatCreditsLink": "积分与用量",
       "faqWhatCreditsAnswerAfter": "。"
     }
@@ -10067,7 +10068,7 @@
       "text0679d5053dda": "{value0}尚未报告任何工具。一旦同步，每个人都会在此处获得自己的默认·阻止·询问·允许控制。",
       "text067ed033e4a6": "六种会破坏系统的模式，每种旁边都附有修复方案。",
       "text0686a22fbf7d": "另一个会话——同一项目、同一团队或另一个客户",
-      "text0690079160b0": "“{value0}”已删除",
+      "text0690079160b0": "{value0}已删除",
       "text0690d70b6301": "Easy connect 通过各自的 OAuth 页面覆盖 3,000+ 个应用，适合数据栈外围的 SaaS 来源。对于数据仓库本身，直接连接器通常才是诚实答案——大多数数据仓库通过驱动程序或 API 访问，而不是 OAuth 目录条目。",
       "text06993786f49e": "已断开 GitHub 连接",
       "text06a6228ef85f": "连接代码仓库时——它们都以相同方式受限；无法在此选择或更改。",
@@ -18847,6 +18848,20 @@
       "text843ed3b90b42": "将此文件与 192×192 的 color.png 和 32×32 的透明 outline.png 一起打包为 zip。",
       "text5c71673648a2": "在 Teams 中依次打开 Apps → Manage your apps → Upload an app，上传该 zip。",
       "text91b9932411cc": "将应用添加到聊天或频道，然后提及它以开始会话。",
+      "textfd326bb01b61": "粘贴你刚创建的机器人的三个值。",
+      "text39864856b1bc": "在 Azure 门户中",
+      "text14bb4b708203": "在 Microsoft Teams 中",
+      "textbda0f959cde0": "请准备好密钥的值。你将在下一步中粘贴它。",
+      "text9bd6f94da702": "此机器人的 Teams 应用清单",
+      "text7fd0fd8f2405": "使用你自己的 Azure 机器人，然后在任意 Teams 聊天或频道中提及它。",
+      "text776fd1de4147": "请让工作区管理员连接 Microsoft Teams。",
+      "text89e9e20668f3": "把你的智能体带到 Slack",
+      "textc1bd5ca19f5f": "把你的智能体带到 Teams",
+      "texta15b754f2e91": "在任意聊天或频道中提及它，它就会在那里完成工作，无需仪表板，也无需切换上下文。",
+      "text675d4a4174ba": "总结这个讨论串",
+      "textbd52d3eb5ed1": "目前已有三项决定，还有一个问题待 Leo 回复。",
+      "text5df6373cf99f": "周五之前还剩什么？",
+      "textf4d1a9671f2f": "马上处理。正在查看发布清单和三个未关闭的工单。",
       "textd208e2f1260f": "打开 Teams 管理中心",
       "text98722a5463cb": "无法连接 Teams",
       "text53e5f96332d9": "授予管理员同意，使 Kortix 机器人可以在你的租户中运行。",
@@ -19521,12 +19536,6 @@
       "servedModelInPlaceOf": "替代",
       "servedModelBadge": "正在使用 {model}",
       "servedModelBarDescription": "{requested} 未响应上一个请求",
-      "computerAwakeStays": "你在此页面时，沙盒保持开启 · 最多 {duration}",
-      "computerAwakeStops": "沙盒将在 {duration}后停止。发送一条消息以保持开启。",
-      "computerAwakeStopsSoon": "沙盒即将停止。发送一条消息以保持开启。",
-      "computerAwakeHoursMinutes": "{hours} 小时 {minutes} 分钟",
-      "computerAwakeHours": "{hours} 小时",
-      "computerAwakeMinutes": "{minutes} 分钟",
       "text414cc580557b": "已编辑排队中的会话提示",
       "text52867b778586": "一个 kortix.yaml。",
       "textd0dfd435b2f4": "你的 AI 团队，以代码定义。",
@@ -21112,6 +21121,7 @@
     "zoomOut": "缩小",
     "mapTwoFingers": "使用双指移动地图",
     "pick": "推荐",
+    "checklistReady": "已完成 {done}/{total}",
     "convertFailed": "无法准备对话记录。请重试。"
   },
   "mobileAppPromo": {
