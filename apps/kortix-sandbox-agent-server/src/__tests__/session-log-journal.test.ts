@@ -507,6 +507,38 @@ describe('session-log journal', () => {
     await journal.stop(0)
   })
 
+  test('live turn: a codemode part puts when a call in its metadata.calls starts or ends, never per repeated frame', async () => {
+    resetKortixEventBusForTests()
+    fakeApi()
+    const fake = fakeAdapter()
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    fake.liveSeq('m5', 5)
+    bus.publish('message.updated', { sessionID: T, info: { id: 'm5', sessionID: T, role: 'assistant', parentID: 'u4', time: { created: 5_000 }, modelID: 'fake-1', providerID: 'fake' } }, T)
+    const script = (calls: Array<{ name: string; status: string }>) => ({
+      messageID: 'm5', sessionID: T, type: 'tool', id: 'm5-cm', callID: 'c-cm', tool: 'codemode',
+      state: { status: 'running', input: { code: 'await tools.bash({})' }, metadata: { calls }, time: { start: 5_100 } },
+    })
+    const steps = [
+      script([]),
+      script([{ name: 'bash', status: 'running' }]),
+      script([{ name: 'bash', status: 'running' }]), // the same frame again: no put
+      script([{ name: 'bash', status: 'ok' }]),
+      script([{ name: 'bash', status: 'ok' }, { name: 'read', status: 'running' }]),
+    ]
+    for (const part of steps) bus.publish('message.part.updated', { sessionID: T, part }, T)
+    const calls = frames
+      .filter((f) => f.type === 'log.message')
+      .map((f) => (f.payload.message as SessionLogMessage).blocks.length)
+    // message.updated, the new part, then one put per call start or end.
+    expect(calls).toEqual([0, 1, 1, 1, 1])
+    await journal.stop(0)
+  })
+
   test('live turn (P4.7): a running call keeps its v1 metadata and a pending call its partial input; a tool part puts on a status or metadata-key change only', async () => {
     resetKortixEventBusForTests()
     const api = fakeApi()

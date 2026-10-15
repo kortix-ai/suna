@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '../..');
 
 // Structural assertions follow the owning modules after extraction.
-const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts', 'app-density.tsx', 'app-access.tsx']
+const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-releases.tsx', 'app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts', 'app-density.tsx', 'app-access.tsx']
   .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
   .join('\n');
 

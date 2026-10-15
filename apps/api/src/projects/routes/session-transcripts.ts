@@ -6,7 +6,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability, sessionIsTombstoned } from '../lib/access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { AnyObject, projectsApp, SessionTranscriptReadSchema } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
@@ -93,7 +93,7 @@ export function registerSessionTranscriptsRoutes(): void {
         c.get('sessionId') ?? null,
         callerKortixSessionId(c),
       );
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // The saved-history read: it serves the mirror only for the session's
       // current OpenCode root.
@@ -169,7 +169,7 @@ export function registerSessionTranscriptsRoutes(): void {
       const { loaded } = binding;
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
       const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json(await sessionMessageAuthors(visible.row));
     },
   );
@@ -198,7 +198,7 @@ export function registerSessionTranscriptsRoutes(): void {
       const { loaded } = binding;
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
       const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json(await sessionModelUsage(visible.row));
     },
   );

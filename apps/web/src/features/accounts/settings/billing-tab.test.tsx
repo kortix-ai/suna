@@ -63,7 +63,7 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     );
   }
 
-  test('shows the Free plan with its monthly credits and the tier select on the most popular tier', () => {
+  test('shows the Free plan with its monthly credits and the tier select on the $200 tier', () => {
     billingEnabled = true;
     accountStateData = freeState();
     const html = renderPlan();
@@ -76,10 +76,10 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     expect(html).not.toContain('Available balance');
   });
 
-  test('the tier select marks the most popular tier and estimates agent hours', () => {
+  test('the tier select shows no popularity badge and estimates agent hours', () => {
     accountStateData = freeState();
     const html = renderPlan();
-    expect(html).toContain('Most popular');
+    expect(html).not.toContain('Most popular');
     expect(html).toContain('≈ 1,830 agent-computer hours a month.'); // agentHoursForCredits(20_000)
     expect(html).not.toContain('Starter');
   });
