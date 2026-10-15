@@ -1,11 +1,12 @@
 {
-  "source_hash": "4695b6985da43b413c35ee062dbdf229bfe2793547d417ddbaac863593ed1ac0",
+  "source_hash": "6586379c61dcda8a7746d98cad44034108783ec8554389ec14436f7cb1eab285",
   "diff_files": [
     "apps/web/src/app/[locale]/(app)/checkout/page.tsx",
     "apps/web/src/app/[locale]/(app)/connections/page.tsx",
     "apps/web/src/app/[locale]/admin/_components/admin-shell.tsx",
     "apps/web/src/app/globals.css",
     "apps/web/src/features/session/header/session-site-header.tsx",
+    "apps/web/src/features/workspace/account-menu-button.activity.test.tsx",
     "apps/web/src/features/workspace/account-menu-button.test.tsx",
     "apps/web/src/features/workspace/account-menu-button.tsx",
     "apps/web/src/features/workspace/account-top-bar.test.tsx",
@@ -22,13 +23,13 @@
     "tests/e2e/specs/09-admin-console.spec.ts",
     "tests/e2e/specs/52-account-chip-ui.spec.ts"
   ],
-  "diff_hash": "1bfa5716c937ab03c04370d6b266908a38023d57c00feb20a41495844fa3d406",
-  "head": "b8155986f540c70433f3c66231532ba6cde55a97",
+  "diff_hash": "b069058fb419eb13165e14b7c836469a1e4f3713e3e128e167815cabd3dc1fbd",
+  "head": "98394801681e15caa2549b85fa9067be89fdd49b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-15T12:01:53.227Z"
+  "at": "2026-10-15T12:39:45.747Z"
 }
