@@ -179,7 +179,6 @@ export function ComposerCard({
   projectId,
   toolbarSlot,
   servedModel,
-  computerAwake,
   rewind,
   selectedAgent = null,
   onAgentChange,
@@ -216,9 +215,9 @@ export function ComposerCard({
         cardClassName,
         isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
         // A layer above (`ComposerAboveCard`) owns the top corners: a notice,
-        // the sandbox-on strip or the served bar (known here), or a visible
+        // or the served bar (known here), or a visible
         // strip (known only to CSS, through `data-composer-stack`).
-        (notice || computerAwake || (onModelChange && servedModel) || questionActive) &&
+        (notice || (onModelChange && servedModel) || questionActive) &&
           'rounded-t-none',
         '[[data-composer-stack]:has(>[data-composer-strip]:not(:empty))+&]:rounded-t-none',
         // The bottom half of the ring the docked question starts (see

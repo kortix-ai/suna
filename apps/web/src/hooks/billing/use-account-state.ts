@@ -65,14 +65,31 @@ export const accountStateKeys = {
 // UTILITY - Invalidation helper for mutations
 // =============================================================================
 
-// Global deduplication state for account state refetches
-let refetchTimeout: NodeJS.Timeout | null = null;
-let pendingSkipCache = false;
-let activeRefetchPromise: Promise<void> | null = null;
+// Forced refetches are debounced and deduplicated per QueryClient and per
+// account slot (KRTX-2414). One module-wide timer and promise let a second
+// account cancel the first account's pending refetch, and skip its own while
+// the first one ran.
+type QueryClientLike = ReturnType<typeof useQueryClient>;
+interface RefetchSlot {
+  timeout: ReturnType<typeof setTimeout> | null;
+  /** A caller in this window asked to bypass the server cache: the most aggressive wins. */
+  skipCache: boolean;
+  active: Promise<void> | null;
+}
+const refetchSlots = new WeakMap<QueryClientLike, Map<string, RefetchSlot>>();
 const REFETCH_DEBOUNCE_MS = 200;
 
+function refetchSlot(queryClient: QueryClientLike, accountId?: string): RefetchSlot {
+  let slots = refetchSlots.get(queryClient);
+  if (!slots) refetchSlots.set(queryClient, (slots = new Map()));
+  const key = accountId ?? '';
+  let slot = slots.get(key);
+  if (!slot) slots.set(key, (slot = { timeout: null, skipCache: false, active: null }));
+  return slot;
+}
+
 export function invalidateAccountState(
-  queryClient: ReturnType<typeof useQueryClient>,
+  queryClient: QueryClientLike,
   refetch = false,
   skipCache = false,
   accountId?: string,
@@ -89,48 +106,33 @@ export function invalidateAccountState(
 
   if (!refetch) return;
 
-  // Track if any caller wants skipCache (most aggressive wins)
-  if (skipCache) {
-    pendingSkipCache = true;
-  }
+  const slot = refetchSlot(queryClient, accountId);
+  if (skipCache) slot.skipCache = true;
 
-  // If there's already an active refetch in progress, just queue the skipCache preference
-  if (activeRefetchPromise) {
-    return;
-  }
+  // This slot is already fetching: keep the skipCache preference for its next refetch.
+  if (slot.active) return;
 
-  // Clear any pending debounce timeout
-  if (refetchTimeout) {
-    clearTimeout(refetchTimeout);
-  }
-
-  // Debounce to batch multiple rapid calls into one
-  refetchTimeout = setTimeout(() => {
-    const shouldSkipCache = pendingSkipCache;
-    pendingSkipCache = false;
-    refetchTimeout = null;
-
-    // Create a single promise that all callers will share
-    activeRefetchPromise = (async () => {
-      try {
-        // Use refetchQueries which properly deduplicates across components
-        // The queryFn in the useAccountState hook will handle skipCache
-        if (shouldSkipCache) {
-          // For skipCache, we need to bypass the cached queryFn
-          // Use setQueryData with fresh data
-          const freshData = await getAccountState({ skipCache: true, accountId });
-          queryClient.setQueryData(accountStateKeys.state(accountId), freshData);
-        } else {
-          // Normal refetch - React Query handles deduplication
-          await queryClient.refetchQueries({
-            queryKey: accountStateKeys.state(accountId),
-            type: 'active',
-          });
-        }
-      } finally {
-        activeRefetchPromise = null;
+  // Debounce to batch rapid calls for this slot into one.
+  if (slot.timeout) clearTimeout(slot.timeout);
+  slot.timeout = setTimeout(() => {
+    const shouldSkipCache = slot.skipCache;
+    slot.skipCache = false;
+    slot.timeout = null;
+    slot.active = (async () => {
+      if (shouldSkipCache) {
+        // Bypass the server cache: write fresh data straight into the slot.
+        const freshData = await getAccountState({ skipCache: true, accountId });
+        queryClient.setQueryData(accountStateKeys.state(accountId), freshData);
+      } else {
+        // Normal refetch — React Query deduplicates across components.
+        await queryClient.refetchQueries({ queryKey: accountStateKeys.state(accountId), type: 'active' });
       }
-    })();
+    })()
+      // A failed refresh keeps the stale data; the next request tries again.
+      .catch(() => undefined)
+      .finally(() => {
+        slot.active = null;
+      });
   }, REFETCH_DEBOUNCE_MS);
 }
 
