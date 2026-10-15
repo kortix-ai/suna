@@ -80,7 +80,7 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     accountStateData = freeState();
     const html = renderPlan();
     expect(html).toContain('Most popular');
-    expect(html).toContain('≈ 1,000 agent-computer hours a month.');
+    expect(html).toContain('≈ 1,830 agent-computer hours a month.'); // agentHoursForCredits(20_000)
     expect(html).not.toContain('Starter');
   });
 
