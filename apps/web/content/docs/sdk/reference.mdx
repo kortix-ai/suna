@@ -358,7 +358,7 @@ Every field of `create` is in [Triggers & reminders](/docs/connect/triggers#fiel
 | `token(appId)` | A 15-minute sign-in token for the App that names the caller. Needs the `member_tokens` capability. |
 | `authEnv(appId)` | `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS`, to verify App tokens without a network call. |
 
-Kortix turns Apps on per project. While Apps is off, every Apps route returns `403 feature_disabled`. Routes: `/projects/{projectId}/apps/…`. See [Build on Apps from TypeScript](/docs/apps#build-on-apps-from-typescript).
+Apps are generally available in every project. Apps routes still require project membership and the appropriate Apps permission. Routes: `/projects/{projectId}/apps/…`. See [Build on Apps from TypeScript](/docs/apps#build-on-apps-from-typescript).
 
 ### Gateway and models
 

@@ -39,7 +39,6 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const t = useTranslations('sidebar');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const customizeTab = useCapabilityTab(projectId);
-  const apps = useFeatureFlag(projectId, 'apps');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const volumes = useFeatureFlag(projectId, 'drives');
   const canReview = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ).allowed === true;
@@ -62,15 +61,11 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
-      ...(apps.enabled
-        ? {
-            apps: {
-              label: tI18nComplete.raw('text89dd748442c1'),
-              icon: <AppWindowIcon />,
-              href: `${base}/apps`,
-            },
-          }
-        : {}),
+      apps: {
+        label: tI18nComplete.raw('text89dd748442c1'),
+        icon: <AppWindowIcon />,
+        href: `${base}/apps`,
+      },
       ...(canReview
         ? { review: { label: t('review'), icon: <TrayIcon />, href: reviewHref(projectId) } }
         : {}),
@@ -92,7 +87,6 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
     tI18nComplete,
     projectId,
     customizeTab,
-    apps.enabled,
     reminders.enabled,
     canReview,
     filesListed,

@@ -1194,10 +1194,6 @@
           "name": "Meta-agente",
           "description": "Adicione um coordenador que gerencia sessões especializadas e trabalhos de várias etapas no projeto."
         },
-        "apps": {
-          "name": "Aplicativos",
-          "description": "Implante sites estáticos, pacotes JavaScript, Dockerfiles e imagens OCI em URLs estáveis e execute backends: um banco de dados, funções de servidor, consultas em tempo real, armazenamento de arquivos, agendamento e busca em uma máquina sempre ativa."
-        },
         "monitors": {
           "name": "Monitores",
           "description": "Execute observadores persistentes de registros, feeds ou APIs que iniciam sessões de agentes a partir de eventos."
@@ -2090,6 +2086,7 @@
     "expandQuotes": "Expandir citações",
     "collapseQuotes": "Recolher citações",
     "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
+    "stoppedBy": "Parado por {name}",
     "queued": "Na fila",
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",
