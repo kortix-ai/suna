@@ -1165,10 +1165,12 @@
     "current": "Attuale",
     "currentPlan": "Piano attuale",
     "includes": "{{plan}} include",
-    "askOwner": "Chiedi a un proprietario dell'account di effettuare l'upgrade",
+    "askOwner": "Chiedi a un proprietario o a un amministratore dell'account di fare l'upgrade",
     "contactSales": "Contatta le vendite",
     "upgradeTo": "Passa a {{plan}}",
-    "switchTo": "Torna a {{plan}}"
+    "switchTo": "Torna a {{plan}}",
+    "trialLabel_one": "Prova {{plan}} · {{count}} giorno rimasto",
+    "trialLabel_other": "Prova {{plan}} · {{count}} giorni rimasti"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1180,7 +1182,23 @@
     "showMoreSubsessions_one": "Mostra {{count}} altra",
     "showMoreSubsessions_other": "Mostra altre {{count}}",
     "showMoreSubsessionsLabel_one": "Mostra {{count}} altra sotto-sessione di {{title}}",
-    "showMoreSubsessionsLabel_other": "Mostra altre {{count}} sotto-sessioni di {{title}}"
+    "showMoreSubsessionsLabel_other": "Mostra altre {{count}} sotto-sessioni di {{title}}",
+    "pin": "Fissa",
+    "unpin": "Rimuovi dai fissati",
+    "archive": "Archivia",
+    "unarchive": "Rimuovi dall'archivio",
+    "pinDone": "Sessione fissata",
+    "unpinDone": "Sessione rimossa dai fissati",
+    "archiveDone": "Sessione archiviata",
+    "unarchiveDone": "Sessione rimossa dall'archivio",
+    "pinFailed": "Impossibile fissare la sessione. Riprova.",
+    "unpinFailed": "Impossibile rimuovere la sessione dai fissati. Riprova.",
+    "archiveFailed": "Impossibile archiviare la sessione. Riprova.",
+    "unarchiveFailed": "Impossibile rimuovere la sessione dall'archivio. Riprova.",
+    "undo": "Annulla",
+    "pinnedSection": "Fissate",
+    "archivedView": "Archiviate",
+    "archivedEmpty": "Le sessioni che archivi verranno mostrate qui."
   },
   "genui": {
     "chartTapHint": "Tocca per leggere un valore",

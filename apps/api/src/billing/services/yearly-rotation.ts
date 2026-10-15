@@ -38,12 +38,10 @@ export async function processYearlyCreditRotation(): Promise<{
   async function rotateBatch(accounts: Awaited<ReturnType<typeof getYearlyAccountsDueForRotation>>) {
     for (const account of accounts) {
       try {
-        // A paid plan and an Enterprise contract both carry their monthly
-        // amount on the row; anything else grants its fixed allowance.
+        // A paid plan carries its monthly amount on the row; anything else
+        // grants its fixed allowance.
         const plan = canonicalTier(account.tier);
-        const credits = plan === 'credits' || plan === 'enterprise'
-          ? planMonthlyUsd(account)
-          : getTier(account.tier ?? 'free').monthlyCredits;
+        const credits = plan === 'credits' ? planMonthlyUsd(account) : getTier(account.tier ?? 'free').monthlyCredits;
         const now = new Date();
         // UTC, like the free-tier key: a replica in another time zone must not mint a second key at a month edge.
         const yearMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -53,9 +51,7 @@ export async function processYearlyCreditRotation(): Promise<{
           await wallet.reset({
             accountId: account.accountId,
             amount: credits,
-            description: plan === 'enterprise'
-              ? `Enterprise contract monthly credits: ${Math.round(credits * 100)} credits`
-              : `Yearly plan monthly credits: ${Math.round(credits * 100)} credits`,
+            description: `Yearly plan monthly credits: ${Math.round(credits * 100)} credits`,
             key: { event: idempotencyKey },
           });
         }

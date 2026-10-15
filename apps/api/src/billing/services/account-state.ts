@@ -1,11 +1,22 @@
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { config } from '../../config';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
+import { isoValue } from '../../shared/cost-values';
+import type {
+  AccountAccessGrace,
+  AccountContract,
+  AccountEnterpriseOffer,
+  AccountStateResponse,
+  AccountTrial,
+  CommitmentInfo,
+  ScheduledChange,
+} from '../../types';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
 import { resolveAccountBilling } from './billing-cache';
-import { enterpriseEntitledFromRow } from './resolve-billing';
+import { ACCESS_GRACE_DAYS, type ResolvedBilling } from './resolve-billing';
+import { type ContractRow, getContractState } from './enterprise-contracts';
+import { trialPlanFor } from './trial-admin';
 import {
   billingSnapshotFromAccount,
   billingStateAllowsRun,
@@ -58,20 +69,18 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // All of these are independent of one another (each keyed only on accountId
   // and/or the `account` row already fetched above) — run them concurrently
   // instead of ~8 sequential round-trips.
-  const [resolved, [credits, isAdmin, entitlements, autoTopup, usageThisPeriod]] =
+  const [resolved, [credits, isAdmin, entitlements, autoTopup, usageThisPeriod], { active: contract, offer, lastEnded }] =
     await Promise.all([resolvedPending, Promise.all([
       getCreditSummary(account),
       isPlatformAdmin(accountId),
-      // Entitlements must honor the self-serve enterprise DEMO flag, not just the
-      // billing tier — otherwise flipping the demo on never surfaces the SSO/SCIM
-      // cards (the tier's static entitlements say sso:false). getAccountEntitlements
-      // applies the demo override.
+      // The resolved entitlements (trial, grace and overrides applied), not the
+      // stored tier's static ones.
       getAccountEntitlements(accountId, account),
       getAutoTopupSettings(accountId, account),
       sub
         ? getUsageBreakdownThisPeriod(accountId, currentPeriodStart(sub.billingCycleAnchor ?? null)).catch(() => null)
         : Promise.resolve(null),
-    ])]);
+    ]), getContractState(accountId)]);
 
   const isCancelled =
     sub?.stripeSubscriptionStatus === 'canceled' || sub?.revenuecatCancelledAt != null;
@@ -170,19 +179,65 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       entitlements,
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
-    // Surface the per-account contracted-Enterprise flag so the admin console
-    // and the frontend can distinguish a real Enterprise contract (entitlements
-    // sourced from `enterprise_entitled`, independent of billing tier) from a
-    // self-serve demo or a self-host license. When true, the frontend hides
-    // the self-serve "Enterprise features — Demo" toggle (a real contract
-    // supersedes the demo) and the admin console shows the contract state.
-    enterprise_entitled: enterpriseEntitledFromRow(sub),
+    enterprise_entitled: resolved.plan.family === 'enterprise',
+    trial: trialOf(sub, resolved),
+    contract: contractOf(contract),
+    enterprise_offer: offerOf(offer),
+    grace: graceOf(resolved, lastEnded),
     models: [],
     auto_topup: autoTopup,
     usage_this_period: usageThisPeriod,
   };
 
   return state;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The active trial, as the account sees it. */
+function trialOf(sub: CreditAccountRow, resolved: ResolvedBilling): AccountTrial | null {
+  if (resolved.source !== 'trial' || !sub?.trialEndsAt) return null;
+  const plan = trialPlanFor(sub.trialTier ?? '');
+  if (!plan) return null;
+  return {
+    plan,
+    started_at: isoValue(sub.trialStartedAt),
+    ends_at: isoValue(sub.trialEndsAt) ?? sub.trialEndsAt,
+    days_left: Math.max(0, Math.ceil((new Date(sub.trialEndsAt).getTime() - Date.now()) / DAY_MS)),
+  };
+}
+
+function contractOf(row: ContractRow | null): AccountContract | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    license_usd: Number(row.licenseUsd),
+    credits_usd: Number(row.creditsUsd),
+    term_months: row.termMonths,
+    collection: row.collection as AccountContract['collection'],
+    starts_at: isoValue(row.startsAt),
+    ends_at: isoValue(row.endsAt),
+    renews: row.autoRenews,
+  };
+}
+
+function offerOf(row: ContractRow | null): AccountEnterpriseOffer | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    license_usd: Number(row.licenseUsd),
+    credits_usd: Number(row.creditsUsd),
+    term_months: row.termMonths,
+    collection: row.collection as AccountEnterpriseOffer['collection'],
+  };
+}
+
+/** SSO/SCIM grace after an Enterprise trial (resolved) or a contract (its end date) ended. */
+function graceOf(resolved: ResolvedBilling, lastEnded: ContractRow | null): AccountAccessGrace | null {
+  if (resolved.grace) return { reason: resolved.grace.reason, ends_at: resolved.grace.endsAt };
+  if (resolved.plan.family === 'enterprise' || !lastEnded?.endedAt) return null;
+  const endsMs = new Date(lastEnded.endedAt).getTime() + ACCESS_GRACE_DAYS * DAY_MS;
+  return endsMs > Date.now() ? { reason: 'contract_ended', ends_at: new Date(endsMs).toISOString() } : null;
 }
 
 export async function buildAccountState(accountId: string): Promise<AccountStateResponse> {
@@ -251,6 +306,10 @@ export function buildLocalAccountState(): AccountStateResponse {
     // No-DB local mode has no credit_accounts row, so the contracted-Enterprise
     // flag is false by construction (fail-closed).
     enterprise_entitled: false,
+    trial: null,
+    contract: null,
+    enterprise_offer: null,
+    grace: null,
     models: [],
     auto_topup: {
       enabled: false,

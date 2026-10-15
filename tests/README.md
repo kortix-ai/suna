@@ -66,6 +66,9 @@ reuse. A file that joins the diff or an edit to a changed file drops every
 reused group. Delete `tests/attestations/<branch>.json` to rerun everything on
 the same diff. The attestation hashes the working tree, so commit the tested
 edits as they are: a tested file that the commit leaves out makes it stale.
+A run fingerprints the working tree before its lanes start. When the tree
+differs at the end (an edit or commit made during the run), it writes no
+attestation and exits 1: rerun `pnpm test` on the final tree.
 
 `CI=1 pnpm test` runs the whole suite and reuses nothing. GitHub Actions sets
 `CI`, so the `Tests` run on every push to `dev` and the release lanes always

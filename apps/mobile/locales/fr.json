@@ -1165,10 +1165,12 @@
     "current": "Actuelle",
     "currentPlan": "Offre actuelle",
     "includes": "{{plan}} comprend",
-    "askOwner": "Demandez à un propriétaire du compte de changer d'offre",
+    "askOwner": "Demandez à un propriétaire ou un admin du compte de passer à un plan supérieur",
     "contactSales": "Contacter les ventes",
     "upgradeTo": "Passer à {{plan}}",
-    "switchTo": "Basculer vers {{plan}}"
+    "switchTo": "Basculer vers {{plan}}",
+    "trialLabel_one": "Essai {{plan}} · {{count}} jour restant",
+    "trialLabel_other": "Essai {{plan}} · {{count}} jours restants"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1180,7 +1182,23 @@
     "showMoreSubsessions_one": "Afficher {{count}} de plus",
     "showMoreSubsessions_other": "Afficher {{count}} de plus",
     "showMoreSubsessionsLabel_one": "Afficher {{count}} sous-session de plus de {{title}}",
-    "showMoreSubsessionsLabel_other": "Afficher {{count}} sous-sessions de plus de {{title}}"
+    "showMoreSubsessionsLabel_other": "Afficher {{count}} sous-sessions de plus de {{title}}",
+    "pin": "Épingler",
+    "unpin": "Désépingler",
+    "archive": "Archiver",
+    "unarchive": "Désarchiver",
+    "pinDone": "Session épinglée",
+    "unpinDone": "Session désépinglée",
+    "archiveDone": "Session archivée",
+    "unarchiveDone": "Session désarchivée",
+    "pinFailed": "Impossible d'épingler la session. Réessaie.",
+    "unpinFailed": "Impossible de désépingler la session. Réessaie.",
+    "archiveFailed": "Impossible d'archiver la session. Réessaie.",
+    "unarchiveFailed": "Impossible de désarchiver la session. Réessaie.",
+    "undo": "Annuler",
+    "pinnedSection": "Épinglées",
+    "archivedView": "Archivées",
+    "archivedEmpty": "Les sessions que vous archivez apparaîtront ici."
   },
   "genui": {
     "chartTapHint": "Touchez pour lire une valeur",

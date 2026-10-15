@@ -4,7 +4,7 @@
 import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
 import { subscribe } from '../fixtures/billing';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { grantEnterpriseTrial } from '../fixtures/enterprise-access';
 import { log } from '../core/log';
 import type { FlowContext } from '../core/types';
 
@@ -2218,7 +2218,7 @@ flow('SEC-AUD-4', {
 
   await ctx.step('the owner deletes the only group in an audience → the value stays closed', async () => {
     // Groups are an rbac entitlement; the platform admin unlocks it for this account.
-    await enableEnterpriseDemo(ctx, team.id);
+    await grantEnterpriseTrial(ctx, team.id);
     const created = await asOwner.post('/v1/accounts/:accountId/iam/groups',
       { name: ctx.fixtures.name('grp'), description: 'e2e' }, { params: { accountId: team.id } });
     created.status(201);

@@ -1,50 +1,47 @@
-// Admin-issued trial lifecycle: grant, revoke, expiry sweep.
+// Trials: a dated grant of a plan (.agents/skills/billing/references/plans-and-access.md).
 //
-// Resolution semantics live in resolve-billing.ts (the trial is a lazy overlay,
-// never a `tier` write). This module owns the WRITES: the admin routes call
-// grantTrial/revokeTrial, the billing cron calls sweepExpiredTrials, and the
-// Stripe webhook flips an active trial to 'converted' when a real subscription
-// lands (webhooks.ts) so a purchased plan is never masked by the overlay.
+// Resolution lives in resolve-billing.ts (the trial is a lazy overlay on the
+// trial columns, never a `tier` write). This module owns the WRITES: the admin
+// routes call grantTrial/revokeTrial, the access sweep calls
+// sweepExpiredTrials, and the Stripe webhooks call markTrialConverted when a
+// purchase ends a trial.
 
 import { creditAccounts } from '@kortix/db';
-import { and, eq, gt, lte } from 'drizzle-orm';
+import { and, eq, lte } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { isoValue } from '../../shared/cost-values';
 import { clearAccountLimitCache } from '../../shared/account-limits';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyAdminOverride } from './account-write-owner';
 import { TRIAL_STATUS } from './effective-tier';
-import {
-  type EntitlementOverrides,
-  type OverrideKey,
-  toStoredOverrides,
-  withoutOverrideKeys,
-} from './entitlement-overrides';
+import { ENTITLEMENT_OVERRIDE_KEYS, parseEntitlementOverrides, toStoredOverrides } from './entitlement-overrides';
 import { invalidateCachedAccountTier } from './entitlements';
-import { type PlanRecord, resolvePlanRecord } from './plan-catalog';
-import { isValidTier } from './tiers';
+import { canonicalTier } from './tiers';
 import { wallet } from '../wallet';
 
 export const MAX_TRIAL_DURATION_DAYS = 365;
-
-/** Monthly credits (USD) of a trial issued before `trial_monthly_usd`, per legacy seat. */
-const LEGACY_TRIAL_USD_PER_SEAT = 25;
+/** Largest one-time trial credit grant, USD. */
+export const MAX_TRIAL_CREDIT_GRANT_USD = 10_000;
+/** The default one-time credit grant of an Enterprise trial, USD. */
+export const DEFAULT_ENTERPRISE_TRIAL_CREDITS_USD = 500;
 
 /** Ledger type for credits granted as part of a trial (reporting cleanliness). */
 export const TRIAL_GRANT_LEDGER_TYPE = 'trial_grant';
 
+export type TrialPlan = 'credits' | 'enterprise';
+
 export type GrantTrialInput = {
   accountId: string;
-  /** Plan key the trial emulates: 'credits' or 'enterprise'. */
+  /** The plan the trial grants: 'credits' or 'enterprise' (legacy keys resolve). */
   tierKey: string;
   durationDays: number;
   note?: string | null;
   actorUserId?: string | null;
   /**
-   * Optional wallet grant per 30 days, same unit as `wallet.grant` (USD
-   * credits: the free welcome grant is `2`). Sandbox compute always
-   * debits the wallet — even a BYOK trial needs compute credits to run
-   * sessions — so the grant is part of the trial issue, explicit and audited,
-   * never an implicit wallet-floor bypass.
+   * One-time wallet grant in USD, expiring at the trial end. Defaults to
+   * DEFAULT_ENTERPRISE_TRIAL_CREDITS_USD for an Enterprise trial and 0 for a
+   * Credits trial. Compute always debits the wallet, so a trial with no
+   * credits can open the plan's features but not run a session.
    */
   creditGrant?: number;
 };
@@ -52,17 +49,24 @@ export type GrantTrialInput = {
 export type TrialSnapshot = {
   status: string;
   tier: string | null;
-  monthlyUsd: number | null;
   startedAt: string | null;
   endsAt: string | null;
   note: string | null;
 };
 
+/** The plan a trial grants, or null when the key is not a trial plan. */
+export function trialPlanFor(tierKey: string): TrialPlan | null {
+  const plan = canonicalTier(tierKey);
+  return plan === 'credits' || plan === 'enterprise' ? plan : null;
+}
+
 export function validateGrantTrialInput(
   input: Pick<GrantTrialInput, 'tierKey' | 'durationDays' | 'creditGrant'>,
 ): string | null {
-  if (!isValidTier(input.tierKey) || input.tierKey === 'none' || input.tierKey === 'free') {
-    return `tier_key must be an existing paid tier, got "${input.tierKey}"`;
+  // Exactly the two plan keys: a retired key ('team', 'tier_2_20') is not a plan
+  // to grant, even though a stored one still resolves (trialPlanFor).
+  if (input.tierKey !== 'credits' && input.tierKey !== 'enterprise') {
+    return `tier_key must be 'credits' or 'enterprise', got "${input.tierKey}"`;
   }
   if (
     !Number.isInteger(input.durationDays) ||
@@ -72,206 +76,54 @@ export function validateGrantTrialInput(
     return `duration_days must be an integer in [1, ${MAX_TRIAL_DURATION_DAYS}]`;
   }
   if (input.creditGrant !== undefined) {
-    if (!Number.isFinite(input.creditGrant) || input.creditGrant < 0 || input.creditGrant > 10_000) {
-      return 'credit_grant must be a number in [0, 10000]';
+    if (!Number.isFinite(input.creditGrant) || input.creditGrant < 0 || input.creditGrant > MAX_TRIAL_CREDIT_GRANT_USD) {
+      return `credit_grant must be a number in [0, ${MAX_TRIAL_CREDIT_GRANT_USD}]`;
     }
   }
   return null;
 }
 
-/** Credits (USD) the trial on this row grants every 30 days. */
-function trialMonthlyUsd(
-  row: { trialMonthlyUsd?: string | null; trialSeats?: number | null } | null | undefined,
-): number | null {
-  if (!row) return null;
-  if (row.trialMonthlyUsd != null) return Number(row.trialMonthlyUsd) || 0;
-  return row.trialSeats ? LEGACY_TRIAL_USD_PER_SEAT * row.trialSeats : null;
-}
-
-function trialSnapshotFromRow(
-  row: Awaited<ReturnType<typeof getCreditAccount>>,
-): TrialSnapshot {
+function trialSnapshotFromRow(row: Awaited<ReturnType<typeof getCreditAccount>>): TrialSnapshot {
   return {
     status: row?.trialStatus ?? TRIAL_STATUS.NONE,
     tier: row?.trialTier ?? null,
-    monthlyUsd: trialMonthlyUsd(row),
-    startedAt: row?.trialStartedAt ?? null,
-    endsAt: row?.trialEndsAt ?? null,
+    startedAt: isoValue(row?.trialStartedAt),
+    endsAt: isoValue(row?.trialEndsAt),
     note: row?.trialNote ?? null,
   };
 }
 
 function invalidateEntitlementCaches(accountId: string) {
-  // Two caches, two clears — the gateway tier-snapshot cache AND the limit
-  // cache. Clearing only one is the exact skew the admin tier route shipped
-  // with (it cleared limits but not the gateway cache).
+  // Two caches, two clears — the gateway tier-snapshot cache AND the limit cache.
   invalidateCachedAccountTier(accountId);
   clearAccountLimitCache();
 }
 
 /**
- * The override keys a temporary grant OWNS for its window.
- *
- * `grantTemporaryAccess` REPLACES exactly this set on every grant instead of
- * merging into it. Merging would leave a previous grant's key behind carrying
- * the previous grant's `expires_at` — an Enterprise pilot followed by a Team
- * pilot would keep SSO alive on the Enterprise timetable, which is the failure
- * this primitive exists to end. Overrides outside this set (an operator's
- * `computeRateMultiplier`, a permanent `enterpriseEntitled`) are untouched.
+ * The overrides with the copies an older trial grant wrote removed. Before the
+ * one-plan model, a trial also wrote its plan's entitlements into
+ * `entitlement_overrides`, each expiring at the trial end. Those copies are
+ * recognised by that exact `expires_at`, so an operator's own override on the
+ * same key survives.
  */
-export const TEMPORARY_ACCESS_OVERRIDE_KEYS = [
-  'managedModels',
-  'sso',
-  'scim',
-  'rbac',
-  'auditAccess',
-  'branding',
-] as const satisfies readonly OverrideKey[];
-
-/**
- * PURE. Expand a plan record into the expiring overrides that make an account
- * BEHAVE as that plan until `endsAtIso`.
- *
- * Only what the record actually grants: the enterprise four are written just
- * when the plan carries them, so a Team pilot never silently hands out SSO.
- * `managedModels` is always written — a plan that does NOT grant managed models
- * must say so, otherwise the account's own plan decides and the grant is not a
- * grant of that plan.
- */
-export function temporaryAccessOverrides(
-  plan: PlanRecord,
-  endsAtIso: string,
-): EntitlementOverrides {
-  const overrides: EntitlementOverrides = {
-    managedModels: { value: plan.entitlements.managedModels, expires_at: endsAtIso },
-  };
-  if (plan.entitlements.sso) overrides.sso = { value: true, expires_at: endsAtIso };
-  if (plan.entitlements.scim) overrides.scim = { value: true, expires_at: endsAtIso };
-  if (plan.entitlements.rbac) overrides.rbac = { value: true, expires_at: endsAtIso };
-  if (plan.entitlements.auditAccess) {
-    overrides.auditAccess = { value: true, expires_at: endsAtIso };
+export function withoutTrialCopies(overrides: unknown, trialEndsAt: string | null | undefined) {
+  const parsed = parseEntitlementOverrides(overrides);
+  if (!trialEndsAt) return parsed;
+  const endsMs = new Date(trialEndsAt).getTime();
+  for (const key of ENTITLEMENT_OVERRIDE_KEYS) {
+    const entry = parsed[key];
+    if (entry?.expires_at && new Date(entry.expires_at).getTime() === endsMs) delete parsed[key];
   }
-  if (plan.entitlements.branding) overrides.branding = { value: true, expires_at: endsAtIso };
-  return overrides;
-}
-
-export type GrantTemporaryAccessInput = {
-  accountId: string;
-  /** Plan key the account should behave as for the window (catalog key). */
-  planKey: string;
-  durationDays: number;
-  actorUserId?: string | null;
-  note?: string | null;
-  /** Wallet grant in USD credits, granted now and every 30 days. Defaults to 25. */
-  creditGrant?: number;
-  /** Audit-style label for the write-owner log line. */
-  action?: string;
-};
-
-export type TemporaryAccessResult = {
-  before: TrialSnapshot;
-  current: TrialSnapshot;
-  creditGranted: number;
-  /** ISO end of the window — every override entry and the credit grant carry it. */
-  endsAt: string;
-  /** The expiring overrides that were written. */
-  overrides: EntitlementOverrides;
-};
-
-/**
- * Grant an account temporary access to a plan.
- *
- * THE PRIMITIVE BEHIND A TRIAL. A trial is not a special kind of account state —
- * it is "behave as plan X, with $Y of credits, until date Z", and every part of
- * that now expires on its own:
- *
- *   - the plan's entitlements land in `entitlement_overrides` with
- *     `expires_at = end`, so the grant lapses by ARITHMETIC. No cron has to
- *     notice, and nothing has to be un-granted by hand;
- *   - the wallet grant is expiring and stamped with the same instant;
- *   - the legacy `trial_*` columns are STILL WRITTEN, unchanged, so the trial
- *     overlay in `resolve-billing.ts`, the expiry/re-grant sweeps, and the
- *     admin console keep working exactly as they do today. That duplication is
- *     deliberate and temporary: it ends when the overlay is retired in favour
- *     of the overrides, one release after every reader is on this path.
- *
- * Upserts the credit row so a brand-new account can be granted before its first
- * billing event. Re-granting replaces the window (extend/adjust = re-grant).
- */
-export async function grantTemporaryAccess(
-  input: GrantTemporaryAccessInput,
-): Promise<TemporaryAccessResult> {
-  const creditGrant = input.creditGrant ?? LEGACY_TRIAL_USD_PER_SEAT;
-  const invalid = validateGrantTrialInput({
-    tierKey: input.planKey,
-    durationDays: input.durationDays,
-    creditGrant,
-  });
-  if (invalid) throw new Error(invalid);
-
-  const row = await getCreditAccount(input.accountId);
-  const before = trialSnapshotFromRow(row);
-  const now = new Date();
-  const endsAtIso = new Date(now.getTime() + input.durationDays * 24 * 60 * 60 * 1000).toISOString();
-
-  const plan = resolvePlanRecord(input.planKey);
-  const overrides: EntitlementOverrides = {
-    ...withoutOverrideKeys(row?.entitlementOverrides, TEMPORARY_ACCESS_OVERRIDE_KEYS),
-    ...temporaryAccessOverrides(plan, endsAtIso),
-  };
-
-  await applyAdminOverride(
-    input.accountId,
-    {
-      entitlementOverrides: toStoredOverrides(overrides),
-      // Legacy trial columns — one-release compatibility, see the doc block.
-      trialStatus: TRIAL_STATUS.ACTIVE,
-      trialTier: input.planKey,
-      trialMonthlyUsd: String(creditGrant),
-      trialStartedAt: now.toISOString(),
-      trialEndsAt: endsAtIso,
-      trialNote: input.note?.slice(0, 2000) ?? null,
-      trialGrantedBy: input.actorUserId ?? null,
-    },
-    {
-      userId: input.actorUserId ?? null,
-      action: input.action ?? 'admin.account.temporary_access.grant',
-    },
-  );
-
-  if (creditGrant > 0) {
-    // Expiring, stamped with the window's end: granted credits are part of the
-    // grant, they die with it. (They previously landed as PERMANENT credits —
-    // a trial that ended left real spendable money behind.)
-    await wallet.grant({
-      accountId: input.accountId,
-      amount: creditGrant,
-      kind: TRIAL_GRANT_LEDGER_TYPE,
-      description: `Trial grant: ${input.planKey} plan, ${input.durationDays} days`,
-      expiring: true,
-      expiresAt: endsAtIso,
-      key: null,
-    });
-  }
-
-  invalidateEntitlementCaches(input.accountId);
-  return {
-    before,
-    current: trialSnapshotFromRow(await getCreditAccount(input.accountId)),
-    creditGranted: creditGrant,
-    endsAt: endsAtIso,
-    overrides,
-  };
+  return parsed;
 }
 
 /**
- * Grant (or replace) a trial.
+ * Grant (or replace) a trial: "behave as plan X until date Z", with one
+ * expiring credit grant. Re-granting moves the end date (extend = re-grant)
+ * and grants credits again only when `creditGrant` is above 0.
  *
- * A thin naming layer over `grantTemporaryAccess` — same window, same expiring
- * overrides, same legacy columns. Two differences, both to keep the existing
- * admin route's contract byte-identical:
- *   - the wallet grant stays OPT-IN (`credit_grant`, default 0);
- *   - the write is logged as `admin.account.trial.grant`.
+ * Upserts the credit row so a brand-new account can be granted before its
+ * first billing event.
  */
 export async function grantTrial(input: GrantTrialInput): Promise<{
   before: TrialSnapshot;
@@ -280,22 +132,55 @@ export async function grantTrial(input: GrantTrialInput): Promise<{
 }> {
   const invalid = validateGrantTrialInput(input);
   if (invalid) throw new Error(invalid);
+  const plan = trialPlanFor(input.tierKey) as TrialPlan;
+  const creditGrant = input.creditGrant ?? (plan === 'enterprise' ? DEFAULT_ENTERPRISE_TRIAL_CREDITS_USD : 0);
 
-  const { before, current, creditGranted } = await grantTemporaryAccess({
-    accountId: input.accountId,
-    planKey: input.tierKey,
-    durationDays: input.durationDays,
-    note: input.note ?? null,
-    actorUserId: input.actorUserId ?? null,
-    creditGrant: input.creditGrant ?? 0,
-    action: 'admin.account.trial.grant',
-  });
-  return { before, current, creditGranted };
+  const row = await getCreditAccount(input.accountId);
+  const before = trialSnapshotFromRow(row);
+  const now = new Date();
+  const endsAtIso = new Date(now.getTime() + input.durationDays * 24 * 60 * 60 * 1000).toISOString();
+  const extending = before.status === TRIAL_STATUS.ACTIVE && before.tier === plan && !!before.startedAt;
+
+  await applyAdminOverride(
+    input.accountId,
+    {
+      trialStatus: TRIAL_STATUS.ACTIVE,
+      trialTier: plan,
+      trialMonthlyUsd: null,
+      trialStartedAt: extending ? before.startedAt : now.toISOString(),
+      trialEndsAt: endsAtIso,
+      trialNote: input.note?.slice(0, 2000) ?? null,
+      trialGrantedBy: input.actorUserId ?? null,
+      entitlementOverrides: toStoredOverrides(withoutTrialCopies(row?.entitlementOverrides, before.endsAt)),
+    },
+    { userId: input.actorUserId ?? null, action: extending ? 'admin.account.trial.extend' : 'admin.account.trial.grant' },
+  );
+
+  if (creditGrant > 0) {
+    // Expiring with the trial: granted credits are part of the grant and die with it.
+    await wallet.grant({
+      accountId: input.accountId,
+      amount: creditGrant,
+      kind: TRIAL_GRANT_LEDGER_TYPE,
+      description: `Trial credits: ${plan} plan until ${endsAtIso.slice(0, 10)}`,
+      expiring: true,
+      expiresAt: endsAtIso,
+      key: { request: `trial:${input.accountId}:${now.getTime()}` },
+    });
+  }
+
+  invalidateEntitlementCaches(input.accountId);
+  return {
+    before,
+    current: trialSnapshotFromRow(await getCreditAccount(input.accountId)),
+    creditGranted: creditGrant,
+  };
 }
 
 /**
- * Revoke a trial immediately. Keeps tier/amount/window on the row (audit trail);
- * only the status changes, and `trialIsActive` fails on any non-'active' status.
+ * Revoke a trial immediately. Keeps plan and window on the row (audit trail);
+ * only the status changes, and `trialIsActive` fails on any non-'active'
+ * status. A revoke gets no SSO grace: it is deliberate.
  */
 export async function revokeTrial(accountId: string): Promise<{
   before: TrialSnapshot;
@@ -310,13 +195,7 @@ export async function revokeTrial(accountId: string): Promise<{
     accountId,
     {
       trialStatus: TRIAL_STATUS.REVOKED,
-      // The derived overrides go with it. They carry the ORIGINAL window's
-      // `expires_at`, so leaving them would keep the entitlements the revoke
-      // exists to remove alive for the rest of the trial — "revoked" would
-      // mean nothing until the date it was revoked before.
-      entitlementOverrides: toStoredOverrides(
-        withoutOverrideKeys(row?.entitlementOverrides, TEMPORARY_ACCESS_OVERRIDE_KEYS),
-      ),
+      entitlementOverrides: toStoredOverrides(withoutTrialCopies(row?.entitlementOverrides, before.endsAt)),
     },
     { action: 'admin.account.trial.revoke' },
   );
@@ -325,33 +204,29 @@ export async function revokeTrial(accountId: string): Promise<{
 }
 
 /**
- * Flip an ACTIVE trial to 'converted' because a real subscription landed.
+ * Flip an ACTIVE trial to 'converted' because the account bought the plan.
  *
- * A deliberate cross-domain write, and the only one in the file: `trial_status`
- * is admin-owned (an operator issues the trial), but the FACT that ends it —
- * a paying subscription — is only ever observed by the billing-provider
- * webhook. Rather than let `applyStripeSync` carry an admin-owned key (it
- * throws on one, on purpose), the webhook calls this narrow verb, which writes
- * exactly one field and nothing else.
+ * A deliberate cross-domain write: `trial_status` is admin-owned, but the fact
+ * that ends it — a purchase — is only observed by the billing-provider webhook.
+ * The webhook calls this narrow verb instead of carrying an admin-owned key.
+ *
+ * `purchased` is the plan that was bought. Buying Credits ends a Credits trial
+ * only: an Enterprise trial keeps running to its end, then the account lands
+ * on Credits. Accepting an Enterprise contract ends any trial.
  *
  * Self-guarding: it re-reads the row and no-ops unless the trial is still
- * ACTIVE, so a redelivered webhook cannot turn 'none'/'expired'/'revoked' into
- * 'converted'. Returns whether it wrote.
+ * ACTIVE. Returns whether it wrote.
  */
-export async function markTrialConverted(accountId: string): Promise<boolean> {
+export async function markTrialConverted(accountId: string, purchased: TrialPlan = 'credits'): Promise<boolean> {
   const row = await getCreditAccount(accountId);
   if (row?.trialStatus !== TRIAL_STATUS.ACTIVE) return false;
+  if (purchased === 'credits' && trialPlanFor(row.trialTier ?? '') === 'enterprise') return false;
 
   await applyAdminOverride(
     accountId,
     {
       trialStatus: TRIAL_STATUS.CONVERTED,
-      // Same reason as the revoke: the account is on a real plan now, and its
-      // entitlements must come from that plan, not from a grant whose window
-      // happens to still be open.
-      entitlementOverrides: toStoredOverrides(
-        withoutOverrideKeys(row?.entitlementOverrides, TEMPORARY_ACCESS_OVERRIDE_KEYS),
-      ),
+      entitlementOverrides: toStoredOverrides(withoutTrialCopies(row.entitlementOverrides, row.trialEndsAt)),
     },
     { action: 'billing.trial.converted' },
   );
@@ -359,102 +234,15 @@ export async function markTrialConverted(accountId: string): Promise<boolean> {
   return true;
 }
 
-const MS_PER_TRIAL_MONTH = 30 * 24 * 60 * 60 * 1000;
-
 /**
- * Pure plan for a trial's monthly re-grant at `now`. Returns null when no
- * re-grant is due: still inside month 1, or the window has ended. Month 1 is
- * covered by the issue-time `creditGrant`; this covers months 2..N. One stable
- * idempotency key per (account, trial start, month index).
+ * Flip rows whose window has passed to 'expired' and return them, so the
+ * caller can tell the account and Kortix. The lazy check in `trialIsActive`
+ * already stopped granting at the timestamp; this makes the stored status read
+ * honestly and is the moment the "trial ended" notice goes out.
  */
-export function trialMonthlyRegrant(
-  trial: {
-    accountId: string;
-    startedAt: string | null;
-    endsAt: string | null;
-    monthlyUsd: number | null;
-  },
-  now: Date,
-): { monthIndex: number; amount: number; idempotencyKey: string } | null {
-  if (!trial.startedAt || !trial.endsAt) return null;
-  const startedMs = new Date(trial.startedAt).getTime();
-  const endsMs = new Date(trial.endsAt).getTime();
-  if (!Number.isFinite(startedMs) || !Number.isFinite(endsMs)) return null;
-  if (now.getTime() >= endsMs) return null;
-
-  const monthIndex = Math.floor((now.getTime() - startedMs) / MS_PER_TRIAL_MONTH);
-  if (monthIndex < 1) return null;
-
-  const amount = trial.monthlyUsd ?? 0;
-  if (amount <= 0) return null;
-
-  return {
-    monthIndex,
-    amount,
-    idempotencyKey: `trial_regrant_${trial.accountId}_${startedMs}_${monthIndex}`,
-  };
-}
-
-/**
- * Monthly credit re-grant for active trials. A trial grants its
- * `trial_monthly_usd` every 30 days — the issue-time `creditGrant` covers month 1, and this sweep grants each subsequent 30-day boundary inside
- * the trial window. Idempotent across runs: one ledger row per
- * (account, trial start, month index), through the wallet's grant key.
- * Called from the billing cron alongside sweepExpiredTrials.
- */
-export async function sweepTrialMonthlyGrants(now: Date = new Date()): Promise<number> {
-  const nowIso = now.toISOString();
-  const rows = await db
-    .select({
-      accountId: creditAccounts.accountId,
-      trialTier: creditAccounts.trialTier,
-      trialSeats: creditAccounts.trialSeats,
-      trialMonthlyUsd: creditAccounts.trialMonthlyUsd,
-      trialStartedAt: creditAccounts.trialStartedAt,
-      trialEndsAt: creditAccounts.trialEndsAt,
-    })
-    .from(creditAccounts)
-    .where(
-      and(
-        eq(creditAccounts.trialStatus, TRIAL_STATUS.ACTIVE),
-        gt(creditAccounts.trialEndsAt, nowIso),
-        lte(creditAccounts.trialStartedAt, new Date(now.getTime() - MS_PER_TRIAL_MONTH).toISOString()),
-      ),
-    );
-
-  let granted = 0;
-  for (const row of rows) {
-    const plan = trialMonthlyRegrant(
-      {
-        accountId: row.accountId,
-        startedAt: row.trialStartedAt,
-        endsAt: row.trialEndsAt,
-        monthlyUsd: trialMonthlyUsd(row),
-      },
-      now,
-    );
-    if (!plan) continue;
-
-    const result = await wallet.grant({
-      accountId: row.accountId,
-      amount: plan.amount,
-      kind: TRIAL_GRANT_LEDGER_TYPE,
-      description: `Trial monthly re-grant: month ${plan.monthIndex + 1} (${row.trialTier ?? 'trial'})`,
-      expiring: true,
-      expiresAt: row.trialEndsAt,
-      key: { request: plan.idempotencyKey },
-    });
-    if (!result.replayed) granted++;
-  }
-  return granted;
-}
-
-/**
- * Flip rows whose window has passed to 'expired'. Pure hygiene — the lazy
- * check in trialIsActive already stopped granting at the timestamp; this makes
- * the stored status read honestly. Called from the billing cron.
- */
-export async function sweepExpiredTrials(now: Date = new Date()): Promise<number> {
+export async function sweepExpiredTrials(
+  now: Date = new Date(),
+): Promise<Array<{ accountId: string; trialTier: string | null; trialEndsAt: string | null }>> {
   const rows = await db
     .update(creditAccounts)
     .set({ trialStatus: TRIAL_STATUS.EXPIRED, updatedAt: now.toISOString() })
@@ -464,8 +252,12 @@ export async function sweepExpiredTrials(now: Date = new Date()): Promise<number
         lte(creditAccounts.trialEndsAt, now.toISOString()),
       ),
     )
-    .returning({ accountId: creditAccounts.accountId });
+    .returning({
+      accountId: creditAccounts.accountId,
+      trialTier: creditAccounts.trialTier,
+      trialEndsAt: creditAccounts.trialEndsAt,
+    });
   for (const row of rows) invalidateCachedAccountTier(row.accountId);
   if (rows.length > 0) clearAccountLimitCache();
-  return rows.length;
+  return rows;
 }

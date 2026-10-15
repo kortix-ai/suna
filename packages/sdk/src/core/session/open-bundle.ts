@@ -76,9 +76,17 @@ export const OPEN_BUNDLE_TRANSCRIPT_LIMIT = 40;
  */
 export const SAVED_WINDOW_HOLD_MS = 5 * 60_000;
 
-// ponytail: one slot, the one session a connecting view shows. A map when a
-// host connects several sessions at once.
-let heldWindow: { key: string; envelope: SessionTranscriptSyncEnvelope; atMs: number } | null = null;
+/** How many sessions' holds live at once. A hold exists for the seconds
+ *  between a connecting view's read and that session's bind; a handful is
+ *  generous. The oldest hold gives its slot when the cap is hit, so the map
+ *  stays bounded. */
+const HELD_WINDOW_CAP = 16;
+
+// One hold per session, not one global slot: a late hold for session B (its
+// connecting view still settling) must not evict session A's hold and send
+// A's bind back to a full-window snapshot read — the window downloaded twice
+// per open, the exact thing KRTX-189 forbids.
+const heldWindows = new Map<string, { envelope: SessionTranscriptSyncEnvelope; atMs: number }>();
 
 /** Keep the saved window a host read before `useSession` binds the session. */
 export function holdSavedWindow(
@@ -87,7 +95,14 @@ export function holdSavedWindow(
   envelope: SessionTranscriptSyncEnvelope,
   nowMs: number = Date.now(),
 ): void {
-  heldWindow = { key: scopeKey(projectId, sessionId), envelope, atMs: nowMs };
+  const key = scopeKey(projectId, sessionId);
+  heldWindows.delete(key);
+  heldWindows.set(key, { envelope, atMs: nowMs });
+  while (heldWindows.size > HELD_WINDOW_CAP) {
+    const oldest = heldWindows.keys().next().value;
+    if (oldest === undefined) break;
+    heldWindows.delete(oldest);
+  }
 }
 
 /** The held saved window of this session, or null when none is held or it is
@@ -97,12 +112,13 @@ export function heldSavedWindow(
   sessionId: string,
   nowMs: number = Date.now(),
 ): SessionTranscriptSyncEnvelope | null {
-  if (!heldWindow || heldWindow.key !== scopeKey(projectId, sessionId)) return null;
-  if (nowMs - heldWindow.atMs > SAVED_WINDOW_HOLD_MS) {
-    heldWindow = null;
+  const held = heldWindows.get(scopeKey(projectId, sessionId));
+  if (!held) return null;
+  if (nowMs - held.atMs > SAVED_WINDOW_HOLD_MS) {
+    heldWindows.delete(scopeKey(projectId, sessionId));
     return null;
   }
-  return heldWindow.envelope;
+  return held.envelope;
 }
 
 interface BundleEntry {
@@ -127,7 +143,7 @@ function scopeKey(projectId: string, sessionId: string): string {
  *  the one before it. */
 export function resetSessionOpenBundles(): void {
   entries.clear();
-  heldWindow = null;
+  heldWindows.clear();
 }
 
 export interface OpenSessionBundleOptions {

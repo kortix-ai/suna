@@ -322,7 +322,7 @@ function FileBody({
     // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
     // off and renders the body as a document (embedded markup stays text), the
     // same component the chat's inline preview uses.
-    return <MarkdownWithFrontmatter content={content} className="p-6" />;
+    return <MarkdownWithFrontmatter content={content} documentPath={path} className="p-6" />;
   }
 
   // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a

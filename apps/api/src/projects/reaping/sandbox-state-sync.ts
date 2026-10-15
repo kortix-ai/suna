@@ -12,7 +12,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { retryOnDeadlock } from '../../shared/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';
@@ -520,7 +520,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       .then((m) => m.drainSessionLifecycleQueue({ limit: 5 }))
       .catch(() => undefined);
   }
-  if (write.externalId) invalidateProviderCache(write.externalId);
+  if (write.externalId) invalidateSandbox(write.externalId);
 }
 
 export interface StoppedReconcileOptions {
@@ -636,6 +636,6 @@ export async function reconcileSandboxRemovedByExternalId(
       err,
     ),
   );
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   return true;
 }

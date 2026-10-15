@@ -68,6 +68,7 @@ App viewers are described in [Know who is looking](/docs/apps#know-who-is-lookin
 | `gitBackend` | The instance git backend that holds Kortix-managed repositories. | `/projects/git/backend` |
 | `billing` | Plan, credit balance, transactions, usage, subscription. | `/billing/…`, `/usage/…` |
 | `notifications` | The caller's inbox, preferences, Web Push and device tokens. | `/notifications/…` |
+| `capture` | Kortix Capture: one account's recorded screen, actions and audio, and the device sign-in approval. | `/accounts/{accountId}/capture/…`, `/capture/…` |
 | `marketplace` | The public marketplace catalog and its sources. | `/marketplace/…` |
 | `sandboxShares` | Public share links for one sandbox port. | `/p/share` |
 | `connectStatus()` | Whether the managed OAuth connect provider is configured on this instance. | `/connectors/connect-status` |
@@ -196,6 +197,23 @@ Every method needs a person's credential. A service account gets `403`.
 | `registerDeviceToken(input)` · `unregisterDeviceToken(token)` | A native app's push token. |
 
 Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs/work/sessions#notifications).
+
+### `kortix.capture`
+
+Capture belongs to the account, not to a project. `kortix.capture.account(accountId)` binds one account. Every account call answers `403 capture_disabled` while Capture is off for the account. Each member reads their own devices and timeline. Reading another member needs the `capture.read_all` permission and writes a `capture.member_view` audit event. Account owners and admins have it by default. See [Capture](/docs/capture).
+
+| Method | What it does |
+| --- | --- |
+| `account(id).workspace.get()` · `.workspace.setEnabled(on)` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` · turn Capture on or off (`capture.manage`). |
+| `account(id).devices.list({ userId?, scope? })` · `.devices.revoke(deviceId)` · `.devices.assetUrl(deviceId, name)` | Devices with live status (`recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status). `scope: 'account'` lists every member's devices. · Revoke a device's token. · A 5-minute signed URL of an action screenshot. |
+| `account(id).policy.get()` · `.policy.set(policy)` | The account's capture policy: layers, privacy, retention, recording, notice. A write needs `capture.manage`. |
+| `account(id).timeline.get(query?)` · `.timeline.items(query?)` · `.timeline.days(query?)` | App and window runs for a UTC day or a window up to 31 days · frames, actions and audio in a window, 500 of each · the days with recorded items, newest first. |
+| `account(id).search({ q, kinds?, app?, from?, to?, limit?, userId?, scope? })` | Full-text search over on-screen text, actions and audio, newest first. |
+| `account(id).frame(frameId, { userId? })` · `.media(chunkId, { userId? })` | One frame with its on-screen text and a 5-minute signed URL of its video · signed URLs of an item's video and audio. |
+| `deviceGrant(userCode)` · `approveDevice(userCode, accountId?)` · `denyDevice(userCode)` | The person's half of the device sign-in. |
+| `me.search(query)` · `me.timeline(query)` · `me.frame(frameId)` | Reads for the person the token acts for, in the token's account. A credential that acts for no person gets `403 capture_no_human`. |
+
+React (`@kortix/sdk/react`): `useCaptureWorkspace`, `useSetCaptureEnabled`, `useCaptureDevices` (polls every 10 s), `useRevokeCaptureDevice`, `useCapturePolicy`, `useSetCapturePolicy`, `useCaptureDays`, `useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`, `useCaptureChunkMedia`, `useCaptureDeviceGrant`, `useApproveCaptureDevice`, `useDenyCaptureDevice`. Each account hook takes the account id first. A `null` id sends no request.
 
 ## The project handle
 

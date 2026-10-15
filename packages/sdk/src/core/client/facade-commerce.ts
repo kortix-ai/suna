@@ -18,6 +18,8 @@ export function bindCommerce() {
     tierConfigurations: P.getBillingTierConfigurations,
     /** Subscribe to, or change, the credits plan (`POST /billing/plan`). */
     setPlan: P.setBillingPlan,
+    /** Accept the open Enterprise offer: a Stripe Checkout link (`POST /billing/enterprise-offer/checkout`). */
+    acceptEnterpriseOffer: P.acceptEnterpriseOffer,
 
     /**
      * @deprecated The API retired these routes. Both reject with
