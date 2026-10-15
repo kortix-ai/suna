@@ -9,6 +9,7 @@ import {
   serializePromptWithPastes,
   shouldTilePaste,
   splitPastedContent,
+  trimPastedText,
   utf8Bytes,
 } from './pasted-content';
 
@@ -43,7 +44,7 @@ describe('round trip', () => {
     'has a close </pasted_content> inside',
     'has </PASTED_CONTENT> upper',
     'a file <file path="x">tag</file> inside',
-    'line one\r\nline two\r\n',
+    'line one\r\nline two',
     'emoji 🚀 and हिन्दी पाठ',
   ];
   for (const body of bodies) {
@@ -134,5 +135,17 @@ describe('performance', () => {
     const t = performance.now();
     pastedContentBlocks('<pasted_content id="a" chars="1">'.repeat(8000));
     expect(performance.now() - t).toBeLessThan(200);
+  });
+});
+
+describe('trimPastedText', () => {
+  test('drops blank lines at the top and whitespace at the end, keeps the first line indent', () => {
+    expect(trimPastedText('\n  \n\r\n    code\n  more\n\n  \n')).toBe('    code\n  more');
+  });
+
+  test('a parsed block with blank lines around the body comes out trimmed', () => {
+    const body = '\n\nSkip to content\nBody\n\n';
+    const wire = `<pasted_content id="a" chars="${body.length}">\n${body}\n</pasted_content>`;
+    expect(splitPastedContent(wire).pastes).toEqual([{ id: 'a', text: 'Skip to content\nBody' }]);
   });
 });

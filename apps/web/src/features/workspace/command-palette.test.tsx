@@ -145,9 +145,10 @@ describe('offered tabs survive the panel filter', () => {
     }
   });
 
-  test('with NO project, every live tab is offered — all of them are personal', () => {
+  test('with NO project, every live tab but Computer is offered — all of them are personal', () => {
     const offered: string[] = tabsFor({ hasProject: false });
-    expect([...offered].sort()).toEqual([...SETTINGS_TABS].sort());
+    // Computer pairs a machine from a project, so it needs one open.
+    expect([...offered].sort()).toEqual(SETTINGS_TABS.filter((tab) => tab !== 'computer').sort());
     for (const tab of offered) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
     // The project configuration tabs specifically — these were the ones the
     // old `Customize · X` entries offered from `/accounts/**`. They are not
