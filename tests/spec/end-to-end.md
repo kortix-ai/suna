@@ -1228,16 +1228,16 @@ specification, runtime lifecycle, billing attribution, and atomic active
 deployment pointer. The provider remains an implementation detail.
 
 `APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
-`GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is a per-project
-feature flag, off by default: a member of a flag-off project gets
-`403 {code:'feature_disabled', feature:'apps'}` on every apps route. Apps is
-internal-only: the owner's `PATCH /projects/:projectId/features` with
-`apps: true` answers `403 {code:'feature_operator_only'}`. The flow clears any
-override left by a reused local fixture and enables the flag as the run-scoped
-platform operator through `PUT /admin/api/projects/:id/features`; the owner's
-project read then lists `apps` with `enabled: true, operator_only: true`. A
-project writer creates a unique lower-case slug and machine policy; list/get
-return the stable public URL and active deployment pointer; every App carries
+`GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is generally
+available (2026-10-14): there is no `apps` feature flag, so a project with no
+override — and one carrying a leftover stored `experimental.apps: false` —
+lists, creates and deploys Apps. A member of a fresh project answers `200` on
+the routes with no setup step. The graduated key is unknown:
+`PATCH /projects/:projectId/features` with `feature:"apps"` →
+`400 {error:"Unknown feature flag 'apps'"}`, and the project read lists no
+`apps` row in `experimental_features`. A project writer creates a unique
+lower-case slug and machine policy; list/get return the stable public URL and
+active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
 1 vCPU / 2 GiB / 10 GiB). Apps have no budget: no App response carries
 `monthly_budget_usd`, and a create or patch that still sends one (an older
@@ -1257,8 +1257,7 @@ Invalid slugs → 400; `NONMEMBER` → 403.
 `APP-2` Artifact and deployment boundaries —
 `POST /projects/:projectId/apps/artifacts` registers an immutable archive upload
 or OCI reference; `POST …/artifacts/:artifactId/finalize` finalizes only an
-awaiting archive. The flow enables the `apps` feature flag first (off by
-default). Access policy — `GET/PATCH …/:appId/access` read and persist the
+awaiting archive. Access policy — `GET/PATCH …/:appId/access` read and persist the
 mode; `restricted` without any member or group → 400; `project` persists and
 reads back; `POST …/:appId/access-session` returns a signed URL + expiry for a
 member. `POST …/:appId/deployments` requires a ready artifact and an
@@ -1268,7 +1267,10 @@ Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
 back an unknown deployment, or starting/stopping an undeployed App → 409/400 as
 specified by each route. `APP-2` exercises these boundaries through the real
-HTTP API, then deletes the test App.
+HTTP API on a project seeded with persisted `metadata.experimental.apps: false`:
+Apps list → 200, create → 201, and a matching OCI deployment → 202 queued
+(version 1), readable by ID. It then deletes the test App. `APP-1` retains the
+separate no-override CRUD coverage.
 
 `APP-3` Machine limits — an App machine answers to the same ceiling a session
 sandbox does (`SANDBOX_SPEC_LIMITS`: 32 CPU, 128 GB memory, 500 GB disk). The
@@ -1655,8 +1657,9 @@ App's public http service with the prefix stripped; an App it does not use
 answers `403 app_not_linked`, a used static App `409 app_binding_unsupported`,
 a used App with no running release `503 app_binding_unavailable`.
 
-`APP-9` Capability surface and links. Flag off: the token route answers `403
-{code:'feature_disabled', feature:'apps'}`. Flag on: an invalid slug answers
+`APP-9` Capability surface and links. There is no `apps` flag: the token
+route needs none, and `PATCH /projects/:projectId/features` with
+`feature:"apps"` answers `400 Unknown feature flag`. An invalid slug answers
 400. A create answers `201` with `capabilities` `deployments`, `rollback`,
 `preview`, `member_tokens` and no `kind`, `instance` or `monthly_budget_usd`
 (a `kind` in the body is ignored). The six retired capability routes answer

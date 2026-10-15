@@ -8,7 +8,6 @@ import { errorToast } from '@/components/ui/toast';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -16,7 +15,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
-import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
+import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { ArrowUpRightIcon, HardDrivesIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
@@ -74,11 +73,7 @@ function AppsHeader({
 
 export function AppsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // One gating primitive, fail-closed. Apps NEVER enables itself from here:
-  // activation lives only in Customize → Feature flags, so this page has no
-  // mutation and no self-enable button.
-  const appsGate = useFeatureFlag(projectId, 'apps');
-  const apps = useProjectApps(appsGate.enabled ? projectId : null);
+  const apps = useProjectApps(projectId);
   const searchParams = useSearchParams();
   // Apps own their leaves — the routes assert project.app.write for policy and
   // shape changes and project.app.deploy for anything that changes what the
@@ -125,9 +120,7 @@ export function AppsView({ projectId }: { projectId: string }) {
         projectId={projectId}
         columns={gridColumns}
         onColumnsChange={setGridColumns}
-        showColumns={
-          appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
-        }
+        showColumns={apps.isLoading || !!apps.data?.length}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -151,15 +144,7 @@ export function AppsView({ projectId }: { projectId: string }) {
             APP_GRID_CONTAINER,
           )}
         >
-          {appsGate.isLoading ? (
-            <AppGridSkeleton columns={gridColumns} />
-          ) : !appsGate.enabled ? (
-            <FeatureGateScreen
-              featureName="Apps"
-              internalOnly
-              description={tI18nComplete.raw('text3387c31a18b3')}
-            />
-          ) : apps.isLoading ? (
+          {apps.isLoading ? (
             <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
             <ErrorState

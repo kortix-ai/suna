@@ -1194,10 +1194,6 @@
           "name": "Meta-Agent",
           "description": "Fügen Sie einen Koordinator hinzu, der spezialisierte Sitzungen und mehrstufige Arbeiten im Projekt verwaltet."
         },
-        "apps": {
-          "name": "Apps",
-          "description": "Stellen Sie statische Websites, JavaScript-Pakete, Dockerfiles und OCI-Images unter stabilen serverlosen URLs bereit und betreiben Sie Backends: eine Datenbank, Serverfunktionen, Echtzeitabfragen, Dateispeicher, Zeitpläne und Suche auf einer ständig laufenden Maschine."
-        },
         "monitors": {
           "name": "Monitore",
           "description": "Führen Sie dauerhafte Wächter aus, die Protokolle, Feeds oder APIs beobachten und bei Ereignissen Agentensitzungen starten."

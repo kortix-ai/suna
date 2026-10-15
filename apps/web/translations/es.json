@@ -1194,10 +1194,6 @@
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
         },
-        "apps": {
-          "name": "Aplicaciones",
-          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
-        },
         "monitors": {
           "name": "Monitores",
           "description": "Ejecuta observadores persistentes de registros, fuentes o API que inician sesiones de agente ante eventos."
