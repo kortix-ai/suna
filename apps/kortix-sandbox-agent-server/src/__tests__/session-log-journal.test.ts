@@ -8,7 +8,10 @@
  * the 3 s bound before the turn-end relay, and the flush on the daemon's stop.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import { rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fromV1, toV1 } from '@kortix/api-contract/session-log'
 import type {
   AdapterCapabilities,
@@ -848,5 +851,103 @@ describe('session-log journal', () => {
   test('no control plane: the journal does not start, and the turn-end flush is a no-op', async () => {
     delete process.env.KORTIX_API_URL
     expect(startSessionLogJournal(fakeAdapter().port, { generation: 1 })).toBeNull()
+  })
+})
+
+describe('attachment bytes (P2.13)', () => {
+  const PNG = randomBytes(64)
+  const shaOf = (b: Buffer) => createHash('sha256').update(b).digest('hex')
+  const digest = shaOf(PNG)
+  const own = `kortix-attachment://project-1/session-1/obj-${digest}`
+  /** A store with one image message; `blob` serves its bytes. */
+  function imageAdapter() {
+    const base = fakeAdapter()
+    base.put('msg_img', 1, 'see the image')
+    const changes = base.port.changes.bind(base.port)
+    const port: SessionLogPort = {
+      ...base.port,
+      async changes(cursors) {
+        const out = await changes(cursors)
+        for (const { message } of out.messages) message.blocks.push({ type: 'attachment', id: 'img', ref: `blob:${digest}`, mime: 'image/png', bytes: PNG.length, sha256: digest })
+        return out
+      },
+      blob: (sha256) => (sha256 === digest ? PNG : null),
+    }
+    return { ...base, port }
+  }
+  /** A fake API: the blob routes answer by `blob` (a status or the stored object), the journal acknowledges. */
+  function blobApi(blob: (method: string, n: number) => number | 'store') {
+    const posted: SessionLogJournalRequest[] = []
+    const calls: string[] = []
+    const objects = new Map<string, Buffer>()
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      async fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname.endsWith('/log/journal')) {
+          const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await request.arrayBuffer())))) as SessionLogJournalRequest
+          posted.push(body)
+          return ack(body)
+        }
+        calls.push(`${request.method} ${request.headers.get('content-type') ?? ''}`.trim())
+        const answer = blob(request.method, calls.length)
+        if (answer !== 'store') return new Response('no', { status: answer })
+        if (request.method === 'GET') return Response.json({ ref: objects.has(digest) ? own : null })
+        const bytes = Buffer.from(await request.arrayBuffer())
+        if (shaOf(bytes) !== url.pathname.split('/').at(-1)) return new Response('mismatch', { status: 400 })
+        objects.set(digest, bytes)
+        return Response.json({ ref: own })
+      },
+    })
+    servers.push(server)
+    process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
+    return { posted, calls, objects }
+  }
+  const refsOf = (body: SessionLogJournalRequest) => body.puts.flatMap((p) => p.message.blocks.flatMap((b) => (b.type === 'attachment' ? [b.ref] : [])))
+
+  test('the journal uploads the bytes before the record goes out, and the record names the stored object', async () => {
+    const api = blobApi(() => 'store')
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+    expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET', 'PUT image/png'])
+    expect(api.objects.get(digest)).toEqual(PNG)
+    expect(refsOf(api.posted[0]!)).toEqual([own])
+    // Asked once per boot: a later collection that re-exports the message sends nothing more.
+    expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET', 'PUT image/png'])
+  })
+
+  test('a failed upload sends the record with blob: at once; the next collection retries and re-sends it with the stored ref', async () => {
+    const api = blobApi((method, n) => (method === 'PUT' && n === 2 ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0, retryMs: 1 })
+    expect(await journal.flush()).toBe(true)
+    expect(refsOf(api.posted[0]!)).toEqual([`blob:${digest}`])
+    expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET', 'PUT image/png', 'GET', 'PUT image/png'])
+    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`], [own]])
+    expect(api.posted[1]!.puts[0]!.rev).toBeGreaterThan(api.posted[0]!.puts[0]!.rev)
+  })
+
+  test('an API without the route (404) keeps blob: for the boot and is not asked again', async () => {
+    const api = blobApi(() => 404)
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+    expect(await journal.flush()).toBe(true)
+    expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET'])
+    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`]])
+  })
+
+  test('the dump directory keeps blob: and asks nothing', async () => {
+    const api = blobApi(() => 'store')
+    process.env.KORTIX_SESSION_LOG_DUMP_DIR = join(tmpdir(), `journal-dump-${randomBytes(4).toString('hex')}`)
+    try {
+      const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+      expect(await journal.flush()).toBe(true)
+      expect(api.calls).toEqual([])
+    } finally {
+      rmSync(process.env.KORTIX_SESSION_LOG_DUMP_DIR, { recursive: true, force: true })
+      delete process.env.KORTIX_SESSION_LOG_DUMP_DIR
+    }
   })
 })

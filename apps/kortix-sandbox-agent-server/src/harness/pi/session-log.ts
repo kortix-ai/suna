@@ -17,9 +17,10 @@
  * - The model of an assistant message is the one the pi message names. A v1
  *   assistant row carries the model selected when it streamed.
  * - User text: `text` is the v1 text, `model_text` the text pi sent when it
- *   differs (a prompt template pi expanded). A pi image is an attachment with
- *   `ref: blob:<sha256>` and `bytes`; the bytes stay in the native store (no
- *   object store yet). A v1 file part pi never received (not an image, a
+ *   differs (a prompt template pi expanded). A pi image (a prompt's, or a tool
+ *   result's) is an attachment with `ref: blob:<sha256>`, `sha256` and `bytes`;
+ *   the journal uploads the bytes (`blob`) and replaces the ref with the stored
+ *   object's `kortix-attachment://` ref (P2.13). A v1 file part pi never received (not an image, a
  *   model without image input, or an image pi dropped) is a harness block
  *   `{ kind: 'undelivered_file', model_visible: false }`, never an
  *   attachment: the model never saw it, so a restore must not present it.
@@ -222,9 +223,20 @@ function partPool(v1: KortixMessage | undefined) {
   }
 }
 
+/** The base64 data of each image an export read, by sha256, for `piBlob`. The strings are pi's own: the map copies none. */
+const imageData = new Map<string, string>()
+
+/** The bytes of an image an export named `blob:<sha256>` (`SessionLogPort.blob`). */
+export function piBlob(sha256: string): Buffer | null {
+  const data = imageData.get(sha256)
+  return data === undefined ? null : Buffer.from(data, 'base64')
+}
+
 function attachment(c: J): { ref: string; bytes: number; sha256: string; mime: string } {
-  const bytes = Buffer.from(String(c.data ?? ''), 'base64')
+  const data = String(c.data ?? '')
+  const bytes = Buffer.from(data, 'base64')
   const digest = sha256(bytes)
+  imageData.set(digest, data)
   return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, mime: String(c.mimeType ?? 'application/octet-stream') }
 }
 
@@ -569,5 +581,6 @@ export function createPiSessionLogPort(read: () => PiSessionSnapshot | null, tar
       const s = read()
       return s ? piLive(s, threadId, messageId) : null
     },
+    blob: piBlob,
   }
 }

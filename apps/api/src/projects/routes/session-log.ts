@@ -20,12 +20,20 @@
  * read's gate and changes nothing: the loss report of the stored log on another harness
  * (`switchPreflight`, `@kortix/api-contract/session-log` `capabilities.ts`).
  *
+ * The attachment bytes, `GET` and `PUT /:projectId/sessions/:sessionId/log/blobs/:sha256` (P2.13), take
+ * the journal's credential and switch. The journal asks for the object of an attachment it writes as
+ * `blob:<sha256>`, uploads the bytes when there is none, and writes the `kortix-attachment://` ref both
+ * answer into the record (`../session-log-blobs.ts`).
+ *
  * The journal body is gzipped JSON. It is not declared as a validated request schema: the
  * OpenAPI validator would call `req.json()` on gzip bytes (same reason as
  * `platform/routes/runtime-projection.ts`). The handler gunzips, caps and validates it.
  */
 import { gunzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
+import { MAX_SESSION_ATTACHMENT_BYTES } from '@kortix/shared';
+import { bodyLimit } from 'hono/body-limit';
 import {
   SessionLogJournalConflictSchema,
   SessionLogJournalRequestSchema,
@@ -49,7 +57,8 @@ import type { AppEnv } from '../../types';
 import { assertProjectCapability, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
-import { ingestSessionLogJournal, readSessionLogManifest, type SessionLogScope } from '../session-log-ingest';
+import { findSessionLogBlob, storeSessionLogBlob } from '../session-log-blobs';
+import { ingestSessionLogJournal, readSessionLogManifest, sessionExists, type SessionLogScope } from '../session-log-ingest';
 import { readSessionLogPage } from '../session-log-read';
 import { claimSessionLog } from '../session-log-restore';
 import { sessionLogSwitchPreflight } from '../session-log-switch';
@@ -59,6 +68,9 @@ const MAX_GZIP_BYTES = 2 * 1024 * 1024;
 const MAX_RAW_BYTES = 16 * 1024 * 1024;
 
 const params = z.object({ projectId: z.string(), sessionId: z.string() });
+const blobParams = params.extend({ sha256: z.string().regex(/^[0-9a-f]{64}$/) });
+const BlobRefSchema = z.object({ ref: z.string().nullable() });
+const TOO_LARGE = 'Session-log attachments must be 50 MiB or smaller';
 
 /** The calling box's scope, or null when the credential is not this session's sandbox credential. */
 function sandboxScope(c: Context<AppEnv>): SessionLogScope | null {
@@ -112,6 +124,58 @@ async function sessionReadGate(
 }
 
 export function registerSessionLogRoutes(): void {
+  projectsApp.use(
+    '/:projectId/sessions/:sessionId/log/blobs/:sha256',
+    bodyLimit({ maxSize: MAX_SESSION_ATTACHMENT_BYTES, onError: (c) => c.json({ error: TOO_LARGE }, 413) }),
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/log/blobs/{sha256}',
+      tags: ['projects'],
+      summary: 'Find the stored object of a session-log attachment by its sha256',
+      description: 'Session sandbox credential only. `{ ref }`: the `kortix-attachment://` ref of the object, or null when the session has none.',
+      ...auth,
+      request: { params: blobParams },
+      responses: { 200: json(BlobRefSchema, 'The object ref, or null'), ...errors(400, 403, 404, 503) },
+    }),
+    async (c) => {
+      const scope = sandboxScope(c);
+      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
+      if (!(await sessionExists(scope))) return c.json({ error: 'Session not found' }, 404);
+      return c.json({ ref: await findSessionLogBlob(scope, c.req.valid('param').sha256) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/sessions/{sessionId}/log/blobs/{sha256}',
+      tags: ['projects'],
+      summary: 'Store the bytes of a session-log attachment',
+      description:
+        'Body: the raw bytes, `Content-Type` = their MIME type, at most 50 MiB. Session sandbox credential only. ' +
+        'The body sha256 must equal the path sha256 (else 400). Stored once per session and sha256; answers the object `{ ref }`.',
+      ...auth,
+      request: { params: blobParams },
+      responses: { 200: json(BlobRefSchema.extend({ ref: z.string() }), 'The object ref'), ...errors(400, 403, 404, 413, 503) },
+    }),
+    async (c) => {
+      const scope = sandboxScope(c);
+      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
+      const { sha256 } = c.req.valid('param');
+      const mime = (c.req.header('content-type') || 'application/octet-stream').split(';')[0]!.trim().toLowerCase();
+      if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mime)) return c.json({ error: 'Invalid Content-Type' }, 400);
+      const bytes = Buffer.from(await c.req.arrayBuffer());
+      if (createHash('sha256').update(bytes).digest('hex') !== sha256) return c.json({ error: 'The body sha256 does not match the path' }, 400);
+      if (!(await sessionExists(scope))) return c.json({ error: 'Session not found' }, 404);
+      return c.json({ ref: await storeSessionLogBlob(scope, sha256, mime, bytes) }, 200);
+    },
+  );
+
   projectsApp.openapi(
     createRoute({
       method: 'post',

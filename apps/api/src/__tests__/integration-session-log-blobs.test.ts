@@ -248,3 +248,104 @@ describe('a text over 256 kB is stored by reference', () => {
     expect([...bucket.objects.keys()].filter((k) => k.startsWith(`${project.project_id}/`))).toEqual([]);
   });
 });
+
+describe('attachment bytes the journal uploads (P2.13)', () => {
+  // A synthetic 2x2 PNG.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAD0lEQVR4nGNgaPgPQhAKACX2Bf2gcp/LAAAAAElFTkSuQmCC', 'base64');
+  const PNG_SHA = createHash('sha256').update(PNG).digest('hex');
+  let box = '';
+  let boxToken = '';
+  const blob = (sha: string, init: RequestInit = {}, token = boxToken) =>
+    app.request(`${base(box)}/log/blobs/${sha}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers as Record<string, string>) } });
+  const put = (bytes: Buffer, sha = createHash('sha256').update(bytes).digest('hex'), mime = 'image/png', token = boxToken) =>
+    blob(sha, { method: 'PUT', headers: { 'Content-Type': mime }, body: new Uint8Array(bytes) }, token);
+
+  beforeAll(async () => {
+    box = await seedSession(project, OWNER);
+    await db.insert(sessionSandboxes).values({ sandboxId: box, sessionId: box, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
+    boxToken = (await createAccountToken({ accountId: project.account_id, userId: OWNER, projectId: project.project_id, sessionId: box, name: 'session-log-blobs-attachments' })).secretKey;
+  });
+
+  test('an unknown sha256 answers ref null; the upload stores the bytes once and answers the ref; the lookup then answers it', async () => {
+    const before = bucket.uploads.length;
+    const missing = await blob(PNG_SHA);
+    expect(missing.status).toBe(200);
+    expect(await missing.json()).toEqual({ ref: null });
+
+    const first = await put(PNG);
+    expect(first.status).toBe(200);
+    const { ref } = (await first.json()) as { ref: string };
+    expect(ref).toMatch(new RegExp(`^kortix-attachment://${project.project_id}/${box}/${UUID}$`));
+    const object = bucket.objects.get(objectKey(ref))!;
+    expect(Buffer.from(await object.arrayBuffer())).toEqual(PNG);
+    expect(object.type).toBe('image/png');
+    expect((await blobRows(box)).map((b) => ({ sha256: b.sha256, objectKey: b.objectKey, bytes: b.bytes, mime: b.mime }))).toEqual([
+      { sha256: PNG_SHA, objectKey: objectKey(ref), bytes: PNG.length, mime: 'image/png' },
+    ]);
+    // The same image again: the same ref, no second upload.
+    expect(await (await put(PNG)).json()).toEqual({ ref });
+    expect(await (await blob(PNG_SHA)).json()).toEqual({ ref });
+    expect(bucket.uploads.length - before).toBe(1);
+
+    // The box reads it back through the attachments route, as a restore does.
+    const read = await app.request(`${base(box)}/attachments/${ref.split('/').at(-1)}`, { headers: { Authorization: `Bearer ${boxToken}` } });
+    expect(read.status).toBe(200);
+    expect(createHash('sha256').update(Buffer.from(await read.arrayBuffer())).digest('hex')).toBe(PNG_SHA);
+
+    // A record naming the object is stored as sent: GET .../log serves the ref, sha256 and bytes.
+    const image = { type: 'attachment', id: 'prt_img', ref, mime: 'image/png', bytes: PNG.length, sha256: PNG_SHA };
+    const res = await app.request(`${base(box)}/log/journal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${boxToken}` },
+      body: Bun.gzipSync(JSON.stringify(batch([{ rev: REV + 1, message: message('msg_img', 0, [image], { role: 'user' }) }]))) as BodyInit,
+    });
+    expect(res.status).toBe(200);
+    expect(((await stored('msg_img', box))!.record as { blocks: unknown[] }).blocks).toEqual([image]);
+  });
+
+  test('a body whose sha256 is not the path, a bad sha256 or Content-Type → 400; a token not bound to the session → 403; nothing stored', async () => {
+    const before = bucket.uploads.length;
+    expect((await put(PNG, '0'.repeat(64))).status).toBe(400);
+    expect((await put(PNG, 'not-a-sha')).status).toBe(400);
+    expect((await put(Buffer.from('x'), undefined, 'not a mime')).status).toBe(400);
+    expect((await put(Buffer.from('owner bytes'), undefined, 'image/png', ownerToken)).status).toBe(403);
+    expect((await blob(PNG_SHA, {}, ownerToken)).status).toBe(403);
+    expect(bucket.uploads.length).toBe(before);
+  });
+
+  test('a body over 50 MiB → 413; the operator switch off → 503 on both routes; nothing stored', async () => {
+    const before = bucket.uploads.length;
+    const big = Buffer.alloc(50 * 1024 * 1024 + 1);
+    expect((await put(big, '0'.repeat(64))).status).toBe(413);
+    const { config } = await import('../config');
+    config.SESSION_LOG_INGEST_ENABLED = false;
+    try {
+      expect((await blob(PNG_SHA)).status).toBe(503);
+      expect((await put(PNG)).status).toBe(503);
+    } finally {
+      config.SESSION_LOG_INGEST_ENABLED = true;
+    }
+    expect(bucket.uploads.length).toBe(before);
+  });
+
+  test('a text and an attachment with the same bytes share one object', async () => {
+    const text = 'x'.repeat(300_000);
+    const sha = sha256(text);
+    const res = await app.request(`${base(box)}/log/journal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${boxToken}` },
+      body: Bun.gzipSync(JSON.stringify(batch([{ rev: REV + 2, message: message('msg_big', 1, [{ type: 'text', id: 'prt_big', text }]) }]))) as BodyInit,
+    });
+    expect(res.status).toBe(200);
+    const textRef = ((await stored('msg_big', box))!.record as { blocks: Array<{ ref: string }> }).blocks[0]!.ref;
+    expect(await (await put(Buffer.from(text), sha, 'text/plain')).json()).toEqual({ ref: textRef });
+  });
+
+  test('session deletion removes the index rows (cascade) and account erasure the objects', async () => {
+    expect((await blobRows(box)).length).toBe(2);
+    await deleteAccountExternalStores(project.account_id);
+    expect([...bucket.objects.keys()].filter((k) => k.startsWith(`${project.project_id}/${box}/`))).toEqual([]);
+    await db.execute(sql`delete from kortix.project_sessions where session_id = ${box}`);
+    expect(await blobRows(box)).toEqual([]);
+  });
+});

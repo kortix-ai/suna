@@ -210,6 +210,9 @@ describe('pi session-log export', () => {
     expect(image).toEqual({ type: 'attachment', id: 'msg_a-p1', ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, mime: 'image/png', name: 'shot.png' })
     expect(pdf).toMatchObject({ type: 'harness', id: 'msg_a-p2', kind: 'undelivered_file', model_visible: false, data: { mime: 'application/pdf', filename: 'notes.pdf' } })
     expect(JSON.stringify(pdf)).not.toContain('base64')
+    // P2.13: the port gives the journal the bytes behind the ref.
+    expect(createPiSessionLogPort(() => null).blob!(digest)).toEqual(bytes)
+    expect(createPiSessionLogPort(() => null).blob!('0'.repeat(64))).toBeNull()
   })
 
   test('a sub-agent child is a thread spawned by the task call', () => {
@@ -390,16 +393,21 @@ describe('pi session-log adapter through the journal', () => {
       port: 0,
       hostname: '127.0.0.1',
       async fetch(request) {
+        // P2.13: the image's bytes are asked for, then uploaded, before its record goes out.
+        if (new URL(request.url).pathname.includes('/log/blobs/')) return Response.json({ ref: request.method === 'PUT' ? STORED : null })
         const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await request.arrayBuffer())))) as SessionLogJournalRequest
         bodies.push(body)
         return Response.json({ acked: [...body.puts.map((p) => ({ message_id: p.message.message_id, rev: p.rev })), ...body.tombstones] })
       },
     })
+    const STORED = 'kortix-attachment://project-1/session-pi-log/00000000-0000-4000-8000-000000000001'
     servers.push(server)
     process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
     const journal = startSessionLogJournal(createPiSessionLogPort(fixture), { generation: 0 })!
     expect(await journal.flush()).toBe(true)
     expect(bodies.length).toBeGreaterThan(0)
+    const image = bodies.flatMap((b) => b.puts.flatMap((p) => p.message.blocks)).find((b) => b.type === 'attachment')
+    expect([image?.ref, typeof image?.sha256, typeof image?.bytes]).toEqual([STORED, 'string', 'number'])
     for (const body of bodies) expect(SessionLogJournalRequestSchema.safeParse(body).success).toBe(true)
     expect(bodies.flatMap((b) => b.puts)).toHaveLength(15)
     expect(bodies[0]!.threads.map((t) => t.thread_id)).toEqual([ROOT, CHILD])
