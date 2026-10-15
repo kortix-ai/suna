@@ -4,7 +4,7 @@
 // must write one usage row and move the wallet once: every wallet key is derived
 // from that row or from the request id.
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { creditAccounts, creditLedger, usageEvents } from '@kortix/db';
+import { creditAccounts, creditLedger, gatewayRequestLogs, usageEvents } from '@kortix/db';
 import type { UsageEvent } from '@kortix/llm-gateway';
 import { eq } from 'drizzle-orm';
 
@@ -178,11 +178,67 @@ withDb('gateway usage settlement is idempotent per request', () => {
     });
   });
 
-  // The provider bills the customer's own key; Kortix never charges it, even
-  // for an event that carries a cost.
-  test('a BYOK settlement writes its usage row and moves no money', async () => {
+  // The provider bills the customer's own key. Under the monthly allowance
+  // (billing/services/byok-fee.ts) Kortix charges nothing, even for an event
+  // that carries a cost.
+  test('a BYOK settlement under the allowance writes its usage row and moves no money', async () => {
     const id = requestId('byok');
     await recordGatewayUsage(event(id, { billingMode: 'none' }));
+
+    expect(await usageRows(id)).toHaveLength(1);
+    expect(await ledger()).toEqual([]);
+  });
+
+  // Past $1,000 of list-price BYOK usage this month, each request pays 5% of
+  // its list price, settled after the request; subscriptions stay free.
+  test('past the allowance a BYOK request pays the 5% fee, and a ChatGPT subscription does not', async () => {
+    await db.insert(gatewayRequestLogs).values({
+      requestId: requestId('history'),
+      accountId,
+      requestedModel: 'anthropic/claude',
+      resolvedModel: 'claude',
+      provider: 'anthropic',
+      status: 200,
+      ok: true,
+      billingMode: 'none',
+      upstreamCost: '1500',
+    });
+
+    const id = requestId('byok-fee');
+    await recordGatewayUsage(event(id, { billingMode: 'none', provider: 'anthropic', upstreamCost: 2, finalCost: 0 }));
+    const codex = requestId('codex');
+    await recordGatewayUsage(event(codex, { billingMode: 'none', provider: 'openai-codex', upstreamCost: 2, finalCost: 0 }));
+
+    const debits = await ledger();
+    expect(debits.map((row) => [row.type, row.amount, row.description])).toEqual([
+      ['usage', -0.1, 'BYOK fee · anthropic/kortix/test'],
+    ]);
+    const [row] = await db.select({ cost: usageEvents.costUsd }).from(usageEvents).where(eq(usageEvents.requestId, id));
+    expect(Number(row!.cost)).toBe(0.1);
+    expect(await usageRows(codex)).toHaveLength(1);
+  });
+
+  // `byokFee` is an entitlement, on by default: an operator override off
+  // waives it for one account.
+  test('an account with the byokFee entitlement overridden off pays no BYOK fee', async () => {
+    await db
+      .update(creditAccounts)
+      .set({ entitlementOverrides: { byokFee: { value: false } } })
+      .where(eq(creditAccounts.accountId, accountId));
+    await db.insert(gatewayRequestLogs).values({
+      requestId: requestId('history-waived'),
+      accountId,
+      requestedModel: 'anthropic/claude',
+      resolvedModel: 'claude',
+      provider: 'anthropic',
+      status: 200,
+      ok: true,
+      billingMode: 'none',
+      upstreamCost: '1500',
+    });
+
+    const id = requestId('byok-waived');
+    await recordGatewayUsage(event(id, { billingMode: 'none', provider: 'anthropic', upstreamCost: 2, finalCost: 0 }));
 
     expect(await usageRows(id)).toHaveLength(1);
     expect(await ledger()).toEqual([]);

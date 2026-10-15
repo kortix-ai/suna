@@ -20,6 +20,8 @@ export function bindCommerce() {
     setPlan: P.setBillingPlan,
     /** Accept the open Enterprise offer: a Stripe Checkout link (`POST /billing/enterprise-offer/checkout`). */
     acceptEnterpriseOffer: P.acceptEnterpriseOffer,
+    /** "Talk to sales": one click, no form (`POST /billing/enterprise/contact`). */
+    contactSales: P.contactEnterpriseSales,
 
     /**
      * @deprecated The API retired these routes. Both reject with

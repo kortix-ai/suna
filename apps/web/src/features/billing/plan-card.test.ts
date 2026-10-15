@@ -2,7 +2,7 @@ import type { AccountState } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { describePlanStatus } from './account-overview';
-import { describePlanChange } from './plan-card';
+import { describePlanChange, planPickerView } from './plan-card';
 
 /**
  * The Plan pane's model, tested without React.
@@ -113,19 +113,14 @@ describe('describePlanStatus', () => {
     expect(status.sublabel).toBe('$100/mo');
   });
 
-  test('Free and Enterprise carry no monthly amount', () => {
-    for (const [key, label] of [
-      ['free', 'Free'],
-      ['enterprise', 'Enterprise'],
-    ] as const) {
-      const status = describePlanStatus(
-        stateWith({
-          plan: { key, family: key, label, sublabel: null, monthly_usd: null },
-        } as Partial<AccountState>),
-      );
-      expect(status.name).toBe(label);
-      expect(status.sublabel).toBeNull();
-    }
+  test('Free carries no monthly amount', () => {
+    const status = describePlanStatus(
+      stateWith({
+        plan: { key: 'free', family: 'free', label: 'Free', sublabel: null, monthly_usd: null },
+      } as Partial<AccountState>),
+    );
+    expect(status.name).toBe('Free');
+    expect(status.sublabel).toBeNull();
   });
 });
 
@@ -164,57 +159,71 @@ describe('describePlanChange', () => {
   });
 });
 
-// One plan system (2026-10-15): an account always sees what it is on and until
-// when. Before, an Enterprise account with no Stripe subscription read
-// "Enterprise · No subscription".
-describe('describePlanStatus for trials and contracts', () => {
-  const enterprise = { key: 'enterprise', family: 'enterprise', label: 'Enterprise', sublabel: null, monthly_usd: null };
+// Trials are removed and Enterprise is a feature layer, not a plan
+// (2026-10-15): the plan card describes the billing plan only.
+describe('describePlanStatus without trials', () => {
   const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const free = { key: 'free', family: 'free', label: 'Free', sublabel: null, monthly_usd: null };
 
-  test('a trial names itself, its days left and its end date', () => {
+  test('a leftover trial block changes nothing: the card names the billing plan', () => {
     const status = describePlanStatus(
       stateWith({
-        plan: enterprise,
-        trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+        plan: free,
+        trial: { plan: 'credits', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
       } as Partial<AccountState>),
     );
-    expect(status).toMatchObject({ name: 'Enterprise', sublabel: 'Trial · 9 days left', detail: `Ends ${day('2026-11-14T00:00:00.000Z')}` });
-    expect(status.isActive).toBe(true);
-    expect(status.isWindingDown).toBe(true);
+    expect(status).toMatchObject({ name: 'Free', sublabel: null, isWindingDown: false });
+    expect(status.detail.toLowerCase()).not.toContain('trial');
   });
 
-  test('a trial on its last day says so', () => {
+  test('after a license ends, the grace says until when SSO stays on', () => {
     const status = describePlanStatus(
-      stateWith({
-        plan: enterprise,
-        trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 0 },
-      } as Partial<AccountState>),
-    );
-    expect(status.sublabel).toBe('Trial · ends today');
-  });
-
-  test('a renewing contract renews; a contract that does not renew ends', () => {
-    const contract = { id: 'c', license_usd: 25000, credits_usd: 15000, term_months: 12, collection: 'invoice', starts_at: null, ends_at: '2027-03-01T00:00:00.000Z', renews: true };
-    const renewing = describePlanStatus(stateWith({ plan: enterprise, contract } as Partial<AccountState>));
-    expect(renewing).toMatchObject({ sublabel: 'Annual contract', detail: `Renews ${day('2027-03-01T00:00:00.000Z')}`, isActive: true, isWindingDown: false });
-    const ending = describePlanStatus(stateWith({ plan: enterprise, contract: { ...contract, renews: false } } as Partial<AccountState>));
-    expect(ending.detail).toBe(`Ends ${day('2027-03-01T00:00:00.000Z')}`);
-    expect(ending.isWindingDown).toBe(true);
-  });
-
-  test('Enterprise without a contract on file never reads "No subscription"', () => {
-    const status = describePlanStatus(stateWith({ plan: enterprise } as Partial<AccountState>));
-    expect(status.detail).toBe('Annual contract');
-    expect(status.detail).not.toBe('No subscription');
-  });
-
-  test('after an Enterprise trial, the grace says until when SSO stays on', () => {
-    const status = describePlanStatus(
-      stateWith({
-        plan: { key: 'free', family: 'free', label: 'Free', sublabel: null, monthly_usd: null },
-        grace: { reason: 'trial_ended', ends_at: '2026-11-28T00:00:00.000Z' },
-      } as Partial<AccountState>),
+      stateWith({ plan: free, grace: { reason: 'contract_ended', ends_at: '2026-11-28T00:00:00.000Z' } } as Partial<AccountState>),
     );
     expect(status.detail).toBe(`SSO stays on until ${day('2026-11-28T00:00:00.000Z')}`);
+  });
+});
+
+describe('planPickerView', () => {
+  const view = (over: Partial<AccountState>, subscription: Record<string, unknown> = {}) =>
+    planPickerView(
+      stateWith({
+        ...over,
+        subscription: { status: 'none', cancel_at_period_end: false, current_period_end: null, ...subscription },
+      } as Partial<AccountState>),
+    );
+  const freePlan = { key: 'free', family: 'free', label: 'Free', sublabel: null, status: 'current', shape: 'none', rank: 1, monthly_usd: null } as AccountState['plan'];
+  const creditsPlan = { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, status: 'current', shape: 'credits', rank: 2, monthly_usd: 500 } as AccountState['plan'];
+
+  test('a Free account opens on the default tier', () => {
+    expect(view({ plan: freePlan })).toEqual({ currentUsd: null, initialUsd: 200 });
+  });
+
+  test('a paying account opens on the amount it pays', () => {
+    expect(view({ plan: creditsPlan }, { monthly_usd: 500, subscription_id: 'sub_1', status: 'active' })).toEqual({
+      currentUsd: 500,
+      initialUsd: 500,
+    });
+  });
+
+  test('the subscription amount is the fallback when the plan block has none', () => {
+    expect(view({ plan: { ...creditsPlan!, monthly_usd: null } }, { monthly_usd: 100, subscription_id: 'sub_1', status: 'active' })).toEqual({
+      currentUsd: 100,
+      initialUsd: 100,
+    });
+  });
+
+  test('Enterprise demo or license still gets the picker: Enterprise never replaces the plan', () => {
+    const demo = view({ plan: freePlan, enterprise: { state: 'demo' } });
+    const licensed = view({ plan: creditsPlan, enterprise: { state: 'licensed' } }, { monthly_usd: 500, subscription_id: 'sub_1', status: 'active' });
+    expect(demo).toEqual({ currentUsd: null, initialUsd: 200 });
+    expect(licensed).toEqual({ currentUsd: 500, initialUsd: 500 });
+  });
+
+  test('a live subscription on an unreported amount opens on "choose a tier"', () => {
+    expect(view({ plan: { ...creditsPlan!, monthly_usd: null } }, { subscription_id: 'sub_1', status: 'active' })).toEqual({
+      currentUsd: null,
+      initialUsd: null,
+    });
   });
 });

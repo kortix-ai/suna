@@ -367,6 +367,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Privacy: 'text54a57c3147c4',
   privateBody: 'texte7268350dbfc',
   privateHeading: 'text5994c8a10999',
+  'Plans, credits, Enterprise, entitlements, members and billing state, per account.':
+    'text81e6bf495c98',
   'Product deck': 'text32d61a2331fe',
   Productivity: 'textf42bca637cb3',
   'Profiles the warehouse, writes performant SQL and ships a dashboard from a plain question.':
@@ -806,8 +808,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'This deployment exposes no per-project feature flags.': 'text8d3df7003a8d',
   'Throw some confetti': 'texteff2ec3d9dcd',
   'Tier:': 'text50c519cd51cc',
-  'Tiers, credits, trials, entitlements, members and billing state, per account.':
-    'text0c94dd964eb3',
   'Told to this agent at the start of every session. Markdown. Leave empty to use the default instructions.':
     'text5fe8921b712c',
   'Total balance': 'text10ea22c4a146',

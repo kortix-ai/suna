@@ -122,6 +122,7 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { configReleaseNoticePath } from '@/services/config-provider/notice'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { bootLinkPath, isInReleaseStore, readBootLinkTarget, readBootReleaseRoot, releaseRootOf } from '@/services/config-provider/boot-config'
 import { syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
@@ -405,7 +406,7 @@ export async function buildOpencodeConfigContent(
   // server-side and hands it down sealed; the daemon only LAYERS its own
   // session-local overlays (MCP/gateway/Slack below) on top, never composes
   // agent behavior itself.
-  const compiledAgentConfigRaw = env.KORTIX_COMPILED_AGENT_CONFIG
+  const compiledAgentConfigRaw = compiledAgentConfigFromEnv(env)
   const hasCompiledAgentConfig = !!compiledAgentConfigRaw
   // (5) The daemon-injected managed skills dir (`ensureInjectedManagedSkills`).
   // OpenCode loads skills from config-declared `skills.paths` — the overlay dir

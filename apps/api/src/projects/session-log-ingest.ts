@@ -147,7 +147,7 @@ class SeqConflict extends Error {
 }
 
 /** The session row, only when it belongs to this project and account. */
-async function sessionExists(scope: SessionLogScope): Promise<boolean> {
+export async function sessionExists(scope: SessionLogScope): Promise<boolean> {
   const [row] = await db
     .select({ sessionId: projectSessions.sessionId })
     .from(projectSessions)

@@ -69,18 +69,18 @@ export function UserAvatar({
     <Avatar
       className={cn(
         sizes.box,
-        'shrink-0 overflow-hidden rounded-full p-0 font-medium',
+        'shrink-0 overflow-hidden rounded-sm p-0 font-medium',
         ring && 'ring-background ring-2',
         // A photo keeps an edge on a light page: a 1px inset hairline over it.
         avatarUrl &&
-          'after:ring-border after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:ring-1 after:ring-inset',
+          'after:ring-border after:pointer-events-none after:absolute after:inset-0 after:rounded-sm after:ring-1 after:ring-inset',
         variant === 'primary' && 'bg-primary text-primary-foreground',
         className,
       )}
     >
       {avatarUrl ? <AvatarImage src={avatarUrl} alt={name || email} /> : null}
       <AvatarFallback
-        className={cn('rounded-full font-medium', sizes.text)}
+        className={cn('rounded-sm font-medium', sizes.text)}
         style={{ backgroundColor: fill, color: AVATAR_INK }}
       >
         {initials || '?'}

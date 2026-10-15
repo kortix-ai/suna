@@ -125,7 +125,7 @@ The web and native renderers map each `name` to a component. An unknown componen
 | Prompt, pi | Section in `systemPrompt()` (`harness/pi/runtime.ts`) |
 | Web analytics | `apps/web/src/lib/track.ts` closed event set (PostHog, no PII) |
 
-## 6. Component catalog (v1: 17 components)
+## 6. Component catalog (19 components: v1's 17, then Steps and Checklist)
 
 General rules for every component:
 - Every count has a hard limit in the schema. The model cannot write cluttered UI.
@@ -152,6 +152,8 @@ General rules for every component:
 | 15 | `Callout` | `tone: info\|warn\|success`, `title?`, `body` | body ≤ 400 chars | `> **title** body` |
 | 16 | `Image` | `src`, `alt`, `caption?` | `alt` required | `![alt](src)` |
 | 17 | `Link` | `label`, `href` | http(s) only | `[label](href)` |
+| 18 | `Steps` | `steps: Step[{title, text?, image?, meta?}]`: a journey or process, a photo rail | 1–12 steps; title ≤ 80, text ≤ 500, meta ≤ 40 chars | Numbered list, `**title** — text (meta)` |
+| 19 | `Checklist` | `title`, `items[]`; ticks stay local, never stored or sent | 1–20 items, each ≤ 120 chars | `**title**` then a task list (`- [ ]`) |
 
 ### 6.1 Charts
 - **Web:** `recharts`. It is already a dependency (`apps/web/package.json`) and the shadcn `components/ui/chart.tsx` wraps it. The chart code loads only when a chart block appears.
@@ -213,7 +215,7 @@ The Phase 0 evaluation set includes negative cases, where the correct answer is 
 - Given the server kill switch is on, then new sessions get no instructions, and clients render blocks as `toMarkdown`.
 
 **R-WEB-1. Web renderer**
-- [ ] Renders all 17 components through `@/components/ui/*`, in both themes. `kortix-brand/scripts/audit.sh` is clean on changed files.
+- [ ] Renders all 19 components through `@/components/ui/*`, in both themes. `kortix-brand/scripts/audit.sh` is clean on changed files.
 - [ ] Each block has its own error boundary. A render error shows `toMarkdown` output and fires `genui_block` with `outcome=render_error`.
 - [ ] Charts and the map load as separate lazy chunks.
 - [ ] Copy-message copies `toMarkdown` output, not OpenUI syntax.
@@ -221,7 +223,7 @@ The Phase 0 evaluation set includes negative cases, where the correct answer is 
 - [ ] Desktop parity (Electron): 720 × 480 window, both themes, browser zoom, no clipped last row.
 
 **R-MOB-1. Mobile renderer**
-- [ ] Renders all 17 components with mobile primitives (`apps/mobile/design.md`, `AGENTS.md`).
+- [ ] Renders all 19 components with mobile primitives (`apps/mobile/design.md`, `AGENTS.md`).
 - [ ] Ships over the air on the current `runtimeVersion` (`1.5.0` after the Expo SDK 57 merge; `1.4.4` when this spec was written) with no new native module.
 - [ ] Android matches iOS.
 - [ ] Builds older than the OTA show the raw fence. This is accepted, and the OTA reaches them on next launch (`checkAutomatically: ON_LOAD`).

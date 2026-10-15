@@ -26,19 +26,19 @@ const CARD_RATIO_MIN = 9 / 16;
 const CARD_RATIO_MAX = 4 / 3;
 /** The share of a photo that may be cropped to fill its tile instead of showing bars. */
 const CARD_CROP_MAX = 0.08;
-/** An image this close to square (height over width) is a logo or a product shot: a 1:1 tile, shown whole with room around it. */
-const SQUARE_SNAP = [0.85, 1.18] as const;
 /** An image narrower than this (in source pixels) is a logo or icon: a square tile, shown whole with room around it. */
 const LOGO_MAX_WIDTH = 240;
+/** An exactly square image up to this width is a brand logo or app icon too; a larger square image is a photo. */
+const SQUARE_LOGO_MAX_WIDTH = 512;
 /** The text under a photo, as a share of the column width, for balancing the columns before it is measured. */
 export const CARD_TEXT_RATIO = 0.5;
 export type CardShape = { ratio: number; fit: 'cover' | 'contain'; inset: boolean };
 
-/** How a card image is framed, from its natural size: an inset square for a logo or near-square shot, else a photo at its own shape within the limits. */
+/** How a card image is framed, from its natural size: an inset square for a logo, else a photo at its own shape within the limits. */
 export function cardImageShape(width: number, height: number): CardShape {
   if (!width || !height) return { ratio: UNKNOWN_RATIO, fit: 'cover', inset: false };
   const natural = height / width;
-  if (width < LOGO_MAX_WIDTH || (natural >= SQUARE_SNAP[0] && natural <= SQUARE_SNAP[1])) return { ratio: 1, fit: 'contain', inset: true };
+  if (width < LOGO_MAX_WIDTH || (width === height && width <= SQUARE_LOGO_MAX_WIDTH)) return { ratio: 1, fit: 'contain', inset: true };
   const ratio = Math.min(CARD_RATIO_MAX, Math.max(CARD_RATIO_MIN, natural));
   // Within CARD_CROP_MAX of the limit, filling the tile crops less than the bars `contain` would leave.
   return { ratio, fit: Math.abs(ratio - natural) / natural <= CARD_CROP_MAX ? 'cover' : 'contain', inset: false };

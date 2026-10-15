@@ -182,7 +182,7 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
  * no subscription) cannot be produced locally without Stripe.
  */
 export interface PlanStatus {
-  /** Plan name as the product names it: Free, Credits or Enterprise. */
+  /** Plan name as the product names it: Free or Credits. */
   name: string;
   /** Qualifier under the name: the credits plan's monthly amount, e.g. `$100/mo`. */
   sublabel: string | null;
@@ -204,14 +204,6 @@ export interface PlanStatusCopy {
   active: string;
   noSubscription: string;
   status: (status: string) => string;
-  /** `Trial · 9 days left`. Optional so an older caller keeps compiling. */
-  trialDaysLeft?: (days: number) => string;
-  /** `Trial · ends today`. */
-  trialEndsToday?: string;
-  /** `Ends Nov 14` — a trial or a contract that does not renew. */
-  ends?: (date: string) => string;
-  /** `Annual contract` — an Enterprise contract. */
-  annualContract?: string;
   /** `SSO stays on until Nov 28` — the grace after Enterprise access ended. */
   graceUntil?: (date: string) => string;
 }
@@ -225,10 +217,6 @@ const DEFAULT_PLAN_STATUS_COPY: PlanStatusCopy = {
   active: 'Active',
   noSubscription: 'No subscription',
   status: (status) => status.replace(/_/g, ' '),
-  trialDaysLeft: (days) => `Trial · ${days} ${days === 1 ? 'day' : 'days'} left`,
-  trialEndsToday: 'Trial · ends today',
-  ends: (date) => `Ends ${date}`,
-  annualContract: 'Annual contract',
   graceUntil: (date) => `SSO stays on until ${date}`,
 };
 
@@ -247,32 +235,6 @@ export function describePlanStatus(
   const plan = resolvedPlan(state);
   const sub = state.subscription;
   const text = { ...DEFAULT_PLAN_STATUS_COPY, ...copy };
-
-  // A trial and an Enterprise contract are not Stripe subscriptions: say what
-  // they are and until when, before the subscription lines below.
-  const trial = state.trial;
-  if (trial) {
-    const ends = formatIsoDate(trial.ends_at, text.locale);
-    return {
-      name: plan.label,
-      sublabel: trial.days_left > 0 ? text.trialDaysLeft!(trial.days_left) : text.trialEndsToday!,
-      detail: ends ? text.ends!(ends) : text.trialEndsToday!,
-      isActive: true,
-      isWindingDown: true,
-    };
-  }
-  if (plan.family === 'enterprise') {
-    const contract = state.contract;
-    const ends = formatIsoDate(contract?.ends_at, text.locale);
-    return {
-      name: plan.label,
-      // With no term on file the detail already says "Annual contract".
-      sublabel: contract && ends ? text.annualContract! : null,
-      detail: ends ? (contract?.renews ? text.renews(ends) : text.ends!(ends)) : text.annualContract!,
-      isActive: true,
-      isWindingDown: Boolean(contract && ends && !contract.renews),
-    };
-  }
 
   const periodEnd = sub?.current_period_end
     ? formatDate(sub.current_period_end, text.locale)

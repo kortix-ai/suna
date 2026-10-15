@@ -56,8 +56,7 @@ export function describePlanChange(opts: {
   return 'unchanged';
 }
 
-/** Monthly credits the account's current plan grants, or `null` when it grants
- *  a fixed amount that is not a purchase (Enterprise contracts). */
+/** Monthly credits the account's current plan grants, or `null` when unknown. */
 function currentPlanCredits(state: AccountState): number | null {
   const plan = resolvedPlan(state);
   if (plan.monthlyUsd != null) return monthlyCreditsForUsd(plan.monthlyUsd);
@@ -77,10 +76,6 @@ export function PlanCard({ state }: { state: AccountState }) {
     renews: (date: string) => t('renews', { date }),
     active: t('active'),
     noSubscription: t('noSubscription'),
-    trialDaysLeft: (days: number) => t('trialDaysLeft', { days }),
-    trialEndsToday: t('trialEndsToday'),
-    ends: (date: string) => t('ends', { date }),
-    annualContract: t('annualContract'),
     graceUntil: (date: string) => t('graceUntil', { date }),
     status: (status: string) =>
       t.has(`statuses.${status}`)
@@ -141,32 +136,38 @@ export function PlanCard({ state }: { state: AccountState }) {
   );
 }
 
+export interface PlanPickerView {
+  /** The monthly amount the account pays, or null when it pays none. */
+  currentUsd: number | null;
+  /** The amount the picker opens on. */
+  initialUsd: number | null;
+}
+
 /**
- * Pick a monthly amount and apply it. Renders nothing when billing is off, for
- * an Enterprise contract (managed with the account team), and shows who to ask
- * to anyone who may not change billing.
+ * What the plan picker opens on: the amount the account pays, or the default
+ * tier. Enterprise never changes the billing plan, so every account gets the
+ * picker. A live subscription on an amount the API does not report (an
+ * off-ladder legacy price) opens on the select's "choose a tier" state.
+ */
+export function planPickerView(state: AccountState): PlanPickerView {
+  const currentUsd = resolvedPlan(state).monthlyUsd ?? state.subscription?.monthly_usd ?? null;
+  const initialUsd = currentUsd ?? (accountHasLiveSubscription(state) ? null : DEFAULT_TIER_USD);
+  return { currentUsd, initialUsd };
+}
+
+/**
+ * Pick a monthly amount and apply it. Renders nothing when billing is off, and
+ * shows who to ask to anyone who may not change billing.
  */
 export function PlanChanger({ state, className }: { state: AccountState; className?: string }) {
   const t = useTranslations('billing.credits.planCard');
   const locale = useLocale();
-  const plan = resolvedPlan(state);
-  const currentUsd = plan.monthlyUsd ?? null;
+  const { currentUsd, initialUsd } = planPickerView(state);
   const hasSubscription = accountHasLiveSubscription(state);
-  // An off-ladder current amount (a legacy $20 plan) opens on the select's
-  // "choose a tier" state; everyone else opens on their tier or the popular one.
-  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(
-    currentUsd ?? (hasSubscription ? null : DEFAULT_TIER_USD),
-  );
+  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(initialUsd);
   const { change, isPending } = useChangeCreditPlan();
 
   if (!isBillingEnabled()) return null;
-  if (plan.family === 'enterprise') {
-    return (
-      <p className={cn('text-muted-foreground px-4 py-3 text-xs', className)}>
-        {t('enterpriseNote')}
-      </p>
-    );
-  }
   if (!canManageBilling(state)) {
     return (
       <p className={cn('text-muted-foreground px-4 py-3 text-xs', className)}>{t('ownerOnly')}</p>

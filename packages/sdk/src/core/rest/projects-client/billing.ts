@@ -35,6 +35,11 @@ export type BillingState =
 export type PlanFamily = 'free' | 'credits' | 'enterprise';
 
 /** A dated grant of a plan. `days_left` counts whole days, rounded up; 0 on the last day. */
+/** The Enterprise feature layer of an account (`AccountState.enterprise`). */
+export interface AccountEnterprise {
+  state: 'off' | 'demo' | 'licensed';
+}
+
 export interface AccountTrial {
   plan: 'credits' | 'enterprise';
   started_at: string | null;
@@ -51,7 +56,8 @@ export interface AccountContract {
   /** Annual platform fee, USD. */
   license_usd: number;
   /** Annual credit commitment, USD, granted as one pool per term. */
-  credits_usd: number;
+  /** @deprecated A license carries no credits (2026-10-15); no longer sent. */
+  credits_usd?: number;
   term_months: number;
   collection: EnterpriseContractCollection;
   starts_at: string | null;
@@ -65,7 +71,8 @@ export interface AccountContract {
 export interface AccountEnterpriseOffer {
   id: string;
   license_usd: number;
-  credits_usd: number;
+  /** @deprecated A license carries no credits (2026-10-15); no longer sent. */
+  credits_usd?: number;
   term_months: number;
   collection: EnterpriseContractCollection;
 }
@@ -106,10 +113,12 @@ export interface AccountState {
    * The plan the account BEHAVES as, named the way the product names plans.
    *
    * Distinct from `subscription` on purpose. `subscription.tier_key` is the
-   * STORED plan (legacy keys read as `'credits'`). This block is the RESOLVED
-   * plan: an active admin-issued trial overlays it, so it reports the plan the
-   * server's gates actually enforce. Read it through {@link resolvedPlan},
-   * which also covers responses from an API too old to send it.
+   * STORED plan (legacy keys read as `'credits'`). This block is the BILLING
+   * plan: what the account pays for. A Credits trial overlays it; an
+   * Enterprise trial does not, because it lends the Enterprise features only
+   * (see `trial`, and `tier.entitlements` for what the gates enforce). Read it
+   * through {@link resolvedPlan}, which also covers responses from an API too
+   * old to send it.
    */
   plan?: {
     /** Plan key — 'none' | 'free' | 'credits' | 'enterprise'. */
@@ -132,6 +141,9 @@ export interface AccountState {
   subscription: {
     tier_key: string;
     tier_display_name: string;
+    /** The credits plan's monthly amount the account PAYS, in USD, or null
+     *  when it pays none. Kept during a trial, while `plan.monthly_usd` is null. */
+    monthly_usd?: number | null;
     status: string;
     billing_period: 'monthly' | 'yearly' | 'yearly_commitment' | null;
     provider: 'stripe' | 'revenuecat' | 'local';
@@ -228,7 +240,13 @@ export interface AccountState {
   enterprise_entitled?: boolean;
   /** The active trial: a dated grant of a plan. Null when there is none.
    *  Absent on an older server. */
+  /** @deprecated Trials are removed (2026-10-15): always null. Read {@link AccountState.enterprise}. */
   trial?: AccountTrial | null;
+  /**
+   * The Enterprise feature layer: 'off', 'demo' (self-serve, marked "Demo") or
+   * 'licensed' (a license contract). Absent on an older server.
+   */
+  enterprise?: AccountEnterprise;
   /** The active Enterprise contract. Null when there is none. Absent on an
    *  older server. */
   contract?: AccountContract | null;
@@ -302,6 +320,7 @@ export function getDefaultAccountState(): AccountState {
     subscription: {
       tier_key: 'none',
       tier_display_name: 'No Plan',
+      monthly_usd: null,
       status: 'no_subscription',
       billing_period: null,
       provider: 'stripe',
@@ -985,6 +1004,28 @@ export async function acceptEnterpriseOffer(
       account_id: params.accountId,
     }),
     'Failed to start the Enterprise checkout',
+  );
+}
+
+export interface ContactEnterpriseSalesParams {
+  accountId?: string;
+  /** Optional free text for sales, e.g. what the team needs. */
+  note?: string;
+}
+
+/**
+ * "Talk to sales" from inside the app: one click, no form. The API emails
+ * Kortix sales the account, the signed-in user and its Enterprise state. Any
+ * member may ask (`billing.read`). `sent` is false when the deployment has no
+ * sales inbox configured.
+ */
+export async function contactEnterpriseSales(params: ContactEnterpriseSalesParams = {}): Promise<{ sent: boolean }> {
+  return unwrap(
+    await backendApi.post<{ sent: boolean }>('/billing/enterprise/contact', {
+      account_id: params.accountId,
+      ...(params.note ? { note: params.note } : {}),
+    }),
+    'Failed to reach Kortix sales',
   );
 }
 

@@ -1169,8 +1169,8 @@
     "contactSales": "営業に問い合わせる",
     "upgradeTo": "{{plan}}にアップグレード",
     "switchTo": "{{plan}}に切り替え",
-    "trialLabel_one": "{{plan}} トライアル · 残り {{count}} 日",
-    "trialLabel_other": "{{plan}} トライアル · 残り {{count}} 日"
+    "enterpriseDemoLabel": "{{plan}} · Enterprise デモ",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1204,6 +1204,7 @@
   },
   "genui": {
     "chartTapHint": "タップして値を表示",
+    "checklistReady": "{{done}}/{{total}} 完了",
     "map": "地図",
     "mapUnavailable": "地図を表示できません",
     "openImage": "画像を開く",

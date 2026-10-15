@@ -90,22 +90,31 @@ function CardRating({ rating, reviews, price }: { rating: unknown; reviews: unkn
   );
 }
 
-/** A card's text in either layout: title (underlined when it links), rating, location line, description, tags. */
+/**
+ * A card's text in either layout: title (underlined when it links), rating, location line, the tags as tone-dot
+ * pills (as on web), and the description.
+ */
 function CardText({ props }: { props: GenuiNode['props'] }) {
-  const tags = kids(props.badges).map((badge) => String(badge.props.label));
+  const badges = kids(props.badges);
   return (
     <View className="flex-1 gap-1">
       <Text className={`font-medium ${props.href ? 'underline' : ''}`}>{String(props.title)}</Text>
       <CardRating rating={props.rating} reviews={props.reviews} price={props.price} />
       {props.subtitle ? <Text variant="muted">{String(props.subtitle)}</Text> : null}
+      {badges.length > 0 ? (
+        <View className="flex-row flex-wrap gap-1.5 pt-0.5">
+          {badges.map((badge) => (
+            <CardBadge key={badge.id} badge={badge} well="bg-secondary" />
+          ))}
+        </View>
+      ) : null}
       {props.body ? <Text variant="small" className="leading-5">{String(props.body)}</Text> : null}
-      {tags.length > 0 ? <Text variant="muted">{tags.join(' · ')}</Text> : null}
     </View>
   );
 }
 
-/** The list thumbnail: a 72pt square, the whole image inside a 6pt inset. */
-const THUMB = 72;
+/** The list thumbnail and the Steps photo: a 72pt square. A photo fills it; a logo sits whole inside a 6pt inset. */
+export const THUMB = 96;
 /** Below this width the grid is one column (every phone); a tablet gets two. */
 const CARD_TWO_COLUMNS_MIN = 480;
 /** The grid's gap between columns and an inset tile's padding, in pt. */
@@ -134,19 +143,27 @@ function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' 
   if (mode === 'list') {
     return (
       <View className="rounded-2xl bg-card">
-        {cards.map(({ id, props }, i) => (
-          <View key={id}>
-            {i > 0 ? <Separator /> : null}
-            <Pressable accessibilityRole={props.href ? 'link' : undefined} disabled={!props.href} onPress={open(props.href)} className="flex-row gap-3 px-4 py-3 active:opacity-70">
-              {props.image ? (
-                <View style={{ width: THUMB, height: THUMB }} className="overflow-hidden rounded-lg bg-secondary p-1.5">
-                  <GenuiImageView src={String(props.image)} alt="" fixedHeight={THUMB - 12} look={look(id, { resizeMode: 'contain' })} />
-                </View>
-              ) : null}
-              <CardText props={props} />
-            </Pressable>
-          </View>
-        ))}
+        {cards.map(({ id, props }, i) => {
+          const shape = shapes[id] ?? cardImageShape(0, 0);
+          return (
+            <View key={id}>
+              {i > 0 ? <Separator /> : null}
+              <Pressable accessibilityRole={props.href ? 'link' : undefined} disabled={!props.href} onPress={open(props.href)} className="flex-row gap-3 px-4 py-3 active:opacity-70">
+                {props.image ? (
+                  <View style={{ width: THUMB, height: THUMB }} className={`overflow-hidden rounded-lg bg-secondary ${shape.inset ? 'p-1.5' : ''}`}>
+                    <GenuiImageView
+                      src={String(props.image)}
+                      alt=""
+                      fixedHeight={shape.inset ? THUMB - 12 : THUMB}
+                      look={look(id, { resizeMode: shape.inset ? 'contain' : 'cover' })}
+                    />
+                  </View>
+                ) : null}
+                <CardText props={props} />
+              </Pressable>
+            </View>
+          );
+        })}
       </View>
     );
   }
