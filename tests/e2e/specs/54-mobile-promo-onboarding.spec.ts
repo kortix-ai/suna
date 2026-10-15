@@ -2,7 +2,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseProject } from '../../src/fixtures/database-project';
-import { runDatabaseSql } from '../helpers/database';
+import { queryDatabaseRows } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
 import { selectAccountForUi } from '../helpers/ui';
@@ -10,8 +10,9 @@ import { selectAccountForUi } from '../helpers/ui';
 /**
  * KRTX-2378 / KRTX-2396: the "Kortix, now on your phone" introduction waits
  * until onboarding is done, so it never opens behind or over the onboarding
- * wizard. Once onboarding is done it opens on the project page, and a close
- * sticks across a reload.
+ * wizard. "Skip for now" closes the wizard in place (it used to stay on screen
+ * until a reload). Then the introduction opens once, and a close sticks across
+ * a reload.
  */
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
@@ -65,15 +66,19 @@ test('54 — the mobile app promo waits for onboarding, and a close sticks', asy
       await expect(promoTitle(page)).toHaveCount(0);
     });
 
-    await test.step('once onboarding is done, the project page shows the promo', async () => {
-      await runDatabaseSql(
-        `UPDATE kortix.projects SET metadata = metadata || jsonb_build_object('onboarding_completed_at', now()::text) WHERE project_id = $1`,
-        [projectId],
-        env.databaseUrl,
-      );
-      await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
-      await expect(promoTitle(page)).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByText(WIZARD_TITLE, { exact: true })).toHaveCount(0);
+    await test.step('Skip for now stamps the project and closes the wizard in place; then the promo opens', async () => {
+      await page.getByRole('button', { name: 'Skip for now' }).first().click();
+      await expect(page.getByText(WIZARD_TITLE, { exact: true })).toHaveCount(0, { timeout: 10_000 });
+      await expect
+        .poll(async () =>
+          (await queryDatabaseRows<{ stamped: boolean }>(
+            "SELECT metadata ? 'onboarding_completed_at' AND metadata->>'onboarding_completed_at' IS NOT NULL AS stamped FROM kortix.projects WHERE project_id = $1",
+            [projectId],
+            env.databaseUrl,
+          ))[0]?.stamped,
+        )
+        .toBe(true);
+      await expect(promoTitle(page)).toBeVisible({ timeout: 30_000 });
     });
 
     await test.step('Close closes it for good: stored as closed, and gone after a reload', async () => {

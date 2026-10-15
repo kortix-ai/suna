@@ -13,7 +13,6 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -77,10 +76,6 @@ export function ProjectHome({
   // home, which "New session" opens, stays the normal home.
   const searchParams = useSearchParams();
   const firstChat = useFirstChatPending(projectId) && isFirstChatRequested(searchParams);
-  // The onboarding wizard opens over this page while onboarding is pending
-  // (`project-shell.tsx`); the promo waits until it is done (KRTX-2378).
-  const onboarding = useProjectOnboarding(projectId);
-  const onboarded = onboarding.hydrated && onboarding.status === 'completed';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -141,6 +136,12 @@ export function ProjectHome({
     ...contract('config'),
   });
   const accountId = projectDetailQuery.data?.project?.account_id;
+  // The onboarding wizard opens over this page until the project is stamped
+  // (`project-shell.tsx`); the promo waits for the stamp (KRTX-2378).
+  const onboarded = Boolean(
+    (projectDetailQuery.data?.project?.metadata as { onboarding_completed_at?: string } | undefined)
+      ?.onboarding_completed_at,
+  );
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
