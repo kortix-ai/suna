@@ -1,5 +1,5 @@
 {
-  "source_hash": "fdf9d5dd2c17fda3264d5655d96751b51eba27ce6ac074c536db7fc4f4cf898e",
+  "source_hash": "ec30c824172f06bf03a19e49ba9edfce877c22c2a3970798008a473f1cb00e64",
   "diff_files": [
     "apps/web/src/app/[locale]/presentations/decks/security-diagram-content.ts",
     "apps/web/src/app/[locale]/presentations/decks/security-localization.test.tsx",
@@ -136,16 +136,15 @@
     "packages/sdk/src/react/session-stop.ts",
     "packages/sdk/src/react/session-title-sync.ts",
     "packages/sdk/src/react/teams-install-polling.ts",
-    "packages/sdk/src/react/use-project-name.test.ts",
     "packages/sdk/src/react/use-project-name.ts"
   ],
-  "diff_hash": "c6fd189d9d72f0ea05ddfa65566eded8d23260fc597b760dfd47b133dfb19092",
-  "head": "1a7150c3a9a8adb662a68feea32ef4663b2ed317",
+  "diff_hash": "4cda7d29a379eb7ac62bedbaccaaa5dbbfa899a0473dfb3eff7c60d2613f012c",
+  "head": "4c7285c0bdd71f2a735962f11460960db956935b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T07:38:51.553Z"
+  "at": "2026-10-15T08:03:27.470Z"
 }

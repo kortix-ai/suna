@@ -134,4 +134,3 @@ describe('useProjectIcon', () => {
     expect(useProjectIcon('proj-1')).toBeUndefined();
   });
 });
-
