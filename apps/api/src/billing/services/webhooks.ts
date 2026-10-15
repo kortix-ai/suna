@@ -1,3 +1,4 @@
+import { formatUsdAsCredits } from '@kortix/shared';
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
@@ -78,7 +79,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     accountId,
     amount: amountTotal,
     kind: 'purchase',
-    description: `Credit purchase: $${amountTotal.toFixed(2)}`,
+    description: `Credit purchase: ${formatUsdAsCredits(amountTotal)} credits ($${amountTotal.toFixed(2)})`,
     expiring: false,
     key: { event: session.id },
   });

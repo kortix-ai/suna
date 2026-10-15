@@ -489,7 +489,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const team = await ctx.fixtures.team();
     const amountCents = 713;
-    const description = `Credit purchase: $${(amountCents / 100).toFixed(2)}`;
+    const description = `Credit purchase: ${amountCents.toLocaleString('en-US')} credits ($${(amountCents / 100).toFixed(2)})`;
     const sessionId = `cs_ke2e_${randomUUID().replaceAll('-', '')}`;
 
     const deliver = async (type: string, paymentStatus: 'paid' | 'unpaid', eventId = `evt_ke2e_${randomUUID().replaceAll('-', '')}`, session = sessionId) => {
