@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import { readProjectManifest, extractNestedString, type Config as HostConfig } from '@/lib/config/config'
 import { loadConfig } from '../harness'
+import { compiledSetV3 } from '@/lib/config/manifest-v3'
 import { opencodeConfigDirCandidates, projectSkillDirs } from './project-layout'
 
 type Config = OpenCodeConfig
@@ -16,7 +17,9 @@ type Config = OpenCodeConfig
  * what keeps a freshly provisioned sandbox bootable before a project has been
  * cloned.
  */
-export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
+export async function resolveOpencodeConfigDir(cfg: Config, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  // kortix.yaml v3 reads no harness folder: the compiled set is the only input.
+  if (compiledSetV3(env.KORTIX_COMPILED_AGENT_CONFIG)) return cfg.defaultOpencodeConfigDir
   const fs = await import('node:fs/promises')
   const manifestDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
   for (const relConfigDir of opencodeConfigDirCandidates(manifestDir)) {
