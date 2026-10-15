@@ -1,0 +1,18 @@
+{
+  "source_hash": "9f3f30bee01238bccbccfb0aeffbfbce13ccb9ddac3c6c5652ce2b1976109bcc",
+  "diff_files": [
+    "apps/web/src/app/[locale]/not-found.test.tsx",
+    "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/features/workspace/customize/sections/view/account-secret-resources-panel.test.tsx",
+    "tests/e2e/shard-durations.json"
+  ],
+  "diff_hash": "db91836d1e1304175a34fa6228c03503b79a558e69d349942ea8edc18e09f7d2",
+  "head": "7af91dab24c44266e37be601ea378414d5f593db",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T12:27:25.788Z"
+}
