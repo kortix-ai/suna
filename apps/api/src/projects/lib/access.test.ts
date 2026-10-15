@@ -192,10 +192,10 @@ describe('sessionIsTombstoned — a deleted session refuses every runtime verb',
     expect(sessionIsTombstoned({ metadata: { deletedAt: null } })).toBe(false);
   });
 
-  test('the /start and /restart handlers both ask it after loadVisibleSession', async () => {
+  test('the /start, /restart and /continue handlers each ask it after loadVisibleSession', async () => {
     const src = await Bun.file(new URL('../routes/session-runtime.ts', import.meta.url)).text();
     const occurrences = src.split('sessionIsTombstoned(visible.row)').length - 1;
-    expect(occurrences).toBe(2);
+    expect(occurrences).toBe(3);
   });
 });
 

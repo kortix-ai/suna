@@ -455,8 +455,8 @@ mock.module('../projects/secrets', () => ({
 const triggerDbMock: any = {
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
-        where: () => {
+      from: (table: unknown) => {
+        const where = () => {
           const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
           (result as any).for = () => result;
           result.orderBy = () => {
@@ -523,8 +523,16 @@ const triggerDbMock: any = {
             else resolve([]);
           };
           return result;
-        },
-      }),
+        };
+        return {
+          // KRTX-2419: resolveSessionHarness reads the project's
+          // session_log_restore flag through a `.leftJoin(projectSessions, …)`
+          // chain before provisioning. The joined read still answers with the
+          // project row, so leftJoin reuses the same where chain.
+          leftJoin: () => ({ where }),
+          where,
+        };
+      },
     }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
