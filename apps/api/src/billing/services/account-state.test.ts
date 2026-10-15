@@ -10,6 +10,7 @@ import { describe, expect, mock, test } from 'bun:test';
 import { sandboxes } from '@kortix/db';
 import { getTier } from './tiers';
 import * as realUsageBreakdown from './usage-breakdown';
+import * as realCreditAccounts from '../repositories/credit-accounts';
 
 let getCreditAccountCalls = 0;
 let account: Record<string, unknown> | null = null;
@@ -34,6 +35,7 @@ mock.module('../../config', () => ({
 }));
 
 mock.module('../repositories/credit-accounts', () => ({
+  ...realCreditAccounts,
   getCreditAccount: async (_accountId: string) => {
     getCreditAccountCalls += 1;
     return account;

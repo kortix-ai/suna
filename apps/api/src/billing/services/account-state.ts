@@ -14,7 +14,7 @@ import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
 import { resolveAccountBilling } from './billing-cache';
 import { ACCESS_GRACE_DAYS, type ResolvedBilling } from './resolve-billing';
-import { type ContractRow, getActiveContract, getLastEndedContract, getOpenOffer } from './enterprise-contracts';
+import { type ContractRow, getContractState } from './enterprise-contracts';
 import { trialPlanFor } from './trial-admin';
 import {
   billingSnapshotFromAccount,
@@ -68,7 +68,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // All of these are independent of one another (each keyed only on accountId
   // and/or the `account` row already fetched above) — run them concurrently
   // instead of ~8 sequential round-trips.
-  const [resolved, [credits, isAdmin, entitlements, autoTopup, usageThisPeriod], [contract, offer, lastEnded]] =
+  const [resolved, [credits, isAdmin, entitlements, autoTopup, usageThisPeriod], { active: contract, offer, lastEnded }] =
     await Promise.all([resolvedPending, Promise.all([
       getCreditSummary(account),
       isPlatformAdmin(accountId),
@@ -79,7 +79,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       sub
         ? getUsageBreakdownThisPeriod(accountId, currentPeriodStart(sub.billingCycleAnchor ?? null)).catch(() => null)
         : Promise.resolve(null),
-    ]), Promise.all([getActiveContract(accountId), getOpenOffer(accountId), getLastEndedContract(accountId)])]);
+    ]), getContractState(accountId)]);
 
   const isCancelled =
     sub?.stripeSubscriptionStatus === 'canceled' || sub?.revenuecatCancelledAt != null;

@@ -73,15 +73,23 @@ async function contractWithStatus(accountId: string, status: 'active' | 'offered
 export const getActiveContract = (accountId: string) => contractWithStatus(accountId, 'active');
 export const getOpenOffer = (accountId: string) => contractWithStatus(accountId, 'offered');
 
-/** The contract that ended most recently, for the SSO grace notice. */
-export async function getLastEndedContract(accountId: string): Promise<ContractRow | null> {
-  const [row] = await db
-    .select()
-    .from(enterpriseContracts)
-    .where(and(eq(enterpriseContracts.accountId, accountId), eq(enterpriseContracts.status, 'ended')))
-    .orderBy(desc(enterpriseContracts.endedAt))
-    .limit(1);
-  return row ?? null;
+/**
+ * The account's active contract, open offer and most recently ended contract,
+ * in one query (account-state reads all three on every request).
+ */
+export async function getContractState(accountId: string): Promise<{
+  active: ContractRow | null;
+  offer: ContractRow | null;
+  lastEnded: ContractRow | null;
+}> {
+  const rows: ContractRow[] = await db.select().from(enterpriseContracts).where(eq(enterpriseContracts.accountId, accountId));
+  const endedMs = (row: ContractRow) => (row.endedAt ? new Date(row.endedAt).getTime() : 0);
+  const ended = rows.filter((row) => row.status === 'ended').sort((a, b) => endedMs(b) - endedMs(a));
+  return {
+    active: rows.find((row) => row.status === 'active') ?? null,
+    offer: rows.find((row) => row.status === 'offered') ?? null,
+    lastEnded: ended[0] ?? null,
+  };
 }
 
 async function getContract(id: string): Promise<ContractRow> {
