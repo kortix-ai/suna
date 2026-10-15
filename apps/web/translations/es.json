@@ -7537,6 +7537,7 @@
       "treeMessages": "mensajes",
       "subAgentsLoaded": "{loaded} de {total} subagentes cargados",
       "loadAll": "Cargar todos",
+      "subAgentLoadFailed": "No se pudo cargar",
       "detailInput": "Tokens de entrada",
       "detailOutput": "Tokens de salida",
       "detailReasoning": "Tokens de razonamiento",

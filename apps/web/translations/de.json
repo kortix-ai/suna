@@ -7537,6 +7537,7 @@
       "treeMessages": "Nachrichten",
       "subAgentsLoaded": "{loaded} von {total} Sub-Agenten geladen",
       "loadAll": "Alle laden",
+      "subAgentLoadFailed": "Konnte nicht geladen werden",
       "detailInput": "Input-Tokens",
       "detailOutput": "Output-Tokens",
       "detailReasoning": "Reasoning-Tokens",
