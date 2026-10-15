@@ -833,7 +833,8 @@ flow(
         // member the App itself would admit.
         qr = await group("grp-qr", [qrOnly, bothMember, noRole]);
         abs = await group("grp-abs", [absOnly, bothMember]);
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+        // Apps is GA (2026-10-14): no flag setup — a fresh project lists and
+        // creates Apps with no override (APP-2 pins that).
         const created = await owner.post(
           "/v1/projects/:projectId/apps",
           { slug, name: "ke2e group App" },
