@@ -1,5 +1,5 @@
 {
-  "source_hash": "1a9b30daaf7393a24454db067c985e1bbc5b6d5da18e4ba6b32fecf35528e0e5",
+  "source_hash": "ce35712d1c74dfc8d3aceb5062b56eb75668564f6ecab006b0ea46477dee7c85",
   "diff_files": [
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
@@ -30,12 +30,12 @@
     "tests/src/coverage/allowlist.ts"
   ],
   "diff_hash": "caa7964e2015a01aa1d13853791e41ce086f5fd760b3809a24d91f4719d0c11a",
-  "head": "1d87cf96b50af8d85960f28f90acdd3a85c3d062",
-  "passed": false,
+  "head": "a92ff795f3fe9d2b0e771d1fbf945648a3a07ce9",
+  "passed": true,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T12:23:22.651Z"
+  "at": "2026-10-15T12:30:02.473Z"
 }
