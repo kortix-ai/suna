@@ -4,6 +4,12 @@
 set lock_timeout = '2s';
 set statement_timeout = '30s';
 
+-- backfill-safe: no DDL in this file, so no ACCESS EXCLUSIVE lock is held. Each
+-- statement touches a bounded set: one role_permissions row and one roles row,
+-- and only the credit_accounts rows that carry a retired flag, the managed-models
+-- override or the Enterprise tier (a few dozen in prod), plus one contract row
+-- per Enterprise account.
+
 -- One plan system (.agents/skills/billing/references/plans-and-access.md).
 -- Data only: no column is dropped here. The API that ships with this
 -- migration no longer reads demo_enterprise, enterprise_entitled or
