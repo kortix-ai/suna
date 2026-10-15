@@ -297,8 +297,18 @@ describe('session sync controller eviction', () => {
       expect(getSessionSyncController(sessionId)).toBe(controller);
     }
 
+    // Released overflow is evicted once it has been idle past the hold, not in the release's
+    // own tick: a remounting effect (StrictMode) retains it again right after.
     retained[0]?.release();
-    expect(getSessionSyncController('session-0')).not.toBe(retained[0]?.controller);
+    expect(getSessionSyncController('session-0')).toBe(retained[0]!.controller);
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 60_000;
+      retainSessionSyncController('session-1')();
+      expect(getSessionSyncController('session-0')).not.toBe(retained[0]?.controller);
+    } finally {
+      Date.now = realNow;
+    }
     for (const entry of retained.slice(1)) entry.release();
   });
 

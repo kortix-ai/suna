@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createElement } from 'react';
+import { StrictMode, createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 import { getSessionSyncController } from '../browser/session-sync/session-sync-registry';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -256,7 +256,9 @@ describe('livenessBusy: an open server turn keeps the repair running', () => {
 // registry's 20 controllers, the first rows' retains evicted the later rows' controllers
 // before their own effects ran: on dev, 12 of 14 rows read no runtime messages and showed
 // "0 messages" over a sub-agent that had 3.
-test('every sub-agent hook mounted in one commit reads its runtime messages', async () => {
+// React's StrictMode (every `next dev` page) runs each effect, its cleanup, then the effect
+// again: the release in between must not destroy the controller the remount reads with.
+async function everySubAgentReads(strict: boolean) {
   const ids = Array.from({ length: 25 }, (_, index) => `ses_subagent${index}`);
   const read = new Set<string>();
   const originalFetch = globalThis.fetch;
@@ -281,7 +283,8 @@ test('every sub-agent hook mounted in one commit reads its runtime messages', as
   let renderer: ReturnType<typeof create> | undefined;
   try {
     await act(async () => {
-      renderer = create(createElement('div', null, ...ids.map((id) => createElement(SubAgent, { key: id, id }))));
+      const rows = createElement('div', null, ...ids.map((id) => createElement(SubAgent, { key: id, id })));
+      renderer = create(strict ? createElement(StrictMode, null, rows) : rows);
     });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -294,4 +297,7 @@ test('every sub-agent hook mounted in one commit reads its runtime messages', as
     setCurrentRuntime(null);
     globalThis.fetch = originalFetch;
   }
-});
+}
+
+test('every sub-agent hook mounted in one commit reads its runtime messages', () => everySubAgentReads(false));
+test('every sub-agent hook mounted in one commit reads its runtime messages under StrictMode', () => everySubAgentReads(true));
