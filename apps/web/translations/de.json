@@ -1840,7 +1840,9 @@
     },
     "lost": {
       "title": "Der Computer dieser Sitzung ist verloren gegangen",
-      "message": "Die Cloud-Sandbox ist beim Anbieter verschwunden. Daher kann diese Sitzung nicht neu gestartet oder wiederhergestellt werden. Das ist ein Fehler unsererseits, nicht deinerseits — er wurde automatisch gemeldet. Alles, was aus dieser Sitzung committed und gepusht wurde, ist im Repository deines Projekts sicher."
+      "message": "Die Cloud-Sandbox ist beim Anbieter verschwunden. Daher kann diese Sitzung nicht neu gestartet oder wiederhergestellt werden. Das ist ein Fehler unsererseits, nicht deinerseits — er wurde automatisch gemeldet. Alles, was aus dieser Sitzung committed und gepusht wurde, ist im Repository deines Projekts sicher.",
+      "continueMessage": "Die Cloud-Sandbox ist beim Anbieter verschwunden. Das ist ein Fehler unsererseits, und er wurde gemeldet. Setze die Sitzung auf einem neuen Computer fort: Er startet vom Branch der Sitzung und bringt diese Unterhaltung zurück. Was nicht committed und gepusht wurde, bleibt verloren.",
+      "continue": "Sitzung fortsetzen"
     },
     "restart": {
       "label": "Sitzung neu starten",

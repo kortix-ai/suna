@@ -1840,7 +1840,9 @@
     },
     "lost": {
       "title": "This session's computer was lost",
-      "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
+      "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository.",
+      "continueMessage": "Its cloud sandbox disappeared on the provider side. This is a fault on our end, and it has been reported. Continue the session on a new computer: it starts from the session branch and brings this conversation back. Work that was not committed and pushed stays lost.",
+      "continue": "Continue session"
     },
     "restart": {
       "label": "Restart session",
