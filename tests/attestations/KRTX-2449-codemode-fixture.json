@@ -1,0 +1,15 @@
+{
+  "source_hash": "6d32ba70812b0d637396de0425373e8488935f27d17f9a92da08ee1ad9a113d4",
+  "diff_files": [
+    "packages/shared/src/session-fixture/tools/pi.ts"
+  ],
+  "diff_hash": "0a175624c9661b269d58eff4c5a88b282df013c3c18e42a3102fedeef62bf162",
+  "head": "8bd93bf3dc8d88f0383defad78ab041c9f2314a4",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T20:27:20.921Z"
+}
