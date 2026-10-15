@@ -516,7 +516,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   const account = await getCreditAccount(accountId);
   if (!account) return;
 
-  const periodStart = invoice.period_start;
+  // The period this renewal OPENS. Stripe dates a subscription_cycle invoice
+  // by the period that ended (`period_start` is that period's start, which
+  // activation already recorded), so `period_end` is the new period's start.
+  // Keying on `period_start` skipped the first renewal after activation.
+  const periodStart = invoice.period_end;
   if (account.lastRenewalPeriodStart && account.lastRenewalPeriodStart >= periodStart) {
     console.log(`[Webhook] Renewal already processed for period ${periodStart}`);
     return;

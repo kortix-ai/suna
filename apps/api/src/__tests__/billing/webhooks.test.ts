@@ -521,15 +521,16 @@ describe('invoice.paid (renewal)', () => {
   });
 
   test('skips already-processed renewals (idempotency)', async () => {
-    const periodStart = Math.floor(Date.now() / 1000);
-    const invoice = createMockStripeInvoice({ period_start: periodStart });
+    // A renewal is keyed on the period it opens: the invoice's period_end.
+    const opens = Math.floor(Date.now() / 1000);
+    const invoice = createMockStripeInvoice({ period_start: opens - 86400 * 30, period_end: opens });
     const event = createMockStripeEvent('invoice.paid', invoice);
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
 
     mockRegistry.getCreditAccount = async () =>
-      // A redelivered invoice carries the SAME period start.
+      // A redelivered invoice opens the SAME period.
       createMockCreditAccount({
-        lastRenewalPeriodStart: periodStart,
+        lastRenewalPeriodStart: opens,
       });
 
     await processStripeWebhook(JSON.stringify(event), 'sig');

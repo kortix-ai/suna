@@ -353,7 +353,8 @@ describe('buildMinimalAccountState — plan changes', () => {
       tier: 'credits',
       planMonthlyUsd: '5000',
       scheduledMonthlyUsd: '3000',
-      scheduledTierChangeDate: '2026-11-14T00:00:00.000Z',
+      // Postgres hands back its own text form; the wire carries ISO 8601.
+      scheduledTierChangeDate: '2026-11-14 00:00:00+00',
       stripeSubscriptionId: 'sub_live',
       billingCycleAnchor: '2026-09-14T00:00:00.000Z',
     });

@@ -372,7 +372,7 @@ function extractScheduledChange(
       type: 'downgrade',
       current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: from * 100, monthly_usd: from },
       target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: to * 100, monthly_usd: to },
-      effective_date: sub.scheduledTierChangeDate ?? new Date((periodEndSeconds(sub, currentTierName) ?? 0) * 1000).toISOString(),
+      effective_date: isoValue(sub.scheduledTierChangeDate) ?? new Date((periodEndSeconds(sub, currentTierName) ?? 0) * 1000).toISOString(),
     };
   }
 

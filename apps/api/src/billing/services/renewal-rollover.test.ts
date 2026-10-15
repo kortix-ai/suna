@@ -84,7 +84,7 @@ function renewal() {
   return {
     id: 'evt_renew',
     type: 'invoice.paid',
-    data: { object: { id: 'in_cycle', subscription: 'sub_1', billing_reason: 'subscription_cycle', period_start: 1_900_000_000, amount_paid: 10_000 } },
+    data: { object: { id: 'in_cycle', subscription: 'sub_1', billing_reason: 'subscription_cycle', period_start: 1_897_400_000, period_end: 1_900_000_000, amount_paid: 10_000 } },
   };
 }
 
@@ -160,6 +160,18 @@ describe('monthly renewal on the credits plan', () => {
 
     expect(resets[0].amount).toBe(2);
     expect(resets[0].description).toBe('Monthly renewal: 200 credits');
+  });
+
+  test('the first renewal after activation is granted (Stripe dates a cycle invoice by the period that ended)', async () => {
+    // Activation recorded the first period's start; the renewal invoice's
+    // period_start is that same instant, its period_end the new period's start.
+    subscription = sub(CREDITS_PRICE, 10_000);
+    account = { accountId: 'acct-1', tier: 'credits', planMonthlyUsd: '100', lastRenewalPeriodStart: 1_897_400_000 };
+
+    await processStripeWebhook('{}', 'sig');
+
+    expect(resets).toHaveLength(1);
+    expect(syncs.at(-1)).toMatchObject({ lastRenewalPeriodStart: 1_900_000_000 });
   });
 
   test('a period already renewed is skipped', async () => {
