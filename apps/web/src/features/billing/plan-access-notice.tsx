@@ -57,23 +57,24 @@ export function PlanAccessNotice({ state }: { state: AccountState }) {
 
       {trial ? (
         <InfoBanner
-          tone={trial.days_left <= 7 ? 'warning' : 'info'}
+          tone="info"
           title={t('trialTitle', { plan: planName, days: trial.days_left })}
           action={
-            <span className="flex flex-wrap gap-2">
-              {enterpriseTrial ? salesButton : null}
-              {manager ? (
-                <Button size="sm" onClick={upgrade}>
-                  {t('upgrade')}
-                </Button>
-              ) : null}
-            </span>
+            // An Enterprise trial is sold by sales, not by an Upgrade button;
+            // a Credits trial converts to the plan the account picks.
+            enterpriseTrial ? (
+              salesButton
+            ) : manager ? (
+              <Button size="sm" onClick={upgrade}>
+                {t('upgrade')}
+              </Button>
+            ) : null
           }
         >
           {enterpriseTrial
             ? t('trialBodyEnterprise', { date: formatDay(trial.ends_at, locale) })
             : t('trialBody', { date: formatDay(trial.ends_at, locale) })}{' '}
-          {manager ? null : t('askManager')}
+          {manager || enterpriseTrial ? null : t('askManager')}
         </InfoBanner>
       ) : null}
 

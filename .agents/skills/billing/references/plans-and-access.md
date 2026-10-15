@@ -21,12 +21,18 @@ production DB write with no audit event.
 2. **Time-boxed access is a dated grant on top of the plan.** A trial names a
    plan, an end date, who granted it and why. When it ends, the account returns
    to the plan it pays for. It never ends silently.
-3. **Exceptions are per-key overrides** in `entitlement_overrides`, each with
+3. **Enterprise is a feature layer, not a replacement for paying.** An
+   Enterprise trial lends the Enterprise features and limits only: the billing
+   plan stays what the account pays for, so it can pick and pay for Credits at
+   any time. A Credits trial lends the Credits plan itself. The Enterprise plan
+   (`tier='enterprise'`) means a contract: the contract is how that account
+   pays.
+4. **Exceptions are per-key overrides** in `entitlement_overrides`, each with
    an optional `expires_at`. This is the only escape hatch.
-4. **The account always sees its state:** plan, why (contract, subscription,
+5. **The account always sees its state:** plan, why (contract, subscription,
    trial), and until when.
-5. **Access changes have one write path**: an audited route. No raw DB writes.
-6. **Never lock people out.** When a trial or contract ends, SSO and SCIM stay
+6. **Access changes have one write path**: an audited route. No raw DB writes.
+7. **Never lock people out.** When a trial or contract ends, SSO and SCIM stay
    on for a 14-day grace. Everything else follows the base plan at once.
 
 ## Plans
@@ -107,13 +113,18 @@ A trial is a dated grant of a plan on the trial columns of `credit_accounts`:
 - Plans: `enterprise` (default 30 days) or `credits` (any amount).
 - Credits: one grant at the start, default $500 for an enterprise trial,
   expiring at the trial end. No monthly re-grant and no seats.
-- Resolution: while active, the trial plan's entitlements apply
-  (`resolve-billing.ts`). Trials no longer write copies into
-  `entitlement_overrides`.
+- Resolution (`resolve-billing.ts`): `ResolvedBilling.plan` is the billing
+  plan, `ResolvedBilling.features` the plan whose features and limits apply.
+  An Enterprise trial sets `features` only; a Credits trial sets both. Gates
+  (`getAccountTier`, limits, entitlements) read `features`; account state and
+  the plan picker read `plan`. A trial never lowers what the stored plan
+  grants. Trials no longer write copies into `entitlement_overrides`.
 - Shown: `GET /v1/billing/account-state` returns `trial: { plan, ends_at,
-  days_left }`. The web billing page and account hub show a banner
-  "Enterprise trial · N days left" with **Upgrade** (Credits checkout or the
-  Enterprise offer) and **Talk to sales**.
+  days_left }`, and `subscription.monthly_usd` keeps the amount the account
+  pays. The billing page shows a banner "Enterprise trial · N days left" with
+  **Talk to sales** (an Enterprise trial has no Upgrade button; a Credits trial
+  has **Upgrade**), the plan picker stays available, and the sidebar shows the
+  trial as a quiet row, not a call to action.
 - Warned: 7, 3 and 1 days before the end, to billing managers and Kortix ops.
 - Ended: the hourly sweep sets `expired` and emails both. SSO/SCIM grace 14
   days.

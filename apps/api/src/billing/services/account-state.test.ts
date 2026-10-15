@@ -314,6 +314,16 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
     expect(state.subscription.can_purchase_credits).toBe(true);
   });
 
+  test('subscription.monthly_usd keeps what the account pays while the trial plan reports none', async () => {
+    account = trialing({ tier: 'credits', planMonthlyUsd: '500', trialTier: 'enterprise' });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.plan?.family).toBe('enterprise');
+    expect(state.plan?.monthly_usd).toBeNull();
+    expect(state.subscription.monthly_usd).toBe(500);
+  });
+
   test('monthly_credits stays on the STORED plan — a trial grants no credits', async () => {
     account = trialing();
 

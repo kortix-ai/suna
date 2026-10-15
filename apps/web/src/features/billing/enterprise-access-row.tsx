@@ -2,8 +2,8 @@
 
 /**
  * Whether the account has the Enterprise features (SSO, SCIM, advanced roles,
- * audit logs), and why: the Enterprise plan through a contract or a trial, or
- * the grace after it ended. Replaces the retired Enterprise preview toggle:
+ * audit logs), and why: an Enterprise contract, an Enterprise trial (which
+ * lends the features, not the plan), or the grace after either ended. Replaces the retired Enterprise preview toggle:
  * the plan decides (.agents/skills/billing/references/plans-and-access.md).
  *
  * Renders a bare `SettingsRow`: mount it inside a `SettingsRowGroup`.
@@ -24,8 +24,11 @@ export function EnterpriseAccessRow({ state }: { state: AccountState }) {
   const t = useTranslations('billing.access');
   const locale = useLocale();
   const openDemo = useRequestDemo();
-  const onEnterprise = resolvedPlan(state).family === 'enterprise';
-  const { trial, grace } = state;
+  // Enterprise is a feature layer on top of the billing plan: on through the
+  // Enterprise plan (a contract) or an Enterprise trial, which lends only it.
+  const { grace } = state;
+  const trial = state.trial?.plan === 'enterprise' ? state.trial : null;
+  const onEnterprise = resolvedPlan(state).family === 'enterprise' || trial !== null;
 
   const description = onEnterprise
     ? trial

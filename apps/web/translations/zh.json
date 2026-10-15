@@ -2200,7 +2200,8 @@
         "updateAction": "更改为每月 {amount}",
         "chooseAction": "更新套餐",
         "ownerOnly": "只有账户所有者和管理员可以更改套餐。",
-        "enterpriseNote": "企业版套餐由你的客户团队负责管理。"
+        "enterpriseNote": "企业版套餐由你的客户团队负责管理。",
+        "keepEnterprise": "试用结束后如需继续使用 Enterprise，请联系销售。"
       },
       "modal": {
         "title": "选择你的积分档位",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "我每月需要支付多少？",
-          "answer": "可选择每月 50 美元（5,000 个积分）到每月 10,000 美元（1,000,000 个积分）的档位。每月 200 美元（20,000 个积分）最受欢迎。所有档位的积分费率相同：每美元 100 个积分。每月超过 10,000 美元请联系销售。"
+          "answer": "可选择每月 50 美元（5,000 个积分）到每月 10,000 美元（1,000,000 个积分）的档位。所有档位的积分费率相同：每美元 100 个积分。每月超过 10,000 美元请联系销售。"
         },
         "members": {
           "question": "成员需要付费吗？",
@@ -2535,7 +2536,7 @@
       "credits": "积分版",
       "trialTitle": "{plan}试用 · {days, plural, =0 {今天结束} other {剩余 # 天}}",
       "trialBody": "此账户正在试用{plan}，至 {date} 为止。之后将恢复为已付费的套餐。随时升级即可保留。",
-      "trialBodyEnterprise": "此账户正在试用企业版，至 {date} 为止：SSO、SCIM、高级角色和审计日志已开启。之后将恢复为已付费的套餐，SSO 和 SCIM 再保持开启 14 天。随时可以升级。",
+      "trialBodyEnterprise": "此账户正在试用企业版，至 {date} 为止：SSO、SCIM、高级角色和审计日志已开启。之后将恢复为已付费的套餐，SSO 和 SCIM 再保持开启 14 天。如需继续使用 Enterprise，请联系销售。",
       "upgrade": "升级",
       "talkToSales": "联系销售",
       "askManager": "请让账户所有者或管理员升级套餐。",

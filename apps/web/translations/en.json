@@ -2200,7 +2200,8 @@
         "updateAction": "Update to {amount} / month",
         "chooseAction": "Update plan",
         "ownerOnly": "Only account owners and admins can change the plan.",
-        "enterpriseNote": "Enterprise plans are managed with your account team."
+        "enterpriseNote": "Enterprise plans are managed with your account team.",
+        "keepEnterprise": "To stay on Enterprise after the trial, talk to sales."
       },
       "modal": {
         "title": "Pick your credits tier",
@@ -2436,7 +2437,7 @@
         },
         "amounts": {
           "question": "How much do I pay each month?",
-          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). $200 a month (20,000 credits) is the most popular. Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
+          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
         },
         "members": {
           "question": "Do I pay for members?",
@@ -2535,7 +2536,7 @@
       "credits": "Credits",
       "trialTitle": "{plan} trial · {days, plural, =0 {ends today} one {# day left} other {# days left}}",
       "trialBody": "This account is on a {plan} trial until {date}. After that it returns to the plan it pays for. Upgrade at any time to keep it.",
-      "trialBodyEnterprise": "This account is on an Enterprise trial until {date}: SSO, SCIM, advanced roles and audit logs are on. After that it returns to the plan it pays for, and SSO and SCIM stay on for 14 more days. Upgrade at any time.",
+      "trialBodyEnterprise": "This account is on an Enterprise trial until {date}: SSO, SCIM, advanced roles and audit logs are on. After that it returns to the plan it pays for, and SSO and SCIM stay on for 14 more days. To keep Enterprise, talk to sales.",
       "upgrade": "Upgrade",
       "talkToSales": "Talk to sales",
       "askManager": "Ask an account owner or admin to upgrade.",
