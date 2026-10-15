@@ -15,7 +15,12 @@ import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import type { Principal } from '../core/types';
 import { subscribe } from '../fixtures/billing';
-import { createDatabaseSession, seedDatabaseRunningFirstPrompt } from '../fixtures/database-project';
+import {
+  createDatabaseSession,
+  endDatabaseTurn,
+  seedDatabaseRunningFirstPrompt,
+  seedDatabaseRunningTurn,
+} from '../fixtures/database-project';
 import { mintWireMessageId, readTranscript, waitForSessionReady } from '../fixtures/session-run';
 
 const probe = (nonce: string) =>
@@ -226,6 +231,178 @@ flow(
       const r = await owner.del(PROMPT, { params: { ...params, promptId: memberPrompt } });
       r.status(200);
       if (await listed(memberPrompt)) throw new Error("the member's prompt is still listed");
+    });
+  },
+);
+
+/**
+ * SESS-55. In a shared session any member who could send could also stop
+ * another member's run, and the run then read "stopped" to its prompter with
+ * no name. Only the member who prompted the running turn, the session owner or
+ * a project manager may stop it; everyone else is told why and nothing is
+ * written. Whoever stops a run is recorded, and every viewer can read who.
+ * Local: the running turn is seeded in the database, so no sandbox is needed.
+ */
+flow(
+  'SESS-55',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/message-authors',
+      'POST /v1/accounts/:accountId/iam/assignments',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const prompter = await team.addMember('member');
+    const bystander = await team.addMember('member');
+    const AGENT = 'kortix';
+    for (const member of [prompter, bystander]) {
+      await team.grantProjectRole(project.id, member.userId!, 'member');
+    }
+    await ctx.step('the owner grants both members the agent the session runs', async () => {
+      for (const member of [prompter, bystander]) {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/iam/assignments',
+          {
+            principal_type: 'user',
+            principal_id: member.userId,
+            role_key: 'agent-user',
+            scope_type: 'project',
+            scope_id: project.id,
+            object_type: 'agent',
+            object_id: AGENT,
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status([200, 201]);
+      }
+    });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asPrompter = ctx.client.as(prompter);
+    const asBystander = ctx.client.as(bystander);
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'project',
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    const params = { projectId: project.id, sessionId };
+    const TURN = '/v1/projects/:projectId/sessions/:sessionId/turn';
+    const HOLD = '/v1/projects/:projectId/sessions/:sessionId/prompts/hold';
+    const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+    const PROMPT = '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId';
+    const AUTHORS = '/v1/projects/:projectId/sessions/:sessionId/message-authors';
+    const canStop = async (as: typeof owner) => {
+      const r = await as.get(TURN, { params });
+      r.status(200);
+      return r.json<{ can_stop?: boolean }>().can_stop;
+    };
+    const refused = (r: Awaited<ReturnType<typeof owner.get>>) =>
+      r.status(403).body().has('$.code', 'not_turn_prompter');
+    const stopperOf = async (messageId: string) => {
+      const r = await asBystander.get(AUTHORS, { params });
+      r.status(200);
+      return r.json<{ stops: Record<string, { kind: string; user_id?: string }> }>().stops[messageId];
+    };
+
+    await ctx.step('nothing runs: every member reads can_stop true', async () => {
+      for (const as of [owner, asPrompter, asBystander]) {
+        if ((await canStop(as)) !== true) throw new Error('can_stop is not true with no running turn');
+      }
+    });
+
+    const firstMessage = mintWireMessageId();
+    const first = await seedDatabaseRunningTurn(ctx.env, {
+      projectId: project.id,
+      sessionId,
+      accountId: team.id,
+      prompterUserId: prompter.userId!,
+      messageId: firstMessage,
+    });
+
+    await ctx.step("a member's run: its prompter and the owner may stop it, another member may not", async () => {
+      const seen = { owner: await canStop(owner), prompter: await canStop(asPrompter), bystander: await canStop(asBystander) };
+      if (seen.owner !== true || seen.prompter !== true || seen.bystander !== false) {
+        throw new Error(`can_stop owner/prompter/bystander = ${JSON.stringify(seen)}`);
+      }
+    });
+
+    await ctx.step('another member\'s Stop → 403 not_turn_prompter, and the queue is not held', async () => {
+      refused(await asBystander.post(HOLD, { held: true }, { params }));
+      const r = await owner.get(PROMPTS, { params });
+      r.status(200);
+      const held = r.json<{ prompts: Array<{ reason?: string | null }> }>().prompts.filter((p) => p.reason === 'held');
+      if (held.length > 0) throw new Error(`${held.length} prompt(s) held by a refused stop`);
+    });
+
+    await ctx.step('another member\'s "Stop and send" → 403, on a new prompt and on a queued one', async () => {
+      refused(
+        await asBystander.post(
+          PROMPTS,
+          {
+            client_message_id: crypto.randomUUID(),
+            message_id: mintWireMessageId(),
+            remint_on_delivery: false,
+            parts: [{ type: 'text', text: 'stop and do mine' }],
+            delivery: 'interrupt',
+            overrides: { agent: AGENT },
+          },
+          { params },
+        ),
+      );
+      const queued = await asBystander.post(
+        PROMPTS,
+        {
+          client_message_id: crypto.randomUUID(),
+          message_id: mintWireMessageId(),
+          remint_on_delivery: false,
+          parts: [{ type: 'text', text: 'after your run' }],
+          placement: 'composer',
+          delivery: 'queue',
+          overrides: { agent: AGENT },
+        },
+        { params },
+      );
+      queued.status([200, 202]);
+      const promptId = queued.json<{ prompt_id: string }>().prompt_id;
+      refused(await asBystander.patch(PROMPT, { delivery: 'interrupt' }, { params: { ...params, promptId } }));
+    });
+
+    await ctx.step("the owner stops the member's run → 200; once it ends, every member reads the owner as its stopper", async () => {
+      (await owner.post(HOLD, { held: true }, { params })).status(200);
+      await endDatabaseTurn(ctx.env, { sessionId, turnToken: first.turnToken });
+      const stopper = await stopperOf(firstMessage);
+      if (stopper?.kind !== 'member' || stopper.user_id !== ctx.P.OWNER.userId) {
+        throw new Error(`stops[${firstMessage}] = ${JSON.stringify(stopper)}, expected the owner`);
+      }
+      (await owner.post(HOLD, { held: false }, { params })).status(200);
+    });
+
+    const secondMessage = mintWireMessageId();
+    const second = await seedDatabaseRunningTurn(ctx.env, {
+      projectId: project.id,
+      sessionId,
+      accountId: team.id,
+      prompterUserId: prompter.userId!,
+      messageId: secondMessage,
+    });
+
+    await ctx.step('the member stops their own run → 200, and is recorded as its stopper', async () => {
+      (await asPrompter.post(HOLD, { held: true }, { params })).status(200);
+      await endDatabaseTurn(ctx.env, { sessionId, turnToken: second.turnToken });
+      const stopper = await stopperOf(secondMessage);
+      if (stopper?.user_id !== prompter.userId) {
+        throw new Error(`stops[${secondMessage}] = ${JSON.stringify(stopper)}, expected the prompter`);
+      }
     });
   },
 );
