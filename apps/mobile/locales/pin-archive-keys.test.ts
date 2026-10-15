@@ -37,7 +37,7 @@ describe('pin and archive strings', () => {
     expect(en.t('sessions.pin')).toBe('Pin');
     expect(en.t('sessions.unarchive')).toBe('Unarchive');
     expect(en.t('sessions.archiveDone')).toBe('Session archived');
-    expect(en.t('sessions.pinFailed')).toBe('Unable to pin the session. Try again.');
+    expect(en.t('sessions.pinFailed')).toBe('Could not pin the session. Try again.');
     expect(en.t('sessions.pinnedSection')).toBe('Pinned');
     expect(en.t('sessions.archivedEmpty')).toBe('Sessions you archive will show up here.');
   });
