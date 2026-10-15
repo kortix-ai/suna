@@ -799,13 +799,13 @@ flow(
     };
 
     await ctx.step(
-      "setup: two allowed groups (one member in each, one in both, one in neither) and an App restricted to the two groups",
+      "setup: two allowed groups — one member in each, one in both, one in neither, and a fifth in the FIRST group with no project role — and an App restricted to the two groups",
       async () => {
-        qr = await group("grp-qr", [qrOnly, bothMember]);
+        // The fifth member sits INSIDE an allowed group: the pin below is that
+        // group membership never widens the project, which only bites for a
+        // member the App itself would admit.
+        qr = await group("grp-qr", [qrOnly, bothMember, noRole]);
         abs = await group("grp-abs", [absOnly, bothMember]);
-        // A fifth member sits in a group with no project role: group membership
-        // must not stand in for project access.
-        await group("grp-lone", [noRole]);
         await setFeatureAsOperator(ctx, project.id, "apps", true);
         const created = await owner.post(
           "/v1/projects/:projectId/apps",
@@ -863,11 +863,14 @@ flow(
     });
 
     await ctx.step("group membership does not stand in for project access", async () => {
-      // An account member inside a granted group but with no role on the
+      // An account member INSIDE an allowed group but with no role on the
       // project still gets nothing: the App allow-list narrows PROJECT
-      // members, it never widens the project itself.
+      // members, it never widens the project itself. The contrast with the
+      // neither-member step (a project member without app access gets a 200
+      // list with the App filtered out) shows this 403 is the project gate
+      // firing — group membership did not buy project access.
       const listed = await ctx.client.as(noRole).get("/v1/projects/:projectId/apps", { params });
-      listed.status(403);
+      listed.status(403).body().has("$.code", "no_project_membership");
     });
 
     await ctx.step("narrowing the policy to one group keeps that group's members in", async () => {
