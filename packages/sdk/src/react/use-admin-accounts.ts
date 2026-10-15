@@ -125,6 +125,8 @@ export function adminAccountOverridesPath(accountId: string): string {
 export interface AdminAccount {
   accountId: string;
   name: string | null;
+  /** The Enterprise feature layer: off, demo (self-serve) or licensed (a license contract). Absent on an older server. */
+  enterprise?: 'off' | 'demo' | 'licensed';
   /**
    * The name the PRODUCT shows for this account. `name` is the raw stored
    * column, which for old rows is a migration placeholder ('Personal' /
@@ -196,7 +198,7 @@ export interface AdminEnterpriseContract {
   status: 'offered' | 'active' | 'ended' | 'withdrawn' | string;
   /** Annual platform fee, USD. */
   licenseUsd: number;
-  /** Annual credit commitment, USD, granted as one pool per term. */
+  /** @deprecated A license carries no credits: always 0. */
   creditsUsd: number;
   termMonths: number;
   collection: AdminContractCollection | string;
@@ -213,7 +215,8 @@ export interface AdminEnterpriseContract {
 export interface AdminCreateEnterpriseContractVariables {
   accountId: string;
   licenseUsd: number;
-  creditsUsd: number;
+  /** @deprecated A license carries no credits (2026-10-15): ignored by the API, not sent. */
+  creditsUsd?: number;
   /** 1–12 for a Stripe-collected contract, up to 60 for `manual`. Defaults to 12. */
   termMonths?: number;
   collection: AdminContractCollection;
@@ -731,7 +734,8 @@ export function useAdminCreateEnterpriseContract() {
   const queryClient = useQueryClient();
   return useMutation<{ contract: AdminEnterpriseContract }, Error, AdminCreateEnterpriseContractVariables>({
     mutationFn: ({ accountId, licenseUsd, creditsUsd, termMonths, collection, note }) => {
-      const body: Record<string, unknown> = { license_usd: licenseUsd, credits_usd: creditsUsd, collection };
+      void creditsUsd; // a license carries no credits
+      const body: Record<string, unknown> = { license_usd: licenseUsd, collection };
       if (termMonths !== undefined) body.term_months = termMonths;
       if (note !== undefined) body.note = note;
       return adminCall(

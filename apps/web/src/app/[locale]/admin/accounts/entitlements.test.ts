@@ -1,10 +1,10 @@
-// The Entitlements tab is the only UI for the operator-only plan writes: trial
-// grant/revoke, Enterprise contracts (offer, end, withdraw, payment link) and
+// The Entitlements tab is the only UI for the operator-only Enterprise writes:
+// the demo switch, license contracts (offer, end, withdraw, payment link) and
 // per-key overrides. Losing a control in a refactor is silent — nothing else
 // calls these routes — so this pins the wiring: the SDK hooks are the
 // transport, destructive actions are confirmed, and the retired controls
-// (demo switch, entitled switch, managed-models tri-state, compute multiplier)
-// stay gone. Same source-assertion style as `src/components/iam/enterprise-upsell.test.ts`.
+// (the retired admin demo route, entitled switch, managed-models tri-state,
+// compute multiplier, trials) stay gone. Same source-assertion style as `src/components/iam/enterprise-upsell.test.ts`.
 import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
@@ -20,10 +20,9 @@ describe('admin accounts — Entitlements tab', () => {
   });
 
   test('every write goes through an SDK hook, never a raw fetch', () => {
-    for (const hook of ['useAdminGrantTrial', 'useAdminRevokeTrial', 'useAdminSetOverrides']) {
-      expect(pageSource).toContain(hook);
-    }
+    expect(pageSource).toContain('useAdminSetOverrides');
     for (const hook of [
+      'useSetEnterpriseDemo',
       'useAdminEnterpriseContracts',
       'useAdminCreateEnterpriseContract',
       'useAdminEndEnterpriseContract',
@@ -56,52 +55,23 @@ describe('admin accounts — Entitlements tab', () => {
     }
   });
 
-  test('trial grant sends tier, duration, credit grant and note, and no seats', () => {
-    const grant = pageSource.match(/grantTrial\.mutateAsync\(\{([\s\S]*?)\}\);/)?.[1] ?? '';
-    expect(grant).not.toBe('');
-    for (const field of ['tierKey', 'durationDays', 'creditGrant', 'note:']) {
-      expect(grant).toContain(field);
-    }
-    expect(grant).not.toContain('seats');
-  });
-
-  test('the grant form defaults to Enterprise, 30 days and the server credit default', () => {
-    expect(pageSource).toContain("useState('enterprise')");
-    expect(pageSource).toContain("useState('30')");
-    expect(pageSource).toContain("useState('')");
-    expect(pageSource).toContain('DEFAULT_ENTERPRISE_TRIAL_CREDIT = 500');
-    expect(pageSource).not.toMatch(/MAX_TRIAL_SEATS|setSeats/);
-    for (const preset of [14, 30, 60, 90]) {
-      expect(pageSource).toContain(String(preset));
-    }
-  });
-
-  test('granting the plan already on trial is labelled Extend', () => {
-    expect(pageSource).toContain('const extending = isActive && trial?.tier === tierKey');
-    expect(pageSource).toContain("? 'Extend'");
-  });
-
-  test('revoking a trial is confirmed, never fired from a single click', () => {
-    expect(pageSource).toMatch(/onClick=\{\(\) => setConfirmRevoke\(true\)\}/);
-    expect(pageSource).toMatch(/<ConfirmDialog[\s\S]*?onConfirm=\{handleRevokeTrial\}/);
-  });
-
-  test('trial picker offers exactly Enterprise and Credits', () => {
-    const options = pageSource.match(/TRIAL_TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
-    expect(options).not.toBe('');
-    for (const tier of ['credits', 'enterprise']) {
-      expect(options).toContain(`value: '${tier}'`);
-    }
-    // Never offer non-plans, legacy plans, or the whole catalog — that picker
-    // confused even the founder ("what are these tiers dude").
-    for (const tier of ['free', 'none', 'team', 'starter', 'pro', 'per_seat', 'scale', 'tier_']) {
-      expect(options).not.toContain(`value: '${tier}'`);
+  // Trials are removed (2026-10-15): the routes answer 410.
+  test('no trial UI is left: no hooks, no grant form, no badge', () => {
+    for (const gone of [
+      'useAdmin[G]rantTrial',
+      'useAdmin[R]evokeTrial',
+      'TRIAL_[T]IER_OPTIONS',
+      'handle[G]rantTrial',
+      'account\\.[t]rial',
+    ]) {
+      expect(pageSource).not.toMatch(new RegExp(gone));
+      expect(contractSource).not.toMatch(new RegExp(gone));
     }
   });
 
   // The page used to own a TIER_CATALOG and stamp "· legacy" onto any key in
   // it — a second, hand-maintained plan vocabulary that drifted from the
-  // server's. The API now resolves the plan (trial applied) and ships it as `account.plan`; the page renders that.
+  // server's. The API now resolves the plan and ships it as `account.plan`; the page renders that.
   test('an account plan is rendered from the API plan block, never re-derived', () => {
     expect(pageSource).not.toContain('TIER_CATALOG');
     expect(pageSource).not.toMatch(/function tierLabel\b/);
@@ -123,16 +93,17 @@ describe('admin accounts — Entitlements tab', () => {
     expect(pageSource.toLowerCase()).not.toContain('legacy');
   });
 
-  test('the tier filter sends the four raw plan keys', () => {
+  test('the tier filter sends the three raw plan keys', () => {
     // The list route filters on the STORED credit_accounts.tier column, so the
     // filter values must stay the raw keys even though nothing else on the
     // page names a plan from them.
     const options = pageSource.match(/TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(options).not.toBe('');
-    for (const key of ['none', 'free', 'credits', 'enterprise']) {
+    for (const key of ['none', 'free', 'credits']) {
       expect(options).toContain(`value: '${key}'`);
     }
-    for (const key of ['per_seat', 'team', 'tier_']) {
+    // Enterprise is a feature layer, not a plan: no account stores it as a tier.
+    for (const key of ['enterprise', 'per_seat', 'team', 'tier_']) {
       expect(options).not.toContain(`value: '${key}`);
     }
     expect(pageSource).not.toContain('Grandfathered');
@@ -228,10 +199,24 @@ describe('admin accounts — Enterprise contract card', () => {
     expect(contractSource).toContain('navigator.clipboard.writeText(checkout_url)');
   });
 
-  test('an Enterprise account with no contract is flagged', () => {
-    expect(contractSource).toContain('No contract on file');
-    expect(contractSource).toContain('Enterprise · no contract');
+  test('the card shows the Enterprise state, and the demo switch unless licensed', () => {
+    for (const label of ['Enterprise · demo', 'Enterprise · licensed', 'Licensed', 'Turn on demo', 'Turn off demo']) {
+      expect(contractSource).toContain(label);
+    }
+    expect(contractSource).toContain("enterprise !== 'licensed' && (");
+    expect(contractSource).toContain('setDemo.mutate(');
+    // The list row is stale until the admin list refetches.
+    expect(contractSource).toContain("queryKey: ['admin', 'accounts']");
     expect(contractSource).toContain("t('text06bdc1c507f1', { date: day(account.graceEndsAt) })");
+  });
+
+  test('a license carries no credits: no credits field, invoice by default', () => {
+    expect(contractSource).not.toContain('setCredits');
+    expect(contractSource).not.toContain('Credits USD / year');
+    expect(contractSource).not.toContain('c.creditsUsd');
+    expect(contractSource).not.toContain('contract.creditsUsd');
+    expect(contractSource).toContain("useState<AdminContractCollection>('invoice')");
+    expect(contractSource).toContain('creditsUsd: 0,');
   });
 
   test('the list and sheet show the plan state line', () => {
