@@ -1,5 +1,5 @@
 {
-  "source_hash": "cb3b689797c12a79ee4dadd22a69e654f0ca86aa70cc87f898a880f2ffb95ecc",
+  "source_hash": "f2b77cee7e8a8765a818794a192a7b3a4b8e3f489c2ee07ea171c787bbb30103",
   "diff_files": [
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
@@ -10,6 +10,7 @@
     "apps/web/src/components/iam/audit-title-translation-keys.generated.ts",
     "apps/web/src/features/workspace/settings/tabs/general-tab.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.tsx",
+    "apps/web/src/features/workspace/settings/tabs/transfer-workspace-dialog.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/transfer-workspace-dialog.tsx",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
@@ -28,13 +29,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "790322dcfa39bb146f1c874bfdf2d730c58ce7af68262e9ae9106420cce61bf5",
-  "head": "03eb0af06fedcc9d85101597846d522203460b00",
-  "passed": false,
+  "diff_hash": "c3844f4fb054e13108e7f51aeacf91d1d26e392c115d82303abaad9ea8e73195",
+  "head": "4b0a25b3d5872c1e78ca68b3b60d62f8ec854af4",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T00:09:53.094Z"
+  "at": "2026-10-15T10:43:31.157Z"
 }
