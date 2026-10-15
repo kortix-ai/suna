@@ -540,7 +540,6 @@ async function applyRecordedRewind(
     );
 }
 
-/** Merge one OpenCode session's rows into the mirror, 100 per statement. */
 /** The runtime sessions among `ids` that hold at least one saved row of this session. */
 async function savedRuntimeSessions(tx: Tx, sessionId: string, ids: string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
@@ -551,6 +550,7 @@ async function savedRuntimeSessions(tx: Tx, sessionId: string, ids: string[]): P
   return new Set(rows.map((row) => row.id).filter((id): id is string => !!id));
 }
 
+/** Merge one OpenCode session's rows into the mirror, 100 per statement. */
 async function upsertMirrorRows(
   tx: Tx,
   sessionId: string,
