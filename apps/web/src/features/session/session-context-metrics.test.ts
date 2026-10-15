@@ -214,12 +214,12 @@ describe('getSessionContextMetrics', () => {
     expect(getSessionContextMetrics(thread([msg]), undefined, freeLookup).context?.providerLabel).toBe('acme');
   });
 
-  test('totalCost prices tokens through the lookup (raw provider cost × 1.2); a reported cost wins', () => {
+  test('totalCost prices tokens through the lookup (raw provider cost × 1.055); a reported cost wins', () => {
     const msg = assistant({ usage: { input: 1_000_000, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 } });
     expect(getSessionContextMetrics(thread([msg]), undefined, freeLookup).totalCost).toBe(0);
-    expect(getSessionContextMetrics(thread([msg]), undefined, lookup).totalCost).toBeCloseTo(1.2, 9);
+    expect(getSessionContextMetrics(thread([msg]), undefined, lookup).totalCost).toBeCloseTo(1.055, 9);
     const reported = assistant({ usage: { ...positiveTokens(), cost: 0.5 } });
-    expect(getSessionContextMetrics(thread([reported]), undefined, lookup).totalCost).toBeCloseTo(0.6, 9);
+    expect(getSessionContextMetrics(thread([reported]), undefined, lookup).totalCost).toBeCloseTo(0.5275, 9);
     // A message without a model has no price; a user message never costs.
     expect(getSessionContextMetrics(thread([assistant({ model: null, usage: positiveTokens() }), user()]), undefined, lookup).totalCost).toBe(0);
   });

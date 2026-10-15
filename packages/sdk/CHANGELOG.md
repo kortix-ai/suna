@@ -5,6 +5,47 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (credits-only billing)
+Seat pricing is gone. Every legacy plan reads as `credits`: one paid plan, any
+whole monthly amount from $50 to $10,000, one shared credit wallet, unlimited
+members. 1 credit = $0.01.
+
+- Added: `setBillingPlan(params)` (`POST /v1/billing/plan`), `kortix.billing.setPlan`,
+  and the `useSetBillingPlan()` mutation hook in `@kortix/sdk/react`. Params
+  `{ monthlyUsd, successUrl, cancelUrl, locale?, accountId? }`; result
+  `SetBillingPlanResult` = `checkout_created` | `updated` | `unchanged` |
+  `payment_pending`. The hook invalidates the `['account-state']` queries.
+  Types `SetBillingPlanParams` and `SetBillingPlanResult`. Additive.
+- Deprecated, now reject with `ENDPOINT_RETIRED` and send no request (the API
+  answers `410`): `createPerSeatCheckout`, `claimPerSeatBilling`,
+  `cancelScheduledChange` (also `kortix.billing.subscription.cancelScheduledChange`),
+  `getProrationPreview` (also `...subscription.prorationPreview`). Their result
+  types stay exported. Removed in the next major. No export name was removed.
+- Breaking type changes (the API no longer sends these fields; nothing is
+  renamed):
+  - `PlanFamily` is `'free' | 'credits' | 'enterprise'` (`'team'` is gone).
+  - `AccountState.plan`: `status` is `'current' | 'non_plan'`, `shape` is
+    `'none' | 'credits' | 'contract'`, `is_grandfathered` is removed, and
+    `monthly_usd: number | null` is added.
+  - `AccountState` drops `billing_model`, `seats`, `member_count`,
+    `can_claim_per_seat` and `can_claim_computer`. `usage_this_period` is
+    present for every account.
+  - `ResolvedPlanView.isGrandfathered` is replaced by `monthlyUsd`.
+  - `BillingTierConfigurationsResponse` adds required `min_monthly_usd` and
+    `max_monthly_usd`.
+  - Admin: `AdminGrantTrialVariables.seats` is removed (`creditGrant` is granted
+    now and every 30 days during the trial); `AdminAccountTrial.seats` becomes
+    `monthlyUsd`; `AdminAccount` drops `billingModel` and `seatCount`;
+    `AdminAccountPlan` drops `is_grandfathered`, adds `monthlyUsd`, and its
+    `family` and `status` unions narrow as above.
+- The 402 body no longer carries `billing_model`. Branch on `billing_state`
+  (`out_of_credits`, `no_subscription`, `payment_failed`).
+- Added: `ProjectLlmCatalogResponse.platformFeePercent`, Kortix's fee on managed
+  model usage in percent (5.5). `managedPricingRoutes` now carries base provider
+  prices, before the fee. Optional, absent on an older server. Additive.
+- Changed: `COST_MARKUP` is `1.055` (was `1.2`), so displayed session cost
+  matches what credits are charged.
+
 ### Added (session-log follow-ups)
 - `sessionLogFullTextPlan(refs)`: which texts stored by reference a host shows
   inline and which it downloads. The smallest fill the 1 MiB inline budget;

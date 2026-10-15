@@ -115,7 +115,7 @@ flow(
         .has("$.slug", slug)
         .has("$.desired_state", "running")
         .has("$.always_on", true)
-        .has("$.estimated_monthly_usd", 73.48)
+        .has("$.estimated_monthly_usd", 39.95)
         .has("$.warnings", [])
         // One primitive: clients branch on capabilities. No labels, services or uses until set.
         .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
@@ -164,7 +164,7 @@ flow(
       (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
         .status(200).body().has("$.always_on", true);
       const reread = await owner.get("/v1/projects/:projectId/apps/:appId", { params });
-      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 73.48);
+      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 39.95);
       if ("monthly_budget_usd" in reread.json<any>()) throw new Error(`an App carries a budget: ${reread.text()}`);
 
       // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.

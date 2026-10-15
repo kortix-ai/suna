@@ -17,10 +17,8 @@ export {
   invalidateAccountState,
   // Main hook
   useAccountState,
-  useCancelScheduledChange,
   useCancelSubscription,
   // Mutation hooks
-  useCreatePerSeatCheckout,
   useCreatePortalSession,
   usePurchaseCredits,
   useReactivateSubscription,
@@ -59,7 +57,6 @@ export type { AccountState, PlanFamily, ResolvedPlanView } from '@kortix/sdk';
  * The plan the account BEHAVES as. Prefer this over
  * `accountStateSelectors.tierKey` for anything a person reads and for any
  * "is this account on a paid plan?" branch — `tier_key` is the STORED plan and
- * stays `free` for an admin trial and for a paying per-seat team with a stale
- * row, so branching on it makes the UI contradict the server.
+ * stays `free` for an admin trial and for a paying account with a stale row, so branching on it makes the UI contradict the server.
  */
 export { resolvedPlan } from '@kortix/sdk';

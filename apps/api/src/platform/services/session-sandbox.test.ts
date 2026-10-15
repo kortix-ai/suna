@@ -654,6 +654,19 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     }
   });
 
+  test('a warm (speculative) box asks the provider to keep its region; any other box may fall back', async () => {
+    for (const [metadata, required] of [[{ warm: true }, true], [undefined, false]] as const) {
+      providerCreateOpts = [];
+      const opened = waitFor((resolve) => {
+        onComputeOpened = resolve;
+      });
+      await provisionSessionSandbox({ ...baseOpts(), ...(metadata ? { metadata } : {}) });
+      await opened;
+      expect(providerCreateOpts).toHaveLength(1);
+      expect(providerCreateOpts[0]?.locationRequired).toBe(required);
+    }
+  });
+
   test('no KORTIX_INSTANCE_ID → no instanceId stamp (deployed environments are untouched)', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;

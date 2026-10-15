@@ -138,6 +138,8 @@ const ACTION_VERBS: Record<string, string> = {
   'token.revoke': 'revoke account tokens',
   'token.personal.create': 'create your own personal access token',
   'token.personal.revoke': 'revoke your own personal access token',
+  'capture.read_all': 'read other members’ Kortix Capture recordings',
+  'capture.manage': 'manage Kortix Capture for this account',
   // Billing
   'billing.read': 'view billing',
   'billing.write': 'change billing',

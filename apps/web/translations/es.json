@@ -539,7 +539,7 @@
         },
         "plan": {
           "label": "Plan",
-          "description": "Suscripción, puestos del equipo y facturación de esta cuenta."
+          "description": "Tu plan, tus créditos y la facturación de esta cuenta."
         }
       }
     },
@@ -2077,16 +2077,12 @@
   },
   "billing": {
     "plan": {
-      "teamSeats": "{count, plural, one {Equipo · # asiento} other {Equipo · # asientos}}",
       "cancels": "Se cancela el {date}",
       "cancelsAtPeriodEnd": "Se cancela al final del período",
       "renews": "Se renueva el {date}",
       "active": "Activo",
       "noSubscription": "Sin suscripción",
       "status": "{status}",
-      "seats": "Asientos",
-      "perSeat": "Por asiento",
-      "monthlyTotal": "Total mensual",
       "perMonth": "{amount}/mes",
       "currentPlan": "Plan actual",
       "statuses": {
@@ -2100,9 +2096,6 @@
         "paused": "En pausa"
       },
       "loadFailed": "No se pudieron cargar los datos de la suscripción",
-      "teamTitle": "Kortix Team",
-      "teamDescription": "Incluye a todos los miembros del equipo en un único plan compartido.",
-      "subscribe": "Suscribirse a Team",
       "manageBilling": "Gestionar facturación",
       "outOfCredits": "Te has quedado sin créditos",
       "buyCreditsHint": "Compra créditos abajo o activa la recarga automática.",
@@ -2119,7 +2112,7 @@
       "minimum": "La recarga mínima es de {amount}.",
       "contactSales": "Para importes superiores a {amount}, contacta con ventas.",
       "creditHint": "{credits} créditos · se añaden en cuanto pagues.",
-      "noExpiry": "Los créditos nunca caducan. 1 $ = 100 créditos.",
+      "noExpiry": "Los créditos nunca caducan. 1 $ = 100 créditos, más una bonificación desde 50 $.",
       "processing": "Procesando",
       "addAmount": "Añadir {amount}",
       "addCredits": "Añadir créditos",
@@ -2127,7 +2120,11 @@
       "checkoutFailed": "No se pudo crear la sesión de pago",
       "amountGroup": "Importe de recarga",
       "customAmount": "Importe personalizado en dólares",
-      "custom": "Personalizado"
+      "custom": "Personalizado",
+      "creditHintBonus": "{credits} créditos + {bonus} de bonificación · se añaden en cuanto pagas.",
+      "autoTopupOff": "Recarga automática: desactivada",
+      "autoTopupOn": "Recarga automática: añade {amount} cuando el saldo baja de {threshold}",
+      "ledgerBonus": "Bonificación de recarga"
     },
     "autoTopup": {
       "bufferError": "El importe de recarga debe superar el umbral en al menos {buffer} — introduce {minimum} o más.",
@@ -2146,11 +2143,63 @@
       "save": "Guardar",
       "paymentNeeded": "Añade un método de pago para ejecutar la recarga automática.",
       "turnedOffAfterFailure": "La recarga automática se desactivó el {date}: el último cargo falló ({reason}). Actualiza el método de pago y vuelve a activar la recarga automática.",
-      "lastChargeFailed": "El último cargo de recarga automática falló el {date} ({reason}). Kortix lo intenta de nuevo; tras 3 cargos fallidos seguidos, la recarga automática se desactiva."
+      "lastChargeFailed": "El último cargo de recarga automática falló el {date} ({reason}). Kortix lo intenta de nuevo; tras 3 cargos fallidos seguidos, la recarga automática se desactiva.",
+      "bonusHint": "Cada recarga añade {credits} créditos + {bonus} de bonificación.",
+      "bonusFrom": "Las recargas de {min} o más añaden créditos de bonificación."
     },
     "title": "Facturación & Suscripción",
     "subscription": "Suscripción",
-    "credits": "Créditos",
+    "credits": {
+      "change": {
+        "updated": "Plan actualizado",
+        "updatedDescription": "{credits} créditos / mes.",
+        "unchanged": "Ese ya es tu plan.",
+        "paymentPending": "El pago necesita confirmación",
+        "paymentPendingDescription": "Abriendo el portal de facturación para confirmarlo.",
+        "failed": "No se pudo cambiar el plan"
+      },
+      "planCard": {
+        "title": "Créditos mensuales",
+        "description": "Todos los miembros comparten un único fondo de créditos. Los créditos sin usar se trasladan un mes.",
+        "rate": "1 crédito = 0,01 $ de cómputo en sandbox y uso de modelos gestionados.",
+        "raiseHint": "Una subida se cobra ahora, de forma prorrateada, y añade al instante los créditos prorrateados.",
+        "cutHint": "Una bajada empieza en la próxima renovación.",
+        "subscribeAction": "Suscribirse por {amount} / mes",
+        "updateAction": "Cambiar a {amount} / mes",
+        "chooseAction": "Actualizar plan",
+        "ownerOnly": "Solo los propietarios de la cuenta pueden cambiar el plan.",
+        "enterpriseNote": "Los planes Enterprise se gestionan con tu equipo de cuenta."
+      },
+      "modal": {
+        "title": "Elige tu nivel de créditos",
+        "description": "Un solo plan por niveles. Miembros ilimitados comparten un único fondo de créditos y los créditos sin usar se trasladan un mes.",
+        "askOwnerHint": "Solo los propietarios de la cuenta pueden cambiar el plan.",
+        "askOwnerTitle": "Pide a un propietario de la cuenta",
+        "askOwnerBody": "Solo los propietarios de la cuenta pueden gestionar la facturación. Pide a un propietario que elija un nivel de créditos para la cuenta."
+      },
+      "admin": {
+        "plan": "Plan",
+        "monthlyAmount": "Importe mensual"
+      },
+      "tiers": {
+        "label": "Nivel mensual de créditos",
+        "perMonth": "/ mes",
+        "currentSuffix": "(tu plan actual)",
+        "creditsPerMonth": "{credits} créditos / mes",
+        "credits": "{credits} créditos",
+        "price": "{amount} / mes",
+        "popular": "Más popular",
+        "current": "Actual",
+        "choose": "Elige un nivel",
+        "chooseHint": "Los niveles empiezan en {min} al mes.",
+        "hours": "≈ {hours} horas de ordenador de agente al mes.",
+        "groups": {
+          "small": "Equipos pequeños",
+          "growing": "Equipos en crecimiento",
+          "scale": "Scale"
+        }
+      }
+    },
     "popular": "Popular",
     "creditsExplained": "Créditos explicados",
     "creditsExhausted": "+100 Créditos en {time}. Actualiza para usar ahora.",
@@ -2310,6 +2359,144 @@
         "technicalIssues": "Experimenté problemas técnicos",
         "resultsNotGood": "Los resultados no cumplieron mis expectativas",
         "other": "Otra razón"
+      }
+    },
+    "pricing": {
+      "plans": {
+        "free": {
+          "name": "Free",
+          "note": "Empieza con créditos reales de sandbox.",
+          "f1": "200 créditos / mes, sin tarjeta",
+          "f2": "1 proyecto",
+          "f3": "Usa tu propia clave de API para cualquier modelo premium",
+          "f4": "Conecta tu suscripción de ChatGPT"
+        },
+        "credits": {
+          "name": "Créditos",
+          "note": "Desde 50 $ al mes. Elige los créditos que tu equipo necesita.",
+          "unit": "/ mes y más",
+          "f1": "Todo lo de Free",
+          "f2": "Miembros ilimitados, un único fondo de créditos compartido",
+          "f3": "Los créditos sin usar se trasladan un mes",
+          "f4": "Recarga cuando quieras. Las recargas nunca caducan",
+          "f5": "Modelos gestionados y todas las funciones",
+          "f6": "Soporte por correo electrónico"
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "note": "Escala, seguridad y tu despliegue.",
+          "price": "A medida",
+          "f1": "Todo lo de Créditos",
+          "f2": "SAML SSO + sincronización de directorio SCIM",
+          "f3": "RBAC avanzado + registros de auditoría",
+          "f4": "Nube, VPC o local",
+          "f5": "BYOK, suscripción de ChatGPT y controles de modelos gestionados",
+          "f6": "SLA, DPA y soporte dedicado"
+        }
+      },
+      "faq": {
+        "free": {
+          "question": "¿Qué incluye Free?",
+          "answer": "Free incluye 200 créditos al mes para cómputo en sandbox y 1 proyecto. Usa tu propia clave de API o conecta tu suscripción de ChatGPT para modelos premium. Los modelos gestionados con claves de Kortix requieren un plan de pago."
+        },
+        "credit": {
+          "question": "¿Qué se puede comprar con un crédito?",
+          "answer": "1 crédito son 0,01 $. Los créditos pagan el ordenador del agente, facturado por segundo y por recurso: {vcpuRate} por vCPU y hora, {memoryRate} por GB de RAM y hora, {diskRate} por GB de almacenamiento y mes. La máquina predeterminada de {spec} usa unos {creditsPerHour} créditos por hora, así que 1 crédito equivale a unos {minutes} minutos. Un ordenador detenido no cuesta nada. Los créditos también pagan los modelos de Kortix, al precio base del proveedor más un {fee} % de comisión de plataforma. Tu propia clave de API o suscripción a ChatGPT no consume créditos."
+        },
+        "amounts": {
+          "question": "¿Cuánto pago cada mes?",
+          "answer": "Elige un nivel desde 50 $ al mes (5.000 créditos) hasta 10.000 $ al mes (1.000.000 de créditos). 200 $ al mes (20.000 créditos) es el más popular. Todos los niveles dan créditos a la misma tarifa: 100 créditos por dólar. Para más de 10.000 $ al mes, habla con ventas."
+        },
+        "members": {
+          "question": "¿Pago por los miembros?",
+          "answer": "No. Los miembros son gratuitos e ilimitados. Toda la cuenta comparte un único fondo de créditos, así que añadir a una persona nunca cambia tu factura."
+        },
+        "rollover": {
+          "question": "¿Qué pasa con los créditos sin usar?",
+          "answer": "Los créditos mensuales sin usar se trasladan un mes. Los créditos de recargas nunca caducan."
+        },
+        "models": {
+          "question": "¿Los modelos consumen créditos?",
+          "answer": "Solo los modelos de Kortix. Cuestan el precio base del proveedor más un {fee} % de comisión de plataforma, pagado con créditos, y la app muestra los precios base. Con tu propia clave de API o una suscripción a ChatGPT conectada, el uso del modelo va a tu proveedor y no consume créditos. Entonces los créditos solo pagan el ordenador del agente."
+        },
+        "topup": {
+          "question": "¿Puedo añadir créditos a mitad de mes?",
+          "answer": "Sí. Recarga cualquier importe en cualquier momento o activa la recarga automática para que tus agentes nunca se detengan. Las recargas desde {smallestBonusUsd} añaden créditos extra: +{smallestBonus} % con {smallestBonusUsd}, hasta +{largestBonus} % desde {largestBonusUsd}. Los créditos de recarga nunca caducan."
+        },
+        "change": {
+          "question": "¿Puedo cambiar mi nivel?",
+          "answer": "En cualquier momento, desde Ajustes. Una subida se cobra ahora, de forma prorrateada, y añade al instante los créditos prorrateados. Una bajada empieza en la próxima renovación."
+        },
+        "existing": {
+          "question": "¿Qué pasó con mi plan actual?",
+          "answer": "Cada plan existente pasó a ser un plan de créditos con el mismo precio mensual. Los planes por puesto ahora reciben toda su factura como créditos en un fondo compartido, y los puestos desaparecen. Un plan por debajo de 50 $ mantiene su precio; un cambio lo pasa a un nivel."
+        },
+        "enterprise": {
+          "question": "¿Y Enterprise?",
+          "answer": "Todo lo de Créditos más SAML SSO, sincronización de directorio SCIM (Okta, Microsoft Entra, JumpCloud), RBAC avanzado, registros de auditoría, SLA y DPA, y despliegue en nube / VPC / local. Habla con nosotros para precios por volumen."
+        }
+      },
+      "hero": {
+        "eyebrow": "Precios",
+        "title": "Empieza gratis. Paga solo lo que usan tus agentes.",
+        "b1": "{credits} créditos gratis cada mes",
+        "b2": "Sin tarjeta de crédito",
+        "b3": "Miembros ilimitados, un único fondo de créditos",
+        "cta": "Empieza gratis"
+      },
+      "hours": {
+        "eyebrow": "Horas de agente",
+        "title": "1 crédito equivale a unos {minutes} minutos de ordenador de agente",
+        "description": "Los créditos pagan el ordenador del agente: la máquina en la nube donde tu agente ejecuta código, navega y edita archivos. Se factura por segundo mientras funciona y no cuesta nada mientras está detenido.",
+        "rate": {
+          "value": "1 crédito = 0,01 $",
+          "note": "Cada nivel ofrece créditos a esta tarifa."
+        },
+        "hour": {
+          "value": "{creditsPerHour} créditos = 1 hora",
+          "note": "De ordenador de agente ({spec}). Facturado por segundo. Nada mientras está detenido."
+        },
+        "tier": {
+          "value": "{tierUsd} al mes ≈ {hours} horas",
+          "note": "De ordenador de agente, cuando el uso de modelos va con tus propias claves."
+        },
+        "rates": {
+          "title": "Tarifas de cómputo",
+          "note": "Se factura por segundo según el tamaño reservado. Un ordenador detenido no cuesta nada.",
+          "vcpu": {
+            "label": "vCPU",
+            "price": "{price} / hora"
+          },
+          "memory": {
+            "label": "Memoria",
+            "price": "{price} / GB-hora"
+          },
+          "disk": {
+            "label": "Almacenamiento",
+            "price": "{price} / GB-mes"
+          }
+        }
+      },
+      "models": {
+        "eyebrow": "Los modelos van aparte",
+        "title": "Los modelos se facturan aparte del ordenador del agente",
+        "description": "Los créditos pagan el ordenador del agente. Lo que cuesta una llamada a un modelo depende de su origen.",
+        "keys": {
+          "tag": "Sin créditos",
+          "title": "Tus propias claves de API",
+          "body": "Añade una clave de Anthropic, OpenAI o cualquier otro proveedor. El uso del modelo va directo a tu proveedor y no consume créditos."
+        },
+        "chatgpt": {
+          "tag": "Sin créditos",
+          "title": "Tu suscripción a ChatGPT",
+          "body": "Conecta tu suscripción a ChatGPT. Tus agentes la usan para las llamadas a modelos y no se gasta ningún crédito."
+        },
+        "kortix": {
+          "tag": "Se paga con créditos",
+          "title": "Modelos de Kortix",
+          "body": "Sin claves que gestionar. Cada llamada cuesta el precio base del proveedor más un {fee} % de comisión de plataforma, pagado con créditos. La app muestra los precios base."
+        },
+        "summary": "Con tus propias claves, los créditos solo pagan el ordenador del agente."
       }
     }
   },
@@ -2675,7 +2862,9 @@
       "permission": "Solicitud de permiso",
       "shared": "Compartida contigo",
       "automation_failed": "Alerta de fallo",
-      "automation_recovered": "Alerta de recuperación"
+      "automation_recovered": "Alerta de recuperación",
+      "capture_device_down": "Ordenador de Capture detenido",
+      "capture_device_recovered": "Ordenador de Capture graba de nuevo"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -2684,7 +2873,9 @@
       "permission": "El agente pide permiso para ejecutar una herramienta.",
       "shared": "Alguien comparte una sesión contigo.",
       "automation_failed": "Un trigger o un recordatorio empieza a fallar.",
-      "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar."
+      "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar.",
+      "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
+      "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar."
     },
     "bell": {
       "label": "Notificaciones",
@@ -3090,13 +3281,12 @@
       "contactGeneral": "General",
       "contactSecurity": "Seguridad",
       "faqWhatCreditsQuestion": "¿Qué son los créditos y cuánto cuestan?",
-      "faqWhatCreditsAnswerBefore": "Los créditos son la unidad de uso de la plataforma en Kortix, y las llamadas a modelos son lo que más consume. Kortix añade un 20 % al coste del modelo, un 50 % a la mayoría de las llamadas a herramientas, y cobra en su lugar una tarifa fija de plataforma del 10 % si usas tu propia clave de API. Encontrarás la tabla de tarifas completa, los dos tipos de crédito y cómo hacer que un saldo dure más en",
+      "faqWhatCreditsAnswerBefore": "Los créditos pagan el ordenador del agente y los modelos de Kortix. 1 crédito cuesta 0,01 $ y el ordenador del agente por defecto usa unos 11 créditos por hora. Los modelos de Kortix cuestan el precio base del proveedor más una tarifa de plataforma del 5,5 %. Tu propia clave API o tu suscripción a ChatGPT no usan créditos. Los planes, las recargas y cómo hacer que el saldo dure están en",
       "faqWhatCreditsLink": "Créditos y uso",
       "faqWhatCreditsAnswerAfter": "."
     }
   },
   "hardcodedUi": {
-    "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Cambia la facturación por máquina al nuevo plan de 40 $ por puesto. Cancelamos tus suscripciones de máquinas, aplicamos el saldo no utilizado al primer puesto y devolvemos el resto como ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Los tokens heredan el rol de cuenta y los grupos de su creador en cada solicitud. Para limitar el acceso de un token, restríngelo a un solo proyecto cuando lo crees.",
     "projectAccessBoundary": {
       "privateHeading": "Pide acceso.",
@@ -4185,9 +4375,7 @@
     },
     "appHomePricingPage": {
       "line107JsxTextStartFreeScaleWhenYouAposReReady": "Empieza gratis. Escala cuando estés listo.",
-      "line108JsxTextSelfHostTheWholePlatformForFreeMove": "Autoaloja toda la plataforma gratis. Pasa a la nube gestionada por asiento y a Enterprise cuando necesites on-prem y controles avanzados.",
       "line118JsxTextMostPopular": "Más popular",
-      "line138JsxTextCloudIsPerSeatUsageBasedComputeYou": "Cloud se cobra por asiento más cómputo basado en uso. Solo pagas por lo que tus agentes realmente ejecutan.",
       "line145JsxTextComparePlans": "Comparar planes",
       "line153JsxTextOpenSource": "Código abierto",
       "line183JsxTextPricingQuestions": "Preguntas sobre precios",
@@ -8608,8 +8796,8 @@
     "autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad": "Ir a proyectos",
     "autoAppAppMarketplacePageJsxTextBrowseSkillsAcrossEvery14a9148d": "Explore habilidades en todas las fuentes: un clic las agrega al repositorio de un proyecto, en vivo en su próxima sesión.",
     "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrTitlebf9bba8c": "Suscríbete para iniciar sesiones",
-    "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779": "Tu equipo aún no tiene un plan. Suscríbase a Kortix Team para ejecutar sesiones, con computación LLM y computadoras AI para cada compañero de equipo.",
-    "autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1": "Suscríbete al plan de equipo",
+    "autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779": "Tu cuenta aún no tiene un plan. Elige un importe mensual de créditos para ejecutar sesiones. Todos los miembros comparten un único fondo.",
+    "autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1": "Elegir un plan",
     "autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3": "Aún no hay proyectos",
     "autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2": "Un proyecto es un espacio dedicado a una empresa, producto o idea.",
     "autoAppAuthAuthPageJsxAttrAriaLabelAuthenticationMode01efd9f8": "Modo de autenticación",
@@ -8729,13 +8917,8 @@
     "autoAppPublicMarketingDevelopersPageJsxTextInstallTheCLIbd0e41b0": "Instale la CLI, ejecute",
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": "e implemente el agente que ya utiliza.",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "Implementar agentes internos",
-    "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "Precios simples por asiento. Paga por lo que usas.",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Cada puesto incluye la plataforma completa y créditos mensuales para el tiempo de ejecución de Agent Computer. Use su propia clave de API o conecte ChatGPT para acceder a modelos. Los modelos gestionados siguen disponibles y consumen créditos según el uso de tokens.",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Pague por el ordenador. Use su propio modelo.",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Los créditos de Kortix están destinados principalmente al tiempo de ejecución de Agent Computer. Use su propia clave de API o suscripción de ChatGPT para mantener la facturación del modelo con su proveedor. Los modelos gestionados opcionales consumen créditos Team según el uso de tokens.",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "Empezar a construir",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "Haz que tu equipo comience",
-    "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "$40 por asiento, con $20 de créditos de uso cada uno. Prorrateado automáticamente, cancele en cualquier momento o hable con nosotros sobre Enterprise.",
     "autoAppPublicMarketingPricingPageJsxTextContactSales8f878231": "Contactar con ventas",
     "autoAppPublicSeoBlogSlugPageJsxAttrSizesMaxbb7ac8fb": "(ancho máximo: 768 px) 100 vw, 768 px",
     "autoAppPublicSeoBlogSlugPageJsxTextMoreFrom3f4590f3": "Más del blog",
@@ -8764,8 +8947,6 @@
     "autoAppSystemDebugSharingPageJsxTextSharingPickerVisualHarness45b06d33": "SharingPicker: arnés visual",
     "autoAppSystemDebugSharingPageJsxAttrTitleShareSessiona4e430a9": "Compartir sesión",
     "autoAppSystemDebugToolsPageJsxTextSidePanelFileseba2e222": "Panel lateral · Archivos (explorador)",
-    "autoAppAdminAccountsPageJsxTextRevertToTeam5247682b": "Volver al equipo",
-    "autoAppAdminAccountsPageJsxTextEnterpriseUnlocksSAMLSSO7daa7fe0": "Enterprise desbloquea la sincronización del directorio SAML SSO + SCIM para esta cuenta. La facturación de asientos no ha cambiado.",
     "autoAppAdminOpsPageJsxTextShowingTheLatestecb396dc": "Mostrando lo último",
     "autoAppAdminProvidersPageJsxAttrTitleSandboxProviders3d848bdc": "Proveedores de entorno de pruebas",
     "autoAppAdminProvidersPageJsxAttrDescriptionBalanceNewSandboxes50122048": "Equilibre nuevos entornos de pruebas entre proveedores, inspeccione qué está ejecutando cada uno, migre sesiones entre proveedores y realice un seguimiento del rendimiento de cada proveedor.",
@@ -8975,7 +9156,7 @@
     "autoAppPresentationSlidesPlatformJsxAttrLeadWeBuildOur3a652ae7": "Construimos nuestras propias empresas en Kortix y dejamos que la gente mire: agentes revisando las relaciones públicas, una vista previa de cada cambio, un mensaje de Slack que se convierte en un envío.",
     "autoAppPresentationSlidesPlatformJsxAttrTitleOpenSourced5df9dc2": "Código abierto",
     "autoAppPresentationSlidesPlatformJsxAttrBodySelfHostableUnderneathb975d6f7": "Autohospedable debajo.",
-    "autoAppPresentationSlidesPlatformJsxAttrBodySeatsCompute61f703c9": "Asientos + computo.",
+    "autoAppPresentationSlidesPlatformJsxAttrBodySeatsCompute61f703c9": "Créditos para cómputo y modelos.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyRunItAnywhere9c8c4cd2": "Ejecútelo donde sea necesario.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyAgentsSkillsWholedd8eefbc": "Agentes, habilidades, proyectos completos.",
     "autoAppPresentationSlidesPlatformJsxAttrBodyTheComputeFloora3af4e83": "La sala de computación: microVM de CPU y GPU.",
@@ -9395,9 +9576,7 @@
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelLightf3e8a707": "Tema ligero",
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelDark294ccd51": "tema oscuro",
     "autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelSystem89196afd": "Tema del sistema",
-    "autoFeaturesAccountsSettingsBillingTabJsxTextKortixTeam698bb03b": "Equipo Kortix",
     "autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571": "Suscríbase para poner a todo su equipo en Kortix: computación LLM y computadoras AI, una billetera.",
-    "autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToTeam6a396f73": "Suscríbete al plan de equipo",
     "autoFeaturesAccountsSettingsCliTokensTabJsxTextBullbb9413cf": "•",
     "autoFeaturesAccountsSettingsKeyboardShortcutsTabJsxAttrLabelCmd975d185c": "comando (⌘)",
     "autoFeaturesAccountsSettingsKeyboardShortcutsTabJsxAttrLabelCtrl620ee654": "Ctrl (⌃)",
@@ -9405,27 +9584,15 @@
     "autoFeaturesBillingAccountOverviewJsxAttrLabelWalletBalancecdd0c37d": "Saldo de billetera",
     "autoFeaturesBillingAccountOverviewJsxTextSpendThisPeriodc3ec187b": "Pasa este periodo",
     "autoFeaturesBillingAccountOverviewJsxAttrSublabelSandboxRuntimef66ba97a": "Tiempo de ejecución de la zona de pruebas",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextSwitchTo0413ce4a": "Cambiar a precios basados en asientos",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff5cec3ce2": "Pase la facturación por máquina al nuevo plan de $40 por asiento. Cancelamos sus suscripciones a máquinas, asignamos su saldo no utilizado a su primer asiento,",
     "autoFeaturesBillingClaimPerSeatCardJsxTextNonExpiringc3f29937": "crédito sin vencimiento",
     "autoFeaturesBillingClaimPerSeatCardJsxTextSwitchingf28a1421": "Cambiando…",
-    "autoFeaturesBillingClaimPerSeatCardJsxTextClaimSeat0d87cca9": "Reclamar precios basados en asientos",
-    "autoFeaturesBillingSeatManagementCardJsxTextTeamSeatsac65209c": "Asientos de equipo",
     "autoFeaturesBillingSeatManagementCardJsxTextTeammateIncludesCompute626f1aeb": "/compañero de equipo · incluye computación + uso de LLM",
     "autoFeaturesBillingSeatManagementCardJsxTextModba31324": "· /mes",
     "autoFeaturesBillingSeatManagementCardJsxTextThisPeriode510d764": "este periodo",
     "autoFeaturesBillingSeatManagementCardJsxTextTotalSpendThis908ba767": "Gasto total este período",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d": "Suscríbete al equipo Kortix",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatPera29a6c6d": "por asiento por mes. LLM Computación y Computadoras AI para cada compañero de equipo.",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextKortixTeame5d39916": "Equipo Kortix",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatc1480f59": "por asiento",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextBilledMonthlybdd7a0cd": "facturado mensualmente",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextLLMComputeAndfea9deab": "LLM Computación y Computadoras AI para cada compañero de equipo. Agregue asientos a medida que su equipo crezca.",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f": "Iniciando el pago...",
     "autoFeaturesBillingTeamPlanCheckoutJsxTextAutoProratedCancelfa091962": "Prorrateado automáticamente · cancelar en cualquier momento · facturado mensualmente",
-    "autoFeaturesBillingTeamPlanCheckoutJsxAttrLabelOnlyAccountbf72d3e0": "Sólo los propietarios de cuentas pueden suscribirse. Su asiento se activa automáticamente una vez que lo hacen.",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextAskAnAccount6f6b506d": "Solicite un asiento al propietario de una cuenta",
-    "autoFeaturesBillingTeamPlanCheckoutJsxTextOnlyAccountOwnerse7f0d952": "Sólo los propietarios de cuentas pueden gestionar la facturación. Una vez que un propietario se suscribe a Kortix Team, su asiento se activa automáticamente.",
     "autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f": "Alternar barra lateral",
     "autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904": "algo real en lo que trabajar.",
     "autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d": "Describe una tarea para iniciar una sesión...",
@@ -9938,7 +10105,6 @@
       "text0983d3e38ba5": "Fuerte criterio de pensamiento sistémico.",
       "text09851ae4a654": "- Prepara su espacio de trabajo a partir de la plantilla",
       "text0989a07682e0": "herramienta no registrada — alternativa MCP",
-      "text098d65d3bf79": "Ultra · $200/mes",
       "text0991397702fa": "Ejecutar ahora",
       "text09993f2060aa": "He añadido una política de acceso",
       "text099b6264cb74": "Agentes y skills de Kortix",
@@ -9959,7 +10125,6 @@
       "text0a08767ed1da": "Permitida, restringida o bloqueada",
       "text0a15fd3848fa": "Modelo de visión",
       "text0a1d956ac650": "Revisa los cambios que proponen tus agentes y explora cada versión que guardaron.",
-      "text0a2ea173ab93": "Los créditos financian el procesamiento del sandbox; incluso una prueba BYOK necesita saldo en la billetera para ejecutar sesiones. El crédito de bienvenida gratuito es de $2; un mes por asiento cuesta $25.",
       "text0a30a815d67d": "Página",
       "text0a45caff4417": "Ejecutar comandos de shell en el terminal",
       "text36569109d4e5": "Costes de sesión y registro de créditos de esta cuenta.",
@@ -10154,7 +10319,6 @@
       "text108d15248c17": "Sólo eventos con acción que comienza \"{value0}\"",
       "text108fd36702c5": "El entorno de este proyecto está listo",
       "text109311589787": "Entorno de ejecución",
-      "text109346f4fd22": "Tu cartera está vacía, por lo que no se pueden ejecutar sesiones. Añade saldo para mantener la computación y los últimos modelos de IA; tu plan y tus plazas no se verán afectados.",
       "text1095ddb6dcd8": "Añade una aplicación",
       "text109d57cb33d7": "Clasificar, puntuar ni rechazar candidatos",
       "text109ff88aec78": "Conexión predeterminada actualizada",
@@ -10490,7 +10654,6 @@
       "text1a17a48d8496": "Libro mayor de créditos",
       "text1a1e4d549e85": "Cuando este agente comienza por sí solo.",
       "text1a2303ede074": "Conectar",
-      "text1a24578b099b": "miembros de la cuenta organización lista de propietarios administradores puestos",
       "text1a3ba76c2b52": "Te dirigiremos igualmente al siguiente paso.",
       "text1a425eb8b2b6": "Conector añadido al manifiesto, pero la sincronización falló: {value0}. Usa Sync para volver a intentarlo.",
       "text1a42d28bc87a": "Los entornos aislados de los agentes, que se ejecutan en el proveedor que configures",
@@ -10537,7 +10700,6 @@
       "text1b7b2078f271": "La respuesta aparece en el hilo como un solo mensaje que se va completando, no como un muro de actualizaciones. El agente finaliza ese mensaje en lugar de publicar otro debajo.",
       "text1b7bdab96532": "Qué agente gestiona cada ejecución.",
       "text1b84926d58a9": "No hay guion para esta diapositiva.",
-      "text1b85843d53b1": "miembros miembro acceso al espacio de trabajo colaboradores personas compañeros lista quién puede ver permisos conceder compartir puestos",
       "text1b8f0674b970": "El sandbox contiene un token de Kortix con alcance de proyecto y ninguna clave de terceros. La credencial de tu sistema de candidatos se descifra en el servidor, se adjunta a la solicitud saliente y luego se elimina.",
       "text1ba70b3e6cfc": "El modelo",
       "text1bb320d9db5d": "Usar clave personalizada de AgentMail",
@@ -10864,7 +11026,6 @@
       "text24d906bf39fc": "Se aplica a las claves que las personas crean aquí. Las claves que Kortix crea para una sesión en ejecución terminan con esa sesión.",
       "text24dab51514a1": "{value0} añadido a {value1}",
       "text24db9f4eb779": "Suscripción sincronizada correctamente",
-      "text24e800f1cdb3": "Team · $40/asiento/mes",
       "text24f15c9196e8": "· grupo",
       "text24f32b0f8b75": "Prueba de cuenta concedida",
       "text24f46f717cfa": "No se requiere autorización",
@@ -10983,7 +11144,6 @@
       "text28810171a932": "Comentarios sintetizados en especificaciones, con la evidencia adjunta",
       "text28904e587358": "Hace commit y abre una solicitud de cambios",
       "text2893925796c8": "Cargando registro…",
-      "text289aec13d5aa": "Suscríbete: ${value0}/asiento",
       "text289aff12b042": "Pregunta",
       "text289b30b31ca1": "Una expresión cron de 6 campos —segundo, minuto, hora, día, mes y día de la semana— en cualquier zona horaria IANA. O una marca de tiempo run_at única, para algo que debe ocurrir una vez y después quedar inactivo.",
       "text28a800e4720b": "select_account",
@@ -11892,7 +12052,6 @@
       "text42d0d7ff0656": "Ciclo del agente",
       "text42d8a7ea9caf": "exento",
       "text42e45c4f8d15": "No se pudo actualizar el webhook",
-      "text42ef2c24bd7a": "Plazas del equipo",
       "text42f3ceed281b": "OpenClaw y Hermes son agentes personales de código abierto brillantes, y los recomendamos sinceramente para particulares. Pero un «Jarvis» personal y una plataforma empresarial gobernada son cosas distintas. Aquí está exactamente la línea divisoria.",
       "text42fbdd7efa9b": "1px sólido rgba(255,80,80,0.4)",
       "text42fcd9dda5f6": "No se pudo eliminar esa instrucción",
@@ -11987,7 +12146,6 @@
       "text457f4f767fe0": "Disponibilidad de API comprobada",
       "text45808d75bf89": "Webhooks",
       "text45823eaac0c8": "Cookie",
-      "text458cde86effb": "Mantiene habilitados SSO, SCIM, RBAC y la auditoría para una cuenta Enterprise con contrato firmado que también se factura por asiento, para que la conciliación de Stripe no los elimine.",
       "text45989de49fb7": "Detalles",
       "text459a23a5980f": "Cómodo",
       "text459ff8f45278": "Aprovisionar grupos automáticamente",
@@ -12013,7 +12171,6 @@
       "text4616b90a6d94": "segundos hasta",
       "text46342ec1eec9": "Fase",
       "text4634beebd84d": "El agente recibe un token. Nunca recibe la clave.",
-      "text46470f35d5d8": "Su suscripción, puestos de equipo y facturación de esta cuenta.",
       "text464bfda48ca0": "TIPO II",
       "text464c4ffd019e": "Editar",
       "text464cf293fd24": "Un hilo de {channel} vinculado a una sesión, que termina en una solicitud de cambio ofrecida para aprobación.",
@@ -12720,7 +12877,6 @@
       "text59f65a8a6575": "Abrir en Google Slides",
       "text59f765f38854": "Lo que necesita",
       "text5a052671ec75": "Campo de identificador único para los usuarios",
-      "text5a0b692095be": "Precios sencillos por puesto. El plan gratuito incluye 200 créditos al mes para el cómputo de sandbox; mejora tu plan cuando quieras los modelos de IA más recientes y 2.500 créditos compartidos por puesto.",
       "text5a0cac0326d5": "Descargar Kortix",
       "text5a219a418ec7": "No se pudo leer esta entrada del archivo.",
       "text5a23444828db": "Gestionar",
@@ -12827,7 +12983,6 @@
       "text5d24939e8b83": "1 sesión  =  1 computadora  =  1 rama",
       "text5d28a8e6bc88": "He establecido la URL de callback, la audiencia y el NameID",
       "text5d28a90f4498": "fallido",
-      "text5d2c13d6f9fa": "asiento",
       "text5d401fa67ac9": "Cómodo: hasta 3 por fila",
       "text5d405d8955db": "Se ejecutó el conjunto de pruebas de facturación",
       "text5d42766c7eca": "Propuesta",
@@ -14193,7 +14348,6 @@
       "text854a397472d0": "La diapositiva {value0} se ha editado correctamente",
       "text854e6dd9d777": "El tipo queda fijado al registrarse. Registra una aplicación nueva para cambiarlo.",
       "text8552ade1b621": "La cámara de una sesión: qué hay {inside} y qué hay {outside}.",
-      "text8559d8fd97d1": "{count, plural, one {# asiento activo} other {# asientos activos}} · Se han depositado ${credit} de crédito de uso.",
       "text8564edf2cd1f": "Credenciales de conectores, resueltas en el servidor",
       "text857be0b1fee8": "Antecedentes",
       "text8585b95f4600": "Kortix en GitHub",
@@ -15060,7 +15214,6 @@
       "text9d4b2eae7c42": "El valor predeterminado es permisivo: una acción se ejecuta salvo que hayas indicado lo contrario. En un proyecto de ventas, lo primero es configurar las acciones salientes como Ask y las destructivas como Block. Te lo decimos en lugar de dejar que supongas que se eligió por ti la opción más segura.",
       "text9d53e28e9e39": "El acceso por proyecto aparece en la sección «Projects» de esta página.",
       "text9d54b2fd9149": "Usa cualquier proveedor o la suscripción de ChatGPT que ya pagas. El modelo es configuración en tu repo, no una decisión que toma un proveedor por ti.",
-      "text9d5adef979f7": "Concedido anteriormente",
       "text9d6304b7f8dc": "Gestión de identidad → Configuración",
       "text9d74727714db": "Descartado",
       "text9da0bf42ad07": "Contraer barra lateral",
@@ -16249,7 +16402,6 @@
       "textbf405915a297": "La migración mecánica en doscientas aplicaciones",
       "textbf4d20c9ba67": "Consumo de cómputo",
       "textbf56a193cb9f": "Resultado siguiente",
-      "textbf5d8eb5292b": "No hay ninguna suscripción activa de máquina que se pueda cambiar a precios por puesto.",
       "textbf5f39ac2192": "    app: gmail",
       "textbf692d2cef5a": "Los metadatos de federación capturados anteriormente aparecen completados abajo. Kortix registra tu IdP y dirige a él los inicios de sesión de tu dominio de email.",
       "textbf6c07f87075": "Conectar una aplicación",
@@ -17241,11 +17393,9 @@
       "textdbba817f12f2": "7 acuerdos avanzaron, 2 se retrasaron.",
       "textdbbfc6cf8952": "Aplicación de navegador o nativa. Sin secreto; solo PKCE.",
       "textdbc539f3b073": ". No tienes permiso para cambiarlo; pídeselo a un responsable del proyecto.",
-      "textdbc55cb506f2": "Tu equipo aún no tiene un plan. Suscríbete a Kortix Team para ejecutar sesiones, con computación LLM y AI Computers para cada miembro del equipo.",
       "textdbcd5e7bb7a0": "Claro",
       "textdbd9b1773511": "Las habilidades y la memoria se acumulan en cada ejecución",
       "textdbe0414753c1": "Espera un momento antes de volver a intentarlo.",
-      "textdbe08e62ef56": "Tu equipo está en Kortix Team. Los créditos de cálculo y LLM están listos.",
       "textdbe46defeac2": "solo muestra una advertencia",
       "textdbef6cc84fef": "inicio de auto-anfitrión de Kortix",
       "textdbf362d4f210": "Copiar enlace",
@@ -17412,7 +17562,6 @@
       "texte0401ccff09d": "Slack y el correo se conectan igual, para que un agente pueda recibir mensajes y responder donde ya ocurre el trabajo.",
       "texte0447514873e": "No se pudieron cargar los miembros",
       "texte0454e781e5f": "$ kortix cr",
-      "texte0478c3e271b": "Tienes precios por puesto",
       "texte04eb29020ea": "ventas",
       "texte0603c499aae": "http",
       "texte0661dab3f98": "Un token limitado y nada más",
@@ -17638,7 +17787,6 @@
       "texte654b63c8098": "Crear bandeja de entrada de Email administrada",
       "texte65ac57c0c16": "Habilidades, herramientas y políticas como código",
       "texte65afdeb4024": "No se pudo conectar con el servidor de vista previa. Es posible que el sandbox aún se esté iniciando.",
-      "texte65c84be34f9": "Enterprise habilita SAML SSO, la sincronización de directorios SCIM, RBAC y el acceso a auditorías para esta cuenta. El plan facturado y la facturación por puesto no cambian.",
       "texte65f8a02d565": "No se pudieron cargar los cambios",
       "texte674447337e8": "Disponible",
       "texte67a6ef2363e": "Usar mi propia aplicación OAuth",
@@ -18092,7 +18240,6 @@
       "textf3a4ff3c0ae3": "Registra una app de autenticación en Ajustes → Seguridad y vuelve a intentarlo; esta cuenta bloquea las acciones protegidas hasta que tu sesión se verifique mediante MFA.",
       "textf3ad568c3fa6": "La imagen de máquina en la que se ejecuta esta sesión. Se elige al crear la sesión y no se puede cambiar después; inicia una sesión nueva para usar otra.",
       "textf3b80d5fea1d": "Cada edición llega a la rama creada para esa sesión. Nada de lo que hace el agente es visible para otra sesión ni para main.",
-      "textf3b81325942e": "Asientos",
       "textf3d19541f3a5": "30 segundos",
       "textf3d331b82d30": "No se pudo sincronizar la suscripción",
       "textf3d4c9b3357c": "Deja de crear software estático. Empieza a crear ciclos de feedback.",
@@ -18513,13 +18660,12 @@
       "text87ee04b2e9ee": "Ninguno detenido",
       "text58dfb849aa70": "{value0} detenidos",
       "text42bd5f3bc3ca": "Se muestra en tu lista de {value0}.",
-      "text415d8dfb1c5e": "Cada puesto añade {value0} créditos compartidos al mes. Todo el equipo usa un único saldo.",
       "textb9967f948f93": "Valores de entorno",
       "textaea537d63c8c": "Cuentas autorizadas",
       "text57c8f2cd3dd6": "Fijado al iniciar la sesión",
       "textce033f75c938": "esperando una decisión",
       "text5726504025dc": "esperando {value0} decisiones",
-      "texte0a770200f93": "Incluido en tu plan",
+      "texte0a770200f93": "Se paga con créditos",
       "texta527a1778404": "Suscripción de ChatGPT Plus o Pro",
       "textb1a5c13d215e": "Fijado a una plantilla que este proyecto ya no declara.",
       "text0703d9121fd7": "Fijado para este agente. Las sesiones y automatizaciones nuevas lo usan.",
@@ -18556,7 +18702,6 @@
       "text151863950f0e": "¿Puedo usar los modelos por los que ya pago?",
       "text055026a9c10e": "Sí. Usa tu propia clave de API para cualquier proveedor importante, inicia sesión con la suscripción de ChatGPT que ya pagas o utiliza la puerta de enlace gestionada sin proporcionar ninguna clave. El modelo es una línea de configuración en tu repositorio, por lo que cambiar de proveedor es un diff, no una migración.",
       "texte8dc9deba44c": "¿Cuánto cuesta?",
-      "text8eb8b8551cec": "Free cuesta $0 e incluye un proyecto y 200 créditos mensuales de computación en sandbox, con tu propia clave para cualquier modelo prémium. Team cuesta $40 por puesto al mes y agrupa 2.500 créditos por puesto. El software con alojamiento propio no cuesta nada; tú pagas directamente el modelo y la computación.",
       "text7ee5a6d5e8ad": "Por qué lo estamos construyendo",
       "text625b22ba31d0": "Leer el código fuente",
       "textf16b8eb8dbdc": "quién hace el trabajo",
@@ -19651,7 +19796,62 @@
       "text91dc861375bc": "Política de versiones móviles consultada",
       "texta37dd5ef6ef2": "Personalizar barra lateral",
       "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar",
-      "text2313fe21ea84": "Editar {name}"
+      "text2313fe21ea84": "Editar {name}",
+      "text44f9fff8bdae": "Cambió el plan de créditos",
+      "text3fa17bba73e1": "Tu cuenta aún no tiene un plan. Elige un importe mensual de créditos para ejecutar sesiones. Todos los miembros comparten un único fondo.",
+      "text6821e42be2c1": "Tu monedero está vacío, así que las sesiones no pueden ejecutarse. Recarga para mantener el cómputo y los últimos modelos de IA en marcha; tu plan no se ve afectado.",
+      "text146aaf3c71fa": "Mantiene habilitados SSO, SCIM, RBAC y auditoría en una cuenta Enterprise firmada que también se factura mediante un plan de pago, para que la conciliación de Stripe no los retire.",
+      "text517105fd13ce": "Los créditos financian el cómputo en sandbox: incluso una prueba BYOK necesita saldo en el monedero para ejecutar sesiones. La concesión de bienvenida gratuita es de 2 $.",
+      "text2f1d17f50af8": "Enterprise desbloquea SAML SSO, sincronización de directorio SCIM, RBAC y acceso a auditoría para esta cuenta. El plan facturado no cambia.",
+      "text12836c0e435d": "Free cuesta 0 $: un proyecto y 200 créditos al mes de cómputo en sandbox, con tu propia clave para cualquier modelo premium. Los planes de pago son de créditos: eliges un importe mensual, los miembros son gratuitos e ilimitados y un único fondo cubre toda la cuenta. Autoalojar el software no cuesta nada; en su lugar pagas tu propia factura de modelos y de cómputo.",
+      "text5dffd4db88c5": "Tu plan, tus créditos y la facturación de esta cuenta.",
+      "text49fd64c206dd": "Tu plan está activo. Los créditos están listos.",
+      "textad828837ddd8": "miembros miembro acceso al espacio de trabajo colaboradores personas compañeros lista quién puede ver permisos conceder compartir",
+      "textf651529d7e60": "miembros de la cuenta organización lista de propietarios administradores",
+      "texta6d6b4ec7eac": "Inició el inicio de sesión de un dispositivo de Capture",
+      "text0eab78d793bb": "Consultó el inicio de sesión de un dispositivo de Capture",
+      "texte52ffa7bb9da": "Emitió credenciales de almacenamiento de Capture",
+      "textdc2d4533ec39": "Vio el inicio de sesión de un dispositivo de Capture",
+      "text266a5a40483f": "Aprobó el inicio de sesión de un dispositivo de Capture",
+      "textda06e844a7d6": "Rechazó el inicio de sesión de un dispositivo de Capture",
+      "text1ba9cde823f2": "Listó los dispositivos de Capture",
+      "textc7d6cc3caadb": "Revocó un dispositivo de Capture",
+      "texta54e0f5b2592": "Abrió una captura de pantalla de Capture",
+      "text824bd00e2a12": "Vio la política de Capture",
+      "text59d82688db84": "Actualizó la política de Capture",
+      "text3eea23f138ae": "Vio una línea de tiempo de Capture",
+      "text5e3631b144e8": "Vio elementos de la línea de tiempo de Capture",
+      "text5972f4c2a0e8": "Buscó en una línea de tiempo de Capture",
+      "text177ca40772f2": "Vio un fotograma de Capture",
+      "text1ab1f7711ad9": "Abrió contenido multimedia de Capture",
+      "text976ea5cbcc50": "Vio los datos de Capture de un miembro",
+      "textd2e5b8c11904": "Vio su propia línea de tiempo de Capture",
+      "text4b35cdb5791c": "Buscó en su propia línea de tiempo de Capture",
+      "text3313027faa41": "Vio su propio fotograma de Capture",
+      "textc866967aa0f8": "Leyó una línea de tiempo de Capture como agente",
+      "textec9dc2164abe": "Sincronizó un dispositivo de Capture",
+      "textba3a78850415": "Vio los días de una línea de tiempo de Capture",
+      "textb71f504f3410": "Vio el espacio de trabajo de Capture",
+      "textba3d3f6932af": "Activó o desactivó Capture",
+      "text10a01973feb8": "Vio los datos de Capture de una cuenta",
+      "textab4c24c38193": "Activó Capture",
+      "text6bdc49eed8c9": "Desactivó Capture",
+      "text5b68b1f32366": "Inscribió un equipo con un token de inscripción",
+      "text1ca08fc86d90": "Listó los tokens de inscripción de Capture",
+      "textf11b95b56214": "Creó un token de inscripción de Capture",
+      "textd4806967bdd6": "Revocó un token de inscripción de Capture",
+      "textb3e9170332a7": "Listó los equipos en espera de inscripción",
+      "text8258034e2578": "Aprobó la inscripción de un equipo",
+      "textd2bea71d87f9": "Rechazó la inscripción de un equipo",
+      "text282851365ab1": "Vinculó un dispositivo de Capture a una persona",
+      "text53e7a07c14d4": "Vio un dispositivo de Capture sin vincular",
+      "texta67e3dc962e8": "Kortix Capture",
+      "textf12162aa6ac0": "capture grabación pantalla dispositivos instalar inscripción",
+      "text7193a9579bbc": "Grupo de botones",
+      "text0abba441f16e": "Horizontal",
+      "text727cd3a64d79": "Vertical",
+      "textcecd0c56d299": "Conectar correo",
+      "text07b547d6911c": "Los miembros quedan a 1px de distancia. Las esquinas exteriores conservan el radio del botón; las que dan a un vecino se reducen a 4px. Funciona con cualquier variante de Button, horizontal o"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -19831,7 +20031,7 @@
     "metaKey": "Clave de API",
     "metaSignIn": "Iniciar sesión",
     "metaSignInOrKey": "Iniciar sesión o clave de API",
-    "metaIncluded": "Incluido en su plan",
+    "metaIncluded": "Se paga con créditos",
     "apiKey": "Clave de API",
     "savedKey": "Clave guardada",
     "replace": "Reemplazar",
@@ -19909,7 +20109,8 @@
     "fromPrice": "desde {input} / {output} por 1 M",
     "price": "{input} / {output} por 1 M",
     "hiddenLine": "No está en el selector de modelos · las solicitudes directas siguen funcionando",
-    "blockedLine": "Las solicitudes a este modelo están bloqueadas"
+    "blockedLine": "Las solicitudes a este modelo están bloqueadas",
+    "platformFee": "Modelos de Kortix: precio del proveedor + {fee} % de comisión de plataforma"
   },
   "gatewayCosts": {
     "mostSpend": "Mayor gasto",
@@ -19966,9 +20167,9 @@
     "credentialsHint": "Desactiva la inferencia sin eliminar las credenciales.",
     "providerError": "No se pudo actualizar el acceso al proveedor.",
     "managedTitle": "Modelos gestionados por Kortix",
-    "managedDescription": "Modelos gestionados que usan créditos de Kortix. No necesitas una clave API.",
+    "managedDescription": "Precio base del proveedor más una tarifa de plataforma del {fee} %, pagado con créditos. No necesitas una clave API.",
     "managedUpgradeHint": "Mejora tu plan para usar los modelos gestionados de Kortix o conecta tu propio proveedor.",
-    "pricingEstimate": "Precio estimado para el cliente. La ruta utilizada determina el cargo.",
+    "pricingEstimate": "Precio base del proveedor, antes de la comisión de plataforma. La ruta utilizada determina el cargo.",
     "pricingRoute": "{route}: {input} entrada / {cacheRead} caché / {output} salida por millón de tokens",
     "pricingPreferred": "Preferida",
     "textImage": "Texto + imagen",
@@ -20774,5 +20975,443 @@
     },
     "appStore": "App Store",
     "googlePlay": "Google Play"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Aprobar el inicio de sesión de Kortix Capture",
+      "description": "Comprueba que el código coincide con la app y elige una cuenta.",
+      "approvingAs": "Iniciando sesión como {email}",
+      "notice": "Los propietarios y administradores ven lo que graba. Cada acceso queda registrado.",
+      "ownCodeOnly": "Aprueba solo un código que aparezca en tu propio equipo.",
+      "approve": "Aprobar inicio de sesión",
+      "deny": "Denegar",
+      "approvedTitle": "Kortix Capture ha iniciado sesión",
+      "approvedDescription": "La app ahora graba en {account}. Puedes cerrar esta pestaña.",
+      "deniedTitle": "Inicio de sesión rechazado",
+      "deniedDescription": "La app no ha iniciado sesión. Puedes cerrar esta pestaña.",
+      "expiredTitle": "Este código ha caducado",
+      "expiredDescription": "Vuelve a iniciar sesión desde la app Kortix Capture.",
+      "invalidTitle": "Código no encontrado",
+      "invalidDescription": "El código puede ser incorrecto o ya usado. Comprueba el código en la app e inténtalo de nuevo.",
+      "enterCodeTitle": "Introduce el código de Kortix Capture",
+      "enterCodeDescription": "La app muestra un código de ocho caracteres.",
+      "codeLabel": "Código",
+      "continue": "Continuar",
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "Cuenta",
+      "noAccounts": "Ninguna de tus cuentas tiene Kortix Capture activado. Un propietario o administrador puede activarlo.",
+      "approvedDescriptionNoAccount": "La app ha iniciado sesión. Puedes cerrar esta pestaña."
+    },
+    "duration": {
+      "hoursMinutes": "{hours} h {minutes} min",
+      "minutes": "{minutes} min"
+    },
+    "timeline": {
+      "title": "Línea de tiempo",
+      "recordedDays": "Días grabados",
+      "today": "Hoy",
+      "yesterday": "Ayer",
+      "notFound": "Este equipo no está en {name}.",
+      "backToDevices": "Volver a dispositivos",
+      "breadcrumb": "Ruta de navegación",
+      "previousDay": "Día grabado anterior",
+      "nextDay": "Día grabado siguiente",
+      "empty": {
+        "noDataTitle": "Las grabaciones de {device} aparecerán aquí"
+      },
+      "layers": "Mostrar",
+      "layersAll": "Todo",
+      "layersNone": "Nada",
+      "layer": {
+        "screen": "Pantalla",
+        "actions": "Acciones",
+        "audio": "Audio"
+      },
+      "live": "En vivo",
+      "liveHint": "Ir al momento más reciente (L)",
+      "liveState": {
+        "uploadingFirst": "En directo · subiendo la primera grabación",
+        "uploadingSeconds": "En directo · subiendo, {n} s de retraso",
+        "uploadingMinutes": "En directo · subiendo, {n} min de retraso"
+      },
+      "display": {
+        "picker": "Pantalla",
+        "active": "Pantalla activa",
+        "all": "Todas las pantallas",
+        "main": "Principal",
+        "unnamed": "Pantalla {n}",
+        "activeBadge": "Activa",
+        "strip": "Pantallas",
+        "show": "Mostrar {name}"
+      },
+      "player": "Reproductor",
+      "screenHidden": "Capa de pantalla oculta. Las acciones y los pasos siguen visibles.",
+      "play": "Reproducir (Espacio)",
+      "pause": "Pausar (Espacio)",
+      "zoomIn": "Acercar",
+      "zoomOut": "Alejar",
+      "lane": {
+        "apps": "Apps",
+        "actions": "Acciones",
+        "audio": "Audio"
+      },
+      "keysHint": "{mod}← {mod}→ entre apps · ← → fotogramas · Espacio reproduce",
+      "previousRun": "Aplicación anterior ({shortcut})",
+      "nextRun": "Aplicación siguiente ({shortcut})",
+      "speed": "Velocidad",
+      "trackLabel": "Momento en la línea de tiempo",
+      "unknownApp": "App desconocida",
+      "search": {
+        "label": "Buscar en este dispositivo",
+        "placeholder": "Buscar en este dispositivo",
+        "results": "Resultados de búsqueda",
+        "none": "Nada en este ordenador coincide con la búsqueda.",
+        "kind": {
+          "screen": "Pantalla",
+          "actions": "Acción",
+          "audio": "Audio"
+        }
+      },
+      "moment": {
+        "eyebrow": "En el cursor",
+        "nothing": "Nada grabado",
+        "window": "Ventana",
+        "address": "Dirección",
+        "steps": "Acciones alrededor de este momento",
+        "noSteps": "No se grabaron acciones alrededor de este momento.",
+        "said": "Dicho alrededor de este momento"
+      },
+      "frame": {
+        "label": "Grabación de pantalla de {app}",
+        "none": "No hay grabación en este momento.",
+        "encrypted": "El dispositivo cifró esta grabación. Kortix no puede mostrarla.",
+        "failed": "Esta grabación no se puede reproducir en este navegador."
+      },
+      "jump": {
+        "label": "Ir a una fecha y hora",
+        "title": "Ir a",
+        "go": "Ir",
+        "none": "Aún no hay grabaciones."
+      },
+      "track": {
+        "noCapture": "Sin grabación",
+        "audio": "audio",
+        "gap": "Aquí no hay grabación. Pulsa {shortcut} para volver."
+      }
+    },
+    "devices": {
+      "status": {
+        "recording": "Grabando",
+        "paused": "En pausa",
+        "locked": "Pantalla bloqueada",
+        "excluded": "App excluida en primer plano",
+        "permission": "Necesita permiso",
+        "notRecording": "No graba",
+        "offline": "Sin conexión",
+        "unknown": "Desconocido"
+      },
+      "permission": {
+        "screen_recording": "Grabación de pantalla",
+        "accessibility": "Accesibilidad",
+        "microphone": "Micrófono"
+      },
+      "unnamed": "Ordenador sin nombre",
+      "you": "Tú",
+      "member": "Un miembro",
+      "memberNone": "Aún sin ordenador",
+      "memberSummary": "{count, plural, one {# ordenador} other {# ordenadores}} · {recording} grabando",
+      "actionsFor": "Acciones para {name}",
+      "revoke": "Revocar ordenador",
+      "revokeTitle": "¿Revocar este ordenador?",
+      "revokeDescription": "{name} deja de grabar en esta organización de inmediato. Para volver a grabar, inicia sesión desde Este equipo en ese equipo.",
+      "revoked": "Ordenador revocado",
+      "revokeFailed": "No se pudo revocar el ordenador",
+      "title": "Dispositivos",
+      "descriptionAll": "Cada miembro de {name} y los ordenadores que graba. Los miembros solo ven los suyos.",
+      "descriptionMine": "Tus ordenadores. Tú ves lo que graban, y también los propietarios y administradores de esta organización.",
+      "viewLabel": "Vista",
+      "viewAll": "Todos",
+      "viewMine": "Mis dispositivos",
+      "loadFailed": "No se pudieron cargar los dispositivos.",
+      "tryAgain": "Reintentar",
+      "empty": {
+        "allTitle": "Ningún equipo graba aún en {name}",
+        "mineTitle": "Aún no grabas ningún equipo",
+        "body": "Instala Kortix Capture en un equipo e inicia sesión con Kortix, o despliégalo en muchos equipos con un token de inscripción."
+      },
+      "listLabel": "Lista de dispositivos",
+      "noMatch": "Ningún dispositivo tiene este estado.",
+      "col": {
+        "device": "Dispositivo",
+        "person": "Persona",
+        "os": "SO",
+        "status": "Estado",
+        "lastFrame": "Última grabación",
+        "layers": "Graba",
+        "actions": "Acciones"
+      },
+      "layer": {
+        "screen": "Pantalla",
+        "actions": "Acciones",
+        "audio": "Audio"
+      },
+      "frames": "Cada {seconds, number} s · {resolution}",
+      "never": "Nunca",
+      "pausedUntil": "hasta {time}",
+      "apiLink": "API de Kortix Capture",
+      "rollout": "Instalación de empresa",
+      "managedBadge": "Despliegue de TI",
+      "link": "Vincular a una persona…",
+      "relink": "Cambiar la persona vinculada…",
+      "unlinked": "Sin vincular",
+      "getCapture": "Obtener Kortix Capture",
+      "download": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "guide": "Guía de instalación"
+      },
+      "summaryLabel": "Estado de los ordenadores",
+      "summary": {
+        "recording": "{count} grabando",
+        "idle": "{count} inactivos",
+        "attention": "{count, plural, one {# necesita atención} other {# necesitan atención}}",
+        "not_recording": "{count} sin grabar"
+      },
+      "health": {
+        "offline": "Sin informe. Visto por última vez {time}",
+        "stalled": "Grabador bloqueado. Último fotograma {time}",
+        "error": "Grabador detenido. Último fotograma {time}",
+        "never_reported": "Instalado, pero aún no ha informado",
+        "unseen": "Sin verse desde hace más de 7 días",
+        "permission_missing": "Permite la app en los ajustes del sistema",
+        "paused": "Una persona pausó la grabación",
+        "sync_error": "Fallan las subidas",
+        "backlog": "{count, plural, one {# elemento espera} other {# elementos esperan}} para subirse",
+        "behind_version": "Actualiza de {current} a {version}",
+        "asleep": "Suspendido o apagado. Visto por última vez {time}"
+      }
+    },
+    "settings": {
+      "title": "Ajustes de la organización",
+      "description": "{name}: qué graban los equipos y cuánto tiempo lo guarda Kortix.",
+      "layersTitle": "Qué se graba",
+      "layer": {
+        "screen": "Pantalla",
+        "screenHint": "La pantalla, la app y la ventana en primer plano, y el texto en pantalla.",
+        "actions": "Acciones",
+        "actionsHint": "Clics, escritura y atajos, con una captura por clic.",
+        "audio": "Audio",
+        "audioHint": "Micrófono y audio del sistema, con transcripción."
+      },
+      "masking": "Ocultar datos personales",
+      "maskingHint": "Los dispositivos sustituyen nombres, correos, teléfonos, direcciones, números de cuenta y secretos en lo que graban, en el ordenador, antes de guardarlo. Cada ordenador descarga primero un modelo local de 1 GB aprox. y no graba nada hasta que está listo.",
+      "pause": "Pausar la grabación para todos",
+      "pauseHint": "Ningún dispositivo de esta organización graba hasta que lo desactives. Los miembros ven que la organización pausó la grabación.",
+      "exclusions": {
+        "group": {
+          "password_managers": "Gestores de contraseñas",
+          "password_managersHint": "1Password, Bitwarden, Acceso a Llaveros, Contraseñas y similares.",
+          "messaging": "Mensajería",
+          "messagingHint": "Mensajes, WhatsApp, Signal, Telegram y sus notificaciones.",
+          "banking": "Banca y finanzas",
+          "bankingHint": "Apps de banca y finanzas y unos 950 sitios de bancos y fintech."
+        },
+        "orgIntro": "Cada equipo de {org} omite estos elementos antes de grabar, así que nunca se guardan ni se suben. Las personas pueden añadir los suyos en Kortix Capture, pero no quitar estos.",
+        "kindLabel": "Apps o sitios web",
+        "apps": "Apps",
+        "websites": "Sitios web",
+        "searchOrAddApp": "Busca apps o añade una por su ID de app",
+        "searchWebsites": "Buscar o añadir un sitio web",
+        "addApp": "Excluir {app}",
+        "addDomain": "Excluir {domain}",
+        "categories": "Categorías",
+        "appCount": "{count, plural, one {# app} other {# apps}}",
+        "siteCount": "{count, plural, one {# sitio web} other {# sitios web}}",
+        "setByOrg": "Definido por {org}",
+        "privateBrowsing": "Navegación privada",
+        "privateBrowsingDescription": "Ventanas privadas y de incógnito en todos los navegadores compatibles.",
+        "excluded": "Excluidos",
+        "noMatch": "No hay coincidencias.",
+        "noExcludedApps": "No hay ninguna app excluida.",
+        "noExcludedSites": "No hay ningún sitio web excluido."
+      },
+      "remoteDays": "En Kortix",
+      "remoteDaysHint": "Cuánto tiempo conserva Kortix las grabaciones. 0 las conserva sin límite.",
+      "noticeTitle": "Aviso",
+      "noticePlaceholder": "La grabación está activada en esta organización.",
+      "noticeHint": "Opcional. Cada persona lo ve una vez, y de nuevo cuando cambia.",
+      "lastChanged": "Último cambio {time}",
+      "defaultPolicy": "Se aplican los ajustes predeterminados.",
+      "discard": "Descartar cambios",
+      "unsaved": "Cambios sin guardar",
+      "save": "Guardar cambios",
+      "saved": "Ajustes guardados",
+      "saveFailed": "No se pudieron guardar los ajustes",
+      "loadFailed": "No se pudieron cargar los ajustes.",
+      "tryAgain": "Reintentar",
+      "layersHint": "Cada equipo de {org} graba lo que esté activado aquí.",
+      "exclusionsTitle": "No grabar nunca en ningún equipo",
+      "retentionTitle": "Conservación",
+      "pauseTitle": "Pausa",
+      "days": "días",
+      "experimentalTitle": "Experimental",
+      "experimentalHint": "Prueba funciones que aún pueden cambiar.",
+      "privacyControls": "Controles de privacidad",
+      "privacyControlsHint": "Muestra el enmascarado de datos personales y las apps y sitios que ningún equipo graba. Al desactivarlo se ocultan; lo configurado sigue aplicándose.",
+      "maskingTitle": "Enmascarado",
+      "framesTitle": "Fotogramas de pantalla",
+      "interval": "Un fotograma cada",
+      "intervalHint": "Los intervalos más cortos conservan más detalle y usan más CPU y almacenamiento.",
+      "intervalOption": "{seconds, number} s",
+      "resolution": "Resolución",
+      "resolutionHint": "Las pantallas más grandes se reducen a esta altura. 4K conserva los detalles finos, como los planos CAD.",
+      "framesHint": "Sin valor, cada ordenador usa el suyo (una imagen cada 2 s a 1440p). Con valor, todos los ordenadores lo usan y nadie puede cambiarlo. Los clics, la escritura y el desplazamiento se graban con sus propias capturas con cualquier intervalo.",
+      "computerDecides": "Cada ordenador decide"
+    },
+    "area": {
+      "wordmark": "Kortix Capture",
+      "backToKortix": "Volver a Kortix",
+      "kortix": "Kortix",
+      "breadcrumb": "Kortix y Kortix Capture",
+      "signedInAs": "Sesión iniciada como {email}",
+      "switchOrg": "Cambiar de organización",
+      "organizations": "Organizaciones",
+      "nav": {
+        "devices": "Dispositivos",
+        "settings": "Ajustes",
+        "timeline": "Línea de tiempo"
+      },
+      "off": {
+        "title": "Kortix Capture está desactivado en {name}",
+        "bodyAdmin": "Actívalo para grabar los equipos de esta organización. Después instala Kortix Capture en cada equipo o despliégalo en muchos a la vez.",
+        "bodyMember": "Pide a un propietario o administrador de esta organización que lo active.",
+        "turnOn": "Activar Kortix Capture",
+        "failed": "No se pudo activar Kortix Capture"
+      },
+      "loadFailed": "No se pudo abrir Kortix Capture.",
+      "tryAgain": "Reintentar"
+    },
+    "account": {
+      "title": "Kortix Capture",
+      "label": "Kortix Capture está activado",
+      "description": "Los equipos graban en esta organización. Cada persona ve sus grabaciones; propietarios y administradores ven las de todos.",
+      "descriptionReadOnly": "Un propietario o administrador de esta organización activa o desactiva Kortix Capture.",
+      "failed": "No se pudo cambiar Kortix Capture."
+    },
+    "api": {
+      "title": "API de Kortix Capture",
+      "description": "Lleva tus datos de Capture a scripts, agentes o cualquier otra cosa por HTTPS. La API devuelve lo que puedes ver aquí.",
+      "baseUrl": "URL base",
+      "auth": "Autenticación",
+      "authBody": "Envía una clave de API de Kortix como token bearer. La clave actúa en tu nombre.",
+      "createKey": "Crear una clave de API",
+      "endpoints": "Endpoints de datos",
+      "endpoint": {
+        "account": "Kortix Capture para esta organización: activado o no, y lo que puedes ver y cambiar",
+        "search": "Busca texto en pantalla, acciones y transcripciones",
+        "timeline": "Lo que grabó un dispositivo: tramos de apps, fotogramas, acciones, líneas de transcripción",
+        "frames": "Un fotograma con su texto en pantalla; una URL de vídeo firmada",
+        "days": "Los días en que una persona grabó, primero los más recientes",
+        "devices": "Dispositivos y su estado en vivo"
+      },
+      "example": "Ejemplo",
+      "scopeOwn": "La API devuelve solo tus propias grabaciones.",
+      "scopeAll": "Tienes capture.read_all: la API devuelve todos los miembros de esta organización. Cada lectura de otro miembro queda en el registro de auditoría.",
+      "docs": "Documentación de la API",
+      "done": "Listo"
+    },
+    "rollout": {
+      "title": "Instalar en los equipos de la empresa",
+      "description": "TI instala Kortix Capture con un token de inscripción. Cada equipo graba solo; nadie inicia sesión.",
+      "tokensTitle": "Tus tokens de inscripción",
+      "tokensEmpty": "Aún no hay ningún token de inscripción.",
+      "guide": "Guía de configuración para TI",
+      "done": "Listo",
+      "newTitle": "Nuevo token de inscripción",
+      "name": "Nombre",
+      "namePlaceholder": "Portátiles de ingeniería",
+      "for": "Para",
+      "forHint": "Cualquiera: vinculas los equipos después. Una persona: todos los equipos se vinculan a ella.",
+      "forAnyone": "Cualquiera de la empresa",
+      "forPerson": "Para {person}",
+      "domains": "Dominios de correo",
+      "domainsHint": "Solo personas que inician sesión en su equipo con un correo de estos dominios. Vacío: cualquiera.",
+      "limit": "Límite de equipos",
+      "limitHint": "Un límite por si el token se filtra. Vacío: sin límite.",
+      "expires": "Válido durante",
+      "never": "Nunca",
+      "days": "{days, plural, one {# día} other {# días}}",
+      "approval": "Aprobar cada equipo",
+      "approvalHint": "Cada equipo nuevo espera a que lo apruebes en Dispositivos antes de grabar.",
+      "create": "Crear token",
+      "createFailed": "No se pudo crear el token",
+      "createdTitle": "{name}: copia el token ahora",
+      "createdBody": "Kortix muestra este token una sola vez. Quien lo tenga puede inscribir equipos en esta organización hasta que lo revoques.",
+      "installTitle": "Instalar en cada equipo",
+      "installBody": {
+        "windows": "Ejecútalo como administrador o distribúyelo con Intune o directiva de grupo. El equipo empieza a grabar en el próximo inicio de sesión.",
+        "macos": "Ejecútalo en Terminal o distribuye el paquete con tu MDM. La persona permite la grabación de pantalla una vez, salvo que un perfil PPPC la conceda.",
+        "linux": "Ejecútalo en un escritorio con X11. El equipo empieza a grabar en el próximo inicio de sesión. Wayland aún no es compatible."
+      },
+      "usage": "{count, plural, one {# equipo} other {# equipos}}",
+      "usageOf": "{count} de {max} equipos",
+      "expired": "Caducó {time}",
+      "expiresIn": "Caduca {time}",
+      "noExpiry": "No caduca",
+      "state": {
+        "active": "Activo",
+        "revoked": "Revocado",
+        "expired": "Caducado"
+      },
+      "approvalBadge": "Aprobar cada uno",
+      "anyDomain": "Cualquier dominio",
+      "revoke": "Revocar",
+      "revokeTitle": "¿Revocar {name}?",
+      "revokeBody": "Los equipos nuevos ya no pueden inscribirse con él. Los equipos que inscribió siguen grabando; revócalos en Dispositivos.",
+      "revoked": "Token revocado",
+      "revokeFailed": "No se pudo revocar el token",
+      "copy": "Copiar",
+      "waitingTitle": "Esperando aprobación",
+      "waitingBody": "Estos equipos tienen un token de inscripción válido y esperan a un administrador: el token pide aprobar cada equipo, o un administrador los revocó. No graban nada hasta que los apruebes.",
+      "col": {
+        "person": "Persona de Windows",
+        "computer": "Equipo",
+        "reason": "Por qué espera",
+        "lastSeen": "Visto por última vez",
+        "actions": "Acciones"
+      },
+      "unnamed": "Equipo sin nombre",
+      "reason": {
+        "approval_required": "El token aprueba cada equipo, un administrador lo revocó, o pidió un token nuevo sin el actual (una reinstalación)."
+      },
+      "deny": "Rechazar",
+      "approve": "Aprobar",
+      "denyTitle": "¿Rechazar a {person} en este equipo?",
+      "denyBody": "El equipo deja de preguntar y no graba nada. Si ya graba, su dispositivo se revoca al instante.",
+      "denied": "Equipo rechazado",
+      "decideFailed": "No se pudo guardar la decisión",
+      "approveTitle": "Aprobar este equipo",
+      "approveBody": "{computer} ({person}) empieza a grabar en menos de un minuto. Vincúlalo a un miembro ahora o más tarde en Dispositivos.",
+      "member": "Miembro",
+      "cancel": "Cancelar",
+      "approved": "Aprobado. El equipo se inscribe en menos de un minuto.",
+      "noOne": "Sin vincular",
+      "linkTitle": "Vincular {name} a una persona",
+      "linkBody": "A partir de ahora el equipo graba para esta persona. Lo que grabó sin vincular pasa a ella; lo que grabó para una persona anterior sigue siendo suyo.",
+      "linked": "Dispositivo vinculado",
+      "unlinked": "Dispositivo desvinculado",
+      "linkFailed": "No se pudo cambiar la persona vinculada",
+      "save": "Guardar",
+      "domainsPlaceholder": "corp.example",
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux"
+      },
+      "nameHint": "Para reconocerlo, por ejemplo el equipo.",
+      "showRevoked": "Mostrar revocados ({count})",
+      "hideRevoked": "Ocultar revocados"
+    }
   }
 }

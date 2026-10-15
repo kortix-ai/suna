@@ -7,6 +7,7 @@
  */
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { escapeLike } from '../shared/sql-like';
+import { LEGACY_PAID_PLAN_KEYS } from '../billing/services/tier-facts';
 import type { AdminAccountsListQuery } from './accounts-query';
 import type { AdminProjectsListQuery } from './projects-query';
 
@@ -53,7 +54,11 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
     const { adminAccountsSearchCondition } = await import('./accounts-search');
     conds.push(adminAccountsSearchCondition(search));
   }
-  if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
+  // A stored legacy key is a `credits` row until the tier rewrite runs.
+  if (tierValues.length) {
+    const stored = tierValues.flatMap((t) => (t === 'credits' ? ['credits', ...LEGACY_PAID_PLAN_KEYS] : [t]));
+    conds.push(inArray(creditAccounts.tier, stored));
+  }
   // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
   if (paidOnly) {
     conds.push(and(isNotNull(creditAccounts.tier), notInArray(creditAccounts.tier, [...UNPAID_TIERS])));
@@ -90,14 +95,14 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       provider: creditAccounts.provider,
       planType: creditAccounts.planType,
       stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-      // Read by resolveBillingFromRow's per-seat self-heal (a live seat
-      // subscription outranks a stale non-paid `tier`). Not rendered.
       stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-      billingModel: creditAccounts.billingModel,
+      planMonthlyUsd: creditAccounts.planMonthlyUsd,
+      // Read only by planMonthlyUsd()'s fallback for a per-seat row not yet backfilled.
       seatCount: creditAccounts.seatCount,
       trialStatus: creditAccounts.trialStatus,
       trialTier: creditAccounts.trialTier,
       trialSeats: creditAccounts.trialSeats,
+      trialMonthlyUsd: creditAccounts.trialMonthlyUsd,
       trialStartedAt: creditAccounts.trialStartedAt,
       trialEndsAt: creditAccounts.trialEndsAt,
       trialNote: creditAccounts.trialNote,

@@ -1,0 +1,15 @@
+[Unit]
+Description=Kortix Capture machine service
+Documentation=https://kortix.com
+After=network-online.target systemd-logind.service
+Wants=network-online.target
+
+[Service]
+# Reads the root-only /etc/kortix/capture.json and enrolls each person who uses
+# a graphical session. It never records: kortix-capture.service (a user unit) does.
+ExecStart=/usr/bin/kortix-capture machine run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

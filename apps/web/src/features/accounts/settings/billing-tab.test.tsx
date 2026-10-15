@@ -29,6 +29,9 @@ mock.module('@/hooks/billing', () => ({
   useCancelSubscription: () => ({ mutate: () => {}, isPending: false }),
   useReactivateSubscription: () => ({ mutate: () => {}, isPending: false }),
 }));
+mock.module('@/features/billing/use-change-credit-plan', () => ({
+  useChangeCreditPlan: () => ({ change: () => {}, isPending: false }),
+}));
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => billingEnabled }));
 mock.module('@/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
@@ -37,28 +40,74 @@ mock.module('@/stores/billing-account-context', () => ({
 
 const { BillingTab } = await import('./billing-tab');
 
-// The expected copy is spelled out per case — the "owed" suffix included — so
-// the test never branches on the balance itself (billing-source-rules forbids a
-// balance-vs-literal comparison outside the decision layer, tests included).
-const cases: [number, string, string][] = [
-  [2, '$2.00', '200 credits'],
-  [0, '$0.00', '0 credits'],
-  [-1, '-$1.00', '100 credits owed'],
-];
-for (const [balance, dollars, creditsLine] of cases) {
-  test(`Plan shows the free account's ${balance} dollar balance before checkout`, () => {
-    total = balance;
+/**
+ * The Plan pane of an account with no paid subscription: the plan card names
+ * Free, shows its 200 credits, and offers the tier select with a Subscribe
+ * action. The wallet (balance, spend) belongs to the Credits pane and the
+ * wallet-first view, so the Plan pane must not print it.
+ */
+describe('BillingTab — plan pane without a paid subscription', () => {
+  function freeState(overrides: Record<string, unknown> = {}) {
+    return {
+      credits: { total: 2 },
+      can_manage_billing: true,
+      plan: { key: 'free', family: 'free', label: 'Free', sublabel: null, monthly_usd: null },
+      subscription: { status: 'none' },
+      ...overrides,
+    };
+  }
+
+  function renderPlan() {
+    return renderToStaticMarkup(
+      createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true, showWallet: false }),
+    );
+  }
+
+  test('shows the Free plan with its monthly credits and the tier select on the most popular tier', () => {
     billingEnabled = true;
-    accountStateData = null;
-    const html = renderToStaticMarkup(createElement(BillingTab, {
-      returnUrl: '/settings/plan', isActive: true, showWallet: false,
-    }));
-    expect(html).toContain('Available balance');
-    expect(html).toContain(`>${dollars}</p>`);
-    expect(html).toContain(`>${creditsLine}</p>`);
-    expect(html).toContain('Subscribe');
+    accountStateData = freeState();
+    const html = renderPlan();
+    expect(html).toContain('Current plan');
+    expect(html).toContain('>Free</p>');
+    expect(html).toContain('200 credits / month');
+    expect(html).toContain('Monthly credits');
+    expect(html).toContain('Subscribe for $200 / month');
+    expect(html).toContain('20,000 credits / month');
+    expect(html).not.toContain('Available balance');
   });
-}
+
+  test('the tier select marks the most popular tier and estimates agent hours', () => {
+    accountStateData = freeState();
+    const html = renderPlan();
+    expect(html).toContain('Most popular');
+    expect(html).toContain('≈ 1,830 agent-computer hours a month.'); // agentHoursForCredits(20_000)
+    expect(html).not.toContain('Starter');
+  });
+
+  test('a member who may not change billing sees who to ask, not the picker', () => {
+    accountStateData = freeState({ can_manage_billing: false });
+    const html = renderPlan();
+    expect(html).toContain('Only account owners can change the plan.');
+    expect(html).not.toContain('Subscribe for');
+  });
+
+  test('billing off renders no plan changer', () => {
+    billingEnabled = false;
+    accountStateData = freeState();
+    const html = renderPlan();
+    expect(html).not.toContain('Subscribe for');
+    billingEnabled = true;
+  });
+
+  test('wallet-first view keeps the balance and adds the plan changer under it', () => {
+    total = 2;
+    accountStateData = freeState();
+    const html = renderToStaticMarkup(
+      createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
+    );
+    expect(html).toContain('Subscribe for');
+  });
+});
 
 /**
  * The cancel control — the piece that was missing when the dogfood journey
@@ -67,15 +116,15 @@ for (const [balance, dollars, creditsLine] of cases) {
  * offered the action, so "cancel anytime" was a promise the app could not keep.
  *
  * These cases pin the four account states the control renders for, on the
- * SAME pane a paying customer sees (a subscribed Team account, `showWallet:
+ * SAME pane a paying customer sees (a subscribed Credits account, `showWallet:
  * false`, billing enabled).
  */
 describe('BillingTab — cancel control on a subscribed account', () => {
   function subscribedState(overrides: Record<string, unknown> = {}) {
     return {
       credits: { total: 100 },
-      billing_model: 'per_seat',
       can_manage_billing: true,
+      plan: { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: 100 },
       subscription: {
         status: 'active',
         subscription_id: 'sub_synthetic',
@@ -92,6 +141,16 @@ describe('BillingTab — cancel control on a subscribed account', () => {
       returnUrl: '/settings/plan', isActive: true, showWallet: false,
     }));
   }
+
+  test('an active subscription shows its monthly amount and offers Update beside Cancel', () => {
+    accountStateData = subscribedState();
+    const html = renderPlan();
+    expect(html).toContain('>Credits</p>');
+    expect(html).toContain('$100/mo');
+    expect(html).toContain('10,000 credits / month');
+    expect(html).toContain('Update plan');
+    expect(html).toContain('Cancel subscription');
+  });
 
   test('an active subscription offers Cancel subscription beside Manage billing', () => {
     accountStateData = subscribedState();

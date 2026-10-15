@@ -1,0 +1,217 @@
+---
+title: Capture
+description: Record each member's screen, input actions and audio 24/7 into a searchable timeline that belongs to the Kortix account.
+---
+
+Kortix Capture records a member's own computer 24/7:
+
+- the screen: video, the app, the window title, the URL and the on-screen text;
+- input actions (clicks, typing) with a screenshot of each;
+- audio, with a transcript, when the account's policy turns it on.
+
+Kortix indexes the recordings into one timeline per person. You can rewatch
+any moment and search all of it. Capture v1 is raw capture: it records,
+uploads and indexes. It does no further processing.
+
+Capture belongs to the **Kortix account** (your organization), not to a
+project. One account has one Capture workspace: one switch and one policy.
+Devices sign in to the account.
+
+## Turn Capture on
+
+A person with the `capture.manage` permission turns Capture on for the
+account. Account owners and admins have it. Capture is off by default. While
+it is off:
+
+- every Capture route answers `403` with `code: "capture_disabled"`;
+- a device cannot sign in or get storage credentials;
+- Kortix indexes nothing new.
+
+Everything about Kortix Capture lives under `/capture` in Kortix. Open
+**Kortix Capture** (command palette, or `/capture`), then **Settings**
+(owners and admins), and turn on **Kortix Capture** for the organization. The
+same page holds the organization's rules: what computers record, how long
+Kortix keeps it, an account-wide pause and an optional notice.
+
+From the API: `PATCH /v1/accounts/<account_id>/capture` with `{"enabled": true}`.
+From TypeScript: `kortix.capture.account(accountId).workspace.setEnabled(true)`.
+
+## Install Kortix Capture
+
+Kortix Capture is its own app, installed apart from the Kortix app. It runs in
+the background on Windows, macOS and Linux, shows an icon in the notification
+area (the menu bar on macOS), and records into one Kortix account. A computer
+connects in one of two ways:
+
+| Way | For | How |
+|---|---|---|
+| Sign in with Kortix | one person on their own computer | the person approves the computer in the browser |
+| Enrollment token | IT, for many computers at once | IT installs with a token; nobody signs in. See [IT rollout](/docs/capture/rollout) |
+
+Download the installer for the computer: [Windows](/download/capture/windows)
+(`.msi`), [macOS](/download/capture/macos) (`.pkg`) or
+[Linux](/download/capture/linux) (`.deb`).
+
+The installers are attached to every Kortix release, under the same version.
+Each one is also on the
+[releases page](https://github.com/kortix-ai/suna/releases/latest) with its
+checksums in `CAPTURE-SHA256SUMS`. Install a newer installer over the old one to
+update; the configuration stays.
+
+To sign in with Kortix:
+
+1. Install Kortix Capture and open it from the Kortix Capture icon.
+2. Choose **Sign in with Kortix…**. The browser opens `/capture/authorize`
+   with a code. Check that the code matches, then choose the account. Only
+   accounts with Capture on are listed.
+3. On macOS, grant the permissions when asked: Screen Recording for the
+   screen, Accessibility and Input Monitoring for actions, Microphone for
+   audio. Windows and Linux ask for none.
+
+Without the icon, the same sign-in is
+`kortix-capture sync setup --provider kortix --issuer <your Kortix API>`.
+
+The computer records into that account as you, 24/7, and uploads every
+finished item. It gets a revocable device token and, from it, short-lived
+storage credentials for its own folder (`orgs/<account_id>/<device_id>/`) and
+read access to the policy. Signing in again on the same computer reuses the
+device. Forgetting a time range on the device removes it from Kortix too.
+
+## Link a computer to a person
+
+Every computer is a device in **Capture → Devices**. A computer you signed in
+records for you. A computer IT enrolled with a personal token records for the
+member the token names. A computer IT enrolled with a company token records for
+the account, **linked to no one**. That is a normal state: link it to a person
+only when you want it in their timeline.
+
+To link or change it, choose **Link to a person…** on the device
+(`capture.manage`). From then on the computer records for that person. What it
+recorded linked to no one moves to them within minutes; what it recorded for
+an earlier person stays theirs. From the API:
+`PUT /v1/accounts/<account_id>/capture/devices/<device_id>/link` with
+`{"user_id": "<member>"}`, or `{"user_id": null}` to unlink.
+
+Only people with `capture.read_all` see a computer linked to no one. Every
+read of it writes `capture.device_view` to the audit log. An agent never reads
+it.
+
+## Who sees what
+
+Access is Kortix IAM. Capture has no roles of its own.
+
+| Who | Reads | Writes |
+|---|---|---|
+| Every member | their own devices and timeline | revokes their own devices |
+| `capture.read_all` | every member's devices and timeline, and account-wide search | nothing |
+| `capture.manage` | the workspace and the policy | the switch, the policy, revokes any device |
+| An agent | only the timeline of the person its private session acts for | nothing |
+
+Account owners and admins have `capture.read_all` and `capture.manage` by
+default. To give either one to someone else, add it to a custom role
+(**Account → Roles**, area **Capture**). A Kortix API key acts as the person
+who made it, with the same permissions.
+
+Every read of another member's data writes `capture.member_view` to the
+account's audit log. An account-wide read (all devices, account search) writes
+`capture.account_view`. An agent's read writes `capture.agent_read`. Turning
+Capture on or off writes `capture.enable` or `capture.disable`.
+
+## The policy
+
+One policy applies to every device of the account:
+
+- layers: screen, actions, audio (audio is off until someone turns it on);
+- an account-wide pause;
+- **Screen frames**: one frame every 0.5 to 10 s, and the resolution (720p to
+  4K). Left on **Each computer decides**, a computer uses its own (one frame
+  every 2 s, 1440p). Set, every computer uses it and shows it locked. Clicks,
+  typing and scrolling are recorded with their own screenshots at any interval;
+  pick 1 s when screens change fast without input, such as live dashboards;
+- how long Kortix keeps recordings (`remote_days`);
+- an optional notice: each person sees it once, and again when its text changes;
+- **Experimental → Privacy controls** (off by default) shows two more:
+  personal-data masking on the computer (each computer first downloads a ~1 GB
+  model), and the apps and websites no computer records. Each computer skips
+  those before it records, so they are never saved or uploaded; a person can
+  add their own in Kortix Capture but cannot remove these. Turning the switch
+  off hides the controls; what is set keeps applying.
+
+Each computer chooses how long it keeps recordings after uploading them
+(7 days by default).
+
+Kortix publishes the policy to `orgs/<account_id>/policy.json` in the capture
+store, where every device reads it within a minute. A device cannot write a
+policy of its own. Kortix also enforces the layers when it indexes: a device
+never widens the policy.
+
+A device records every connected display, the active one (the display with
+the focused window) first. Each display is its own recorded item; the
+timeline names the display of every item and frame.
+
+## Kortix Capture API
+
+Everything Capture records is readable with a Kortix API key, from a script, a
+notebook, a BI tool or an agent.
+
+**Auth.** Create a key in Kortix (Settings → API keys) or with
+`POST /v1/accounts/tokens`. Send it as `Authorization: Bearer kortix_pat_…`.
+
+**Base URL.** `https://<your Kortix API>/v1/accounts/<account_id>/capture`.
+`GET /v1/accounts` lists your accounts.
+
+**Scoping.** Every route reads your own data by default. With
+`capture.read_all`, pass `user_id=<member>` (audited as `capture.member_view`)
+or, where the route takes it, `scope=account` for every member (audited as
+`capture.account_view`). A device linked to no one is read by its `device_id`
+without `user_id` (`capture.read_all`, audited as `capture.device_view`);
+without that permission the same request returns only your own rows of it. A
+read outside your permissions answers `403`
+`capture_forbidden`. While Capture is off, every route answers `403`
+`capture_disabled`.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` |
+| `PATCH /` `{ "enabled": true }` | the same; needs `capture.manage` |
+| `GET enrollment-tokens` · `POST enrollment-tokens` · `DELETE enrollment-tokens/<token_id>` | the IT rollout tokens; needs `capture.manage` (see [IT rollout](/docs/capture/rollout)) |
+| `GET enrollments?status=pending` · `POST enrollments/<id>/approve` `{ "user_id" }` · `POST enrollments/<id>/deny` | computers that wait for a decision; needs `capture.manage` |
+| `PUT devices/<device_id>/link` `{ "user_id" }` | links the device to a member, or unlinks it with `null`; needs `capture.manage` |
+| `GET devices?user_id=&scope=account` | devices with their live state: what the device last reported (for example `recording`, `paused`), or `offline` after 2 minutes of silence |
+| `DELETE devices/<device_id>` | revokes the device: its token stops working at once |
+| `GET devices/<device_id>/assets/<name>` | a signed URL of one action screenshot (5 minutes) |
+| `GET policy` · `PUT policy` `{ "policy": { … } }` | the account policy; writing needs `capture.manage` |
+| `GET days?tz=Europe/Berlin&user_id=&device_id=` | the days with recordings, newest first, in a time zone |
+| `GET timeline?day=&from=&to=&user_id=&device_id=&display_id=` | `{ displays, focus, runs, chunks }`: the displays seen, which display held the focus when, app and window runs (of the focused display, or of `display_id`), and the indexed items, in a window of at most 31 days |
+| `GET timeline/items?from=&to=&user_id=&device_id=&display_id=` | `{ frames, actions, audio }`, oldest first, at most 500 of each; `display_id=all` for every display |
+| `GET search?q=refund or invoice&kinds=screen,actions,audio&app=&from=&to=&limit=20&scope=account` | hits, newest first: `{ kind, id, ts, user_id, device_id, chunk_id, display_id, display_name, app, title, url, snippet }` (one screen hit per chunk and window; `limit` up to 100) |
+| `GET frames/<frame_id>` | `{ frame, video: { url, expires_at, offset_ms }, screenshot }`: the full on-screen text, the 1 fps chunk video to seek, the nearest action screenshot (signed URLs, 5 minutes) |
+| `GET chunks/<chunk_id>/media` | signed URLs of an item's video or audio |
+
+`user_id` resolves to a name and email through
+`GET /v1/accounts/<account_id>/members`, which every member of the account may
+read.
+
+Example:
+
+```bash
+curl -s -H "Authorization: Bearer $KORTIX_API_KEY" \
+  "https://<your Kortix API>/v1/accounts/$ACCOUNT/capture/search?q=invoice&limit=5"
+```
+
+The TypeScript SDK wraps the same routes: `kortix.capture.account(accountId)`
+(see [SDK → reference](/docs/sdk/reference)).
+
+## Agents in a session
+
+An agent in a member's private session reads that member's timeline through
+`/v1/capture/me/search`, `/v1/capture/me/timeline` and
+`/v1/capture/me/frames/<frame_id>`, or with `kortix capture search`,
+`timeline` and `frame`. It reads only that person, in the session's account. A
+trigger run or a shared session acts for no person and gets `403`
+`capture_no_human`.
+
+## Build on it
+
+See [SDK → reference](/docs/sdk/reference) (`kortix.capture`) for the client
+surface and the React hooks.
