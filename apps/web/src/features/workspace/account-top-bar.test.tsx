@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { createElement, type ReactNode } from 'react';
+import { type ReactNode, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { AccountMenuButton } from './account-menu-button';
@@ -22,7 +22,9 @@ describe('AccountTopBar notification bell', () => {
   test('the bell renders before the account menu', async () => {
     const code = await source();
     expect(code).toContain('<NotificationBell />');
-    expect(code.indexOf('<NotificationBell />')).toBeLessThan(code.indexOf('<AccountMenuButton />'));
+    expect(code.indexOf('<NotificationBell />')).toBeLessThan(
+      code.indexOf('<AccountMenuButton />'),
+    );
   });
 
   test('the bell is a client-only chunk', async () => {
@@ -40,7 +42,8 @@ describe('AccountTopBar notification bell', () => {
  * console's header. The capability header and the session header have rendered
  * or browser owners of their own: `project-page-header.test.tsx` renders the
  * chip into the header's markup, and `tests/e2e/specs/52-account-chip-ui.spec.ts`
- * drives the session view and `/admin` in a real browser.
+ * drives the session view (exactly one account control, in a real browser);
+ * `tests/e2e/specs/09-admin-console.spec.ts` drives `/admin`.
  */
 const passthrough = ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) =>
   createElement('div', props, children);
@@ -54,14 +57,30 @@ mock.module('@/features/providers/auth-provider', () => ({
 }));
 mock.module('next/navigation', () => ({
   usePathname: () => '/admin',
+  // Extra navigation exports the session header's transitive tree imports.
+  useParams: () => ({}),
+  useSearchParams: () => new URLSearchParams(),
+  useSelectedLayoutSegments: () => [],
+  useSelectedLayoutSegment: () => null,
+  useLinkStatus: () => ({ pending: false }),
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
 }));
 mock.module('next/link', () => ({
   // Faithful for static markup: the real Link spreads every non-Link prop
   // onto the anchor (tests count data-testid on rendered links) and consumes
   // its own navigation props.
-  default: ({ href, children, prefetch, replace, scroll, shallow, locale, legacyBehavior, passHref, ...rest }:
-    { href: string; children?: ReactNode; [key: string]: unknown }) =>
+  default: ({
+    href,
+    children,
+    prefetch,
+    replace,
+    scroll,
+    shallow,
+    locale,
+    legacyBehavior,
+    passHref,
+    ...rest
+  }: { href: string; children?: ReactNode; [key: string]: unknown }) =>
     createElement('a', { ...rest, href }, children),
 }));
 mock.module('@/components/ui/sidebar', () => ({
@@ -117,5 +136,28 @@ describe('AccountTopBar app-wide wiring, rendered', () => {
     // owns the account surface — the marker the shell's suppression rule reads.
     expect(html).toContain('data-kx-account-owner');
     expect(html).toContain('kx-titlebar-row');
+  });
+
+  test('the session header carries the embedded chip in its titlebar row', async () => {
+    const { SessionSiteHeader } = await import('@/features/session/header/session-site-header');
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const client = new QueryClient({
+      // Static render only: no query may fetch, so every hook stays pending.
+      defaultOptions: { queries: { enabled: false, retry: false }, mutations: { retry: false } },
+    });
+    const html = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(SessionSiteHeader, { sessionId: 'probe-session', sessionTitle: 'Probe' }),
+      ),
+    );
+    expect(html).toContain('aria-label="Logged in as Grace Hopper"');
+    // Embedded, so the shell's floating corner stands down while this header
+    // owns the account surface; the corner serves when the header has not
+    // mounted yet (spec 52 drives that boot state in a real browser).
+    expect(html).toContain('data-kx-account-owner');
+    // The chip trails the row (after the dev tools), not the leading cluster.
+    expect(html.indexOf('data-kx-account-owner')).toBeGreaterThan(html.indexOf('aria-label="Developer tools"'));
   });
 });
