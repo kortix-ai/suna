@@ -34,6 +34,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Home: 'text3a78695388b3',
   'Internal Browser': 'text875c0e464942',
   'Invite members': 'texte85663498c96',
+  'Kortix Capture': 'texta67e3dc962e8',
   'LLM Providers': 'textf9e89f3cc0c8',
   'Light Theme': 'textceab50a6f7f4',
   'Log Out': 'textd57d48b71020',
@@ -82,6 +83,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textd440cfc72edc',
   'browser chromium agent viewport automation live stream': 'texta019a77aa6df',
   'browser preview app port localhost session': 'textb597cb0305b9',
+  'capture recording screen devices install enrollment': 'textf12162aa6ac0',
   'channels channel slack teams discord email agentmail inbox inbound messaging':
     'text508121aba2d4',
   'connectors connections pipedream mcp openapi postman collections connector': 'text40f61622c4a4',

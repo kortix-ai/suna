@@ -1,6 +1,6 @@
 /**
  * Integration test (real local DB): the one-plan data migration
- * (20261015003246450_billing_admins_trials_from_demo) carries every retired
+ * (20261015021234612_billing_admins_trials_from_demo) carries every retired
  * flag over without changing what an account can do. The test re-runs the
  * migration file on synthetic rows; each step is guarded, so a second run is
  * safe on the already-migrated database.
@@ -14,7 +14,7 @@ import { db } from '../shared/db';
 
 const MIGRATION = resolve(
   import.meta.dir,
-  '../../../../packages/db/migrations/20261015003246450_billing_admins_trials_from_demo.sql',
+  '../../../../packages/db/migrations/20261015021234612_billing_admins_trials_from_demo.sql',
 );
 const ids = Array.from({ length: 7 }, () => crypto.randomUUID());
 const [column, jsonbExpiring, jsonbFalse, jsonbExpired, enterprise, modelsColumn, demo] = ids as [

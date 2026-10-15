@@ -21,7 +21,10 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
-CREATE TABLE "kortix"."enterprise_contracts" (
+-- IF NOT EXISTS: this file was first committed as 20261015003246449 on the
+-- enterprise-plans branch; a local database that ran that name already has
+-- the table. No shared environment ever ran it.
+CREATE TABLE IF NOT EXISTS "kortix"."enterprise_contracts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"account_id" uuid NOT NULL,
 	"status" text NOT NULL,
@@ -43,10 +46,10 @@ CREATE TABLE "kortix"."enterprise_contracts" (
 	CONSTRAINT "enterprise_contracts_collection_check" CHECK (collection IN ('checkout', 'invoice', 'manual'))
 );
 --> statement-breakpoint
-CREATE INDEX "idx_enterprise_contracts_account" ON "kortix"."enterprise_contracts" USING btree ("account_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_enterprise_contracts_one_active" ON "kortix"."enterprise_contracts" USING btree ("account_id") WHERE status = 'active';--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_enterprise_contracts_one_offered" ON "kortix"."enterprise_contracts" USING btree ("account_id") WHERE status = 'offered';--> statement-breakpoint
-CREATE INDEX "idx_enterprise_contracts_stripe_subscription" ON "kortix"."enterprise_contracts" USING btree ("stripe_subscription_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_enterprise_contracts_account" ON "kortix"."enterprise_contracts" USING btree ("account_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_enterprise_contracts_one_active" ON "kortix"."enterprise_contracts" USING btree ("account_id") WHERE status = 'active';--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_enterprise_contracts_one_offered" ON "kortix"."enterprise_contracts" USING btree ("account_id") WHERE status = 'offered';--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_enterprise_contracts_stripe_subscription" ON "kortix"."enterprise_contracts" USING btree ("stripe_subscription_id");--> statement-breakpoint
 
 -- Hand-edited below (pattern from 20261014160044884_config_release_heads.sql):
 -- contract amounts are billing data, closed to the browser roles.
