@@ -164,12 +164,12 @@ describe('isDaytonaStateTransitionConflict', () => {
     ).toBe(false);
   });
 
-  test('rejects a generic 409 without the Daytona shape', () => {
+  test('classifies a plain 409 carrying the Daytona message, even without the DaytonaConflictError name', () => {
     const err = new Error('Sandbox state change in progress') as Error & { statusCode?: number };
     err.statusCode = 409;
-    // The message alone is not enough on a bare chain without a Daytona-shaped
-    // error… but a 409 status IS present here, so this shape IS classified —
-    // the message is Daytona-specific and a 409 carries it.
+    // The contract this pins: the conflict SHAPE (a 409 status) plus the exact
+    // Daytona message suffice — the error does not also need the
+    // `DaytonaConflictError` name to be classified as the expected conflict.
     expect(isDaytonaStateTransitionConflict(err)).toBe(true);
   });
 
