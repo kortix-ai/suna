@@ -1,5 +1,5 @@
 {
-  "source_hash": "3708359b02c8a3e8efa9b30bc95f8c91ca5beac216332895a39a362982cbf38b",
+  "source_hash": "f72ef851d3f51f1564a10410373f9a1dd27b11add6476363b5023670999d813a",
   "diff_files": [
     "apps/api/src/__tests__/integration-feature-flag-toggle-http.test.ts",
     "apps/api/src/__tests__/unit-feature-flags.test.ts",
@@ -16,15 +16,22 @@
     "apps/cli/src/command-table.ts",
     "apps/cli/src/commands/apps-deploy.ts",
     "apps/cli/src/commands/projects.ts",
+    "apps/tui/SPEC.md",
+    "apps/tui/scripts/live-app.tsx",
+    "apps/web/content/docs/api.mdx",
     "apps/web/content/docs/apps.mdx",
+    "apps/web/content/docs/clients.mdx",
+    "apps/web/content/docs/index.mdx",
     "apps/web/content/docs/project/agents.mdx",
     "apps/web/content/docs/project/index.mdx",
     "apps/web/content/docs/project/manifest.mdx",
+    "apps/web/content/docs/sdk/reference.mdx",
     "apps/web/src/features/apps/app-preview-pool-loader.tsx",
     "apps/web/src/features/apps/apps-feature-gate.test.ts",
     "apps/web/src/features/apps/apps-view.tsx",
     "apps/web/src/features/workspace/capabilities/agents/agent-apps-grant.test.ts",
     "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
+    "apps/web/src/features/workspace/customize/sections/view/agent-editor-access-fields.tsx",
     "apps/web/src/features/workspace/customize/sections/view/agent-editor.tsx",
     "apps/web/src/features/workspace/project-sidebar/footer/project-apps-nav.tsx",
     "apps/web/src/features/workspace/project-sidebar/nav-row-meta.tsx",
@@ -50,6 +57,7 @@
     "packages/sdk/src/react/use-feature-flag.test.ts",
     "packages/sdk/src/react/use-feature-flag.ts",
     "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/general-knowledge-worker/skills/web-publishing-and-deployments/SKILL.md",
     "packages/starter/templates/managed/skills/kortix-apps/SKILL.md",
     "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
     "packages/starter/templates/managed/skills/kortix-system/references/kortix/apps.md",
@@ -62,13 +70,13 @@
     "tests/src/flows/connectors.flow.ts",
     "tests/src/flows/experimental.flow.ts"
   ],
-  "diff_hash": "7afb0d6d2ba86a8652469f3ad7a58a4041ecad1870953f0516809e2713d56eac",
-  "head": "bde0e346f261c694b20250059531ce9baf716aea",
-  "passed": true,
+  "diff_hash": "2555eff2ad08e0cfdc6f2297abbc53f5c194535cf2d880e4d33dfbfbb972b118",
+  "head": "40dbe18a9af8e3c9979dd5729338e94cfdda4d15",
+  "passed": false,
   "lanes": {
-    "core": "pass",
+    "core": "fail",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T10:41:57.092Z"
+  "at": "2026-10-15T12:53:37.170Z"
 }
