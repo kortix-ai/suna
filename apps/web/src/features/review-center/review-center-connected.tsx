@@ -14,7 +14,6 @@ import { useTranslations } from '@/i18n/use-translations';
  * prototype.
  */
 
-import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
 import { useProjectContext } from '@/features/project-files/context';
 import { useChangeRequestRecovery } from '@/features/project-files/hooks/use-change-request-recovery';
@@ -222,11 +221,12 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
                 errorToast(tI18nComplete.raw('text3923e8556e27'), {
                   description: tI18nComplete.raw('text3d33bdd92001'),
                   duration: CONFLICT_TOAST_MS,
-                  button: (
-                    <Button size="sm" onClick={() => recoverChange(item, conflicts)}>
-                      {tI18nComplete.raw('texte8a1fa10c8d2')}
-                    </Button>
-                  ),
+                  actions: [
+                    {
+                      label: tI18nComplete.raw('texte8a1fa10c8d2'),
+                      onClick: () => recoverChange(item, conflicts),
+                    },
+                  ],
                 });
                 return;
               }

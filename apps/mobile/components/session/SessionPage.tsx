@@ -2021,6 +2021,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       toast.info('Removed from queue', {
         action: {
           label: 'Undo',
+          kind: 'undo',
           onPress: () => void createSessionPrompt(projectId, projectSessionId, {
             clientMessageId: removed.client_message_id,
             messageId: removed.message_id,

@@ -1,8 +1,14 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { dismissToast, errorToast, progressToast, successToast } from '@/components/ui/toast';
+import { IconDelete } from '@/components/ui/kortix-icons';
+import {
+  dismissToast,
+  errorToast,
+  progressToast,
+  successToast,
+  undoToast,
+} from '@/components/ui/toast';
 import { deleteProjectSession, restoreProjectSession } from '@kortix/sdk';
 import { qk, removeCachedProjectSession } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -75,11 +81,7 @@ export function SessionDeleteModal({
           ? {
               id: toastId,
               duration: UNDO_TOAST_MS,
-              button: (
-                <Button size="sm" variant="outline" onClick={() => void undoDelete(id, toastId)}>
-                  {tCommon('retry')}
-                </Button>
-              ),
+              actions: [{ label: tCommon('retry'), onClick: () => void undoDelete(id, toastId) }],
             }
           : undefined,
       );
@@ -103,18 +105,16 @@ export function SessionDeleteModal({
       id === openSessionId ? undefined : removeCachedProjectSession(queryClient, projectId, id),
     onSuccess: (_result, id) => {
       const toastId = `session-delete-undo-${id}`;
-      successToast(
+      undoToast(
         sessionLabel
           ? tHardcodedUi('i18nComplete.text0690079160b0', { value0: sessionLabel })
           : tHardcodedUi.raw('i18nComplete.text3c0cf36859ac'),
         {
           id: toastId,
           duration: UNDO_TOAST_MS,
-          button: (
-            <Button size="sm" variant="outline" onClick={() => void undoDelete(id, toastId)}>
-              {t('undo')}
-            </Button>
-          ),
+          icon: <IconDelete className="size-4" />,
+          undoLabel: t('undo'),
+          onUndo: () => void undoDelete(id, toastId),
         },
       );
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });

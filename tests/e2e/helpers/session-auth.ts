@@ -23,6 +23,8 @@ interface AuthOptions {
   supabaseUrl: string;
   password: string;
   envFiles?: string[];
+  /** Leave the mobile app promo to the page: not pre-closed, no Escape handler. */
+  showMobileAppPromo?: boolean;
 }
 
 function envFiles(options: AuthOptions): string[] {
@@ -230,7 +232,7 @@ export async function installBrowserSessionDirect(
     ? new URL("/favicon.png", returnUrl).href
     : "/favicon.png";
   await page.goto(faviconUrl, { waitUntil: "domcontentloaded" });
-  await closeMobileAppPromo(page, session.user.id);
+  if (!options.showMobileAppPromo) await closeMobileAppPromo(page, session.user.id);
 
   const origin = new URL(page.url()).origin;
   const encoded = `base64-${Buffer.from(JSON.stringify(session), "utf8").toString("base64url")}`;
