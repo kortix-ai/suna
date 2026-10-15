@@ -78,7 +78,8 @@ describe('CodemodeTool', () => {
     expect(html).toContain('12 ms');
     expect(html).toContain('one');
     expect(html).not.toContain('Wall time');
-    expect(html).toContain('tools.bash');
+    // The script, as text: once Shiki has loaded it renders as token spans.
+    expect(html.replace(/<[^>]+>/g, '')).toContain('await tools.bash({ command:');
   });
 
   test('a failed script shows the verdict, the call that failed and the error', () => {
