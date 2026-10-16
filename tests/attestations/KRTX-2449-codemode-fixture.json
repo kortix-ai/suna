@@ -1,15 +1,15 @@
 {
-  "source_hash": "06d2b192e50b5ed01a490a9d4c6f231c47608882a5c459db15922dc0de99efbd",
+  "source_hash": "2859c9227adc18151ca4cd4a27499106bd0f555f883c92a4b4247d07c7bb3a03",
   "diff_files": [
     "packages/shared/src/session-fixture/tools/pi.ts"
   ],
   "diff_hash": "0a175624c9661b269d58eff4c5a88b282df013c3c18e42a3102fedeef62bf162",
-  "head": "b15d4056310adb4a952630e90ac05376201a0c7d",
-  "passed": false,
+  "head": "fc5f3864a0bc6cec19b1e6ae6548418fd8bc303b",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T21:05:52.876Z"
+  "at": "2026-10-16T04:33:57.605Z"
 }
