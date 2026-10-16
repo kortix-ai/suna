@@ -1,6 +1,7 @@
 import type { Connection } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
+  accountNeedsSignIn,
   accountVisibility,
   connectorConnectionRows,
   newAccountAudienceFor,
@@ -189,5 +190,27 @@ describe('accountVisibility', () => {
       share('group', 'ops', 'Ops'),
     ]);
     expect(accountVisibility(shared, 'u-1')).toEqual({ kind: 'named', names: ['Sales'], more: 2 });
+  });
+});
+
+// KRTX-2185: an MCP server with no sign-in (DeepWiki) listed its account as
+// "Not signed in" with a Connect button. The API reports `authorized: false`
+// for every account without a credential; a connector with no auth scheme
+// has nothing to sign in.
+describe('accountNeedsSignIn', () => {
+  const unsigned = { authorized: false };
+  test('a direct connector with no auth scheme has nothing to sign in', () => {
+    expect(accountNeedsSignIn(unsigned, { provider: 'mcp', authSecret: null })).toBe(false);
+    expect(accountNeedsSignIn(unsigned, { provider: 'openapi', authSecret: null })).toBe(false);
+  });
+  test('a direct connector with an auth scheme needs its sign-in', () => {
+    expect(accountNeedsSignIn(unsigned, { provider: 'mcp', authSecret: 'LINEAR_TOKEN' })).toBe(true);
+  });
+  test('a managed account signs in through its provider, whatever authSecret says', () => {
+    expect(accountNeedsSignIn(unsigned, { provider: 'composio', authSecret: null })).toBe(true);
+  });
+  test('a signed-in account, or an older server that sends no flag, needs nothing', () => {
+    expect(accountNeedsSignIn({ authorized: true }, { provider: 'mcp', authSecret: 'X' })).toBe(false);
+    expect(accountNeedsSignIn({}, { provider: 'mcp', authSecret: 'X' })).toBe(false);
   });
 });
