@@ -3,9 +3,10 @@ import { redirect } from 'next/navigation';
 
 /**
  * The Review Center's old address, from when it was a Customize tab
- * (2026-09-02 to 2026-10-02). It redirects to `/projects/[id]/review` and
- * keeps the query, so a shared `?id=<review item id>` link still opens the
- * same review.
+ * (2026-09-02 to 2026-10-02). It redirects to `reviewHref` — the review
+ * section of the merged Repo page (KRTX-2444), which the standalone
+ * `/projects/[id]/review` address also redirects to now — and keeps the
+ * query, so a shared `?id=<review item id>` link still opens the same review.
  */
 export default async function LegacyCustomizeReviewPage({
   params,

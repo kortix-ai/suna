@@ -6,8 +6,9 @@ import { join } from 'node:path';
  * The sidebar has two groups around the session list.
  *
  * Top: New session, then the customizable nav rows (`ProjectNavItems`:
- * Customize, Apps, Review, Reminders, Files — order and visibility from
- * "Customize sidebar", `sidebar-nav-store.ts`).
+ * Customize, Apps, Reminders, Files — order and visibility from "Customize
+ * sidebar", `sidebar-nav-store.ts`; the Review row merged into the Repo
+ * page's review section in KRTX-2444 and its count now badges Files).
  *
  * Footer: status and the two connect rows only (Jay, 2026-10-12): "keep the
  * bottom part as low as possible". The footer is bottom-anchored (`mt-auto`),

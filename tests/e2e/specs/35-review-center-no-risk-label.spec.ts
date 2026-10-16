@@ -71,7 +71,9 @@ test.describe('35 — Review Center shows no risk label', () => {
 
       // KRTX-2316: the always-mounted sidebar polls the needs-you counts, never
       // the inbox list or the whole change-request history. The one list read
-      // allowed is the shell's idle prefetch of the Review tab's first page.
+      // allowed is the shell's idle prefetch of the review section's first
+      // page (KRTX-2444 merged that section into the Repo page; the count the
+      // standalone Review row carried now badges the Files row).
       const reads: string[] = [];
       page.on('request', (request) => {
         const url = new URL(request.url());
@@ -85,12 +87,17 @@ test.describe('35 — Review Center shows no risk label', () => {
       await dismissOnboarding(page);
       const summary = await (await summaryRead).json();
       expect(summary).toEqual({ needs_you_total: 1, needs_you_by_session: {} });
-      await expect(page.getByRole('link', { name: /Review\s*1/ })).toBeVisible({ timeout: 60_000 });
+      // KRTX-2444: the badge the standalone Review row carried now rides the
+      // Files row, the merged Repo page's nav row.
+      await expect(page.getByRole('link', { name: /Files\s*1/ })).toBeVisible({ timeout: 60_000 });
       const listReads = reads.filter((read) => read.includes('/review/items'));
       expect(listReads.length).toBeLessThanOrEqual(1);
       for (const read of listReads) expect(read).toContain('segment=needs_you');
       expect(reads.filter((read) => read.includes('/change-requests') && read.includes('status=all'))).toEqual([]);
 
+      // KRTX-2444: the legacy address redirects into the review section of the
+      // merged Repo page (`?id=` preserved), so this also journeys the old
+      // entry point leaving no dead link.
       await page.goto(`/projects/${project.id}/review`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
