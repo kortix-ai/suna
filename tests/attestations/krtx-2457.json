@@ -4,12 +4,12 @@
     "apps/web/src/components/iam/audit-display-helpers.test.ts"
   ],
   "diff_hash": "9dace43f6ce66a7399b1ffb503c82ed14aee50f6a8ebe653a14c9eda02d52ac3",
-  "head": "92607d57128f40889c4ecc70d8ddaedd58af03bd",
+  "head": "da9337a121391912a7ce863f524e9e711b2824f0",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-16T03:38:03.011Z"
+  "at": "2026-10-16T04:44:28.537Z"
 }
