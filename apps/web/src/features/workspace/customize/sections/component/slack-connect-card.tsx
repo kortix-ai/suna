@@ -97,9 +97,7 @@ function SlackChannelMock() {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <p className="text-foreground border-b px-5 py-3 text-sm font-semibold">
-          {tI18nComplete.raw('texta0befce308e6')}
-        </p>
+        <p className="text-foreground border-b px-5 py-3 text-sm font-semibold">{tI18nComplete.raw('textd3d6fcf27034')}</p>
         <div className="flex flex-1 flex-col gap-4 px-5 py-4">
           <div className="flex gap-2.5">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-(--slack-avatar) text-sm font-semibold text-(--slack-on-sidebar)">
@@ -107,12 +105,12 @@ function SlackChannelMock() {
             </span>
             <div className="min-w-0 text-sm">
               <p className="flex items-baseline gap-2">
-                <span className="text-foreground font-semibold">Maya</span>
-                <span className="text-muted-foreground text-xs tabular-nums">10:42 AM</span>
+                <span className="text-foreground font-semibold">{tI18nComplete.raw('textc6c8dad55129')}</span>
+                <span className="text-muted-foreground text-xs tabular-nums">{tI18nComplete.raw('text9a059d44c8e5')}</span>
               </p>
               <p className="text-foreground">
                 <span className="rounded-xs bg-(--slack-mention-fill) px-0.5 text-(--slack-mention)">
-                  @Kortix
+                  {tI18nComplete.raw('text9bfa706b0569')}
                 </span>{' '}
                 {tI18nComplete.raw('text675d4a4174ba')}
               </p>
@@ -128,7 +126,7 @@ function SlackChannelMock() {
                 <span className="bg-muted text-muted-foreground rounded-xs px-1 text-xs font-semibold">
                   APP
                 </span>
-                <span className="text-muted-foreground text-xs tabular-nums">10:42 AM</span>
+                <span className="text-muted-foreground text-xs tabular-nums">{tI18nComplete.raw('text9a059d44c8e5')}</span>
               </p>
               <p className="text-foreground text-pretty">
                 {tI18nComplete.raw('textbd52d3eb5ed1')}

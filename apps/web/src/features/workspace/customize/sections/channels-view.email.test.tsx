@@ -1,5 +1,9 @@
-import * as sdkReact from '@kortix/sdk/react';
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+// The mock below replaces the whole barrel, so it spreads the real module:
+// consumers deep in the graph bind names this suite never stubs
+// (`resetIdentityState`, `useConnectTeams`), and a missing binding fails
+// the module link, not just the render.
+import * as sdkReact from '@kortix/sdk/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 let emailEnabled = false;
@@ -8,16 +12,13 @@ const emailInstall = mock(() => ({ data: null, isLoading: false }));
 const disconnected = () => ({ data: null, isLoading: false });
 const disconnect = () => ({ isPending: false, mutate: mock() });
 
-// Spread the real SDK and stub only what this test drives: the component
-// chain reads more of the SDK (`qk`, `contract`, `resetIdentityState`) than
-// any hand-written list can keep up with, and a missing export there fails
-// the whole file with a missing-export error.
 mock.module('@kortix/sdk/react', () => ({
   ...sdkReact,
   useFeatureFlag: () => ({ enabled: emailEnabled, isLoading: false }),
   useVisibleAgents: () => [],
   useRuntimeProviders: disconnected,
-  modelKeyToWire: ({ providerID, modelID }: { providerID: string; modelID: string }) => `${providerID}/${modelID}`,
+  modelKeyToWire: ({ providerID, modelID }: { providerID: string; modelID: string }) =>
+    `${providerID}/${modelID}`,
   flattenModels: () => [],
   modelProviderMode: () => 'gateway' as const,
 }));
@@ -30,15 +31,15 @@ mock.module('@/hooks/channels/use-channels-installations', () => ({
   useEmailInstall: emailInstall,
   useDisconnectSlack: disconnect,
   useDisconnectEmail: disconnect,
+  useConnectSlack: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
+  useSlackManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-teams-installations', () => ({
-  // `teams-byo-wizard` reads `useConnectTeams`/`useTeamsManifest` too; a mock
-  // without them makes the import fail with a missing-export error.
-  useConnectTeams: disconnect,
-  useTeamsManifest: disconnected,
   useTeamsInstall: disconnected,
   useTeamsMode: disconnected,
   useDisconnectTeams: disconnect,
+  useConnectTeams: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
+  useTeamsManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-channel-bindings', () => ({
   useChannelBindings: () => ({ data: { bindings: [] }, isLoading: false }),
@@ -69,7 +70,9 @@ const { ChannelsSection } = await import('./view/channels-view');
 
 function renderEmailRow() {
   const markup = renderToStaticMarkup(<ChannelsSection projectId="email-test" />);
-  const row = markup.match(/<li\b[^>]*>[\s\S]*?<\/li>/g)?.find((item) => item.includes('>Email</p>'));
+  const row = markup
+    .match(/<li\b[^>]*>[\s\S]*?<\/li>/g)
+    ?.find((item) => item.includes('>Email</p>'));
   expect(row).toBeDefined();
   return row ?? '';
 }

@@ -169,15 +169,18 @@ mock.module('@/hooks/channels/use-channels-installations', () => ({
   useEmailInstall: () => ({ data: null }),
   useDisconnectSlack: () => ({}),
   useDisconnectEmail: () => ({}),
+  // The connect card mounts the BYO wizard, whose module imports these even
+  // when the wizard never opens in this suite — the mock replaces the whole
+  // shim, so every statically imported binding has to exist.
+  useConnectSlack: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
+  useSlackManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-teams-installations', () => ({
   useTeamsInstall: () => ({ data: null }),
   useTeamsMode: () => ({ data: null }),
-  // `teams-byo-wizard` reads both; a mock without them makes the import fail
-  // with a missing-export error.
-  useTeamsManifest: () => ({ data: null }),
-  useConnectTeams: () => ({ mutate: () => {}, isPending: false }),
   useDisconnectTeams: () => ({}),
+  useConnectTeams: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
+  useTeamsManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-channel-bindings', () => ({
   useChannelBindings: () => ({

@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import { buildPaletteSearchText } from '@/features/workspace/command-palette';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import {
+  type SettingsPaletteParams,
   settingsPaletteGroups,
   settingsPaletteSearchText,
-  type SettingsPaletteParams,
 } from '@/features/workspace/settings-palette-items';
 import { TERMINAL_THEMES } from '@/lib/interface-themes';
 import { getItemsForSurface, menuRegistry } from '@/lib/menu-registry';
@@ -345,9 +345,10 @@ describe('queries return the rows they name', () => {
   });
 
   test('"apps" reaches the Apps page, not Connectors', () => {
-    // `settings:computer` belongs too: its rail description says "…files,
-    // terminal, and apps on your computer", so the query answers both rows.
-    // Connectors still does not match.
+    // `nav:proj-apps` is the page the word names. `settings:computer` also
+    // answers because its own description says "… the files, terminal, and
+    // apps on your computer" — a real word the user read on that row, not a
+    // wildcard leak; the Connectors rows still answer nothing.
     expect(hits('apps').sort()).toEqual(['nav:proj-apps', 'settings:computer']);
   });
 

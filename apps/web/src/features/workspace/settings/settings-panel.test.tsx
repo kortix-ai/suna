@@ -9,12 +9,12 @@ import { railGroups } from './rail';
 import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from './rail-copy-context';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
-  buildSettingsPanelSettingsNav,
-  isSettingsTabAllowed,
-  probeAdmits,
   SettingsPanelShell,
   type SettingsPanelShellProps,
   type SettingsTabAllowedParams,
+  buildSettingsPanelSettingsNav,
+  isSettingsTabAllowed,
+  probeAdmits,
 } from './settings-panel-body';
 import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from './settings-tabs';
 import type { RailItem } from './type';
@@ -183,7 +183,9 @@ describe('SettingsPanelShell — desktop rail', () => {
 
   test('Back to app starts at the left edge of the web sidebar row', () => {
     const html = render();
-    expect(html).toMatch(/<aside[^>]*>[\s\S]*?<div class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*justify-start[^"]*"/);
+    expect(html).toMatch(
+      /<aside[^>]*>[\s\S]*?<div class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*justify-start[^"]*"/,
+    );
     expect(html).toMatch(/kx-titlebar-row[\s\S]*?Back to app/);
   });
 
@@ -248,7 +250,9 @@ test('mobile Settings headers sit in the native titlebar band on macOS', () => {
   const source = readFileSync(join(import.meta.dir, 'settings-panel-body.tsx'), 'utf8');
   const css = readFileSync(join(import.meta.dir, '../../../app/globals.css'), 'utf8');
   expect(source).toContain('kx-settings-mobile-titlebar');
-  expect(css).toMatch(/\.kx-settings-mobile-titlebar \.kx-settings-mobile-close\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
+  expect(css).toMatch(
+    /\.kx-settings-mobile-titlebar \.kx-settings-mobile-close\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/,
+  );
 });
 
 /**
@@ -533,29 +537,24 @@ describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
     return { hasProject: false, ...overrides };
   }
 
-  // `computer` is the one live project-scoped tab: pairing names the project
-  // it starts from (`settings-panel-body.tsx`), so it is refused without one
-  // and the palette test excludes it the same way.
-  test('with no project, every live tab except computer is allowed — the rest are personal', () => {
+  test('with no project, every live tab but the paired computer is allowed', () => {
     const allowed = SETTINGS_TABS.filter((tab) => isSettingsTabAllowed(tab, paramsFor()));
-    expect([...allowed].sort()).toEqual(
-      SETTINGS_TABS.filter((tab) => tab !== 'computer').sort(),
-    );
-    for (const tab of ACCOUNT_SCOPED_SETTINGS_TABS) {
-      expect(isSettingsTabAllowed(tab, paramsFor())).toBe(true);
-    }
+    expect([...allowed].sort()).toEqual(SETTINGS_TABS.filter((tab) => tab !== 'computer').sort());
+    for (const tab of allowed) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
   });
 
-  // The one project-scoped tab, and the gate is what hides it — with the
-  // retired project ids — on `/settings` and under `/accounts/**`, where
-  // there is no project to name. Asserted as an exact list so a second
-  // project-scoped tab cannot be added without a decision.
-  test('computer is the only live project-scoped tab; the retired project ids still gate on a project', () => {
+  // The one live project-scoped tab, and the gate is what hides it — and
+  // with it the whole `Workspace` rail group — on `/settings` and under
+  // `/accounts/**`, where there is no project to name. `computer` pairs the
+  // signed-in person's machine FROM a project (settings-panel-body.tsx:
+  // "pairing names the project it starts from"), so it gates like the retired
+  // ids below. Asserted as an exact list so a further project-scoped tab
+  // cannot be added without a decision.
+  test('the paired computer is the one live project-scoped tab; the retired ids still gate on a project', () => {
     const projectScoped = SETTINGS_TABS.filter(
       (tab) => !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab),
     );
     expect(projectScoped).toEqual(['computer']);
-    expect(isSettingsTabAllowed('computer', paramsFor())).toBe(false);
     // The panes still exist behind the type, and the gate still refuses them
     // without a project, so a stray `openSettings('sandbox')` on `/accounts`
     // cannot mount a project pane with nothing to point it at.
