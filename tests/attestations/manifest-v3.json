@@ -1,17 +1,17 @@
 {
-  "source_hash": "97b12f95379a13ef250c7af62e5d79ca156a4cc4944648256620a2b328cb3bec",
+  "source_hash": "d5be38a4b9c6cbe716cad52f3f0d550532a1dbc8fe5837d4b801e575aad8be91",
   "diff_files": [
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-command-gate.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/manifest-v3.ts",
-    "apps/web/content/docs/project/manifest.mdx"
+    "apps/cli/src/__tests__/migrate.blackbox.test.ts",
+    "apps/cli/src/commands/migrate.ts",
+    "apps/cli/src/manifest-migrate.ts"
   ],
-  "diff_hash": "392e90bc4bcf32250a6890978b256b452632f94fbfffeff7d90dfb26ec01058d",
-  "head": "901a454f0b6f356d64ec1e541478a21c00aed559",
+  "diff_hash": "c0c8a732dd9d51eed45890542adfa8186b221c24cf1ea15440081480816d52fb",
+  "head": "9f6a651667b73ea1a6bed5649d357707ce56640e",
   "passed": false,
   "lanes": {
-    "core": "pass",
-    "packages": "fail",
-    "db-suites": "skipped-unaffected"
+    "core": "fail",
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-15T23:55:05.382Z"
+  "at": "2026-10-16T00:16:31.254Z"
 }
