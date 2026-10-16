@@ -117,8 +117,14 @@ function restoreFavicon() {
   }
 }
 
-/** Drop every unseen session the user is looking at right now. */
-function markViewedSeen() {
+/**
+ * Drop every unseen session the user is looking at right now. A window the
+ * person left (another tab, another app) shows nobody anything: the session on
+ * screen stays unseen until they come back, when the focus listener below
+ * clears it. In the desktop app that session is usually the one that finished.
+ */
+export function markViewedSeen() {
+  if (isTabHidden()) return;
   const { unseen, markSeen } = useTurnAttentionStore.getState();
   const viewed = unseen.filter((id) => isViewingSession(id));
   if (viewed.length > 0) markSeen(viewed);
