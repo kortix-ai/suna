@@ -10,6 +10,8 @@ import {
 import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import {
   attachmentFailureReason,
+  refusedFilesToast,
+  splitComposerFiles,
   attachmentFailureRetryable,
   attachmentsBlockSend,
   captureAttachmentSubmission,
@@ -791,5 +793,70 @@ describe('planAttachmentReplacement', () => {
         urlsToRevoke: ['blob:removed'],
       },
     );
+  });
+});
+
+// KRTX-2557: one empty or oversized file in a drop refused the whole drop
+// (the SDK's `addMany` checks the batch at once), with one English message
+// that named no file. The split keeps every file that fits.
+describe('splitComposerFiles', () => {
+  const MiB = 1024 * 1024;
+  const file = (name: string, size: number) =>
+    ({ name, size }) as File;
+
+  test('the files that fit attach; each refused file says why', () => {
+    const { accepted, refused } = splitComposerFiles(
+      [file('notes.md', 120), file('empty.txt', 0), file('video.mov', 51 * MiB), file('photo.png', 2 * MiB)],
+      { count: 0, bytes: 0 },
+    );
+    expect(accepted.map((f) => f.name)).toEqual(['notes.md', 'photo.png']);
+    expect(refused.map(({ file, reason }) => [file.name, reason])).toEqual([
+      ['empty.txt', 'empty'],
+      ['video.mov', 'tooLarge'],
+    ]);
+  });
+
+  test('past 20 files in one message, the rest are refused', () => {
+    const files = Array.from({ length: 4 }, (_, i) => file(`f${i}.txt`, 10));
+    const { accepted, refused } = splitComposerFiles(files, { count: 18, bytes: 0 });
+    expect(accepted.map((f) => f.name)).toEqual(['f0.txt', 'f1.txt']);
+    expect(refused.map(({ reason }) => reason)).toEqual(['tooMany', 'tooMany']);
+  });
+
+  test('past 100 MiB in one message, a file that would cross it is refused and a smaller one still fits', () => {
+    const { accepted, refused } = splitComposerFiles(
+      [file('big.zip', 40 * MiB), file('small.txt', 5 * MiB)],
+      { count: 1, bytes: 70 * MiB },
+    );
+    expect(accepted.map((f) => f.name)).toEqual(['small.txt']);
+    expect(refused).toEqual([{ file: expect.objectContaining({ name: 'big.zip' }), reason: 'totalTooLarge' }]);
+  });
+});
+
+describe('refusedFilesToast', () => {
+  // Stands in for next-intl: the key, then its values.
+  const t = (key: string, values?: Record<string, unknown>) => `${key}${values ? JSON.stringify(values) : ''}`;
+  const file = (name: string) => ({ name, size: 0 }) as File;
+
+  test('names every refused file with its reason, under one count', () => {
+    expect(
+      refusedFilesToast(
+        [
+          { file: file('empty.txt'), reason: 'empty' },
+          { file: file('video.mov'), reason: 'tooLarge' },
+          { file: file('f21.txt'), reason: 'tooMany' },
+          { file: file('big.zip'), reason: 'totalTooLarge' },
+        ],
+        t,
+      ),
+    ).toEqual({
+      title: 'notAttached{"count":4}',
+      description: [
+        'refusedEmpty{"name":"empty.txt"}',
+        'refusedTooLarge{"name":"video.mov"}',
+        'refusedTooMany{"name":"f21.txt"}',
+        'refusedTotalTooLarge{"name":"big.zip"}',
+      ].join('\n'),
+    });
   });
 });

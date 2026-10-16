@@ -9897,6 +9897,11 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Auffüllen",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Plan verwalten",
     "composerAttachments": {
+      "notAttached": "{count, plural, one {# Datei wurde nicht angehängt} other {# Dateien wurden nicht angehängt}}",
+      "refusedEmpty": "{name} ist leer.",
+      "refusedTooLarge": "{name} ist größer als 50 MiB.",
+      "refusedTooMany": "{name}: Eine Nachricht fasst höchstens 20 Dateien.",
+      "refusedTotalTooLarge": "{name}: Eine Nachricht fasst höchstens 100 MiB an Dateien.",
       "couldNotAttach": "Dateien konnten nicht angehängt werden",
       "couldNotRetry": "Anhang konnte nicht erneut hochgeladen werden",
       "couldNotSend": "Nicht gesendet",
