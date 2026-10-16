@@ -175,6 +175,11 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     });
     const deduped = await recordTriggerRun({ ...base, ...triggerRunFromFire({ status: 'queued', sessionId, deduped: true }) });
     const failed = await recordTriggerRun({ ...base, ...triggerRunFromFire({ status: 'failed', error: 'No account owner available to own the session' }) });
+    const commandId = crypto.randomUUID();
+    const requeued = await recordTriggerRun({
+      ...base,
+      ...triggerRunFromFire({ status: 'failed', requeued: true, commandId, error: 'sandbox capacity exhausted' }),
+    });
 
     expect(await run(queued!)).toMatchObject({ source: 'webhook', status: 'succeeded', sessionId, runStatus: 'running', lastError: null });
     expect(await run(deduped!)).toMatchObject({ status: 'skipped', sessionId, runStatus: null, lastError: 'deduped' });
@@ -184,6 +189,16 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
       runStatus: null,
       lastError: 'No account owner available to own the session',
     });
+    // A create that went back to the lifecycle queue may still run: not failed.
+    expect(await run(requeued!)).toMatchObject({
+      status: 'requeued',
+      sessionId: null,
+      commandId,
+      runStatus: null,
+      lastError: 'sandbox capacity exhausted',
+    });
+    // The claim worker takes only queued/running rows, so none of these.
+    expect(await claimTriggerExecutions({ now, workerId: 'run-history', limit: 10 })).toHaveLength(0);
   });
 
   test('a webhook rejected before its signature verified is stored rejected and unverified', async () => {
@@ -268,6 +283,17 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     });
     await recordTriggerRunEnd({ ...end, status: 'idle', childSession: true, now: secondEnd }, noPush);
     expect(await run(third!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
+
+    // A stopped turn closes the run as failed with "stopped", and is still
+    // not a trigger run outcome: the trigger runtime is not touched.
+    const stoppedAt = new Date('2026-10-16T10:12:00.000Z');
+    const result = await recordTriggerRunEnd(
+      { ...end, status: 'error', error: { name: 'MessageAbortedError', message: 'aborted' }, now: stoppedAt },
+      noPush,
+    );
+    expect(result).toBe('not_a_trigger_run');
+    expect(await run(third!)).toMatchObject({ runStatus: 'failed', runError: 'stopped' });
+    expect((await run(third!)).runEndedAt?.toISOString()).toBe(stoppedAt.toISOString());
   });
 
   test('max_lateness skips a stale slot as a run and advances next_fire_at to the next future slot', async () => {

@@ -65,8 +65,12 @@ export function triggerRunFailureText(error: { name?: string; message?: string }
  * KRTX-1743 ruling 3: the run this turn finished is the newest open run of
  * the trigger in this session. It gets the turn's outcome.
  */
-async function closeTriggerRun(end: TriggerRunEnd, slug: string, now: Date): Promise<void> {
-  const failed = end.status === 'error';
+async function closeTriggerRun(
+  end: TriggerRunEnd,
+  slug: string,
+  now: Date,
+  outcome: { runStatus: 'succeeded' | 'failed'; runError: string | null },
+): Promise<void> {
   const newestOpen = db
     .select({ executionId: projectTriggerExecutions.executionId })
     .from(projectTriggerExecutions)
@@ -84,8 +88,7 @@ async function closeTriggerRun(end: TriggerRunEnd, slug: string, now: Date): Pro
   await db
     .update(projectTriggerExecutions)
     .set({
-      runStatus: failed ? 'failed' : 'succeeded',
-      runError: failed ? triggerRunFailureText(end.error) : null,
+      ...outcome,
       runEndedAt: now,
       updatedAt: now,
     })
@@ -100,10 +103,21 @@ export async function recordTriggerRunEnd(
   // Only a turn this call genuinely closed is a run outcome. A replay, a
   // retry, a subagent, or a user's stop says nothing about the trigger.
   if (!slug || end.childSession || end.outcome !== 'closed') return 'not_a_trigger_run';
-  if (end.status === 'error' && ABORT_END_ERROR_NAMES.includes(end.error?.name ?? '')) return 'not_a_trigger_run';
   const now = end.now ?? new Date();
+  // A stopped turn ends its run, but says nothing about the trigger.
+  if (end.status === 'error' && ABORT_END_ERROR_NAMES.includes(end.error?.name ?? '')) {
+    await closeTriggerRun(end, slug, now, { runStatus: 'failed', runError: 'stopped' });
+    return 'not_a_trigger_run';
+  }
   const row = and(eq(projectTriggerRuntime.projectId, end.projectId), eq(projectTriggerRuntime.slug, slug));
-  await closeTriggerRun(end, slug, now);
+  await closeTriggerRun(
+    end,
+    slug,
+    now,
+    end.status === 'error'
+      ? { runStatus: 'failed', runError: triggerRunFailureText(end.error) }
+      : { runStatus: 'succeeded', runError: null },
+  );
 
   if (end.status === 'idle') {
     const recovered = await db

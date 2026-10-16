@@ -201,6 +201,10 @@ export function registerTriggerWebhooksRoutes(): void {
       source: 'webhook',
       idempotencyKey,
       request: requestAuditContext(c),
+    }).catch(async (error: unknown) => {
+      // A fire that throws is a failed run; the throw still answers as before.
+      await recordRun({ status: 'failed', error: error instanceof Error ? error.message : String(error) });
+      throw error;
     });
     await recordRun(triggerRunFromFire(result));
 

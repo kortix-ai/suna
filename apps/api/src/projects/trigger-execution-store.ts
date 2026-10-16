@@ -463,7 +463,12 @@ export async function markTriggerRuntimeDeliveryFailed(input: {
 /** A stored run payload larger than this is replaced by a size marker (KRTX-1743). */
 export const TRIGGER_RUN_PAYLOAD_MAX_BYTES = 64 * 1024;
 
-export type TriggerRunStatus = 'succeeded' | 'failed' | 'skipped' | 'rejected';
+/**
+ * `requeued`: the create went back to the session-lifecycle queue and may
+ * still run. Like every run status here, the claim worker never reads it:
+ * it claims only `queued` and `running` rows.
+ */
+export type TriggerRunStatus = 'succeeded' | 'failed' | 'skipped' | 'rejected' | 'requeued';
 
 /** The payload as stored on a run: over 64 KiB it is a marker and cannot be replayed. */
 export function cappedRunPayload(payload: Record<string, unknown>): Record<string, unknown> {
@@ -538,8 +543,12 @@ export function triggerRunFromFire(result: {
   error?: string;
   reason?: string;
   deduped?: boolean;
+  requeued?: boolean;
 }): { status: TriggerRunStatus; sessionId: string | null; commandId: string | null; error: string | null } {
   const ids = { sessionId: result.sessionId ?? null, commandId: result.commandId ?? null };
+  if (result.status === 'failed' && result.requeued) {
+    return { status: 'requeued', ...ids, error: result.error ?? result.reason ?? 'create requeued' };
+  }
   if (result.status === 'failed') {
     return { status: 'failed', ...ids, error: result.error ?? result.reason ?? 'trigger fire failed' };
   }
@@ -560,15 +569,16 @@ export async function purgeExpiredTriggerRuns(now = new Date()): Promise<number>
   const doomed = await db
     .select({ executionId: projectTriggerExecutions.executionId })
     .from(projectTriggerExecutions)
+    // `source <> 'cron'` plus one `created_at <` range: the predicate of
+    // idx_project_trigger_executions_noncron_created. Rejected runs are
+    // webhook runs, so they are in that index too.
     .where(
-      or(
-        and(
-          ne(projectTriggerExecutions.source, 'cron'),
-          lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - RUN_RETENTION_DAYS * day)),
-        ),
-        and(
+      and(
+        ne(projectTriggerExecutions.source, 'cron'),
+        lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - REJECTED_RUN_RETENTION_DAYS * day)),
+        or(
           eq(projectTriggerExecutions.status, 'rejected'),
-          lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - REJECTED_RUN_RETENTION_DAYS * day)),
+          lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - RUN_RETENTION_DAYS * day)),
         ),
       ),
     )

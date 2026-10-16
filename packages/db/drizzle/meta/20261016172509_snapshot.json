@@ -18819,6 +18819,38 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_project_trigger_executions_replay_of": {
+          "name": "idx_project_trigger_executions_replay_of",
+          "columns": [
+            {
+              "expression": "replay_of",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"project_trigger_executions\".\"replay_of\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_trigger_executions_noncron_created": {
+          "name": "idx_project_trigger_executions_noncron_created",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"project_trigger_executions\".\"source\" <> 'cron'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {

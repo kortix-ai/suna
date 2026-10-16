@@ -861,6 +861,8 @@ export function registerTriggersRoutes(): void {
       };
       const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
 
+      // Every fire is a run in the trigger's history (KRTX-1743), a fire that
+      // throws included; the throw still answers as before.
       const result = await fireGitTrigger({
         spec,
         project: loaded.row,
@@ -868,8 +870,11 @@ export function registerTriggersRoutes(): void {
         renderedPrompt,
         source: 'manual',
         request: requestAuditContext(c),
+      }).catch(async (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        await recordTriggerRun({ projectId, slug, source: 'manual', spec, payload, status: 'failed', error: message, now });
+        throw error;
       });
-      // Every fire is a run in the trigger's history (KRTX-1743).
       await recordTriggerRun({ projectId, slug, source: 'manual', spec, payload, ...triggerRunFromFire(result), now });
 
       if (result.status === 'queued') {

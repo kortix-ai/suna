@@ -1935,6 +1935,12 @@ export const projectTriggerExecutions = kortixSchema.table(
     index('idx_project_trigger_executions_session')
       .on(table.sessionId)
       .where(sql`${table.sessionId} is not null`),
+    index('idx_project_trigger_executions_replay_of')
+      .on(table.replayOf)
+      .where(sql`${table.replayOf} is not null`),
+    index('idx_project_trigger_executions_noncron_created')
+      .on(table.createdAt)
+      .where(sql`${table.source} <> 'cron'`),
   ],
 );
 
