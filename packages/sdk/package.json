@@ -197,7 +197,7 @@
   },
   "files": ["dist", "src", "README.md"],
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
+    "typecheck": "tsgo --noEmit && tsgo --noEmit -p examples/tsconfig.json",
     "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | sort -z | xargs -0 -n1 -P4 bun test --isolate",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "build:bundles": "pnpm run build && tsup",
@@ -210,6 +210,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.3",
     "@types/react-test-renderer": "^19.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-test-renderer": "^19.2.0",
