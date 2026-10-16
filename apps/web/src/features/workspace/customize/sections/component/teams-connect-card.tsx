@@ -103,9 +103,11 @@ function TeamsChannelMock() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-end gap-4 border-b px-4 pt-3">
-          <p className="text-foreground pb-2.5 text-sm font-semibold">Launch</p>
+          <p className="text-foreground pb-2.5 text-sm font-semibold">
+            {tI18nComplete.raw('textccf56ef5db0b')}
+          </p>
           <p className="text-foreground border-b-2 border-(--teams-brand) pb-2 text-xs font-semibold">
-            Posts
+            {tI18nComplete.raw('texta80811cf6889')}
           </p>
         </div>
 

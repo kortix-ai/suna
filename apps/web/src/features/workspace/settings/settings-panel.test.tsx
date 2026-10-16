@@ -533,21 +533,29 @@ describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
     return { hasProject: false, ...overrides };
   }
 
-  test('with no project, every live tab is allowed — all of them are personal', () => {
+  // `computer` is the one live project-scoped tab: pairing names the project
+  // it starts from (`settings-panel-body.tsx`), so it is refused without one
+  // and the palette test excludes it the same way.
+  test('with no project, every live tab except computer is allowed — the rest are personal', () => {
     const allowed = SETTINGS_TABS.filter((tab) => isSettingsTabAllowed(tab, paramsFor()));
-    expect([...allowed].sort()).toEqual([...SETTINGS_TABS].sort());
-    for (const tab of SETTINGS_TABS) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
+    expect([...allowed].sort()).toEqual(
+      SETTINGS_TABS.filter((tab) => tab !== 'computer').sort(),
+    );
+    for (const tab of ACCOUNT_SCOPED_SETTINGS_TABS) {
+      expect(isSettingsTabAllowed(tab, paramsFor())).toBe(true);
+    }
   });
 
-  // The three project-scoped tabs, and the gate is what hides them — and
-  // with them the whole `Workspace` rail group — on `/settings` and under
-  // `/accounts/**`, where there is no project to name. Asserted as an exact
-  // list so a fourth project-scoped tab cannot be added without a decision.
-  test('no live tab is project-scoped; the retired project ids still gate on a project', () => {
+  // The one project-scoped tab, and the gate is what hides it — with the
+  // retired project ids — on `/settings` and under `/accounts/**`, where
+  // there is no project to name. Asserted as an exact list so a second
+  // project-scoped tab cannot be added without a decision.
+  test('computer is the only live project-scoped tab; the retired project ids still gate on a project', () => {
     const projectScoped = SETTINGS_TABS.filter(
       (tab) => !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab),
     );
-    expect(projectScoped).toEqual([]);
+    expect(projectScoped).toEqual(['computer']);
+    expect(isSettingsTabAllowed('computer', paramsFor())).toBe(false);
     // The panes still exist behind the type, and the gate still refuses them
     // without a project, so a stray `openSettings('sandbox')` on `/accounts`
     // cannot mount a project pane with nothing to point it at.

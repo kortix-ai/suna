@@ -53,6 +53,9 @@ mock.module('@/lib/use-project-can', () => ({
 }));
 
 mock.module('@/features/workspace/customize/migrate-to-v3/manifest-version', () => ({
+  // `sandbox-tab.tsx` also reads `manifestFilename` from this module; a mock
+  // without it makes the import fail with a missing-export error.
+  manifestFilename: (version: number | null) => (version === 1 ? 'kortix.toml' : 'kortix.yaml'),
   useProjectManifestVersion: () => ({ version: 2, isLoading: false }),
 }));
 

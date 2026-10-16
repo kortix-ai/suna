@@ -173,6 +173,10 @@ mock.module('@/hooks/channels/use-channels-installations', () => ({
 mock.module('@/hooks/channels/use-teams-installations', () => ({
   useTeamsInstall: () => ({ data: null }),
   useTeamsMode: () => ({ data: null }),
+  // `teams-byo-wizard` reads both; a mock without them makes the import fail
+  // with a missing-export error.
+  useTeamsManifest: () => ({ data: null }),
+  useConnectTeams: () => ({ mutate: () => {}, isPending: false }),
   useDisconnectTeams: () => ({}),
 }));
 mock.module('@/hooks/channels/use-channel-bindings', () => ({

@@ -345,7 +345,10 @@ describe('queries return the rows they name', () => {
   });
 
   test('"apps" reaches the Apps page, not Connectors', () => {
-    expect(hits('apps')).toEqual(['nav:proj-apps']);
+    // `settings:computer` belongs too: its rail description says "…files,
+    // terminal, and apps on your computer", so the query answers both rows.
+    // Connectors still does not match.
+    expect(hits('apps').sort()).toEqual(['nav:proj-apps', 'settings:computer']);
   });
 
   test('"agents" and "skills" reach their pages, not a restart command', () => {

@@ -97,7 +97,9 @@ function SlackChannelMock() {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <p className="text-foreground border-b px-5 py-3 text-sm font-semibold"># launch</p>
+        <p className="text-foreground border-b px-5 py-3 text-sm font-semibold">
+          {tI18nComplete.raw('texta0befce308e6')}
+        </p>
         <div className="flex flex-1 flex-col gap-4 px-5 py-4">
           <div className="flex gap-2.5">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-(--slack-avatar) text-sm font-semibold text-(--slack-on-sidebar)">

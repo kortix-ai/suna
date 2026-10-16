@@ -1,3 +1,4 @@
+import * as sdkReact from '@kortix/sdk/react';
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -7,7 +8,12 @@ const emailInstall = mock(() => ({ data: null, isLoading: false }));
 const disconnected = () => ({ data: null, isLoading: false });
 const disconnect = () => ({ isPending: false, mutate: mock() });
 
+// Spread the real SDK and stub only what this test drives: the component
+// chain reads more of the SDK (`qk`, `contract`, `resetIdentityState`) than
+// any hand-written list can keep up with, and a missing export there fails
+// the whole file with a missing-export error.
 mock.module('@kortix/sdk/react', () => ({
+  ...sdkReact,
   useFeatureFlag: () => ({ enabled: emailEnabled, isLoading: false }),
   useVisibleAgents: () => [],
   useRuntimeProviders: disconnected,
@@ -26,6 +32,10 @@ mock.module('@/hooks/channels/use-channels-installations', () => ({
   useDisconnectEmail: disconnect,
 }));
 mock.module('@/hooks/channels/use-teams-installations', () => ({
+  // `teams-byo-wizard` reads `useConnectTeams`/`useTeamsManifest` too; a mock
+  // without them makes the import fail with a missing-export error.
+  useConnectTeams: disconnect,
+  useTeamsManifest: disconnected,
   useTeamsInstall: disconnected,
   useTeamsMode: disconnected,
   useDisconnectTeams: disconnect,
