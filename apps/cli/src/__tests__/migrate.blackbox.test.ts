@@ -275,3 +275,22 @@ harnesses:
     expect(read('desk/kortix.yaml')).toBe(DESK);
   });
 });
+
+describe('kortix migrate (agents only the OpenCode folder declared)', () => {
+  test('an undeclared OpenCode agent file becomes a declared agent with its behavior, prompt and skills', () => {
+    write({
+      'harnesses/opencode/agents/helper.md': '---\ndescription: Helps the lead.\nmode: subagent\nmodel: kortix/glm-5.3-flash\npermission: allow\n---\nYou help.\n',
+    });
+    const result = kortix('migrate', '--write');
+    expect(result.code).toBe(0);
+    const manifest = parseManifestText(read('kortix.yaml'), 'yaml');
+    const agents = manifest.agents as Record<string, Record<string, unknown>>;
+    // v2 loaded it from the folder, unrestricted; v3 declares it and keeps that.
+    expect(agents.helper).toMatchObject({ description: 'Helps the lead.', mode: 'subagent', model: 'kortix/glm-5.3-flash', prompt_file: 'agents/helper.md', skills: 'all' });
+    expect(read('agents/helper.md')).toBe('You help.\n');
+    expect(existsSync(join(cwd, 'harnesses/opencode/agents/helper.md'))).toBe(false);
+    // `lead` had no task rule in v2, so it may still start every subagent, now including helper.
+    expect(agents.lead!.subagents).toBe('all');
+    expect(validateManifest(read('kortix.yaml'), 'yaml').issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+});

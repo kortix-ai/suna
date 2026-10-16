@@ -171,11 +171,23 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     exists(dir) ? readdirSync(resolve(root, dir), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)) : [];
   const changes: MigrationChange[] = [];
   const dropped: string[] = [];
-  const agents = table(raw.agents) ?? {};
-  const names = Object.keys(agents);
-  const defaultAgent = typeof raw.default_agent === 'string' ? raw.default_agent : names[0];
   const harnesses = table(raw.harnesses) ?? {};
   const opencodeDir = opencodeConfigDirCandidates(raw).find((dir) => exists(`${dir}/opencode.jsonc`) || exists(`${dir}/opencode.json`) || exists(dir)) ?? opencodeConfigDirCandidates(raw)[0]!;
+  // v2 also ran agents that only the OpenCode folder declared (`<dir>/agents/*.md`),
+  // with no skill restriction. v3 runs declared agents only: declare each one,
+  // keep its skills, and move its prompt to agents/<name>.md.
+  const agents: Table = { ...(table(raw.agents) ?? {}) };
+  const folderAgents = new Map<string, string>();
+  for (const sub of ['agents', 'agent']) {
+    for (const entry of files(`${opencodeDir}/${sub}`)) {
+      const name = entry.name.replace(/\.md$/, '');
+      if (!entry.isFile() || !entry.name.endsWith('.md') || agents[name] !== undefined) continue;
+      agents[name] = { skills: 'all' };
+      folderAgents.set(name, `${opencodeDir}/${sub}/${entry.name}`);
+    }
+  }
+  const names = Object.keys(agents);
+  const defaultAgent = typeof raw.default_agent === 'string' ? raw.default_agent : names[0];
 
   // opencode.json[c]: its `permission` moves onto every agent that sets none.
   let projectPermission: unknown;
@@ -268,14 +280,17 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
   for (const name of names) {
     const block = table(agents[name]) ?? {};
     const next: Table = {};
-    const mdPath = agentFileCandidates(raw, name).find(exists);
+    const folderPath = folderAgents.get(name);
+    const mdPath = folderPath ?? agentFileCandidates(raw, name).find(exists);
     let frontmatter: Table = {};
     if (mdPath) {
       const split = splitFrontmatter(read(mdPath));
       frontmatter = split.frontmatter;
-      next.prompt_file = mdPath;
       const moved = Object.keys(frontmatter).filter((key) => key !== 'name');
-      changes.push({ path: mdPath, action: 'rewrite', note: `frontmatter → agents.${name}${moved.length ? ` (${moved.join(', ')})` : ''}`, content: split.body });
+      const target = folderPath && !exists(`agents/${name}.md`) ? `agents/${name}.md` : mdPath;
+      next.prompt_file = target;
+      changes.push({ path: target, action: 'rewrite', note: `${folderPath ? 'declared from the OpenCode folder; ' : ''}frontmatter → agents.${name}${moved.length ? ` (${moved.join(', ')})` : ''}`, content: split.body });
+      if (target !== mdPath) changes.push({ path: mdPath, action: 'delete', note: `moved to ${target}` });
     }
     for (const key of BEHAVIOR_KEYS) if (frontmatter[key] !== undefined) next[key] = frontmatter[key];
     const permission = frontmatter.permission ?? projectPermission;
