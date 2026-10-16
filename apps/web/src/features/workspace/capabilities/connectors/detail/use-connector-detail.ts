@@ -9,6 +9,7 @@ import { connectorDisplayName } from '@/features/workspace/capabilities/connecto
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
 import { connectorConnectionRows } from '@/features/workspace/customize/sections/view/connector-connections';
+import { emptyProjectSlot } from '@/hooks/connectors/use-add-account';
 import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
 import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
@@ -56,10 +57,13 @@ export function useConnectorDetail({
   // A revoked row is history, not an account: it must not turn "connect the
   // first account" into "finish setting up" (found 2026-09-17 on a connector
   // whose only shared account had just been disconnected).
-  const accounts = connectorConnectionRows(
-    connectionsQuery.data?.connections,
-    connector.slug,
-  ).filter((connection) => connection.status !== 'revoked');
+  // The server's empty shared slot is a placeholder, not an account: it is
+  // not listed or counted (see `emptyProjectSlot`).
+  const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+  const slot = emptyProjectSlot(connector, rows);
+  const accounts = rows.filter(
+    (connection) => connection !== slot && connection.status !== 'revoked',
+  );
   const soleAccount = accounts.length === 1 ? accounts[0]! : null;
   // Server-computed and account-aware: `needs_auth` means no reachable account
   // holds a usable credential, whatever the owner type.

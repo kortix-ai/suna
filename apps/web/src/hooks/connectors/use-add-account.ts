@@ -138,14 +138,16 @@ export function useAddAccount({
   });
 
   const pending = createAccount.isPending || addManaged.isPending;
-  /** The next free name for a new account: `<name>`, `<name> 2`, … */
-  const proposedLabel = () =>
-    proposeAccountLabel(
+  /** The next free name for a new account: `<name>`, `<name> 2`, … The
+   *  unlisted empty slot does not take a name: "Everyone" reuses it. */
+  const proposedLabel = () => {
+    const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+    const slot = emptyProjectSlot(connector, rows);
+    return proposeAccountLabel(
       displayName,
-      connectorConnectionRows(connectionsQuery.data?.connections, connector.slug).map(
-        (row) => row.label,
-      ),
+      rows.filter((row) => row !== slot).map((row) => row.label),
     );
+  };
   const submit = (draft: NewAccountDraft) => {
     if (pending) return;
     if (isManagedConnectorProvider(connector.provider)) {
@@ -166,7 +168,10 @@ export function useAddAccount({
  * connector that needs no credential (`requestAuthType` `'none'`) has none:
  * its first account already works.
  */
-function emptyProjectSlot(connector: AdminConnector, rows: readonly Connection[]): Connection | null {
+export function emptyProjectSlot(
+  connector: AdminConnector,
+  rows: readonly Connection[],
+): Connection | null {
   if (connector.requestAuthType === 'none') return null;
   const shared = rows.filter((row) => row.owner_type === 'project');
   const slot = shared.length === 1 ? shared[0]! : null;

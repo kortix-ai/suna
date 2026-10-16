@@ -93,7 +93,7 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
-import { useAddAccount } from '@/hooks/connectors/use-add-account';
+import { emptyProjectSlot, useAddAccount } from '@/hooks/connectors/use-add-account';
 import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
@@ -159,6 +159,7 @@ import { autoConnectPlan, mergeResourceDiscoveryIntoForm } from './connector-oau
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { startOAuth2SignIn } from './connector-oauth2-start';
 import { DiscoverCatalogue } from './discover-catalogue';
+import { slugFromTitle, slugFromUrl } from './connector-slug';
 import { useCreateCustomConnector } from './use-create-custom-connector';
 import { AudienceText } from './view/audience-badge';
 import {
@@ -547,7 +548,12 @@ export function ConnectionsList({
     onChanged();
   };
 
-  const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+  const allRows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+  // The server's empty shared slot is a placeholder, not an account anyone
+  // added: listing it reads as "everyone already shares this". Add account
+  // still reuses it when the person picks Everyone.
+  const slot = emptyProjectSlot(connector, allRows);
+  const rows = slot ? allRows.filter((row) => row !== slot) : allRows;
 
   const openCredential = onSetCredential ?? setCredentialTarget;
   // "Add account" asks the account's name and who may use it: only you,
@@ -2632,22 +2638,6 @@ function AppCatalogue({
 }
 
 /**
- * Slugify the source document's own name — OpenAPI `info.title`, Postman
- * `info.name` — so adding a spec proposes the slug the API calls itself
- * ("Kortix WhatsApp Gateway" → `kortix-whatsapp-gateway`). Derived from the
- * document rather than its URL: a hostname is a guess, a title is a statement.
- */
-function slugFromTitle(title: string | null | undefined): string {
-  return (title ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
-    .replace(/-+$/g, '');
-}
-
-/**
  * Postman-style static header table. Any header, any value, sent on every call
  * this connector makes. Kept as ordered rows (not an object) while editing so a
  * half-typed or duplicate name doesn't silently drop a row out from under the
@@ -2796,12 +2786,14 @@ function ConnectorConfigFields({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // Once the slug is typed in by hand, never overwrite it from the source again.
   const slugTouched = useRef(false);
-  const suggestedSlug = slugFromTitle(detectedTitle);
+  const suggestedSlug =
+    slugFromTitle(detectedTitle) ||
+    slugFromUrl(draft.url ?? draft.endpoint ?? draft.baseUrl ?? draft.spec);
   useEffect(() => {
-    // Only ever fills a blank slug, and only before the user types one. Editing
-    // an existing connector (slugEditable false) is never touched.
+    // Follows the source until the user types a slug. Editing an existing
+    // connector (slugEditable false) is never touched.
     if (!slugEditable || readOnly || slugTouched.current) return;
-    if (!suggestedSlug || draft.slug) return;
+    if (!suggestedSlug || draft.slug === suggestedSlug) return;
     onChange({ ...draft, slug: suggestedSlug });
   }, [suggestedSlug, slugEditable, readOnly, draft, onChange]);
   const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });
@@ -3235,7 +3227,8 @@ export function CustomConnectorForm({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
-    provider: 'openapi',
+    // MCP is what most people paste: a server URL, as in every MCP client.
+    provider: 'mcp',
   });
   const [oauth2Selected, setOauth2Selected] = useState(false);
   const [oauth2, setOauth2] = useState<OAuth2CredentialForm>(EMPTY_OAUTH2_CREDENTIAL_FORM);

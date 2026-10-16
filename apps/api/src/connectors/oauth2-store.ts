@@ -18,6 +18,7 @@ import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import { connectionIsEffectiveProjectDefault, upsertConnectionCredential } from './credentials';
 import { nativeOAuth2CallbackUrl } from './oauth2-callback-url';
 import {
@@ -452,6 +453,11 @@ export async function completeAuthorizationCodeSession(input: {
     await rematerializeAfterOAuthCompletion(loaded.connectionId);
     return { redirectUri: claimed.successRedirectUri, ok: true };
   } catch (error) {
+    // The redirect only carries `token_exchange_failed`; the cause lives here.
+    logger.warn('[connector] OAuth code exchange failed', {
+      connectionId: claimed.connectionId,
+      err: (error as Error).message,
+    });
     await db
       .update(connectorConnections)
       .set({ status: 'error', updatedAt: new Date() })
