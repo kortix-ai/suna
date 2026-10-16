@@ -1,0 +1,15 @@
+{
+  "source_hash": "56a27065058c77dc4cab26da01393034e9a0d2dc5e7ff5fb89477d8af2ce02e1",
+  "diff_files": [
+    "apps/web/src/lib/browser-noise/rules/old-browsers.ts"
+  ],
+  "diff_hash": "10e7c68273715343a17c9fa5d9382c0adde53e55b2180b60b22d3f9d627f243f",
+  "head": "c2d2ffbd5ea3d5b7a346cb3a8e4f3ea82ce44155",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T04:27:53.515Z"
+}

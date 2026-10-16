@@ -1,0 +1,16 @@
+{
+  "source_hash": "fa280dfab191e1399c54467e1ad1f37634305fea174fb61f2bcde8666e098f20",
+  "diff_files": [
+    "apps/web/src/components/ui/checkbox.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "f01d3c7f4cc6bfab9f4be7c555a38dbe9da6e550e63874670e7d85b430321df7",
+  "head": "96941728e2ce11e3fc3b659741f5f4c0fbabf0d6",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T04:56:12.385Z"
+}

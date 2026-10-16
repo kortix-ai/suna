@@ -476,6 +476,7 @@ flow('GW-ACCESS-1', {
     'PATCH /v1/projects/:projectId/experimental',
     'PUT /v1/projects/:projectId/gateway/routing-policy',
     'POST /v1/projects/:projectId/gateway/keys',
+    'GET /v1/projects/:projectId/gateway/keys',
     'GET /v1/projects/:projectId/model-picker',
     'POST /v1/llm/chat/completions',
   ],
@@ -503,6 +504,13 @@ flow('GW-ACCESS-1', {
       .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
     const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'model access verification' }, { params });
     minted.status(200).body().exists('$.secret_key');
+    // The mint response states the URL to use the key against (KRTX-1750) —
+    // the standalone gateway's origin when one is configured, null when the
+    // API serves the gateway itself (the client falls back to its own host).
+    // Mint and list must agree on it, whatever the environment sets.
+    const keysList = await owner.get('/v1/projects/:projectId/gateway/keys', { params });
+    keysList.status(200);
+    minted.status(200).body().has('$.gateway_url', keysList.json<{ gateway_url: string | null }>().gateway_url);
     key = minted.json<{ secret_key: string }>().secret_key;
   });
   await ctx.step('anonymous and nonmember requests cannot read or change access', async () => {
