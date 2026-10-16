@@ -51,7 +51,6 @@ describe('toolKind', () => {
     // prefixed and dashed spellings
     ['oc-bash', 'bash'],
     ['oc_bash', 'bash'],
-    ['codemode', 'bash'],
     ['oc-apply-patch', 'apply_patch'],
     ['web-search', 'web_search'],
     // anything else

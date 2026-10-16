@@ -53,9 +53,7 @@ kind('write', ['write']);
 // lowered, so `Grep`, `Glob` and `LS` stay foreign to the native output parsers.
 kind('edit', ['edit', 'multiedit', 'morph_edit', 'MultiEdit', 'NotebookEdit']);
 kind('apply_patch', ['apply_patch', 'patch']);
-// pi 1.2.0's codemode: a script the model wrote that calls other tools. It runs,
-// like bash, and the narration reads it as "Ran a script" (see narration.ts).
-kind('bash', ['bash', 'codemode']);
+kind('bash', ['bash']);
 kind('web_search', ['web_search', 'websearch', 'image_search']);
 kind('webfetch', ['webfetch', 'web_fetch', 'scrape_webpage', 'scrapewebpage']);
 kind('media', ['image_gen', 'video_gen']);
