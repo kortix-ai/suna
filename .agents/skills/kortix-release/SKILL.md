@@ -29,7 +29,7 @@ run Promote to Production (`staging` → reviewed release PR → `prod`).** Neve
 `prod`.
 
 **Promoting to staging means promoting the newest `dev` SHA whose `Tests` run
-on `dev` is green.** Every push to `dev` runs all ten `Tests` lanes (since
+on `dev` is green.** Every push to `dev` runs all thirteen `Tests` lanes (since
 2026-10-12). Runs queue, so a run starts about every 25 minutes and tests the
 `dev` HEAD of that moment. Do not wait for a particular SHA: take the newest
 green one. Until 2026-10-12 the rule was "promote current HEAD and fix forward",
@@ -126,7 +126,7 @@ API typecheck, frontend build, sandbox-agent build, and the Terraform/Checkov
 scanners.
 
 `Tests` starts with `reuse dev verdict`. When the PR's head SHA already has a
-green `Tests` run on `dev`, the ten lanes skip and the job summary links that
+green `Tests` run on `dev`, the thirteen lanes skip and the job summary links that
 run: the lanes test the head SHA, so the dev run is the same proof. The other
 workflows still run (CodeQL is the long pole, about 15 min). A hotfix branch
 has no dev run, so its lanes run.

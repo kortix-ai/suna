@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."
+        },
+        "workspace_volume": {
+          "name": "Volume do espaço de trabalho",
+          "description": "Mantém o /workspace de cada nova sessão em um volume próprio em vez do disco do sandbox. A Kortix ativa por projeto."
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "Faltando: {items}.",
       "restoreAgent": "O agente sabe o que está faltando.",
       "restoreDismiss": "Fechar o aviso de restauração",
+      "missingMessage": "{count, plural, one {# mensagem anterior} other {# mensagens anteriores}}",
       "missingAttachment": "{count, plural, one {# anexo} other {# anexos}}",
       "missingText": "{count, plural, one {# texto longo} other {# textos longos}}",
       "missingToolInput": "{count, plural, one {# entrada de ferramenta} other {# entradas de ferramenta}}",
@@ -20596,6 +20601,18 @@
     "setUp": "Configurar autenticador"
   },
   "connectorPages": {
+    "addMcpMenu": "Servidor MCP",
+    "addMcpMenuHint": "Cole a URL de um servidor e entre",
+    "addMcpTitle": "Adicionar um servidor MCP",
+    "addMcpDescription": "Cole a URL do servidor e escolha quem pode usá-lo. O Kortix faz seu login e carrega as ferramentas dele.",
+    "addMcpUrlLabel": "URL do servidor",
+    "addMcpUrlHint": "O endpoint remoto do servidor, começando com https://",
+    "addMcpUrlNamed": "Adiciona o conector {name}.",
+    "addMcpUrlInvalid": "Digite uma URL que comece com https://",
+    "addMcpConnect": "Conectar",
+    "addMcpConnected": "{name} está conectado. Os agentes podem usar as ferramentas dele.",
+    "addMcpSignInFailed": "Não foi possível iniciar o login em {name}: {reason}",
+    "addMcpFailed": "Não foi possível adicionar o servidor MCP",
     "install": "Instalar",
     "installNamed": "Instalar {name}",
     "added": "Adicionado",

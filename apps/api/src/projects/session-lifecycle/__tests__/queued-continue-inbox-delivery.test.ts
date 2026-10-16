@@ -17,10 +17,17 @@
 // Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
+
+// The delivery waits are real `Bun.sleep` calls (deliver.ts' 1.5 s retry, the
+// 700 ms landing proof). These tests assert what is sent and in which order,
+// never how long a wait lasts, so each wait is cut to at most 10 ms.
+const realSleep = Bun.sleep;
+const shortSleep = spyOn(Bun, 'sleep').mockImplementation(((ms: number) => realSleep(Math.min(Number(ms), 10))) as typeof Bun.sleep);
+afterAll(() => shortSleep.mockRestore());
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';

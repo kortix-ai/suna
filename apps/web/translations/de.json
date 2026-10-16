@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
+        },
+        "workspace_volume": {
+          "name": "Workspace-Volume",
+          "description": "Speichert /workspace jeder neuen Sitzung auf einem eigenen Volume statt auf der Sandbox-Festplatte. Kortix aktiviert es pro Projekt."
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "Fehlt: {items}.",
       "restoreAgent": "Der Agent weiß, was fehlt.",
       "restoreDismiss": "Hinweis zur Wiederherstellung schließen",
+      "missingMessage": "{count, plural, one {# frühere Nachricht} other {# frühere Nachrichten}}",
       "missingAttachment": "{count, plural, one {# Anhang} other {# Anhänge}}",
       "missingText": "{count, plural, one {# langer Text} other {# lange Texte}}",
       "missingToolInput": "{count, plural, one {# Tool-Eingabe} other {# Tool-Eingaben}}",
@@ -20596,6 +20601,18 @@
     "setUp": "Authenticator einrichten"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP-Server",
+    "addMcpMenuHint": "Server-URL einfügen und anmelden",
+    "addMcpTitle": "MCP-Server hinzufügen",
+    "addMcpDescription": "Füge die URL des Servers ein und wähle, wer ihn nutzen kann. Kortix meldet dich an und lädt seine Tools.",
+    "addMcpUrlLabel": "Server-URL",
+    "addMcpUrlHint": "Der Remote-Endpunkt des Servers, beginnend mit https://",
+    "addMcpUrlNamed": "Fügt den Connector {name} hinzu.",
+    "addMcpUrlInvalid": "Gib eine URL ein, die mit https:// beginnt",
+    "addMcpConnect": "Verbinden",
+    "addMcpConnected": "{name} ist verbunden. Agenten können seine Tools nutzen.",
+    "addMcpSignInFailed": "Die Anmeldung bei {name} konnte nicht starten: {reason}",
+    "addMcpFailed": "Der MCP-Server konnte nicht hinzugefügt werden",
     "install": "Installieren",
     "installNamed": "{name} installieren",
     "added": "Hinzugefügt",

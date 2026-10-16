@@ -63,6 +63,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
+  // The session's /workspace volume (platform/services/workspace-volume.ts):
+  // its boxes mount it and a delete deletes it.
+  'workspace_volume',
 ] as const;
 
 /**

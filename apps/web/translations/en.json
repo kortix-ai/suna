@@ -1080,6 +1080,10 @@
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
+        },
+        "workspace_volume": {
+          "name": "Workspace volume",
+          "description": "Keeps each new session's /workspace on its own volume instead of the sandbox disk. Kortix enables it per project."
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "Missing: {items}.",
       "restoreAgent": "The agent was told what is missing.",
       "restoreDismiss": "Dismiss restore notice",
+      "missingMessage": "{count, plural, one {# earlier message} other {# earlier messages}}",
       "missingAttachment": "{count, plural, one {# attachment} other {# attachments}}",
       "missingText": "{count, plural, one {# long text} other {# long texts}}",
       "missingToolInput": "{count, plural, one {# tool input} other {# tool inputs}}",
@@ -20596,6 +20601,18 @@
     "setUp": "Set up authenticator"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP server",
+    "addMcpMenuHint": "Paste a server URL and sign in",
+    "addMcpTitle": "Add an MCP server",
+    "addMcpDescription": "Paste the server's URL and choose who can use it. Kortix signs you in and loads its tools.",
+    "addMcpUrlLabel": "Server URL",
+    "addMcpUrlHint": "The server's remote endpoint, starting with https://",
+    "addMcpUrlNamed": "Adds the connector {name}.",
+    "addMcpUrlInvalid": "Enter a URL that starts with https://",
+    "addMcpConnect": "Connect",
+    "addMcpConnected": "{name} is connected. Agents can use its tools.",
+    "addMcpSignInFailed": "Could not start the {name} sign-in: {reason}",
+    "addMcpFailed": "Could not add the MCP server",
     "install": "Install",
     "installNamed": "Install {name}",
     "added": "Added",

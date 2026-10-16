@@ -307,10 +307,8 @@ test('31 — session header renders every config release state from GET /config'
     });
 
     await test.step('dark theme and a 720 × 480 window keep the chip inside the header', async () => {
-      // Since #10031 the web app defaults to light, not the system scheme, so
-      // a dark OS alone no longer darkens it. Pick Dark as a user does: the
-      // mode next-themes stores under `theme`. Each openWith reloads the page.
-      await page.emulateMedia({ colorScheme: 'dark' });
+      // The web default theme is `light`, not `system` (#10031), so pick dark
+      // explicitly; `openWith` reloads the page and next-themes reads it.
       await page.evaluate(() => localStorage.setItem('theme', 'dark'));
       await page.setViewportSize({ width: 720, height: 480 });
       for (const [index, name] of [[5, 'session-config-fallback-chip']] as const) {

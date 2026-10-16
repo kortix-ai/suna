@@ -1075,6 +1075,18 @@ test('saved attachments resolve before a sandbox path exists', () => {
   expect(normalizeAttachments([], [{ path: '', filename: 'a.png', mime: 'image/png', attachment: ref }])[0].src).toBe(ref);
 });
 
+test('an image a `<file>` tag names draws once: the tag tile, not its attachment block', () => {
+  const path = '/workspace/uploads/.kortix-inbox/cmd_1/1-swatch.png';
+  const ref = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  const tag = { path, filename: 'swatch.png', mime: 'image/png', attachment: ref, sourcePartIndex: 0 };
+  const block = (source_path?: string) => ({ type: 'attachment' as const, id: 'msg_1-n1', mime: 'image/png', ref: `blob:${'a'.repeat(64)}`, ...(source_path ? { source_path } : {}) });
+  const text = { type: 'text' as const, id: 'msg_1-n0', text: 'look' };
+  expect(normalizeAttachments([text, block(path)], [tag]).map((a) => a.key)).toEqual([`attachment:${ref}`]);
+  // Another file's block, or one without `source_path`, still draws.
+  expect(normalizeAttachments([text, block('/workspace/uploads/.kortix-inbox/cmd_1/2-other.png')], [tag])).toHaveLength(2);
+  expect(normalizeAttachments([text, block()], [tag])).toHaveLength(2);
+});
+
 // A message can carry many `<reply_context>` quotes, each written at
 // its position in the text. The bubble draws each quote where it was written,
 // as the same left-rule blockquote the single leading quote always used.

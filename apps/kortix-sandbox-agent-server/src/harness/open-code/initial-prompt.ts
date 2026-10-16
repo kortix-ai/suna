@@ -114,7 +114,11 @@ export async function reconcileInitialTurnAcceptanceToApi(
  * own impatience. The 20s outer deadline is unchanged and still bounds the whole
  * loop.
  */
-const SESSION_CREATE_ATTEMPT_TIMEOUT_MS = 10_000
+let sessionCreateAttemptTimeoutMs = 10_000
+/** Tests shorten the attempt timeout; it stays above the 1.6 s slow create they also prove. */
+export function setSessionCreateAttemptTimeoutMsForTests(ms: number): void {
+  sessionCreateAttemptTimeoutMs = ms
+}
 
 export async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
   const url = `${baseUrl}/session?directory=${encodeURIComponent(workspace)}`
@@ -122,7 +126,7 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   let lastError = 'opencode session create timed out'
   while (Date.now() < deadline) {
     // Never let one attempt outlive the outer deadline.
-    const attemptMs = Math.max(500, Math.min(SESSION_CREATE_ATTEMPT_TIMEOUT_MS, deadline - Date.now()))
+    const attemptMs = Math.max(500, Math.min(sessionCreateAttemptTimeoutMs, deadline - Date.now()))
     try {
       const res = await fetch(url, {
         method: 'POST',

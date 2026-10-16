@@ -579,6 +579,11 @@ export class PlatinumProvider implements SandboxProvider {
         if (workloadType === 'app') {
           throw new Error(`[apps] The machine's volume could not be mounted (storage refused: ${reason}). The machine did not start without it.`);
         }
+        if (opts.volumes?.['/workspace']) {
+          throw new Error(
+            `[workspace] This session’s workspace volume or drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+          );
+        }
         throw new Error(
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );

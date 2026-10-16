@@ -614,6 +614,7 @@ function pathPatch(path, value) {
 }
 function deepMerge(dst, src) {
   for (const [k, v] of Object.entries(src)) {
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
     if (v && typeof v === 'object' && !Array.isArray(v) && dst[k] && typeof dst[k] === 'object' && !Array.isArray(dst[k])) deepMerge(dst[k], v);
     else dst[k] = v;
   }
