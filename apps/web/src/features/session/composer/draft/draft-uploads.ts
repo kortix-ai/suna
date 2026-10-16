@@ -95,6 +95,15 @@ export function restoreDraftUploads(
           isImage: upload.isImage,
         },
       ];
-    return [{ kind: 'uploaded', uploadId, filename: upload.filename, mime: upload.mime, isImage: false }];
+    return [
+      {
+        kind: 'uploaded',
+        uploadId,
+        filename: upload.filename,
+        mime: upload.mime,
+        size: upload.size,
+        isImage: false,
+      },
+    ];
   });
 }

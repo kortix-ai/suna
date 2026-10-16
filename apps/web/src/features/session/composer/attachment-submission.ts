@@ -50,6 +50,13 @@ export interface StageComposerFilesDependencies {
   isImage: (file: File) => boolean;
 }
 
+/** The bytes of each tray file the controller lists: what a new drop is counted against. */
+export function heldTraySizes(files: readonly AttachedFile[]): number[] {
+  return files.flatMap((file) =>
+    file.kind === 'local' ? [file.file.size] : file.kind === 'uploaded' ? [file.size] : [],
+  );
+}
+
 /** Why a file was left out of a drop or a pick. */
 export type RefusedFileReason = 'empty' | 'tooLarge' | 'tooMany' | 'totalTooLarge';
 

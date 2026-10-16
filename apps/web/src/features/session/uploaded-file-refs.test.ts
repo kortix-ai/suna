@@ -242,6 +242,7 @@ describe('promptFileParts', () => {
       uploadId: 'local-restored',
       filename: 'notes.pdf',
       mime: 'application/pdf',
+      size: 1200,
       isImage: false,
     };
     const parts = promptFileParts([restored], [ready('att-restored', 'notes.pdf')]);

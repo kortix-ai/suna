@@ -42,7 +42,7 @@ describe('finishedDraftUploads', () => {
 
   test('a restored upload with no File is kept too', () => {
     const tray: AttachedFile[] = [
-      { kind: 'uploaded', uploadId: 'u-3', filename: 'shot.png', mime: 'image/png', isImage: false },
+      { kind: 'uploaded', uploadId: 'u-3', filename: 'shot.png', mime: 'image/png', size: 3, isImage: false },
     ];
     expect(finishedDraftUploads(tray, [{ ...item('u-3', 'ready', attachment), file: undefined }])).toEqual([
       { uploadId: 'u-3', upload: { ...attachment, isImage: false } },
@@ -73,7 +73,7 @@ describe('restoreDraftUploads', () => {
     ]);
     expect(tray).toEqual([
       { kind: 'local', uploadId: 'u-1', file, localUrl: 'blob:restored', isImage: true },
-      { kind: 'uploaded', uploadId: 'u-2', filename: 'notes.png', mime: 'image/png', isImage: false },
+      { kind: 'uploaded', uploadId: 'u-2', filename: 'notes.png', mime: 'image/png', size: 3, isImage: false },
     ]);
     // A File is handed back once.
     expect(takeUnsentUploadFile('att-1')).toBeUndefined();

@@ -69,6 +69,7 @@ import {
   planAttachmentReplacement,
   refusedFilesToast,
   runComposerSend,
+  heldTraySizes,
   splitComposerFiles,
   stageComposerFiles,
   takeNewBillingRefusals,
@@ -816,9 +817,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       // One empty or oversized file must not refuse the whole drop: the SDK
       // checks a batch at once, so the files that fit are split off first and
       // each refused one is named (KRTX-2557).
-      const held = attachedFilesRef.current.flatMap((attached) =>
-        attached.kind === 'local' ? [attached.file.size] : [],
-      );
+      const held = heldTraySizes(attachedFilesRef.current);
       const { accepted, refused } = splitComposerFiles(Array.from(files), {
         count: held.length,
         bytes: held.reduce((sum, size) => sum + size, 0),

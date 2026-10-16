@@ -35,6 +35,8 @@ export type AttachedFile =
       uploadId: string;
       filename: string;
       mime: string;
+      /** Bytes on the server: the tray counts them toward the message limits. */
+      size: number;
       isImage: boolean;
     };
 
