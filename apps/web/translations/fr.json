@@ -2738,7 +2738,7 @@
       },
       "link": {
         "title": "Consultez votre boîte e-mail",
-        "description": "Nous avons envoyé un lien de connexion à <address>{email}</address>. Ouvrez-le pour continuer.",
+        "description": "Nous avons envoyé un lien à <address>{email}</address>. Ouvrez-le pour continuer.",
         "notReceived": "Vous n’avez pas reçu le lien ?",
         "resendIn": "Renvoyer dans {seconds}",
         "resend": "Renvoyer"
