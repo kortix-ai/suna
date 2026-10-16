@@ -20697,7 +20697,9 @@
     "providerInfoActionsApp": "{name} извршава сваку радњу коју агент затражи.",
     "providerInfoSecretsManaged": "Агенти никада не виде лозинку, токен ни кључ.",
     "providerInfoSecretsDirect": "Kortix додаје кључ сваком позиву. Агенти га никада не виде.",
-    "providerInfoLabel": "Ко управља овом везом"
+    "providerInfoLabel": "Ко управља овом везом",
+    "addMcpAppTitle": "Poveži {name}",
+    "addMcpAppDescription": "Kortix se povezuje sa MCP serverom servisa {name}. Izaberi ko može da ga koristi, pa se prijavi na {name}."
   },
   "connectMcp": {
     "title": "Povežite Kortix preko MCP-a",

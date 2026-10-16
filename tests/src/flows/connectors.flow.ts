@@ -688,6 +688,42 @@ flow(
   },
 );
 
+// Install asks this before it offers an app's hosted MCP server. The positive
+// answers need a public OAuth server, so the unit tests cover them
+// (`mcpSignInCheck`); here the guard and the permission.
+flow(
+  'CONN-36',
+  {
+    domain: 'connectors',
+    routes: ['POST /v1/connectors/projects/:projectId/connectors/mcp-sign-in-check'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const path = '/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check';
+
+    await ctx.step('a local MCP server URL is refused by the egress guard', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(path, { url: 'https://127.0.0.1/mcp' }, { params: { projectId: p.id } });
+      r.status(400).body().has('$.code', 'invalid_source_address');
+    });
+
+    await ctx.step('a value that is not a URL is a 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(path, { url: 'linear' }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step('NONMEMBER cannot check a server', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(path, { url: 'https://mcp.example.test/mcp' }, { params: { projectId: p.id } });
+      r.status(403);
+    });
+  },
+);
+
 // Pairs with CONN-7 (PUT .../credential) — disconnect (delete) a connector's
 // stored credential. Unknown connector → 404 (deleteConnectorCredential looks
 // the connector up before touching the credential store).

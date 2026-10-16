@@ -20697,7 +20697,9 @@
     "providerInfoActionsApp": "{name} ejecuta cada acción que pide un agente.",
     "providerInfoSecretsManaged": "Los agentes nunca ven una contraseña, token ni clave.",
     "providerInfoSecretsDirect": "Kortix añade la clave a cada llamada. Los agentes nunca la ven.",
-    "providerInfoLabel": "Quién gestiona esta conexión"
+    "providerInfoLabel": "Quién gestiona esta conexión",
+    "addMcpAppTitle": "Conectar {name}",
+    "addMcpAppDescription": "Kortix se conecta al servidor MCP propio de {name}. Elige quién puede usarlo y luego inicia sesión en {name}."
   },
   "connectMcp": {
     "title": "Conecta Kortix por MCP",

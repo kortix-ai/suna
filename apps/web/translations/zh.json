@@ -20697,7 +20697,9 @@
     "providerInfoActionsApp": "{name} 执行智能体请求的每个操作。",
     "providerInfoSecretsManaged": "智能体永远看不到密码、令牌或密钥。",
     "providerInfoSecretsDirect": "Kortix 在每次调用时附加密钥，智能体永远看不到。",
-    "providerInfoLabel": "谁管理此连接"
+    "providerInfoLabel": "谁管理此连接",
+    "addMcpAppTitle": "连接 {name}",
+    "addMcpAppDescription": "Kortix 连接到 {name} 官方的 MCP 服务器。选择谁可以使用它，然后登录 {name}。"
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",

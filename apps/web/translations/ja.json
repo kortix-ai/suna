@@ -20697,7 +20697,9 @@
     "providerInfoActionsApp": "{name} がエージェントの依頼したすべてのアクションを実行します。",
     "providerInfoSecretsManaged": "エージェントがパスワード、トークン、キーを見ることはありません。",
     "providerInfoSecretsDirect": "Kortix が各呼び出しにキーを付加します。エージェントには見えません。",
-    "providerInfoLabel": "この接続の管理者"
+    "providerInfoLabel": "この接続の管理者",
+    "addMcpAppTitle": "{name} を接続",
+    "addMcpAppDescription": "Kortix は {name} 公式の MCP サーバーに接続します。利用できる人を選び、{name} にサインインしてください。"
   },
   "connectMcp": {
     "title": "MCP で Kortix に接続",
