@@ -254,6 +254,15 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 }
 
 /**
+ * A message id the runtime has not seen: `id` with its last char set to `c`. A minted id ends in a
+ * random base62 char, so a plain swap returns `id` itself once in 62 runs (then `steer` answers
+ * `duplicate` and `retract` answers `read`). Upper case keeps x/y/w/z ids distinct from each other.
+ */
+function siblingId(id: string, c: string): string {
+  return id.slice(0, -1) + (id.endsWith(c) ? c.toUpperCase() : c)
+}
+
+/**
  * pi discovers user-level skills under the home it is handed
  * (`harness/pi/service.ts` → `environment: { home: homedir() }`), and
  * `homedir()` is `$HOME`. In a sandbox that is the agent's own empty home; on a
@@ -698,7 +707,7 @@ describe('pi harness', () => {
     const delays: Record<string, number> = { 'STEER-ONE': 200, 'STEER-GONE': 100 }
     const original = (runtime as any).images.bind(runtime)
     spyOn(runtime as any, 'images').mockImplementation(async (input: any) => (await Bun.sleep(delays[input.text] ?? 0), original(input)))
-    const id = (c: string) => runtime.activeTurnMessageId()!.replace(/.$/, c)
+    const id = (c: string) => siblingId(runtime.activeTurnMessageId()!, c)
     const steer = (c: string, text: string) => runtime.steer({ messageID: id(c), text, files: [] })
     const one = steer('x', 'STEER-ONE')
     const two = steer('y', 'STEER-TWO')
@@ -724,7 +733,7 @@ describe('pi harness', () => {
     const root = runtime.rootId
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
     await waitFor(() => runtime.questions.list().length === 1)
-    expect(await runtime.steer({ messageID: runtime.activeTurnMessageId()!.replace(/.$/, 'z'), text: 'STEERED while asked', parts: [] } as never)).toBe('steered')
+    expect(await runtime.steer({ messageID: siblingId(runtime.activeTurnMessageId()!, 'z'), text: 'STEERED while asked', parts: [] } as never)).toBe('steered')
     await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
