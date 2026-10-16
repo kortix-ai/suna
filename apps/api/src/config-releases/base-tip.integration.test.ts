@@ -94,7 +94,15 @@ describe('sharedBaseTip', () => {
 
   test('a move during a check keeps the row expired: the stale answer is not stored', async () => {
     const first = tip();
-    await Bun.sleep(10);
+    // The expire must land inside the first check: after its claim committed and
+    // before its record. A fixed sleep raced the claim's INSERT — under load the
+    // INSERT could land after the expire, the expiry matched zero rows, and the
+    // stale answer legitimately stored. ask() runs only after a won claim (and
+    // sleeps 50 ms), so asks > 0 proves the claim committed while the check is
+    // still in flight. Past that point both orderings pass: an expire during the
+    // ask makes the record a no-op; an expire after the record leaves the row expired.
+    for (let waited = 0; asks === 0 && waited < 5_000; waited += 10) await Bun.sleep(10);
+    expect(asks).toBe(1);
     await expireBaseTips(projectId);
     expect(await first).toBe(TIP_A);
     upstream = TIP_B;
