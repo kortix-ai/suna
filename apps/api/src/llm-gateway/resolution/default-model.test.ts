@@ -3,6 +3,7 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as resolveCandidatesModule from './resolve-candidates';
 import * as modelPreferencesModule from '../../repositories/model-preferences';
 import * as secretsModule from '../../projects/secrets';
+import { runtimeModelCatalog } from '../models/runtime-catalog';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -244,6 +245,39 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
 // by (accountId, projectId) too — otherwise the FIRST project to resolve
 // `auto` on an account would poison the cache for every OTHER project on
 // that same account for up to 30s.
+// 2026-10-16: a project default saved as codex/gpt-5.5 before ChatGPT dropped
+// it pinned every new session to it; the picker showed GPT-6.1 Sol, the turn
+// died on ChatGPT's 400. A dropped ChatGPT default stays on ChatGPT.
+describe('a ChatGPT default that left the lineup moves to the current ChatGPT flagship', () => {
+  beforeEach(() => {
+    accountDefaults = { account: null, agents: {}, projects: { p1: 'codex/gpt-5.5' } };
+    resolveCandidatesImpl = async (model) => {
+      if (model === 'codex/gpt-5.5') throw new GatewayResolutionError('model_retired', 'gone', 'pick another');
+      return [{ provider: 'openai-codex' }];
+    };
+    connectedSecretNames = ['OPENAI_API_KEY'];
+    spyOn(runtimeModelCatalog, 'codexModelIds').mockImplementation(() => ['gpt-6.1-sol', 'gpt-6-sol']);
+  });
+
+  test('resolveEffectiveModel (session create, picker)', async () => {
+    const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toEqual({ model: 'codex/gpt-6.1-sol', source: 'platform' });
+  });
+
+  test('resolveDefaultModelForPrincipal (a prompt with no model)', async () => {
+    expect(await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false })).toBe('codex/gpt-6.1-sol');
+  });
+
+  test('a disconnected ChatGPT account still falls to a connected provider', async () => {
+    resolveCandidatesImpl = async (model) => {
+      if (model.startsWith('codex/')) throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect');
+      return [{ provider: 'openai' }];
+    };
+    const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result.model?.startsWith('openai/')).toBe(true);
+  });
+});
+
 describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account, project)', () => {
   test('two projects on the SAME account never share a cached agent default', async () => {
     const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };

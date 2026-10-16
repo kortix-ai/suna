@@ -110,6 +110,32 @@ export async function getLatestRelease(): Promise<Release | null> {
 }
 
 const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
+const CAPTURE_DEV_API = `https://api.github.com/repos/${REPO}/releases/tags/capture-dev-latest`;
+
+/**
+ * The dev channel's Kortix Capture build (the `capture-dev-latest` prerelease that
+ * capture.yml publishes from dev): what dev.kortix.com serves, since its installers sync to
+ * dev-api. Null on any failure, like getLatestCaptureRelease.
+ */
+export async function getCaptureDevRelease(): Promise<Release | null> {
+  try {
+    const res = await fetch(CAPTURE_DEV_API, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-download' },
+      next: { revalidate: 600 },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { name?: string; tag_name?: string; assets?: GithubAsset[] };
+    const assets: ReleaseAsset[] = (data.assets ?? [])
+      .filter((a): a is GithubAsset & { name: string; browser_download_url: string } =>
+        Boolean(a.name && a.browser_download_url),
+      )
+      .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
+    return assets.length ? { version: data.name ?? data.tag_name ?? 'dev', assets } : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The newest published vX.Y.Z Release that carries Kortix Capture installers.

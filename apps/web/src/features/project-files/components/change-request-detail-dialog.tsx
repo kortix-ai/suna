@@ -43,7 +43,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   manifestFilename,
   useProjectManifestVersion,
-} from '@/features/workspace/customize/migrate-to-v3/manifest-version';
+} from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import { useProjectCans } from '@/lib/use-project-can';
