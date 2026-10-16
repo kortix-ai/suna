@@ -1,3 +1,4 @@
+import { formatUsdAsCredits } from '@kortix/shared';
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
@@ -78,7 +79,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     accountId,
     amount: amountTotal,
     kind: 'purchase',
-    description: `Credit purchase: $${amountTotal.toFixed(2)}`,
+    description: `Credit purchase: ${formatUsdAsCredits(amountTotal)} credits ($${amountTotal.toFixed(2)})`,
     expiring: false,
     key: { event: session.id },
   });
@@ -319,9 +320,14 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   // The amount follows the subscription even before it pays, so the plan page
   // shows what the customer is about to be billed. The tier needs payment.
   // A comped $0 subscription leaves the stored amount alone.
+  // A scheduled cut is the exception: Stripe already bills the lower amount,
+  // but this period keeps the amount in effect until the renewal applies it.
   const subscriptionUsd = monthlyCreditsForSubscription(subscription);
-  if (resolvedTier === 'credits' && subscriptionUsd > 0) {
+  const cutPending = account?.scheduledMonthlyUsd != null && Number(account.scheduledMonthlyUsd) === subscriptionUsd;
+  if (resolvedTier === 'credits' && subscriptionUsd > 0 && !cutPending) {
     updates.planMonthlyUsd = String(subscriptionUsd);
+    updates.scheduledMonthlyUsd = null;
+    updates.scheduledTierChangeDate = null;
   }
   if (resolvedTier && subIsPaying) {
     updates.tier = resolvedTier;
@@ -464,6 +470,7 @@ async function revertToFree(
     {
       tier: 'free',
       planMonthlyUsd: null,
+      scheduledMonthlyUsd: null,
       stripeSubscriptionStatus: 'canceled',
       scheduledTierChange: null,
       scheduledTierChangeDate: null,
@@ -510,7 +517,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   const account = await getCreditAccount(accountId);
   if (!account) return;
 
-  const periodStart = invoice.period_start;
+  // The period this renewal OPENS. Stripe dates a subscription_cycle invoice
+  // by the period that ended (`period_start` is that period's start, which
+  // activation already recorded), so `period_end` is the new period's start.
+  // Keying on `period_start` skipped the first renewal after activation.
+  const periodStart = invoice.period_end;
   if (account.lastRenewalPeriodStart && account.lastRenewalPeriodStart >= periodStart) {
     console.log(`[Webhook] Renewal already processed for period ${periodStart}`);
     return;
@@ -545,6 +556,9 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     accountId,
     {
       ...(tierName === 'credits' ? { planMonthlyUsd: String(allowance) } : {}),
+      // A scheduled cut takes effect with this renewal.
+      scheduledMonthlyUsd: null,
+      scheduledTierChangeDate: null,
       lastRenewalPeriodStart: periodStart,
       lastProcessedInvoiceId: invoice.id,
       lastGrantDate: new Date().toISOString(),

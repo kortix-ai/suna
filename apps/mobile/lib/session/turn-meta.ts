@@ -7,7 +7,8 @@
  * `now` is injected, never read here, so the "N ago" wording is testable.
  */
 
-import { formatCost, formatDuration, formatTokens, type SessionLogTurn } from '@kortix/sdk';
+import { formatDuration, formatTokens, type SessionLogTurn } from '@kortix/sdk';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 /** The web popover's labels (apps/web translations/en.json). */
 export const TURN_META_LABELS = {
@@ -147,7 +148,7 @@ export function turnMetaRows(input: {
     if (value) rows.push({ label: TURN_META_LABELS.duration, value });
   }
   if (cost && cost.cost > 0) {
-    rows.push({ label: TURN_META_LABELS.cost, value: formatCost(cost.cost) });
+    rows.push({ label: TURN_META_LABELS.cost, value: `${formatUsdAsCredits(cost.cost)} credits` });
   }
   const tokenTotal = cost ? cost.tokens.input + cost.tokens.output : 0;
   if (cost && tokenTotal > 0) {

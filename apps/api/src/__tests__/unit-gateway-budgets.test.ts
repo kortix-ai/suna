@@ -105,7 +105,7 @@ describe('checkBudget', () => {
       spendQueue = [50];
       const result = await checkBudget(principal());
       expect(result.exceeded).toBe(true);
-      expect(result.message).toContain('$50/day');
+      expect(result.message).toContain('5,000 credits/day');
       expect(result.message).toContain("project's");
     });
 
@@ -153,7 +153,7 @@ describe('checkBudget', () => {
       expect(result.exceeded).toBe(false);
       expect(result.warnings).toBeDefined();
       expect(result.warnings).toHaveLength(1);
-      expect(result.warnings![0]).toContain('$50/day');
+      expect(result.warnings![0]).toContain('5,000 credits/day');
     });
 
     test('a warn budget under its limit produces no warning', async () => {
@@ -364,6 +364,6 @@ describe('checkBudget spend measurement', () => {
     const result = await checkBudget(principal());
 
     expect(result.exceeded).toBe(true);
-    expect(result.message).toContain('$12.60 used this month');
+    expect(result.message).toContain('1,260 credits used this month');
   });
 });

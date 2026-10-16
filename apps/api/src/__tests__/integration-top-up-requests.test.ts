@@ -60,7 +60,7 @@ describe('a member asks the owners for credits', () => {
     expect(await ask(MEMBER)).toEqual({ notified: 1 });
     expect(sent.map((m) => m.to)).toEqual([[email(OWNER, 'owner')]]);
     expect(sent[0]!.subject).toBe(`${email(MEMBER, 'member')} asked you to add credits to top-up-requests-account`);
-    expect(sent[0]!.text).toContain("can't run agents in top-up-requests-account: the balance is $0.42.");
+    expect(sent[0]!.text).toContain("can't run agents in top-up-requests-account: the balance is 42 credits.");
     expect(sent[0]!.text).toContain(`/projects?accountId=${team.account_id}&accountTab=billing`);
     expect(sent[0]!.category).toBe('billing-top-up-request');
   });

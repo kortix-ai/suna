@@ -147,7 +147,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       billing_period: billingPeriod,
       provider,
       subscription_id: subscriptionId,
-      current_period_end: null,
+      current_period_end: periodEndSeconds(sub, tierName),
       cancel_at_period_end: isCancelling,
       is_cancelled: isCancelled,
       cancellation_effective_date: null,
@@ -346,10 +346,36 @@ function getSubscriptionStatus(sub: CreditAccountRow, tierName: string, isAdmin:
   return sub.stripeSubscriptionStatus ?? (tierName === 'free' ? 'active' : 'no_subscription');
 }
 
+/**
+ * When the current paid period ends (the next renewal), in Unix seconds: the
+ * anchor-aligned date after the current period start. Null without a live
+ * Stripe credits plan.
+ */
+function periodEndSeconds(sub: CreditAccountRow, tierName: string): number | null {
+  if (tierName !== 'credits' || !sub?.stripeSubscriptionId || !sub.billingCycleAnchor) return null;
+  const start = currentPeriodStart(sub.billingCycleAnchor);
+  if (!start) return null;
+  // A period is at most 31 days, so 32 days past its start lands in the next one.
+  const end = currentPeriodStart(sub.billingCycleAnchor, new Date(new Date(start).getTime() + 32 * 86_400_000));
+  return end ? Math.floor(new Date(end).getTime() / 1000) : null;
+}
+
 function extractScheduledChange(
   sub: CreditAccountRow,
   currentTierName: string,
 ): ScheduledChange | null {
+  // A lowered credits amount waiting for the renewal (setPlan's cut).
+  if (sub?.scheduledMonthlyUsd != null && currentTierName === 'credits') {
+    const from = planMonthlyUsd(sub);
+    const to = Number(sub.scheduledMonthlyUsd);
+    return {
+      type: 'downgrade',
+      current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: from * 100, monthly_usd: from },
+      target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: to * 100, monthly_usd: to },
+      effective_date: isoValue(sub.scheduledTierChangeDate) ?? new Date((periodEndSeconds(sub, currentTierName) ?? 0) * 1000).toISOString(),
+    };
+  }
+
   if (sub?.revenuecatPendingChangeProduct && sub.revenuecatPendingChangeDate) {
     const current = getTier(currentTierName);
     return {
