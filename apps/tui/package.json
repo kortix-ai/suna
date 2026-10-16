@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/index.tsx",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "keymap": "bun run scripts/print-keymap.ts",
     "bundle": "bash bundle/bundle-host.sh",
     "bundle:all": "bash bundle/bundle-all.sh",
@@ -15,7 +15,7 @@
     "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
     "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
     "bundle:clean": "rm -f bundle/kortix-tui bundle/kortix-tui-darwin-* bundle/kortix-tui-linux-*",
-    "test": "bun test --timeout ${KORTIX_TUI_TEST_TIMEOUT_MS:-20000}"
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TUI_TEST_TIMEOUT_MS:-20000}\""
   },
   "dependencies": {
     "@kortix/cli": "workspace:*",
@@ -36,6 +36,7 @@
     "@tsconfig/bun": "^1.0.7",
     "@types/bun": "^1.1.0",
     "@types/react": "^19.2.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.4.0"
   }
 }

@@ -84,12 +84,14 @@ describe('the waiting row has a fallback when no turn owns it', () => {
     expect(chat).toMatch(
       /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.id\s*\}/,
     );
-    // …and the row draws it INSIDE the turn's viewport, after the turn.
+    // …and the row draws it INSIDE the turn's viewport (the slice ends at its
+    // close tag), after the turn. The viewport's own props are not pinned.
     const row = between(turn, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
-    expect(row).toContain('<TurnViewport turnId={turnId} className={viewportClassName}>');
-    expect(row).toContain(
-      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}',
-    );
+    const indicator =
+      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}';
+    expect(row).toMatch(/<TurnViewport\s+turnId=\{turnId\}\s+className=\{viewportClassName\}/);
+    expect(row.indexOf(indicator)).toBeGreaterThan(row.indexOf('<SessionTurn {...turnProps} />'));
+    expect(row.indexOf('<SessionTurn {...turnProps} />')).toBeGreaterThan(row.indexOf('<TurnViewport'));
     expect(chat).toContain('fallbackBusyRowAfterTurnId({');
   });
 });

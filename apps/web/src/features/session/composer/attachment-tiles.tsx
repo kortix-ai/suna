@@ -226,7 +226,14 @@ function AttachmentImageTile({
     // `attachment-preview.tsx` HEIC effect tracked.
   }, [af, isHeic]);
 
-  const src = isHeic ? heicUrl : af.kind === 'local' ? af.localUrl : af.url;
+  // A restored upload (`uploaded`) has no picture in this tab: the named tile below.
+  const src = isHeic
+    ? heicUrl
+    : af.kind === 'local'
+      ? af.localUrl
+      : af.kind === 'remote'
+        ? af.url
+        : undefined;
 
   // Fall back to the named tile — the file is still attached and still sends;
   // only the thumbnail is unavailable.
@@ -358,7 +365,15 @@ export function AttachmentTiles({
           // thumbnail box) — `relative` on a `contents` element is inert, so
           // that split has to live one level in from the `<li>`, not on it.
           <li
-            key={uploadId ? `attachment:${uploadId}` : af.kind === 'local' ? af.localUrl : af.url}
+            key={
+              uploadId
+                ? `attachment:${uploadId}`
+                : af.kind === 'remote'
+                  ? af.url
+                  : af.kind === 'local'
+                    ? af.localUrl
+                    : af.uploadId
+            }
             className="contents"
           >
             <div className="group relative" aria-busy={running || undefined}>

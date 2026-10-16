@@ -7,7 +7,7 @@ import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
 import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
 
-flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
+flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
   await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects");
     r.status(200).body().schema(ProjectSchema.array());

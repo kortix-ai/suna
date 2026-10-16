@@ -1258,10 +1258,6 @@
         "session_log_restore": {
           "name": "セッションログからの復元",
           "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
-        },
-        "workspace_volume": {
-          "name": "ワークスペースボリューム",
-          "description": "新しいセッションごとに /workspace をサンドボックスのディスクではなく専用のボリュームに保存します。Kortix がプロジェクトごとに有効にします。"
         }
       }
     },
@@ -16671,6 +16667,7 @@
       "textc3bf78fdd3b9": "申請を送信できませんでした",
       "textc3c25857485f": "すること",
       "textc3c709a999c1": "メモリを読み取り中…",
+      "textc3d1545dd522": "v1のkortix.tomlをガバナンス優先のkortix.yamlに変換し、プラットフォーム管理のスキルを最新のマーケットプレース基準に更新して、レビュー用の変更リクエストを開きます。",
       "textc3d2e79ebdd0": "コネクター",
       "textc3e3a6edeaa5": "利用規約",
       "textc3e58a73609d": "破壊的",
@@ -17411,6 +17408,7 @@
       "textd83a0d814c59": "API Statusに緑色の「Enabled」が表示され、「SCIM Username」パラメーターがEmailにマッピングされ、管理者承認による保留なしでプロビジョニングが有効になっていることを確認します。",
       "textd84b8be91e7b": "Kortix — プレゼンテーション",
       "textd84ee1e1e08b": "kortix init を試すか、コマンドには / を入力",
+      "textd85a383e851d": "マニフェストを v2 (kortix.yaml) に移行",
       "textd861cc0af73c": "kortix init が構成を作り、kortix ship が稼働させます。同じリポジトリが同じ動作をするため、ローカル開発と本番システムは別物ではなくなります。",
       "textd864380a766f": "サンドボックスにはプロジェクト単位のKortixトークンが1つだけあり、第三者のキーはありません。トラッカーとヘルプデスクの認証情報はサーバー側で復号され、外部呼び出しに付加されます。",
       "textd8707d411d99": "シークレット",
@@ -19201,6 +19199,7 @@
       "text97dc6aeaa967": "コンピュータトンネルのデバイス認可をポーリングしました",
       "textf3e8ebf108f5": "変更リクエストのマージをプレビューしました",
       "text703a2cfcc370": "コネクタ認証をプレビューしました",
+      "text63abe9112af0": "MCP サーバーのサインインを確認しました",
       "textf4a73a5afc5b": "プラン変更の日割り計算をプレビューしました",
       "text5c3f85a1e314": "SCIM ユーザーをプロビジョニングしました",
       "text7603d7a6b46b": "Git リポジトリにプッシュしました",
@@ -20084,8 +20083,12 @@
       "textc6813a9e41ac": "クレジット：{value0} LLM · {value1} コンピューティング · {value2} その他。",
       "textc86ce3b8097b": "例：5000",
       "textfaaf56a699c2": "上限（クレジット）",
-      "textc3d1545dd522": "v1のkortix.tomlをガバナンス優先のkortix.yamlに変換し、プラットフォーム管理のスキルを最新のマーケットプレース基準に更新して、レビュー用の変更リクエストを開きます。",
-      "textd85a383e851d": "マニフェストを v2 (kortix.yaml) に移行"
+      "texte7a241debad5": "URL",
+      "text3dd46a7b552c": "アプリを追加",
+      "text68cf13547e38": "URL でアプリを追加",
+      "text46bc646c9bfe": "任意の場所でホストされているサイトをこのプロジェクトに表示します。Kortix は実行中のアプリと並べてその場で開きます。",
+      "text08e6480e9b78": "{value0} を追加しました",
+      "text6241684827b2": "このサイトは Kortix での表示を許可していません。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20691,7 +20694,9 @@
     "providerInfoActionsApp": "{name} がエージェントの依頼したすべてのアクションを実行します。",
     "providerInfoSecretsManaged": "エージェントがパスワード、トークン、キーを見ることはありません。",
     "providerInfoSecretsDirect": "Kortix が各呼び出しにキーを付加します。エージェントには見えません。",
-    "providerInfoLabel": "この接続の管理者"
+    "providerInfoLabel": "この接続の管理者",
+    "addMcpAppTitle": "{name} を接続",
+    "addMcpAppDescription": "Kortix は {name} 公式の MCP サーバーに接続します。利用できる人を選び、{name} にサインインしてください。"
   },
   "connectMcp": {
     "title": "MCP で Kortix に接続",

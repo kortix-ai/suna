@@ -156,7 +156,7 @@ describe('kortix migrate --write', () => {
       prompt_file: 'agents/lead.md',
       permission: { bash: 'ask' },
       // v2 dropped every Kortix tool the tools key did not list.
-      tools: { exclude: ['image_search', 'scrape_webpage', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] },
+      tools: { exclude: ['image_search', 'scrape_webpage', 'show'] },
       skills: 'all',
       subagents: 'all',
       commands: ['standup'],
@@ -172,7 +172,7 @@ describe('kortix migrate --write', () => {
       mode: 'subagent',
       prompt_file: 'agents/reviewer.md',
       permission: { edit: 'deny' },
-      tools: { exclude: ['image_search', 'scrape_webpage', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] },
+      tools: { exclude: ['image_search', 'scrape_webpage', 'show'] },
       skills: ['triage', 'kortix-system'],
       commands: ['weekly-report'],
       extensions: ['notes'],

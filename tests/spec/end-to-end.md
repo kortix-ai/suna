@@ -120,9 +120,9 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ## 2. CLI — local + auth (no/low API)
 
-`INIT-1` `kortix init <name> -y` → fresh standalone `<name>/` in the kortix_version 3 layout: `kortix.yaml` (`kortix_version: 3`, `prompt_file: agents/kortix.md`), `agents/`, `skills/`, `memory/`, `extensions/pty/`, and no `harnesses/` or `.kortix/` folder; agent wiring; and `git init -b main`. **Zero API calls.** Exit 0.
+`INIT-1` `kortix init <name> -y` → fresh standalone `<name>/` in the root project layout: `kortix.yaml` (naming `file: agents/kortix.md` and `opencode.config_dir: harnesses/opencode`), `agents/`, `skills/` (canonical skill), `memory/`, `harnesses/opencode/`, and no `.kortix/` folder; agent wiring; and `git init -b main`. **Zero API calls.** Exit 0.
 `INIT-2` `kortix init <name>` when `<name>/` already exists and is non-empty → exit 1 (refuses).
-`INIT-3` `kortix init <name> --primary opencode --agents claude,cursor -y` → chosen agents wired via symlinks (`.agents/skills` and `.claude/skills` → `skills/`; no `.opencode` link, a v3 project has no OpenCode config dir) + `AGENTS.md` for Codex/Cursor; no `.cursor` rule file; unselected agents skipped.
+`INIT-3` `kortix init <name> --primary opencode --agents claude,cursor -y` → chosen agents wired via symlinks (`.opencode` → `harnesses/opencode`, `.agents/skills` and `.claude/skills` → `skills/`) + `AGENTS.md` for Codex/Cursor; no `.cursor` rule file; unselected agents skipped.
 `INIT-4` `kortix init <name> --no-git` → scaffold created with no repository.
 `CREATE-1` bare `kortix <name>` is an unknown command → exit 2, explains `kortix init <name>`, and never creates a directory. Scaffolding is explicit-only so mistyped commands cannot mutate the filesystem.
 `LOGIN-1` `kortix login --token kortix_pat_…` → validate `kortix_pat_` prefix → `GET /accounts/me` → 200 → host saved + active in `~/.config/kortix/config.json` (mode 0600).
@@ -1021,6 +1021,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CONN-9` Legacy Pipedream rollback only: `GET /connectors/projects/:id/pipedream/apps` and `/pipedream/sections` → admin → 200 or 501 when Pipedream is not configured; sections returns stable bounded category slices and rejects non-members. Preserve this flow only while these rollback routes remain mounted.
 `CONN-13` `PUT /connectors/projects/:id/connectors/:slug/credential-mode|authorization-strategy|name|policies` → admin (`project.connector.write`); body validated before the connector lookup (bad mode, empty name, or invalid policy action → 400 even against an unknown slug); well-formed body + unknown connector → 404 for credential-mode/name/policies; NONMEMBER → 403. `authorization-strategy` is deprecated: it is a no-op that answers `200 {ok:true, deprecated:true}` for ANY value and ANY slug, including one that does not exist — the connector-level strategy concept is gone, so the route no longer looks anything up. NONMEMBER on `authorization-strategy` → 403.
 `CONN-14` `POST /connectors/projects/:id/connectors/auth-discovery {provider,spec|url|endpoint|baseUrl}` → admin (`project.connector.write`) loads the guarded direct source and returns normalized authentication candidates plus a supported recommendation; omitted auth on `POST …/connectors` applies that recommendation, while explicit `{auth:{type:"none"}}` skips discovery and remains a durable opt-out. Source credential literals are never returned.
+`CONN-36` `POST /connectors/projects/:id/connectors/mcp-sign-in-check {url}` → admin (`project.connector.write`) runs the MCP authorization discovery (RFC 9728 + RFC 8414) on the server URL and returns `{requires_sign_in, one_click}`; `one_click` is true only with OAuth endpoints plus dynamic client registration (RFC 7591). A private or local URL answers `400 invalid_source_address`; a non-URL answers `400`; a non-member `403`.
 `CONN-15` Project admin enables `connectors_api_discover` through `PATCH /projects/:id/features`; `GET /connectors/projects/:id/discover/connectors[?q&cursor&category&limit]` → browses the direct integrations.sh catalogue; `GET …/discover/sections?perCategory=6&maxCategories=12` → `{popular,sections,categories}` with at most 6 Popular cards and 1–12 sections, each carrying at most 6 cards and a `total` equal to its facet `count`; the largest section's `total` exceeds its card count, and `discover/connectors?category=<key>` returns that same `total`; `GET …/discover/connectors/detail?id=…` → resolves the trusted record's API/MCP/Postman/GraphQL/docs/CLI variants; upstream outage → 502; `NONMEMBER` → 403 on the list and sections before any upstream fetch.
 `CONN-19` `PUT /connectors/projects/:id/connectors/:slug/secret-binding {secret_identifier}` → project admin binds an active `broker`/`connector` project secret or clears the binding with `null`; malformed identifiers → 400; unknown connector → 404; stored credentials, user-owned authorization, platform authentication, and incompatible secrets → 409; `NONMEMBER` → 403.
 `CONN-27` Session grant provenance + channel guarantee + honest denials (INC-2026-09-08-CONNECTOR-GATEWAY). The fixture mints its credential through `POST /accounts/tokens`, then binds it to the fixture session without the server signing secret. A session-bound token's `agent_grant` is re-derived from the manifest on every gateway call and REPLACED only for a genuine manifest change: it carries `manifestRevision` (blob sha) + `manifestCommit`; a grant read from the same blob that differs from the stored one is confirmed by a second read before it replaces the token, a grant read at an ancestor commit never does, and an unreadable manifest serves the stored grant (last-known-good). The channel connector that created the session (`project_sessions.metadata.source`) is callable under ANY grant. `POST /connectors/projects/:id/call` → 403 `connector_not_assigned` names `agent`, `granted`, `manifest_revision`, `manifest_commit`, `hint`; a declared connector with no usable connection → 403 `connector_not_connected` (+`hint`), and `GET …/connectors` lists it as `needs_auth`; `POST /projects/:id/turn-stream {kind:step}` with no open channel turn → 200 `{ok:false, reason:"no_open_turn"}`. Ten calls after a mid-session `POST …/connectors` keep the manifest's grant. With a narrowed grant, `POST …/call {connector:"<slug>.<action>"}` → 400 `invalid_tool_reference` before the grant gate, and both attachment routes (`/connectors/attachments`, `/connectors/projects/:id/attachments`) → 403 `connector_not_assigned` naming `kortix_email`, or the connector named in `X-Kortix-Attachment-Connector`.
@@ -1202,7 +1203,6 @@ Composio catalogue search (no browser journey since 2026-10-16): short queries, 
 
 
 `CONN-25` Gmail managed OAuth regression. A project declares `{provider:"composio",app:"gmail"}` and connect returns `{provider:"composio",app:"gmail",connected:false,isNoAuth:false,connectUrl,sessionId,connectionId,requestId}`. The Connect Link must be HTTPS on `connect.composio.dev`, the session must be a real Tool Router session, and the authorization request ID must be non-empty.
-`CONN-26` Real agent provider-selection regression. A funded managed project boots a fresh Daytona session, sends the connector request through `POST …/prompts` using `kortix/morph-dsv41flash`, and requires the agent to call its actual connector MCP tools. The assistant must return a `connect.composio.dev` authorization link and ask the user to open it. No tool call may set `provider:"pipedream"` or `allow_legacy_pipedream:true`; an explicit provider, when present, must be `composio`. Project REST readback must expose the agent-created Gmail connector with config `{provider:"composio",app:"gmail"}` and no Pipedream-backed Gmail declaration.
 `DEL-3` `DELETE /v1/account/delete-immediately` → ANON → 401 (auth boundary; destructive happy path not run).
 
 ---
@@ -1726,6 +1726,22 @@ who gets a 200 list with the App filtered out, shows the 403 is the project
 gate). Narrowing the policy to one group keeps that group's members in and
 cuts the other group's; widening back restores them — under OR, no policy
 change can lock an admitted member out.
+
+`APP-14` External App by URL — `POST /projects/:projectId/apps` with
+`external_url` (https, no credentials; `http:`, userinfo or another scheme →
+`400`, nothing created) creates an App hosted elsewhere: `201`, `url` and
+`external_url` are the site, `active_deployment_id: null`,
+`estimated_monthly_usd: 0`. The API reads the site's `X-Frame-Options` and CSP
+`frame-ancestors` once, through the SSRF guard: a site that allows the web
+origin to frame it (or one the API cannot reach, such as a private address)
+gets `capabilities: ["preview"]` and `warnings: []`; one that refuses gets
+`capabilities: []` and the warning `app_external_not_frameable`. List and get
+carry it. Deploy and `…/token` answer `409 app_capability_unsupported`.
+`…/access-session` answers `200` with the site URL itself. A request to the
+App's Kortix host that passes its access gate answers `302` to the site.
+A `PATCH` with `external_url` moves it; the same `PATCH` on an App Kortix runs
+answers `409 app_not_external`. An external App takes no App slot. Delete
+removes it from the list.
 
 ---
 

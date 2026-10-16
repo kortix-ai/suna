@@ -172,7 +172,11 @@ export function emptyProjectSlot(
   connector: AdminConnector,
   rows: readonly Connection[],
 ): Connection | null {
-  if (connector.requestAuthType === 'none') return null;
+  // `none` means the account works unsigned, for a direct connector only: a
+  // managed app reports `none` because Composio holds its sign-in.
+  if (connector.requestAuthType === 'none' && !isManagedConnectorProvider(connector.provider)) {
+    return null;
+  }
   const shared = rows.filter((row) => row.owner_type === 'project');
   const slot = shared.length === 1 ? shared[0]! : null;
   return slot?.authorized === false && slot.metadata?.default_slot === 'project' ? slot : null;

@@ -97,7 +97,7 @@ describe('memoryRowTarget — the row opens the file it names', () => {
     // for a commit: the row displayed `notes/final.md` and opened `draft.md` —
     // the name the rename had just removed — so the click landed on a file that
     // no longer existed.
-    expect(memoryRelPath(openPath)).toBe(subtitle);
+    expect(subtitle).toBe(memoryRelPath(openPath));
   });
 
   test('a rename with no destination in its input falls back to the source, for BOTH', () => {
@@ -107,14 +107,14 @@ describe('memoryRowTarget — the row opens the file it names', () => {
     const { openPath, subtitle } = memoryRowTarget('rename', DRAFT, '');
 
     expect(openPath).toBe(DRAFT);
-    expect(memoryRelPath(openPath)).toBe(subtitle);
+    expect(subtitle).toBe(memoryRelPath(openPath));
   });
 
   test('every other command targets its own path', () => {
     for (const command of ['view', 'create', 'insert', 'str_replace', 'delete']) {
       const { openPath, subtitle } = memoryRowTarget(command, FINAL, '');
       expect(openPath).toBe(FINAL);
-      expect(memoryRelPath(openPath)).toBe(subtitle);
+      expect(subtitle).toBe(memoryRelPath(openPath));
     }
   });
 

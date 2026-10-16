@@ -2,7 +2,6 @@
   "local": {
     "e2e/specs/01-account-auth.spec.ts": 20.3,
     "e2e/specs/10-billing-journey.spec.ts": 0,
-    "e2e/specs/13-sdk-only-session.spec.ts": 0,
     "e2e/specs/27-desktop-parity-desktop.spec.ts": 386.9,
     "e2e/specs/27-desktop-parity.spec.ts": 442.8,
     "e2e/specs/34-instant-session-loads.spec.ts": 117.1,
@@ -15,7 +14,6 @@
   "deployed": {
     "e2e/specs/01-account-auth.spec.ts": 17,
     "e2e/specs/10-billing-journey.spec.ts": 22.8,
-    "e2e/specs/13-sdk-only-session.spec.ts": 91.2,
     "e2e/specs/27-desktop-parity-desktop.spec.ts": 189.6,
     "e2e/specs/27-desktop-parity.spec.ts": 217.1,
     "e2e/specs/34-instant-session-loads.spec.ts": 165.8,

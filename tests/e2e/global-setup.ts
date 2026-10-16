@@ -66,11 +66,6 @@ export function browserLaneRequirements(
       detail: '10-billing-journey skips without it',
       ok: () => env.E2E_ENABLE_BILLING_JOURNEY === '1',
     },
-    {
-      name: 'E2E_ENABLE_SDK_ONLY_SESSION=1',
-      detail: '13-sdk-only-session skips without it',
-      ok: () => env.E2E_ENABLE_SDK_ONLY_SESSION === '1',
-    },
   ];
   return requirements;
 }

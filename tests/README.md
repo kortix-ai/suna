@@ -66,15 +66,17 @@ pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --agentic-only tests/example.e2e.ts # Opt-in e2e browser pilot
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
-pnpm test -- --target-full     # Every deployed staging API flow and browser journey
-pnpm test -- --target-api-full --api-shard=1/6     # One deployed API shard
+pnpm test -- --target-full     # Deployed seam API flows (`deployed` tag) and browser journeys
+pnpm test -- --target-api-full # Deployed seam API flows only (the release gate's API job)
 pnpm test -- --target-browser-full --browser-shard=1/3 # One deployed browser shard
 ```
 
 `--target-full` runs both deployed lanes in one process. The two per-lane modes
 run one lane each, so the release gate can run them as parallel GitHub jobs.
-Both accept a shard, and both assert the deployed SHA exactly as `--target-full`
-does.
+Both assert the deployed SHA exactly as `--target-full` does. The API lane runs
+only the flows tagged `deployed` (see "Release gate: the deployed seams").
+`--api-shard=N/M` partitions that set when one job is not enough; the browser
+lane takes `--browser-shard=N/M`.
 
 Browser and full modes start local Supabase, apply migrations, and start the
 deterministic API, gateway, and web processes. The runner stops only processes
@@ -110,18 +112,24 @@ browser-visible changes) before you merge into `main`. A pull request into
 lanes, once) or the `preview` label (below).
 
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
-It runs on every push to `main`, on a pull request into `staging`, once when a
-person adds the `test` label to a pull request, and on manual dispatch. The push-to-`main` run is a post-merge safety net: it blocks nothing,
-and a red run comments on the offending commit with the failing lane names. A
+It holds the contract lanes (no browser). They run nightly on `dev`, once
+when a person adds the `test` label to a pull request into `dev`, on manual
+dispatch, and inside the release suite (`tests-release.yml` calls it). The
+nightly run blocks nothing; a red night comments on the commit with the
+failing lane names. A
 cancelled run means a newer commit superseded it. Deployed-target runs are
 separate: `deploy-preview.yml` (`--target-full` against a preview origin, on
 dispatch only; the `preview` label deploys without it) and `tests-release.yml` (`--target-*-full` against deployed
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is seven lanes in parallel, each natively on one free GitHub-hosted
-runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). The core lane
-runs `pnpm test -- --no-packages`. Four package lanes run one slice of package
+The run is eight lanes in parallel, each natively on one free GitHub-hosted
+runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Two core lanes
+split the default run without package quality: `core-flows` runs
+`pnpm test -- --core-group=flows` (the REST and CLI flows) and `core-db` runs
+`pnpm test -- --core-group=db` (the DB suites, runner unit tests, route
+coverage, worktree tests, then the SDK). On one runner the flows and the DB
+suites shared 4 vCPU and the lane took 11-12 min. Four package lanes run one slice of package
 quality each: `pnpm test -- --packages-only --package-group=api` (`cli`,
 `kortixd`, `rest`; `rest` holds the repo-wide checks and every other package).
 On one runner the API, CLI and kortixd suites and three `tsc` shared 4 vCPU and
@@ -130,13 +138,15 @@ lanes run shards `1/2` and `2/2` with one Playwright worker each
 (`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The runner hands
 each shard its spec files by path, balanced by measured duration (see
-"Browser shard balancing"). The seven lanes are the parallel equivalent of
+"Browser shard balancing"). The eight lanes are the parallel equivalent of
 `pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
 Supabase so the root runner reuses it. `actions/cache` keeps the Chromium
-download per lockfile; every runner is a fresh VM, so `pnpm install` and the
-Supabase image pulls run cold on each lane.
+download per lockfile. Every runner is a fresh VM, so `pnpm install` (~45 s)
+and the Supabase image pulls (~55 s) run cold on each lane. A `node_modules`
+cache does not pay on these runners: restoring its 1.33 GB archive took
+24-44 s against a 41-49 s cold install (2026-10-16).
 
 Until 2026-08-26 each lane ran inside a Platinum or Daytona cloud sandbox with
 a content-addressed warm image; the runner was a thin orchestrator. That path
@@ -191,7 +201,7 @@ branch no longer exists.
 `tests-release.yml` runs the deployed staging suite for pull requests into
 `prod`. It does not repeat the local-profile suite. It rejects development and
 production hosts. It requires the API, gateway, **and frontend** health commits
-to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
+to equal `RELEASE_SOURCE_SHA`. It runs the `deployed` REST and CLI flows with
 `--require-all`, then runs all configured Playwright journeys against
 `staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
@@ -252,41 +262,74 @@ bun tests/bin/refresh-shard-durations.ts local <tests.yml run id>...
 bun tests/bin/refresh-shard-durations.ts deployed <tests-release.yml run id>...
 ```
 
-A spec file that no run executed (quarantined, local-only) gets 0. A shard wall
+A spec file that no run executed (local-only) gets 0. A shard wall
 time is about `fixed overhead + sum of its files` at one worker: 295 s local, 105 s
 deployed. The largest file is the floor. `27-desktop-parity` was one 520 s file
 (655 s on CI run 38777589705); its journeys now live in
 `e2e/helpers/desktop-parity.ts` and run from two spec files, one per runtime.
 
-#### Release gate shards
+#### Release gate: the deployed seams
 
-The gate runs as parallel matrix jobs instead of one 90-minute job: six API
-shards (`--target-api-full --api-shard=N/6`) and three browser shards
-(`--target-browser-full --browser-shard=N/3`), with `fail-fast: false` so one
-red shard still reports the others. Wall clock becomes the slowest shard rather
-than a contended sum on one 2-vCPU runner.
+The release suite's contract lanes run every flow on the release tree.
+The release gate runs against deployed staging, so it tests only what a
+deployment can break. Its API job runs the flows tagged `deployed`
+(`DEPLOYED_FLOW_TAG` in `src/core/local-runner.ts`), one or more per seam, the
+money path first. `--require-all` applies to that set: a skipped, todo, or
+failed `deployed` flow fails the gate.
 
-`src/core/shard.ts` computes the API partition from the live flow registry, so a
-newly added flow always lands in exactly one shard and can never fall out of the
-gate. Shard 1 owns every `serial` and every `global` flow, and nothing else. Two
-jobs running the platform-mutating `global` flows at once would corrupt each
-other, and both kinds run strictly one-at-a-time, so a parallel flow sharing
-that runner waits behind a queue it cannot help drain. The remaining flows are
-bin-packed longest-first using the declared `timeoutMs` as a static cost proxy.
-Read a printed projected load as a wall-clock ceiling of
-`load / KE2E_API_WORKERS`. `unit/shard.test.ts` proves the partition is total,
-that the pinned flows never leave shard 1, and that shard 1 takes no packed
-work.
+| Seam | Flows |
+| --- | --- |
+| Health, deployed SHA, edge error shape | SYS-1, SYS-8, SYS-5, GW-1, GW-1b |
+| Auth and JWT against the real Supabase | AUTH-3, AUTH-1, ME-1, TOK-3 |
+| Email delivery | AUTH-2, AUTH-4 |
+| CORS, cookies, domains | PRX-1, PRX-3, OAU-5, MCP-1 |
+| Sandbox boot and the runtime proxy | RUN-2, RUN-2-pi, RUN-8 |
+| SSE through the edge | RUN-3, RUN-3-pi |
+| Sandbox stop and wake | SESS-12, SESS-12-pi |
+| LLM gateway | GW-2, GW-MANAGED-1 |
+| Stripe and billing webhooks | BILL-1, BILL-3, BILL-8, BILL-18 |
+| Object storage and uploads | SESS-31, SESS-31-log, FILE-9 |
+| Git push to managed repositories | SHIP-1, RUN-7, RUN-7-pi, GH-19, FILE-1 |
+| Money path: prompt to merged change request, real CLI | GOLD-1, CLI-SESS |
+| MCP over HTTP with a PAT | MCP-4 |
+| Apps edge host check | APP-5 |
+| Provider webhook secrets | SBX-6 |
+| Web push keys | NOTIF-4 |
+| Internal cron key | BILL-13 |
+| Database writes over the deployed pool | ACCT-2, PROJ-1 |
 
-Why six. On run 32240074477 four shards of 137 flows were all killed by the
-40-minute job cap while still passing what they ran (76/87 and 68/77). Measured
-from those logs, a shard completes 2.0–2.3 flows/min, so 137 flows needs 62–70
-minutes — more than a 60-minute cap allows. Six shards put 82 flows on each,
-which the same rates finish in 38–43 minutes. Each shard uses
-`KE2E_API_WORKERS=1` and `KE2E_SANDBOX_WORKERS=1` to stay below staging's
-proven concurrency ceiling.
+45 flows, picked for stability: in the 8 release-gate runs from 2026-10-13 to
+2026-10-15, 44 passed every run (SESS-31-log: 3 of 3 since it was added) and
+RUN-3 failed once on a request timeout (run 38399331524). Their median times
+sum to ~10 min of flow work, which the 9 workers run in ~3 min. `unit/deployed-set.test.ts`
+pins this table to the tags, keeps the set between 30 and 50 flows, and rejects
+a todo `deployed` flow. To add a seam, tag its flow
+(`tags: ['deployed']`, or add `deployed` to the existing tags) and add the row
+here and in that test. A `harnessFlow` tag covers both harness variants.
 
-A final job named `full suite + quality gates` aggregates the shards. That exact
+The gate is three parallel jobs and an aggregator:
+
+- `deployed api smoke`: one job, `--target-api-full`, 4 API and 5 sandbox
+  workers. About 1 min of runner setup, then ~3 min of flows. The 30-minute
+  cap covers a cold sandbox image (`runner.ts` waits up to 15 min for the
+  image and 10 min for its runtime); it is a hang detector, not a budget.
+- `deployed browser shard` 1 to 4: `--target-browser-full
+  --browser-shard=N/4`, `fail-fast: false`. Four shards keep the heaviest
+  shard to one spec 27 file (~3.6 min of journeys in the `deployed` table).
+- `sweep stale test accounts` runs beside them, not in front. It reclaims
+  accounts older than 2 hours, so it cannot touch this run.
+
+Before 2026-10-16 the API job was six shards of the whole registry (~700
+flows), 10-17 min each on green run 38495058722, and v0.13.57 needed 5 gate
+rounds for flakes on shared staging. `src/core/shard.ts` still partitions any
+selection for `--api-shard`, and `unit/shard.test.ts` proves that partition.
+
+Staging concurrency is a fleet total: 4 + 5 API workers plus 4 browser workers
+is 13. Run 32231251280 collapsed staging at 26 workers, 15 held on run
+32240074477, and 19 produced origin 5xx on team creation. Lower the workers
+first if `MAINTENANCE_MODE` 503s reappear.
+
+A final job named `full suite + quality gates` aggregates the jobs. That exact
 name is the required status check on `prod` branch protection; renaming it
 without updating the protection rule silently disables the gate.
 
@@ -592,7 +635,6 @@ cannot work around when they break. Since 2026-10-16 it has these spec files:
 | `34-instant-session-loads` | A session opens instantly from its saved copy. |
 | `27-desktop-parity`, `27-desktop-parity-desktop` | Send, steer and queue a prompt; the web and desktop gate (journeys in `e2e/helpers/desktop-parity.ts`). |
 | `55-session-own-model` | A session keeps the model it was started with. |
-| `13-sdk-only-session` | A real sandbox streams a real prompt (deployed, `@quarantine`). |
 | `49-connector-connect-landing` | Connect a connector and land on its page. |
 | `45-invite-lands-in-invited-project` | Accept a project invite and land in the project. |
 
@@ -616,6 +658,13 @@ The lane writes its Playwright HTML report to
 `tests/test-results/html/index.html`. CI includes that directory in the browser
 artifact.
 
+Every CI browser run records a video of every journey, passed or failed
+(`resolveVideoMode` in `playwright.config.ts`). A local run keeps a video only
+for a failure. To replay a release shard, download its artifact and open the
+report: `gh run download <run-id> --repo kortix-ai/suna -n
+tests-release-browser-shard-1 -D /tmp/shard-1`, then `npx playwright
+show-report /tmp/shard-1/html`.
+
 ### Tag filters
 
 `playwright.config.ts` reads four environment variables and turns them into
@@ -632,33 +681,12 @@ Entries in the same direction are unioned. Playwright applies both at
 collection, before `--shard`, so an excluded journey is never loaded, never
 counted, and never lands in a shard.
 
-### Quarantined journeys
+### No quarantine
 
-A browser journey that cannot be made deterministic against a deployed target
-carries the `@quarantine` tag on its `test.describe`. Today that is
-`17-oauth-provider-initiation` (it clicks through to `accounts.google.com` and
-`github.com` and asserts what those pages do, so a third-party interstitial
-turns a gate red with no Kortix defect behind it), `13-sdk-only-session`, and
-`08-accounts-project-access` (cross-task IAM cache propagation — the spec's own
-header explains what the product needs before it can be un-quarantined).
-
-- **Every gate excludes the tag by default.** `resolveGrepFilters` injects it
-  whenever the environment names no include filter, so a workflow cannot block
-  a build on a quarantined journey by forgetting to set `E2E_EXCLUDE_TAGS` —
-  which is exactly what `tests.yml` did.
-- The blocking release gate also names the tag explicitly; that is now
-  belt-and-braces rather than the only thing holding the line.
-- `.github/workflows/tests-browser-nightly.yml` runs exactly the tag, nightly
-  and on dispatch, against the same staging origin with the same secrets. It
-  gates nothing. A red run there is a ticket, not a block.
-
-An excluded journey does not count as a skip. `strict-skip-reporter.ts` fails
-the strict lane on a `skipped` RESULT, and a grep-excluded journey produces no
-result at all. Prove the set with `playwright test --list`.
-
-To return a journey to the blocking gate, remove its tag — no workflow edit is
-needed. Remove it only once the non-determinism is gone at the source, not
-because the nightly happened to be green.
+Nothing is quarantined: no browser journey, no API flow, no DB suite (testing
+reset, 2026-10-16). The mechanism is gone. A test that fails twice without a
+Kortix defect is fixed or deleted the same day. A test that fails because of a
+Kortix defect stays red until the defect is fixed.
 
 ### Deployed-target resilience
 
@@ -742,9 +770,9 @@ suite ignored them. `unit/db-suites.test.ts` fails when a test file reads
 `process.env.TEST_DATABASE_URL` (or the other lane variables) but is not named
 as a DB suite, so a new suite cannot sit skipped inside a unit lane.
 
-To park a broken suite, add it to `DB_SUITE_QUARANTINE` with the reason. The
-lane prints every quarantined file on every run. Remove the entry when the
-cause is fixed.
+The lane also supplies local Supabase Storage's S3 endpoint to the one suite
+whose subject is an S3 round trip (`PROJECT_SNAPSHOT_SUITE` in
+`src/core/db-suites.ts`). No other suite gets the S3 variables.
 
 A test that needs a live cloud sandbox, a model, or another external service is
 not a DB suite. Name it `*.live.test.ts`; no lane runs it.

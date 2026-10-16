@@ -83,7 +83,7 @@ describe('generic OAuth2 lifecycle protocol', () => {
   // (RFC 6749 §2.3: one authentication method per request).
   test('client_secret_basic sends the client only in the Authorization header', async () => {
     let body = new URLSearchParams();
-    let authorization: string | null = null;
+    let authorization = null as string | null; // assigned inside fetchImpl; `as` keeps TS from narrowing it to null
     await exchangeOAuth2AuthorizationCode(
       {
         ...PUBLIC_APP,
@@ -100,7 +100,7 @@ describe('generic OAuth2 lifecycle protocol', () => {
         },
       },
     );
-    expect(authorization).toBe(`Basic ${Buffer.from('confidential:secret-123').toString('base64')}`);
+    expect<string | null>(authorization).toBe(`Basic ${Buffer.from('confidential:secret-123').toString('base64')}`);
     expect(body.has('client_id')).toBe(false);
     expect(body.has('client_secret')).toBe(false);
   });

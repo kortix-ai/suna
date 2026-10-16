@@ -1258,10 +1258,6 @@
         "session_log_restore": {
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
-        },
-        "workspace_volume": {
-          "name": "Volume dell'area di lavoro",
-          "description": "Mantiene /workspace di ogni nuova sessione su un volume dedicato invece che sul disco della sandbox. Kortix lo attiva per progetto."
         }
       }
     },
@@ -16671,6 +16667,7 @@
       "textc3bf78fdd3b9": "Impossibile inviare la tua candidatura",
       "textc3c25857485f": "Fa",
       "textc3c709a999c1": "Lettura memoria…",
+      "textc3d1545dd522": "Converte il kortix.toml v1 nel kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma all'ultima baseline del marketplace e apre una richiesta di modifica per la revisione.",
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
@@ -17411,6 +17408,7 @@
       "textd83a0d814c59": "API Status mostra \"Enabled\" in verde, il parametro \"SCIM Username\" è associato a Email e il provisioning è abilitato senza il blocco per l'approvazione dell'amministratore.",
       "textd84b8be91e7b": "Kortix — Presentazioni",
       "textd84ee1e1e08b": "prova kortix init oppure / per i comandi",
+      "textd85a383e851d": "Migra il manifest alla v2 (kortix.yaml)",
       "textd861cc0af73c": "kortix init crea la struttura, kortix ship la rende operativa. È lo stesso repo che fa la stessa cosa, quindi lo sviluppo locale e il sistema live non appartengono più a categorie diverse.",
       "textd864380a766f": "La sandbox contiene un token Kortix con ambito di progetto e nessuna chiave di terze parti. Le credenziali del tracker e dell’helpdesk vengono decrittate lato server e allegate alla chiamata in uscita.",
       "textd8707d411d99": "Segreti",
@@ -19201,6 +19199,7 @@
       "text97dc6aeaa967": "Autorizzazione del dispositivo per il tunnel del computer interrogata",
       "textf3e8ebf108f5": "Anteprima dell'unione della richiesta di modifica visualizzata",
       "text703a2cfcc370": "Anteprima dell'autenticazione del connettore visualizzata",
+      "text63abe9112af0": "Accesso al server MCP verificato",
       "textf4a73a5afc5b": "Anteprima del rateo del cambio di piano visualizzata",
       "text5c3f85a1e314": "Utente SCIM predisposto",
       "text7603d7a6b46b": "Push nel repository Git eseguito",
@@ -20084,8 +20083,12 @@
       "textc6813a9e41ac": "In crediti: {value0} LLM · {value1} calcolo · {value2} altro.",
       "textc86ce3b8097b": "es. 5000",
       "textfaaf56a699c2": "Limite (crediti)",
-      "textc3d1545dd522": "Converte il kortix.toml v1 nel kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma all'ultima baseline del marketplace e apre una richiesta di modifica per la revisione.",
-      "textd85a383e851d": "Migra il manifest alla v2 (kortix.yaml)"
+      "texte7a241debad5": "URL",
+      "text3dd46a7b552c": "Aggiungi app",
+      "text68cf13547e38": "Aggiungi un’app tramite URL",
+      "text46bc646c9bfe": "Mostra in questo progetto un sito ospitato ovunque. Kortix lo apre qui, accanto alle app che esegue.",
+      "text08e6480e9b78": "{value0} aggiunta",
+      "text6241684827b2": "Questo sito non consente a Kortix di mostrarlo qui."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20691,7 +20694,9 @@
     "providerInfoActionsApp": "{name} esegue ogni azione richiesta da un agente.",
     "providerInfoSecretsManaged": "Gli agenti non vedono mai password, token o chiavi.",
     "providerInfoSecretsDirect": "Kortix aggiunge la chiave a ogni chiamata. Gli agenti non la vedono mai.",
-    "providerInfoLabel": "Chi gestisce questa connessione"
+    "providerInfoLabel": "Chi gestisce questa connessione",
+    "addMcpAppTitle": "Connetti {name}",
+    "addMcpAppDescription": "Kortix si collega al server MCP di {name}. Scegli chi può usarlo, poi accedi a {name}."
   },
   "connectMcp": {
     "title": "Collega Kortix tramite MCP",

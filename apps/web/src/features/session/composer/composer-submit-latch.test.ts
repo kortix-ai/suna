@@ -478,8 +478,14 @@ describe('the composer submits through the latch', () => {
     );
     // The tray shows the refused files again: the sent cache lets go of their pictures, unrevoked.
     expect(failed).toContain('disownSentAttachmentPreviews(sentFiles);');
-    // The host releases after its POST: the composer never forgets an upload.
-    expect(code()).not.toContain('.forget(');
+    // The host releases a send's uploads after its POST: the composer never
+    // forgets one. Its single release is on unmount, for the tray's finished
+    // uploads a draft keeps by handle. Those are listed, never handed off to a
+    // send, so the release cannot reach a send's uploads.
+    expect(code().split('.forget(').length - 1).toBe(1);
+    expect(code()).toContain(
+      'promptAttachmentsRef.current.forget(finishedUploadsRef.current.map(({ uploadId }) => uploadId));',
+    );
   });
 
   test('the composer never revokes a picture a Send took', () => {
