@@ -13,6 +13,14 @@ const STORE_KEY = '@notification_preferences';
 const registered: { preferences: Record<string, boolean> }[] = [];
 const patches: unknown[] = [];
 let patchFails = false;
+/** The sign-out DELETE: resolves this, or throws when it is an Error, or never settles when null. */
+let unregisterResult: { success: true; deleted: boolean } | Error | null = { success: true, deleted: true };
+const released: { token: string; backendUrl?: string }[] = [];
+/** The release POST: resolves, or rejects with this. */
+let releaseError: unknown = null;
+/** While set, the release POST waits for it. */
+let releaseGate: Promise<void> | null = null;
+const API_URL = 'https://api.kortix.test';
 
 mock.module('react-native', () => ({ Platform: { OS: 'ios' } }));
 mock.module('expo', () => ({ isRunningInExpoGo: () => false }));
@@ -22,6 +30,7 @@ mock.module('expo-notifications', () => ({
   getPermissionsAsync: async () => ({ status: 'granted' }),
   getExpoPushTokenAsync: async () => ({ data: 'ExponentPushToken[test]' }),
 }));
+mock.module('@/api/config', () => ({ API_URL }));
 mock.module('@/lib/logger', () => ({ log: { log() {}, warn() {}, error() {} } }));
 mock.module('@kortix/sdk', () => ({
   INBOX_NOTIFICATION_KINDS: ['turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered'],
@@ -29,7 +38,17 @@ mock.module('@kortix/sdk', () => ({
     registered.push(input);
     return { success: true, message: 'ok' };
   },
-  unregisterDeviceToken: async () => ({ success: true, deleted: true }),
+  unregisterDeviceToken: () => {
+    const result = unregisterResult;
+    if (result === null) return new Promise(() => {});
+    return result instanceof Error ? Promise.reject(result) : Promise.resolve(result);
+  },
+  releaseDeviceToken: async (token: string, options?: { backendUrl?: string }) => {
+    released.push({ token, backendUrl: options?.backendUrl });
+    if (releaseGate) await releaseGate;
+    if (releaseError) throw releaseError;
+    return { ok: true };
+  },
   updateNotificationPreferences: async (patch: unknown) => {
     patches.push(patch);
     if (patchFails) throw new Error('503');
@@ -39,9 +58,11 @@ mock.module('@kortix/sdk', () => ({
 
 let registration: typeof import('./registration');
 let useNotificationStore: typeof import('@/stores/notification-store').useNotificationStore;
+let usePushStore: typeof import('@/stores/push-store').usePushStore;
 beforeAll(async () => {
   registration = await import('./registration');
   useNotificationStore = (await import('@/stores/notification-store')).useNotificationStore;
+  usePushStore = (await import('@/stores/push-store')).usePushStore;
 });
 
 const ALL_ON_PREFS = { enabled: true, onCompletion: true, onError: true, onQuestion: true, onPermission: true, playSound: true };
@@ -67,6 +88,10 @@ beforeEach(() => {
   registered.length = 0;
   patches.length = 0;
   patchFails = false;
+  unregisterResult = { success: true, deleted: true };
+  released.length = 0;
+  releaseError = null;
+  releaseGate = null;
 });
 // Sign-out clears the last posted key, so each test posts from scratch.
 afterEach(() => registration.unregisterPushOnSignOut());
@@ -163,5 +188,126 @@ describe('carryOverLegacyKinds', () => {
     await registration.carryOverLegacyKinds();
     expect(patches).toHaveLength(0);
     expect(storedFlag()).toBe(true);
+  });
+});
+
+// KRTX-2242: a sign-out that cannot delete its row leaves a durable record,
+// and a later call removes the row without a credential.
+describe('pendingRelease', () => {
+  const TOKEN = 'ExponentPushToken[test]';
+  const PENDING = { backendUrl: API_URL, token: TOKEN };
+  const OLD_BACKEND = { backendUrl: 'https://old.example.test', token: TOKEN };
+  const pending = () => usePushStore.getState().pendingRelease;
+  const storedPending = () => JSON.parse(storage.get('@push_registration') ?? '{}').state?.pendingRelease;
+
+  beforeEach(() => usePushStore.setState({ token: TOKEN, pendingRelease: null }));
+  afterEach(() => usePushStore.setState({ pendingRelease: null }));
+
+  test('a failed sign-out DELETE records the row for this backend, persisted', async () => {
+    unregisterResult = new Error('offline');
+    await registration.unregisterPushOnSignOut();
+    expect(pending()).toEqual(PENDING);
+    expect(storedPending()).toEqual(PENDING);
+  });
+
+  // Real timers: waits the 3 s deadline.
+  test('a sign-out DELETE past the deadline records the row', async () => {
+    unregisterResult = null;
+    await registration.unregisterPushOnSignOut();
+    unregisterResult = { success: true, deleted: true }; // the shared afterEach signs out again
+    expect(pending()).toEqual(PENDING);
+  }, 10_000);
+
+  test('a confirmed DELETE, deleted or not, records nothing', async () => {
+    await registration.unregisterPushOnSignOut();
+    unregisterResult = { success: true, deleted: false };
+    await registration.unregisterPushOnSignOut();
+    expect(pending()).toBeNull();
+  });
+
+  test('signed out: the flush releases the row on its backend and clears the record', async () => {
+    usePushStore.setState({ pendingRelease: OLD_BACKEND });
+    await registration.flushPendingRelease({ signedIn: false });
+    expect(released).toEqual([{ token: TOKEN, backendUrl: OLD_BACKEND.backendUrl }]);
+    expect(pending()).toBeNull();
+  });
+
+  test('a 404 (a server without the route) clears the record', async () => {
+    usePushStore.setState({ pendingRelease: PENDING });
+    releaseError = Object.assign(new Error('HTTP 404'), { status: 404 });
+    await registration.flushPendingRelease({ signedIn: false });
+    expect(pending()).toBeNull();
+  });
+
+  test('a 401 (an older server: auth runs before its 404) clears the record', async () => {
+    usePushStore.setState({ pendingRelease: PENDING });
+    releaseError = Object.assign(new Error('HTTP 401'), { status: 401 });
+    await registration.flushPendingRelease({ signedIn: false });
+    expect(pending()).toBeNull();
+  });
+
+  test('a 429 or a 408 keeps the record for the next call', async () => {
+    usePushStore.setState({ pendingRelease: PENDING });
+    releaseError = Object.assign(new Error('HTTP 429'), { status: 429 });
+    await registration.flushPendingRelease({ signedIn: false });
+    expect(pending()).toEqual(PENDING);
+    releaseError = Object.assign(new Error('HTTP 408'), { status: 408 });
+    await registration.flushPendingRelease({ signedIn: false });
+    expect(pending()).toEqual(PENDING);
+  });
+
+  test('a network error or a 5xx keeps the record for the next call', async () => {
+    usePushStore.setState({ pendingRelease: PENDING });
+    releaseError = new TypeError('Network request failed');
+    await registration.flushPendingRelease({ signedIn: false });
+    expect(pending()).toEqual(PENDING);
+    releaseError = Object.assign(new Error('HTTP 503'), { status: 503 });
+    await registration.flushPendingRelease({ signedIn: false });
+    expect(pending()).toEqual(PENDING);
+    expect(released).toHaveLength(2);
+  });
+
+  test('signed in on the same backend with the same token: no release', async () => {
+    usePushStore.setState({ pendingRelease: PENDING });
+    await registration.flushPendingRelease({ signedIn: true });
+    expect(released).toHaveLength(0);
+    expect(pending()).toEqual(PENDING);
+  });
+
+  test('signed in, the record names another backend: released', async () => {
+    usePushStore.setState({ pendingRelease: OLD_BACKEND });
+    await registration.flushPendingRelease({ signedIn: true });
+    expect(released).toHaveLength(1);
+    expect(pending()).toBeNull();
+  });
+
+  test('a register of the same token on the same backend clears the record', async () => {
+    await loadStored(null);
+    usePushStore.setState({ pendingRelease: PENDING });
+    expect(await registration.syncPushRegistration()).toBe(TOKEN);
+    expect(pending()).toBeNull();
+  });
+
+  test('a register started during a release posts only after the release resolves', async () => {
+    await loadStored(null);
+    usePushStore.setState({ pendingRelease: OLD_BACKEND });
+    let open!: () => void;
+    releaseGate = new Promise<void>((resolve) => (open = resolve));
+    const flush = registration.flushPendingRelease({ signedIn: true });
+    while (released.length === 0) await new Promise((r) => setTimeout(r, 0));
+    const sync = registration.syncPushRegistration();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(registered).toHaveLength(0);
+    open();
+    await flush;
+    expect(await sync).toBe(TOKEN);
+    expect(registered).toHaveLength(1);
+  });
+
+  test('a register on another backend keeps the record of the old one', async () => {
+    await loadStored(null);
+    usePushStore.setState({ pendingRelease: OLD_BACKEND });
+    await registration.syncPushRegistration();
+    expect(pending()).toEqual(OLD_BACKEND);
   });
 });

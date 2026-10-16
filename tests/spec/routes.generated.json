@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 840,
+  "count": 841,
   "routes": [
     {
       "method": "GET",
@@ -1501,6 +1501,10 @@
     {
       "method": "DELETE",
       "path": "/v1/notifications/device-token/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/device-token/release"
     },
     {
       "method": "GET",

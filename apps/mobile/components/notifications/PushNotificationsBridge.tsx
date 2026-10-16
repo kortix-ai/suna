@@ -7,6 +7,8 @@
  *   that session (the live stream's in-app cue plays instead).
  * - Registers the token on sign-in when OS permission is already granted.
  *   It never asks: requestPushPermissionOnce() asks after the first send.
+ * - Removes the token row a failed sign-out left (flushPendingRelease), on
+ *   mount, on a sign-in change and on resume (KRTX-2242).
  * - Re-posts this phone's Notifications switches 500 ms after a change.
  * - Opens the tapped session, or its project for an automation alert, also
  *   for the tap that cold-started the app. The tap marks its inbox row read
@@ -23,6 +25,7 @@ import type { NotificationResponse } from 'expo-notifications';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { markNotificationsRead } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import { API_URL } from '@/api/config';
 import { useAuthContext } from '@/contexts';
 import { log } from '@/lib/logger';
 import {
@@ -33,6 +36,7 @@ import {
   shouldPresentInForeground,
 } from '@/lib/notifications/push';
 import {
+  flushPendingRelease,
   getNotifications,
   remotePushSupported,
   syncPushPreferences,
@@ -146,14 +150,26 @@ export function PushNotificationsBridge() {
     };
   }, [queryClient]);
 
+  // A token row a failed sign-out left: release it now and on each resume
+  // until the backend confirms. Needs no push support: the record exists
+  // only when a token did.
+  useEffect(() => {
+    void flushPendingRelease({ signedIn });
+    return addResumeListener(() => {
+      void flushPendingRelease({ signedIn: signedInRef.current });
+    }, PUSH_RESUME_DELAY_MS);
+  }, [signedIn]);
+
   // Sign-in: register when permission is already granted. Back in the
   // foreground without a token: the user may have allowed it in Settings.
+  // With a pending release: the last register failed to bind the old row.
   // That check waits until the resume work that cannot wait has run.
   useEffect(() => {
     if (!signedIn || !remotePushSupported()) return;
     void syncPushRegistration();
     return addResumeListener(() => {
-      if (signedInRef.current && !usePushStore.getState().token) {
+      const { token, pendingRelease } = usePushStore.getState();
+      if (signedInRef.current && (!token || pendingRelease?.backendUrl === API_URL)) {
         void syncPushRegistration();
       }
     }, PUSH_RESUME_DELAY_MS);

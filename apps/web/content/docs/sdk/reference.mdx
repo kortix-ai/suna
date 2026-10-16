@@ -194,7 +194,7 @@ Every method needs a person's credential. A service account gets `403`.
 | `markRead({ ids })` · `markRead({ all: true })` · `markRead({ sessionId })` | Mark 1 to 100 rows, all rows, or one session's rows read. Returns `{ updated, unread_count }`. |
 | `preferences()` · `updatePreferences({ kinds })` | Push and email per kind: `{ kinds, email_available }`. A patch changes only the kinds it names. |
 | `webPushPublicKey()` · `registerWebPushSubscription({ endpoint, keys })` · `unregisterWebPushSubscription(endpoint)` | Web Push for this browser. Registration needs a browser sign-in: a personal access key gets `403`. |
-| `registerDeviceToken(input)` · `unregisterDeviceToken(token)` | A native app's push token. |
+| `registerDeviceToken(input)` · `unregisterDeviceToken(token)` · `releaseDeviceToken(token, { backendUrl? })` | A native app's push token. `releaseDeviceToken` needs no credential: a signed-out app removes its token. |
 
 Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs/work/sessions#notifications).
 

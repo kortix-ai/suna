@@ -11,7 +11,10 @@
  *   user's record, once. Only for a user with a `notification_center`
  *   project (KRTX-1742); the device row keeps this phone's switches.
  * - `unregisterPushOnSignOut()`: deletes this device's row before the auth
- *   session is cleared. Bounded, never throws.
+ *   session is cleared. Bounded, never throws. A failure records the row as
+ *   `pendingRelease` (stores/push-store.ts).
+ * - `flushPendingRelease()`: removes a recorded row without a credential
+ *   (`@kortix/sdk` `releaseDeviceToken`), KRTX-2242.
  *
  * Remote push does not exist in Expo Go on Android (SDK 53+: token calls
  * throw). There, every function here is a no-op.
@@ -21,7 +24,13 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { isRunningInExpoGo } from 'expo';
 import { log } from '@/lib/logger';
-import { registerDeviceToken, unregisterDeviceToken, updateNotificationPreferences } from '@kortix/sdk';
+import {
+  registerDeviceToken,
+  releaseDeviceToken,
+  unregisterDeviceToken,
+  updateNotificationPreferences,
+} from '@kortix/sdk';
+import { API_URL } from '@/api/config';
 import {
   legacyKindPatch,
   serverPreferences,
@@ -118,16 +127,22 @@ export function carryOverLegacyKinds(): Promise<void> {
   return carryOverInFlight;
 }
 
+/** Resolves once `store` has read its persisted state. */
+async function hydrated(store: {
+  persist: { hasHydrated: () => boolean; onFinishHydration: (fn: () => void) => () => void };
+}): Promise<void> {
+  if (store.persist.hasHydrated()) return;
+  await new Promise<void>((resolve) => {
+    const unsubscribe = store.persist.onFinishHydration(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
+}
+
 async function runCarryOver(): Promise<void> {
   const store = useNotificationStore;
-  if (!store.persist.hasHydrated()) {
-    await new Promise<void>((resolve) => {
-      const unsubscribe = store.persist.onFinishHydration(() => {
-        unsubscribe();
-        resolve();
-      });
-    });
-  }
+  await hydrated(store);
   if (store.getState().legacyKindsMigrated) return;
   const patch = legacyKindPatch(store.getState().preferences);
   try {
@@ -162,6 +177,8 @@ function register(token: string, preferences: ServerPreferences) {
 }
 
 async function runSync(): Promise<string | null> {
+  // A release still in flight must not delete the row this sign-in registers.
+  await flushInFlight;
   if (!remotePushSupported()) return null;
   const Notifications = getNotifications()!;
   if (!(await permissionGranted(Notifications))) return null;
@@ -171,7 +188,12 @@ async function runSync(): Promise<string | null> {
   try {
     await register(token, prefs);
     lastPosted = postedKey(token, prefs);
-    usePushStore.getState().setToken(token);
+    const push = usePushStore.getState();
+    push.setToken(token);
+    // The row is now bound to this sign-in: nothing is left to release.
+    if (push.pendingRelease?.backendUrl === API_URL && push.pendingRelease.token === token) {
+      push.setPendingRelease(null);
+    }
     return token;
   } catch (error) {
     log.warn('[PUSH] Register failed:', error);
@@ -217,28 +239,86 @@ export async function requestPushPermissionOnce(): Promise<void> {
   }
 }
 
+const TIMED_OUT = Symbol('timed out');
+
 /**
  * Deletes this device's token row for the signed-in user. Resolves within
- * SIGN_OUT_UNREGISTER_TIMEOUT_MS; a failure is logged, never thrown. The
- * local token stays: the next sign-in re-registers it for the new user.
+ * SIGN_OUT_UNREGISTER_TIMEOUT_MS; never throws. A failure or timeout records
+ * the row as `pendingRelease` for `flushPendingRelease()`. The local token
+ * stays: the next sign-in re-registers it for the new user.
  */
 export async function unregisterPushOnSignOut(): Promise<void> {
   const token = usePushStore.getState().token;
   lastPosted = null;
-  if (!token) return;
+  if (!token) {
+    log.log('[PUSH] Sign-out: no push token on this device');
+    return;
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SIGN_OUT_UNREGISTER_TIMEOUT_MS);
   try {
     // The deadline also covers the auth header read, which can wait on a
     // token refresh before the request starts.
-    await withDeadline(
+    const result = await withDeadline(
       unregisterDeviceToken(token, { signal: controller.signal }),
       SIGN_OUT_UNREGISTER_TIMEOUT_MS,
-      undefined
+      TIMED_OUT
     );
+    if (result === TIMED_OUT) {
+      log.warn('[PUSH] Unregister on sign-out timed out: release pending');
+      usePushStore.getState().setPendingRelease({ backendUrl: API_URL, token });
+    } else if (!result.deleted) {
+      // Another user's row, or already gone: nothing of this sign-in is left.
+      log.log('[PUSH] Unregister on sign-out: no row for this user');
+    }
   } catch (error) {
-    log.warn('[PUSH] Unregister on sign-out failed (non-critical):', error);
+    log.warn('[PUSH] Unregister on sign-out failed: release pending', error);
+    usePushStore.getState().setPendingRelease({ backendUrl: API_URL, token });
   } finally {
     clearTimeout(timer);
   }
+}
+
+let flushInFlight: Promise<void> | null = null;
+
+/**
+ * Removes the row a failed sign-out left (`pendingRelease`) without a
+ * credential. Skipped while signed in on the same backend with the same
+ * token: the next register binds that row to the current sign-in. Cleared on
+ * success and on a 4xx other than 408/429 (an older server without the route
+ * answers 401 or 404); kept on a network error, 5xx, 408 or 429 for the next
+ * call. Never throws.
+ */
+export function flushPendingRelease({ signedIn }: { signedIn: boolean }): Promise<void> {
+  if (!flushInFlight) {
+    flushInFlight = runFlush(signedIn).finally(() => {
+      flushInFlight = null;
+    });
+  }
+  return flushInFlight;
+}
+
+/**
+ * A 4xx other than 408/429 does not change on retry. The release route answers
+ * only 200, 400 or 429; an older server answers its auth 401 or a 404.
+ */
+function isFinalRejection(status: unknown): boolean {
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+async function runFlush(signedIn: boolean): Promise<void> {
+  await hydrated(usePushStore);
+  const pending = usePushStore.getState().pendingRelease;
+  if (!pending) return;
+  if (signedIn && pending.backendUrl === API_URL && pending.token === usePushStore.getState().token) return;
+  try {
+    await releaseDeviceToken(pending.token, { backendUrl: pending.backendUrl });
+  } catch (error) {
+    if (!isFinalRejection((error as { status?: unknown } | null)?.status)) {
+      log.warn('[PUSH] Release of a signed-out token failed, retrying later:', error);
+      return;
+    }
+    log.log('[PUSH] Backend rejected the release: dropping the pending release', error);
+  }
+  if (usePushStore.getState().pendingRelease === pending) usePushStore.getState().setPendingRelease(null);
 }
