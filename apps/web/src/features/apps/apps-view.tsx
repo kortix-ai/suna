@@ -21,7 +21,7 @@ import { ArrowUpRightIcon, HardDrivesIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
@@ -257,7 +257,46 @@ function AppsEmptyState() {
   );
 }
 
-function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
+/**
+ * The project's Apps as the in-session browser's landing (KRTX-2441): the same
+ * cards as the Apps page, sized by the panel through the same container query.
+ * A click hands the App's URL to the browser it sits in instead of a modal, so
+ * the App opens beside the chat. `empty` shows while there is no App to list.
+ */
+export function ProjectAppsGrid({
+  projectId,
+  onOpen,
+  empty = null,
+}: {
+  projectId: string;
+  onOpen: (url: string) => void;
+  empty?: ReactNode;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const apps = useProjectApps(projectId);
+  const canAdmin = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_ADMIN).allowed === true;
+  const listed = apps.data ? gridApps(apps.data, canAdmin) : [];
+  if (apps.isLoading) return null;
+  if (!listed.length) return <>{empty}</>;
+  return (
+    <section className={cn('px-4 py-4', APP_GRID_CONTAINER)}>
+      <h2 className="text-muted-foreground mb-3 text-xs font-medium">{tI18nComplete.raw('text89dd748442c1')}</h2>
+      <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[3].grid)}>
+        {listed.map((app) => (
+          <AppCard
+            key={app.app_id}
+            projectId={projectId}
+            app={app}
+            shown={cardPreviewApp(apps.data!, app, canAdmin)}
+            onOpen={onOpen}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: (url: string) => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `shown` is the App whose live preview the card frames: the App itself, or
   // the first tab of one that hides its own (a backend shows its dashboard).
@@ -282,7 +321,9 @@ function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: Ap
           lives in the detail modal's header instead. */}
       <button
         type="button"
-        onClick={onOpen}
+        // The access-session URL when one was minted (it carries the sign-in
+        // exchange an `access: members` App needs), else the public host.
+        onClick={() => onOpen(access.session.data?.url ?? shown?.url ?? app.url)}
         aria-label={`Open ${app.name}`}
         className="group w-full text-left focus-visible:outline-none"
       >

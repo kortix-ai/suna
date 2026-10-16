@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
+import { Home } from '@/features/icon/icons/home';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
@@ -83,9 +84,8 @@ export function parseAddressInput(value: string): string | null {
 }
 
 /**
- * The back / forward buttons and the address pill every sandbox preview
- * surface renders, with the hostname highlighted at rest and Reload inside the
- * pill. The bar
+ * The back / forward buttons and the home / address / reload group every
+ * sandbox preview surface renders, with the hostname highlighted at rest. The bar
  * owns its own draft state; the surface keeps its history model and hands in
  * the current address via `displayValue`. The surface composes its own row
  * controls around it (`BrowserPanel`'s overflow menu, `AppPreview`'s viewer
@@ -100,6 +100,7 @@ export function SandboxAddressBar({
   onBack,
   onForward,
   onReload,
+  onHome,
   onNavigate,
   placeholder,
   ariaLabel,
@@ -116,6 +117,8 @@ export function SandboxAddressBar({
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
+  /** Back to the browser's landing (the project's Apps and recents). */
+  onHome: () => void;
   /** Called with the internal `http://localhost:<port><path>` URL after the
    *  draft parses as a sandbox port. */
   onNavigate: (internalUrl: string) => void;
@@ -126,7 +129,7 @@ export function SandboxAddressBar({
    *  preview — its landing tab keeps the user's draft — so it passes
    *  `hasPreview` here; `AppPreview` always restores. */
   resetOnEscape?: boolean;
-  /** Actions on the open page, rendered inside the pill after Reload —
+  /** Actions on the open page, rendered at the address's trailing edge —
    *  `AppPreview` puts `Copy link` here. */
   trailing?: ReactNode;
 }) {
@@ -194,82 +197,91 @@ export function SandboxAddressBar({
         </Hint>
       </ButtonGroup>
 
-      {/* The address pill: what is open, with the actions on it — Reload and
-          the surface's `trailing` — at its trailing edge. */}
-      <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1  items-center px-1">
-        <div
-          className={cn(
-            'bg-muted flex h-7 w-full items-center gap-1 rounded-md border border-transparent px-1 text-xs tracking-tight transition-colors',
-            addressError && 'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
-          )}
-        >
-          <span className="flex size-6 shrink-0 items-center justify-center">
-            <Globe aria-hidden className="text-muted-foreground size-3.5" />
-          </span>
-          <div className="group/address relative flex h-full min-w-0 flex-1 items-center">
-            <Input
-              ref={inputRef}
-              type="text"
-              size="xs"
-              value={urlParts ? displayValue : addressValue}
-              aria-label={ariaLabel}
-              onChange={(e) => {
-                setAddressValue(e.target.value);
-                if (addressError) setAddressError(false);
-              }}
-              onFocus={() => {
-                setIsEditing(true);
-                setTimeout(() => inputRef.current?.select(), 0);
-              }}
-              onBlur={() => setIsEditing(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setIsEditing(false);
-                  setAddressError(false);
-                  if (resetOnEscape) setAddressValue(displayValue);
-                  inputRef.current?.blur();
-                }
-              }}
-              placeholder={placeholder}
-              className={cn(
-                'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none focus:ring-0',
-                urlParts && 'text-transparent',
-              )}
-            />
-            {urlParts && (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 right-0 left-0 flex items-center overflow-hidden whitespace-nowrap"
-              >
-                <span className="text-muted-foreground group-hover/address:text-foreground truncate transition-colors">
-                  {urlParts.prefix}
-                  <span className="text-foreground">{urlParts.host}</span>
-                  {urlParts.rest}
+      {/* Home, the address, Reload: one group, built like Back / Forward. The
+          page's own actions (`trailing`) sit at the address's trailing edge. */}
+      <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1 items-center px-1">
+        <ButtonGroup className="w-full min-w-0">
+          <Hint label={tI18nComplete.raw('text3a78695388b3')} side="bottom">
+            <Button
+              type="button"
+              variant="secondary"
+              size="icon"
+              onClick={onHome}
+              disabled={!hasPreview}
+              aria-label={tI18nComplete.raw('text3a78695388b3')}
+            >
+              <Home className="size-3.5" />
+            </Button>
+          </Hint>
+          <div
+            className={cn(
+              'bg-muted flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md border border-transparent px-2 text-xs tracking-tight transition-colors',
+              addressError && 'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
+            )}
+          >
+            <div className="group/address relative flex h-full min-w-0 flex-1 items-center">
+              <Input
+                ref={inputRef}
+                type="text"
+                size="xs"
+                value={urlParts ? displayValue : addressValue}
+                aria-label={ariaLabel}
+                onChange={(e) => {
+                  setAddressValue(e.target.value);
+                  if (addressError) setAddressError(false);
+                }}
+                onFocus={() => {
+                  setIsEditing(true);
+                  setTimeout(() => inputRef.current?.select(), 0);
+                }}
+                onBlur={() => setIsEditing(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsEditing(false);
+                    setAddressError(false);
+                    if (resetOnEscape) setAddressValue(displayValue);
+                    inputRef.current?.blur();
+                  }
+                }}
+                placeholder={placeholder}
+                className={cn(
+                  'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none focus:ring-0',
+                  urlParts && 'text-transparent',
+                )}
+              />
+              {urlParts && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 right-0 left-0 flex items-center overflow-hidden whitespace-nowrap"
+                >
+                  <span className="text-muted-foreground group-hover/address:text-foreground truncate transition-colors">
+                    {urlParts.prefix}
+                    <span className="text-foreground">{urlParts.host}</span>
+                    {urlParts.rest}
+                  </span>
                 </span>
+              )}
+            </div>
+            {addressError && (
+              <span className="text-kortix-red shrink-0 text-xs">
+                {tI18nComplete.raw('textce1e609b7bf5')}
               </span>
             )}
-          </div>
-          {addressError && (
-            <span className="text-kortix-red shrink-0 text-xs">
-              {tI18nComplete.raw('textce1e609b7bf5')}
-            </span>
-          )}
-          <ButtonGroup className="shrink-0">
-            <Hint label={tI18nComplete.raw('text0e9161011702')} side="bottom">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={onReload}
-                disabled={!hasPreview}
-                className="size-6 shrink-0 rounded-sm"
-              >
-                <GrRefresh className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
-              </Button>
-            </Hint>
             {trailing}
-          </ButtonGroup>
-        </div>
+          </div>
+          <Hint label={tI18nComplete.raw('text0e9161011702')} side="bottom">
+            <Button
+              type="button"
+              variant="secondary"
+              size="icon"
+              onClick={onReload}
+              disabled={!hasPreview}
+              aria-label={tI18nComplete.raw('text0e9161011702')}
+            >
+              <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
+            </Button>
+          </Hint>
+        </ButtonGroup>
       </form>
     </>
   );

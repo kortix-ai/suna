@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { ProjectAppsGrid } from '@/features/apps/apps-view';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
@@ -83,6 +84,7 @@ const getSandboxHealthSnapshot = (): SandboxHealth => {
 export function AppPreview({
   url,
   name,
+  projectId,
   shareContext,
   onClose,
   onSendToAgent,
@@ -90,6 +92,8 @@ export function AppPreview({
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
   url: string;
   name: string;
+  /** Lists the project's Apps on the no-app landing. */
+  projectId?: string;
   /** Project-session ids the share link is scoped to. Absent on a booting or
    *  transient session, which is why Copy link is omitted rather than disabled
    *  there — same rule as `ShareFileButton`. */
@@ -290,6 +294,7 @@ export function AppPreview({
           onBack={goBack}
           onForward={goForward}
           onReload={reload}
+          onHome={() => navigateTo('')}
           onNavigate={navigateTo}
           placeholder={tI18nComplete.raw('text878abd024f27')}
           inputRef={addressRef}
@@ -361,10 +366,19 @@ export function AppPreview({
         )}
 
         {noApp ? (
-          /* Landing — recent ports when we have them (the same list
-             BrowserPanel's landing shows), a quiet search hint otherwise. */
-          localhostRecents.length > 0 ? (
-            <div className="h-full overflow-y-auto">
+          /* Landing — the project's Apps, then recent ports (the same list
+             BrowserPanel's landing shows); a quiet search hint when neither. */
+          <div className="flex h-full flex-col overflow-y-auto">
+            {projectId ? (
+              <ProjectAppsGrid
+                projectId={projectId}
+                onOpen={navigateTo}
+                empty={localhostRecents.length > 0 ? null : <SearchHint />}
+              />
+            ) : localhostRecents.length > 0 ? null : (
+              <SearchHint />
+            )}
+            {localhostRecents.length > 0 ? (
               <PreviewRecentsLanding
                 recents={localhostRecents}
                 onOpen={(url) => {
@@ -372,15 +386,8 @@ export function AppPreview({
                   if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
                 }}
               />
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
-                <Globe className="size-12 opacity-20" />
-                <p className="text-sm">{tI18nComplete.raw('text2f883b75cd2d')}</p>
-              </div>
-            </div>
-          )
+            ) : null}
+          </div>
         ) : hasPreview ? (
           <iframe
             key={refreshKey}
@@ -412,6 +419,18 @@ export function AppPreview({
             <Loading className="size-4" />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SearchHint() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
+        <Globe className="size-12 opacity-20" />
+        <p className="text-sm">{tI18nComplete.raw('text2f883b75cd2d')}</p>
       </div>
     </div>
   );

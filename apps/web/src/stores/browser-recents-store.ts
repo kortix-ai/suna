@@ -17,11 +17,22 @@ const MAX_RECENTS = 8;
 
 /**
  * Canonical form used for dedupe and display: requires an http(s) scheme and
- * a host, strips trailing slashes so `/` and `` are the same entry.
+ * a host, strips trailing slashes so `/` and `` are the same entry. Drops an
+ * App's one-shot `__kortix_access` token: it expires in 5 minutes and is a
+ * credential, so it never belongs in persisted history.
  */
 export function normalizeRecentUrl(url: string): string {
-  const trimmed = url.trim();
+  let trimmed = url.trim();
   if (!/^https?:\/\/[^/\s]+/i.test(trimmed)) return '';
+  if (trimmed.includes('__kortix_access=')) {
+    try {
+      const parsed = new URL(trimmed);
+      parsed.searchParams.delete('__kortix_access');
+      trimmed = parsed.toString();
+    } catch {
+      return '';
+    }
+  }
   return trimmed.replace(/\/+$/, '');
 }
 

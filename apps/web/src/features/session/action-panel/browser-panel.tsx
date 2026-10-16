@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
+import { ProjectAppsGrid } from '@/features/apps/apps-view';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { isKortixAppUrl } from '@/features/session/kortix-app-url';
@@ -244,8 +245,10 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
       setHistoryIndex(newIndex);
       const url = history[newIndex];
 
-      if (isWebProxyUrl(url)) {
-        const targetUrl = parseWebProxyUrl(url);
+      // A Kortix App stays on its own origin, so its history entry is the
+      // target itself; a web-proxy entry wraps the target.
+      if (isKortixAppUrl(url) || isWebProxyUrl(url)) {
+        const targetUrl = isKortixAppUrl(url) ? url : parseWebProxyUrl(url);
         if (targetUrl) {
           let displayHost: string;
           try {
@@ -284,6 +287,17 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     [canGoBack, canGoForward, historyIndex, history, tabId, updateTabMetadata, handleRefresh],
   );
 
+  /** Home: the landing (Apps + recents). An empty url is what renders it. */
+  const handleHome = useCallback(() => {
+    updateTabMetadata({
+      id: tabId,
+      title: appPreviewTitle,
+      type: 'preview',
+      href: '/p/web',
+      metadata: { url: '', port: 0, originalUrl: '', path: '/' },
+    });
+  }, [tabId, appPreviewTitle, updateTabMetadata]);
+
   const handleBack = useCallback(() => goHistory(-1), [goHistory]);
   const handleForward = useCallback(() => goHistory(1), [goHistory]);
 
@@ -320,6 +334,20 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
 
   const hasPreview = !!previewUrl;
   const showRecents = mounted && recents.length > 0;
+  const emptyState = (
+    <EmptyState
+      icon={Globe}
+      className="h-full"
+      title={tHardcodedUi.raw('autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05')}
+      description={
+        <>
+          {tHardcodedUi.raw('autoComponentsTabsPreviewTabContentJsxTextOpenAnAppda305669')}{' '}
+          <span className="text-foreground/80 font-mono">3000</span>{' '}
+          {tHardcodedUi.raw('autoComponentsTabsPreviewTabContentJsxTextIfYouKnow6745fa88')}
+        </>
+      }
+    />
+  );
 
   // Copy-public-link action, surfaced from the "⋯" overflow menu.
   const shareLink = usePublicShareLink({
@@ -344,6 +372,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           onBack={handleBack}
           onForward={handleForward}
           onReload={handleRefresh}
+          onHome={handleHome}
           onNavigate={navigateTo}
           placeholder={tHardcodedUi.raw(
             'autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9',
@@ -458,8 +487,18 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           />
         </div>
       ) : (
-        /* Landing — recent URLs when we have them, helper copy otherwise */
-        <div className="flex-1 overflow-y-auto">
+        /* Landing — the project's Apps, then recent URLs; helper copy when
+           there is neither. */
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          {projectId ? (
+            <ProjectAppsGrid
+              projectId={projectId}
+              onOpen={navigateTo}
+              empty={showRecents ? null : emptyState}
+            />
+          ) : showRecents ? null : (
+            emptyState
+          )}
           {showRecents ? (
             <PreviewRecentsLanding
               recents={recents}
@@ -470,22 +509,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
                 ) : undefined
               }
             />
-          ) : (
-            <EmptyState
-              icon={Globe}
-              className="h-full"
-              title={tHardcodedUi.raw(
-                'autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05',
-              )}
-              description={
-                <>
-                  {tHardcodedUi.raw('autoComponentsTabsPreviewTabContentJsxTextOpenAnAppda305669')}{' '}
-                  <span className="text-foreground/80 font-mono">3000</span>{' '}
-                  {tHardcodedUi.raw('autoComponentsTabsPreviewTabContentJsxTextIfYouKnow6745fa88')}
-                </>
-              }
-            />
-          )}
+          ) : null}
         </div>
       )}
     </div>

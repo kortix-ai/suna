@@ -12,6 +12,7 @@ import {
   ArrowRightIcon as ArrowRight,
   ArrowClockwiseIcon as GrRefresh,
 } from '@phosphor-icons/react';
+import { Home } from '@/features/icon/icons/home';
 import {
   parseAddressInput,
   PreviewRecentsLanding,
@@ -47,6 +48,7 @@ function bar(over: Partial<Parameters<typeof SandboxAddressBar>[0]> = {}) {
       onBack={noop}
       onForward={noop}
       onReload={noop}
+      onHome={noop}
       onNavigate={noop}
       placeholder="Type a port, e.g. 3000"
       inputRef={{ current: null }}
@@ -126,24 +128,34 @@ describe('splitUrlForDisplay — the hostname highlight split', () => {
 });
 
 describe('SandboxAddressBar — the shared toolbar', () => {
-  test('renders back / forward, then Reload inside the address pill, in order', () => {
+  test('renders back / forward, then home / address / reload as one group, in order', () => {
     intlErrors.length = 0;
     const html = render(bar());
     expect(intlErrors).toEqual([]);
     const back = icon(<ArrowLeft className="size-4" />);
     const forward = icon(<ArrowRight className="size-4" />);
-    const reload = icon(<GrRefresh className="size-3.5" />);
+    const home = icon(<Home className="size-3.5" />);
+    const reload = icon(<GrRefresh className="size-4" />);
     expect(html).toContain(back);
     expect(html).toContain(forward);
+    expect(html).toContain(home);
     expect(html).toContain(reload);
     expect(html.indexOf(back)).toBeLessThan(html.indexOf(forward));
-    expect(html.indexOf(forward)).toBeLessThan(html.indexOf(reload));
+    expect(html.indexOf(forward)).toBeLessThan(html.indexOf(home));
+    expect(html.indexOf(home)).toBeLessThan(html.indexOf('<input'));
+    expect(html.indexOf('<input')).toBeLessThan(html.indexOf(reload));
   });
 
   test('without a live preview every control is disabled', () => {
     const html = render(bar({ hasPreview: false }));
-    expect(html.match(/<button/g)?.length).toBe(3);
-    expect(html.match(/disabled=""/g)?.length).toBe(3);
+    // Back, forward, home, reload. Home is disabled because the landing IS home.
+    expect(html.match(/<button/g)?.length).toBe(4);
+    expect(html.match(/disabled=""/g)?.length).toBe(4);
+  });
+
+  test('Home is a labelled button, not a decorative globe', () => {
+    const html = render(bar({ hasPreview: true }));
+    expect(html).toContain('aria-label="Home"');
   });
 
   test('with a live preview reload stays enabled; back/forward follow history', () => {
@@ -151,7 +163,7 @@ describe('SandboxAddressBar — the shared toolbar', () => {
     expect(html.match(/disabled=""/g)?.length ?? 0).toBe(0);
 
     const atStart = render(bar({ hasPreview: true }));
-    // Only reload is enabled at the start of history: back and forward disabled.
+    // Home and reload are enabled at the start of history: back and forward disabled.
     expect(atStart.match(/disabled=""/g)?.length ?? 0).toBe(2);
   });
 
