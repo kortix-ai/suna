@@ -1,0 +1,22 @@
+{
+  "source_hash": "11cd90ed08be9552092651c692dac861e3b92c3f3a4190128cca9ae3a83012ba",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-daytona-state-change.test.ts",
+    "apps/api/src/http-errors.ts",
+    "apps/api/src/shared/daytona-state-transition.ts",
+    "packages/sdk/src/core/http/api-client.test.ts",
+    "packages/sdk/src/core/http/api-client.ts",
+    "packages/sdk/src/core/http/response-error.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json"
+  ],
+  "diff_hash": "fd4fdcdf46aab89f45fc0f1f594956ba5d54c2d64a091a0c47f4610634b49f4f",
+  "head": "d8836f1169afbd08426a5cde53ea65bc4a8722d7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T07:11:24.650Z"
+}

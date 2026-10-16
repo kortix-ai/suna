@@ -17,6 +17,10 @@ import { SecretUndecryptableError } from './secrets/undecryptable';
 import { deadCredentialLogDecision, deadCredentialLogKey, isDeadCredential } from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
+import {
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+  isDaytonaStateTransitionConflict,
+} from './shared/daytona-state-transition';
 import { isDaytonaTransientProviderError } from './shared/daytona-transient';
 import {
   CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
@@ -163,6 +167,45 @@ function handlePushPolicyRejection(err: Error, c: Context, method: string): Resp
         message: 'the repository rejected the push because of its branch protection or repository rules',
         status: 409,
         code: 'repository_push_rejected',
+      },
+      409,
+    );
+  }
+  return null;
+}
+
+function handleDaytonaStateTransitionConflict(err: Error, c: Context, method: string, path: string): Response | null {
+  // Daytona answers HTTP 409 when a sandbox state transition is already in
+  // flight ("Sandbox state change in progress") — e.g. a second stop request
+  // arrives while the first is still settling. `apps.ts hosting.stop()`'s
+  // settle window expires and re-throws a plain Error whose cause is the
+  // original DaytonaConflictError; any call site without its own try/catch
+  // (the POST /v1/projects/:id/apps/:appId/stop route) forwarded it to the
+  // generic 500 → Sentry → Better Stack pattern `6bc03d7d…`. The in-flight
+  // transition is already doing what the caller asked, so this is an
+  // EXPECTED, self-resolving state: answer a typed 409
+  // `sandbox_state_change_in_progress` WITHOUT paging Sentry. The SDK
+  // classifies that code silent to onError and the web toast shows the
+  // retryable message. Other 409s (a DaytonaConflictError for a different
+  // reason, or an unrelated upstream) still fall through to the generic
+  // capture below. See shared/daytona-state-transition.ts.
+  if (isDaytonaStateTransitionConflict(err)) {
+    appLogger.warn(
+      `${method} ${path} -> 409 [DaytonaConflictError:state-transition] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'DaytonaConflictError',
+        errorName: err.name,
+        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+      },
+    );
+    return c.json(
+      {
+        error: true,
+        message: 'sandbox state change in progress; try again shortly',
+        code: SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+        status: 409,
       },
       409,
     );
@@ -452,6 +495,8 @@ function handleUnhandledError(err: Error, c: Context): Response {
   if (gitUnavailable) return gitUnavailable;
   const pushRejected = handlePushPolicyRejection(err, c, method);
   if (pushRejected) return pushRejected;
+  const stateTransition = handleDaytonaStateTransitionConflict(err, c, method, path);
+  if (stateTransition) return stateTransition;
   const daytonaTransient = handleDaytonaTransientProviderError(err, c, method, path);
   if (daytonaTransient) return daytonaTransient;
   const composioTransient = handleComposioTransientProviderError(err, c, method, path);
