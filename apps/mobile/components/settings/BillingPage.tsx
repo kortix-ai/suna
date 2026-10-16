@@ -31,7 +31,7 @@ import {
   CaretRightIcon as ChevronRight,
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@/lib/icons';
-import { formatCredits } from '@kortix/shared';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 import {
   SettingsGroup,
@@ -225,7 +225,7 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
           <View className="items-center gap-1 pb-2 pt-4">
             <Text variant="muted">{t('billing.availableCredits', 'Available credits')}</Text>
             <Text variant="h1" className="tabular-nums">
-              {formatCredits(credits?.total || 0)}
+              {formatUsdAsCredits(credits?.total ?? 0)}
             </Text>
             {planName ? (
               <Text variant="muted">
@@ -246,9 +246,9 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
         <SettingsGroup title={t('billing.credits', 'Credits')}>
           <SettingsRow
             label={t('billing.monthly', 'Monthly')}
-            value={formatCredits(credits?.monthly || 0)}
+            value={formatUsdAsCredits(credits?.monthly ?? 0)}
           />
-          <SettingsRow label={t('billing.extra', 'Extra')} value={formatCredits(credits?.extra || 0)} />
+          <SettingsRow label={t('billing.extra', 'Extra')} value={formatUsdAsCredits(credits?.extra ?? 0)} />
         </SettingsGroup>
 
         {subscription ? (

@@ -3,7 +3,8 @@
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
@@ -134,7 +135,8 @@ function ErrorRow({ className, children, ...props }: ComponentProps<typeof Item>
 
 // ============================================================================
 // Insufficient-credits detection — an upstream 402 from the LLM gateway
-// surfaces as "Payment Required: Insufficient credits. Balance: $-0.06". Render
+// surfaces as "Payment Required: Insufficient credits. Balance: -6 credits"
+// (older servers: "Balance: $-0.06"). Render
 // a specialized card with one-click actions instead of raw text.
 // ============================================================================
 
@@ -196,13 +198,6 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
   );
 }
 
-function parseBalance(text: string): string | null {
-  const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]);
-  if (Number.isNaN(value)) return null;
-  return `$${value.toFixed(2)}`;
-}
 
 function InsufficientCreditsCard({
   errorText,
@@ -212,6 +207,8 @@ function InsufficientCreditsCard({
   className?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   // KRTX-1720: a member cannot buy credits (`billing.write`), and the billing
   // pane the buttons open is hidden from them. Say who can act instead. Until
@@ -219,7 +216,8 @@ function InsufficientCreditsCard({
   // the answer, and no "ask an owner" to an owner.
   const accountState = useAccountState({ accountId }).data;
   const mayManageBilling = canManageBilling(accountState);
-  const balance = parseBalance(errorText);
+  // The balance the account holds reads in credits, from either message shape.
+  const balanceUsd = parseBalanceUsd(errorText);
   const billingTo = accountSettingsTarget({ tab: 'billing', accountId });
   const title = tHardcodedUi.raw(
     'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
@@ -235,7 +233,9 @@ function InsufficientCreditsCard({
         {/* The balance is the one number the user needs; when the message has
             none, show the raw server text so nothing is dropped on the floor. */}
         <ItemDescription className="line-clamp-none text-xs text-pretty wrap-anywhere tabular-nums">
-          {balance ? `Balance ${balance}` : errorText}
+          {balanceUsd !== null
+            ? tI18nComplete('text03217276a5f1', { value0: formatUsdAsCredits(balanceUsd, { locale }) })
+            : errorText}
         </ItemDescription>
       </ItemContent>
       {mayManageBilling ? (
