@@ -103,9 +103,9 @@ function TeamsChannelMock() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-end gap-4 border-b px-4 pt-3">
-          <p className="text-foreground pb-2.5 text-sm font-semibold">Launch</p>
+          <p className="text-foreground pb-2.5 text-sm font-semibold">{tI18nComplete.raw('texta4b2d28ad49b')}</p>
           <p className="text-foreground border-b-2 border-(--teams-brand) pb-2 text-xs font-semibold">
-            Posts
+            {tI18nComplete.raw('text2c2e44899866')}
           </p>
         </div>
 
@@ -117,8 +117,8 @@ function TeamsChannelMock() {
               </span>
               <div className="min-w-0 text-sm">
                 <p className="flex items-baseline gap-2">
-                  <span className="text-foreground font-semibold">Maya</span>
-                  <span className="text-muted-foreground text-xs tabular-nums">10:42 AM</span>
+                  <span className="text-foreground font-semibold">{tI18nComplete.raw('textc6c8dad55129')}</span>
+                  <span className="text-muted-foreground text-xs tabular-nums">{tI18nComplete.raw('text9a059d44c8e5')}</span>
                 </p>
                 <p className="text-foreground">
                   <span className="font-semibold text-(--teams-brand)">
@@ -135,7 +135,7 @@ function TeamsChannelMock() {
               <div className="min-w-0 text-sm">
                 <p className="flex items-baseline gap-2">
                   <span className="text-foreground font-semibold">Kortix</span>
-                  <span className="text-muted-foreground text-xs tabular-nums">10:43 AM</span>
+                  <span className="text-muted-foreground text-xs tabular-nums">{tI18nComplete.raw('text92dca4f34a6f')}</span>
                 </p>
                 <p className="text-foreground text-pretty">
                   {tI18nComplete.raw('textf4d1a9671f2f')}
