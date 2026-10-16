@@ -31,7 +31,7 @@ mock.module('../core/http/api-client', () => ({
   },
 }));
 
-const { useSetBillingPlan, useAcceptEnterpriseOffer } = await import('./use-billing-plan');
+const { useSetBillingPlan, useAcceptEnterpriseOffer, useBillingPlanPreview } = await import('./use-billing-plan');
 const {
   ADMIN_ENTITLEMENT_OVERRIDE_KEYS,
   useAdminGrantTrial,
@@ -65,7 +65,8 @@ test('useSetBillingPlan posts monthly_usd and invalidates account-state on succe
   expect(result).toEqual({ status: 'updated', monthly_usd: 100, ok: true });
 
   hook.onSuccess();
-  expect(invalidated).toEqual([{ queryKey: ['account-state'] }]);
+  // A changed plan makes every cached preview stale too.
+  expect(invalidated).toEqual([{ queryKey: ['account-state'] }, { queryKey: ['billing-plan-preview'] }]);
 });
 
 test('useAdminGrantTrial sends no seats and passes credit_grant', async () => {
@@ -95,9 +96,10 @@ test('the admin contract hooks hit the contract routes with the snake_case body'
   expect(requests[0]).toMatchObject({ method: 'GET', path: '/admin/api/accounts/acc-1/enterprise-contracts' });
 
   const create = useAdminCreateEnterpriseContract() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
+  // A license carries no credits: a stale creditsUsd is not sent.
   await create.mutationFn({ accountId: 'acc-1', licenseUsd: 25000, creditsUsd: 15000, termMonths: 12, collection: 'manual', note: 'x' });
   expect(requests[1]).toMatchObject({ method: 'POST', path: '/admin/api/accounts/acc-1/enterprise-contract' });
-  expect(requests[1].body).toEqual({ license_usd: 25000, credits_usd: 15000, term_months: 12, collection: 'manual', note: 'x' });
+  expect(requests[1].body).toEqual({ license_usd: 25000, term_months: 12, collection: 'manual', note: 'x' });
 
   const end = useAdminEndEnterpriseContract() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
   await end.mutationFn({ accountId: 'acc-1' });
@@ -114,4 +116,21 @@ test('the admin contract hooks hit the contract routes with the snake_case body'
 
 test('ADMIN_ENTITLEMENT_OVERRIDE_KEYS lists exactly the seven keys the server accepts', () => {
   expect([...ADMIN_ENTITLEMENT_OVERRIDE_KEYS].sort()).toEqual(['auditAccess', 'branding', 'byokFee', 'managedModels', 'rbac', 'scim', 'sso']);
+});
+
+test('useBillingPlanPreview posts the amount to /billing/plan/preview, keyed by account and amount', async () => {
+  const hook = useBillingPlanPreview({ monthlyUsd: 500, accountId: 'acc-1' }) as unknown as {
+    queryKey: unknown[];
+    queryFn: () => Promise<unknown>;
+    enabled: boolean;
+  };
+  expect(hook.queryKey).toEqual(['billing-plan-preview', 'acc-1', 500]);
+  expect(hook.enabled).toBe(true);
+  await hook.queryFn();
+  expect(requests).toEqual([{ method: 'POST', path: '/billing/plan/preview', body: { monthly_usd: 500, account_id: 'acc-1' } }]);
+});
+
+test('useBillingPlanPreview stays idle without an amount', () => {
+  const hook = useBillingPlanPreview({ monthlyUsd: null }) as unknown as { enabled: boolean };
+  expect(hook.enabled).toBe(false);
 });

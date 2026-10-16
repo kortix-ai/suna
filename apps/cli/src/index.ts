@@ -47,6 +47,7 @@ import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
+import { runMigrate } from './commands/migrate.ts';
 import { runTools } from './commands/tools.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { type Command, TIERS } from './command-table.ts';
@@ -203,6 +204,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   ship: (rest) => runShip(rest),
   deploy: (rest) => runShip(rest),
   validate: (rest) => runValidate(rest),
+  migrate: (rest) => runMigrate(rest),
   schema: (rest) => runSchema(rest),
   'self-host': (rest) => runSelfHost(rest),
   login: (rest) => runLogin(rest),

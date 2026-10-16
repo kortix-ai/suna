@@ -242,10 +242,10 @@ export interface ManifestAppDefaults {
   block: AppBlockV2;
 }
 
-/** Every `apps.<name>` block of the v2 kortix.yaml above `cwd`, or null. */
+/** Every `apps.<name>` block of the kortix.yaml (kortix_version 2 or 3) above `cwd`, or null. */
 export function loadManifestApps(cwd: string): { root: string; blocks: Record<string, AppBlockV2> } | null {
   const manifest = loadLocalManifest(cwd);
-  if (!manifest || manifest.data.kortix_version !== 2) return null;
+  if (!manifest || !(Number(manifest.data.kortix_version) >= 2)) return null;
   const rawApps = manifest.data.apps;
   if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
   return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
@@ -274,7 +274,7 @@ export function loadManifestAppDefaults(
 ): ManifestAppDefaults | null {
   const loaded = loadManifestApps(cwd);
   if (!loaded) {
-    if (requestedName) throw new Error(`--manifest-app ${requestedName} needs a kortix.yaml with kortix_version: 2 and an apps.${requestedName} block`);
+    if (requestedName) throw new Error(`--manifest-app ${requestedName} needs a kortix.yaml (kortix_version 2 or 3) with an apps.${requestedName} block`);
     return null;
   }
   const entries = Object.entries(loaded.blocks);

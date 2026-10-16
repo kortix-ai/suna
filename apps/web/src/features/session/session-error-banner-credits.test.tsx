@@ -8,7 +8,10 @@ import { TurnErrorDisplay } from './session-error-banner';
 
 /** The out-of-credits card for a viewer whose account state says
  *  `can_manage_billing`, or whose account state has not loaded (`undefined`). */
-function render(canManageBilling: boolean | undefined): string {
+function render(
+  canManageBilling: boolean | undefined,
+  errorText = 'insufficient credits: Balance: $0.00',
+): string {
   const client = new QueryClient();
   // A server render reads the account store's initial state: no selected
   // account, so the card asks for the account state under a null id.
@@ -18,7 +21,7 @@ function render(canManageBilling: boolean | undefined): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-        <TurnErrorDisplay errorText="insufficient credits: Balance: $0.00" />
+        <TurnErrorDisplay errorText={errorText} />
       </NextIntlClientProvider>
     </QueryClientProvider>,
   );
@@ -47,5 +50,25 @@ describe('the out-of-credits card', () => {
     expect(markup).toContain('Buy credits');
     expect(markup).toContain('Enable auto top-up');
     expect(markup).not.toContain('Only an account owner or admin can add credits');
+  });
+});
+
+// The balance is what the account holds, so it reads in credits (1 credit =
+// $0.01). The API's message changed from dollars to credits; the card reads both.
+describe('the out-of-credits balance', () => {
+  test('the credits message reads its balance in credits', () => {
+    const markup = render(true, 'Insufficient credits. Balance: 1,250 credits, required: 3 credits');
+    expect(markup).toContain('Balance 1,250 credits');
+  });
+
+  test('an older server\'s dollar message reads in credits too', () => {
+    const markup = render(true, 'Payment Required: Insufficient credits. Balance: $-0.06');
+    expect(markup).toContain('Balance -6 credits');
+    expect(markup).not.toContain('$');
+  });
+
+  test('a message without a balance shows the server text', () => {
+    const markup = render(true, 'Payment Required: out of credits');
+    expect(markup).toContain('Payment Required: out of credits');
   });
 });

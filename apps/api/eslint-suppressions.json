@@ -164,7 +164,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 24
+      "count": 22
     }
   },
   "src/admin/queries.ts": {

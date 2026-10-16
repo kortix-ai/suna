@@ -13,6 +13,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join, posix, resolve } from 'node:path';
 import { execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema';
 import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
 
@@ -169,9 +170,12 @@ async function archiveTree(
  * the working tree (`harnesses/opencode`, `skills/`, `harnesses/pi`, …), and a
  * file a config refers to by a relative path is where the repository put it.
  *
- * The one change is per-agent plugin selection (`harnesses.opencode.plugins`
- * in kortix.yaml): an agent variant drops the unselected plugin entry files
- * from `<config dir>/plugins`.
+ * The changes: per-agent plugin selection (v2 `harnesses.opencode.plugins`
+ * in kortix.yaml) drops the unselected plugin entry files from
+ * `<config dir>/plugins`; files `.gitattributes` marks `export-ignore` are left
+ * out; and a kortix_version 3 tree has no OpenCode config dir — its leftover
+ * v2 `opencode.json[c]` files are left out, and `configDir` is null. A v3
+ * session's plugins come from `extensions`, compiled per session agent.
  */
 interface ReleaseTreeSource {
   /** The OpenCode config dir inside the tree, or null when the commit has none. */
@@ -180,7 +184,7 @@ interface ReleaseTreeSource {
   rootTree: string;
   /** Selected plugins; null keeps the legacy, globally auto-discovered set. */
   plugins: string[] | null;
-  /** Files the tree's `.gitattributes` marks `export-ignore`, left out of the release. */
+  /** Files left out of the release: `export-ignore`d ones, and a v3 tree's leftover `opencode.json[c]`. */
   exportIgnored: string[];
 }
 
@@ -433,7 +437,7 @@ export async function toolModuleFiles(mirror: string, rootTree: string, modules:
   return [...found.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
-/** Filename references only. The plugin implementation stays in the repository. */
+/** v2 only: filename references, the implementation stays in the repository. v3 has no plugin variants. */
 export function selectedOpenCodePlugins(manifest: Record<string, unknown> | null, agent: string): string[] | null {
   if (manifest?.kortix_version !== 2) return null;
   const global = (manifest.harnesses as { opencode?: { plugins?: string[] } } | undefined)?.opencode?.plugins;
@@ -467,6 +471,17 @@ export async function resolveReleaseTreeSource(
     rootTree,
     (path) => path === project.manifestPath || (configDir !== null && path.startsWith(`${configDir}/`)),
   );
+  // v3 reads no harness config dir (the daemon reads only the compiled set):
+  // a leftover v2 `opencode.json[c]` would make the release look like one.
+  if (Number(manifest?.kortix_version) === 3) {
+    for (const dir of [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR]) {
+      for (const name of ['opencode.jsonc', 'opencode.json']) {
+        const path = `${dir}/${name}`;
+        const exists = await runGitCapture(['cat-file', '-e', `${commit}:${path}`], mirror);
+        if (exists.exitCode === 0 && !exportIgnored.includes(path)) exportIgnored.push(path);
+      }
+    }
+  }
   if (configDir && plugins !== null) {
     const configTree = await resolveConfigTreeId(mirror, commit, configDir);
     const available = configTree

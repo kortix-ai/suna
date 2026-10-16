@@ -55,9 +55,19 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
     conds.push(adminAccountsSearchCondition(search));
   }
   // A stored legacy key is a `credits` row until the tier rewrite runs.
+  // `enterprise` and `enterprise_demo` are the Enterprise layer, not a stored
+  // tier: Licensed (enterprise_entitled, or a legacy tier='enterprise') and Demo.
   if (tierValues.length) {
-    const stored = tierValues.flatMap((t) => (t === 'credits' ? ['credits', ...LEGACY_PAID_PLAN_KEYS] : [t]));
-    conds.push(inArray(creditAccounts.tier, stored));
+    const plans = tierValues.filter((t) => t !== 'enterprise' && t !== 'enterprise_demo');
+    const stored = plans.flatMap((t) => (t === 'credits' ? ['credits', ...LEGACY_PAID_PLAN_KEYS] : [t]));
+    const anyOf = [
+      ...(stored.length ? [inArray(creditAccounts.tier, stored)] : []),
+      ...(tierValues.includes('enterprise')
+        ? [or(eq(creditAccounts.enterpriseEntitled, true), eq(creditAccounts.tier, 'enterprise'))]
+        : []),
+      ...(tierValues.includes('enterprise_demo') ? [eq(creditAccounts.demoEnterprise, true)] : []),
+    ];
+    if (anyOf.length) conds.push(or(...anyOf));
   }
   // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
   if (paidOnly) {
@@ -91,6 +101,9 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       nonExpiringCredits: creditAccounts.nonExpiringCredits,
       dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
       tier: creditAccounts.tier,
+      // The Enterprise layer, read by resolveBillingFromRow for the row's state.
+      enterpriseEntitled: creditAccounts.enterpriseEntitled,
+      demoEnterprise: creditAccounts.demoEnterprise,
       paymentStatus: creditAccounts.paymentStatus,
       provider: creditAccounts.provider,
       planType: creditAccounts.planType,
@@ -99,11 +112,6 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       planMonthlyUsd: creditAccounts.planMonthlyUsd,
       // Read only by planMonthlyUsd()'s fallback for a per-seat row not yet backfilled.
       seatCount: creditAccounts.seatCount,
-      trialStatus: creditAccounts.trialStatus,
-      trialTier: creditAccounts.trialTier,
-      trialStartedAt: creditAccounts.trialStartedAt,
-      trialEndsAt: creditAccounts.trialEndsAt,
-      trialNote: creditAccounts.trialNote,
       // The resolver applies the per-feature overrides; a projection without
       // them would report a different answer than the gates enforce.
       entitlementOverrides: creditAccounts.entitlementOverrides,

@@ -756,6 +756,11 @@ export type Command = {
     template: string;
     subtask?: boolean;
     hints: Array<string>;
+    /**
+     * The agents that may run this command (kortix.yaml v3). Absent on a v1/v2
+     * project: then every agent may run it.
+     */
+    agents?: Array<string>;
 };
 export type Agent = {
     name: string;

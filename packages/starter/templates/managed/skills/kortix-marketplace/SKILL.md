@@ -39,17 +39,28 @@ adding an item is the import flow below.
    - a `kortix.yaml` at the repo root → a **project** (agents + skills + tools +
      config),
    - a `SKILL.md` → a **skill**,
-   - an agent definition (an `agents/*.md`) → an **agent**,
+   - an agent definition (an `agents.<name>` block in a `kortix.yaml`, or a
+     legacy `agents/*.md`) → an **agent**,
    - a tool file (a `tools/*.ts`) → a **tool**.
 3. **Merge what fits into this project**, in the right place:
-   - skills → `skills/<name>/`,
-   - agents → `agents/<name>.md`, declared under `agents:` in `kortix.yaml`,
-   - tools → `tools/<name>.ts`, declared under `tools:` in `kortix.yaml`, so every harness runs it. An item written as an OpenCode tool (`tool({ args, execute })`) is converted to the harness-neutral contract (`kortix-system` → `references/kortix/tools.md`); keep it in `harnesses/opencode/tools/` only if it needs OpenCode-only context,
+   - skills → `skills/<name>/`, registered under `skills:` in `kortix.yaml`
+     (`<name>: skills/<name>`), and granted to each agent that needs it
+     (`agents.<agent>.skills`),
+   - agents → one block under `agents:` in `kortix.yaml`, with `prompt` or
+     `prompt_file` (for example `agents/<name>.md`) and the grants it needs.
+     A legacy agent `.md` becomes `prompt_file` plus its frontmatter keys on
+     the block,
+   - tools → `tools/<name>.ts`, registered under `tools:` in `kortix.yaml`, so every harness runs it. An item written as an OpenCode tool (`tool({ args, execute })`) is converted to the harness-neutral contract (`kortix-system` → `references/kortix/tools.md`),
+   - OpenCode plugins and pi packages → an `extensions:` entry, enabled per
+     agent (`agents.<agent>.extensions`),
+   - commands → a `commands:` entry, enabled per agent
+     (`agents.<agent>.commands`),
    - for a **whole project**: pull in its skills/agents/tools and reconcile its
      `kortix.yaml` into this project's (merge connectors/triggers/agents — never
      blindly overwrite the user's manifest). Use judgment; keep what's relevant.
-   Projects created before 2026-09 keep agents, skills and tools under
-   `.kortix/opencode/`. Both layouts work; put new files in the root layout.
+   A `kortix_version: 3` project reads no `harnesses/`, `.kortix/`,
+   `.opencode/` or `.pi/` folder: never import files there. A legacy v1 or
+   v2 project moves to v3 with `kortix migrate` (`--write` applies it).
 4. **Adapt it to this project.** If a skill carries a "TODO: make this yours"
    placeholder or generic copy, tailor it to what this project actually does.
 5. **Wire up its needs.** If the item requires a connector/secret, don't hardcode
