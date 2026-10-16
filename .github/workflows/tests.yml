@@ -1,9 +1,11 @@
 name: Tests
 
-# The local suite: seven lanes (core, browser-1..2, packages-api|cli|kortixd|rest) on GitHub-hosted
-# runners (free on this public repo). Each lane is the unchanged root command
-# `pnpm test -- <args>`. Together they cover `pnpm test --full` once: `core`
-# skips package quality (`--no-packages`) because the `packages-*` lanes run it.
+# The local suite: eight lanes (core-flows, core-db, browser-1..2,
+# packages-api|cli|kortixd|rest) on GitHub-hosted runners (free on this public
+# repo). Each lane is the unchanged root command `pnpm test -- <args>`. Together
+# they cover `pnpm test --full` once: the two `core-*` lanes split the core run
+# (`--core-group=flows|db`, no package quality) and the `packages-*` lanes run
+# package quality.
 #
 # One tree, one run (testing reset, 2026-10-16). It runs when ANY of these holds:
 #   1. a pull request into `staging`  - the dev -> staging gate
@@ -60,11 +62,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `--no-packages`: the `packages-*` lanes run package quality; core
-          # repeating it cost ~18 min per run (2026-10-11 release analysis).
-          - lane: core
+          # The core run in two halves on two runners since 2026-10-16. On one
+          # 4 vCPU runner the flows (450 s) and the DB suites (385 s) shared the
+          # CPU and the lane took 11-12 min (run 38932470058). `core-flows`
+          # runs the REST/CLI flows; `core-db` runs the DB suites, the runner
+          # unit tests, route coverage, the worktree tests and the SDK.
+          # Neither runs package quality: the `packages-*` lanes do.
+          - lane: core-flows
             mode: core
-            args: --no-packages
+            args: --core-group=flows
+          - lane: core-db
+            mode: core
+            args: --core-group=db
           # Two browser shards, one Playwright worker each (testing reset,
           # 2026-10-16): the suite is the money-path specs. `--browser-shard=N/M`
           # splits whole spec files by measured duration
@@ -110,6 +119,22 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
+      # node_modules (root + every workspace package) per lockfile. A hit
+      # makes `pnpm install` a no-op check instead of a ~45 s fetch and link.
+      # One lane saves it, right after the install and before any test can
+      # write into node_modules: packages-kortixd, the shortest lane, so the
+      # upload never lengthens the run. The nightly `dev` run seeds the cache
+      # every branch can read.
+      - name: Restore node_modules
+        id: node-modules
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+            tests/node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'patches/**', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'tests/package.json') }}
       - name: Install workspace dependencies
         run: |
           corepack enable pnpm
@@ -117,22 +142,33 @@ jobs:
           pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
+      - name: Save node_modules
+        if: steps.node-modules.outputs.cache-hit != 'true' && matrix.lane == 'packages-kortixd'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+            tests/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Install ripgrep
         # The sandbox agent's glob/grep tools (kortix-sandbox-agent-server)
         # shell out to rg. The sandbox image ships it; GitHub's runner image
         # does not (Blacksmith's did, which hid this until 2026-10-08).
-        # Core runs the package tests too (package-quality), so not only packages.
-        if: matrix.mode != 'browser'
+        # Only package quality runs that code: the core lanes skip the install.
+        if: matrix.mode == 'packages'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ripgrep
       - name: Restore Chromium
-        # The core and packages-rest lanes also run apps/web's layout test that launches Chromium.
-        if: matrix.mode == 'browser' || matrix.lane == 'packages-rest' || matrix.mode == 'core'
+        # packages-rest also runs apps/web's layout test that launches Chromium.
+        # The core lanes run no package quality, so they need no Chromium.
+        if: matrix.mode == 'browser' || matrix.lane == 'packages-rest'
         uses: actions/cache@v4
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
-        if: matrix.mode == 'browser' || matrix.lane == 'packages-rest' || matrix.mode == 'core'
+        if: matrix.mode == 'browser' || matrix.lane == 'packages-rest'
         run: pnpm --dir tests exec playwright install --with-deps chromium
       - name: Free the local Supabase ports
         # Blacksmith runners are reused, and a job that ended without stopping
@@ -206,13 +242,13 @@ jobs:
       - name: Run the root test lane
         run: |
           set -euo pipefail
-          # SDK tests run in the core lane; skipping them here keeps the
+          # SDK tests run in the core-db lane; skipping them here keeps the
           # binding `packages-*` lanes as short as they can be.
           if [[ "$TEST_LANE" == packages-* ]]; then
             export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
           fi
           # One Playwright worker per browser shard on a 4 vCPU / 16 GB
-          # runner (see the matrix). Browser lanes only: the core lane's unit
+          # runner (see the matrix). Browser lanes only: the core-db lane's unit
           # tests assert the default of two.
           if [[ "$TEST_LANE" == browser-* ]]; then
             export E2E_BROWSER_WORKERS=1
@@ -306,7 +342,7 @@ jobs:
           {
             echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
             echo
-            echo "Full local suite (\`core\`, \`browser-1..2\`, \`packages-*\`)."
+            echo "Full local suite (\`core-flows\`, \`core-db\`, \`browser-1..2\`, \`packages-*\`)."
             if [ -n "$failed" ]; then
               echo
               echo "Failing lanes: \`$failed\`"

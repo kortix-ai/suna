@@ -119,9 +119,13 @@ dispatch only; the `preview` label deploys without it) and `tests-release.yml` (
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is seven lanes in parallel, each natively on one free GitHub-hosted
-runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). The core lane
-runs `pnpm test -- --no-packages`. Four package lanes run one slice of package
+The run is eight lanes in parallel, each natively on one free GitHub-hosted
+runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Two core lanes
+split the default run without package quality: `core-flows` runs
+`pnpm test -- --core-group=flows` (the REST and CLI flows) and `core-db` runs
+`pnpm test -- --core-group=db` (the DB suites, runner unit tests, route
+coverage, worktree tests, then the SDK). On one runner the flows and the DB
+suites shared 4 vCPU and the lane took 11-12 min. Four package lanes run one slice of package
 quality each: `pnpm test -- --packages-only --package-group=api` (`cli`,
 `kortixd`, `rest`; `rest` holds the repo-wide checks and every other package).
 On one runner the API, CLI and kortixd suites and three `tsc` shared 4 vCPU and
@@ -130,13 +134,15 @@ lanes run shards `1/2` and `2/2` with one Playwright worker each
 (`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The runner hands
 each shard its spec files by path, balanced by measured duration (see
-"Browser shard balancing"). The seven lanes are the parallel equivalent of
+"Browser shard balancing"). The eight lanes are the parallel equivalent of
 `pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
 Supabase so the root runner reuses it. `actions/cache` keeps the Chromium
-download per lockfile; every runner is a fresh VM, so `pnpm install` and the
-Supabase image pulls run cold on each lane.
+download per lockfile, and keeps every `node_modules` directory per lockfile
+and workspace `package.json` set: on a hit `pnpm install` only confirms the
+tree. Only `packages-kortixd` saves that cache, right after its install. Every
+runner is a fresh VM, so the Supabase image pulls run cold on each lane.
 
 Until 2026-08-26 each lane ran inside a Platinum or Daytona cloud sandbox with
 a content-addressed warm image; the runner was a thin orchestrator. That path

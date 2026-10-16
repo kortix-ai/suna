@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { buildLocalTestPlan } from '../src/core/local-runner';
 
 const root = resolve(import.meta.dirname, '../..');
 const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
@@ -17,14 +18,18 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs seven root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
+  test('runs eight root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
       'TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
     );
     expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}");
-    expect(testWorkflow).toContain('- lane: core');
+    // The core run in two halves on two runners since 2026-10-16: flows and
+    // DB suites shared 4 vCPU for 11-12 min (run 38932470058).
+    expect(testWorkflow).toMatch(/- lane: core-flows\n\s+mode: core\n\s+args: --core-group=flows\n/);
+    expect(testWorkflow).toMatch(/- lane: core-db\n\s+mode: core\n\s+args: --core-group=db\n/);
+    expect(testWorkflow).not.toContain('- lane: core\n');
     // Package quality in four slices on four runners since 2026-10-16: on one
     // runner the API, CLI and kortixd suites shared 4 vCPU (run 38777589705).
     for (const group of ['api', 'cli', 'kortixd', 'rest']) {
@@ -42,10 +47,8 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toContain('- lane: browser-3');
     expect(testWorkflow).toContain('if [[ "$TEST_LANE" == browser-* ]]; then');
     expect(testWorkflow).toContain('export E2E_BROWSER_WORKERS=1');
-    // Never job-wide: the core lane's runner unit tests assert the default.
+    // Never job-wide: the core-db lane's runner unit tests assert the default.
     expect(testWorkflow).not.toContain('E2E_BROWSER_WORKERS: "1"');
-    // Package quality runs once per CI run, in the `packages-*` lanes.
-    expect(testWorkflow).toMatch(/- lane: core\n\s+mode: core\n\s+args: --no-packages\n/);
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     // Every run is a full run now, so the packages guard keys off the lane
@@ -59,6 +62,35 @@ describe('native test-lane workflow', () => {
     // lane used to burn 60 min before the trunk verdict could fire.
     expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 40$/m);
     expect(testWorkflow).not.toMatch(/^ {4}timeout-minutes: 60$/m);
+  });
+
+  test('the matrix lanes together run exactly the lanes of `pnpm test -- --full`', () => {
+    const matrixArgs = [...testWorkflow.matchAll(/^ {12}args: (.+)$/gm)].map((m) => m[1]!.split(' '));
+    expect(matrixArgs).toHaveLength(8);
+    const ran = matrixArgs.flatMap((args) => buildLocalTestPlan(args).lanes.map((lane) => lane.name));
+    const full = buildLocalTestPlan(['--full']).lanes.map((lane) => lane.name);
+    expect(new Set(ran)).toEqual(new Set(full));
+    // Sliced lanes (browser shards, package groups) repeat by design; every
+    // other lane runs on exactly one runner.
+    const sliced = new Set(['browser', 'package-quality']);
+    const once = ran.filter((name) => !sliced.has(name));
+    expect(once.sort()).toEqual(full.filter((name) => !sliced.has(name)).sort());
+  });
+
+  test('caches node_modules per lockfile and saves it from one lane right after the install', () => {
+    const restore = laneStep('Restore node_modules');
+    expect(restore).toContain('uses: actions/cache/restore@v4');
+    expect(restore).toContain("hashFiles('pnpm-lock.yaml'");
+    for (const path of ['node_modules', 'apps/*/node_modules', 'packages/*/node_modules', 'tests/node_modules']) {
+      expect(restore).toContain(`            ${path}\n`);
+    }
+    const save = laneStep('Save node_modules');
+    expect(save).toContain('uses: actions/cache/save@v4');
+    expect(save).toContain("steps.node-modules.outputs.cache-hit != 'true' && matrix.lane == 'packages-kortixd'");
+    expect(save).toContain('key: ${{ steps.node-modules.outputs.cache-primary-key }}');
+    const order = ['Restore node_modules', 'Install workspace dependencies', 'Save node_modules', 'Run the root test lane'];
+    const at = order.map((name) => testWorkflow.indexOf(`      - name: ${name}\n`));
+    expect(at).toEqual([...at].sort((x, y) => x - y));
   });
 
   test('gives the browser lanes Chromium and a prestarted Supabase', () => {

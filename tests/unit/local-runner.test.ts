@@ -48,6 +48,26 @@ describe('local test runner', () => {
     expect(() => buildLocalTestPlan(['--packages-only', '--no-packages'])).toThrow('--no-packages');
   });
 
+  it('--core-group=flows|db splits the --no-packages run into two halves', () => {
+    const flows = buildLocalTestPlan(['--core-group=flows']);
+    const db = buildLocalTestPlan(['--core-group=db']);
+    expect(flows.mode).toBe('core');
+    expect(db.mode).toBe('core');
+    expect(flows.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([['api-cli-flows']]);
+    expect(flows.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'local']);
+    // The SDK keeps a stage of its own: its wall-clock assertions.
+    expect(db.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
+      ['db-suites', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['sdk'],
+    ]);
+    const halves = [...flows.lanes, ...db.lanes].map((lane) => lane.name).sort();
+    expect(halves).toEqual(buildLocalTestPlan(['--no-packages']).lanes.map((lane) => lane.name).sort());
+    expect(buildLocalTestPlan(['--no-packages', '--core-group=db']).lanes).toEqual(db.lanes);
+    expect(() => buildLocalTestPlan(['--core-group=web'])).toThrow('flows or db');
+    expect(() => buildLocalTestPlan(['--core-group=db', '--core-group=flows'])).toThrow('only one --core-group');
+    expect(() => buildLocalTestPlan(['--full', '--core-group=db'])).toThrow('default core run');
+  });
+
   it('runs only the DB suites and passes path filters through', () => {
     const plan = buildLocalTestPlan(['--db-only', 'integration-prompt-inbox', 'tests/migration']);
 

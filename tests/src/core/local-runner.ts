@@ -125,14 +125,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // minimal target validation and health probe instead.
   const latencyOnly = args.includes('--latency');
   const agenticOnly = args.includes('--agentic-only');
-  // CI's `core` lane passes this: its `packages` lane already runs package
-  // quality, so the core lane would spend ~18 min repeating it.
+  // The core run without package quality: CI's `packages-*` lanes run it.
   const noPackages = args.includes('--no-packages');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
   // `--package-group=api|cli|kortixd|rest`: one slice of package quality
   // (tests/bin/package-quality.ts), so CI runs the slices on parallel runners.
   const packageGroupArgs = args.filter((arg) => arg.startsWith('--package-group='));
+  // `--core-group=flows|db`: one half of the core run without package quality,
+  // so CI runs the REST/CLI flows and the DB suites on parallel runners.
+  const coreGroupArgs = args.filter((arg) => arg.startsWith('--core-group='));
   const modes = [
     full,
     flowsOnly,
@@ -163,6 +165,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   }
   if (packageGroupArgs.length > 1) {
     throw new Error('choose only one --package-group value');
+  }
+  if (coreGroupArgs.length > 1) {
+    throw new Error('choose only one --core-group value');
+  }
+  const coreGroup = coreGroupArgs[0]?.slice('--core-group='.length);
+  if (coreGroupArgs.length === 1) {
+    if (coreGroup !== 'flows' && coreGroup !== 'db') throw new Error('--core-group must be flows or db');
+    if (modes > 0) throw new Error('--core-group applies only to the default core run');
   }
   const packageGroup = packageGroupArgs[0]?.slice('--package-group='.length);
   if (packageGroupArgs.length === 1) {
@@ -200,6 +210,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--target-browser-full' &&
       arg !== '--no-packages' &&
       !arg.startsWith('--package-group=') &&
+      !arg.startsWith('--core-group=') &&
       !arg.startsWith('--browser-shard=') &&
       !arg.startsWith('--api-shard='),
   );
@@ -395,6 +406,13 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     ...packageQuality,
     env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
   };
+  // The two core groups partition `--no-packages`: the flows on one runner,
+  // everything else on the other.
+  if (coreGroup === 'flows') return { mode: 'core', lanes: [flows], stages: [[flows]] };
+  if (coreGroup === 'db') {
+    const dbStage = coreStage.filter((lane) => lane !== flows);
+    return { mode: 'core', lanes: [...dbStage, sdk], stages: [dbStage, [sdk]] };
+  }
   if (noPackages) return { mode: 'core', lanes, stages: [coreStage, [sdk]] };
   return {
     mode: 'core',
