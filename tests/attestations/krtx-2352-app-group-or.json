@@ -1,0 +1,17 @@
+{
+  "source_hash": "377e1bb30e8a773e230af4b6e9910d791b0f55eb12d1cef052429c2a4ac359b6",
+  "diff_files": [
+    "apps/api/src/apps/access.test.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/apps.flow.ts"
+  ],
+  "diff_hash": "eea55ac89fc9da0fc38414dc9ba33239dec425410dd567f057bbb9dd777c8c8e",
+  "head": "332708540e3e197711e34a76287717c85badc92d",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T07:33:52.304Z"
+}
