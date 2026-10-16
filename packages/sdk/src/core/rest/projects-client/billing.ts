@@ -158,11 +158,16 @@ export interface AccountState {
       current_tier: {
         name: string;
         display_name: string;
+        /** Credits a month (1 credit = $0.01). */
         monthly_credits?: number;
+        /** The same amount in USD. */
+        monthly_usd?: number;
       };
       target_tier: {
         name: string;
         display_name: string;
+        /** The same amount in USD. */
+        monthly_usd?: number;
         monthly_credits?: number;
       };
       effective_date: string;
@@ -949,17 +954,70 @@ export interface SetBillingPlanParams {
 }
 
 /**
+ * What a plan change did, or would do ({@link PlanChangePreview}).
+ * - `raised`: instant. Charged now, prorated; the credits for the rest of the
+ *   period are added at once.
+ * - `scheduled`: a lower amount from the next renewal (`effective_at`). No
+ *   charge, no refund; this period keeps its amount and credits.
+ * - `kept`: a scheduled lower amount was cancelled.
+ * - `none`: the amount equals the one in effect.
+ * - `checkout`: no paid subscription yet (preview only).
+ */
+export type PlanChange = 'raised' | 'scheduled' | 'kept' | 'none' | 'checkout';
+
+/**
  * Result of {@link setBillingPlan}.
  * - `checkout_created`: no paid subscription yet. Redirect to `checkout_url`.
- * - `updated` / `unchanged`: an existing subscription changed in place. A raise
- *   is charged now and grants the prorated credits at once; a cut applies at
- *   the next renewal.
+ * - `updated` / `unchanged`: an existing subscription changed in place;
+ *   `change` says how (optional: absent on an older API).
  * - `payment_pending`: the raise needs payment confirmation with `client_secret`.
  */
 export type SetBillingPlanResult =
   | { status: 'checkout_created'; checkout_url: string; monthly_usd: number }
-  | { status: 'updated' | 'unchanged'; monthly_usd: number }
+  | {
+      status: 'updated' | 'unchanged';
+      monthly_usd: number;
+      change?: PlanChange;
+      /** `scheduled`: when the lower amount takes effect (the next renewal). */
+      effective_at?: string;
+      /** `raised`: USD charged now. */
+      charged_usd?: number;
+      /** `raised`: credits added now (1 credit = $0.01). */
+      credits_added?: number;
+    }
   | { status: 'payment_pending'; monthly_usd: number; client_secret: string };
+
+/** What {@link setBillingPlan} would do for an amount: {@link previewBillingPlan}. */
+export interface PlanChangePreview {
+  change: PlanChange;
+  /** The amount asked for, USD a month. */
+  monthly_usd: number;
+  /** The amount in effect this period. Null without a paid subscription. */
+  current_monthly_usd: number | null;
+  /** USD due now: the prorated raise, or the first month at checkout. */
+  due_now_usd: number;
+  /** Credits added now (1 credit = $0.01). */
+  credits_now: number;
+  /** `scheduled`: when the lower amount takes effect. */
+  effective_at: string | null;
+}
+
+export interface PreviewBillingPlanParams {
+  /** Whole USD per month. */
+  monthlyUsd: number;
+  accountId?: string;
+}
+
+/** Preview a plan change without making it: `POST /billing/plan/preview`. */
+export async function previewBillingPlan(params: PreviewBillingPlanParams): Promise<PlanChangePreview> {
+  return unwrap(
+    await backendApi.post<PlanChangePreview>('/billing/plan/preview', {
+      monthly_usd: params.monthlyUsd,
+      account_id: params.accountId,
+    }),
+    'Failed to preview the plan change',
+  );
+}
 
 /** Subscribe to, or change, the credits plan: `POST /billing/plan`. Rejects with 400 outside 20..10,000. */
 export async function setBillingPlan(params: SetBillingPlanParams): Promise<SetBillingPlanResult> {

@@ -25,6 +25,7 @@ export interface AccountState {
   /** The Enterprise feature layer. Absent on older APIs. */
   enterprise?: { state: 'off' | 'demo' | 'licensed' };
   can_manage_billing?: boolean;
+  /** USD amounts (1 credit = $0.01). Show them with `formatUsdAsCredits`. */
   credits: {
     total: number;
     daily: number;

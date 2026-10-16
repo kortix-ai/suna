@@ -52,6 +52,7 @@ export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 export const STRIPE_OWNED_FIELDS = [
   'tier',
   'planMonthlyUsd',
+  'scheduledMonthlyUsd',
   'stripeSubscriptionId',
   'stripeSubscriptionStatus',
   'billingCycleAnchor',

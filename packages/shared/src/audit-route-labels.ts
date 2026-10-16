@@ -266,6 +266,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/billing/deduct': { action: 'billing.credit.llm_usage.deduct', title: 'Deducted credits for LLM usage' },
   'POST /v1/billing/deduct-usage': { action: 'billing.credit.agent_usage.deduct', title: 'Deducted credits for agent run' },
   'POST /v1/billing/plan': { action: 'billing.plan.set', title: 'Changed the credits plan' },
+  'POST /v1/billing/plan/preview': { action: 'billing.plan.preview', title: 'Previewed a credits plan change' },
   'POST /v1/billing/enterprise-offer/checkout': { action: 'billing.enterprise_offer.checkout', title: 'Started accepting the Enterprise offer' },
   'POST /v1/billing/enterprise/contact': { action: 'billing.enterprise.contact', title: 'Asked Kortix sales about Enterprise' },
   'GET /v1/billing/proration-preview': { action: 'billing.proration.preview', title: 'Previewed plan change proration' },

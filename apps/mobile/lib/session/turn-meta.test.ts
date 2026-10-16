@@ -108,7 +108,7 @@ describe('turnMetaRows — labelled rows in display order', () => {
     ).toEqual([
       { label: 'Finished', value: '2 minutes ago' },
       { label: 'Duration', value: '1m 5s' },
-      { label: 'Cost', value: '$0.03' },
+      { label: 'Cost', value: '3.21 credits' },
       { label: 'Tokens', value: '2.0k' },
     ]);
   });
@@ -117,7 +117,7 @@ describe('turnMetaRows — labelled rows in display order', () => {
     expect(turnMetaRows({ endedAt: null, now, durationMs: 400, cost: undefined })).toEqual([]);
   });
 
-  test('zero cost and zero tokens are omitted, not rendered as $0.00 / 0', () => {
+  test('zero cost and zero tokens are omitted, not rendered as 0 credits / 0', () => {
     expect(turnMetaRows({ endedAt: now, now, durationMs: null, cost: cost(0, 0, 0) })).toEqual([
       { label: 'Finished', value: '0 seconds ago' },
     ]);

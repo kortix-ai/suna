@@ -40,6 +40,7 @@ export type StepFamily =
   | 'explore'
   | 'edit'
   | 'run'
+  | 'script'
   | 'web'
   | 'create'
   | 'plan'
@@ -66,6 +67,11 @@ const FAMILY_OF_KIND: Record<ToolKind, StepFamily | 'hidden'> = {
   apply_patch: 'edit',
   bash: 'run',
   pty: 'run',
+  // pi's codemode: a script the model wrote that calls the other tools. Its own
+  // family — its sentence ("Ran a script") is what the registered renderer's
+  // own card says ("Ran script"), and a registered tool must never land in the
+  // `other` fallback that exists for unknown MCP tools.
+  script: 'script',
   web_search: 'web',
   webfetch: 'web',
   media: 'create',
@@ -608,6 +614,8 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
     }
     case 'run':
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;
+    case 'script':
+      return n === 1 ? 'Ran a script' : `Ran ${n} scripts`;
     case 'web': {
       const isSearch = (p: ToolPart) => {
         const t = normalizeName(p.tool);
@@ -766,8 +774,6 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
     case 'retired':
       return 'Used a connector that has since been removed';
     case 'other': {
-      // pi's codemode: a script the model wrote that calls other tools (its row lists them).
-      if (parts.every(isScript)) return n === 1 ? 'Ran a script' : `Ran ${n} scripts`;
       if (n === 1) return `Used ${narrationToolName(parts[0].tool)}`;
       // Never inspect only parts[0] — a mixed group of unrecognized/MCP tools
       // must name every distinct one, not silently drop the rest.
@@ -777,8 +783,6 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
     }
   }
 }
-
-const isScript = (part: ToolPart) => normalizeName(part.tool) === 'codemode';
 
 /**
  * The failure phrasing for a step whose status is 'error' (W7). Same rules as
@@ -802,6 +806,8 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
     }
     case 'run':
       return 'A command failed';
+    case 'script':
+      return 'A script failed';
     case 'web':
       return "Couldn't finish searching the web";
     case 'create':
@@ -831,7 +837,6 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
       // distinct tools of which only one errored — naming parts[0] would blame
       // the wrong tool by name. Prefer the parts that actually failed, and
       // name every distinct one, mirroring narrateStep's own 'other' handling.
-      if (parts.every(isScript)) return 'A script failed';
       const failed = parts.filter(
         (p) => (p.state as { status?: string } | undefined)?.status === 'error',
       );

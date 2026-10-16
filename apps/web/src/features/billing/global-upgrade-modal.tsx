@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils';
 import { BillingAccountProvider, useBillingAccountId } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { type AccountState, type BillingState, canManageBilling } from '@kortix/sdk';
-import { formatCredits } from '@kortix/shared';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { ArrowRightIcon as ArrowRight, UserPlusIcon as UserPlus } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -55,7 +55,7 @@ export interface UpgradePlansModalProps {
   billingState?: BillingState;
   balance?: number;
   /** True while account state is doing its first load — the credit view shows a
-   *  balance skeleton instead of a misleading $0.00 until the real value lands. */
+   *  balance skeleton instead of a misleading 0 until the real value lands. */
   accountLoading?: boolean;
 }
 
@@ -379,11 +379,13 @@ function CreditTopUpModal({
 }
 
 /**
- * The available balance: the concrete "why" behind an out-of-credits block.
+ * The available balance, in credits: the concrete "why" behind an
+ * out-of-credits block.
  *
  * The LIVE account state is the source of truth (the field the Plan page
- * reads); the 402's `balance` is only a pre-load hint. A real $0.00 shows as
- * $0.00, and an unloaded value shows a skeleton, never a misleading $0.00.
+ * reads); the 402's `balance` is only a pre-load hint. A real 0 shows as 0,
+ * and an unloaded value shows a skeleton, never a misleading 0. A negative
+ * balance keeps its minus and turns red: the account owes those credits.
  */
 function WalletBalance({
   accountState,
@@ -395,6 +397,8 @@ function WalletBalance({
   accountLoading?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCredits = useTranslations('settings.credits');
+  const locale = useLocale();
   const liveBalance = accountState?.credits?.total;
   const hasLiveBalance = typeof liveBalance === 'number';
   const walletUsd = hasLiveBalance ? liveBalance : (balance ?? 0);
@@ -413,14 +417,11 @@ function WalletBalance({
               isNegative ? 'text-kortix-red' : 'text-foreground',
             )}
           >
-            {`${isNegative ? '-' : ''}$${Math.abs(walletUsd).toFixed(2)}`}
+            {formatUsdAsCredits(walletUsd, { locale })}
           </span>
-          {isNegative && (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {formatCredits(Math.round(Math.abs(walletUsd) * 100))}{' '}
-              {tI18nComplete.raw('text4fef65587333')}
-            </span>
-          )}
+          <span className="text-muted-foreground text-xs">
+            {tCredits('unit', { count: Math.abs(walletUsd) * 100 })}
+          </span>
         </span>
       )}
     </div>

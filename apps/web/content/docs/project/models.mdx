@@ -198,15 +198,16 @@ A budget caps what a project, or one member in it, spends on models in a period.
 
 ```bash
 kortix gateway budget                                   # budgets with their spend this period, and this month's project spend
-kortix gateway budget set --limit <limit> --scope project --period month --action block
+kortix gateway budget set --limit 20 --scope project --period month --action block   # 20 USD = 2,000 credits
 kortix gateway budget set --limit <limit> --scope member --user <user-id> --period week --action warn
 kortix gateway budget rm <budget-id>
 ```
 
+- `--limit` takes US dollars, the unit of the API's `limit_usd` field. One credit is $0.01, so `--limit 20` is a 2,000-credit budget. The CLI shows budgets and spend in credits, and `--json` returns the API's dollar fields.
 - `--period` is `day`, `week` or `month`, in UTC. A week starts on Monday. A month starts on the 1st.
 - **Block** (`block`) refuses new requests at the limit with `402 budget_exceeded`. **Warn only** (`warn`) lets them run.
 - A budget counts all spend: Kortix credits and the cost on your own keys.
-- Each budget shows its spend in its own period, for example `$15.00 of $20.00 per day · blocks at limit · 75% used`, and when the period resets. This is the number the gateway compares with the limit. `GET /v1/projects/<project-id>/gateway/budgets` returns it per budget as `spent_usd`, `period_start` and `resets_at`, and a member budget's member as `subject_email`. `project_spend` and `members` in the same response are month-to-date.
+- Each budget shows its spend in its own period, for example `1,500 of 2,000 credits per day · blocks at limit · 75% used`, and when the period resets. This is the number the gateway compares with the limit. `GET /v1/projects/<project-id>/gateway/budgets` returns it per budget in US dollars as `spent_usd`, `period_start` and `resets_at`, and a member budget's member as `subject_email`. `project_spend` and `members` in the same response are month-to-date.
 - Every member cap has a row in the list, also when its member has spent nothing this month.
 - At 80% and at 100% of the limit, Kortix emails the account owners and admins and the project managers, once per threshold per period.
 - Setting a budget needs `project.gateway.budget.set`. Reading spend needs `project.gateway.spend.read`.
