@@ -159,6 +159,7 @@ flow(
     timeoutMs: 120_000,
     routes: [
       'POST /v1/billing/plan',
+      'POST /v1/billing/plan/preview',
       'POST /v1/billing/sync-subscription',
       'GET /v1/billing/account-state',
     ],
@@ -188,11 +189,86 @@ flow(
         success_url: 'https://example.com/ok',
         cancel_url: 'https://example.com/cancel',
       });
-      r.status(200).body().has('$.status', 'updated').has('$.monthly_usd', 100);
+      r.status(200).body().has('$.status', 'updated').has('$.change', 'raised').has('$.monthly_usd', 100);
       const state = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/billing/account-state', { query: { account_id: team.id } });
       state.status(200).body().has('$.plan.monthly_usd', 100);
+    });
+    await ctx.step('previewing a cut to $50 names the renewal date and nothing due now', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/billing/plan/preview', { account_id: team.id, monthly_usd: 50 });
+      r.status(200).body().has('$.change', 'scheduled').has('$.due_now_usd', 0).has('$.current_monthly_usd', 100);
+    });
+    await ctx.step('a cut to $50 is scheduled: this period keeps $100, scheduled_change names $50', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/billing/plan', {
+        account_id: team.id,
+        monthly_usd: 50,
+        success_url: 'https://example.com/ok',
+        cancel_url: 'https://example.com/cancel',
+      });
+      r.status(200).body().has('$.change', 'scheduled');
+      const state = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/billing/account-state', { query: { account_id: team.id } });
+      state.status(200).body().has('$.plan.monthly_usd', 100).has('$.subscription.scheduled_change.target_tier.monthly_usd', 50);
+    });
+    await ctx.step('choosing $100 again keeps the plan and clears the scheduled cut', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/billing/plan', {
+        account_id: team.id,
+        monthly_usd: 100,
+        success_url: 'https://example.com/ok',
+        cancel_url: 'https://example.com/cancel',
+      });
+      r.status(200).body().has('$.change', 'kept');
+      const state = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/billing/account-state', { query: { account_id: team.id } });
+      state.status(200).body().has('$.plan.monthly_usd', 100).has('$.subscription.scheduled_change', null);
+    });
+  },
+);
+
+/**
+ * BILL-20 — a plan change can be previewed before it is made. Without a paid
+ * subscription the preview is Checkout: the first month due now and its
+ * credits at once. Previewing writes nothing. It needs billing.write.
+ */
+flow(
+  'BILL-20',
+  {
+    domain: 'billing',
+    routes: ['POST /v1/billing/plan/preview', 'GET /v1/billing/account-state'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    await ctx.step('OWNER previews $300 on a free account → checkout, $300 and 30,000 credits now', async () => {
+      const r = await owner.post('/v1/billing/plan/preview', { account_id: team.id, monthly_usd: 300 });
+      r.status(200)
+        .body()
+        .has('$.change', 'checkout')
+        .has('$.monthly_usd', 300)
+        .has('$.current_monthly_usd', null)
+        .has('$.due_now_usd', 300)
+        .has('$.credits_now', 30_000)
+        .has('$.effective_at', null);
+    });
+    await ctx.step('previewing changed nothing: the account is still on the free plan', async () => {
+      const r = await owner.get('/v1/billing/account-state', { query: { account_id: team.id } });
+      r.status(200).body().has('$.plan.family', 'free').has('$.subscription.scheduled_change', null);
+    });
+    await ctx.step('an amount off the ladder → 400', async () => {
+      const r = await owner.post('/v1/billing/plan/preview', { account_id: team.id, monthly_usd: 25 });
+      r.status(400);
+    });
+    await ctx.step('MEMBER cannot preview a plan change → 403', async () => {
+      const member = await team.addMember('member');
+      const r = await ctx.client.as(member).post('/v1/billing/plan/preview', { account_id: team.id, monthly_usd: 300 });
+      r.status(403);
+    });
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/plan/preview', { account_id: team.id, monthly_usd: 300 });
+      r.status(401);
     });
   },
 );
