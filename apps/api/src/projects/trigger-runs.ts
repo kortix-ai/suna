@@ -66,7 +66,24 @@ function encodeCursor(row: RunRow | { createdAt: string; executionId: string }):
 }
 
 /** `created_at::text` as Postgres prints it: `2026-10-16 18:03:54.382+00`. */
-const PG_TIMESTAMPTZ_TEXT = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/;
+const PG_TIMESTAMPTZ_TEXT = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?[+-](\d{2})(?::(\d{2}))?$/;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * True when the fields name a real instant. The fields are round-tripped
+ * through `Date.UTC`, because `Date.parse` accepts 2026-02-30 and Postgres
+ * throws on it.
+ */
+function isRealTimestamp(text: string): boolean {
+  const m = PG_TIMESTAMPTZ_TEXT.exec(text);
+  if (!m) return false;
+  const [y, mo, d, h, mi, sec, offH, offM] = [m[1], m[2], m[3], m[4], m[5], m[6], m[8], m[9] ?? '00'].map(Number) as number[];
+  if (offH! > 15 || offM! > 59) return false;
+  const t = new Date(Date.UTC(y!, mo! - 1, d!, h!, mi!, sec!));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === mo! - 1 && t.getUTCDate() === d
+    && t.getUTCHours() === h && t.getUTCMinutes() === mi && t.getUTCSeconds() === sec;
+}
 
 /** Null when the cursor is not one this module issued. */
 export function decodeTriggerRunCursor(cursor: string): { createdAt: string; executionId: string } | null {
@@ -74,11 +91,8 @@ export function decodeTriggerRunCursor(cursor: string): { createdAt: string; exe
     const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
     if (!Array.isArray(parsed) || parsed.length !== 2) return null;
     const [createdAt, executionId] = parsed;
-    if (typeof createdAt !== 'string' || !PG_TIMESTAMPTZ_TEXT.test(createdAt)) return null;
-    // The regex admits month 13 or hour 25; Postgres would throw on those, so parse it too.
-    const iso = createdAt.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
-    if (Number.isNaN(Date.parse(iso))) return null;
-    if (typeof executionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(executionId)) return null;
+    if (typeof createdAt !== 'string' || !isRealTimestamp(createdAt)) return null;
+    if (typeof executionId !== 'string' || !UUID.test(executionId)) return null;
     return { createdAt, executionId };
   } catch {
     return null;
@@ -171,7 +185,7 @@ export async function listVisibleTriggerRuns(input: {
 
 /** One run of one trigger, unredacted, for replay. Null when it is not that trigger's. */
 export async function loadTriggerRunForReplay(projectId: string, slug: string, runId: string) {
-  if (!/^[0-9a-f-]{36}$/i.test(runId)) return null;
+  if (!UUID.test(runId)) return null;
   const [row] = await db
     .select()
     .from(t)

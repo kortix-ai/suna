@@ -2450,10 +2450,18 @@ flow(
         if (ids.size !== 5) throw new Error('pages overlap');
       });
 
-      await ctx.step('a tampered cursor (well-formed base64 JSON, impossible timestamp) → 400, not 500', async () => {
-        const forge = (createdAt: string) => Buffer.from(JSON.stringify([createdAt, crypto.randomUUID()])).toString('base64url');
-        for (const createdAt of ['2026-13-45 99:99:99+00', '2026-10-16T18:03:54Z', "now()'; --"]) {
-          (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query: { cursor: forge(createdAt) } })).status(400);
+      await ctx.step('a tampered cursor (well-formed base64 JSON: impossible timestamp, impossible calendar day, or a non-UUID id) → 400, not 500', async () => {
+        const forge = (createdAt: string, executionId: string = crypto.randomUUID()) =>
+          Buffer.from(JSON.stringify([createdAt, executionId])).toString('base64url');
+        const forged = [
+          forge('2026-13-45 99:99:99+00'),
+          forge('2026-10-16T18:03:54Z'),
+          forge("now()'; --"),
+          forge('2026-02-30 00:00:00+00'), // an impossible calendar day that Date.parse accepts
+          forge('2026-10-16 18:03:54+00', '-'.repeat(36)), // 36 dashes, not a UUID
+        ];
+        for (const cursor of forged) {
+          (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query: { cursor } })).status(400);
         }
       });
 
