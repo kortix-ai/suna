@@ -227,7 +227,7 @@ describe('reply quotes in the draft envelope', () => {
 
   test('an envelope written before quotes existed loads with an empty list', () => {
     const old = { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: TEXT_DOC, files: [] };
-    expect(deserializeDraft(old, USER)).toEqual({ ...old, quotes: [], pastes: [] });
+    expect(deserializeDraft(old, USER)).toEqual({ ...old, quotes: [], pastes: [], uploads: [] });
   });
 
   test('malformed quotes are dropped, not trusted', () => {
@@ -329,5 +329,50 @@ describe('pasted tiles in the draft envelope', () => {
     expect(deserializeDraft(bad, USER)?.pastes).toEqual([]);
     const mixed = { ...bad, pastes: [paste, { id: 7, text: 'x' }, { id: 'b', text: '' }, null] };
     expect(deserializeDraft(mixed, USER)?.pastes).toEqual([paste]);
+  });
+});
+
+describe('finished uploads in the draft envelope', () => {
+  const upload = {
+    attachment_id: 'att-1',
+    filename: 'report.pdf',
+    mime: 'application/pdf',
+    size: 1200,
+    expires_at: '2099-01-01T00:00:00.000Z',
+    isImage: false,
+  };
+
+  test('an empty document with a finished upload is still worth storing', () => {
+    const draft = serializeDraft({
+      doc: EMPTY_DOC,
+      documentIsEmpty: true,
+      files: [],
+      uploads: [upload],
+      userId: USER,
+    });
+    expect(draft?.uploads).toEqual([upload]);
+  });
+
+  test('finished uploads survive the round trip; expired and malformed ones are dropped', () => {
+    const stored = serializeDraft({
+      doc: TEXT_DOC,
+      documentIsEmpty: false,
+      files: [],
+      uploads: [upload],
+      userId: USER,
+    });
+    const raw = JSON.parse(JSON.stringify(stored)) as StoredDraft;
+    raw.uploads = [
+      ...(raw.uploads ?? []),
+      { ...upload, attachment_id: 'att-old', expires_at: '2001-01-01T00:00:00.000Z' },
+      { ...upload, attachment_id: '', size: 1 },
+      { ...upload, attachment_id: 'att-bad-size', size: -1 },
+    ];
+    expect(deserializeDraft(raw, USER)?.uploads).toEqual([upload]);
+  });
+
+  test('an envelope written before uploads existed loads with an empty list', () => {
+    const raw = { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: TEXT_DOC, files: [] };
+    expect(deserializeDraft(raw, USER)?.uploads).toEqual([]);
   });
 });

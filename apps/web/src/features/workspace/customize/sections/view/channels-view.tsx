@@ -27,8 +27,7 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
  *
  * Nesting a second `CapabilityPageShell` inside the page's would print a
  * second `<h1>` and a second `overflow-y-auto` inside the layout's one bounded
- * column, so this file must not reintroduce one; `channels-view.chrome.test.ts`
- * pins that.
+ * column, so this file must not reintroduce one.
  *
  * ## The redesign (this file's shape changed; the data layer did not)
  *
@@ -112,9 +111,9 @@ import {
   ChannelDisconnectButton,
   ChannelRow,
 } from '@/features/workspace/customize/sections/component/channel-row';
+import { TeamsConnectCard } from '@/features/workspace/customize/sections/component/teams-connect-card';
 import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
-import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
 import {
   type ChannelModelKey,
@@ -197,6 +196,9 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   // Teams is on for every project (its feature flag graduated on 2026-10-01).
   const { data: teamsInstall } = useTeamsInstall(projectId);
+  const { data: teamsMode } = useTeamsMode(projectId);
+  // Not connected, Teams gets the same hero as Slack; connected, it is a row.
+  const teamsHero = !teamsInstall && Boolean(teamsMode?.enabled);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
@@ -229,21 +231,15 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const showMoreLabel = !slackRow;
 
   return (
-    /* Narrower than the page it sits in, and deliberately so. The Connectors
-       shell is `max-w-5xl` because a 3-up card grid needs it; everything below
-       is a stack of full-width rows and one hero card, and at 1024px the hero's
-       `aspect-[3/1]` cover band renders ~341px of mostly-empty gradient above
-       four lines of copy. Capped at `max-w-3xl` it is ~256px — the same band the
-       cover was drawn for.
-
-       Left-aligned, not `mx-auto`: the shell's `<h1>` starts at the container's
-       left edge, and a centred column under a left-aligned heading reads as a
-       misalignment rather than as a narrower measure.
+    /* Full width of the Connectors shell, like the All and Connected scopes
+       beside it: the connect heroes are split cards whose chat preview needs
+       the room, and a capped column left a dead band to the right of the
+       scope tabs.
 
        No heading and no scroll container here. Both belong to the
        `CapabilityPageShell` in `connectors-page.tsx`; a second of either would
        print a second `<h1>` and scroll the wrong box. */
-    <div className="w-full max-w-3xl space-y-6">
+    <div className="w-full space-y-6">
       {loading ? (
         <>
           <Skeleton className="h-64 rounded-md" />
@@ -264,6 +260,9 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
               canWrite={canWrite}
             />
           )}
+          {teamsHero && teamsMode ? (
+            <TeamsConnectCard projectId={projectId} mode={teamsMode} canWrite={canWrite} />
+          ) : null}
 
           <section className="space-y-2">
             {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
@@ -288,12 +287,14 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
                 installation={emailInstall ?? null}
                 canWrite={canWrite}
               />
-              <TeamsChannelRow
-                projectId={projectId}
-                canWrite={canWrite}
-                channelCount={channelCounts.get('teams') ?? 0}
-                onOpenChannels={() => openChannels('teams')}
-              />
+              {teamsHero ? null : (
+                <TeamsChannelRow
+                  projectId={projectId}
+                  canWrite={canWrite}
+                  channelCount={channelCounts.get('teams') ?? 0}
+                  onOpenChannels={() => openChannels('teams')}
+                />
+              )}
             </ul>
             {teamsInstall?.appUpdateAvailable ? (
               <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
@@ -310,7 +311,6 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
             onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
           />
 
-          <TeamsChannelPanel projectId={projectId} />
         </>
       )}
     </div>

@@ -3,12 +3,13 @@
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
  * or one deployment together with its provider images, and the machine, scale,
  * exec and volume routes. Maps to spec section 28 (APP-1..8,
- * APP-11; APP-9 and APP-10 live in apps-tokens.flow.ts).
+ * APP-11, APP-13; APP-9, APP-10 and APP-12 live in apps-tokens.flow.ts).
  */
 import { flow } from "../core/flow";
+import type { Client } from "../core/client";
+import type { Principal } from "../core/types";
 import { CliSandbox } from "../fixtures/cli";
 import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
-import { setFeatureAsOperator } from "../fixtures/feature-flags";
 import { withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 
@@ -35,38 +36,30 @@ flow(
     const projectParams = { projectId: project.id };
     let appId = "";
 
-    await ctx.step("clear any apps flag override from a reused project (operator route)", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", null);
-    });
-
-    await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
+    await ctx.step("a project with no flag override reaches Apps: list answers 200", async () => {
+      // Apps went GA (2026-10-14, spec §28): there is no `apps` flag, so a
+      // project that never opted in can list and create Apps. APP-2 covers
+      // persisted `apps: false`, including an accepted deployment.
       const response = await owner.get("/v1/projects/:projectId/apps", {
         params: projectParams,
       });
-      response.status(403);
-      response.body().has("$.code", "feature_disabled");
-      response.body().has("$.feature", "apps");
+      response.status(200).body().has("$.apps", []);
     });
 
-    await ctx.step("owner cannot write the internal-only apps flag: /features → 403 feature_operator_only", async () => {
+    await ctx.step("the graduated apps key is unknown: /features → 400, no catalog row", async () => {
       const response = await owner.patch(
         "/v1/projects/:projectId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
-      response.status(403);
-      response.body().has("$.code", "feature_operator_only");
-      response.body().has("$.feature", "apps");
-    });
-
-    await ctx.step("a platform operator enables apps; the owner's catalog lists it read-only", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
+      response.status(400);
+      response.body().has("$.error", "Unknown feature flag 'apps'");
       const read = await owner.get("/v1/projects/:projectId", { params: projectParams });
       read.status(200);
-      const row = (read.json() as { experimental_features: Array<{ key: string; enabled: boolean; operator_only?: boolean }> })
-        .experimental_features.find((f) => f.key === "apps");
-      if (!row || row.enabled !== true || row.operator_only !== true) {
-        throw new Error(`apps catalog row is ${JSON.stringify(row)}; want enabled + operator_only`);
+      const rows = (read.json() as { experimental_features: Array<{ key: string }> })
+        .experimental_features;
+      if (rows.some((f) => f.key === "apps")) {
+        throw new Error(`the catalog still lists apps: ${JSON.stringify(rows)}`);
       }
     });
 
@@ -113,7 +106,7 @@ flow(
         .has("$.slug", slug)
         .has("$.desired_state", "running")
         .has("$.always_on", true)
-        .has("$.estimated_monthly_usd", 73.48)
+        .has("$.estimated_monthly_usd", 39.95)
         .has("$.warnings", [])
         // One primitive: clients branch on capabilities. No labels, services or uses until set.
         .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
@@ -162,7 +155,7 @@ flow(
       (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
         .status(200).body().has("$.always_on", true);
       const reread = await owner.get("/v1/projects/:projectId/apps/:appId", { params });
-      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 73.48);
+      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 39.95);
       if ("monthly_budget_usd" in reread.json<any>()) throw new Error(`an App carries a budget: ${reread.text()}`);
 
       // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.
@@ -226,7 +219,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PUT /v1/admin/api/projects/:id/features",
+      "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "DELETE /v1/projects/:projectId/apps/:appId",
       "POST /v1/projects/:projectId/apps/artifacts",
@@ -248,8 +241,22 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
 
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
+    await ctx.step("persist legacy apps:false directly; Apps still lists with 200", async () => {
+      await withDb(ctx, async (db) => {
+        const seeded = await db.query(
+          `UPDATE kortix.projects
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+             'experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"apps":false}'::jsonb)
+           WHERE project_id = $1
+           RETURNING metadata->'experimental'->'apps' AS apps`,
+          [project.id],
+        );
+        if (seeded.rows.length !== 1 || seeded.rows[0].apps !== false) {
+          throw new Error("legacy apps:false was not persisted");
+        }
+      });
+      (await owner.get("/v1/projects/:projectId/apps", { params: projectParams }))
+        .status(200).body().has("$.apps", []);
     });
 
     const slug = ctx.fixtures
@@ -396,6 +403,32 @@ flow(
       },
     );
 
+    await ctx.step("legacy apps:false permits an immutable OCI deployment: 202 queued, version 1, readable by ID", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        {
+          artifact_id: artifactId,
+          source: {
+            kind: "oci_image",
+            image: "docker.io/library/nginx:alpine",
+            command: ["nginx", "-g", "daemon off;"],
+            port: 80,
+          },
+        },
+        { params: appParams },
+      );
+      response.status(202).body().has("$.status", "queued").has("$.version", 1).exists("$.deployment_id");
+      const deploymentBody = response.json<unknown>();
+      if (typeof deploymentBody !== "object" || deploymentBody === null ||
+          !("deployment_id" in deploymentBody) || typeof deploymentBody.deployment_id !== "string") {
+        throw new Error("accepted deployment did not return a deployment ID");
+      }
+      const deploymentId = deploymentBody.deployment_id;
+      (await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId", {
+        params: { ...appParams, deploymentId },
+      })).status(200).body().has("$.deployment.deployment_id", deploymentId);
+    });
+
     await ctx.step("delete the test App after the boundary checks", async () => {
       const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
         params: appParams,
@@ -421,10 +454,6 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let appId = "";
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("limits")
@@ -526,10 +555,6 @@ flow(
     const editor = await team.addMember("member");
     await team.grantProjectRole(project.id, editor.userId!, "member");
     const teammate = ctx.client.as(editor);
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("scoped")
@@ -713,6 +738,211 @@ flow(
 );
 
 flow(
+  "APP-13",
+  {
+    domain: "apps",
+    timeoutMs: 240_000,
+    routes: [
+      "PUT /v1/admin/api/projects/:id/features",
+      "POST /v1/accounts/:accountId/iam/groups",
+      "POST /v1/accounts/:accountId/iam/groups/:groupId/members",
+      "POST /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "GET /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const accountParams = { accountId: team.id };
+
+    // The reported failure (2026-10-14, #kortix-triage): an App admitting two
+    // groups refused a member of BOTH, while the same App restricted to one
+    // group loaded — read as AND semantics. Under OR, either membership admits
+    // and widening the allow-list can never lock a member out, so this flow
+    // signs in one member per position and proves the verdicts at the real
+    // surface: list, read and the access session that opens the App.
+    const qrOnly = await team.addMember("member");
+    const absOnly = await team.addMember("member");
+    const bothMember = await team.addMember("member");
+    const neither = await team.addMember("member");
+    const noRole = await team.addMember("member");
+    const userId = (member: Principal) => {
+      if (!member.userId) throw new Error("group fixture member has no user id");
+      return member.userId;
+    };
+    await team.grantProjectRole(project.id, userId(qrOnly), "member");
+    await team.grantProjectRole(project.id, userId(absOnly), "member");
+    await team.grantProjectRole(project.id, userId(bothMember), "member");
+    await team.grantProjectRole(project.id, userId(neither), "member");
+
+    const asQrOnly = ctx.client.as(qrOnly);
+    const asAbsOnly = ctx.client.as(absOnly);
+    const asBoth = ctx.client.as(bothMember);
+
+    const group = async (slug: string, members: Principal[]) => {
+      const created = await owner.post(
+        "/v1/accounts/:accountId/iam/groups",
+        { name: ctx.fixtures.name(slug) },
+        { params: accountParams },
+      );
+      const groupId = created.status(201).json<{ group_id: string }>().group_id;
+      (
+        await owner.post(
+          "/v1/accounts/:accountId/iam/groups/:groupId/members",
+          { userIds: members.map(userId) },
+          { params: { ...accountParams, groupId } },
+        )
+      ).status(200);
+      return groupId;
+    };
+
+    const slug = ctx.fixtures
+      .name("group-scoped")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .slice(0, 63);
+    let appId = "";
+    let qr = "";
+    let abs = "";
+
+    const canOpen = async (client: Client) => {
+      const read = await client.get("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      const listed = await client.get("/v1/projects/:projectId/apps", { params });
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
+      const session = await client.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...params, appId } },
+      );
+      return { read, listedId: ids.includes(appId), session };
+    };
+
+    await ctx.step(
+      "setup: two allowed groups — one member in each, one in both, one in neither, and a fifth in the FIRST group with no project role — and an App restricted to the two groups",
+      async () => {
+        // The fifth member sits INSIDE an allowed group: the pin below is that
+        // group membership never widens the project, which only bites for a
+        // member the App itself would admit.
+        qr = await group("grp-qr", [qrOnly, bothMember, noRole]);
+        abs = await group("grp-abs", [absOnly, bothMember]);
+        // Apps is GA (2026-10-14): no flag setup — a fresh project lists and
+        // creates Apps with no override (APP-2 pins that).
+        const created = await owner.post(
+          "/v1/projects/:projectId/apps",
+          { slug, name: "ke2e group App" },
+          { params },
+        );
+        created.status(201);
+        appId = created.json<{ app_id: string }>().app_id;
+        const restricted = await owner.patch(
+          "/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", group_ids: [qr, abs] },
+          { params: { ...params, appId } },
+        );
+        restricted.status(200).body().has("$.mode", "restricted");
+      },
+    );
+
+    await ctx.step("a member of the first allowed group can open the App", async () => {
+      const { read, listedId, session } = await canOpen(asQrOnly);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of the first allowed group does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of the second allowed group can open the App — EITHER group suffices", async () => {
+      const { read, listedId, session } = await canOpen(asAbsOnly);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of the second allowed group does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of BOTH allowed groups can open the App (the reported failure)", async () => {
+      const { read, listedId, session } = await canOpen(asBoth);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of both allowed groups does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of neither allowed group stays denied", async () => {
+      // 404, never 403: the status must not disclose a teammate's restricted App.
+      const read = await ctx.client.as(neither).get("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      read.status(404);
+      const listed = await ctx.client.as(neither).get("/v1/projects/:projectId/apps", { params });
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
+      if (ids.includes(appId)) throw new Error("a member of neither allowed group sees the App");
+      (
+        await ctx.client.as(neither).post(
+          "/v1/projects/:projectId/apps/:appId/access-session",
+          {},
+          { params: { ...params, appId } },
+        )
+      ).status(404);
+    });
+
+    await ctx.step("group membership does not stand in for project access", async () => {
+      // An account member INSIDE an allowed group but with no role on the
+      // project still gets nothing: the App allow-list narrows PROJECT
+      // members, it never widens the project itself. The contrast with the
+      // neither-member step (a project member without app access gets a 200
+      // list with the App filtered out) shows this 403 is the project gate
+      // firing — group membership did not buy project access.
+      const listed = await ctx.client.as(noRole).get("/v1/projects/:projectId/apps", { params });
+      listed.status(403).body().has("$.code", "no_project_membership").has("$.action", "project.read");
+    });
+
+    await ctx.step("narrowing the policy to one group keeps that group's members in", async () => {
+      const narrowed = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "restricted", group_ids: [abs] },
+        { params: { ...params, appId } },
+      );
+      narrowed.status(200).body().has("$.mode", "restricted");
+      const { session } = await canOpen(asBoth);
+      session.status(200).body().exists("$.url");
+      // The dropped group legitimately loses access: the policy now means it.
+      (
+        await asQrOnly.post(
+          "/v1/projects/:projectId/apps/:appId/access-session",
+          {},
+          { params: { ...params, appId } },
+        )
+      ).status(404);
+    });
+
+    await ctx.step("widening back to both groups restores the dropped group's members", async () => {
+      const widened = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "restricted", group_ids: [qr, abs] },
+        { params: { ...params, appId } },
+      );
+      widened.status(200).body().has("$.mode", "restricted");
+      const { session } = await canOpen(asQrOnly);
+      session.status(200).body().exists("$.url");
+      const bothAgain = await canOpen(asBoth);
+      bothAgain.session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("delete the test App", async () => {
+      const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      response.status(200).body().has("$.ok", true);
+    });
+  },
+);
+
+flow(
   "APP-5",
   {
     domain: "apps",
@@ -735,10 +965,6 @@ flow(
     const projectParams = { projectId: project.id };
     let appId = "";
     let appHost = "";
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     await ctx.step("create an App and take its public hostname", async () => {
       const slug = ctx.fixtures
@@ -874,8 +1100,7 @@ flow(
     const asToken = (token: string) => ctx.client.withBearer(token, "app-viewer-token");
 
     try {
-      await ctx.step("enable Apps; create an App restricted to the viewer that acts as them (api scope)", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("create an App restricted to the viewer that acts as them (api scope)", async () => {
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e viewer token" },
           { params: projectParams });
         created.status(201);
@@ -1023,10 +1248,6 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     const IN_PROGRESS = ["queued", "validating", "building", "provisioning", "checking"];
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("images")
@@ -1209,8 +1430,7 @@ flow(
     };
 
     try {
-      await ctx.step("enable Apps and sign the CLI in", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("sign the CLI in", async () => {
         const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app8") });
         const login = await cli.login(pat, { noProject: true, account: project.accountId });
         if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
@@ -1382,8 +1602,7 @@ flow(
     const machine = { projectId: project.id, appId: "", machineId: UNKNOWN_ID };
 
     try {
-      await ctx.step("enable Apps, create an App with no release, sign the CLI in", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("create an App with no release, sign the CLI in", async () => {
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e fleet App" }, { params: { projectId: project.id } });
         created.status(201);
         appId = created.json<any>().app_id;

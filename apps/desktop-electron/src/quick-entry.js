@@ -18,6 +18,7 @@ const {
   app,
   BrowserWindow,
   Menu,
+  clipboard,
   desktopCapturer,
   globalShortcut,
   ipcMain,
@@ -30,6 +31,7 @@ const { execFile } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { attachContextMenu } = require('./context-menu');
 const {
   composerLabels,
   composerMenuItems,
@@ -176,6 +178,8 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
         sandbox: true,
       },
     });
+    // Right-click in the prompt: paste, spelling, copy (KRTX-2555).
+    attachContextMenu(bar.webContents, { Menu, shell, clipboard, getWindow: () => bar });
     // Clicking anywhere else, the dim included, dismisses the bar. The typed text stays.
     bar.on('blur', () => {
       if (!capturing) hide();

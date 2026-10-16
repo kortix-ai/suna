@@ -5,7 +5,7 @@ description: "Generative UI for Kortix: the agent writes typed UI blocks (cards,
 
 # Generative UI (`genui`)
 
-**Status (2026-10-10): built on branch `genui`, not merged to `dev`.** SDK (`@kortix/sdk/genui`, `/genui/react`), runtime (`genui` flag, prompt on OpenCode and pi, channel guards), web, and mobile are implemented. Plans 1–5 are built. Open: plan-4 task 8 (full `pnpm test` attestation, browser checks), and plan-5 task 7's device check and OTA publish, which wait on Jay (`references/mobile-device-check.md`).
+**Status (2026-10-10): built on branch `genui`, not merged to `dev`.** SDK (`@kortix/sdk/genui`, `/genui/react`), runtime (`genui` flag, prompt on OpenCode and pi, channel guards), web, and mobile are implemented. Plans 1–5 are built. Open: plan-4 task 8 (browser checks), and plan-5 task 7's device check and OTA publish, which wait on Jay (`references/mobile-device-check.md`).
 
 Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). Valid: deepseek-v4.1-flash 100.0%, glm-5.3-flash 100.0%, gate 97.0%; kimi-k3 unavailable (503); Jay's 4 models untested. See `references/eval-results.md`.
 
@@ -20,9 +20,9 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
 | `references/plan-5-mobile.md` | Mobile renderer, components, charts, map, settings, copy, device check, OTA (7 tasks) |
 | `references/eval-results.md` | Phase 0 results: one summary table per eval run, appended by `scripts/eval.ts` |
 | `references/mobile-device-check.md` | On-device checklist for mobile (Jay runs it), the OTA publish procedure, the old-build check |
-| `scripts/eval.ts` | Phase 0 runner: every case against each model through the LLM gateway; writes `output/genui-eval/` and appends `eval-results.md` |
-| `scripts/eval-prompts.json` | The 46 synthetic eval cases: prompt, optional tool result (`context`), expected UI use (`expect`), forbidden components (`forbid`) |
-| `scripts/score.ts`, `scripts/score.test.ts` | Scores one reply (valid blocks, overuse, underuse, forbidden components) and applies the go/no-go gate |
+| `scripts/eval.ts` | Phase 0 runner: every case against each model through the LLM gateway; writes `output/genui-eval/` and appends `eval-results.md`. `GENUI_EVAL_CASES` runs a subset; `GENUI_EVAL_EFFORT` sends `reasoning_effort`. A Codex model needs a project gateway key (`POST /v1/projects/{projectId}/gateway/keys`) as `GENUI_EVAL_TOKEN`: a PAT has no project, so the gateway answers `provider_not_connected` |
+| `scripts/eval-prompts.json` | The 60 synthetic eval cases: prompt, optional tool result (`context`), expected UI use (`expect`), forbidden components (`forbid`), richness bar (`rich`) |
+| `scripts/score.ts`, `scripts/score.test.ts` | Scores one reply (valid blocks, overuse, underuse, forbidden components, images, foreign images, interleaving, prose share, thin) and applies the go/no-go gate |
 
 ## Rules that already hold
 
@@ -35,7 +35,7 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
    (`packages/starter/templates/managed/skills/kortix-genui/SKILL.md`), generated from
    `buildGenuiPrompt()` by `bun packages/sdk/scripts/genui-skill.ts`; `packages/sdk/src/genui/skill.test.ts`
    fails while it is stale. It is never in the system prompt. Project flag off = kortixd hides the skill
-   (`apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui.ts`).
+   (`apps/kortix-sandbox-agent-server/src/lib/config/genui.ts`).
 5. No raw model output reaches Slack, push, email, or the CLI. Run `toMarkdown`.
 6. Query, Mutation, Form, Input, and Button are Phase 4 only, with the guards in
    `references/spec.md` §9.
@@ -56,3 +56,18 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
    statement (`…")````) onto its own line. `genuiToMarkdown` runs it itself. The
    web (`unified-markdown.tsx`), mobile (`selectable-markdown.tsx`) and
    `scripts/score.ts` call it directly.
+10. A block's root is any block (`root = Steps(...)`); `sanitizeTree` wraps a non-Stack root in a Stack.
+    The skill body is ours: PREAMBLE, SYNTAX, the lang-core signatures from `GENUI_LIBRARY.toSpec()`,
+    RULES, EXAMPLES (`packages/sdk/src/genui/prompt.ts`). lang-core's prose sections are not used.
+11. Photos for a visual answer come from ONE batched `image_search` call; a Checklist's ticks never leave
+    the device.
+12. A client whose bundled SDK predates a component cannot render or convert it: the parser reports
+    `unknown-component` and `no-root`, and the block shows *This content could not be displayed.*, not
+    the component's markdown. This hits a published CLI (`genuiToMarkdown` in `apps/cli`), a mobile build
+    without the OTA, and third-party hosts on an older `@kortix/sdk`. Ship order for a new component:
+    publish the CLI on the new SDK and send the mobile OTA first; only then let the regenerated
+    `kortix-genui` skill that teaches it reach sandboxes.
+13. The `kortix-genui` description leaves software installs and terminal steps out on purpose ("How do I
+    install Node.js on macOS? Step by step." stays prose with code fences). `scripts/eval.ts` puts the skill
+    in the system message, so it measures the reply shape, not whether the agent loads the skill: measure
+    the trigger in a real session.

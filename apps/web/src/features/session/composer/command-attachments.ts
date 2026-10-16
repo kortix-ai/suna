@@ -139,3 +139,48 @@ export function planCommandAttachments(
       : tI18nComplete('text807f9beb34b1', { count: attachmentCount }),
   };
 }
+
+export interface UnresolvedCommandChipInput {
+  /** The `/` chip the draft carries, if any — `getContent().commandName`. */
+  commandName: string | undefined;
+  /**
+   * Whether the live command list has EVER resolved. The composer's `commands`
+   * prop is `[]` both while the list is loading and for a host that passes no
+   * list at all, so the loading state has to arrive as its own bit — the
+   * composer cannot recover it from the array.
+   */
+  commandsResolved: boolean;
+  /** `attachedFiles.length`. */
+  attachmentCount: number;
+}
+
+/**
+ * Whether a chip the live list cannot YET resolve may leave with attachments.
+ *
+ * It may not. This is the hole the `planCommandAttachments` refusal cannot
+ * see: that guard runs only on `plan.kind === 'command'`, and a chip whose
+ * lookup misses degrades `planDraftSubmission` to a MESSAGE — which carries
+ * attachments fine. So in the window where the list has never resolved (a
+ * first load, or the `resetRuntimeQueries` a session restart and a config
+ * apply both fire), chip + attachment + Enter left the composer as an
+ * ordinary prompt: exactly the loss the refusal exists to prevent,
+ * reproduced on a booted local stack (2026-10-15, issue KRTX-1903).
+ *
+ * Only the never-resolved list is refused. A list that HAS resolved and
+ * misses the chip keeps its documented behavior — the command is gone, the
+ * failure degrades to plain text, and `draftWillRunCommand`'s doc comment
+ * records why that is deliberate. Without attachments nothing is at risk:
+ * the plain-text fallback is visible, recoverable, and stays available even
+ * while the list is loading.
+ */
+export function planUnresolvedCommandChip(
+  { commandName, commandsResolved, attachmentCount }: UnresolvedCommandChipInput,
+  tI18nComplete: UiTranslator,
+): CommandAttachmentPlan {
+  if (!commandName || commandsResolved || attachmentCount < 1) return { kind: 'dispatch' };
+  return {
+    kind: 'refuse',
+    message: tI18nComplete.raw('textdffd02b805cb'),
+    description: tI18nComplete.raw('textd943cb31f962'),
+  };
+}

@@ -1,6 +1,7 @@
 /**
  * Integration test (real local DB): when a declined card turns auto top-up
- * off, the owners get one email and the settings say why (KRTX-1718). Before
+ * off, the billing managers (owners and admins) get one email each and the
+ * settings say why (KRTX-1718). Before
  * this, the reason sat in `credit_accounts.auto_topup_disabled_reason`, read by
  * no API, and nobody was told; the wallet ran down to $0 and sessions and
  * triggers stopped.
@@ -65,7 +66,7 @@ afterAll(async () => {
 });
 
 describe('auto top-up turned off by a declined card', () => {
-  test('a hard decline turns it off and emails the owner once, with the reason and the billing link', async () => {
+  test('a hard decline turns it off and emails each billing manager once, with the reason and the billing link', async () => {
     await handleFailedCharge(declined.account_id, 0, 'insufficient_funds', true);
 
     expect(await row(declined.account_id)).toMatchObject({
@@ -73,7 +74,8 @@ describe('auto top-up turned off by a declined card', () => {
       autoTopupDisabledReason: 'insufficient_funds',
       autoTopupConsecutiveFailures: 1,
     });
-    expect(sent.map((m) => m.to)).toEqual([[ownerEmail]]);
+    // Owners and admins both hold billing.write and both can fix the card.
+    expect(sent.map((m) => m.to[0]).sort()).toEqual([ownerEmail, adminEmail].sort());
     expect(sent[0]!.subject).toBe('Auto top-up is off for auto-topup-declined-account');
     expect(sent[0]!.text).toContain('The card has insufficient funds. (insufficient_funds)');
     expect(sent[0]!.text).toContain(`/projects?accountId=${declined.account_id}&accountTab=billing`);
@@ -110,12 +112,13 @@ describe('a soft failure', () => {
     });
   });
 
-  test('the third failure in a row turns it off and emails the owner', async () => {
+  test('the third failure in a row turns it off and emails the billing managers', async () => {
     await handleFailedCharge(flaky.account_id, 1, 'processing_error', false);
     expect(sent).toEqual([]);
     await handleFailedCharge(flaky.account_id, 2, 'processing_error', false);
     expect((await row(flaky.account_id)).autoTopupEnabled).toBe(false);
-    expect(sent.map((m) => m.to)).toEqual([[ownerEmail]]);
+    // Owners and admins both hold billing.write and both can fix the card.
+    expect(sent.map((m) => m.to[0]).sort()).toEqual([ownerEmail, adminEmail].sort());
     expect(sent[0]!.text).toContain('The charge failed. (processing_error)');
   });
 });

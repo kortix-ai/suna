@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, jest, mock, test } from 'bun:test';
 let drains = 0;
 let drainMs = 0;
 let concurrent = 0;
@@ -25,9 +25,20 @@ mock.module('./drain', () => ({
 }));
 const { startSessionLifecycleWorker, stopSessionLifecycleWorker } = await import('./worker');
 const { wakeAt, DRAIN_FALLBACK_MS, MIN_DRAIN_GAP_MS } = await import('../../workers/session-lifecycle-worker');
+// A fake clock: the worker's 1 s tick, its wake timers, Date.now() and the
+// mocked drain's sleep all advance only through `elapse`, so every case runs in
+// milliseconds and no loaded runner can delay a timer past an assertion.
+async function elapse(ms: number) {
+  jest.advanceTimersByTime(ms);
+  await Promise.resolve();
+}
+beforeEach(() => {
+  jest.useFakeTimers();
+});
 afterEach(async () => {
   stopSessionLifecycleWorker();
-  await Bun.sleep(drainMs + 20);
+  await elapse(drainMs + 20);
+  jest.useRealTimers();
   drainMs = 0;
   listening = false;
 });
@@ -36,20 +47,20 @@ test('delivery starts without cron leadership and recurring retries stop cleanly
   drains = 0;
   startSessionLifecycleWorker();
   expect(drains).toBe(1);
-  await Bun.sleep(1_050);
+  await elapse(1_050);
   expect(drains).toBe(2);
   stopSessionLifecycleWorker();
-  await Bun.sleep(1_050);
+  await elapse(1_050);
   expect(drains).toBe(2);
 });
 
 test('restarting replaces the previous interval', async () => {
   drains = 0;
   startSessionLifecycleWorker();
-  await Bun.sleep(10);
+  await elapse(10);
   startSessionLifecycleWorker();
   expect(drains).toBe(2);
-  await Bun.sleep(1_050);
+  await elapse(1_050);
   expect(drains).toBe(3);
 });
 
@@ -77,7 +88,7 @@ test('a drain slower than the interval never overlaps the next tick', async () =
   drainMs = 2_500;
   startSessionLifecycleWorker();
   const deadline = Date.now() + 20_000;
-  while (drains < 2 && Date.now() < deadline) await Bun.sleep(25);
+  while (drains < 2 && Date.now() < deadline) await elapse(25);
   expect(maxConcurrent).toBe(1);
   expect(drains).toBe(2);
 });
@@ -103,12 +114,12 @@ test('with the LISTEN live, the tick is only a fallback and a NOTIFY wakes the d
   drains = 0;
   startSessionLifecycleWorker();
   expect(drains).toBe(1);
-  await Bun.sleep(1_200);
+  await elapse(1_200);
   // No 1 s poll while the LISTEN is live.
   expect(drains).toBe(1);
   dueHandler?.(Date.now());
   const deadline = Date.now() + 5_000;
-  while (drains < 2 && Date.now() < deadline) await Bun.sleep(25);
+  while (drains < 2 && Date.now() < deadline) await elapse(25);
   expect(drains).toBe(2);
 });
 
@@ -119,7 +130,7 @@ test('a storm of NOTIFYs drains at most once per gap', async () => {
   const until = Date.now() + 2_100;
   while (Date.now() < until) {
     dueHandler?.(Date.now());
-    await Bun.sleep(20);
+    await elapse(20);
   }
   // 1 at start + one per MIN_DRAIN_GAP_MS over ~2.1 s.
   expect(drains).toBeGreaterThanOrEqual(2);
@@ -131,7 +142,7 @@ test('the fallback tick drains when no NOTIFY came for the fallback window', asy
   drains = 0;
   startSessionLifecycleWorker();
   const deadline = Date.now() + DRAIN_FALLBACK_MS + 3_000;
-  while (drains < 2 && Date.now() < deadline) await Bun.sleep(50);
+  while (drains < 2 && Date.now() < deadline) await elapse(50);
   expect(drains).toBe(2);
 }, 15_000);
 
@@ -144,7 +155,7 @@ test('a later due time keeps its own wake after an earlier one drains', async ()
   dueHandler?.(t0 + 3_000);
   // Both wakes fire long before the 5 s fallback tick could.
   const deadline = t0 + 4_500;
-  while (drains < 3 && Date.now() < deadline) await Bun.sleep(25);
+  while (drains < 3 && Date.now() < deadline) await elapse(25);
   expect(drains).toBe(3);
   expect(Date.now() - t0).toBeLessThan(4_000);
 }, 10_000);

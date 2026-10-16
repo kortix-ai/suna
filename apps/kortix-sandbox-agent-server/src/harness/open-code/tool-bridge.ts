@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import { loadTools, toolBridgeKey } from '@/services/tools/host'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { toolNamesInDir } from './config-directory-inventory'
 
 /**
@@ -63,8 +64,9 @@ export const KortixTools = async () => {
 /**
  * Load the hosted tools, write the bridge plugin to `path` and its tool list
  * beside it, and return the plugin's `file://` spec. `projectRoot` is the
- * checkout OpenCode serves its config from (the working tree or a release);
- * null loads only the Kortix tools. The list holds only the loaded tools: a
+ * release (or, with releases off, the working tree) the boot link serves,
+ * whether or not it has an OpenCode config dir (`readBootReleaseRoot`); null
+ * loads only the Kortix tools. The list holds only the loaded tools: a
  * Kortix tool the project does not list is not in it.
  */
 export async function writeToolBridge(
@@ -94,7 +96,7 @@ export async function writeToolBridge(
 
 function compiledTools(env: NodeJS.ProcessEnv): Partial<CompiledAgentSet> | null {
   try {
-    return JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG ?? 'null') as Partial<CompiledAgentSet> | null
+    return JSON.parse(compiledAgentConfigFromEnv(env) ?? 'null') as Partial<CompiledAgentSet> | null
   } catch {
     return null
   }

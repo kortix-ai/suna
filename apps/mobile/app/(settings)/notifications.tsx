@@ -47,6 +47,8 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   shared: ShareNetworkIcon,
   automation_failed: XCircleIcon,
   automation_recovered: ArrowCounterClockwiseIcon,
+  capture_device_down: XCircleIcon,
+  capture_device_recovered: ArrowCounterClockwiseIcon,
 };
 
 /**

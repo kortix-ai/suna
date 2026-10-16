@@ -2,6 +2,7 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType } from 'react';
+import Link from 'next/link';
 
 import {
   matchesSourceFilters,
@@ -322,6 +323,7 @@ export function SessionFilterMenu({
   reviewCountBySession = {},
 }: SessionFilterMenuProps) {
   const t = useTranslations('sidebar.filter');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const localizedGroupModes = localizedSessionGroupModes(tI18nComplete);
   const localizedOrderModes = localizedSessionOrderModes(tI18nComplete);
@@ -704,6 +706,12 @@ export function SessionFilterMenu({
       >
         {t('collapseAll')}
       </DropdownMenuItem>
+      {/* The sidebar hides archived sessions; the sessions page lists them. */}
+      {!pageFacets && (
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link href={`/projects/${projectId}/sessions?view=archived`}>{tPinArchive('showArchived')}</Link>
+        </DropdownMenuItem>
+      )}
     </DropdownMenuContent>
   );
 }

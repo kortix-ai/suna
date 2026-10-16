@@ -78,6 +78,50 @@ describe('generic OAuth2 lifecycle protocol', () => {
     expect(preserved.refresh_token).toBe('refresh-old');
   });
 
+  // A server that reads a body client_id as client_secret_post answers
+  // `invalid_client: Missing client_secret` to Basic + body client_id
+  // (RFC 6749 §2.3: one authentication method per request).
+  test('client_secret_basic sends the client only in the Authorization header', async () => {
+    let body = new URLSearchParams();
+    let authorization = null as string | null; // assigned inside fetchImpl; `as` keeps TS from narrowing it to null
+    await exchangeOAuth2AuthorizationCode(
+      {
+        ...PUBLIC_APP,
+        client_id: 'confidential',
+        token_endpoint_auth_method: 'client_secret_basic',
+        client_secret: 'secret-123',
+      },
+      { code: 'code-1', callbackUrl: 'https://api.kortix.test/cb', pkceVerifier: 'v' },
+      {
+        fetchImpl: async (_url, init) => {
+          body = new URLSearchParams(String(init?.body));
+          authorization = new Headers(init?.headers).get('authorization');
+          return Response.json({ access_token: 'new' });
+        },
+      },
+    );
+    expect(authorization).toBe(`Basic ${Buffer.from('confidential:secret-123').toString('base64')}`);
+    expect(body.has('client_id')).toBe(false);
+    expect(body.has('client_secret')).toBe(false);
+  });
+
+  test('client_secret_post and none send client_id in the form', async () => {
+    for (const method of ['client_secret_post', 'none'] as const) {
+      let body = new URLSearchParams();
+      await refreshOAuth2Token(
+        { ...PUBLIC_APP, token_endpoint_auth_method: method, client_secret: 's' },
+        'refresh-old',
+        {
+          fetchImpl: async (_url, init) => {
+            body = new URLSearchParams(String(init?.body));
+            return Response.json({ access_token: 'new' });
+          },
+        },
+      );
+      expect(body.get('client_id')).toBe('public-client');
+    }
+  });
+
   test('uses client_secret_jwt without putting the secret in the form', async () => {
     let body = new URLSearchParams();
     await refreshOAuth2Token(

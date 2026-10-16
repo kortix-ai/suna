@@ -25,6 +25,13 @@ case "$mode" in
     # Real-PostgreSQL suites run in `integration` mode (the root `db-suites`
     # lane), never here: without a database they could only skip.
     files=$(find src -name '*.test.ts' ! -name 'integration-*' ! -name '*.integration.test.ts' ! -name '*.live.test.ts' | sort)
+    # Slowest files first (scripts/slow-tests.txt), then the rest in name
+    # order. A batch ends when its slowest file ends, so name order left one
+    # 20-40 s file per batch while the other workers idled: 209 s against
+    # 130 s slowest-first for the same files (2026-10-16). A listed file that
+    # no longer exists is dropped.
+    files=$(awk 'NR == FNR { all[$0] = 1; next } ($0 in all) && !seen[$0]++' \
+      <(printf '%s\n' "$files") <(grep -vE '^(#|$)' scripts/slow-tests.txt; printf '%s\n' "$files"))
     count=$(printf '%s\n' "$files" | grep -c . || true)
     # A suite that runs nothing must never exit 0. `bun test` with an empty
     # file list happily reports success, so a broken find/rename here would

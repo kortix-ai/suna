@@ -15,7 +15,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * `accounts/[id]/groups/[groupId]/page.tsx`.
  */
 export const RBAC_UPSELL_MESSAGE =
-  'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
+  'Custom roles, policies, and groups need Enterprise. An owner or admin can turn on the Enterprise demo, or talk to sales for a license.';
 
 /**
  * How a principal is labelled in every list, row, dialog and confirm.

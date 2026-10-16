@@ -86,4 +86,10 @@ export interface SessionLogPort {
    * puts carry these, so they equal the turn end's record.
    */
   live(threadId: string, messageId: string): { seq: number; created_at?: string } | null
+  /**
+   * The bytes behind an attachment the last `changes` exported as `ref: blob:<sha256>`, or null
+   * when the store no longer has them. The journal uploads them and writes the stored object's
+   * `kortix-attachment://` ref into the record (P2.13). Without it every attachment keeps `blob:`.
+   */
+  blob?(sha256: string): Buffer | null
 }

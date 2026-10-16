@@ -1370,6 +1370,93 @@ harnessFlow(
   },
 );
 
+// ─── RUN-20: a codemode script runs its tool calls on pi ─────────────────────
+// pi only: codemode is a pi tool. The project sets `harnesses.pi.codemode: only`, so the
+// manifest reaches the box (API -> KORTIX_PI_CODEMODE) and the model has no other tool to
+// call: a direct bash call cannot pass for a script. The script's two bash calls write
+// files, so the flow reads the effect back; the runtime's own message list holds the
+// nested calls the transcript flattens away.
+const RUN20_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'agents:',
+  '  kortix:',
+  '    kortix_permissions: all',
+  '    skills: all',
+  'harnesses:',
+  '  pi:',
+  '    codemode: only',
+  '',
+].join('\n');
+
+flow(
+  'RUN-20',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 780_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step('the project runs pi with harnesses.pi.codemode: only', async () => {
+        await world.setFeature('pi_harness', true);
+        await world.commitToMain({ 'kortix.yaml': RUN20_MANIFEST }, 'ke2e RUN-20: codemode only');
+      });
+      const session = await bootSession(ctx, 'pi', { project });
+      const { projectId, sessionId } = session;
+      const nonce = `ke2e-run20-${Date.now()}`;
+      const done = `RUN20_DONE_${Date.now()}`;
+      await ctx.step('the agent runs one codemode script that makes two bash calls', async () => {
+        await sendPrompt(
+          ctx,
+          projectId,
+          sessionId,
+          `Use the codemode tool exactly once. In that one script, call tools.bash twice: ` +
+            `the first command is: printf ${nonce}-a > ${nonce}-a.txt ` +
+            `and the second command is: printf ${nonce}-b > ${nonce}-b.txt ` +
+            `Then return the text "wrote both". Then reply with exactly: ${done}`,
+        );
+        const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+        const tools = messages.flatMap((m) => m.tools ?? []);
+        if (!tools.some((t) => t.tool === 'codemode' && t.status === 'completed')) {
+          throw new Error(`no completed codemode call: ${JSON.stringify(tools)}`);
+        }
+        // The script's calls are not calls of their own in the conversation.
+        if (tools.some((t) => t.tool === 'bash')) throw new Error(`a bash call ran outside the script: ${JSON.stringify(tools)}`);
+      });
+      await ctx.step('the runtime records the script\'s two bash calls on the codemode part', async () => {
+        const root = await pinnedRoot(ctx, projectId, sessionId);
+        const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
+        const codemode = parts.find((p) => p.type === 'tool' && p.tool === 'codemode' && p.state?.status === 'completed');
+        const calls = (codemode?.state?.metadata?.calls ?? []) as Array<{ name?: string; status?: string }>;
+        const ran = calls.map((c) => `${c.name}:${c.status}`);
+        if (ran.length !== 2 || !ran.every((c) => c === 'bash:ok' || c === 'bash:complete')) {
+          throw new Error(`codemode metadata.calls is ${JSON.stringify(calls)}`);
+        }
+      });
+      await ctx.step('both files the script wrote exist with their content', async () => {
+        for (const suffix of ['a', 'b']) {
+          const file = await ctx.client
+            .as(ctx.P.OWNER)
+            .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${nonce}-${suffix}.txt`)}`));
+          file.status(200).body().matches('$.content', new RegExp(`^${nonce}-${suffix}$`));
+        }
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
 // ─── RUN-15: a project tool runs on every harness ────────────────────────────
 // A harness-neutral module: a plain default export, no harness import. It
 // writes its proof to the workspace, so the flow reads the effect back instead
@@ -1387,8 +1474,23 @@ const PROJECT_TOOL_FILES = {
     '  limited:',
     '    kortix_permissions: all',
     '    tools: [read]',
+    // No checkout and no file tools: the box receives only the tool's modules.
+    '  locked:',
+    '    kortix_permissions: all',
+    '    workspace:',
+    '      project_repository: false',
+    '    tools: [ke2e_marker]',
     '',
   ].join('\n'),
+  'agents/locked.md': [
+    '---',
+    'description: Records markers with the ke2e_marker tool only.',
+    'mode: primary',
+    '---',
+    'You record markers. Follow the user instructions exactly.',
+    '',
+  ].join('\n'),
+  'tools/lib/marker-text.ts': 'export const markerText = (nonce: string, agent: string) => `${nonce}:${agent}`\n',
   'agents/limited.md': [
     '---',
     'description: Reads this repository with the read tool only.',
@@ -1400,12 +1502,13 @@ const PROJECT_TOOL_FILES = {
   'tools/ke2e_marker.ts': [
     "import { writeFileSync } from 'node:fs'",
     "import { join } from 'node:path'",
+    "import { markerText } from './lib/marker-text'",
     '',
     'export default {',
     "  description: 'Records a ke2e marker: writes <nonce>:<agent> to ke2e-run15-<nonce>.txt and returns that text.',",
     "  parameters: { type: 'object', properties: { nonce: { type: 'string', description: 'The nonce to record' } }, required: ['nonce'] },",
     '  execute(args, context) {',
-    "    const text = `${args.nonce}:${context.agent}`",
+    '    const text = markerText(args.nonce, context.agent)',
     "    writeFileSync(join(context.directory, `ke2e-run15-${args.nonce}.txt`), text)",
     '    return text',
     '  },',
@@ -1419,8 +1522,8 @@ harnessFlow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    // Two sessions: boot (≤540s) + one turn (≤240s) each.
-    timeoutMs: 1_700_000,
+    // Three sessions: boot (≤540s) + one turn (≤240s) each.
+    timeoutMs: 2_500_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/sessions',
@@ -1461,6 +1564,16 @@ harnessFlow(
         const ran = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker' && t.status !== 'error');
         if (ran.length > 0) throw new Error(`the limited agent ran ke2e_marker on ${harness}: ${JSON.stringify(ran)}`);
         (await file(limited.sandboxId, limitedNonce)).status(404);
+      });
+
+      const lockedNonce = `n${Date.now()}`;
+      const lockedDone = `RUN15_LOCKED_${Date.now()}`;
+      const locked = await bootSession(ctx, harness, { project, agentName: 'locked', prompt: ask(lockedNonce, lockedDone) });
+      await ctx.step('an agent without the project repository still runs the project tool and its relative import', async () => {
+        const messages = await waitForAssistantText(ctx, locked.projectId, locked.sessionId, lockedDone);
+        const calls = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker');
+        if (!calls.some((t) => t.status === 'completed')) throw new Error(`no completed ke2e_marker call for the locked agent on ${harness}: ${JSON.stringify(calls)}`);
+        (await file(locked.sandboxId, lockedNonce)).status(200).body().matches('$.content', new RegExp(`^${lockedNonce}:locked$`));
       });
     } finally {
       await world.close();

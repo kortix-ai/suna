@@ -500,6 +500,7 @@ export function SessionPanelProvider({
             <AppPreview
               url={output.url ?? ''}
               name={displayName}
+              projectId={projectId}
               shareContext={
                 projectId && projectSessionId
                   ? { projectId, sessionId: projectSessionId }

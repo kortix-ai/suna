@@ -11,6 +11,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { compiledSetV3 } from '@/lib/config/manifest-v3'
 
 export const SKILLS_DIR = 'skills'
 /** Default OpenCode config dir when the manifest names none. */
@@ -21,9 +22,11 @@ export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode'
 /**
  * The repo paths a config release is built from, for the session notice: the
  * legacy config dir holds the agents and skills too; the root layout keeps
- * them beside it. `configDir` null = the default.
+ * them beside it. `configDir` null = the default. A kortix.yaml v3 project
+ * (`governance` is its compiled set) has only `kortix.yaml`.
  */
-export function releaseSourcePaths(configDir: string | null): string[] {
+export function releaseSourcePaths(configDir: string | null, governance: string | null = null): string[] {
+  if (compiledSetV3(governance)) return ['kortix.yaml']
   const dir = configDir ?? OPENCODE_CONFIG_DIR
   return dir === LEGACY_OPENCODE_CONFIG_DIR ? [dir] : ['agents', SKILLS_DIR, dir]
 }

@@ -79,6 +79,7 @@ import {
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
+import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
 
 /**
@@ -369,6 +370,9 @@ interface SessionProvisionState {
   // provider drops them itself when Platinum refuses the create over them.
   driveMounts: SessionDriveMounts | undefined;
   driveMountsResolved: boolean;
+  // /workspace on a Platinum volume (workspace-volume.ts): resolved on the
+  // first Platinum attempt, undefined until then, null for a box-disk session.
+  workspaceVolume: WorkspaceVolume | null | undefined;
 }
 
 /** What the detached provisioning loop reads but never changes. */
@@ -544,6 +548,7 @@ export async function provisionSessionSandbox(opts: {
     platinumCreateAttempt: 0,
     driveMounts: undefined,
     driveMountsResolved: false,
+    workspaceVolume: undefined,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -688,6 +693,9 @@ export async function provisionSessionSandbox(opts: {
     sandboxId: sandbox.sandboxId,
     serverType,
     location,
+    // A warm (speculative) box never leaves its project's region: the warm
+    // marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
+    locationRequired: sandbox.metadata?.warm === true,
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
@@ -796,6 +804,8 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
         sessionId: sandbox.sandboxId,
         bootingUserId: userId,
         agentName: opts.agentName ?? 'default',
+        // The /workspace volume takes one of the box's mount slots.
+        reservedSlots: state.workspaceVolume ? 1 : 0,
       }),
     );
   if (drivesRequirePlatinum && providerName !== 'platinum' && drivesSyncAllowed) {
@@ -819,11 +829,21 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     providerCreateInput.volumes = undefined;
     return;
   }
+  const { applyWorkspaceVolume, resolveWorkspaceVolume } = await import('./workspace-volume');
+  if (state.workspaceVolume === undefined) {
+    state.workspaceVolume = await resolveWorkspaceVolume({
+      sessionId: sandbox.sandboxId,
+      projectMetadata: opts.projectMetadata,
+      location: providerCreateInput.location,
+    });
+    if (state.workspaceVolume) ctx.tl.mark('workspace-volume');
+  }
   if (!state.driveMountsResolved) {
     state.driveMounts = await planDrives();
     state.driveMountsResolved = true;
   }
   providerCreateInput.volumes = state.driveMounts?.volumes;
+  if (state.workspaceVolume) applyWorkspaceVolume(providerCreateInput, state.workspaceVolume);
 }
 
 /** What the box mounted (its drives), for its row. */
@@ -1329,7 +1349,8 @@ async function failOverToNextProvider(
   // Drives run on Platinum only: no hand-off to another provider. (With drive
   // sync on, any provider can carry the drives.)
   const next = nextFailoverProvider({
-    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed),
+    // A session whose /workspace is a Platinum volume runs on Platinum only.
+    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed) || !!state.workspaceVolume,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,

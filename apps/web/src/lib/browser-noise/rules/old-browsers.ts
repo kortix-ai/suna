@@ -363,28 +363,6 @@ function isIosWebViewInlineScriptSource(filename: unknown): boolean {
   return !ASSET_FILE_EXTENSION_PATTERN.test(normalized.split('?')[0]);
 }
 
-// The path of an `app:///<path>` WebView source, query string removed.
-function iosWebViewSourcePath(filename: unknown): string {
-  const normalized = normalizeString(filename);
-  if (!normalized.startsWith('app:///')) {
-    return '';
-  }
-  return normalized.slice('app:///'.length).split('?')[0];
-}
-
-// The path of an `https://host/<path>` request url, query string removed.
-function requestUrlPath(requestUrl: unknown): string {
-  const normalized = normalizeString(requestUrl);
-  if (normalized === '') {
-    return '';
-  }
-  try {
-    return new URL(normalized).pathname.replace(/^\//, '');
-  } catch {
-    return '';
-  }
-}
-
 /**
  * Whether a Sentry / window.onerror event is the iOS-WebView in-document
  * inline-script stack-overflow noise class: a `RangeError: Maximum call stack
@@ -418,9 +396,29 @@ function requestUrlPath(requestUrl: unknown): string {
  * recursion), any Next.js-internal source frame (`_next` chunk / `_next-live`
  * runtime file) keeps reporting, and any loaded `.js` asset frame keeps
  * reporting (a loaded script has its own url as filename, not the document
- * url). When the page url is known (the Sentry gate), the inline frame's
- * `app:///` path must additionally EQUAL the page path, so an inline frame from
- * a different document context is preserved.
+ * url). Every resolvable frame must be in-document, so a frame from another
+ * origin keeps reporting. Any same-origin route path qualifies: a single-page
+ * app's injected script keeps the URL of the document the tab first loaded.
+ *
+ * Better Stack fingerprints of the 2026-10-14 burst this widened anchor closes
+ * (KRTX-2292; Kortix Frontend prod, application_id 2346967): the same `Hk`/`Jk`
+ * mutual recursion at document line 228 (`Hk` call site col 63 ↔ `Jk` col 409,
+ * with call-site variants at cols 25/383/363) captured 14 ways — 167
+ * occurrences in one 36-minute burst (02:48–03:24 UTC) on release
+ * `1ecba158…` (v0.13.56), one anonymous Google Search App 441 session on iOS
+ * 27, mechanism `auto.browser.global_handlers.onerror`. The 14 groups and their
+ * counts at issue filing (3-day window): `a5d46842…` 40, `4f17f88c…` 32,
+ * `8c8ac028…` 28, `87df3b2c…` 19, `8820c7f9…` 15, `a1cbbb60…` 11, `28b6b69a…`
+ * 4, `91685ceb…` 4, `e38af57d…` 4, `43e1472c…` 3, `24d55b7b…` 2, `9d27fae9…`
+ * 2, `b2d80609…` 2, `e64db921…` 1. Frame shape: ~44 alternating `Hk`/`Jk`
+ * frames under the project path (`app:///projects/<id>`) and `app:///new`
+ * document sources plus two `?` frames under the earlier-session source
+ * (lines 192/200); no `_next` chunk frame and no resolved `apps/web/src/…`
+ * frame. Verified against the six largest groups' real captures: all classify
+ * as noise under this rule; under the pre-widening path-equality guard all six
+ * leaked to Better Stack — that leak is KRTX-2292. If any of these
+ * fingerprints re-fires after a release carries this rule, the class is
+ * leaking again; triage the frames, do not re-file the class.
  *
  * Residual trade-off, accepted and bounded: a script the app itself emits
  * INLINE into the document (the Electron desktop bootstrap, the analytics-init
@@ -460,20 +458,16 @@ export function isIosWebViewInjectedStackOverflowNoise(input: {
   if (documentSources.length === 0) {
     return false;
   }
-  // Strong anchor when the page url is known: the inline frame's `app:///` path
-  // must be THIS page's path. A different `app:///` path is another document
-  // context, not this page's injected script; keep reporting. A BARE `app:///`
-  // root (empty path) is the app origin the injected script reports on the
-  // open-web marketing/auth pages — there is no route path to compare, so it
-  // belongs to whichever page produced it.
-  const pagePath = requestUrlPath(input.requestUrl);
-  if (pagePath !== '') {
-    return documentSources.some((source) => {
-      const sourcePath = iosWebViewSourcePath(source);
-      return sourcePath === pagePath || sourcePath === '';
-    });
-  }
-  return true;
+  // Every resolvable frame must be in-document. A frame from another origin
+  // (an embed or iframe) or a loaded asset is a different script context;
+  // keep reporting. Any same-origin `app:///<route>` path qualifies, not only
+  // the current page: in a single-page app the injected script keeps the URL
+  // of the document the tab first loaded, while `request.url` follows
+  // client-side navigation (Better Stack, 2026-10-14: frames on
+  // `/projects/<id>` and an earlier session, request on the current session).
+  return sources
+    .filter((source) => isResolvableFrameSource(source))
+    .every(isIosWebViewInlineScriptSource);
 }
 
 // Safari third-party-script "undefined variable" ReferenceError noise — the

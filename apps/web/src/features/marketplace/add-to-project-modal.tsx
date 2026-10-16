@@ -2,8 +2,7 @@
 
 import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -201,19 +200,18 @@ export function AddToProjectModal({
           description: tI18nComplete.raw('text0471e152d0c9'),
           ...(gitSettingsAccountId
             ? {
-                button: (
-                  <Button size="sm" asChild>
-                    {/* Still an anchor, but the destination is a modal over
-                        this page — so the click costs a render, not a
-                        navigation, and the chunk is warm from the hover. */}
-                    <HubLink
-                      to={hubTarget(gitSettingsAccountId, { tab: 'git' })}
-                      onClick={() => onOpenChange(false)}
-                    >
-                      {tI18nComplete.raw('textef2ec2a16945')}
-                    </HubLink>
-                  </Button>
-                ),
+                // The destination is a modal over this page: a render, not a navigation.
+                actions: [
+                  {
+                    label: tI18nComplete.raw('textef2ec2a16945'),
+                    onClick: () => {
+                      onOpenChange(false);
+                      requestAnimationFrame(() =>
+                        openAccountPanel(hubTarget(gitSettingsAccountId, { tab: 'git' })),
+                      );
+                    },
+                  },
+                ],
               }
             : {}),
         });

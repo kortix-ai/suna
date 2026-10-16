@@ -106,15 +106,15 @@ describe('CreditTransactionsTable renders a ledger row', () => {
     expect(html).toContain('Admin Grant');
     expect(html).toContain('goodwill');
     expect(html).toContain('Expiring');
-    expect(html).toContain('+25.00');
-    expect(html).toContain('27.50');
+    expect(html).toContain('+2,500');
+    expect(html).toContain('2,750');
     expect(html).toContain('text-kortix-green');
   });
 
   test('a debit is red and keeps its minus sign', () => {
     const html = render([{ ...grant, id: 'led_2', type: 'compute_debit', amount: -1.25 }]);
     expect(html).toContain('Sandbox');
-    expect(html).toContain('-1.25');
+    expect(html).toContain('-125');
     expect(html).toContain('text-kortix-red');
     expect(html).not.toContain('text-kortix-green');
   });

@@ -75,6 +75,20 @@ test('session(pid, sid).watch and setWatch read and write the caller watch', asy
   ]);
 });
 
+test('session(pid, sid).setPinned and setArchived write the caller`s own list state', async () => {
+  await kortix.session('P1', 'S1').setPinned(true);
+  await kortix.session('P1', 'S1').setArchived(false);
+  expect(calls).toEqual([
+    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/pin', body: { pinned: true } },
+    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/archive', body: { archived: false } },
+  ]);
+});
+
+test('session(pid, sid).recover continues a lost session on a new computer', async () => {
+  await kortix.session('P1', 'S1').recover();
+  expect(calls).toEqual([{ method: 'POST', url: 'http://test.local/projects/P1/sessions/S1/recover', body: {} }]);
+});
+
 test('the root builds a sandbox proxy URL from an external id (mobile: no SandboxInfo in hand)', async () => {
   const root = await import('../../index');
   expect(root.getSandboxUrlForExternalId('ext-1', 6080)).toBe('http://test.local/p/ext-1/6080');

@@ -14,7 +14,7 @@ function drizzleFailure(cause: unknown): Error {
       'Failed query: insert into "kortix"."credit_ledger" ("id", "account_id", "amount", ' +
         '"amount_precise", "balance_after", "balance_after_precise", "type", "description") ' +
         'values (default, $1, default, $2, default, $3, $4, $5) returning "id"\nparams: ' +
-        '00000000-0000-4000-8000-000000000001,2,2,credit_reset,Free tier monthly credit reset: 2 credits',
+        '00000000-0000-4000-8000-000000000001,2,2,credit_reset,Free tier monthly credit reset: 200 credits',
     ),
     { cause },
   );

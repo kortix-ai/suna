@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { managedSkillsDir } from '@/lib/config/managed-skills-dir'
 import { logger } from '@/lib/log/logger'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/services/sandbox-env/genui'
+import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
 
 const execFileAsync = promisify(execFile)
 

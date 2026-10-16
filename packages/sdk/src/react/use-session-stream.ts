@@ -61,7 +61,13 @@ interface TurnPayload {
   turns?: SessionTurnObservation['turns'];
   last_ended?: SessionTurnObservation['last_ended'];
   recent_failures?: SessionTurnObservation['recent_failures'];
+  can_stop?: boolean;
   working?: SessionWorkingVerdict;
+}
+
+/** The open turns, as one comparable key: which run a `can_stop` answer is about. */
+function openTurnsKey(turns: SessionTurnObservation['turns'] | undefined): string {
+  return (turns ?? []).map((turn) => turn.turn_token).sort().join(',');
 }
 
 interface SessionPayload {
@@ -89,16 +95,28 @@ export function applySessionControlFrame(
   if (frame.type === 'kortix.control.turn') {
     const payload = frame.payload as TurnPayload;
     if (!payload?.known || !Array.isArray(payload.turns)) return;
+    const key = qk.project.sessionTurn(projectId, sessionId);
+    // The stream is one broadcast per session, so a frame may carry no
+    // per-caller `can_stop`. The last `/turn` answer still holds while the
+    // SAME turns are open; once they change it is about another run.
+    const previous = queryClient.getQueryData<SessionTurnObservation>(key);
+    const canStop =
+      typeof payload.can_stop === 'boolean'
+        ? payload.can_stop
+        : previous && openTurnsKey(previous.turns) === openTurnsKey(payload.turns)
+          ? previous.can_stop
+          : undefined;
     const observation: SessionTurnObservation = {
       turns: payload.turns,
       ...(payload.last_ended ? { last_ended: payload.last_ended } : {}),
       ...(payload.recent_failures ? { recent_failures: payload.recent_failures } : {}),
+      ...(canStop !== undefined ? { can_stop: canStop } : {}),
       ...(payload.working ? { working: payload.working } : {}),
       // This tab's clock at arrival. The server re-publishes an unchanged frame
       // every 20 s, so a live stream keeps the entry fresh.
       atMs: nowMs,
     };
-    queryClient.setQueryData(qk.project.sessionTurn(projectId, sessionId), observation);
+    queryClient.setQueryData(key, observation);
     return;
   }
   if (frame.type === 'kortix.control.session') {
