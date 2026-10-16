@@ -150,6 +150,15 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   'feature-flags':
     'feature flags flag experimental beta preview labs toggles switches early access',
   upgrades: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
+  // The two connect tabs (KRTX-1997). PR #9992 added both tabs to
+  // `SettingsTab` but not to this record: the typecheck contract below went
+  // unenforced, and `TAB_KEYWORDS[item.tab]` rendered as the literal word
+  // "undefined" in both rows' haystacks — and worse, `computer` answered
+  // "apps" through its rail description (KRTX-2475). These bags carry the
+  // words the panes themselves show: Pair, Desktop app, Download, Command
+  // line, Server URL.
+  mcp: 'mcp model context protocol server',
+  computer: 'computer pair desktop local machine download cli',
   // Every other bag is gone with the tab it named. Thirteen project-
   // configuration tabs (General, Members, Secrets, Channels, Repositories,
   // Models, Sandbox templates, Snapshots, Marketplace, Review, Voice, Feature
