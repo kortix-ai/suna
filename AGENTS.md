@@ -301,8 +301,14 @@ before a push or a merge into `dev`. Pick the checks that cover what you
 changed, run them, and write in the PR body what you ran and why. A diff that
 no test reads (docs, a README, a skill, a standalone script) needs no run. A
 change to shared code, the API, the SDK, a migration, or the runtime needs the
-tests that exercise it: the package's own tests, the affected flows
-(`pnpm test -- --id <ID>` / `--domain <d>`), or the diff-scoped `pnpm test`.
+tests that exercise it: the package's own test file, or the affected flows
+(`pnpm test -- --id <ID>` / `--domain <d>`).
+**A Mac runs targeted tests only.** On macOS the runner refuses a suite-wide run
+(plain `pnpm test`, `--full`, `--packages-only`, `--browser-only`, `--db-only`
+with no path filter) and exits `2`. 2026-10-16: five agent sessions ran the
+suite at once on one laptop (load average 112, swap full). Run one flow, one
+DB suite path, the SDK, or one package's test file. The whole suite runs in CI:
+add the `test` label once, or set `KORTIX_FULL_TEST=1` when a person asks.
 `dev` is gated after the merge: every push runs every `Tests` lane, and a red
 run blocks the next promotion. If your merge turns `dev` red, you fix forward.
 A green `pnpm test` still writes `tests/attestations/<branch>.json`. The runner
