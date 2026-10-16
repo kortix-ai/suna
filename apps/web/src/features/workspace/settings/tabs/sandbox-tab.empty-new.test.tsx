@@ -54,6 +54,10 @@ mock.module('@/lib/use-project-can', () => ({
 
 mock.module('@/features/workspace/customize/migrate-to-v3/manifest-version', () => ({
   useProjectManifestVersion: () => ({ version: 2, isLoading: false }),
+  // The tab reads the filename helper too (#10000): mirror the real mapping
+  // so the mock answers what sandbox-tab.tsx imports.
+  manifestFilename: (version: number | null): 'kortix.toml' | 'kortix.yaml' =>
+    (version ?? 1) >= 2 ? 'kortix.yaml' : 'kortix.toml',
 }));
 
 /**

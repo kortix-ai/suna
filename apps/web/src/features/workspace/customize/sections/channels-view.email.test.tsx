@@ -6,8 +6,12 @@ let canWrite = true;
 const emailInstall = mock(() => ({ data: null, isLoading: false }));
 const disconnected = () => ({ data: null, isLoading: false });
 const disconnect = () => ({ isPending: false, mutate: mock() });
+// The real barrel, loaded before the mock, so the partial override still
+// answers every name the mounted tree imports (qk, resetIdentityState, …).
+const realSdkReact = await import('@kortix/sdk/react');
 
 mock.module('@kortix/sdk/react', () => ({
+  ...realSdkReact,
   useFeatureFlag: () => ({ enabled: emailEnabled, isLoading: false }),
   useVisibleAgents: () => [],
   useRuntimeProviders: disconnected,
@@ -29,6 +33,9 @@ mock.module('@/hooks/channels/use-teams-installations', () => ({
   useTeamsInstall: disconnected,
   useTeamsMode: disconnected,
   useDisconnectTeams: disconnect,
+  // The mounted Teams wizard also calls these SDK-backed hooks.
+  useConnectTeams: () => ({ mutateAsync: mock(async () => undefined) }),
+  useTeamsManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-channel-bindings', () => ({
   useChannelBindings: () => ({ data: { bindings: [] }, isLoading: false }),

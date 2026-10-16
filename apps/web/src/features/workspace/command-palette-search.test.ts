@@ -344,8 +344,11 @@ describe('queries return the rows they name', () => {
     }
   });
 
-  test('"apps" reaches the Apps page, not Connectors', () => {
-    expect(hits('apps')).toEqual(['nav:proj-apps']);
+  test('"apps" reaches the Apps page and the Computer row, not Connectors', () => {
+    // The Computer connect row (#9992) matches too: its on-screen rail
+    // description names "apps" ("the files, terminal, and apps on your
+    // computer"), and the palette matches on what is on screen.
+    expect(hits('apps')).toEqual(['nav:proj-apps', 'settings:computer']);
   });
 
   test('"agents" and "skills" reach their pages, not a restart command', () => {

@@ -174,6 +174,10 @@ mock.module('@/hooks/channels/use-teams-installations', () => ({
   useTeamsInstall: () => ({ data: null }),
   useTeamsMode: () => ({ data: null }),
   useDisconnectTeams: () => ({}),
+  // The Teams BYO wizard's connect mutation and manifest read, which the
+  // mocked module replaces along with the SDK re-export shim.
+  useConnectTeams: () => ({ mutateAsync: mock(async () => undefined) }),
+  useTeamsManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-channel-bindings', () => ({
   useChannelBindings: () => ({
