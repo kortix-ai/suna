@@ -9,6 +9,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import en from '../../../../../translations/en.json';
 import { CodemodeTool, scriptCalls, scriptResult } from './codemode-tool';
 
+/** The text of rendered markup: tags removed until none remain (one pass can leave a tag behind). */
+function textOf(html: string): string {
+  let text = html;
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, '');
+  } while (text !== previous);
+  return text;
+}
+
 function render(node: ReactNode) {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={en} onError={() => {}}>
@@ -79,7 +90,7 @@ describe('CodemodeTool', () => {
     expect(html).toContain('one');
     expect(html).not.toContain('Wall time');
     // The script, as text: once Shiki has loaded it renders as token spans.
-    expect(html.replace(/<[^>]+>/g, '')).toContain('await tools.bash({ command:');
+    expect(textOf(html)).toContain('await tools.bash({ command:');
   });
 
   test('a failed script shows the verdict, the call that failed and the error', () => {

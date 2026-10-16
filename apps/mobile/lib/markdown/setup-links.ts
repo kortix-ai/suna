@@ -60,6 +60,16 @@ const HAS_WORD = /[\p{L}\p{N}]/u;
 /** Past this length the text beside a link is content, not a label (web's `MAX_LABEL_CHARS`). */
 const MAX_LABEL_CHARS = 40;
 
+/**
+ * `text` without the characters of `chars` at its end. A loop, not a `[…]+$` regex: that regex
+ * backtracks quadratically on a long run of those characters.
+ */
+function trimEndChars(text: string, chars: string): string {
+  let end = text.length;
+  while (end > 0 && chars.includes(text[end - 1]!)) end--;
+  return text.slice(0, end);
+}
+
 const kindOf = (route: string): SetupLinkKind => (route === 'secret-intake' ? 'secret' : 'connector');
 
 export function parseSetupLinkHref(href: unknown): { kind: SetupLinkKind; token: string } | null {
@@ -131,7 +141,7 @@ export function splitSetupLinks(markdown: string, streaming = false): SetupLinkS
   const segments: SetupLinkSegment[] = [];
   let buffer: string[] = [];
   const flush = () => {
-    const joined = buffer.join('\n').replace(/^\n+|\n+$/g, '');
+    const joined = trimEndChars(buffer.join('\n').replace(/^\n+/, ''), '\n');
     if (joined.trim()) segments.push({ type: 'markdown', text: joined });
     buffer = [];
   };
@@ -166,7 +176,7 @@ export function splitSetupLinks(markdown: string, streaming = false): SetupLinkS
       const cut = bare && streaming && index === lines.length - 1 && match.index! + written.length === line.length;
       const pending = match[4] !== undefined || cut;
       const href = bare
-        ? written.replace(/^[<`]|[>`.,;:!?*_'"]+$/g, '')
+        ? trimEndChars(written.replace(/^[<`]/, ''), '>`.,;:!?*_\'"')
         : written.slice(written.indexOf('](') + 2, -1);
       return {
         type: 'setup',

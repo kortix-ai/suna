@@ -137,6 +137,9 @@ per resource. Four parser rules explain every finding it reports:
 1. It merges resources that share a type and name across roots. Two roots that
    both declare `aws_s3_bucket.alb_logs` become one resource with mixed
    attributes. Give every resource a name that is unique in `infra/terraform`.
+   `modules/capture-store` names its S3 resources `capture` for this reason:
+   as `this` they merged with `modules/project-snapshots-bucket` and the bucket
+   lost its public access block and versioning (tests `8011`, `8003`).
 2. It does not resolve `local.tags`, `var.tags`, `merge()` or `lookup()` on
    KMS, S3, SNS, IAM role, EC2, subnet and DynamoDB resources (test `8028`).
    Root-level resources repeat the tag map as a literal.
@@ -169,3 +172,14 @@ scheme. A new finding fails the `drata-compliance.yml` gate at `CRITICAL`.
 | Moderate | 8010 | `modules/selfhost-ec2` `aws_security_group.this` egress | Self-host boxes reach registries, model providers and user-chosen hosts with no stable CIDR. Ingress is restricted separately. |
 | Moderate | 8028 | `modules/network` `aws_subnet.public`, `aws_subnet.private` | Tagged with `lookup(var.tags, …)` and an interpolated Kubernetes key. Parser rule 2. |
 | Moderate | 8028 | `modules/ecs-api` `aws_kms_key.logs`, `aws_s3_bucket.alb_logs`; `modules/selfhost-ec2` `aws_instance.this`, `aws_kms_key.alarm_topic`; `modules/project-snapshots-bucket` `aws_s3_bucket.this` | Module resources take the caller's `var.tags`; a literal map would drop per-environment tags. Parser rule 2. |
+
+### Exclusions to create
+
+These findings are correct by design but have no Drata exclusion yet. A person
+with Drata access creates each one (Drata → Monitoring → Pipelines →
+Exclusions) with the rationale below, then moves the row into the table above.
+
+| Sev | Test | Resource | Rationale |
+| --- | --- | --- | --- |
+| Critical | 8025 | `modules/capture-store` `aws_iam_role_policy.device` | The device role is the ceiling for every Capture device credential. The API assumes it with an inline session policy that narrows it to one `orgs/<account_id>/<device_id>/` folder (`apps/api/src/capture/credentials.ts`), and STS grants the intersection. The folder names exist only at issue time, so the role policy must name `orgs/*`. Only the API task role may assume it; sessions last at most 1 hour. |
+| Moderate | 8028 | `modules/capture-store` `aws_s3_bucket.capture`, `aws_iam_role.device`, `aws_sqs_queue.manifests`, `aws_sqs_queue.manifests_dlq` | Module resources take the caller's `var.tags`. Parser rule 2. |
