@@ -35,10 +35,15 @@ export function v3OpencodeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return compiledV3(env) ? { OPENCODE_DISABLE_PROJECT_CONFIG: '1', OPENCODE_DISABLE_EXTERNAL_SKILLS: '1' } : {}
 }
 
-/** The agent a session boots with: `KORTIX_AGENT_NAME`, else the set's `default_agent`. */
+/**
+ * The agent a session boots with: `KORTIX_AGENT_NAME` when the set declares it,
+ * else the set's `default_agent`. A session on a branch can carry an agent name
+ * from the default branch's governance that its own ref does not compile (pi
+ * falls back the same way, `resolveAgentName`).
+ */
 export function sessionAgentName(set: CompiledAgentSet, env: NodeJS.ProcessEnv): string | null {
   const named = (env.KORTIX_AGENT_NAME ?? '').trim()
-  return named && named !== 'default' ? named : (set.default_agent ?? null)
+  return named && named !== 'default' && set.agent?.[named] ? named : (set.default_agent ?? null)
 }
 
 /**

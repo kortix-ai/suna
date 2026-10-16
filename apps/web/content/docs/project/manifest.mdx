@@ -515,6 +515,8 @@ extensions:
 
 `agents` maps an agent name to one block. An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`. Each block holds the agent's behavior and the registered things it enables. Both harnesses run the same compiled agent: the "Compiles to" column holds on OpenCode and pi unless it names one.
 
+Behavior and governance come from different branches. A session compiles each agent's behavior (prompt, model, `permission`, the registered things it enables) from its own branch. Which agents may run, and their `connectors`, `secrets`, `apps` and `kortix_permissions` grants, always come from the default branch, so a session cannot widen its own access by editing its branch. An agent you add on a branch runs after its change request merges.
+
 ### Behavior
 
 | Key | Default | Compiles to |
