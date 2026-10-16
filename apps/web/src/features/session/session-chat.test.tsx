@@ -38,6 +38,8 @@ let persistedOutcome: SessionTurnOutcome = {};
 let auditPending = false;
 /** The `useRuntimeCommands` query's `data`: `undefined` while it loads, the list once it has answered. */
 let runtimeCommandsData: { name: string }[] | undefined = [];
+/** The `data` the agent-scoped call (`useRuntimeCommands({ agent })`) sees — same cache today, its own hook instance. */
+let agentCommandsData: { name: string }[] | undefined = [];
 /** The props the last render handed the composer — the host-wire observables. */
 let composerProps: { commandsResolved?: boolean } | undefined;
 mock.module('@kortix/sdk/react', () => ({
@@ -55,7 +57,9 @@ mock.module('@kortix/sdk/react', () => ({
   useRuntimeReady: () => true,
   useRuntimeSession: () => ({ data: { id: 'session-fixture' }, isFetched: true }),
   useRuntimeAgents: () => ({ data: [{ name: 'build' }] }),
-  useRuntimeCommands: () => ({ data: runtimeCommandsData }),
+  useRuntimeCommands: (opts?: { agent?: string }) => ({
+    data: opts !== undefined ? agentCommandsData : runtimeCommandsData,
+  }),
   useRuntimeProviders: () => ({ data: [], isLoading: false }),
   useRuntimeSessions: () => ({ data: [] }),
   useRuntimeConfig: () => ({ data: {} }),
@@ -741,8 +745,9 @@ describe('SessionChat moved turn sections', () => {
 // that says the live command list has answered at least once. The composer
 // cannot derive it from the `commands` array (that is `[]` both while the list
 // loads and when it resolved empty), so this host wire must forward the RAW
-// query state. A normalized `agentCommands || []` reads as resolved forever,
-// and the refusal could never fire on this host.
+// query state, from the same hook instance whose (filtered) list the composer
+// consumes. A normalized `agentCommands || []` reads as resolved forever, and
+// the refusal could never fire on this host.
 describe('SessionChat command-list resolution wire', () => {
   const renderChat = () =>
     renderToStaticMarkup(
@@ -760,14 +765,30 @@ describe('SessionChat command-list resolution wire', () => {
     );
 
   test('a never-resolved list reaches the composer as unresolved; a resolved one does not', () => {
-    runtimeCommandsData = undefined; // loading: a fresh mount, or a reset the composer cannot see
+    agentCommandsData = undefined; // loading: a fresh mount, or a reset the composer cannot see
     try {
       renderChat();
       expect(composerProps?.commandsResolved).toBe(false);
-      runtimeCommandsData = []; // resolved, and the agent has no commands
+      agentCommandsData = []; // resolved, and the agent has no commands
       renderChat();
       expect(composerProps?.commandsResolved).toBe(true);
     } finally {
+      agentCommandsData = [];
+    }
+  });
+
+  test('the wire follows the agent-scoped instance, not the agent-less one beside it', () => {
+    // Two `useRuntimeCommands` instances live in this component: the agent-less
+    // one (another consumer's list) and the agent-scoped one the composer eats.
+    // They share one cache entry today, so only a test that pulls them apart
+    // can pin that the resolution bit rides the instance that feeds `commands`.
+    agentCommandsData = undefined;
+    runtimeCommandsData = [{ name: 'resolved-elsewhere' }];
+    try {
+      renderChat();
+      expect(composerProps?.commandsResolved).toBe(false);
+    } finally {
+      agentCommandsData = [];
       runtimeCommandsData = [];
     }
   });

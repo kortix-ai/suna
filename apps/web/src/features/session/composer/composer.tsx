@@ -503,15 +503,7 @@ function ComposerImpl(props: SessionChatInputProps) {
   onAgentChange,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
-  /**
-   * Whether the live command list has EVER resolved. `commands` is `[]` both
-   * while the list is loading and for a host that passes no list at all, so
-   * the loading state cannot be read off the array — it arrives as its own
-   * bit, and a host that knows nothing about command lists keeps the
-   * `false` default: a chip staged on such a surface cannot be checked
-   * against anything, so it must not carry attachments out either.
-   * See `planUnresolvedCommandChip` in `command-attachments.ts`.
-   */
+  /** Whether the live command list has EVER resolved — see `planUnresolvedCommandChip`. */
   commandsResolved = false,
   slashFiles = EMPTY_SLASH_FILES,
   onCommand,
@@ -1588,23 +1580,6 @@ function ComposerImpl(props: SessionChatInputProps) {
         return 'sent';
       }
 
-      // A chip the live list cannot resolve YET must not ride out as an
-      // ordinary prompt while files are staged — the whole story, including
-      // why only the never-resolved list refuses, lives on
-      // `planUnresolvedCommandChip`'s doc comment (KRTX-1903).
-      const unresolvedGuard = planUnresolvedCommandChip(
-        {
-          commandName: draft?.commandName,
-          commandsResolved,
-          attachmentCount: filesNow.length,
-        },
-        tI18nComplete,
-      );
-      if (unresolvedGuard.kind === 'refuse') {
-        errorToast(unresolvedGuard.message, { description: unresolvedGuard.description });
-        return;
-      }
-
       if (lockForQuestion) {
         const trimmed = (draft?.text ?? '').trim();
         if (trimmed && onCustomAnswer) {
@@ -1617,6 +1592,25 @@ function ComposerImpl(props: SessionChatInputProps) {
           onQuestionAction();
           return;
         }
+        return;
+      }
+
+      // A chip the live list cannot resolve YET must not ride out as an
+      // ordinary prompt while files are staged — the whole story, including
+      // why only the never-resolved list refuses, lives on
+      // `planUnresolvedCommandChip`'s doc comment (KRTX-1903). It sits below
+      // the question-lock reroute: an answer takes only the text and hands
+      // the files back to the stash, so there is nothing there to lose.
+      const unresolvedGuard = planUnresolvedCommandChip(
+        {
+          commandName: draft?.commandName,
+          commandsResolved,
+          attachmentCount: filesNow.length,
+        },
+        tI18nComplete,
+      );
+      if (unresolvedGuard.kind === 'refuse') {
+        errorToast(unresolvedGuard.message, { description: unresolvedGuard.description });
         return;
       }
 

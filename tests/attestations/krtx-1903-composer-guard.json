@@ -1,22 +1,12 @@
 {
-  "source_hash": "34e037bf94332d0f4f16756c7800a38d14a01e0b3c45e617daf0fd47587492ca",
+  "source_hash": "6ecb15f5dec5b4a6cce3c70a4f13c54c6f2f18a03bbd6d5209c5172bdfc1282c",
   "diff_files": [
-    "apps/web/src/features/apps/app-releases.tsx",
-    "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
-    "apps/web/src/features/session/action-panel/easy/step-icon.tsx",
-    "apps/web/src/features/session/action-panel/shared/narration.test.ts",
     "apps/web/src/features/session/composer-chat-input.tsx",
     "apps/web/src/features/session/composer/command-attachments.test.ts",
     "apps/web/src/features/session/composer/command-attachments.ts",
     "apps/web/src/features/session/composer/composer.tsx",
-    "apps/web/src/features/session/model-consumers.test.tsx",
+    "apps/web/src/features/session/session-chat.test.tsx",
     "apps/web/src/features/session/session-chat.tsx",
-    "apps/web/src/features/workspace/command-palette-search.test.ts",
-    "apps/web/src/features/workspace/customize/sections/channels-view.email.test.tsx",
-    "apps/web/src/features/workspace/customize/sections/component/slack-connect-card.tsx",
-    "apps/web/src/features/workspace/customize/sections/component/teams-connect-card.tsx",
-    "apps/web/src/features/workspace/settings/settings-panel.test.tsx",
-    "apps/web/src/features/workspace/settings/tabs/sandbox-tab.empty-new.test.tsx",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -25,19 +15,15 @@
     "apps/web/translations/ja.json",
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
-    "apps/web/translations/zh.json",
-    "packages/sdk/src/core/turns/segments/narration.test.ts",
-    "packages/sdk/src/core/turns/segments/narration.ts",
-    "packages/sdk/src/core/turns/tool-kind.ts",
-    "packages/sdk/src/core/turns/tool-registry.ts"
+    "apps/web/translations/zh.json"
   ],
-  "diff_hash": "d8e976aef8ac3547cb8a180d404c81a9d2feaf16f84135f13384362ec06a91dc",
-  "head": "5bcf7b5766a26bc43f84b7a6b24b9e7ad63204ad",
+  "diff_hash": "55dc1d1f49d22d55abe5e9be61f3dca6cd7af4400262762367dea52e41bed685",
+  "head": "84ab99f329013fbdc2ef53c7d684f6ee75a05fac",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-16T04:36:05.232Z"
+  "at": "2026-10-16T06:16:10.963Z"
 }
