@@ -946,6 +946,7 @@ flow(
   "APP-5",
   {
     domain: "apps",
+    tags: ["deployed"],
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",

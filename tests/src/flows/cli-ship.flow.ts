@@ -239,6 +239,7 @@ flow(
   'SHIP-1',
   {
     domain: 'cli',
+    tags: ['deployed'],
     requires: ['managedGitPush'],
     // Each `ship` is allotted its own 120s CLI budget below, and a real ship
     // provisions a GitHub repo, commits, and pushes through the git proxy to a

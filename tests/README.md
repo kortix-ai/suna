@@ -66,15 +66,17 @@ pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --agentic-only tests/example.e2e.ts # Opt-in e2e browser pilot
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
-pnpm test -- --target-full     # Every deployed staging API flow and browser journey
-pnpm test -- --target-api-full --api-shard=1/6     # One deployed API shard
+pnpm test -- --target-full     # Deployed seam API flows (`deployed` tag) and browser journeys
+pnpm test -- --target-api-full # Deployed seam API flows only (the release gate's API job)
 pnpm test -- --target-browser-full --browser-shard=1/3 # One deployed browser shard
 ```
 
 `--target-full` runs both deployed lanes in one process. The two per-lane modes
 run one lane each, so the release gate can run them as parallel GitHub jobs.
-Both accept a shard, and both assert the deployed SHA exactly as `--target-full`
-does.
+Both assert the deployed SHA exactly as `--target-full` does. The API lane runs
+only the flows tagged `deployed` (see "Release gate: the deployed seams").
+`--api-shard=N/M` partitions that set when one job is not enough; the browser
+lane takes `--browser-shard=N/M`.
 
 Browser and full modes start local Supabase, apply migrations, and start the
 deterministic API, gateway, and web processes. The runner stops only processes
@@ -191,7 +193,7 @@ branch no longer exists.
 `tests-release.yml` runs the deployed staging suite for pull requests into
 `prod`. It does not repeat the local-profile suite. It rejects development and
 production hosts. It requires the API, gateway, **and frontend** health commits
-to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
+to equal `RELEASE_SOURCE_SHA`. It runs the `deployed` REST and CLI flows with
 `--require-all`, then runs all configured Playwright journeys against
 `staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
@@ -258,35 +260,67 @@ deployed. The largest file is the floor. `27-desktop-parity` was one 520 s file
 (655 s on CI run 38777589705); its journeys now live in
 `e2e/helpers/desktop-parity.ts` and run from two spec files, one per runtime.
 
-#### Release gate shards
+#### Release gate: the deployed seams
 
-The gate runs as parallel matrix jobs instead of one 90-minute job: six API
-shards (`--target-api-full --api-shard=N/6`) and three browser shards
-(`--target-browser-full --browser-shard=N/3`), with `fail-fast: false` so one
-red shard still reports the others. Wall clock becomes the slowest shard rather
-than a contended sum on one 2-vCPU runner.
+The staging pull request's `Tests` lanes run every flow on the release tree.
+The release gate runs against deployed staging, so it tests only what a
+deployment can break. Its API job runs the flows tagged `deployed`
+(`DEPLOYED_FLOW_TAG` in `src/core/local-runner.ts`), one or more per seam, the
+money path first. `--require-all` applies to that set: a skipped, todo, or
+failed `deployed` flow fails the gate.
 
-`src/core/shard.ts` computes the API partition from the live flow registry, so a
-newly added flow always lands in exactly one shard and can never fall out of the
-gate. Shard 1 owns every `serial` and every `global` flow, and nothing else. Two
-jobs running the platform-mutating `global` flows at once would corrupt each
-other, and both kinds run strictly one-at-a-time, so a parallel flow sharing
-that runner waits behind a queue it cannot help drain. The remaining flows are
-bin-packed longest-first using the declared `timeoutMs` as a static cost proxy.
-Read a printed projected load as a wall-clock ceiling of
-`load / KE2E_API_WORKERS`. `unit/shard.test.ts` proves the partition is total,
-that the pinned flows never leave shard 1, and that shard 1 takes no packed
-work.
+| Seam | Flows |
+| --- | --- |
+| Health, deployed SHA, edge error shape | SYS-1, SYS-8, SYS-5, GW-1, GW-1b |
+| Auth and JWT against the real Supabase | AUTH-3, AUTH-1, ME-1, TOK-3 |
+| Email delivery | AUTH-2, AUTH-4 |
+| CORS, cookies, domains | PRX-1, PRX-3, OAU-5, MCP-1 |
+| Sandbox boot and the runtime proxy | RUN-2, RUN-2-pi, RUN-8 |
+| SSE through the edge | RUN-3, RUN-3-pi |
+| Sandbox stop and wake | SESS-12, SESS-12-pi |
+| LLM gateway | GW-2, GW-MANAGED-1 |
+| Stripe and billing webhooks | BILL-1, BILL-3, BILL-8, BILL-18 |
+| Object storage and uploads | SESS-31, SESS-31-log, FILE-9 |
+| Git push to managed repositories | SHIP-1, RUN-7, RUN-7-pi, GH-19, FILE-1 |
+| Money path: prompt to merged change request, real CLI | GOLD-1, CLI-SESS |
+| MCP over HTTP with a PAT | MCP-4 |
+| Apps edge host check | APP-5 |
+| Provider webhook secrets | SBX-6 |
+| Web push keys | NOTIF-4 |
+| Internal cron key | BILL-13 |
+| Database writes over the deployed pool | ACCT-2, PROJ-1 |
 
-Why six. On run 32240074477 four shards of 137 flows were all killed by the
-40-minute job cap while still passing what they ran (76/87 and 68/77). Measured
-from those logs, a shard completes 2.0–2.3 flows/min, so 137 flows needs 62–70
-minutes — more than a 60-minute cap allows. Six shards put 82 flows on each,
-which the same rates finish in 38–43 minutes. Each shard uses
-`KE2E_API_WORKERS=1` and `KE2E_SANDBOX_WORKERS=1` to stay below staging's
-proven concurrency ceiling.
+45 flows, picked for stability: in the 8 release-gate runs from 2026-10-13 to
+2026-10-15, 44 passed every run (SESS-31-log: 3 of 3 since it was added) and
+RUN-3 failed once on a request timeout (run 38399331524). Their median times
+sum to ~10 min of flow work, which the 9 workers run in ~3 min. `unit/deployed-set.test.ts`
+pins this table to the tags, keeps the set between 30 and 50 flows, and rejects
+a todo or quarantined `deployed` flow. To add a seam, tag its flow
+(`tags: ['deployed']`, or add `deployed` to the existing tags) and add the row
+here and in that test. A `harnessFlow` tag covers both harness variants.
 
-A final job named `full suite + quality gates` aggregates the shards. That exact
+The gate is three parallel jobs and an aggregator:
+
+- `deployed api smoke`: one job, `--target-api-full`, 4 API and 5 sandbox
+  workers. About 1 min of runner setup, then ~3 min of flows. The 30-minute
+  cap covers a cold sandbox image (`runner.ts` waits up to 15 min for the
+  image and 10 min for its runtime); it is a hang detector, not a budget.
+- `deployed browser shard` 1 and 2: `--target-browser-full
+  --browser-shard=N/2`, `fail-fast: false`.
+- `sweep stale test accounts` runs beside them, not in front. It reclaims
+  accounts older than 2 hours, so it cannot touch this run.
+
+Before 2026-10-16 the API job was six shards of the whole registry (~700
+flows), 10-17 min each on green run 38495058722, and v0.13.57 needed 5 gate
+rounds for flakes on shared staging. `src/core/shard.ts` still partitions any
+selection for `--api-shard`, and `unit/shard.test.ts` proves that partition.
+
+Staging concurrency is a fleet total: 4 + 5 API workers plus 2 browser workers
+is 11. Run 32231251280 collapsed staging at 26 workers, 15 held on run
+32240074477, and 19 produced origin 5xx on team creation. Lower the workers
+first if `MAINTENANCE_MODE` 503s reappear.
+
+A final job named `full suite + quality gates` aggregates the jobs. That exact
 name is the required status check on `prod` branch protection; renaming it
 without updating the protection rule silently disables the gate.
 

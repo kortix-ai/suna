@@ -188,12 +188,21 @@ describe('local test runner', () => {
     ]);
   });
 
-  it('runs every deployed API flow and browser journey through the release command', () => {
+  it('runs the deployed API flows and every browser journey through the release command', () => {
     const plan = buildLocalTestPlan(['--target-full']);
 
     expect(plan.mode).toBe('target-full');
     expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-api-full', 'target-browser-full']);
-    expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'run', '--require-all']);
+    // Only the `deployed` seam flows: the `Tests` lanes ran every flow on this
+    // tree already. `--require-all` applies to that set.
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+      '--tag',
+      'deployed',
+    ]);
     expect(plan.lanes[1]).toEqual({
       name: 'target-browser-full',
       command: ['bun', 'run', 'test:browser'],
@@ -282,6 +291,8 @@ describe('local test runner', () => {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      'deployed',
       '--shard',
       '2/4',
     ]);
@@ -305,6 +316,8 @@ describe('local test runner', () => {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      'deployed',
     ]);
     expect(buildLocalTestPlan(['--target-browser-full']).lanes[0]?.command).toEqual([
       'bun',
