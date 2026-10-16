@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ReleaseManifest } from './boot-config'
 import type { ConfigReleaseDescriptor } from './descriptor'
+import { compiledSetV3 } from '@/lib/config/manifest-v3'
 import { compiledAgentConfigFromEnv, setCompiledAgentConfigEnv } from './compiled-agent-config'
 
 /**
@@ -44,7 +45,8 @@ export function manifestFromDescriptor(descriptor: ConfigReleaseDescriptor, rele
   return {
     release_id: releaseId,
     source_commit: descriptor.source_commit!,
-    config_dir: descriptor.config_dir,
+    // kortix.yaml v3 has no harness config dir: its compiled set is the only input.
+    config_dir: compiledSetV3(descriptor.compiled_governance) ? null : descriptor.config_dir,
     config_tree_id: descriptor.config_tree_id!,
     // v3: a tree over the API's archive cap has no archive. The box builds it
     // from its checkout or the snapshot; '' never reaches the download.

@@ -145,10 +145,10 @@ The new App uses `private` access unless `--access` selects another mode.
 Use `--no-wait` only when another process will poll deployment state. The
 default wait limit is 1,200 seconds. Change it with `--wait-seconds`.
 
-## Repeatable v2 manifest
+## Repeatable manifest
 
-The `apps:` map is available only in `kortix_version: 2` YAML manifests.
-It contains deployment defaults. It does not auto-deploy on merge.
+The `apps:` map lives in `kortix.yaml` (`kortix_version: 3`, and the legacy
+version 2). An imported file may declare it. It contains deployment defaults. It does not auto-deploy on merge.
 
 ```yaml
 apps:

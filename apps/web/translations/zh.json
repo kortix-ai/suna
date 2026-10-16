@@ -1272,10 +1272,11 @@
       "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
       "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
       "runUpgrade": "运行升级",
-      "manifestV2": {
-        "title": "将清单迁移到 v2 (kortix.yaml)",
-        "description": "将 v1 kortix.toml 转换为以治理为中心的 kortix.yaml，更新平台管理的技能，并打开变更请求供审查。"
-      }
+      "manifestV3": {
+        "title": "将清单升级到 v3 (kortix.yaml)",
+        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
+      },
+      "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
     "plan": {
       "managedByAdmin": "由帐户管理员管理",
@@ -1592,8 +1593,8 @@
       "localComputer": "你的电脑"
     },
     "manifestUpgrade": {
-      "title": "升级到 v2",
-      "description": "此项目仍在使用 <toml>kortix.toml</toml>。代理会将其转换为 <yaml>kortix.yaml</yaml>，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
+      "title": "升级到 v3",
+      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
       "start": "开始升级"
     },
     "filter": {
@@ -1989,7 +1990,27 @@
     "model": "模型",
     "systemPrompt": "系统提示",
     "systemPromptPlaceholder": "定义你的 Worker 应该如何行为...",
-    "customizeIcon": "点击自定义 Worker 图标"
+    "customizeIcon": "点击自定义 Worker 图标",
+    "grants": {
+      "subagents": {
+        "title": "子代理",
+        "description": "此代理可为子任务启动的代理。",
+        "all": "此项目中的所有子代理，包括之后添加的。",
+        "empty": "此项目尚未声明子代理。"
+      },
+      "commands": {
+        "title": "命令",
+        "description": "此代理可以运行的斜杠命令。",
+        "all": "此项目中的所有命令，包括之后添加的。",
+        "empty": "此项目尚未注册命令。"
+      },
+      "extensions": {
+        "title": "扩展",
+        "description": "此代理的会话加载的插件和软件包。",
+        "all": "此项目中的所有扩展，包括之后添加的。",
+        "empty": "此项目尚未注册扩展。"
+      }
+    }
   },
   "home": {
     "heroPlaceholder": "描述你想让你的 Worker 完成的任务..."
@@ -14211,7 +14232,6 @@
       "text7ea05ee375a0": "没有可用的已保存提示词。",
       "text7ea27c63aff1": "管理账单",
       "text7ea4733fb624": "Enterprise 版提供；使用 Enterprise 许可证的自托管实例也提供。上述内置角色在所有计划中免费提供。",
-      "text7ead9bf84af8": "迁移到 v2",
       "text7ebef26162b5": "| * s_9a04",
       "text7ec0261b8e8a": "升级",
       "text7eca5e05f915": "已下载 {value0}",
@@ -16624,7 +16644,7 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "textc3d1545dd522": "将 v1 kortix.toml 转换为治理优先的 kortix.yaml，将平台管理的技能更新至最新 marketplace 基线，并创建变更请求以供审核。",
+      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -17366,7 +17386,7 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "textd85a383e851d": "将清单迁移到 v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init 负责搭建，kortix ship 负责上线。它们使用同一个仓库完成同一件事，因此本地开发和线上系统不再是两种不同的类别。",
       "textd864380a766f": "沙盒仅携带一个项目范围的 Kortix 令牌，不携带第三方密钥。你的跟踪器和帮助台凭据会在服务器端解密并附加到出站调用中。",
       "textd8707d411d99": "密钥",
@@ -18422,7 +18442,6 @@
       "textf7243551e2b7": "请检查您的输入",
       "textf730dd4bb7fb": "go-to-market.md",
       "textf748e0b183a3": "它会标记无法证实的内容",
-      "textf74efe18842d": "此项目使用 v1 清单。迁移到",
       "textf75481058771": "此用户不是该账户的成员。",
       "textf7552f3489ab": "属性传入 PDF URL，或使用上传控件。",
       "textf7571d57f984": "此内容已被移动或删除。",
@@ -20019,7 +20038,8 @@
       "text139479653231": "企业版演示已关闭",
       "text111b159de1cc": "无法更改企业版演示",
       "textc3371113b9c5": "许可证在有效期内开启所有企业版功能，不含积分。",
-      "text81e6bf495c98": "按账户显示套餐、积分、企业版、权益、成员和账单状态。"
+      "text81e6bf495c98": "按账户显示套餐、积分、企业版、权益、成员和账单状态。",
+      "textfe3436af86b4": "扩展"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
