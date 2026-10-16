@@ -2227,18 +2227,32 @@
         "unchanged": "Ese ya es tu plan.",
         "paymentPending": "El pago necesita confirmación",
         "paymentPendingDescription": "Abriendo el portal de facturación para confirmarlo.",
-        "failed": "No se pudo cambiar el plan"
+        "failed": "No se pudo cambiar el plan",
+        "scheduled": "Cambio a un plan menor programado",
+        "scheduledDescription": "Desde el {date}: {amount} / mes. Hasta entonces no cambia nada.",
+        "kept": "Plan mantenido",
+        "keptDescription": "Sigues con {amount} / mes. El cambio queda cancelado.",
+        "raised": "Mejorado a {amount} / mes",
+        "raisedDescription": "Cargo de {due}. {credits} créditos añadidos."
       },
       "planCard": {
         "title": "Créditos mensuales",
         "description": "Todos los miembros comparten un único fondo de créditos. Los créditos sin usar se trasladan un mes.",
         "rate": "1 crédito = 0,01 $ de cómputo en sandbox y uso de modelos gestionados.",
-        "raiseHint": "Una subida se cobra ahora, de forma prorrateada, y añade al instante los créditos prorrateados.",
         "cutHint": "Una bajada empieza en la próxima renovación.",
         "subscribeAction": "Suscribirse por {amount} / mes",
         "updateAction": "Cambiar a {amount} / mes",
         "chooseAction": "Actualizar plan",
-        "ownerOnly": "Solo los propietarios y administradores de la cuenta pueden cambiar el plan."
+        "ownerOnly": "Solo los propietarios y administradores de la cuenta pueden cambiar el plan.",
+        "scheduledNotice": "Cambia a {amount} / mes el {date}. Hasta entonces tu plan y tus créditos no cambian.",
+        "keepAction": "Mantener el plan actual",
+        "keepSummary": "Cancela el cambio a {amount} / mes. Tu plan sigue igual.",
+        "raiseSummary": "Paga {due} hoy, prorrateado por el resto de este periodo. Se añaden {credits} créditos ahora y después {amount} / mes.",
+        "raiseSummaryLoading": "Calculando el cargo de hoy…",
+        "raiseAction": "Pagar {due} y mejorar",
+        "cutSummary": "Sin cargo ni reembolso. Tu plan y tus créditos siguen hasta el {date}; desde entonces pagas {amount} / mes.",
+        "cutAction": "Bajar el {date}",
+        "subscribeSummary": "Paga {amount} hoy. Se añaden {credits} créditos al instante y luego cada mes."
       },
       "modal": {
         "title": "Elige tu nivel de créditos",

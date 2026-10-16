@@ -2227,18 +2227,32 @@
         "unchanged": "すでにこのプランです。",
         "paymentPending": "支払いの確認が必要です",
         "paymentPendingDescription": "確認のため請求ポータルを開いています。",
-        "failed": "プランを変更できませんでした"
+        "failed": "プランを変更できませんでした",
+        "scheduled": "ダウングレードを予約しました",
+        "scheduledDescription": "{date}から{amount} / 月です。それまでは何も変わりません。",
+        "kept": "プランを維持しました",
+        "keptDescription": "{amount} / 月のままです。ダウングレードは取り消されました。",
+        "raised": "{amount} / 月にアップグレードしました",
+        "raisedDescription": "{due}を請求しました。{credits}クレジットを追加しました。"
       },
       "planCard": {
         "title": "月間クレジット",
         "description": "すべてのメンバーが 1 つのクレジットプールを共有します。未使用のクレジットは 1 か月繰り越されます。",
         "rate": "1 クレジット = サンドボックスの計算とマネージドモデル利用の 0.01 ドル分。",
-        "raiseHint": "増額は日割りですぐに請求され、日割り分のクレジットが即時に付与されます。",
         "cutHint": "減額は次回の更新時から適用されます。",
         "subscribeAction": "月 {amount} で登録",
         "updateAction": "月 {amount} に変更",
         "chooseAction": "プランを更新",
-        "ownerOnly": "プランを変更できるのはアカウントのオーナーと管理者だけです。"
+        "ownerOnly": "プランを変更できるのはアカウントのオーナーと管理者だけです。",
+        "scheduledNotice": "{date}に{amount} / 月に変更されます。それまではプランとクレジットは変わりません。",
+        "keepAction": "現在のプランを維持",
+        "keepSummary": "{amount} / 月への変更を取り消します。プランはそのままです。",
+        "raiseSummary": "本日{due}をお支払いいただきます（今期の残り期間で日割り）。{credits}クレジットがすぐに追加され、その後は{amount} / 月です。",
+        "raiseSummaryLoading": "本日の請求額を計算しています…",
+        "raiseAction": "{due}を支払ってアップグレード",
+        "cutSummary": "請求も返金もありません。{date}まではプランとクレジットがそのまま残り、その後は{amount} / 月です。",
+        "cutAction": "{date}にダウングレード",
+        "subscribeSummary": "本日{amount}をお支払いいただきます。{credits}クレジットがすぐに追加され、以後毎月追加されます。"
       },
       "modal": {
         "title": "クレジットのティアを選択",

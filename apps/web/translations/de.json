@@ -2227,18 +2227,32 @@
         "unchanged": "Das ist bereits dein Plan.",
         "paymentPending": "Zahlung muss bestätigt werden",
         "paymentPendingDescription": "Das Abrechnungsportal wird zur Bestätigung geöffnet.",
-        "failed": "Plan konnte nicht geändert werden"
+        "failed": "Plan konnte nicht geändert werden",
+        "scheduled": "Downgrade geplant",
+        "scheduledDescription": "Ab {date}: {amount} / Monat. Bis dahin ändert sich nichts.",
+        "kept": "Plan behalten",
+        "keptDescription": "Sie bleiben bei {amount} / Monat. Der Downgrade ist abgebrochen.",
+        "raised": "Upgrade auf {amount} / Monat",
+        "raisedDescription": "{due} berechnet. {credits} Credits hinzugefügt."
       },
       "planCard": {
         "title": "Monatliche Credits",
         "description": "Alle Mitglieder teilen sich einen Credit-Pool. Ungenutzte Credits werden einen Monat übertragen.",
         "rate": "1 Credit = 0,01 $ Sandbox-Rechenzeit und Nutzung verwalteter Modelle.",
-        "raiseHint": "Eine Erhöhung wird sofort anteilig berechnet und fügt die anteiligen Credits sofort hinzu.",
         "cutHint": "Eine Senkung gilt ab der nächsten Verlängerung.",
         "subscribeAction": "Für {amount} / Monat abonnieren",
         "updateAction": "Auf {amount} / Monat ändern",
         "chooseAction": "Plan aktualisieren",
-        "ownerOnly": "Nur Inhaber und Administratoren des Kontos können den Plan ändern."
+        "ownerOnly": "Nur Inhaber und Administratoren des Kontos können den Plan ändern.",
+        "scheduledNotice": "Ändert sich am {date} auf {amount} / Monat. Bis dahin bleiben Plan und Credits unverändert.",
+        "keepAction": "Aktuellen Plan behalten",
+        "keepSummary": "Bricht die Änderung auf {amount} / Monat ab. Ihr Plan bleibt, wie er ist.",
+        "raiseSummary": "Heute {due} zahlen, anteilig für den Rest dieses Zeitraums. {credits} Credits kommen sofort dazu, danach {amount} / Monat.",
+        "raiseSummaryLoading": "Heutige Zahlung wird berechnet…",
+        "raiseAction": "{due} zahlen und upgraden",
+        "cutSummary": "Keine Zahlung und keine Erstattung. Plan und Credits bleiben bis {date}; danach zahlen Sie {amount} / Monat.",
+        "cutAction": "Downgrade am {date}",
+        "subscribeSummary": "Heute {amount} zahlen. {credits} Credits kommen sofort dazu, dann jeden Monat."
       },
       "modal": {
         "title": "Wähle deine Credit-Stufe",

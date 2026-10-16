@@ -2227,18 +2227,32 @@
         "unchanged": "C'est déjà votre forfait.",
         "paymentPending": "Le paiement doit être confirmé",
         "paymentPendingDescription": "Ouverture du portail de facturation pour confirmer.",
-        "failed": "Impossible de modifier le forfait"
+        "failed": "Impossible de modifier le forfait",
+        "scheduled": "Rétrogradation planifiée",
+        "scheduledDescription": "À partir du {date} : {amount} / mois. Rien ne change d’ici là.",
+        "kept": "Plan conservé",
+        "keptDescription": "Vous restez à {amount} / mois. La rétrogradation est annulée.",
+        "raised": "Passé à {amount} / mois",
+        "raisedDescription": "{due} facturés. {credits} crédits ajoutés."
       },
       "planCard": {
         "title": "Crédits mensuels",
         "description": "Tous les membres partagent un seul pool de crédits. Les crédits inutilisés sont reportés d'un mois.",
         "rate": "1 crédit = 0,01 $ de calcul en sandbox et d'usage des modèles gérés.",
-        "raiseHint": "Une hausse est facturée immédiatement au prorata et ajoute aussitôt les crédits proratisés.",
         "cutHint": "Une baisse prend effet au prochain renouvellement.",
         "subscribeAction": "S'abonner pour {amount} / mois",
         "updateAction": "Passer à {amount} / mois",
         "chooseAction": "Mettre à jour le forfait",
-        "ownerOnly": "Seuls les propriétaires et les administrateurs du compte peuvent modifier le forfait."
+        "ownerOnly": "Seuls les propriétaires et les administrateurs du compte peuvent modifier le forfait.",
+        "scheduledNotice": "Passe à {amount} / mois le {date}. D’ici là, votre plan et vos crédits ne changent pas.",
+        "keepAction": "Garder le plan actuel",
+        "keepSummary": "Annule le passage à {amount} / mois. Votre plan reste tel quel.",
+        "raiseSummary": "Payez {due} aujourd’hui, au prorata du reste de la période. {credits} crédits sont ajoutés maintenant, puis {amount} / mois.",
+        "raiseSummaryLoading": "Calcul du montant du jour…",
+        "raiseAction": "Payer {due} et passer au niveau supérieur",
+        "cutSummary": "Aucun paiement ni remboursement. Votre plan et vos crédits restent jusqu’au {date} ; ensuite vous payez {amount} / mois.",
+        "cutAction": "Rétrograder le {date}",
+        "subscribeSummary": "Payez {amount} aujourd’hui. {credits} crédits sont ajoutés tout de suite, puis chaque mois."
       },
       "modal": {
         "title": "Choisissez votre palier de crédits",

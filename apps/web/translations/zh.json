@@ -2227,18 +2227,32 @@
         "unchanged": "这已经是你当前的套餐。",
         "paymentPending": "付款需要确认",
         "paymentPendingDescription": "正在打开账单门户以确认付款。",
-        "failed": "无法更改套餐"
+        "failed": "无法更改套餐",
+        "scheduled": "已安排降级",
+        "scheduledDescription": "从 {date} 起：{amount} / 月。在此之前不会有任何变化。",
+        "kept": "已保留套餐",
+        "keptDescription": "您继续使用 {amount} / 月。降级已取消。",
+        "raised": "已升级到 {amount} / 月",
+        "raisedDescription": "已收取 {due}。已增加 {credits} 积分。"
       },
       "planCard": {
         "title": "每月积分",
         "description": "所有成员共用一个积分池。未用完的积分可顺延一个月。",
         "rate": "1 个积分 = 0.01 美元的沙盒算力和托管模型用量。",
-        "raiseHint": "提高金额将立即按比例收费，并立即发放按比例计算的积分。",
         "cutHint": "降低金额将从下次续订时生效。",
         "subscribeAction": "以每月 {amount} 订阅",
         "updateAction": "更改为每月 {amount}",
         "chooseAction": "更新套餐",
-        "ownerOnly": "只有账户所有者和管理员可以更改套餐。"
+        "ownerOnly": "只有账户所有者和管理员可以更改套餐。",
+        "scheduledNotice": "将于 {date} 变更为 {amount} / 月。在此之前，您的套餐和积分保持不变。",
+        "keepAction": "保留当前套餐",
+        "keepSummary": "取消变更为 {amount} / 月。您的套餐保持不变。",
+        "raiseSummary": "今天支付 {due}，按本周期剩余时间折算。立即增加 {credits} 积分，之后每月 {amount}。",
+        "raiseSummaryLoading": "正在计算今天的费用…",
+        "raiseAction": "支付 {due} 并升级",
+        "cutSummary": "不收费也不退款。您的套餐和积分保留到 {date}；之后每月支付 {amount}。",
+        "cutAction": "于 {date} 降级",
+        "subscribeSummary": "今天支付 {amount}。立即增加 {credits} 积分，之后每月增加。"
       },
       "modal": {
         "title": "选择你的积分档位",

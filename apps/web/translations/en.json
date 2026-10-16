@@ -2227,18 +2227,32 @@
         "unchanged": "That is already your plan.",
         "paymentPending": "Payment needs confirmation",
         "paymentPendingDescription": "Opening the billing portal to confirm it.",
-        "failed": "Could not change the plan"
+        "failed": "Could not change the plan",
+        "scheduled": "Downgrade scheduled",
+        "scheduledDescription": "From {date}: {amount} / month. Nothing changes until then.",
+        "kept": "Plan kept",
+        "keptDescription": "You stay on {amount} / month. The downgrade is cancelled.",
+        "raised": "Upgraded to {amount} / month",
+        "raisedDescription": "Charged {due}. {credits} credits added."
       },
       "planCard": {
         "title": "Monthly credits",
         "description": "Every member shares one credit pool. Unused credits roll over one month.",
         "rate": "1 credit = $0.01 of sandbox compute and managed-model usage.",
-        "raiseHint": "A raise is charged now, prorated, and adds the prorated credits at once.",
         "cutHint": "A cut starts at your next renewal.",
         "subscribeAction": "Subscribe for {amount} / month",
         "updateAction": "Update to {amount} / month",
         "chooseAction": "Update plan",
-        "ownerOnly": "Only account owners and admins can change the plan."
+        "ownerOnly": "Only account owners and admins can change the plan.",
+        "scheduledNotice": "Changes to {amount} / month on {date}. Until then your plan and credits stay as they are.",
+        "keepAction": "Keep current plan",
+        "keepSummary": "Cancels the change to {amount} / month. Your plan stays as it is.",
+        "raiseSummary": "Pay {due} today, prorated for the rest of this period. {credits} credits are added now, then {amount} / month.",
+        "raiseSummaryLoading": "Calculating today’s charge…",
+        "raiseAction": "Pay {due} and upgrade",
+        "cutSummary": "No charge and no refund. Your plan and credits stay until {date}; from then you pay {amount} / month.",
+        "cutAction": "Downgrade on {date}",
+        "subscribeSummary": "Pay {amount} today. {credits} credits are added at once, then every month."
       },
       "modal": {
         "title": "Pick your credits tier",
