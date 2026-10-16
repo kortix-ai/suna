@@ -55,6 +55,9 @@ function RichRowBody({
  *    and opens a change request.
  *  - **Set up manually** — the page's own form or modal, or the place in the
  *    repo where the thing is declared.
+ *
+ * A tab with one common case that needs no form leads with it (`quick`):
+ * Connectors → "MCP server" (KRTX-2185).
  */
 export function NewEntityMenu({
   label = 'New',
@@ -62,6 +65,7 @@ export function NewEntityMenu({
   pending = false,
   onChat,
   manual,
+  quick,
 }: {
   label?: string;
   size?: 'sm' | 'default';
@@ -73,6 +77,13 @@ export function NewEntityMenu({
   manual?: { label?: string; description?: string } & (
     { onSelect: () => void; href?: never } | { href: string; onSelect?: never }
   );
+  /** The first row, before Create in chat. Needs `manual`. */
+  quick?: {
+    icon: ComponentType<{ className?: string }>;
+    label: string;
+    description?: string;
+    onSelect: () => void;
+  };
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   if (!manual) {
@@ -103,6 +114,11 @@ export function NewEntityMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-76">
+        {quick ? (
+          <DropdownMenuItem className={RICH_ROW_CLASS} onSelect={quick.onSelect}>
+            <RichRowBody icon={quick.icon} title={quick.label} description={quick.description} />
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem className={RICH_ROW_CLASS} onSelect={onChat}>
           <RichRowBody
             icon={ChatCircleIcon}

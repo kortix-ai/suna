@@ -196,7 +196,7 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { projectSessionHref } from '@/lib/navigation/session-href';
 import { type Command, type QuestionRequest, getRetryInfo } from '@/ui';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { isAbortError, turnEndNotice } from '@kortix/sdk';
+import { isAbortError, latestPromptModel, turnEndNotice } from '@kortix/sdk';
 import {
   failureShownByTurn,
   failureSupersededByTurn,
@@ -219,7 +219,6 @@ import {
   markOptimisticSendDispatched,
   markOptimisticSendInboxBacked,
   mintSessionWireMessageId,
-  parseModelKey,
   readStartStash,
   recoverFromSendFailure,
   rejectQuestion,
@@ -796,7 +795,22 @@ export function SessionChat({
     return settlement;
   }, [sessionId, projectSessionId, sessionState, abortSession, tQueue]);
 
+  // The newest user message: its agent seeds the picker, and a new one is a
+  // queue row that just landed (see below).
+  const lastUserMessage = useMemo(
+    () => (messages ? [...messages].reverse().find((m) => m.role === 'user') : undefined),
+    [messages],
+  );
+  // The session row: its model pin, sharing and sandbox status. One cache
+  // entry for every read below, so this mounts no second poll.
+  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
+    enabled: !!projectId && !!projectSessionId,
+  }).data;
+
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
+  // The composer opens on the model the session already runs (its pin, or its
+  // last prompt's model), so a session set from the CLI, the SDK or Slack does
+  // not switch model on its first web message.
   const local = useSessionModelSelection({
     agents,
     providers,
@@ -804,6 +818,8 @@ export function SessionChat({
     sessionId,
     boundAgentName,
     defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    projectSession: projectSessionRow,
+    lastPromptModel: latestPromptModel(messages),
   });
   /**
    * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
@@ -1020,17 +1036,11 @@ export function SessionChat({
 
   const agentNames = useMemo(() => local.agent.list.map((a) => a.name), [local.agent.list]);
 
-  // ---- Check if any messages have tool calls ----
-  // ---- Restore model/agent from last user message ----
-  // Seeds agent/model from the last user message ONLY if there's no per-session
-  // selection yet. This handles opening a session for the first time. If the user
-  // already changed the model in this session (persisted per-session in localStorage),
-  // we don't overwrite it — the per-session selection takes priority via the
-  // resolution chain in useRuntimeLocal.
-  const lastUserMessage = useMemo(
-    () => (messages ? [...messages].reverse().find((m) => m.role === 'user') : undefined),
-    [messages],
-  );
+  // ---- Restore the agent from the last user message ----
+  // The model needs no seed: `lastPromptModel` above feeds the resolution
+  // directly. Seeding it into the picker slots leaked one session's model into
+  // every other session of the same agent, and was skipped whenever the
+  // account had a default model.
   // A NEW user bubble in the transcript is a queue row that just landed —
   // OpenCode persisted a forwarded prompt. Re-read the inbox NOW so the row
   // leaves the strip in the same beat its bubble appears, instead of on the
@@ -1048,16 +1058,6 @@ export function SessionChat({
     lastUserMsgIdRef.current = lastUserMessage.message_id;
     const msg = lastUserMessage;
     if (msg.agent) local.agent.set(msg.agent);
-    // Only seed model from message if the user hasn't already made a per-session
-    // selection (e.g. changed the model after the last message, then reloaded).
-    // The per-session model is checked first in the resolution chain, so we only
-    // need to seed it here when it's empty (first open of this session).
-    if (!local.model.hasSessionModel) {
-      const parsedModel = parseModelKey(
-        msg.model ? { providerID: msg.model.provider, modelID: msg.model.model } : undefined,
-      );
-      if (parsedModel) local.model.set(parsedModel, { autoSeed: true });
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastUserMessage?.message_id]);
 
@@ -1340,10 +1340,7 @@ export function SessionChat({
   }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
   // A queued prompt runs as its author: only they edit or send it, and the
   // session's managers may remove it. Same cache entry as the header's read.
-  const viewerManagesSession =
-    useProjectSession(projectId, projectSessionId ?? undefined, {
-      enabled: !!projectId && !!projectSessionId,
-    }).data?.can_manage_lifecycle !== false;
+  const viewerManagesSession = projectSessionRow?.can_manage_lifecycle !== false;
   const queuedPromptViewer = useMemo(
     () => ({ userId: viewer?.id, managesSession: viewerManagesSession }),
     [viewer?.id, viewerManagesSession],
@@ -2094,6 +2091,12 @@ export function SessionChat({
     workingTurnIdRef.current = workingTurn.workingTurnId;
   }, [workingTurn.workingTurnId]);
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
+  // The turn the working projection names. After a compaction inside the running turn the work
+  // renders under its continuation turn, while the projection still names the prompt or the marker.
+  const activeTurnId = useMemo(() => {
+    const c = turns.find((t) => t.live)?.continues;
+    return c && (working.turnId === c.marker || working.turnId === c.prompt) ? workingTurn.workingTurnId : working.turnId;
+  }, [turns, workingTurn.workingTurnId, working.turnId]);
   /**
    * Does the resolved working turn have a COMPLETED answer while queued prompts
    * wait below it? `resolveWorkingTurn` falls back to the newest turn WITH
@@ -2116,11 +2119,11 @@ export function SessionChat({
       hasPendingTurns: true,
       newestAssistantCompleted: newest.completed_at !== null,
       workingTurnId: wt.id,
-      activeTurnId: working.turnId,
+      activeTurnId,
       pendingDelivery: !!working.pendingDelivery,
       deliveringBelow: workingTurn.pendingTurnIds.some((id) => deliveringPromptIds.has(id)),
     });
-  }, [turns, workingTurn, working.turnId, working.pendingDelivery, deliveringPromptIds]);
+  }, [turns, workingTurn, activeTurnId, working.pendingDelivery, deliveringPromptIds]);
   /**
    * Is ANY turn going to draw the waiting row?
    *
@@ -3836,13 +3839,6 @@ export function SessionChat({
   // confirmed unreachable past the poll loop's failure threshold — plain
   // `runtimeReady` collapses both into the same false. See `retryable` on
   // `SessionComposerReadiness`.
-  // The control plane's own statement about the sandbox behind this session —
-  // the positive evidence the connection projection needs before anything may
-  // say "waking". Read from the shared cache entry `useProjectSession`
-  // populates, so this mounts no second poll of its own.
-  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
-    enabled: !!projectId && !!projectSessionId,
-  }).data;
   const runtimePhase = useRuntimePhase();
   // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
   // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
@@ -4349,7 +4345,7 @@ export function SessionChat({
                           const confirmedActive = turnIsConfirmedActive({
                             isTurnWorking,
                             turnId: turn.id,
-                            activeTurnId: working.turnId,
+                            activeTurnId,
                             pendingDelivery: !!working.pendingDelivery,
                           });
                           const pendingPrompt =
@@ -4390,7 +4386,10 @@ export function SessionChat({
                               viewportClassName={
                                 turnIndex === 0
                                   ? ''
-                                  : lastTurnWorking &&
+                                  : // A compaction and the work after it continue the turn above.
+                                    turn.compaction || turn.continues
+                                    ? 'mt-6'
+                                    : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&
                                       pendingTurnIds.has(turns[turnIndex - 1].id)
                                     ? 'mt-3'
@@ -4694,6 +4693,7 @@ export function SessionChat({
                 onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
+                commandsResolved={agentCommands !== undefined}
                 slashFiles={chatSlashFiles}
                 onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                 onCommand={handleCommand}

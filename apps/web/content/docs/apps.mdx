@@ -132,7 +132,7 @@ deployment is queued.
 
 ## Configure in kortix.yaml
 
-An `apps.<slug>` block in `kortix.yaml` holds an App's deploy settings and
+An `apps.<slug>` block in a v2 `kortix.yaml` holds an App's deploy settings and
 release config. Commit it, and every deploy uses the same settings.
 
 ```yaml
@@ -607,8 +607,8 @@ agents:
 ```
 
 Set the list in `kortix.yaml`, with `kortix agents scope report-writer --apps reports`
-(also `all` and `none`; edits a legacy v2 `kortix.yaml`), or in Customize → Agents →
-the agent → **Apps** on a v2 manifest. The App's access dialog lists the agents granted to it.
+(also `all` and `none`; needs a v2 `kortix.yaml`), or in Customize → Agents →
+the agent → **Apps**. The App's access dialog lists the agents granted to it.
 From code, call `apps.access.agents(appId)`. See
 [Agents & permissions](/docs/project/agents).
 

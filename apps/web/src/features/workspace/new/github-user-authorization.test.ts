@@ -43,7 +43,7 @@ describe('createRepoWithGitHubAuthorization', () => {
 
   test('authorization required: authorize once, store it, retry the same payload', async () => {
     let attempt = 0;
-    const create = mock(async () => {
+    const create = mock(async (_payload: Parameters<typeof createRepoWithGitHubAuthorization>[0]) => {
       attempt += 1;
       if (attempt === 1) throw authorizationRequired();
       return PROJECT;

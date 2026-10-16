@@ -15,8 +15,7 @@
 // banner (role=alert) on screen after the toast expires, on the step that
 // produced it — password form included, since it re-offers the link.
 import { expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
-import { act, create } from 'react-test-renderer';
+import { act, create, type ReactTestInstance } from 'react-test-renderer';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import messages from '../../../../../translations/en.json';
 
@@ -68,7 +67,7 @@ async function continueWithEmail(
   let root: ReturnType<typeof create> | undefined;
   await act(async () => {
     root = create(
-      createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
+      <NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>,
     );
   });
   if (!root) throw new Error('Auth page did not render');
@@ -92,7 +91,7 @@ function expectNoPasswordInput(tree: NonNullable<ReturnType<typeof create>>) {
 function buttonByLabel(
   tree: NonNullable<ReturnType<typeof create>>,
   label: string,
-): { props: { onClick: () => void; disabled?: boolean } } | undefined {
+): ReactTestInstance | undefined {
   return tree.root
     .findAllByProps({ type: 'button' })
     .find((button) => {

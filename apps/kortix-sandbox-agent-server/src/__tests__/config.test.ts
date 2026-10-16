@@ -25,6 +25,8 @@ describe('loadConfig env contract', () => {
     ['an explicit depth is honoured', { KORTIX_CLONE_DEPTH: '25' }, { cloneDepth: 25 }],
     ['the sandbox credential comes from KORTIX_TOKEN', { KORTIX_TOKEN: 'sandbox-token' }, { sandboxToken: 'sandbox-token' }],
     ['KORTIX_SESSION_BRANCH_RESTORE=1 arms the one-time branch restore', { KORTIX_SESSION_BRANCH_RESTORE: '1' }, { sessionBranchRestore: true }],
+    ['/workspace is the box disk by default', {}, { workspaceVolume: false }],
+    ['KORTIX_WORKSPACE_VOLUME=1 says /workspace is a volume', { KORTIX_WORKSPACE_VOLUME: '1' }, { workspaceVolume: true }],
     [
       'the fast-boot delta bundle and its parent commit reach the config',
       {

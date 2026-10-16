@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { assistantMessageError } from '@/harness/pi/turn-events'
-import { turnErrorCode } from '@/harness/shared/turn-relay'
+import { turnEndAfterBegin, turnErrorCode } from '@/harness/shared/turn-relay'
 
 const failed = (errorMessage: string) => assistantMessageError({ stopReason: 'error', errorMessage })
 
@@ -52,5 +52,39 @@ describe('pi turn errors carry a TurnErrorCode', () => {
     expect(turnErrorCode({ name: 'APIError', statusCode: 429 })).toBe('rate_limit')
     expect(turnErrorCode({ name: 'RuntimeAbortedTurn' })).toBe('unknown')
     expect(turnErrorCode({ name: 'TimeoutError' })).toBe('unknown')
+  })
+})
+
+describe('a pi turn end waits for its begin relay (turnEndAfterBegin)', () => {
+  test('the end goes after the begin settles, however fast the turn ended', async () => {
+    const order = turnEndAfterBegin()
+    const sent: string[] = []
+    let settle!: () => void
+    order.begin('msg_a', new Promise<void>((resolve) => (settle = resolve)).then(() => void sent.push('begin')))
+    const end = order.end('msg_a').then(() => void sent.push('end'))
+    await Bun.sleep(20)
+    expect(sent).toEqual([])
+    settle()
+    await end
+    expect(sent).toEqual(['begin', 'end'])
+  })
+
+  test('a hung begin delays the end at most the bound', async () => {
+    const order = turnEndAfterBegin(50)
+    order.begin('msg_b', new Promise(() => {}))
+    const t0 = Date.now()
+    await order.end('msg_b')
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(45)
+    expect(Date.now() - t0).toBeLessThan(1_000)
+  })
+
+  test('an end with no begin, or a second end, does not wait', async () => {
+    const order = turnEndAfterBegin(10_000)
+    order.begin('msg_c', new Promise(() => {}))
+    const t0 = Date.now()
+    await order.end('msg_none')
+    void order.end('msg_c')
+    await order.end('msg_c')
+    expect(Date.now() - t0).toBeLessThan(500)
   })
 })

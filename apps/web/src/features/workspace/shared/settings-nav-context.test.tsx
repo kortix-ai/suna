@@ -79,7 +79,7 @@ describe('useSettingsNav — inside a provider', () => {
         <CaptureNavigate report={onCapture} />
       </SettingsNavProvider>,
     );
-    expect(seen).toBe(navigate);
+    expect<unknown>(seen).toBe(navigate);
   });
 
   test("isOpen=false still resolves the hook (only closed-panel behavior is a view's concern, not the context's)", () => {

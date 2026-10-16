@@ -2,6 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["bun"],
+    "declaration": true,
     "jsx": "react-jsx",
     "noEmit": true,
     "allowImportingTsExtensions": true

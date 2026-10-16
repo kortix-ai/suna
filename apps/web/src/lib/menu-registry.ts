@@ -419,8 +419,8 @@ export const menuRegistry: MenuItemDef[] = [
     // anything, which is why it read as a list rather than as the switcher it
     // opens. The verb stays; only the noun changed.
     //
-    // It said "Switch workspace" until the product settled on ONE noun
-    // (`features/workspace/workspace-vocabulary.test.ts`). "Project" won
+    // It said "Switch workspace" until the product settled on ONE noun.
+    // "Project" won
     // because it is the load-bearing one — the URL (`/projects/<id>`), the API
     // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
     // all say it, and renaming those would break a published SDK's public

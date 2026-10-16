@@ -27,7 +27,7 @@ import { PROVIDER_REMOVAL_PENDING_KEY } from './reaping/archived-box-removal';
 import { isAlreadyNotRunning } from './reaping/policy';
 import { sessionHoldsTurnAuthority } from './session-lifecycle/inbox-admission';
 
-export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
+export { RUNTIME_IDENTITY_UNAVAILABLE } from './session-lifecycle/runtime-wake-fence';
 /** Stable alert key. Better Stack / Sentry rules match on this, not on prose. */
 export const RUNTIME_LOST_EVENT = 'runtime.lost';
 export const RUNTIME_IDENTITY_ERROR =
@@ -236,9 +236,14 @@ export async function preserveEstablishedRuntime(
   // Once per identity. Every open of a lost session runs the removed path and
   // lands here again (the client polls /start every second), and each pass
   // used to report the same loss as a new one.
+  // `/start` reaches this through a recovery claim, which sets
+  // `runtimeIdentityState: 'recovery_claimed'` but keeps the earlier
+  // `runtimeUnavailableAt`. An accepted recovery strips that stamp, so it marks
+  // a loss of this identity already reported.
   const before = (row.metadata as Record<string, unknown> | null) ?? {};
   const alreadyReported =
-    before.runtimeIdentityState === 'unavailable' && before.preservedExternalId === externalId;
+    before.preservedExternalId === externalId &&
+    (before.runtimeIdentityState === 'unavailable' || typeof before.runtimeUnavailableAt === 'string');
   if (!alreadyReported) {
     // A removal Kortix started is an expected teardown, not lost user work.
     if (isKortixInitiatedRemoval(row)) {
