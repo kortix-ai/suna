@@ -1,5 +1,5 @@
 {
-  "source_hash": "9e5ca4bca85582a1f634a9c9ad2e059970b4dbfdb7b7e6fee5981f348472780a",
+  "source_hash": "b2d2fc090ae7a6c53c3ea4e20dc6a39df2370a4622f3768052357a05ff1cf8d3",
   "diff_files": [
     "apps/web/next.config.ts",
     "apps/web/src/app/[locale]/(public)/embed/chat/[token]/embed-shared.test.ts",
@@ -29,13 +29,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "2fed76e7801b387f1d0bc54d7022e531b791790e422c64b844a0186c549f76a9",
-  "head": "034790ea477091c08b377ada839540a7c7887769",
+  "diff_hash": "f4b8a77ced68a52741a7137afd598acb3a5f877e359ea398d3c3396097e6926a",
+  "head": "70b83236733b9e9ed1736c070d5e8fb3356f5239",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-16T07:16:28.085Z"
+  "at": "2026-10-16T08:38:27.138Z"
 }
