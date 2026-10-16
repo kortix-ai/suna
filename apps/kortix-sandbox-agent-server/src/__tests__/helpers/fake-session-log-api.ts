@@ -2,7 +2,7 @@
  * A fake apps/api for the session-log boot reconcile (P6.4) on the real harnesses: the manifest,
  * the restore claim, the journal (with the generation fence), the attachment bytes (`log/blobs`, P2.13:
  * stored in `objects` under `blob-<sha256>`; `failBlobPuts` answers that many PUTs 503) and the
- * attachments route, over one stored `SessionLog`. `maxBytes`: a log whose messages' JSON is longer
+ * attachments route, over one stored `SessionLog`. `maxBytes`: a log whose messages' JSON plus stored objects is longer
  * answers the restore 413 `session_log_too_large` (claimed, no message), as the API's cap does. It points the daemon's control-plane env at itself;
  * `stop` puts the env back.
  */
@@ -32,7 +32,7 @@ export function fakeSessionLogApi(initial: SessionLog, env: { projectId: string;
       if (route === 'log/restore') {
         generation += 1
         const seq_max = Object.fromEntries(stored.threads.map((t) => [t.thread_id, Math.max(0, ...t.messages.map((m) => m.seq))]))
-        const bytes = messages().reduce((n, m) => n + JSON.stringify(m).length, 0)
+        const bytes = messages().reduce((n, m) => n + JSON.stringify(m).length, 0) + [...objects.values()].reduce((n, b) => n + b.length, 0)
         if (env.maxBytes !== undefined && bytes > env.maxBytes) {
           const log = { ...stored, threads: stored.threads.map((t) => ({ ...t, messages: [] })) }
           const revs = Object.fromEntries(messages().map((m) => [m.message_id, 1]))

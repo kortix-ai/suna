@@ -42,8 +42,8 @@
  *   tombstoned messages included: number new messages above it) and `blobs` (each text the
  *   API stored by reference: the record holds its 16 kB preview; read the full text with `GET /v1/projects/:p/sessions/:s/attachments/<id>`,
  *   the id being the last segment of `ref`, and check `sha256`).
- * - 413 `SessionLogRestoreTooLarge`: the live messages are over `SESSION_LOG_RESTORE_MAX_BYTES` (the
- *   sum of their stored JSON lengths, `bytes`, against `limit`). The claim still happens, so the box
+ * - 413 `SessionLogRestoreTooLarge`: the restore is over `SESSION_LOG_RESTORE_MAX_BYTES` (`bytes`, the
+ *   live messages' stored JSON lengths plus the session's live blobs, against `limit`). The claim still happens, so the box
  *   journals above it: the answer is `SessionLogRestore` with every thread and no message, every
  *   rev, `seq_max` and no blob, plus `messages` (the live messages left out). The box writes the D3
  *   note alone into its root and boots: the model does not see the earlier conversation.
@@ -143,7 +143,7 @@ export const SessionLogRestoreSchema = z.object({
 export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_session_log') });
 export const SessionLogRestoreTooLargeSchema = SessionLogRestoreSchema.extend({
   error: z.literal('session_log_too_large'),
-  /** The sum of the live messages' stored JSON lengths. */
+  /** The live messages' stored JSON lengths plus the bytes of the session's live blobs (full texts, attachments). */
   bytes: z.number().int().nonnegative(),
   /** The API's `SESSION_LOG_RESTORE_MAX_BYTES`. */
   limit: z.number().int().nonnegative(),
@@ -177,7 +177,7 @@ export const SessionLogSwitchPreflightSchema = z.object({
   available: z.boolean(),
   /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
   reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
-  /** The new box restores the log (`session_log_restore` on). False: it starts without the conversation (`losses` begins with `history`). */
+  /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */
   losses: z.array(SessionLogSwitchLossSchema),

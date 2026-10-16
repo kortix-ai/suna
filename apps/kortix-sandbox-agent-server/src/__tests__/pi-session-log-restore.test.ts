@@ -808,7 +808,7 @@ describe('the boot reconcile on pi (P6.4)', () => {
     const rootId = log.threads[0]!.thread_id
     const live = log.threads.flatMap((t) => t.messages).length
     const box = freshBox(log.session_id)
-    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime'), objects, maxBytes: 1 })
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime'), objects, maxBytes: 1024 })
     try {
       const service = box.service()
       const boot = (await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 }))!
@@ -829,7 +829,7 @@ describe('the boot reconcile on pi (P6.4)', () => {
       // The next request: the note and the prompt, nothing of the earlier conversation.
       const expected = { ...structuredClone(api.stored()), threads: [{ ...api.stored().threads[0]!, messages: [note] }] }
       const [body] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
-      expect(JSON.stringify(body)).toContain(`Its earlier conversation (${live} messages, 1 MB) is above the 1 MB restore limit and was not restored.`)
+      expect(JSON.stringify(body)).toMatch(new RegExp(`Its earlier conversation \\(${live} messages, [0-9.]+ KiB\\) is above the 1 KiB restore limit and was not restored\\.`))
       expect(oracle(expected, rootId, rt, 'Anything else?', body!).diffs).toEqual([])
       expect(await flushSessionLogJournal()).toBe(true)
       expect(Math.min(...api.journal.flatMap((b) => b.puts.map((p) => p.message.seq)))).toBe(15)

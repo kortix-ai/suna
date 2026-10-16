@@ -763,7 +763,7 @@ describe('the boot reconcile on OpenCode (P6.4)', () => {
     const log = storedImage()
     const rootId = log.threads[0]!.thread_id
     const b = box(log.session_id)
-    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(b.root, 'state'), objects, maxBytes: 1 })
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(b.root, 'state'), objects, maxBytes: 1024 })
     try {
       const boot = (await reconcileSessionLog(b.port, { retryMs: 1 }))!
       expect(api.calls).toEqual(['GET log/manifest', 'POST log/restore'])
@@ -777,7 +777,7 @@ describe('the boot reconcile on OpenCode (P6.4)', () => {
       const expected = { ...structuredClone(api.stored()), threads: [{ ...api.stored().threads[0]!, messages: [note] }] }
       const server = await b.serve()
       const [body] = await prompt(server, rootId, 'Anything else?', [{ text: 'OK' }])
-      expect(JSON.stringify(body)).toContain('is above the 1 MB restore limit and was not restored.')
+      expect(JSON.stringify(body)).toContain('is above the 1 KiB restore limit and was not restored.')
       expect(oracle(expected, rootId, 'Anything else?', body!).diffs).toEqual([])
       resetSessionLogJournalForTests()
       expect(await reconcileSessionLog(b.port, { retryMs: 1 })).toMatchObject({ generation: 1, cursors: [] })

@@ -22,10 +22,12 @@
  * through the attachments route with its own credential. The API never holds a
  * session's full texts in memory here.
  *
- * The cap. Before the read, the sum of the live messages' stored JSON lengths is compared with
- * `SESSION_LOG_RESTORE_MAX_BYTES`. Above it the claim stands and the answer is
- * `SessionLogRestoreTooLarge` (413): every thread without messages, every rev, `seq_max`, no blob.
- * No record leaves Postgres, so the API holds ids and seqs only; the box writes the D3 note alone.
+ * The cap. Before any record leaves Postgres, `sessionLogRestoreBytes` (what a restore makes the box
+ * pull: the live records' stored JSON lengths plus the bytes of the session's live blobs, the full
+ * texts and attachments it reads after the answer) is compared with `SESSION_LOG_RESTORE_MAX_BYTES`.
+ * The size query reads the records inside Postgres only. Above the cap the claim stands and the
+ * answer is `SessionLogRestoreTooLarge` (413): every thread without messages, every rev, `seq_max`,
+ * no blob. The API holds ids and seqs only; the box writes the D3 note alone.
  * ponytail: the whole history is left out; restore the newest messages under the cap (paging) when
  * sessions near the cap are common.
  *
@@ -73,15 +75,29 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
       )
       .returning();
     if (!log) return null;
-    const [size] = await tx
-      .select({ bytes: sql<string>`coalesce(sum(octet_length(${sessionLogMessages.record}::text)), 0)`, messages: sql<number>`count(*)::int` })
-      .from(sessionLogMessages)
-      .where(and(eq(sessionLogMessages.sessionId, scope.sessionId), isNull(sessionLogMessages.deletedAt)));
-    const bytes = Number(size?.bytes ?? 0);
+    const { bytes, messages } = await sessionLogRestoreBytes(tx, scope.sessionId);
     const limit = config.SESSION_LOG_RESTORE_MAX_BYTES;
     if (bytes <= limit) return readWholeLog(tx, log, true);
-    return { ...(await readWholeLog(tx, log, false)), error: 'session_log_too_large', bytes, limit, messages: size!.messages };
+    return { ...(await readWholeLog(tx, log, false)), error: 'session_log_too_large', bytes, limit, messages };
   });
+}
+
+/**
+ * What a restore of the session makes the box pull: the live records' stored JSON lengths plus the
+ * bytes of the session's live blobs (texts over 256 kB, attachments). `messages`: the live messages.
+ */
+export async function sessionLogRestoreBytes(tx: Pick<Tx, 'execute'>, sessionId: string): Promise<{ bytes: number; messages: number }> {
+  const [row] = await tx.execute<{ records: string; blobs: string; messages: number }>(sql`
+    SELECT
+      (SELECT coalesce(sum(octet_length(record::text)), 0) FROM kortix.session_log_messages WHERE session_id = ${sessionId} AND deleted_at IS NULL) AS records,
+      (SELECT coalesce(sum(bytes), 0) FROM kortix.session_log_blobs WHERE session_id = ${sessionId} AND deleted_at IS NULL) AS blobs,
+      (SELECT count(*)::int FROM kortix.session_log_messages WHERE session_id = ${sessionId} AND deleted_at IS NULL) AS messages`);
+  return { bytes: Number(row?.records ?? 0) + Number(row?.blobs ?? 0), messages: Number(row?.messages ?? 0) };
+}
+
+/** True when a restore of the session is under `SESSION_LOG_RESTORE_MAX_BYTES` (no 413). */
+export async function sessionLogRestoreFits(tx: Pick<Tx, 'execute'>, sessionId: string): Promise<boolean> {
+  return (await sessionLogRestoreBytes(tx, sessionId)).bytes <= config.SESSION_LOG_RESTORE_MAX_BYTES;
 }
 
 /** `full` false: every thread, rev and seq, no message record and no blob (the 413 answer). */

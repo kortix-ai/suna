@@ -187,7 +187,7 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     const child = { ...STORED.threads[0]!, thread_id: 'thr_child', parent_thread_id: 'thr_root', messages: [] }
     const bare = { ...STORED, threads: [{ ...STORED.threads[0]!, messages: [] }, child] }
     const tooLarge = Response.json(
-      { generation: 1, log: bare, revs: { m1: 1, m2: 1, m0: 1 }, seq_max: { thr_root: 7, thr_child: 3 }, blobs: [], error: 'session_log_too_large', bytes: 40 * 1024 * 1024, limit: 32 * 1024 * 1024, messages: 2 } satisfies SessionLogRestoreTooLarge,
+      { generation: 1, log: bare, revs: { m1: 1, m2: 1, m0: 1 }, seq_max: { thr_root: 7, thr_child: 3 }, blobs: [], error: 'session_log_too_large', bytes: 38_588_834, limit: 24 * 1024 * 1024, messages: 2 } satisfies SessionLogRestoreTooLarge,
       { status: 413 },
     )
     const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [tooLarge] })
@@ -200,7 +200,7 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(written.threads.map((t) => t.thread_id)).toEqual(['thr_root'])
     expect(written.threads[0]!.messages).toEqual([expect.objectContaining({ seq: 8, origin: 'notification', blocks: [expect.objectContaining({ id: 'prt_kortix_restore_g1' })] })])
     expect((written.threads[0]!.messages[0]!.blocks[0] as { text: string }).text).toBe(
-      'Kortix: this session was restored from its saved session log. Its earlier conversation (2 messages, 40 MB) is above the 32 MB restore limit and was not restored. If you need it, ask the user to send it again.',
+      'Kortix: this session was restored from its saved session log. Its earlier conversation (2 messages, 36.8 MiB) is above the 24 MiB restore limit and was not restored. If you need it, ask the user to send it again.',
     )
     expect(boot).toMatchObject({ generation: 1, session: { restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: 2 }, truncated: 0 } } } } } })
     expect(state()).toMatchObject({ generation: 1, unwritten: ['m1', 'm2', 'm0'] })

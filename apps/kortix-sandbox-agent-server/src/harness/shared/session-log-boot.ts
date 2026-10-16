@@ -330,11 +330,11 @@ function partialNotice(log: SessionLog, dropped: Record<string, number>, truncat
   const counts: Record<string, number> = { ...dropped, text: (dropped.text ?? 0) + truncated.length }
   for (const k of ['tool_input', 'cut_point', 'attachment'] as const) if (prior[k]) counts[k] = (counts[k] ?? 0) + prior[k]
   const items = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${(NOUNS[k] ?? [k, k])[n === 1 ? 0 : 1]}`)
-  const mb = (n: number) => `${Math.ceil(n / 1024 / 1024)} MB`
+  const size = (n: number) => (n >= 1024 ** 2 ? `${+(n / 1024 ** 2).toFixed(1)} MiB` : n >= 1024 ? `${+(n / 1024).toFixed(1)} KiB` : `${n} bytes`)
   const text =
     'Kortix: this session was restored from its saved session log. ' +
     (tooLarge
-      ? `Its earlier conversation (${tooLarge.messages} messages, ${mb(tooLarge.bytes)}) is above the ${mb(tooLarge.limit)} restore limit and was not restored. `
+      ? `Its earlier conversation (${tooLarge.messages} messages, ${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit and was not restored. `
       : `Some earlier content could not be restored${items.length ? `: ${items.join(', ')}` : ''}. `) +
     'If you need it, ask the user to send it again.'
   return {

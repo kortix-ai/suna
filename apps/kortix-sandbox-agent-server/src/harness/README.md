@@ -328,10 +328,17 @@ root. No turn runs at either point.
   sides. Measured on a real Platinum box (pi, 2 vCPU, 3.9 GB, Bun 1.4.3) with a
   synthetic 38.5 MB log (1,000 tool results of 40 kB): the daemon peaked at
   1.57 GB RSS (+1.45 GB, about 38x the log) and settled at 272 MB; the API
-  (`POST …/log/restore`) rose by about 330 MB. So the API caps it:
-  `SESSION_LOG_RESTORE_MAX_BYTES` (default 24 MiB, the sum of the live
-  messages' stored JSON lengths; p99.9 of prod sessions is about 15 MB, p99
-  3.7 MB). Above the cap the claim still happens and the answer is 413
+  (`POST …/log/restore`) rose by about 330 MB. Attachments cost less per
+  byte: 60 synthetic 500 kB images (30 MB of blobs, 83 kB of records) peaked
+  the daemon at 566 MB (+455 MB, about 15x) and the API by about 50 MB (the box
+  reads them one by one through the attachments route). So the API caps what
+  the box pulls: `SESSION_LOG_RESTORE_MAX_BYTES` (default 24 MiB) bounds the
+  live messages' stored JSON lengths plus the bytes of the session's live
+  `session_log_blobs` (full texts over 256 kB and attachments), one sum,
+  blobs at weight 1 (conservative: they cost less than records). p99.9 of
+  prod sessions is about 15 MB, p99 3.7 MB. The size query reads the records
+  inside Postgres before any record leaves it. Above the cap the claim still
+  happens and the answer is 413
   `SessionLogRestoreTooLarge`: every thread without messages, every rev,
   `seq_max`, `messages` (the count left out), `bytes` and `limit`; no record
   leaves Postgres. The box writes the log's root with the D3 note alone
@@ -342,16 +349,22 @@ root. No turn runs at either point.
   `restore_grade: 'partial'` and `dropped: { message: <count> }`, which P5.6
   shows as "Missing: N earlier messages". The stored history stays in the
   transcript. The same 38.5 MB log over the cap: the daemon peaked at 135 MB
-  (+29 MB) and the API rose by about 21 MB. A 413 with another body (a proxy)
+  (+29 MB) and the API rose by about 21 MB; the 30 MB of images over the cap:
+  128 MB and about 2 MB. The switch preflight (`POST …/log/switch-preflight`)
+  reports `restores: false` and a `history` loss for a log over the cap. A 413 with another body (a proxy)
   claimed nothing and restores nothing, as a 404.
   ponytail: an over-cap restore gives the agent none of the history; restore
   the newest messages under the cap (paging) when sessions near it are common.
 
-Default-on: no known blocker remains (the cap above, and P2.13 uploads
-attachment bytes, so a fresh box drops only an attachment whose record still
-says `blob:`). Dev turns `session_log_restore` on for every project without a
-stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in `deploy-dev.yml`,
-2026-10-15); prod does not yet.
+Default-on: the cap above bounds what one restore makes the box hold (live
+records plus live blobs, 24 MiB by default). It does not bound the native
+store a box already holds: a box with a large store loads it at boot (`held()`)
+before any restore. A fresh box drops only an attachment whose record still
+says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a
+release whose kortixd handles the 413 (an older kortixd boots without the
+restore and its journal stops at 409). Dev turns `session_log_restore` on for
+every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
+`deploy-dev.yml`, 2026-10-15); prod does not yet.
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
