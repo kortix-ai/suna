@@ -307,16 +307,46 @@ describe('native test-lane workflow', () => {
     expect(report).toContain('[ "$failed" = "$prev_failed" ]');
   });
 
-  test('the prod pull request re-runs no tree check: its tree is the staging tree plus VERSION', () => {
-    // Testing reset, 2026-10-16. `Tests - release` tests the deployed staging;
-    // every tree check already ran on the pull request into `staging`.
+  test('the staging pull request runs nothing; every tree check runs on the release pull request into prod', () => {
+    // 2026-10-16, owner: "ONLY GATE & run the full suite on PROMOTE TO PROD".
+    // Promote merges the pull request into `staging` itself; the release pull
+    // request into `prod` runs every tree check and `Tests - release` once.
     const dir = resolve(root, '.github/workflows');
-    for (const file of ['ci.yml', 'codeql.yml', 'db-migrations.yml', 'secret-scan.yml', 'secrets-guard.yml', 'i18n-catalogs.yml']) {
+    const treeChecks = [
+      'ci.yml',
+      'codeql.yml',
+      'db-migrations.yml',
+      'secret-scan.yml',
+      'secrets-guard.yml',
+      'i18n-catalogs.yml',
+      'security-scan.yml',
+      'terraform-ci.yml',
+      'drata-compliance.yml',
+    ];
+    for (const file of treeChecks) {
       const text = readFileSync(resolve(dir, file), 'utf8');
-      expect(text, file).toMatch(/^ {2}pull_request:\n(?: {4}.*\n)*? {4}branches: \[staging\]$/m);
+      expect(text, file).toMatch(/^ {2}pull_request:\n(?: {4}.*\n)*? {4}branches: \[prod\]$/m);
     }
     expect(readFileSync(resolve(dir, 'codeql.yml'), 'utf8')).not.toMatch(/^ {2}push:/m);
-    expect(testWorkflow).toContain('branches: [dev, staging]');
+    // tests.yml is folded into the release suite in the same change set.
+    const exempt = new Set(['tests.yml']);
+    const intoStaging = readdirSync(dir)
+      .filter((file) => /\.ya?ml$/.test(file) && !exempt.has(file))
+      .filter((file) => {
+        const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
+        const on = lines.indexOf('on:');
+        if (on < 0) return false;
+        const end = lines.findIndex((line, i) => i > on && /^\S/.test(line));
+        const block = lines.slice(on + 1, end < 0 ? undefined : end);
+        return block.some((line, i) => {
+          if (!/^  pull_request(_target)?:/.test(line)) return false;
+          const next = block.slice(i + 1).findIndex((l) => /^  \S/.test(l));
+          const body = block.slice(i + 1, next < 0 ? undefined : i + 1 + next);
+          const branches = body.find((l) => /^    branches:/.test(l));
+          return !branches || /\bstaging\b/.test(branches);
+        });
+      });
+    expect(intoStaging).toEqual([]);
   });
 
   test('a failed release gate or staging pull request run reruns its failed jobs exactly once', () => {
@@ -369,9 +399,50 @@ describe('native test-lane workflow', () => {
     expect(promote).toContain('select(.conclusion == "action_required")');
     expect(promote).toContain('gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$held/approve"');
     expect(promote.indexOf('/approve"')).toBeGreaterThan(promote.indexOf('gh pr create --base prod'));
+    // The tree checks on the release pull request are held too: approve them.
+    expect(promote).toContain('actions/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=100');
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
     expect(release).toMatch(/^ {2}workflow_dispatch:\n {4}inputs:\n {6}expected_sha:/m);
     expect(release).toContain('name: full suite + quality gates');
+  });
+
+  test('one Promote dispatch takes a dev SHA through staging to the release pull request', () => {
+    // 2026-10-16: the owner's one approval is the dispatch. The workflow merges
+    // the pull request into `staging` itself, as a merge commit, then waits for
+    // staging to serve the merge SHA before it opens the release pull request.
+    const promote = readFileSync(resolve(root, '.github/workflows/promote.yml'), 'utf8');
+    expect(promote).toMatch(/^ {6}ref:\n(?: {8}.*\n)*? {8}default: dev$/m);
+    expect(promote).toMatch(/^ {6}dry_run:\n(?: {8}.*\n)*? {8}type: boolean$/m);
+    expect(promote).toContain('git merge-tree --write-tree origin/staging "$SHA"');
+    expect(promote).toContain('git read-tree --reset -u "$SHA"');
+    expect(promote).toContain('BRANCH="promote/dev-$SHA10"');
+    expect(promote).toContain('gh pr create --base staging');
+    expect(promote).toContain('gh pr merge "$PR" --merge --match-head-commit "$HEAD_SHA"');
+    expect(promote).not.toMatch(/gh pr merge[^\n]*--(squash|rebase|admin)/);
+    // A merge by the workflow token starts no push workflow: dispatch the
+    // build on `staging` so its manifest checks land on the merge SHA.
+    expect(promote).toContain('gh workflow run build-staging.yml --ref staging -f sha="$MERGE_SHA"');
+    for (const url of [
+      'https://staging-api.kortix.com/v1/health',
+      'https://gateway-staging.kortix.com/health',
+      'https://staging.kortix.com/api/health',
+    ]) {
+      expect(promote).toContain(url);
+    }
+    expect(promote).toContain('while [ "$ok" -lt 8 ]; do');
+    // Every side effect of the dev leg is skipped in a dry run.
+    expect(promote).toContain("if: steps.plan.outputs.dev_leg == 'true' && inputs.dry_run != true");
+    expect(promote).toContain('dry run: nothing changed.');
+    // The release job checks out what the stage job promoted, and the staging
+    // tip needs only the three manifest publishes.
+    expect(promote).toContain('needs: stage');
+    expect(promote).toContain('ref: ${{ needs.stage.outputs.source_sha }}');
+    expect(promote).not.toContain('skip_green');
+    expect(promote.indexOf('gh pr merge "$PR"')).toBeLessThan(promote.indexOf('gh pr create --base prod'));
+    // build-staging hands off to Deploy Staging itself on a dispatched run.
+    const build = readFileSync(resolve(root, '.github/workflows/build-staging.yml'), 'utf8');
+    expect(build).toContain("if: github.event_name == 'workflow_dispatch'");
+    expect(build).toContain('gh workflow run deploy-staging.yml');
   });
 
   test('pre-push requires no test attestation; the author picks the tests', () => {
@@ -410,9 +481,9 @@ describe('native test-lane workflow', () => {
       'secrets-guard.yml', // ~15 s
       'terraform-apply-global.yml', // path-gated: infra/terraform roots
     ]);
-    // Release branches keep their gates.
-    for (const file of ['ci.yml', 'tests.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {
-      expect(readFileSync(resolve(dir, file), 'utf8'), file).toMatch(/pull_request:[\s\S]*?branches: \[(?:dev, )?staging/);
+    // The release pull request into `prod` keeps the gates.
+    for (const file of ['ci.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {
+      expect(readFileSync(resolve(dir, file), 'utf8'), file).toMatch(/pull_request:[\s\S]*?branches: \[prod\]/);
     }
     const deployDev = readFileSync(resolve(dir, 'deploy-dev.yml'), 'utf8');
     expect(deployDev).toContain('workflow_dispatch:');

@@ -5,12 +5,11 @@ name: CI
 
 on:
   # A push or pull request into `dev` runs no CI (Actions minutes, 2026-10-03).
-  # The pull request into `staging` is the gate. A weekly schedule runs every
-  # job as a safety net on `dev`.
-  # Not into `prod`: the release tree is the staging tree plus VERSION, already
-  # checked on the staging pull request (testing reset, 2026-10-16).
+  # The release pull request into `prod` is the gate; the pull request into
+  # `staging` runs nothing (2026-10-16). A weekly schedule runs every job as a
+  # safety net on `dev`.
   pull_request:
-    branches: [staging]
+    branches: [prod]
   schedule:
     - cron: '53 4 * * 1' # weekly, Monday 04:53 UTC
   workflow_dispatch:

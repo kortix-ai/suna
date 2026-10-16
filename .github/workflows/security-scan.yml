@@ -13,9 +13,10 @@ on:
     # Re-registered 2026-09-25: the schedule belonged to a user who left the org,
     # and GitHub stopped dispatching it after 2026-08-03. See db-drift.yml.
     - cron: "23 6 * * 1" # 06:23 UTC Mondays
-  # A pull request into `dev` runs no CI. Release pull requests are the gate.
+  # A pull request into `dev` or `staging` runs no CI. The release pull
+  # request into `prod` is the gate (2026-10-16).
   pull_request:
-    branches: [staging, prod]
+    branches: [prod]
     paths:
       - "infra/**"
       - "apps/*/Dockerfile"
