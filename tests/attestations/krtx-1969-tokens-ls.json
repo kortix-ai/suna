@@ -1,0 +1,16 @@
+{
+  "source_hash": "3ea6657827917d3ef6652a8c6726278d920db368c86ac4387ca0dc62d2e7782c",
+  "diff_files": [
+    "apps/cli/src/__tests__/tokens-command.test.ts",
+    "apps/cli/src/commands/tokens.ts"
+  ],
+  "diff_hash": "f137979638dffc5ea464c8134234434e2409d8ba84dbf442e4676eb0ce3ea8d3",
+  "head": "6611dbc530a13932f17b75d1439d5229d2dfcf25",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T14:17:33.543Z"
+}
