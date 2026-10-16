@@ -1,0 +1,18 @@
+{
+  "source_hash": "ed0bab42032409fd7047a56a4618d6146d0dcf702df897a085fa0e18c4de62bb",
+  "diff_files": [
+    "apps/web/src/lib/browser-error-noise.test.mts",
+    "apps/web/src/lib/browser-error-noise.ts",
+    "apps/web/src/lib/browser-noise/golden-verdicts.json",
+    "apps/web/src/lib/browser-noise/rules/graphics.ts"
+  ],
+  "diff_hash": "cc0ef90149ef1b60c4a16a3fb83f332e65a9846d5c8dac56a5edd2d95502b086",
+  "head": "674e39e91c8f9fa480d262c5f8d0ea85579bbc76",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-16T10:36:28.407Z"
+}
