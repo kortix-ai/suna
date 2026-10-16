@@ -1,7 +1,10 @@
 {
-  "source_hash": "28ea4d8fd4bdbc7290a1883818e573afdc41c52b7b689abf3901911c3189febf",
+  "source_hash": "34e037bf94332d0f4f16756c7800a38d14a01e0b3c45e617daf0fd47587492ca",
   "diff_files": [
+    "apps/web/src/features/apps/app-releases.tsx",
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
+    "apps/web/src/features/session/action-panel/easy/step-icon.tsx",
+    "apps/web/src/features/session/action-panel/shared/narration.test.ts",
     "apps/web/src/features/session/composer-chat-input.tsx",
     "apps/web/src/features/session/composer/command-attachments.test.ts",
     "apps/web/src/features/session/composer/command-attachments.ts",
@@ -22,15 +25,19 @@
     "apps/web/translations/ja.json",
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
-    "apps/web/translations/zh.json"
+    "apps/web/translations/zh.json",
+    "packages/sdk/src/core/turns/segments/narration.test.ts",
+    "packages/sdk/src/core/turns/segments/narration.ts",
+    "packages/sdk/src/core/turns/tool-kind.ts",
+    "packages/sdk/src/core/turns/tool-registry.ts"
   ],
-  "diff_hash": "0cec3f72dcbdb23e38b93643b7b9c95f869e2fee26b6d6732f7527777053ca00",
-  "head": "295816e7b9b54916722e485db9b9e53f371cb8d4",
+  "diff_hash": "d8e976aef8ac3547cb8a180d404c81a9d2feaf16f84135f13384362ec06a91dc",
+  "head": "bded282abd917e23548a89efe4e2d758f9b6b080",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-16T02:01:16.201Z"
+  "at": "2026-10-16T04:30:57.462Z"
 }
