@@ -1,27 +1,16 @@
-// Where the Customize surface asks for permission, and what it does with the
-// answer.
-//
-// The tab bar is static: it paints every tab on the first frame. It used to
-// filter on the probe, and a pending probe reads `allowed: false`, so the bar
-// painted empty and the tabs flew in when `/effective` answered. Access is now
-// decided in the content area (`CapabilityAccessGate`), and only on a denial
-// the engine returned. Each tab's body follows its own read leaf, with no
-// surface-wide leaf: a plain member (project.agent.read, project.trigger.read)
-// opens Agents, Triggers and Files and gets a no-access body under every other tab.
+// The one Customize access rule (`capabilityAccess`), which the sidebar row,
+// the More menu, the tab bar, the page-body gate, the `/customize` redirect
+// and the command palette all read. KRTX-2144: a limited project member saw
+// tabs that dead-ended in "You don't have access", saw a different set on the
+// next visit, and still saw Customize and trigger configuration.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
-import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
+import {
+  CAPABILITY_TAB_ACTIONS,
+  capabilityAccess,
+} from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { PROJECT_PAGE_ACTIONS, type CanResult } from '@/lib/use-project-can';
-
-import { capabilityTabDenied, receivedDenial } from './capability-access-gate';
-import { CAPABILITY_TABS } from './capability-tab-routes';
-
-const read = (file: string) =>
-  readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
-const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const verdict = (allowed: boolean): CanResult => ({
   allowed,
@@ -32,93 +21,107 @@ const verdict = (allowed: boolean): CanResult => ({
 const inFlight: CanResult = { allowed: false, reason: null, isLoading: true, isError: false };
 const failed: CanResult = { allowed: false, reason: null, isLoading: false, isError: true };
 
-/** Probe map for a caller allowed everything except the listed actions. */
-const allowExcept = (...denied: string[]) =>
-  Object.fromEntries(PROJECT_PAGE_ACTIONS.map((a) => [a, verdict(!denied.includes(a))]));
-const every = (result: CanResult) =>
-  Object.fromEntries(PROJECT_PAGE_ACTIONS.map((a) => [a, result]));
+/** Probe map for a caller allowed exactly the listed actions. */
+const allowOnly = (...allowed: string[]) =>
+  Object.fromEntries(PROJECT_PAGE_ACTIONS.map((a) => [a, verdict(allowed.includes(a))]));
+const every = (result: CanResult) => Object.fromEntries(PROJECT_PAGE_ACTIONS.map((a) => [a, result]));
+/** The rule for a project with the `drives` flag on. */
+const access = (caps: Record<string, CanResult>) => capabilityAccess(caps, true);
 
-const deniedKeys = (caps: Record<string, CanResult>) =>
-  CAPABILITY_TABS.filter((tab) => capabilityTabDenied(caps, tab.key)).map((t) => t.key);
+// The built-in Member role's project leaves
+// (packages/db/migrations/20260819015724479_rbac_canonical_model.sql).
+const MEMBER = [
+  PROJECT_ACTIONS.PROJECT_READ,
+  PROJECT_ACTIONS.PROJECT_AGENT_READ,
+  PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
+  PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+];
 
-describe('capabilityTabDenied', () => {
-  test('a manager is denied no tab', () => {
-    expect(deniedKeys(allowExcept())).toEqual([]);
+describe('capabilityAccess', () => {
+  test('a manager opens every tab, in bar order', () => {
+    expect(capabilityAccess(every(verdict(true)), true)).toEqual({
+      settled: true,
+      tabs: ['agent', 'skills', 'connectors', 'triggers', 'models', 'secrets', 'files', 'config'],
+    });
   });
 
-  test('a project member is denied exactly the tabs whose read leaf it lacks', () => {
-    const member = allowExcept(
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
-      PROJECT_ACTIONS.PROJECT_SKILL_READ,
-      PROJECT_ACTIONS.PROJECT_SECRET_READ,
-      PROJECT_ACTIONS.PROJECT_MODEL_READ,
-      PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
-    );
-    expect(CAPABILITY_TABS.map((t) => t.key).filter((k) => !deniedKeys(member).includes(k)).sort()).toEqual([
-      'agent',
-      'files',
-      'triggers',
-    ]);
+  test('a plain member opens only Files: no Agents, no Triggers, no dead-end tab', () => {
+    expect(access(allowOnly(...MEMBER))).toEqual({ settled: true, tabs: ['files'] });
   });
 
-  test('a custom role denied one leaf is denied exactly that tab', () => {
-    expect(deniedKeys(allowExcept(PROJECT_ACTIONS.PROJECT_SECRET_READ))).toEqual(['secrets']);
+  test('a caller without project.read gets no tab, so no Customize row', () => {
+    expect(access(allowOnly()).tabs).toEqual([]);
   });
 
-  // The whole fix. A pending probe reads `allowed: false`; treating that as a
-  // denial is what blanked the bar on every cold load.
-  test('a probe in flight or a failed probe denies nothing', () => {
-    expect(deniedKeys(every(inFlight))).toEqual([]);
-    expect(deniedKeys(every(failed))).toEqual([]);
-    expect(deniedKeys({})).toEqual([]);
-    expect(receivedDenial(undefined)).toBe(false);
-    expect(receivedDenial(verdict(false))).toBe(true);
-  });
-});
-
-describe('Customize permission wiring', () => {
-  const bar = code(read('./capability-tabs.tsx'));
-  const gate = code(read('./capability-access-gate.tsx'));
-  const layout = code(read('../../../../app/[locale]/(app)/projects/[id]/(capabilities)/layout.tsx'));
-
-  test('the bar renders every tab without a permission probe', () => {
-    expect(bar).toContain('useLocalizedUiCatalog(CAPABILITY_TABS)');
-    expect(bar).not.toContain('useProjectCans(');
-    expect(bar).not.toContain('useProjectCan(');
-    // The only probe in the bar is the Members launcher's read leaf.
-    expect((bar.match(/useProjectPageCans\(/g) ?? []).length).toBe(1);
+  test('a read leaf alone does not show a configuration tab', () => {
+    const tabs = access(
+      allowOnly(
+        PROJECT_ACTIONS.PROJECT_AGENT_READ,
+        PROJECT_ACTIONS.PROJECT_SKILL_READ,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+        PROJECT_ACTIONS.PROJECT_MODEL_READ,
+        PROJECT_ACTIONS.PROJECT_SECRET_READ,
+      ),
+    ).tabs;
+    expect(tabs).toEqual([]);
   });
 
-  test('the layout gates the body, not the bar', () => {
-    expect(layout).toContain('<CapabilityTabs projectId={projectId} />');
-    expect(layout).toContain(
-      '<CapabilityAccessGate projectId={projectId}>{children}</CapabilityAccessGate>',
-    );
-    expect(gate).toContain('useProjectPageCans(projectId)');
+  test('a write leaf without its read leaf does not show the tab', () => {
+    expect(access(allowOnly(PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).tabs).toEqual([]);
   });
 
-  // One batch for the sidebar, the bar and the gate: the gate reads a verdict
-  // the sidebar already cached, so it adds no request and no wait.
-  test('the shared page batch covers every leaf the surface reads', () => {
-    const batch: readonly string[] = PROJECT_PAGE_ACTIONS;
-    expect(batch).toContain(PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
-    for (const tab of CAPABILITY_TABS) {
-      const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
-      expect(pref, tab.key).toBeDefined();
-      expect(batch).toContain(pref!.action);
+  test('any one trigger write leaf shows Triggers; firing alone does not', () => {
+    for (const write of [
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+    ]) {
+      expect(access(allowOnly(PROJECT_ACTIONS.PROJECT_TRIGGER_READ, write)).tabs).toEqual([
+        'triggers',
+      ]);
     }
+    expect(
+      access(
+        allowOnly(PROJECT_ACTIONS.PROJECT_TRIGGER_READ, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE),
+      ).tabs,
+    ).toEqual([]);
   });
 
-  // The hub renders the project panel read-only for anyone who can read the
-  // member list (`components/iam/access-projects-tab.tsx`). Gating on manage
-  // would hide a page a plain member can open.
-  test('the Members launcher gates on members.READ, not members.manage', () => {
-    const start = bar.indexOf('function MembersLaunchLink');
-    const link = bar.slice(start, bar.indexOf('\n}', start));
-    expect(link).toContain('[PROJECT_ACTIONS.PROJECT_MEMBERS_READ]');
-    expect(link).toContain('if (receivedDenial(canReadMembers)) return null;');
-    expect(link).not.toContain('PROJECT_MEMBERS_MANAGE');
-    // Holds its place while the account id resolves, instead of popping in.
-    expect(link).toContain('if (!accountId) return <span className={MEMBERS_LINK_CLASS}>');
+  test('managing personal connections shows Connectors', () => {
+    expect(
+      access(
+        allowOnly(
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+        ),
+      ).tabs,
+    ).toEqual(['connectors']);
+  });
+
+  // Nothing acts on a half answer: that is what showed a section on one
+  // visit and hid it on the next.
+  test('one probe in flight means not settled and no tab', () => {
+    const caps = every(verdict(true));
+    caps[PROJECT_ACTIONS.PROJECT_SECRET_WRITE] = inFlight;
+    expect(access(caps)).toEqual({ settled: false, tabs: [] });
+    expect(access({})).toEqual({ settled: false, tabs: [] });
+  });
+
+  test('Files shows only with the drives flag on, and waits for the flag', () => {
+    const member = allowOnly(...MEMBER);
+    expect(capabilityAccess(member, false)).toEqual({ settled: true, tabs: [] });
+    expect(capabilityAccess(member, undefined)).toEqual({ settled: false, tabs: [] });
+  });
+
+  test('a failed probe settles closed', () => {
+    expect(access(every(failed))).toEqual({ settled: true, tabs: [] });
+  });
+
+  test('the shared page batch carries every leaf the rule reads', () => {
+    const batch: readonly string[] = PROJECT_PAGE_ACTIONS;
+    for (const action of CAPABILITY_TAB_ACTIONS) expect(batch).toContain(action);
   });
 });

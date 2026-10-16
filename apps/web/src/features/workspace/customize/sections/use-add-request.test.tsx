@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
-import { createElement, useState } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useAddRequest } from './use-add-request';
@@ -11,12 +11,13 @@ function List({ addRequest, onOpen, onHandled }: { addRequest: number; onOpen: (
   return null;
 }
 
-let bump: () => void = () => undefined;
-function Page({ onOpen }: { onOpen: () => void }) {
+// The page hands its "request again" action to the test through a callback
+// prop, after the render.
+function Page({ onOpen, exposeBump }: { onOpen: () => void; exposeBump: (bump: () => void) => void }) {
   const [addRequest, setAddRequest] = useState(1);
-  // A test handle into the rendered page; it is not app render logic.
-  // eslint-disable-next-line react-hooks/globals
-  bump = () => setAddRequest((n) => n + 1);
+  useEffect(() => {
+    exposeBump(() => setAddRequest((n) => n + 1));
+  }, [exposeBump]);
   return createElement(List, { addRequest, onOpen, onHandled: () => setAddRequest(0) });
 }
 
@@ -29,9 +30,13 @@ afterEach(() => errors.mockClear());
 describe('useAddRequest', () => {
   test('opens once per request, and resets the caller after the render', async () => {
     const onOpen = mock(() => undefined);
+    let bump: () => void = () => undefined;
+    const exposeBump = (fn: () => void) => {
+      bump = fn;
+    };
     let root: ReactTestRenderer | undefined;
     await act(async () => {
-      root = create(createElement(Page, { onOpen }));
+      root = create(createElement(Page, { onOpen, exposeBump }));
     });
     expect(onOpen).toHaveBeenCalledTimes(1);
     await act(async () => bump());

@@ -393,6 +393,8 @@ describe('local test runner', () => {
       expect(refused(args)).toBe(false);
     expect(refused([], 'linux')).toBe(false);
     expect(refused([], 'darwin', { KORTIX_FULL_TEST: '1' })).toBe(false);
+    // --sdk-only passed this gate, so the package guard (scripts/test-guard.mjs) must not refuse it.
+    expect(buildLocalTestPlan(['--sdk-only']).lanes[0]?.env).toEqual({ KORTIX_FULL_TEST: '1' });
   });
 
   it('retries a cold local web route until it is ready', async () => {

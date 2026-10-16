@@ -100,7 +100,7 @@ function ContextMenuContent({
       <FullWindowOverlay>
         <ContextMenuPrimitive.Overlay
           style={Platform.select({
-            web: overlayStyle ?? undefined,
+            web: (overlayStyle ?? undefined) as typeof StyleSheet.absoluteFill | undefined,
             native: overlayStyle
               ? StyleSheet.flatten([
                 StyleSheet.absoluteFill,

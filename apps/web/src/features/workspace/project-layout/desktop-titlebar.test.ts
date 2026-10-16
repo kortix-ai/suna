@@ -320,7 +320,7 @@ describe('nothing re-hard-codes the band', () => {
       "html[data-desktop-platform='macos'] .kx-project-shell-drag-region {",
     );
     expect(css).toMatch(
-      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/s,
+      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/,
     );
   });
 
@@ -330,14 +330,14 @@ describe('nothing re-hard-codes the band', () => {
     // not subtract from it. Blink maps `none` to no-drag, so only `initial`
     // resets the shell's injected rule.
     const reset = css.match(
-      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\)\s*\{([^}]*)\}/s,
+      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\)\s*\{([^}]*)\}/,
     );
     expect(reset?.[1]).toContain('-webkit-app-region: initial');
     expect(reset?.[1]).toContain('app-region: initial');
     expect(reset?.[1]).not.toMatch(/app-region:\s*none/);
 
     const scoped = css.match(
-      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/s,
+      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/,
     );
     expect(scoped).not.toBeNull();
     for (const owner of [
