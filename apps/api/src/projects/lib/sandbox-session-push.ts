@@ -1,5 +1,10 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import {
+  COMPILED_AGENT_CONFIG_ENV,
+  COMPILED_AGENT_CONFIG_GZ_CAPABILITY,
+  fitsInEnvString,
+} from '@kortix/api-contract/compiled-agent-config-env';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 // Aliased: every push below binds a local `config` from the sandbox row, which
@@ -80,6 +85,28 @@ export async function daemonHasConfigReleases(
     if (!hasConfigReleaseCapability(body.capabilities)) return false;
     const config = (body.config ?? null) as { release_id?: unknown } | null;
     return typeof config?.release_id === 'string' && config.release_id.length > 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Does the daemon list `capability` in `/kortix/health`? `true`, `false`, or
+ * `null` when health did not answer.
+ */
+async function daemonListsCapability(
+  baseUrl: string,
+  headers: Record<string, string>,
+  capability: string,
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { capabilities?: unknown };
+    return Array.isArray(body.capabilities) && body.capabilities.includes(capability);
   } catch {
     return null;
   }
@@ -183,10 +210,11 @@ export async function pushSessionAgentConfigToSandbox(input: {
     });
     // Capability gate. A daemon with config releases gets governance from its
     // release; `null` (health did not answer) is not permission to push.
-    const releases = await daemonHasConfigReleases(url, {
+    const daemonHeaders = {
       ...(headers as Record<string, string>),
       Authorization: `Bearer ${serviceKey}`,
-    });
+    };
+    const releases = await daemonHasConfigReleases(url, daemonHeaders);
     if (releases !== false) {
       return {
         applied: false,
@@ -194,6 +222,20 @@ export async function pushSessionAgentConfigToSandbox(input: {
           releases === true
             ? 'the daemon receives compiled governance in its config release'
             : 'could not read the daemon capabilities',
+      };
+    }
+    // The push itself is an HTTP body, with no exec limit. The daemon then
+    // keeps the value in the env that OpenCode, git and every PTY inherit. A
+    // daemon that predates the gzip form would store an oversized config raw,
+    // and every exec on the box after that would fail with E2BIG. Such a box
+    // keeps the config it booted with.
+    if (
+      !fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, compiled) &&
+      (await daemonListsCapability(url, daemonHeaders, COMPILED_AGENT_CONFIG_GZ_CAPABILITY)) !== true
+    ) {
+      return {
+        applied: false,
+        reason: 'the compiled agent config exceeds one env string and the daemon cannot hold it encoded',
       };
     }
     // The daemon call blocks until its verified reload either promotes the new

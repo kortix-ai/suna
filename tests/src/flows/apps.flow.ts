@@ -3,9 +3,11 @@
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
  * or one deployment together with its provider images, and the machine, scale,
  * exec and volume routes. Maps to spec section 28 (APP-1..8,
- * APP-11; APP-9 and APP-10 live in apps-tokens.flow.ts).
+ * APP-11, APP-13; APP-9, APP-10 and APP-12 live in apps-tokens.flow.ts).
  */
 import { flow } from "../core/flow";
+import type { Client } from "../core/client";
+import type { Principal } from "../core/types";
 import { CliSandbox } from "../fixtures/cli";
 import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
 import { withDb } from "../fixtures/chat";
@@ -729,6 +731,211 @@ flow(
     await ctx.step("delete the test App", async () => {
       const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
         params: { ...projectParams, appId },
+      });
+      response.status(200).body().has("$.ok", true);
+    });
+  },
+);
+
+flow(
+  "APP-13",
+  {
+    domain: "apps",
+    timeoutMs: 240_000,
+    routes: [
+      "PUT /v1/admin/api/projects/:id/features",
+      "POST /v1/accounts/:accountId/iam/groups",
+      "POST /v1/accounts/:accountId/iam/groups/:groupId/members",
+      "POST /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "GET /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const accountParams = { accountId: team.id };
+
+    // The reported failure (2026-10-14, #kortix-triage): an App admitting two
+    // groups refused a member of BOTH, while the same App restricted to one
+    // group loaded — read as AND semantics. Under OR, either membership admits
+    // and widening the allow-list can never lock a member out, so this flow
+    // signs in one member per position and proves the verdicts at the real
+    // surface: list, read and the access session that opens the App.
+    const qrOnly = await team.addMember("member");
+    const absOnly = await team.addMember("member");
+    const bothMember = await team.addMember("member");
+    const neither = await team.addMember("member");
+    const noRole = await team.addMember("member");
+    const userId = (member: Principal) => {
+      if (!member.userId) throw new Error("group fixture member has no user id");
+      return member.userId;
+    };
+    await team.grantProjectRole(project.id, userId(qrOnly), "member");
+    await team.grantProjectRole(project.id, userId(absOnly), "member");
+    await team.grantProjectRole(project.id, userId(bothMember), "member");
+    await team.grantProjectRole(project.id, userId(neither), "member");
+
+    const asQrOnly = ctx.client.as(qrOnly);
+    const asAbsOnly = ctx.client.as(absOnly);
+    const asBoth = ctx.client.as(bothMember);
+
+    const group = async (slug: string, members: Principal[]) => {
+      const created = await owner.post(
+        "/v1/accounts/:accountId/iam/groups",
+        { name: ctx.fixtures.name(slug) },
+        { params: accountParams },
+      );
+      const groupId = created.status(201).json<{ group_id: string }>().group_id;
+      (
+        await owner.post(
+          "/v1/accounts/:accountId/iam/groups/:groupId/members",
+          { userIds: members.map(userId) },
+          { params: { ...accountParams, groupId } },
+        )
+      ).status(200);
+      return groupId;
+    };
+
+    const slug = ctx.fixtures
+      .name("group-scoped")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .slice(0, 63);
+    let appId = "";
+    let qr = "";
+    let abs = "";
+
+    const canOpen = async (client: Client) => {
+      const read = await client.get("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      const listed = await client.get("/v1/projects/:projectId/apps", { params });
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
+      const session = await client.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...params, appId } },
+      );
+      return { read, listedId: ids.includes(appId), session };
+    };
+
+    await ctx.step(
+      "setup: two allowed groups — one member in each, one in both, one in neither, and a fifth in the FIRST group with no project role — and an App restricted to the two groups",
+      async () => {
+        // The fifth member sits INSIDE an allowed group: the pin below is that
+        // group membership never widens the project, which only bites for a
+        // member the App itself would admit.
+        qr = await group("grp-qr", [qrOnly, bothMember, noRole]);
+        abs = await group("grp-abs", [absOnly, bothMember]);
+        // Apps is GA (2026-10-14): no flag setup — a fresh project lists and
+        // creates Apps with no override (APP-2 pins that).
+        const created = await owner.post(
+          "/v1/projects/:projectId/apps",
+          { slug, name: "ke2e group App" },
+          { params },
+        );
+        created.status(201);
+        appId = created.json<{ app_id: string }>().app_id;
+        const restricted = await owner.patch(
+          "/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", group_ids: [qr, abs] },
+          { params: { ...params, appId } },
+        );
+        restricted.status(200).body().has("$.mode", "restricted");
+      },
+    );
+
+    await ctx.step("a member of the first allowed group can open the App", async () => {
+      const { read, listedId, session } = await canOpen(asQrOnly);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of the first allowed group does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of the second allowed group can open the App — EITHER group suffices", async () => {
+      const { read, listedId, session } = await canOpen(asAbsOnly);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of the second allowed group does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of BOTH allowed groups can open the App (the reported failure)", async () => {
+      const { read, listedId, session } = await canOpen(asBoth);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of both allowed groups does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of neither allowed group stays denied", async () => {
+      // 404, never 403: the status must not disclose a teammate's restricted App.
+      const read = await ctx.client.as(neither).get("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      read.status(404);
+      const listed = await ctx.client.as(neither).get("/v1/projects/:projectId/apps", { params });
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
+      if (ids.includes(appId)) throw new Error("a member of neither allowed group sees the App");
+      (
+        await ctx.client.as(neither).post(
+          "/v1/projects/:projectId/apps/:appId/access-session",
+          {},
+          { params: { ...params, appId } },
+        )
+      ).status(404);
+    });
+
+    await ctx.step("group membership does not stand in for project access", async () => {
+      // An account member INSIDE an allowed group but with no role on the
+      // project still gets nothing: the App allow-list narrows PROJECT
+      // members, it never widens the project itself. The contrast with the
+      // neither-member step (a project member without app access gets a 200
+      // list with the App filtered out) shows this 403 is the project gate
+      // firing — group membership did not buy project access.
+      const listed = await ctx.client.as(noRole).get("/v1/projects/:projectId/apps", { params });
+      listed.status(403).body().has("$.code", "no_project_membership").has("$.action", "project.read");
+    });
+
+    await ctx.step("narrowing the policy to one group keeps that group's members in", async () => {
+      const narrowed = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "restricted", group_ids: [abs] },
+        { params: { ...params, appId } },
+      );
+      narrowed.status(200).body().has("$.mode", "restricted");
+      const { session } = await canOpen(asBoth);
+      session.status(200).body().exists("$.url");
+      // The dropped group legitimately loses access: the policy now means it.
+      (
+        await asQrOnly.post(
+          "/v1/projects/:projectId/apps/:appId/access-session",
+          {},
+          { params: { ...params, appId } },
+        )
+      ).status(404);
+    });
+
+    await ctx.step("widening back to both groups restores the dropped group's members", async () => {
+      const widened = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "restricted", group_ids: [qr, abs] },
+        { params: { ...params, appId } },
+      );
+      widened.status(200).body().has("$.mode", "restricted");
+      const { session } = await canOpen(asQrOnly);
+      session.status(200).body().exists("$.url");
+      const bothAgain = await canOpen(asBoth);
+      bothAgain.session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("delete the test App", async () => {
+      const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
       });
       response.status(200).body().has("$.ok", true);
     });

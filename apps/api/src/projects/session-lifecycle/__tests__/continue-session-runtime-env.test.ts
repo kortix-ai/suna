@@ -97,6 +97,17 @@ mock.module('../../../sandbox-proxy/forward', () => ({
   },
 }));
 
+// The turn-identity bind, slowed so a sync that does not wait for it runs first.
+const realOnBehalfOf = await import('../../lib/on-behalf-of');
+mock.module('../../lib/on-behalf-of', () => ({
+  ...realOnBehalfOf,
+  bindSessionTurnIdentity: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    events.push('bind');
+    return true;
+  },
+}));
+
 mock.module('../../lib/sessions', () => ({
   createProjectSession: async () => {
     throw new Error('not expected');
@@ -186,5 +197,21 @@ describe('continueSession runtime env', () => {
     });
     if (opencodeEnv) expect(syncInputs[0]?.opencodeEnv).toEqual(opencodeEnv);
     else expect(syncInputs[0]?.opencodeEnv).toBeUndefined();
+  });
+
+  // The env sync reads the person the session token acts for, which the bind
+  // writes. Syncing first would push the previous person's personal secrets
+  // for this person's turn.
+  test('a person starting the turn: the env sync waits for the turn-identity bind', async () => {
+    expect(
+      await continueSession({
+        source: 'ui',
+        sessionId: SESSION_ID,
+        text: 'from another member',
+        userId: 'member-2',
+        bindTurnIdentity: true,
+      }),
+    ).toBe('delivered');
+    expect(events).toEqual(['open', 'bind', 'sync', 'prompt']);
   });
 });

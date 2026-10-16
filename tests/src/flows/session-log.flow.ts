@@ -536,3 +536,65 @@ flow(
     }
   },
 );
+
+const BLOB = "/v1/projects/:projectId/sessions/:sessionId/log/blobs/:sha256";
+
+flow(
+  "SLOG-5",
+  {
+    domain: "sessions",
+    requires: ["database"],
+    routes: ["POST /v1/accounts/tokens", `GET ${BLOB}`, `PUT ${BLOB}`, `POST ${JOURNAL}`, `GET ${LOG}`, `GET ${ATTACHMENT}`],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId! });
+    ctx.track("session", sessionId, { projectId: project.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const { box, close } = await sandboxCredential(ctx, project.id, sessionId);
+    const params = { projectId: project.id, sessionId };
+    // A synthetic image as UTF-8 text, so the flow client's text body round-trips it.
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>';
+    const sha256 = createHash("sha256").update(svg).digest("hex");
+    const at = { ...params, sha256 };
+    const upload = (client: typeof box, sha = sha256) =>
+      client.put(BLOB, new TextEncoder().encode(svg), { params: { ...params, sha256: sha }, raw: true, headers: { "content-type": "image/svg+xml" } });
+    let ref = "";
+    try {
+      await ctx.step("the box asks for an attachment the session does not hold → 200 {ref:null}; the owner's own token → 403", async () => {
+        (await box.get(BLOB, { params: at })).status(200).body().has("$", { ref: null });
+        (await owner.get(BLOB, { params: at })).status(403);
+        (await upload(owner)).status(403);
+      });
+
+      await ctx.step("an upload whose body sha256 is not the path's → 400 and nothing stored", async () => {
+        (await upload(box, "0".repeat(64))).status(400);
+        (await box.get(BLOB, { params: at })).status(200).body().has("$", { ref: null });
+      });
+
+      await ctx.step("the box uploads the bytes → 200 {ref} in its session folder; a second upload and the lookup answer the same ref", async () => {
+        const r = await upload(box);
+        r.status(200);
+        ref = r.json<{ ref: string }>().ref;
+        if (!ref.startsWith(`kortix-attachment://${project.id}/${sessionId}/`)) throw new Error(`ref ${ref}`);
+        (await upload(box)).status(200).body().has("$", { ref });
+        (await box.get(BLOB, { params: at })).status(200).body().has("$", { ref });
+      });
+
+      await ctx.step("a journaled record naming the object → 200; GET …/log serves the attachment with ref, sha256 and bytes", async () => {
+        const image = { type: "attachment", id: "prt_img", ref, mime: "image/svg+xml", bytes: svg.length, sha256 };
+        const body = { generation: 0, threads: [], tombstones: [], puts: [{ rev: REV + 1, message: message("msg_img", 0, { blocks: [image] }) }] };
+        (await box.post(JOURNAL, Bun.gzipSync(JSON.stringify(body)), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
+        (await owner.get(LOG, { params })).status(200).body().has("$.messages[0].blocks[0]", image);
+      });
+
+      await ctx.step("the box reads the object back through the attachments route → 200 with the same sha256", async () => {
+        const r = await box.get(ATTACHMENT, { params: { ...params, attachmentId: ref.split("/").at(-1)! } });
+        r.status(200);
+        if (createHash("sha256").update(r.text()).digest("hex") !== sha256) throw new Error("the object's sha256 differs from the upload's");
+      });
+    } finally {
+      await close();
+    }
+  },
+);

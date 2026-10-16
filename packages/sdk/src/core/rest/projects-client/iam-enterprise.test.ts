@@ -1,26 +1,36 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
-import { ENDPOINT_RETIRED_CODE } from '../../http/api/errors';
+import { configureKortix } from '../../http/config';
 import { getEnterpriseDemo, setEnterpriseDemo } from './iam-enterprise';
 
-let requests = 0;
+let calls: Array<{ url: string; method: string; body: unknown }> = [];
 
 beforeEach(() => {
-  requests = 0;
-  globalThis.fetch = mock(async () => {
-    requests++;
-    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  calls = [];
+  configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    const enabled = init?.method === 'PUT' ? JSON.parse(String(init.body)).enabled : true;
+    return new Response(JSON.stringify({ enabled, state: enabled ? 'demo' : 'off' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }) as unknown as typeof fetch;
 });
 
-// The Enterprise preview is retired (2026-10-15): the API answers 410 on its
-// routes. Enterprise features come from the Enterprise plan — a contract or an
-// Enterprise trial an operator grants — and read from account state.
-test('getEnterpriseDemo rejects with ENDPOINT_RETIRED and sends no request', async () => {
-  await expect(getEnterpriseDemo('acc-1')).rejects.toMatchObject({ code: ENDPOINT_RETIRED_CODE });
-  expect(requests).toBe(0);
+// The Enterprise demo is self-serve again (2026-10-15): an owner or admin turns
+// the Enterprise features on for the account, marked "Demo", and sales hears.
+test('getEnterpriseDemo reads GET /accounts/:id/iam/enterprise-demo', async () => {
+  expect(await getEnterpriseDemo('acc-1')).toBe(true);
+  expect(calls.map((c) => [c.method, c.url])).toEqual([['GET', 'http://api.test/v1/accounts/acc-1/iam/enterprise-demo']]);
 });
 
-test('setEnterpriseDemo rejects with ENDPOINT_RETIRED and sends no request', async () => {
-  await expect(setEnterpriseDemo('acc-1', true)).rejects.toMatchObject({ code: ENDPOINT_RETIRED_CODE });
-  expect(requests).toBe(0);
+test('setEnterpriseDemo sends PUT {enabled} and returns the new value', async () => {
+  expect(await setEnterpriseDemo('acc-1', false)).toBe(false);
+  expect(calls).toEqual([
+    { method: 'PUT', url: 'http://api.test/v1/accounts/acc-1/iam/enterprise-demo', body: { enabled: false } },
+  ]);
 });

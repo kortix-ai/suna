@@ -10,6 +10,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { GatewaySeriesPoint } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
@@ -41,10 +42,9 @@ export function fmtDay(value: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-export function fmtUsd(n: number): string {
-  if (n >= 100) return `$${n.toFixed(0)}`;
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  return `$${n.toFixed(4)}`;
+/** A USD amount the gateway spent, in credits (1 credit = $0.01): `1,842`, `0.4`, `<0.01`. */
+export function fmtCredits(usd: number, locale?: string): string {
+  return formatUsdAsCredits(usd, { locale });
 }
 
 export function fmtCompact(n: number): string {
@@ -106,11 +106,14 @@ export function RangeSelector({
 export function MetricTab({
   label,
   value,
+  unit,
   selected,
   onSelect,
 }: {
   label: string;
   value: string;
+  /** A unit word after the value, smaller and muted: `1,842 credits`. */
+  unit?: string;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -135,6 +138,11 @@ export function MetricTab({
         )}
       >
         {value}
+        {unit ? (
+          <span className="text-muted-foreground ml-1 text-xs font-normal tracking-normal">
+            {unit}
+          </span>
+        ) : null}
       </span>
     </button>
   );

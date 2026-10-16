@@ -12,15 +12,15 @@ import type { ProjectRow } from './serializers';
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
  *
- * MUST be kortix_version 2, not KNOWN_SCHEMA_VERSION (which deliberately
- * stays pinned at 1 — see its own doc comment in ../triggers.ts). Every
- * project created through POST /projects/provision (seeded or not) is
- * stamped `metadata.require_declared_agents: true` and reads/writes
- * through the v2-only agent-config API (`applyAgentBlockV2`/
- * `applyDefaultAgentV2` in ./agent-config-v2.ts hard-refuse a v1
- * manifest). A blank project (no `seed_starter`, so no kortix.yaml ever
- * got pushed) synthesizing v1 here meant every agent-config write 400'd
- * with "upgrade to kortix_version 2" before it could ever commit a real
+ * MUST be kortix_version 3 (the canonical version the starter ships), not
+ * KNOWN_SCHEMA_VERSION (which deliberately stays pinned at 1 — see its own
+ * doc comment in ../triggers.ts). Every project created through POST
+ * /projects/provision (seeded or not) is stamped
+ * `metadata.require_declared_agents: true` and reads/writes through the
+ * agent-config API (`applyAgentBlockV2`/`applyDefaultAgentV2` in
+ * ./agent-config-v2.ts hard-refuse a v1 manifest). A blank project (no
+ * `seed_starter`, so no kortix.yaml ever got pushed) synthesizing v1 here
+ * meant every agent-config write 400'd with "upgrade" before it could ever commit a real
  * manifest — a self-inflicted catch-22 that left the project permanently
  * un-declarable (AGENT_NOT_DECLARED on every session-create) short of a
  * force-pushed kortix.yaml or a full re-provision with `seed_starter:true`.

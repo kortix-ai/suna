@@ -1169,8 +1169,8 @@
     "contactSales": "Contacter les ventes",
     "upgradeTo": "Passer à {{plan}}",
     "switchTo": "Basculer vers {{plan}}",
-    "trialLabel_one": "Essai {{plan}} · {{count}} jour restant",
-    "trialLabel_other": "Essai {{plan}} · {{count}} jours restants"
+    "enterpriseDemoLabel": "{{plan}} · démo Enterprise",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1204,6 +1204,7 @@
   },
   "genui": {
     "chartTapHint": "Touchez pour lire une valeur",
+    "checklistReady": "{{done}}/{{total}} prêts",
     "map": "Carte",
     "mapUnavailable": "Carte indisponible",
     "openImage": "Ouvrir l'image",

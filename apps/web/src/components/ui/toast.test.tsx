@@ -323,7 +323,7 @@ describe('toast options — actions, entity, compact', () => {
 });
 
 describe('undoToast', () => {
-  test('defaults to 5 s, passes the id, and renders the Undo key', () => {
+  test('defaults to 5 s, passes the id, and renders Undo as the text-link action', () => {
     reset();
     const id = undoToast('Session archived', {
       id: 'undo-1',
@@ -333,8 +333,10 @@ describe('undoToast', () => {
     expect(id).toBe(customCalls.length);
     expect(lastData()).toMatchObject({ id: 'undo-1', duration: 5000 });
     const html = lastMarkup();
-    expect(html).toContain('>Session archived</span>');
-    expect(html).toContain('>Undo</span>');
+    // The same card as every other toast: the message, then Undo as the
+    // text-link action "Open session" uses.
+    expect(html).toContain('>Session archived</p>');
+    expect(html).toMatch(/<button[^>]*hover:bg-kortix-blue\/15[^>]*>Undo<\/button>/);
     expect(html).toContain('aria-label="Close notification"');
   });
 });

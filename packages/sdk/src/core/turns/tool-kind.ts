@@ -20,6 +20,7 @@ export type ToolKind =
   | 'apply_patch'
   | 'bash'
   | 'pty'
+  | 'script'
   | 'web_search'
   | 'webfetch'
   | 'media'
@@ -53,7 +54,11 @@ kind('write', ['write']);
 // lowered, so `Grep`, `Glob` and `LS` stay foreign to the native output parsers.
 kind('edit', ['edit', 'multiedit', 'morph_edit', 'MultiEdit', 'NotebookEdit']);
 kind('apply_patch', ['apply_patch', 'patch']);
-kind('bash', ['bash', 'codemode']);
+kind('bash', ['bash']);
+// pi's codemode: a script the model wrote that calls the other tools (its row lists them).
+// Its own kind — not `other` — so every family that derives from `toolKind`
+// (narration, registry category, view-model) treats a registered script deliberately.
+kind('script', ['codemode']);
 kind('web_search', ['web_search', 'websearch', 'image_search']);
 kind('webfetch', ['webfetch', 'web_fetch', 'scrape_webpage', 'scrapewebpage']);
 kind('media', ['image_gen', 'video_gen']);

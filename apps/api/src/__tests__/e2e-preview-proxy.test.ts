@@ -935,6 +935,50 @@ describe('Preview proxy: forwarding', () => {
     );
   });
 
+  // The Platinum edge marks every answer it gives itself with
+  // `x-pt-edge-verdict`: it did not proxy the request, so the box never saw
+  // the prompt and a replay cannot post it twice (CFG-12, revocation-unavailable).
+  const sendPrompt = async () => {
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: any) => fn()) as any;
+    try {
+      return await createProxyTestApp().request(
+        `/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`,
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+        },
+      );
+    } finally {
+      globalThis.setTimeout = origSetTimeout;
+    }
+  };
+
+  test('a prompt the provider edge refused itself (x-pt-edge-verdict) is sent again', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":false,"revision":"rev"}' },
+      { status: 503, body: 'Preview access denied', headers: { 'x-pt-edge-verdict': 'revocation-unavailable' } },
+      { status: 204, body: '' },
+    ];
+    const res = await sendPrompt();
+    expect(res.status).toBe(204);
+    const prompts = mockFetchCalls.filter((c) => c.url.endsWith('/session/ses_123/prompt_async?directory=%2Fworkspace'));
+    expect(prompts).toHaveLength(2);
+  });
+
+  test('a prompt answered 502 by the box itself is never sent twice', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":false,"revision":"rev"}' },
+      { status: 502, body: '{"error":"upstream unreachable"}', headers: { 'x-pt-edge-served': '1' } },
+      { status: 204, body: '' },
+    ];
+    const res = await sendPrompt();
+    expect(res.status).toBe(502);
+    const prompts = mockFetchCalls.filter((c) => c.url.endsWith('/session/ses_123/prompt_async?directory=%2Fworkspace'));
+    expect(prompts).toHaveLength(1);
+  });
+
   test('titles from a REST prompt_async body, with the model the user picked for the turn', async () => {
     mockFetchResponses = [
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },

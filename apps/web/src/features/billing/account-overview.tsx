@@ -1,7 +1,7 @@
 'use client';
 
 import type { UiTranslator } from '@/i18n/translator';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 /**
  * The account overview block at the top of the Billing tab: what you can
  * spend, what plan you are on, what you spent this period, and the limits
@@ -17,8 +17,8 @@ import { useTranslations } from '@/i18n/use-translations';
  * What it renders now:
  *
  * 1. **One balance card.** The number you actually came here for is the
- *    largest thing on the pane — available balance, with its credit
- *    equivalent under it — and the plan sits opposite it as a quiet right-hand
+ *    largest thing on the pane — available balance in credits, with its
+ *    dollar equivalent under it — and the plan sits opposite it as a quiet right-hand
  *    column (plan name, then status or renewal date). A hairline splits off a
  *    three-column strip for this period's spend: Compute, LLM, Total. That
  *    strip replaces the old bordered spend table entirely.
@@ -26,6 +26,11 @@ import { useTranslations } from '@/i18n/use-translations';
  *    `active / limit` right-aligned, red at the cap. The progress bars are
  *    gone: a bar under every row tripled the block's height to restate a
  *    fraction the numbers already give exactly.
+ *
+ * **Credits are the unit (2026-10-16).** Everything the account holds or
+ * spent reads in credits (1 credit = $0.01): the balance and the spend strip.
+ * Prices stay in dollars: the plan's `$3,000/mo`. The API sends USD; only
+ * the display converts.
  *
  * Wording: "wallet" → "Available balance", and the "Sandbox runtime" /
  * "Inference" hints under Compute and LLM are dropped — they explained the
@@ -37,7 +42,7 @@ import { formatWholeUsd } from '@/features/billing/compute-pricing';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
 import { resolvedPlan, type AccountState } from '@kortix/sdk';
-import { dollarsToCredits, formatCredits } from '@kortix/shared';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 type LimitRow = {
   id: string;
@@ -84,6 +89,8 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
  */
 export function AccountOverviewView({ state }: { state: AccountState }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCredits = useTranslations('settings.credits');
+  const locale = useLocale();
   const wallet = state.credits?.total ?? 0;
   const isNegative = wallet < 0;
   const usage = state.usage_this_period;
@@ -102,21 +109,24 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
             <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text3ab7dd8428d1')}</p>
             {/* `tabular-nums`, deliberately NOT `font-mono`. Tabular figures
                 give the equal-width digits a balance wants; a monospace face
-                gives the '.' and ',' the same advance as a '0' too, which
-                opens visible gaps mid-number ("$99891 . 85") and reads as
-                broken kerning next to the grouped credits line below. */}
+                gives the ',' the same advance as a '0' too, which opens
+                visible gaps mid-number. Credits are THE number; the unit sits
+                beside it, smaller and muted, and the dollar equivalent is
+                the quiet line under it. */}
             <p
               className={cn(
                 'mt-1.5 truncate text-2xl leading-none font-semibold tracking-tight tabular-nums',
                 isNegative ? 'text-kortix-red' : 'text-foreground',
               )}
             >
-              {formatUsd(wallet)}
+              {formatUsdAsCredits(wallet, { locale })}
+              <span className="text-muted-foreground ml-1.5 text-sm font-normal tracking-normal">
+                {tCredits('unit', { count: Math.abs(wallet) * 100 })}
+              </span>
             </p>
             <p className="text-muted-foreground mt-1.5 text-xs tabular-nums">
-              {formatCredits(dollarsToCredits(Math.abs(wallet)))}{' '}
-              {tI18nComplete.raw('textbe379a30f1aa')}
-              {isNegative ? ' owed' : ''}
+              ≈ {formatUsd(Math.abs(wallet), locale)}
+              {isNegative ? ` ${tI18nComplete.raw('text4fef65587333')}` : ''}
             </p>
           </div>
           <PlanSummary state={state} />
@@ -124,11 +134,16 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
 
         {usage ? (
           <div className="divide-border grid grid-cols-3 divide-x border-t">
-            <SpendStat label={tI18nComplete.raw('textcedc516df056')} value={usage.compute_usd} />
-            <SpendStat label="LLM" value={usage.llm_usd} />
+            <SpendStat
+              label={tI18nComplete.raw('textcedc516df056')}
+              value={usage.compute_usd}
+              locale={locale}
+            />
+            <SpendStat label="LLM" value={usage.llm_usd} locale={locale} />
             <SpendStat
               label={tI18nComplete.raw('text97c8335e2880')}
               value={usage.total_usd}
+              locale={locale}
               strong
             />
           </div>
@@ -182,7 +197,7 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
  * no subscription) cannot be produced locally without Stripe.
  */
 export interface PlanStatus {
-  /** Plan name as the product names it: Free, Credits or Enterprise. */
+  /** Plan name as the product names it: Free or Credits. */
   name: string;
   /** Qualifier under the name: the credits plan's monthly amount, e.g. `$100/mo`. */
   sublabel: string | null;
@@ -192,6 +207,8 @@ export interface PlanStatus {
   isActive: boolean;
   /** Winding down at period end: the dot goes orange rather than green. */
   isWindingDown: boolean;
+  /** `→ $3,000/mo from Nov 14` — a scheduled credits-plan cut, or null. */
+  scheduled: string | null;
 }
 
 export interface PlanStatusCopy {
@@ -204,16 +221,10 @@ export interface PlanStatusCopy {
   active: string;
   noSubscription: string;
   status: (status: string) => string;
-  /** `Trial · 9 days left`. Optional so an older caller keeps compiling. */
-  trialDaysLeft?: (days: number) => string;
-  /** `Trial · ends today`. */
-  trialEndsToday?: string;
-  /** `Ends Nov 14` — a trial or a contract that does not renew. */
-  ends?: (date: string) => string;
-  /** `Annual contract` — an Enterprise contract. */
-  annualContract?: string;
   /** `SSO stays on until Nov 28` — the grace after Enterprise access ended. */
   graceUntil?: (date: string) => string;
+  /** `→ $3,000/mo from Nov 14` — the amount is a monthly price, in dollars. */
+  scheduledFrom?: (amount: string, date: string) => string;
 }
 
 const DEFAULT_PLAN_STATUS_COPY: PlanStatusCopy = {
@@ -225,12 +236,17 @@ const DEFAULT_PLAN_STATUS_COPY: PlanStatusCopy = {
   active: 'Active',
   noSubscription: 'No subscription',
   status: (status) => status.replace(/_/g, ' '),
-  trialDaysLeft: (days) => `Trial · ${days} ${days === 1 ? 'day' : 'days'} left`,
-  trialEndsToday: 'Trial · ends today',
-  ends: (date) => `Ends ${date}`,
-  annualContract: 'Annual contract',
   graceUntil: (date) => `SSO stays on until ${date}`,
+  scheduledFrom: (amount, date) => `→ ${amount}/mo from ${date}`,
 };
+
+/** `Nov 14` — a renewal-side date from an ISO timestamp, no year. */
+function formatShortIsoDate(iso: string | null | undefined, locale?: string): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+}
 
 /** `Nov 14, 2026` — a calendar date from an ISO timestamp. */
 function formatIsoDate(iso: string | null | undefined, locale?: string): string | null {
@@ -248,37 +264,15 @@ export function describePlanStatus(
   const sub = state.subscription;
   const text = { ...DEFAULT_PLAN_STATUS_COPY, ...copy };
 
-  // A trial and an Enterprise contract are not Stripe subscriptions: say what
-  // they are and until when, before the subscription lines below.
-  const trial = state.trial;
-  if (trial) {
-    const ends = formatIsoDate(trial.ends_at, text.locale);
-    return {
-      name: plan.label,
-      sublabel: trial.days_left > 0 ? text.trialDaysLeft!(trial.days_left) : text.trialEndsToday!,
-      detail: ends ? text.ends!(ends) : text.trialEndsToday!,
-      isActive: true,
-      isWindingDown: true,
-    };
-  }
-  if (plan.family === 'enterprise') {
-    const contract = state.contract;
-    const ends = formatIsoDate(contract?.ends_at, text.locale);
-    return {
-      name: plan.label,
-      // With no term on file the detail already says "Annual contract".
-      sublabel: contract && ends ? text.annualContract! : null,
-      detail: ends ? (contract?.renews ? text.renews(ends) : text.ends!(ends)) : text.annualContract!,
-      isActive: true,
-      isWindingDown: Boolean(contract && ends && !contract.renews),
-    };
-  }
-
   const periodEnd = sub?.current_period_end
     ? formatDate(sub.current_period_end, text.locale)
     : null;
   const isActive = sub?.status === 'active';
   const graceEnds = formatIsoDate(state.grace?.ends_at, text.locale);
+  // A cut waits for the renewal (an upgrade is instant), so the plan line
+  // names what it changes to and when. The amount is a price: dollars.
+  const scheduledUsd = sub?.scheduled_change?.target_tier.monthly_usd;
+  const scheduledOn = formatShortIsoDate(sub?.scheduled_change?.effective_date, text.locale);
 
   return {
     name: plan.label,
@@ -303,6 +297,10 @@ export function describePlanStatus(
               : text.noSubscription,
     isActive,
     isWindingDown: Boolean(sub?.cancel_at_period_end),
+    scheduled:
+      scheduledUsd != null && scheduledOn
+        ? text.scheduledFrom!(formatWholeUsd(scheduledUsd, text.locale), scheduledOn)
+        : null,
   };
 }
 
@@ -310,7 +308,26 @@ export function describePlanStatus(
  *  that says where that plan stands — renewal date when there is a live
  *  subscription, status otherwise. */
 function PlanSummary({ state }: { state: AccountState }) {
-  const { name, sublabel, detail, isActive, isWindingDown } = describePlanStatus(state);
+  const t = useTranslations('billing.plan');
+  const locale = useLocale();
+  const { name, sublabel, detail, isActive, isWindingDown, scheduled } = describePlanStatus(
+    state,
+    {
+      locale,
+      perMonth: (amount) => t('perMonth', { amount }),
+      cancels: (date) => t('cancels', { date }),
+      cancelsAtPeriodEnd: t('cancelsAtPeriodEnd'),
+      renews: (date) => t('renews', { date }),
+      active: t('active'),
+      noSubscription: t('noSubscription'),
+      graceUntil: (date) => t('graceUntil', { date }),
+      scheduledFrom: (amount, date) => t('scheduledFrom', { amount, date }),
+      status: (status) =>
+        t.has(`statuses.${status}`)
+          ? t(`statuses.${status}`)
+          : t('status', { status: status.replace(/_/g, ' ') }),
+    },
+  );
 
   return (
     // Right-aligned beside the balance; left-aligned once the row wraps under
@@ -333,11 +350,25 @@ function PlanSummary({ state }: { state: AccountState }) {
       </span>
       {sublabel ? <span className="text-muted-foreground text-xs">{sublabel}</span> : null}
       <span className="text-muted-foreground text-xs first-letter:capitalize">{detail}</span>
+      {scheduled ? (
+        <span className="text-muted-foreground text-xs tabular-nums">{scheduled}</span>
+      ) : null}
     </div>
   );
 }
 
-function SpendStat({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+function SpendStat({
+  label,
+  value,
+  locale,
+  strong,
+}: {
+  label: string;
+  value: number;
+  locale: string;
+  strong?: boolean;
+}) {
+  const tCredits = useTranslations('settings.credits');
   return (
     <div className="min-w-0 px-4 py-3">
       <p className="text-muted-foreground truncate text-xs">{label}</p>
@@ -350,7 +381,10 @@ function SpendStat({ label, value, strong }: { label: string; value: number; str
           strong ? 'text-foreground font-semibold' : 'text-foreground font-medium',
         )}
       >
-        {formatUsd(value)}
+        {formatUsdAsCredits(value, { locale })}
+        <span className="text-muted-foreground ml-1 text-xs font-normal">
+          {tCredits('unit', { count: Math.abs(value) * 100 })}
+        </span>
       </p>
     </div>
   );
@@ -391,18 +425,17 @@ function buildLimitRows(
 
 /**
  * `$99,891.85` — grouped, two decimals, minus before the symbol (`-$3.20`).
+ * Since credits became the unit (2026-10-16) this is the quiet `≈ $868.15`
+ * line under a balance, never the headline.
  *
  * It used to be `` `$${n.toFixed(2)}` ``, which printed `$99891.85`: no
  * thousands separator, so a five-figure balance had to be counted digit by
- * digit — and it sat directly above a credit line that `formatCredits` has
- * always grouped, so one card showed the same quantity two ways.
+ * digit.
  *
- * `style: 'currency'` rather than hand-assembling the string: it is the same
- * call `session-cost-format.ts` already makes, and it is what puts the minus
- * outside the dollar sign instead of producing `$-3.20`. `en-US` is hardcoded
- * to match `formatCredits`
- * (`packages/shared/src/utils/credit-formatter.ts`) — two separators
- * disagreeing inside one card is worse than either choice alone.
+ * `style: 'currency'` rather than hand-assembling the string: it is what puts
+ * the minus outside the dollar sign instead of producing `$-3.20`. Callers
+ * pass the same locale they pass `formatUsdAsCredits`, so the credits number
+ * and this line group their digits the same way.
  */
 export function formatUsd(amount: number | null | undefined, locale = 'en-US'): string {
   const n = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;

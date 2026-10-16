@@ -266,7 +266,6 @@ import {
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
-import { useComputerAwakeLine } from './composer/computer-awake-bar';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import { downloadBlob } from '@/lib/utils/download';
 import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
@@ -817,6 +816,9 @@ export function SessionChat({
   });
   const composerAgentName = composerAgent.selected;
   const noAccessibleAgents = composerAgent.disabled;
+  // The slash menu lists only the commands the composer's agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentCommands } = useRuntimeCommands({ agent: composerAgentName ?? undefined });
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -1178,12 +1180,6 @@ export function SessionChat({
     [modelUsage, local.model.list],
   );
   const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
-
-  // KRTX-1729: the computer stays on while this person is here, up to a cap.
-  // `presenceAwake` is the server's answer to this tab's presence lease. The
-  // clock runs only while there is a window, and the line keeps its identity
-  // until its text changes: the composer is memo-wrapped.
-  const computerAwake = useComputerAwakeLine(sessionState?.presenceAwake ?? null, effectiveBusy);
 
   // WHICH INBOX ROWS ARE ALREADY ON SCREEN — the queued list above the composer
   // (`projectQueueRows`, `QueuedPromptList`) lists only the rest.
@@ -3542,7 +3538,7 @@ export function SessionChat({
     questionPromptRef.current?.performAction();
   }, []);
 
-  const chatCommands = useMemo(() => commands || [], [commands]);
+  const chatCommands = useMemo(() => agentCommands || [], [agentCommands]);
 
   /**
    * Where this session's unsent draft is persisted.
@@ -4571,12 +4567,12 @@ export function SessionChat({
                 )}
               >
                 <Button
-                  variant="transparent"
+                  variant="outline"
                   size="icon-md"
                   aria-hidden={!showScrollButton}
                   tabIndex={showScrollButton ? undefined : -1}
                   className={cn(
-                    'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
+                    'hit-area-2 bg-background hover:bg-muted rounded-full',
                     'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
                     showScrollButton
                       ? 'duration-normal scale-100 opacity-100'
@@ -4691,7 +4687,6 @@ export function SessionChat({
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
                 servedModel={servedNotice}
-                computerAwake={computerAwake}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.

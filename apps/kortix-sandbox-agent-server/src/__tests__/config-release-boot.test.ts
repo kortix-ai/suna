@@ -656,3 +656,30 @@ describe('what the API decides, the session is told and the box runs', () => {
     expect(await readQuarantine(store)).toEqual({})
   })
 })
+
+// kortix.yaml v3 has no harness config folder: the compiled set is the only
+// input. A `harnesses/opencode` or `.kortix/opencode` left in the repository is
+// never served, and the boot is still proven on the image default.
+describe('kortix.yaml v3: no project OpenCode config dir', () => {
+  const V3 = '{"schema":3,"default_agent":"kortix","agent":{"kortix":{"mode":"primary"}}}'
+
+  test('a v3 release serves the image default, keeps the release as the config root, and is proven', async () => {
+    write(work, 'kortix.yaml', 'kortix_version: 3\n')
+    const built = buildRelease(work, commitAll(work, 'v3'), DIR, { governance: V3 })
+    serveRelease(api, built)
+    const run = await boot()
+    const releaseRoot = releaseDir(store, built.descriptor.release_id!)
+    expect(run.result).toMatchObject({ dir: defaultDir, source: 'release', releaseId: built.descriptor.release_id, proven: true })
+    expect(run.servedDirs).not.toContain(join(releaseRoot, DIR))
+    expect(await readBootReleaseRoot(store)).toBe(releaseRoot)
+    expect(await readBootConfigPointer(store)).toMatchObject({ release_id: built.descriptor.release_id, config_dir: null, proven: true })
+  })
+
+  test('config releases off: a v3 checkout serves the image default, with /workspace as the config root', async () => {
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = V3
+    api.respond(FEATURE_DISABLED)
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir: defaultDir, releasesEnabled: false, proven: true })
+    expect(await readBootReleaseRoot(store)).toBe(work)
+  })
+})

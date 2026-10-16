@@ -332,9 +332,8 @@ function SessionRowImpl({
           disabled={isDeleted}
           onCheckedChange={() => onToggleSelect(session.session_id)}
           aria-label={title}
-          // The stock checked state is `bg-kortix-blue`, the exact accent this
-          // redesign removes; everything else about the control is inherited.
-          className="data-[state=checked]:border-foreground data-[state=checked]:bg-foreground"
+          // This redesign removes the blue accent: the black variant.
+          variant="black"
         />
         {identity}
         {relativeLabel ? (

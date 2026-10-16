@@ -48,8 +48,6 @@ describe('toolKind', () => {
     ['triggers', 'automations'],
     ['trigger_pause', 'automations'],
     ['project_list', 'projects'],
-    // pi's codemode runs a script (its tool calls inside it): a command, like bash
-    ['codemode', 'bash'],
     // prefixed and dashed spellings
     ['oc-bash', 'bash'],
     ['oc_bash', 'bash'],

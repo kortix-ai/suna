@@ -1169,8 +1169,8 @@
     "contactSales": "联系销售",
     "upgradeTo": "升级到 {{plan}}",
     "switchTo": "切换到 {{plan}}",
-    "trialLabel_one": "{{plan}} 试用 · 剩余 {{count}} 天",
-    "trialLabel_other": "{{plan}} 试用 · 剩余 {{count}} 天"
+    "enterpriseDemoLabel": "{{plan}} · Enterprise 演示",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1204,6 +1204,7 @@
   },
   "genui": {
     "chartTapHint": "点按查看数值",
+    "checklistReady": "已完成 {{done}}/{{total}}",
     "map": "地图",
     "mapUnavailable": "地图不可用",
     "openImage": "打开图片",

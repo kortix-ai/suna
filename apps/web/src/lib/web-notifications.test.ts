@@ -586,6 +586,79 @@ describe('sendWebNotification — the server Push choice gates each kind', () =>
   });
 });
 
+/**
+ * A toast for the session on screen (it fired while the window had no focus)
+ * names nothing and opens nothing: the person is already there. A toast for
+ * another session names it and opens it.
+ */
+describe('sendWebNotification — the session name only for another session', () => {
+  const win = () => world.window as { location: { pathname: string } };
+  let originalPathname = '';
+  beforeEach(() => {
+    originalPathname = win().location.pathname;
+    visibility = { hidden: true, hasFocus: false };
+  });
+  afterEach(() => {
+    win().location.pathname = originalPathname;
+  });
+
+  const finished = () => toastCalls[0].opts as { options?: { entity?: { label: string }; actions?: Action[] } };
+  const failed = () => toastCalls[0].opts as { label?: string; onOpen?: () => void };
+  const errorPayload = () => ({
+    type: 'error' as const,
+    title: 'Session error',
+    body: 'Fix the login redirect: Insufficient credits.',
+    preview: 'Insufficient credits.',
+    entityLabel: 'Fix the login redirect',
+    tag: 'error:sess1',
+    sessionId: 'sess1',
+    projectId: 'proj1',
+    actionLabel: 'Open session',
+  });
+
+  test('a finished turn of the session on screen: no name, no open link', () => {
+    win().location.pathname = '/projects/proj1/sessions/sess1';
+    sendWebNotification({ ...completionPayload(), entityLabel: 'New session' });
+    expect(finished().options?.entity).toBeUndefined();
+    expect(finished().options?.actions ?? []).toEqual([]);
+  });
+
+  test('a finished turn of another session: its name and the open link', () => {
+    win().location.pathname = '/projects/proj1/sessions/sess2';
+    sendWebNotification({ ...completionPayload(), entityLabel: 'New session' });
+    expect(finished().options?.entity?.label).toBe('New session');
+    expect(finished().options?.actions?.[0]?.label).toBe('Open session');
+  });
+
+  test('a failed turn of the session on screen: no name, no open link', () => {
+    win().location.pathname = '/projects/proj1/sessions/sess1';
+    sendWebNotification(errorPayload());
+    expect(failed().label).toBeUndefined();
+    expect(failed().onOpen).toBeUndefined();
+  });
+
+  // The chat already shows a finished turn; a failed one is worth the toast
+  // even to the person watching it.
+  test('watching the session: a failed turn still toasts, a finished one does not', () => {
+    visibility = { hidden: false, hasFocus: true };
+    win().location.pathname = '/projects/proj1/sessions/sess1';
+    sendWebNotification({ ...completionPayload(), entityLabel: 'New session' });
+    expect(toastCalls).toEqual([]);
+    sendWebNotification(errorPayload());
+    expect(toastCalls).toHaveLength(1);
+    expect(toastCalls[0].kind).toBe('error');
+    expect(failed().label).toBeUndefined();
+    expect(failed().onOpen).toBeUndefined();
+  });
+
+  test('a failed turn of another session: its name and the open link', () => {
+    win().location.pathname = '/projects/proj1/sessions/sess2';
+    sendWebNotification(errorPayload());
+    expect(failed().label).toBe('Fix the login redirect');
+    expect(failed().onOpen).toBeDefined();
+  });
+});
+
 describe('sendWebNotification — the toast open button', () => {
   test('runs the payload onClick, like a click on the OS notification', () => {
     visibility = { hidden: true, hasFocus: false };
@@ -695,6 +768,72 @@ describe('notifyTaskComplete — completions reach tabs that cannot hear the str
     // The publishing tab still runs its own notification path.
     expect(toastCalls).toHaveLength(1);
     expect(useTurnAttentionStore.getState().unseen).toEqual(['sess1']);
+  });
+
+  test('a turn the page left running announces in this tab when it ends (KRTX-2520 follow-up)', () => {
+    // Same window, visible and focused, now on the project home: the session
+    // page and its stream are gone. The SDK's turn-end watch raised this.
+    setPreferences({});
+    visibility = { hidden: false, hasFocus: true };
+    broadcastHub.posted.length = 0;
+
+    notifyTaskComplete('away0', 'Long job', t, { watchedSinceMs: Date.now() });
+
+    expect(toastCalls).toHaveLength(1);
+    expect(useTurnAttentionStore.getState().unseen).toEqual(['away0']);
+    expect(broadcastHub.posted).toHaveLength(1);
+  });
+
+  test('a watch completion is skipped when another tab already relayed this end', () => {
+    // Window A still shows the session: its stream announced the end and the
+    // relay reached this tab. This tab left the session mid-turn, so its own
+    // watch reads the same end seconds later. One toast, one sound, not two.
+    setPreferences({});
+    visibility = { hidden: true, hasFocus: false };
+    const watchedSinceMs = Date.now() - 60_000;
+    notifyTaskCompleteFor({ sessionId: 'away1', sessionTitle: 'Long job', projectId: 'proj1' }, t);
+    toastCalls.length = 0;
+    soundCalls.length = 0;
+    broadcastHub.posted.length = 0;
+
+    notifyTaskComplete('away1', 'Long job', t, { watchedSinceMs });
+
+    expect(toastCalls).toHaveLength(0);
+    expect(soundCalls).toHaveLength(0);
+    expect(broadcastHub.posted).toHaveLength(0);
+  });
+
+  test('a watch completion opens its own project, not the project on screen', () => {
+    // The person left session away3 of projA mid-turn and now works in projB.
+    setPreferences({});
+    visibility = { hidden: true, hasFocus: false };
+    softNavigateCalls.length = 0;
+    broadcastHub.posted.length = 0;
+    const win = world.window as { location: { pathname: string } };
+    const before = win.location.pathname;
+    win.location.pathname = '/projects/projB';
+    try {
+      notifyTaskComplete('away3', 'Long job', t, { watchedSinceMs: Date.now(), projectId: 'projA' });
+      expect(broadcastHub.posted[0]).toMatchObject({ sessionId: 'away3', projectId: 'projA' });
+      openAction(toastCalls[0])();
+      expect(softNavigateCalls).toEqual([expect.stringContaining('/projects/projA/')]);
+    } finally {
+      win.location.pathname = before;
+    }
+  });
+
+  test('a completion shown BEFORE the watch started does not hide the watched turn', () => {
+    setPreferences({});
+    visibility = { hidden: true, hasFocus: false };
+    // An earlier turn of the session, announced before the page left it.
+    notifyTaskCompleteFor({ sessionId: 'away2', sessionTitle: 'Long job', projectId: 'proj1' }, t);
+    toastCalls.length = 0;
+    broadcastHub.posted.length = 0;
+
+    notifyTaskComplete('away2', 'Long job', t, { watchedSinceMs: Date.now() + 1 });
+
+    expect(toastCalls).toHaveLength(1);
+    expect(broadcastHub.posted).toHaveLength(1);
   });
 
   test('the local-only path does not publish — a relayed completion cannot loop', () => {

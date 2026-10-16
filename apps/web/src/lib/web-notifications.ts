@@ -54,7 +54,12 @@ import {
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
-import { broadcastTurnComplete, type TurnCompleteMsg } from '@/lib/turn-broadcast';
+import {
+  broadcastTurnComplete,
+  noteTurnCompleteShown,
+  turnCompleteShownSince,
+  type TurnCompleteMsg,
+} from '@/lib/turn-broadcast';
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
@@ -326,8 +331,10 @@ export function sendWebNotification(
   // channel that works on a default profile — permission untouched, browser
   // notifications disabled — which is exactly where the completion signal
   // used to die (the old permission gates returned before the toast ran).
+  // A failed turn toasts even to the person watching it: the toast is how an
+  // error is noticed. A finished turn does not: the chat already shows it.
+  if (!watching || payload.type === 'error') showInAppToast(payload);
   if (!watching) {
-    showInAppToast(payload);
     if (payload.type === 'completion' && payload.sessionId) {
       // The toast fades after 8 s; the favicon badge is what a returning
       // user still sees, so a finished turn registers for it here.
@@ -614,15 +621,19 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
   }
 
   const id = singleSessionToastId(sessionId);
+  // A toast for the session on screen (it fired while the window had no
+  // focus) names nothing and opens nothing: the person is already there.
+  // Read at render, so it follows where the person is now.
+  const elsewhere = () => !isViewingSession(sessionId);
   if (item.failed) {
     customToast(
       (dismiss) =>
         createElement(SessionFailedCard, {
-          label: item.label,
-          meta: payload.inAppTitle ?? payload.title,
-          preview: payload.preview,
+          title: payload.inAppTitle ?? payload.title,
+          label: elsewhere() ? item.label : undefined,
+          detail: payload.preview,
           openLabel,
-          onOpen: () => open(item),
+          onOpen: elsewhere() ? () => open(item) : undefined,
           onDismiss: dismiss,
         }),
       { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
@@ -636,10 +647,12 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
         message: payload.inAppTitle ?? payload.title,
         icon: toastIcon('success'),
         variant: 'success',
-        options: {
-          entity: { label: item.label },
-          actions: [{ label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) }],
-        },
+        options: elsewhere()
+          ? {
+              entity: { label: item.label },
+              actions: [{ label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) }],
+            }
+          : undefined,
         onDismiss: dismiss,
       }),
     { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
@@ -673,11 +686,19 @@ export function notifyTaskComplete(
   sessionId: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
+  /** Set when the SDK's turn-end watch found this end: the session page was
+   *  not mounted here. `watchedSinceMs` is when the watch started; `projectId`
+   *  is the session's project, which the page on screen may not be. */
+  handoff?: { watchedSinceMs?: number; projectId?: string },
 ) {
+  // Another tab's stream already announced this end and its relay reached
+  // this tab: the watch is the second announcer of the same end.
+  const since = handoff?.watchedSinceMs;
+  if (since !== undefined && turnCompleteShownSince(sessionId, since)) return;
   // Captured now, while the raising event proves which project is open — a
   // receiving tab may be on a page whose path holds no project id, and may
   // never have loaded the project's `notification_center` flag.
-  const projectId = currentProjectId();
+  const projectId = handoff?.projectId ?? currentProjectId();
   const msg = {
     sessionId,
     sessionTitle,
@@ -697,6 +718,7 @@ export function notifyTaskCompleteFor(
   { sessionId, sessionTitle, projectId, notificationCenter }: Omit<TurnCompleteMsg, 'at'>,
   tI18nComplete: UiTranslator,
 ) {
+  noteTurnCompleteShown(sessionId);
   const name = sessionDisplayName(sessionTitle, sessionId);
   const label = sessionTitle ? `"${name.slice(0, 60)}"` : name;
 
@@ -726,6 +748,8 @@ export function notifySessionError(
   errorTitle: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
+  /** The session's project, from the SDK's turn-end watch (see `notifyTaskComplete`). */
+  projectIdOverride?: string,
 ) {
   const name = sessionDisplayName(sessionTitle, sessionId);
   const label = sessionTitle ? `"${name.slice(0, 50)}"` : name;
@@ -741,7 +765,7 @@ export function notifySessionError(
     sessionId,
     actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
-    projectId: currentProjectId(),
+    projectId: projectIdOverride ?? currentProjectId(),
   });
 }
 
