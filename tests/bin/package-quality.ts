@@ -226,6 +226,7 @@ if (repoChecks) {
     run(['node', 'scripts/publish-npm-package.test.mjs']),
     run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
     run(['node', '--test', 'scripts/dev-local.test.mjs']),
+    run(['node', '--test', 'scripts/test-guard.test.mjs']),
   ]);
   await rejectFocusedTests();
 }

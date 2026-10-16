@@ -17,7 +17,7 @@
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
     "clean": "rm -rf .expo node_modules",
-    "test": "bun test --isolate"
+    "test": "node ../../scripts/test-guard.mjs \"bun test --isolate\""
   },
   "dependencies": {
     "@expensify/react-native-live-markdown": "0.1.339",

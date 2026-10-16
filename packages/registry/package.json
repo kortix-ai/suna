@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\""
   },
   "dependencies": {
     "@kortix/manifest-schema": "workspace:*"

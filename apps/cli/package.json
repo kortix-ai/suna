@@ -18,7 +18,7 @@
     "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
     "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
     "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*",
-    "test": "pnpm lint:sdk-boundary && bash scripts/test.sh",
+    "test": "node ../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bash scripts/test.sh\"",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs"
   },
   "dependencies": {

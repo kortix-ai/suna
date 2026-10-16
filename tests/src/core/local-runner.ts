@@ -210,6 +210,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const sdk: LocalTestLane = {
     name: 'sdk',
     command: ['pnpm', '--filter', '@kortix/sdk', 'test'],
+    // The root runner already applied its own Mac gate (refusesSuiteRun).
+    env: { KORTIX_FULL_TEST: '1' },
   };
   // Every PostgreSQL-backed test file, one process and one fresh database per
   // file (src/core/db-suites.ts). Needs local Supabase; the runner starts it

@@ -15,7 +15,7 @@
     "typecheck": "NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit",
     "lint": "eslint src",
     "lint:prune": "eslint src --prune-suppressions",
-    "test": "bash scripts/test.sh",
+    "test": "node ../../scripts/test-guard.mjs \"bash scripts/test.sh\"",
     "test:coverage": "COVERAGE=1 bash scripts/test.sh",
     "test:integration": "bash scripts/test.sh integration",
     "test:live": "bash scripts/test.sh live",
