@@ -243,12 +243,12 @@ jobs:
               sleep 30
             done
           }
-          find_run() { # <workflow> <since> [head sha]
+          find_run() { # <workflow> <since> [head sha]; $3 is optional, so read it as ${3:-} under set -u
             local id=""
             for _ in $(seq 1 30); do
               id="$(gh run list --workflow "$1" --event workflow_dispatch --limit 20 \
                 --json databaseId,headSha,createdAt \
-                --jq "[.[] | select(.createdAt >= \"$2\" and (\"$3\" == \"\" or .headSha == \"$3\"))] | sort_by(.createdAt) | .[0].databaseId // empty")"
+                --jq "[.[] | select(.createdAt >= \"$2\" and (\"${3:-}\" == \"\" or .headSha == \"${3:-}\"))] | sort_by(.createdAt) | .[0].databaseId // empty")"
               [ -n "$id" ] && { echo "$id"; return 0; }
               sleep 10
             done

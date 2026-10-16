@@ -1258,10 +1258,6 @@
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."
-        },
-        "workspace_volume": {
-          "name": "Volume do espaço de trabalho",
-          "description": "Mantém o /workspace de cada nova sessão em um volume próprio em vez do disco do sandbox. A Kortix ativa por projeto."
         }
       }
     },
@@ -20697,7 +20693,9 @@
     "providerInfoActionsApp": "O {name} executa cada ação que um agente pede.",
     "providerInfoSecretsManaged": "Os agentes nunca veem senha, token ou chave.",
     "providerInfoSecretsDirect": "O Kortix adiciona a chave a cada chamada. Os agentes nunca a veem.",
-    "providerInfoLabel": "Quem gerencia esta conexão"
+    "providerInfoLabel": "Quem gerencia esta conexão",
+    "addMcpAppTitle": "Conectar {name}",
+    "addMcpAppDescription": "O Kortix se conecta ao servidor MCP do próprio {name}. Escolha quem pode usá-lo e depois entre no {name}."
   },
   "connectMcp": {
     "title": "Conecte o Kortix via MCP",

@@ -2,7 +2,6 @@ import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
-import { sessionHasWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
@@ -129,11 +128,9 @@ export async function deleteSession(input: {
     });
 
   if (sandbox) {
-    // A /workspace volume is removed with the box, and also when there is none
-    // (a delete during or after a failed first create).
     const removable =
-      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider) &&
-      (!!sandbox.externalId || (await sessionHasWorkspaceVolume(sessionId)));
+      !!sandbox.externalId &&
+      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider);
     // One statement, merged in SQL, from the row the UPDATE locks:
     //   - strip every lifecycle fence (restart, wake, recovery, turn
     //     authority), so a detached restart or recovery that is still running
@@ -163,7 +160,7 @@ export async function deleteSession(input: {
       return null;
     });
 
-    if (removable) {
+    if (removable && sandbox.externalId) {
       if (archived) {
         // First attempt now; the maintenance lane retries a failure.
         void attemptArchivedBoxRemoval({
@@ -172,7 +169,7 @@ export async function deleteSession(input: {
           provider: sandbox.provider,
           metadata: archivePatch,
         });
-      } else if (sandbox.externalId) {
+      } else {
         // The intent could not be recorded. Keep the old best-effort remove.
         const provider = getProvider(sandbox.provider as SandboxProviderName);
         void provider.remove(sandbox.externalId).catch((err) => {

@@ -69,7 +69,6 @@ export const FeatureFlagMapSchema = z.object({
   drives: z.boolean(),
   session_log: z.boolean(),
   session_log_restore: z.boolean(),
-  workspace_volume: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 840,
+  "count": 841,
   "routes": [
     {
       "method": "GET",
@@ -1289,6 +1289,10 @@
     {
       "method": "POST",
       "path": "/v1/connectors/projects/:projectId/connectors/auth-discovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check"
     },
     {
       "method": "POST",
