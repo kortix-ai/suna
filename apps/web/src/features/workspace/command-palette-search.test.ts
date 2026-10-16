@@ -3,12 +3,41 @@ import { describe, expect, test } from 'bun:test';
 import { buildPaletteSearchText } from '@/features/workspace/command-palette';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import {
+  type SettingsPaletteParams,
   settingsPaletteGroups,
   settingsPaletteSearchText,
-  type SettingsPaletteParams,
 } from '@/features/workspace/settings-palette-items';
+import { railGroups } from '@/features/workspace/settings/rail';
 import { TERMINAL_THEMES } from '@/lib/interface-themes';
 import { getItemsForSurface, menuRegistry } from '@/lib/menu-registry';
+
+import enMessages from '../../../translations/en.json';
+import deMessages from '../../../translations/de.json';
+import esMessages from '../../../translations/es.json';
+import frMessages from '../../../translations/fr.json';
+import itMessages from '../../../translations/it.json';
+import jaMessages from '../../../translations/ja.json';
+import ptMessages from '../../../translations/pt.json';
+import srMessages from '../../../translations/sr.json';
+import zhMessages from '../../../translations/zh.json';
+
+/** The slice of a locale catalog the palette searches the Computer row from. */
+type RailCatalog = {
+  settings: { rail: { items: { computer: { description: string } } } };
+};
+
+/** Every locale catalog that carries the rail's computer description. */
+const catalogs: Record<string, RailCatalog> = {
+  en: enMessages,
+  de: deMessages,
+  es: esMessages,
+  fr: frMessages,
+  it: itMessages,
+  ja: jaMessages,
+  pt: ptMessages,
+  sr: srMessages,
+  zh: zhMessages,
+};
 
 /**
  * ============================================================================
@@ -345,7 +374,46 @@ describe('queries return the rows they name', () => {
   });
 
   test('"apps" reaches the Apps page, not Connectors', () => {
+    // `nav:proj-apps` is the page the word names. #9974 codified the
+    // Computer row answering "apps" through its description ("…the files,
+    // terminal, and apps on your computer"), but the query names the Apps
+    // page and an unrelated settings row answering it is the ambiguity
+    // KRTX-2475 flags. The description now reads "applications" — same
+    // sentence, the plural stops matching, and the singular "app" still
+    // reaches the row (kept by the next test).
     expect(hits('apps')).toEqual(['nav:proj-apps']);
+  });
+
+  // The Computer row USED to answer "apps" too: PR #9992 shipped a rail
+  // description that reads "the files, terminal, and apps on your computer",
+  // and the palette searches every word a row shows (KRTX-2475). The
+  // description now says "applications" — the sentence means the same thing,
+  // the plural stops matching, and the singular keeps working, because the
+  // pane IS about the desktop app.
+  test('"app" (singular) still reaches the Computer row through "applications"', () => {
+    expect(hits('app')).toContain('settings:computer');
+  });
+
+  test('every catalog that serves the Computer row keeps the word "apps" out of it', () => {
+    // The palette serves the rail copy through the `next-intl` translator in
+    // the ACTIVE locale (command-palette.tsx builds the settings rows from
+    // `useTranslations('settings.rail')`), so the "apps" pin above only holds
+    // where the served sentence holds. de/es/fr/pt translated the sentence
+    // with their own word for "apps" and answered the query there; every
+    // catalog now says "applications" (Anwendungen, aplicaciones,
+    // applications, aplicativos), and this pins the invariant across all of
+    // them, in every file that carries the key.
+    for (const [locale, messages] of Object.entries(catalogs)) {
+      const served = messages.settings.rail.items.computer.description;
+      expect(served.toLowerCase(), `${locale} catalog`).not.toContain('apps');
+    }
+    // And the served en value must stay the literal rail.ts serves: if the
+    // two copies drift, `hits()` above is testing a haystack the app never
+    // serves.
+    const literal = railGroups()
+      .flatMap((group) => group.items)
+      .find((item) => item.tab === 'computer')?.description;
+    expect(literal).toBe(enMessages.settings.rail.items.computer.description);
   });
 
   test('"agents" and "skills" reach their pages, not a restart command', () => {

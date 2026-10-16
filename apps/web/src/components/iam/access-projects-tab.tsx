@@ -789,11 +789,9 @@ function ProjectAccessPanel({
       } else {
         warningToast(tI18nComplete.raw('text370145ffb7ba'), {
           duration: 8_000,
-          button: (
-            <Button size="sm" onClick={() => copy(result.invite_url)}>
-              {tI18nComplete.raw('text9adff6870471')}
-            </Button>
-          ),
+          actions: [
+            { label: tI18nComplete.raw('text9adff6870471'), onClick: () => copy(result.invite_url) },
+          ],
         });
       }
       queryClient.invalidateQueries({ queryKey: qk.project.pendingInvites(projectId) });

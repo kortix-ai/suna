@@ -1,6 +1,7 @@
 
 import { projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { COMPILED_AGENT_CONFIG_ENV, fitsInEnvString } from '@kortix/api-contract/compiled-agent-config-env';
+import { and, eq } from 'drizzle-orm';
 
 
 
@@ -39,7 +40,7 @@ import { resolveSessionSecretGrant } from './secret-grant';
 import { AmbiguousSecretGrantError, intersectSecretGrants, listProjectSecretsSnapshotForUser } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { piPackageBundleForSession } from '../../pi-packages/bundle';
-import { manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession, selectSessionHarness } from './compile-agent-config';
+import { manifestPiCodemode, manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession, selectSessionHarness } from './compile-agent-config';
 
 
 
@@ -142,6 +143,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   compiledAgentConfig: string | null;
   manifestHarness: 'opencode' | 'pi' | null;
   manifestPackages: unknown[];
+  manifestCodemode: 'off' | 'on' | 'only' | null;
 }> {
   let agentGrantEnv: string[] | 'all' | undefined;
 
@@ -164,6 +166,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   // on pi across the session's whole life.
   let manifestHarness: 'opencode' | 'pi' | null = null;
   let manifestPackages: unknown[] = [];
+  let manifestCodemode: 'off' | 'on' | 'only' | null = null;
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
       projectId: input.projectId,
@@ -175,6 +178,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
     const onManifest = (raw: Record<string, unknown>) => {
       manifestHarness = manifestRuntime(raw);
       manifestPackages = manifestPiPackages(raw, input.agentName);
+      manifestCodemode = manifestPiCodemode(raw, input.agentName);
     };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
@@ -211,7 +215,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       sessionAgent: input.agentName,
     });
   }
-  return { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages };
+  return { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages, manifestCodemode };
 }
 
 /**
@@ -227,13 +231,21 @@ async function resolveSessionHarness(
   // different shapes (or not at all on the reload paths), and the flag must
   // apply on every provisioning path, not only create.
   const [projectRow] = await db
-    .select({ metadata: projects.metadata })
+    .select({ metadata: projects.metadata, sessionMetadata: projectSessions.metadata })
     .from(projects)
+    .leftJoin(
+      projectSessions,
+      and(eq(projectSessions.projectId, projects.projectId), eq(projectSessions.sessionId, input.sessionId)),
+    )
     .where(eq(projects.projectId, input.projectId))
     .limit(1);
   // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
   const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
-  const sessionLogRestore = resolveFeatureFlag(projectRow?.metadata, 'session_log_restore');
+  // A lost session continued on a new computer restores from its log whatever
+  // the project flag says (KRTX-2419, `recover-lost-session.ts`).
+  const sessionLogRestore =
+    resolveFeatureFlag(projectRow?.metadata, 'session_log_restore') ||
+    typeof (projectRow?.sessionMetadata as Record<string, unknown> | null)?.lostRecoveredAt === 'string';
   if (input.platformMetaAgent) {
     // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
     // whenever the LLM gateway is on — pi has no other model path, so a
@@ -323,7 +335,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // value to the sandbox. Every OTHER secret is project-wide (secret
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
-  const { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages } =
+  const { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages, manifestCodemode } =
     await resolveSessionAgentConfig(input);
   const { harness, sessionLogRestore } = await resolveSessionHarness(input, manifestHarness);
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
@@ -425,6 +437,15 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
           return null;
         })
       : null;
+  if (compiledAgentConfig && !fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, compiledAgentConfig)) {
+    // Sizes only. An image whose kortixd predates the gzip form boots without
+    // this config, so the line is how to find sessions that need a newer image.
+    logger.info('[session-env] compiled agent config exceeds one env string; sending it gzip-encoded', {
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      configBytes: Buffer.byteLength(compiledAgentConfig, 'utf8'),
+    });
+  }
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   const genuiEnv = await buildGenuiSandboxEnv(input.projectId);
@@ -470,6 +491,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       compiledAgentConfig,
       harness,
       piPackages: manifestPackages,
+      piCodemode: manifestCodemode,
       piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
       freshSession: input.freshSession,

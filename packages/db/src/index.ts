@@ -86,6 +86,7 @@ export {
   projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
+  projectSessionUserStates,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   providerTransitions,

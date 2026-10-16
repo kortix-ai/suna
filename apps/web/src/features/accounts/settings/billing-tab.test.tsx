@@ -33,6 +33,10 @@ mock.module('@/features/billing/use-change-credit-plan', () => ({
   useChangeCreditPlan: () => ({ change: () => {}, isPending: false }),
 }));
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => billingEnabled }));
+mock.module('@/features/billing/use-enterprise-sales', () => ({
+  useTalkToSales: () => ({ talk: () => {}, isPending: false }),
+  useEnterpriseDemo: () => ({ set: () => {}, isPending: false }),
+}));
 mock.module('@/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
   useBillingAccountResolved: () => true,
@@ -63,7 +67,7 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     );
   }
 
-  test('shows the Free plan with its monthly credits and the tier select on the most popular tier', () => {
+  test('shows the Free plan with its monthly credits and the tier select on the $200 tier', () => {
     billingEnabled = true;
     accountStateData = freeState();
     const html = renderPlan();
@@ -76,10 +80,10 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     expect(html).not.toContain('Available balance');
   });
 
-  test('the tier select marks the most popular tier and estimates agent hours', () => {
+  test('the tier select shows no popularity badge and estimates agent hours', () => {
     accountStateData = freeState();
     const html = renderPlan();
-    expect(html).toContain('Most popular');
+    expect(html).not.toContain('Most popular');
     expect(html).toContain('≈ 1,830 agent-computer hours a month.'); // agentHoursForCredits(20_000)
     expect(html).not.toContain('Starter');
   });
@@ -97,6 +101,27 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     const html = renderPlan();
     expect(html).not.toContain('Subscribe for');
     billingEnabled = true;
+  });
+
+  // Enterprise is a feature layer, read and switched where billing is managed.
+  test('the Enterprise row renders on the plan pane, with the demo switch for a manager', () => {
+    accountStateData = freeState({ enterprise: { state: 'off' } });
+    const html = renderPlan();
+    expect(html).toContain('Enterprise features');
+    expect(html).toContain('Turn on demo');
+    expect(html).toContain('Talk to sales');
+  });
+
+  test('a self-host Enterprise license hides the Enterprise row', () => {
+    accountStateData = freeState({ enterprise_license_available: true });
+    expect(renderPlan()).not.toContain('Enterprise features');
+  });
+
+  test('no trial line renders, even from a leftover trial block', () => {
+    accountStateData = freeState({
+      trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+    });
+    expect(renderPlan().toLowerCase()).not.toContain('trial');
   });
 
   test('wallet-first view keeps the balance and adds the plan changer under it', () => {

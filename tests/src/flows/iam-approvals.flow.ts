@@ -14,7 +14,7 @@
  */
 import { flow } from '../core/flow';
 import { deepStrictEqual } from 'node:assert/strict';
-import { grantEnterpriseTrial } from '../fixtures/enterprise-access';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 
 const UNKNOWN_UUID = '00000000-0000-4000-a000-000000000000';
 
@@ -448,55 +448,61 @@ flow(
   },
 );
 
-// ─── Enterprise access: operator-only, plan-based ───────────────────────────
-// The self-serve Enterprise preview is gone (2026-10-15). Enterprise features
-// come from the Enterprise plan: a contract, or an Enterprise trial a platform
-// admin grants. An account OWNER cannot grant either.
+// ─── Enterprise access: a feature layer ──────────────────────────────────────
+// Enterprise features come from a license contract or the Enterprise demo,
+// which an owner or admin turns on itself (2026-10-15, plans-and-access.md).
 
 flow(
   'IAM-32',
   {
     domain: 'iam',
-    routes: ['POST /v1/admin/api/accounts/:id/trial', 'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata'],
+    routes: [
+      'GET /v1/accounts/:accountId/iam/enterprise-demo',
+      'PUT /v1/accounts/:accountId/iam/enterprise-demo',
+      'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata',
+    ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-
-    await ctx.step('OWNER (has account.write, is not a platform admin) cannot grant Enterprise → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/admin/api/accounts/:id/trial',
-          { tier_key: 'enterprise', duration_days: 30, credit_grant: 0 },
-          { params: { id: team.id } },
-        );
-      r.status(403);
-    });
-
-    await ctx.step('before Enterprise, an SSO write is a clean 402 upsell', async () => {
-      const r = await ctx.client
+    const member = await team.addMember('member');
+    const sso = () =>
+      ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
           { name: 'Acme', primary_domain: 'acme-e2e-iam32.com', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );
-      r.status(402).body().has('$.code', 'entitlement_required').has('$.entitlement', 'sso');
+
+    await ctx.step('a fresh account reads Enterprise off, and an SSO write is a clean 402 upsell', async () => {
+      const g = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
+      g.status(200).body().has('$.enabled', false).has('$.state', 'off');
+      (await sso()).status(402).body().has('$.code', 'entitlement_required').has('$.entitlement', 'sso');
     });
 
-    if (ctx.env.capabilities.admin) {
-      await ctx.step('platform admin grants an Enterprise trial → the same SSO write is no longer a 402', async () => {
-        await grantEnterpriseTrial(ctx, team.id);
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
-            { name: 'Acme', primary_domain: 'acme-e2e-iam32.com', metadata_xml: '<x/>' },
-            { params: { accountId: team.id } },
-          );
-        if (r.statusCode === 402) throw new Error(`still gated after the Enterprise trial: ${r.text()}`);
-      });
-    }
+    await ctx.step('a member without billing.write cannot turn the Enterprise demo on → 403', async () => {
+      const r = await ctx.client
+        .as(member)
+        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
+      r.status(403);
+    });
+
+    await ctx.step('the OWNER turns the Enterprise demo on itself → state demo, and the same SSO write is no longer a 402', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
+      r.status(200).body().has('$.enabled', true).has('$.state', 'demo');
+      const after = await sso();
+      if (after.statusCode === 402) throw new Error(`still gated after the Enterprise demo: ${after.text()}`);
+    });
+
+    await ctx.step('turning it off gates SSO again', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: false }, { params: { accountId: team.id } });
+      r.status(200).body().has('$.enabled', false).has('$.state', 'off');
+      (await sso()).status(402);
+    });
   },
 );
 
@@ -526,9 +532,9 @@ flow(
     );
 
     await ctx.step(
-      'the platform admin grants an Enterprise trial, which unlocks the surface',
+      'the Enterprise demo is turned on, which unlocks the surface',
       async () => {
-        await grantEnterpriseTrial(ctx, team.id);
+        await enableEnterpriseDemo(ctx, team.id);
       },
     );
 

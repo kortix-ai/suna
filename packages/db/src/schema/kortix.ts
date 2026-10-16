@@ -686,7 +686,7 @@ export const configReleaseHeads = kortixSchema.table(
     /** The descriptor JSON's store key. */
     descriptorKey: text('descriptor_key').notNull(),
     /** The agent roster at `source_commit`. Session create only checks it; it re-points nothing. */
-    roster: jsonb('roster').$type<{ enabled: string[]; defaultAgent: string | null; readable: boolean; governed: boolean }>().notNull(),
+    roster: jsonb('roster').$type<{ enabled: string[]; defaultAgent: string | null; readable: boolean; governed: boolean; onlyDeclared?: boolean }>().notNull(),
     /** When the publish read the ref's tip. A slower publish of an older tip never overwrites a newer one. */
     resolvedAt: timestamp('resolved_at', { withTimezone: true }).notNull(),
     publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1512,6 +1512,34 @@ export const projectSessionGrants = kortixSchema.table(
       table.principalType,
       table.principalId,
     ),
+  ],
+);
+
+/**
+ * One person's own list state for one session: pinned to the top of their
+ * list, or archived out of it. Per person, so a shared session can be pinned
+ * by one member and archived by another. Neither write moves the session's
+ * `updated_at`. Archiving clears the pin and pinning clears the archive.
+ * `user_id` has no FK to auth.users: account erasure and member offboarding
+ * delete the rows (`projects/lib/session-user-state.ts`).
+ */
+export const projectSessionUserStates = kortixSchema.table(
+  'project_session_user_states',
+  {
+    sessionId: text('session_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.userId] }),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_session_user_states_session_fk',
+    }).onDelete('cascade'),
+    index('idx_project_session_user_states_user').on(table.userId),
   ],
 );
 
@@ -2391,7 +2419,8 @@ export const sessionTurns = kortixSchema.table(
     endReason: text('end_reason'),
     // Why a `failed` turn ended, as the daemon reported it: `{ name, message }`.
     // Null for every other ending and for a failure nobody named.
-    endError: jsonb('end_error').$type<{ name: string | null; message: string | null }>(),
+    // `by`: the person who asked for a requested stop (`UserStop`), when known.
+    endError: jsonb('end_error').$type<{ name: string | null; message: string | null; by?: string }>(),
     startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
@@ -4284,6 +4313,10 @@ export const creditAccounts = kortixSchema.table(
     // and RevenueCat webhooks. Null for free/enterprise and for rows not yet
     // backfilled (`planMonthlyUsd()` in tiers.ts falls back for those).
     planMonthlyUsd: numeric('plan_monthly_usd', { precision: 12, scale: 2 }),
+    // A lowered monthly amount waiting for the next renewal. `plan_monthly_usd`
+    // stays the amount in effect this period; the renewal applies this one and
+    // clears it. Null when no cut is scheduled.
+    scheduledMonthlyUsd: numeric('scheduled_monthly_usd', { precision: 12, scale: 2 }),
     // Retired by credits-only billing; no code reads them. Dropped by the
     // contract migration once every replica runs code that ignores them.
     billingModel: text('billing_model').default('legacy').notNull(),
@@ -4316,16 +4349,9 @@ export const creditAccounts = kortixSchema.table(
     // RETIRED: the operator-set concurrent-session cap. Sessions are uncapped
     // and no code reads or writes this column; drop it in its own migration.
     maxConcurrentSessions: integer('max_concurrent_sessions'),
-    // Admin-issued trial. The trial NEVER writes `tier` — the Stripe webhook
-    // (webhooks.ts syncSubscriptionState) overwrites `tier` on every
-    // subscription event, so a trial encoded there would be clobbered. Instead
-    // the trial overlays at resolution time (billing/services/effective-tier):
-    // while `trial_status='active'` AND `trial_ends_at` is in the future, the
-    // account resolves entitlements/limits/models as `trial_tier`. Expiry is
-    // lazy (the resolver checks the timestamp) so correctness never depends on
-    // a cron; the billing cron only flips `trial_status` to 'expired' for
-    // hygiene. Reuses the vestigial baseline columns `trial_status`,
-    // `trial_started_at`, `trial_ends_at` (previously written by nothing).
+    // RETIRED (2026-10-15): admin-issued trials are removed. The
+    // enterprise_feature_layer migration ended every active trial; no code
+    // reads these columns. Drop them in their own migration.
     trialTier: varchar('trial_tier', { length: 50 }),
     // Seat allowance while the trial is active. Enforced on member add/invite
     // for non-per_seat accounts (per-seat accounts meter seats via Stripe).

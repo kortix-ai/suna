@@ -100,8 +100,8 @@ export function ProjectOnboardingWizard({
    * project shell passes it (an empty callback): a fresh account's first
    * project reaches the shell unstamped (the create flow stamps only later
    * projects — KRTX-2092), and in the browser this control is the wizard's
-   * only exit. The wizard's `skip` itself opens the first chat, so the shell
-   * needs no navigation of its own — which is what the empty callback says.
+   * only exit. Skipping closes the wizard in place, like finishing, and leaves
+   * the first chat waiting in the sidebar.
    */
   onSkip?: () => void;
 }) {
@@ -294,9 +294,12 @@ export function ProjectOnboardingWizard({
   // `closeOnOutsideClick={false}` and Escape intercepted. Skipping was strictly
   // worse than not skipping. Stamping is what makes "Skip for now" mean what it
   // says.
+  //
+  // No `setLeaving` here: no host navigates on skip, so `leaving` kept the
+  // wizard on screen after the click until a reload (KRTX-2378). The
+  // optimistic stamp closes it in place, as finishing does in the shell.
   const skip = useCallback(() => {
     startFirstChat();
-    if (onSkip) setLeaving(true);
     return completeThenNotify(() => onboarding.complete(), onSkip);
   }, [startFirstChat, onboarding, onSkip]);
 

@@ -24,7 +24,7 @@ You are a **Kortix general knowledge worker** for kaab-demo.
 - two
 `;
 
-const YAML = `kortix_version: 2\ndefault_agent: kortix\nproject:\n  name: kaab-demo\n  description: A Kortix project.\nenv:\n  required: []\n`;
+const YAML = `kortix_version: 3\ndefault_agent: kortix\nproject:\n  name: kaab-demo\n  description: A Kortix project.\nenv:\n  required: []\nagents:\n  kortix:\n    mode: primary\n    prompt_file: kortix.md\n    skills: all\n`;
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2000" viewBox="0 0 1600 2000"><rect width="1600" height="2000" fill="#111"/></svg>\n`;
 

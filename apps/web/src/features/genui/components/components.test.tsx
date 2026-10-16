@@ -69,6 +69,12 @@ pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
     expect(html).not.toContain('data-fallback');
   });
 
+  test('an image with text is a figure: the picture beside the text, no caption chip', () => {
+    const html = render(`root = Image("https://example.com/photo.jpg", "A valid photo", null, "Plain light background, face forward.")`);
+    expect(html).toMatch(/<figure class="flex items-start gap-4">[\s\S]*A valid photo[\s\S]*<figcaption[^>]*>Plain light background, face forward.<\/figcaption>/);
+    expect(html).not.toContain('bg-terminal-surface');
+  });
+
   test('a table caption is the title above the table, outside its frame, and names the table', () => {
     const html = render(`root = Stack([t])\nt = Table(["Region", "Seats"], [["EU", 1]], "Seats by region")`);
     expect(html).toMatch(/<figure[^>]*><figcaption[^>]*>Seats by region<\/figcaption>[\s\S]*<table[^>]*aria-label="Seats by region"/);
@@ -99,6 +105,13 @@ y = CompareItem("Y", ["short"])`);
     expect(cell('a long note that should wrap inside the message column')).toContain('whitespace-normal');
     expect(cell('a long value that wraps')).toContain('whitespace-normal');
     expect(cell('1')).not.toContain('whitespace-normal');
+  });
+
+  test('a ranked item meta is its own line between the title and the reason, never a squeezed side column', () => {
+    const html = render(`root = RankedList([r1])\nr1 = RankedItem("Lenovo IdeaPad Slim 3", "A sensible alternative.", "Older review under 50k; price not checked today")`);
+    expect(html).toMatch(/>Lenovo IdeaPad Slim 3<\/span><span class="text-foreground text-sm font-medium tabular-nums">Older review under 50k; price not checked today<\/span><span class="text-muted-foreground[^"]*">A sensible alternative.<\/span>/);
+    expect(html).not.toContain('max-w-32');
+    expect(html).not.toContain('justify-between');
   });
 
   test('a 10-item ranked list keeps rank 10 on one line, right-aligned in a fixed rank lane; #1 leads', () => {
@@ -171,21 +184,21 @@ y = CompareItem("Y", ["$20", "$21"])`}
     expect(stat).toBe('');
   });
 
-  test('two or more images and nothing else render as one masonry gallery; a lone image stays a single figure', () => {
+  test('four or more images and nothing else render as one masonry gallery; a lone image stays a single figure', () => {
     const img = (id: string) => `${id} = Image("https://example.com/${id}.png", "Photo ${id}", "Caption ${id}")`;
     const ids = (n: number) => ['a', 'b', 'c', 'd', 'e', 'f', 'g'].slice(0, n);
-    const three = render(`root = Stack([${ids(3).join(', ')}])\n${ids(3).map(img).join('\n')}`);
-    // Two flex columns; before any image loads every tile counts as 4:3, so a, c go left and b right.
-    expect(three).toMatch(/<div class="flex items-stretch gap-1\.5"><div class="flex min-w-0 flex-1 flex-col gap-1\.5">/);
+    const four = render(`root = Stack([${ids(4).join(', ')}])\n${ids(4).map(img).join('\n')}`);
+    // Two flex columns; before any image loads every tile counts as 4:3, so a, c go left and b, d right.
+    expect(four).toMatch(/<div class="flex items-stretch gap-1\.5"><div class="flex min-w-0 flex-1 flex-col gap-1\.5">/);
     // Balanced: each tile grows by its own ratio (4:3 until it loads) and its image covers it, so no tile
     // is letterboxed and both columns end level.
-    expect(three).toMatch(/data-gallery-tile="a" class="[^"]*overflow-hidden[^"]*" style="aspect-ratio:1\.3333333333333333;flex-grow:0\.75"/);
-    expect(three).toContain('[&amp;_img]:object-cover');
+    expect(four).toMatch(/data-gallery-tile="a" class="[^"]*overflow-hidden[^"]*" style="aspect-ratio:1\.3333333333333333;flex-grow:0\.75"/);
+    expect(four).toContain('[&amp;_img]:object-cover');
     // Two images: one row, the same height, each as wide as its shape, so nothing is cropped.
     const pair = render(`root = Stack([a, b])\n${ids(2).map(img).join('\n')}`);
     expect(pair).toMatch(/^<div class="flex gap-1\.5"><div data-gallery-tile="a"[^>]*style="aspect-ratio:1\.3333333333333333;flex-grow:1\.3333333333333333;flex-basis:0"/);
     // The lead always shows its caption; a tile shows its own on hover or focus.
-    const caption = (text: string) => three.match(new RegExp(`<figcaption class="([^"]*)"[^>]*>${text}</figcaption>`))?.[1] ?? '';
+    const caption = (text: string) => four.match(new RegExp(`<figcaption class="([^"]*)"[^>]*>${text}</figcaption>`))?.[1] ?? '';
     expect(caption('Caption a')).not.toContain('opacity-0');
     expect(caption('Caption b')).toContain('opacity-0');
     expect(caption('Caption b')).toContain('group-hover/image:opacity-100');
@@ -202,7 +215,7 @@ y = CompareItem("Y", ["$20", "$21"])`}
 
 
 
-  test('two or more cards with layout grid render as masonry: photo, title link, rating with reviews, location, body, tags line', () => {
+  test('two or more cards with layout grid render as masonry: photo, title link, rating with reviews, location, badge pills, body', () => {
     const html = render(`root = Stack([list])
 list = Stack([a, b], "col", "grid")
 a = Card("The Taj Mahal Palace", "Iconic heritage luxury.", "Colaba, South Mumbai", "https://example.com/taj.jpg", "https://example.com/taj", [x, y], 4.7, 33899, "From 24,000 INR")
@@ -217,7 +230,9 @@ y = Badge("Heritage")`);
     expect(html).toMatch(/4\.7<span class="text-muted-foreground">\(33,899\)<\/span>/);
     expect(html).toContain('From 24,000 INR');
     expect(html).toContain('Colaba, South Mumbai');
-    expect(html).toContain('Luxury · Heritage');
+    expect(html).not.toContain('Luxury · Heritage');
+    expect(html).toMatch(/<span data-slot="badge" class="[^"]*ring-0[^"]*">Luxury<\/span>/);
+    expect(html).not.toContain('fill-kortix-yellow');
     // A card without a photo has no photo column and no rating row.
     expect(html.match(/aspect-ratio:/g)).toHaveLength(1);
   });
@@ -244,7 +259,123 @@ a = Card("Python", "General-purpose.", "Language", "https://example.com/python.p
 b = Card("Go", "Backend.", "Language", "https://example.com/go.png")`);
     expect(html).toContain('<ul class="divide-border flex flex-col divide-y">');
     expect(html.match(/<li data-card="[^"]+" class="flex gap-4 py-4/g)).toHaveLength(2);
-    expect(html.match(/bg-muted size-18 shrink-0/g)).toHaveLength(2);
+    expect(html.match(/bg-muted size-26 shrink-0/g)).toHaveLength(2);
+    // Before an image loads its shape is unknown and counts as a photo: it fills the box, no inset.
+    expect(html).toContain('[&amp;_img]:object-cover');
+    expect(html).not.toContain('p-1.5 [&amp;_img]:object-contain');
     expect(html).not.toContain('aspect-ratio:');
+  });
+
+  test('a card in a list shows its badges top right as borderless secondary ui Badges; a good pick leads with a gold star', () => {
+    const list = render(`root = Stack([a, b], "col", "list")
+a = Card("Option A", "No changes.", "60 to 90 min", "https://example.com/a.jpg", "https://example.com/a", [pick, quiet], null, null, "about 40 USD")
+pick = Badge("Best for a first flight", "good")
+quiet = Badge("Quiet")
+b = Card("Option B", "Cheaper.", "70 to 100 min")`);
+    // The title row: the title on the left, the badges on the right, before the price line.
+    expect(list).toMatch(/<div class="flex items-baseline justify-between gap-3">[\s\S]*?Option A[\s\S]*?<div class="flex shrink-0 flex-wrap justify-end gap-1\.5"><span data-slot="badge" class="[^"]*"><svg[^]*?<\/svg>Best for a first flight<\/span><span data-slot="badge" class="[^"]*">Quiet<\/span><\/div><\/div>[\s\S]*?about 40 USD/);
+    expect(list).not.toContain('Best for a first flight · Quiet');
+    expect(list).not.toContain('pt-0.5 [&amp;&gt;span]:bg-muted');
+    // Secondary, normal case, sans, own padding, no ring; no tone tint, no square dot.
+    const badges = [...list.matchAll(/<span data-slot="badge" class="([^"]*)"/g)].map((m) => m[1]!.split(' '));
+    expect(badges).toHaveLength(2);
+    for (const cls of badges) {
+      expect(cls).toEqual(expect.arrayContaining(['bg-secondary/80', 'normal-case', 'font-sans', 'ring-0', 'px-2', 'py-0.5']));
+      expect(cls).not.toContain('uppercase');
+      expect(cls).not.toContain('font-mono');
+    }
+    expect(list).not.toContain('bg-kortix-green');
+    // Only the good pick has the star, filled gold.
+    expect(list.match(/fill-kortix-yellow/g)).toHaveLength(1);
+    // The star is the text size and level with the letters.
+    for (const cls of badges) expect(cls).toEqual(expect.arrayContaining(['[&amp;&gt;svg]:!size-[1em]', '[&amp;&gt;svg]:translate-y-[0.04em]']));
+    const grid = render(`root = Stack([a, b], "col", "grid")
+a = Card("Option A", "No changes.", "60 to 90 min", null, null, [pick, quiet])
+pick = Badge("Best for a first flight", "good")
+quiet = Badge("Quiet")
+b = Card("Option B", "Cheaper.")`);
+    expect(grid).not.toContain('Best for a first flight · Quiet');
+    expect(grid).toMatch(/<span data-slot="badge" class="[^"]*bg-secondary\/80[^"]*"><svg[^]*?<\/svg>Best for a first flight<\/span>/);
+  });
+
+  test('three images and nothing else render as one row, each at its own shape', () => {
+    const img = (id: string) => `${id} = Image("https://example.com/${id}.png", "Photo ${id}")`;
+    const html = render(`root = Stack([a, b, c])\n${['a', 'b', 'c'].map(img).join('\n')}`);
+    expect(html).toMatch(/^<div class="flex gap-1\.5">/);
+    expect(html.match(/flex-basis:0/g)).toHaveLength(3);
+    expect(html).not.toContain('flex items-stretch');
+  });
+
+  test('Steps: one row per step on a rail; a photo row has its image, a row without one shows its number, meta and text lines show', () => {
+    const html = render(`root = Steps([s1, s2, s3])
+s1 = Step("Home → Central Station", "Take a taxi or the bus.", "https://example.com/home.jpg", "about 20 min")
+s2 = Step("Central Station → Airport One", "Take the airport train.\\nTrains leave every 15 minutes.")
+s3 = Step("Airport One", "Check in and board.")`);
+    expect(html).not.toContain('data-fallback');
+    expect(html.match(/<li class="flex gap-4">/g)).toHaveLength(3);
+    // One photo box; the default policy shows the click-to-load button for a remote host until the viewer asks.
+    expect(html.match(/bg-muted size-26 shrink-0 overflow-hidden rounded-lg/g)).toHaveLength(1);
+    expect(html).toContain('Load image from example.com');
+    // Rows 2 and 3 have no photo: in a list with photos, their number fills a photo-sized tile, so every row
+    // has the same 80px thumbnail. The <ol> already reads "item 2 of 3": the tile is hidden from screen readers.
+    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*size-26[^"]*rounded-lg font-mono text-sm tabular-nums">2<\/span>/);
+    expect(html).toMatch(/size-26[^"]*rounded-lg font-mono text-sm tabular-nums">3<\/span>/);
+    expect(html).not.toContain('rounded-full font-mono');
+    expect(html.match(/flex shrink-0 flex-col items-center w-26/g)).toHaveLength(3);
+    // A hairline joins each row to the next; the last row has none. min-h-5 keeps it visible on a row whose
+    // text is shorter than its photo.
+    expect(html.match(/bg-border my-1\.5 min-h-5 w-px flex-1/g)).toHaveLength(2);
+    expect(html).toContain('about 20 min');
+    expect(html).toContain('whitespace-pre-line">Take the airport train.\nTrains leave every 15 minutes.</p>');
+  });
+
+  test('Steps while streaming: a half-written step renders its text so far and no image; an empty Steps renders nothing to read', () => {
+    const steps = (props: Record<string, unknown>, partial: boolean) => ({ id: 's1', type: 'Step', props, partial });
+    const Steps = webGenuiComponents.Steps!;
+    const block = (children: unknown[]) =>
+      renderToStaticMarkup(
+        <Steps node={{ id: 'root', type: 'Steps', props: { steps: children }, partial: false }} props={{ steps: children }} renderChild={() => null} streaming />,
+      );
+    const half = block([steps({ title: 'Home → Cen', image: 'https://exa' }, true)]);
+    expect(half).toContain('Home → Cen');
+    expect(half).not.toContain('Load image');
+    expect(half).toMatch(/tabular-nums">1<\/span>/);
+    expect(block([steps({}, true)])).not.toContain('undefined');
+    expect(block([])).toBe('<ol class="flex flex-col"></ol>');
+  });
+
+  test('Checklist shows 0/3 ready; ticking an item shows 1/3 ready and strikes it; unticking goes back', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <GenuiBlock
+          code={`root = Checklist("Your travel checklist", ["Valid passport", "Visa or entry permit", "Hotel address"])`}
+          streaming={false}
+          components={webGenuiComponents}
+          renderMarkdown={md}
+          renderPending={GenuiPending}
+        />,
+      );
+    });
+    const text = () => JSON.stringify(renderer.toJSON());
+    expect(text()).toContain('Your travel checklist');
+    expect(text()).toContain('0/3 ready');
+    // The bar repeats the count, so screen readers skip it. An open item is ink, not muted.
+    expect(renderer.root.findAll((node) => node.props['data-slot'] === 'progress' && node.props['aria-hidden'] === true).length).toBeGreaterThan(0);
+    expect(renderer.root.findAll((node) => node.type === 'span' && node.props.children === 'Valid passport')[0]!.props.className).toBe('text-foreground');
+    const boxes = renderer.root.findAll((node) => node.type === 'button' && node.props.role === 'checkbox');
+    expect(boxes).toHaveLength(3);
+    await act(async () => boxes[1]!.props.onClick({ preventDefault() {}, defaultPrevented: false }));
+    expect(text()).toContain('1/3 ready');
+    expect(text()).toContain('line-through');
+    await act(async () => boxes[1]!.props.onClick({ preventDefault() {}, defaultPrevented: false }));
+    expect(text()).toContain('0/3 ready');
+    expect(text()).not.toContain('line-through');
+    await act(async () => renderer.unmount());
+  });
+
+  test('a half-written Checklist waits invisibly; Steps and Checklist never fall back to markdown', () => {
+    expect(renderToStaticMarkup(<>{GenuiPending({ id: 'c', type: 'Checklist', props: {}, partial: true })}</>)).toBe('');
+    expect(render(`root = Checklist("Pack", ["Passport"])`)).not.toContain('data-fallback');
   });
 });

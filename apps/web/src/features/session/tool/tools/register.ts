@@ -5,6 +5,7 @@ import './agent-stop-tool';
 import './agent-task-update-tool';
 import './apply-patch-tool';
 import './bash-tool';
+import './codemode-tool';
 import './connector-get-tool';
 import './connector-list-tool';
 import './connector-setup-tool';

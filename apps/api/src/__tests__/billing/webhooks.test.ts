@@ -434,6 +434,32 @@ describe('subscription changes', () => {
     });
   });
 
+  test('a cut scheduled for the renewal keeps the amount in effect this period', async () => {
+    // setPlan already lowered the Stripe quantity to $50; this period was paid at $500.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: 'sub_test_123', tier: 'credits', planMonthlyUsd: '500', scheduledMonthlyUsd: '50' });
+    const sub = createMockStripeSubscription({ id: 'sub_test_123' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls[0].data).not.toHaveProperty('planMonthlyUsd');
+    expect(updateCreditAccountCalls[0].data).not.toHaveProperty('scheduledMonthlyUsd');
+  });
+
+  test('any other amount change replaces a scheduled cut', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: 'sub_test_123', tier: 'credits', planMonthlyUsd: '500', scheduledMonthlyUsd: '100' });
+    const sub = createMockStripeSubscription({ id: 'sub_test_123' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls[0].data).toMatchObject({ planMonthlyUsd: '50', scheduledMonthlyUsd: null, scheduledTierChangeDate: null });
+  });
+
   test('sets paymentStatus=cancelling when cancel_at_period_end', async () => {
     const sub = createMockStripeSubscription({ cancel_at_period_end: true });
     const event = createMockStripeEvent('customer.subscription.updated', sub);
@@ -495,15 +521,16 @@ describe('invoice.paid (renewal)', () => {
   });
 
   test('skips already-processed renewals (idempotency)', async () => {
-    const periodStart = Math.floor(Date.now() / 1000);
-    const invoice = createMockStripeInvoice({ period_start: periodStart });
+    // A renewal is keyed on the period it opens: the invoice's period_end.
+    const opens = Math.floor(Date.now() / 1000);
+    const invoice = createMockStripeInvoice({ period_start: opens - 86400 * 30, period_end: opens });
     const event = createMockStripeEvent('invoice.paid', invoice);
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
 
     mockRegistry.getCreditAccount = async () =>
-      // A redelivered invoice carries the SAME period start.
+      // A redelivered invoice opens the SAME period.
       createMockCreditAccount({
-        lastRenewalPeriodStart: periodStart,
+        lastRenewalPeriodStart: opens,
       });
 
     await processStripeWebhook(JSON.stringify(event), 'sig');

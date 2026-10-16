@@ -355,7 +355,7 @@ function RevealKeyDialog({
               id="gateway-key-stored"
               checked={stored}
               onCheckedChange={(v) => setStored(v === true)}
-              className="data-[state=checked]:border-foreground data-[state=checked]:bg-foreground"
+              variant="black"
             />
             <label htmlFor="gateway-key-stored" className="text-foreground cursor-pointer text-xs">
               {t('storedConfirm')}

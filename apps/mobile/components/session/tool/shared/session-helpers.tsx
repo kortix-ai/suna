@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { View } from 'react-native';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
@@ -186,7 +187,7 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
               </Text>
               {msg.cost > 0 ? (
                 <Text variant="muted" style={[TURN_TYPE.xs, { color: palette.muted50 }]}>
-                  ${msg.cost.toFixed(4)}
+                  {formatUsdAsCredits(msg.cost)} credits
                 </Text>
               ) : null}
             </View>

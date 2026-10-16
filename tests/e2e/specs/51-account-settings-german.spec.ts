@@ -23,6 +23,11 @@ import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
  * German: the bulk remove button and its plural, and the uploaded, replace and
  * remove controls.
  *
+ * KRTX-2399, KRTX-2400: the audit log's quick filters were keyed by their
+ * translated labels, so outside English a click applied nothing, and a secret
+ * write's audit title stayed English. In German the title reads German and the
+ * Agenten filter applies.
+ *
  * Local only: the Enterprise flag and the logo are written into the database.
  */
 
@@ -111,6 +116,33 @@ test(
         for (const english of ['Uploaded', 'Replace', 'Upload']) {
           await expect(page.getByText(english, { exact: true })).toHaveCount(0);
         }
+      });
+
+      await test.step('audit: a secret write reads German, and a translated quick filter applies', async () => {
+        await api(
+          session.access_token,
+          'PUT',
+          `/projects/${projectId}/secrets/E2E_AUDIT_KEY/personal`,
+          { value: 'synthetic' },
+          200,
+        );
+        const auditReads: string[] = [];
+        page.on('request', (request) => {
+          const url = new URL(request.url());
+          if (url.pathname.endsWith(`/accounts/${accountId}/audit`)) auditReads.push(url.search);
+        });
+        await page.goto(`/projects/${projectId}?accountId=${accountId}&accountTab=audit`, {
+          waitUntil: 'domcontentloaded',
+        });
+        await dismissOnboarding(page);
+        await expect(page.getByText('Persönliches Secret gesetzt').first()).toBeVisible({ timeout: 60_000 });
+        const agents = page.getByRole('tab', { name: 'Agenten', exact: true });
+        await agents.click();
+        await expect(agents).toHaveAttribute('aria-selected', 'true');
+        await expect.poll(() => auditReads.some((search) => search.includes('actor_type=agent'))).toBe(true);
+        const all = page.getByRole('tab', { name: 'Alle Aktivitäten', exact: true });
+        await all.click();
+        await expect(all).toHaveAttribute('aria-selected', 'true');
       });
     } finally {
       if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});

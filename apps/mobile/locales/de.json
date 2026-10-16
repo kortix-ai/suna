@@ -1169,8 +1169,8 @@
     "contactSales": "Vertrieb kontaktieren",
     "upgradeTo": "Upgrade auf {{plan}}",
     "switchTo": "Zu {{plan}} wechseln",
-    "trialLabel_one": "{{plan}}-Testphase · noch {{count}} Tag",
-    "trialLabel_other": "{{plan}}-Testphase · noch {{count}} Tage"
+    "enterpriseDemoLabel": "{{plan}} · Enterprise-Demo",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1182,10 +1182,29 @@
     "showMoreSubsessions_one": "{{count}} weitere anzeigen",
     "showMoreSubsessions_other": "{{count}} weitere anzeigen",
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
-    "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
+    "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen",
+    "pin": "Anheften",
+    "unpin": "Lösen",
+    "archive": "Archivieren",
+    "unarchive": "Archivierung aufheben",
+    "pinDone": "Sitzung angeheftet",
+    "unpinDone": "Sitzung gelöst",
+    "archiveDone": "Sitzung archiviert",
+    "unarchiveDone": "Archivierung aufgehoben",
+    "pinFailed": "Sitzung konnte nicht angeheftet werden. Versuch's nochmal.",
+    "unpinFailed": "Sitzung konnte nicht gelöst werden. Versuch's nochmal.",
+    "archiveFailed": "Sitzung konnte nicht archiviert werden. Versuch's nochmal.",
+    "unarchiveFailed": "Archivierung konnte nicht aufgehoben werden. Versuch's nochmal.",
+    "undo": "Rückgängig",
+    "pinnedSection": "Angeheftet",
+    "archivedView": "Archiviert",
+    "archivedEmpty": "Sitzungen, die du archivierst, erscheinen hier.",
+    "stoppedBy": "Gestoppt von {{name}}",
+    "stopNotAllowed": "Nur das Mitglied, das diesen Lauf gestartet hat, der Inhaber der Sitzung oder ein Manager des Projekts kann ihn stoppen."
   },
   "genui": {
     "chartTapHint": "Tippen, um einen Wert zu lesen",
+    "checklistReady": "{{done}}/{{total}} erledigt",
     "map": "Karte",
     "mapUnavailable": "Karte nicht verfügbar",
     "openImage": "Bild öffnen",

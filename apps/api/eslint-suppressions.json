@@ -164,7 +164,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 24
+      "count": 22
     }
   },
   "src/admin/queries.ts": {
@@ -2832,11 +2832,6 @@
       "count": 1
     }
   },
-  "src/sandbox-proxy/index.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/sandbox-proxy/pre-prompt-env-sync.ts": {
     "kortix-api/projects-surface": {
       "count": 6
@@ -2860,6 +2855,11 @@
   },
   "src/sandbox-proxy/prompt-wire-id-repair.ts": {
     "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
+  "src/sandbox-proxy/provider.ts": {
+    "no-console": {
       "count": 1
     }
   },

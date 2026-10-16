@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import NotFoundBoundary, { generateMetadata } from './not-found';
+import { generateMetadata } from './not-found';
 
 describe('the 404 page sets the document title', () => {
   test('the not-found boundary provides the localized 404 heading as its title', async () => {

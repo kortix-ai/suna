@@ -1,14 +1,16 @@
+import { createHostedCheckout } from './hosted-checkout';
 /**
- * Enterprise contracts: an annual license plus a prepaid credit pool
- * (.agents/skills/billing/references/plans-and-access.md, "Enterprise contracts").
+ * Enterprise license contracts: an annual license fee that turns the
+ * Enterprise features on (`enterprise_entitled`). No credits come with it
+ * (.agents/skills/billing/references/plans-and-access.md, "License contracts").
  *
  *   offer ──accept (Stripe Checkout)──┐
  *   invoice (Stripe sends it) ────────┼─► active ──end / Stripe deleted / term over──► ended
  *   manual (paid outside Stripe) ─────┘
  *
- * The contract is the only writer of `tier='enterprise'` besides an operator's
- * plan assignment, and it writes through `applyAdminOverride`: a contract is
- * operator intent, even when Stripe delivers the payment that activates it.
+ * The contract is the only writer of `enterprise_entitled`, through
+ * `applyAdminOverride`: a license is operator intent, even when Stripe delivers
+ * the payment that activates it. The billing plan is never touched.
  */
 import { logger } from '../../lib/logger';
 import { enterpriseContracts } from '@kortix/db';
@@ -21,22 +23,16 @@ import { clearAccountLimitCache } from '../../shared/account-limits';
 import { db } from '../../shared/db';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount } from '../repositories/credit-accounts';
-import { wallet } from '../wallet';
 import { applyAdminOverride } from './account-write-owner';
-import { isDeadSubscriptionStatus } from './billing-state';
 import { mergeOverridePatch, toStoredOverrides } from './entitlement-overrides';
 import { invalidateCachedAccountTier } from './entitlements';
 import { ACCESS_GRACE_DAYS } from './resolve-billing';
 import { getOrCreateStripeCustomer } from './subscriptions';
-import { planForSubscription } from './tiers';
-import { markTrialConverted } from './trial-admin';
 
 export type ContractRow = typeof enterpriseContracts.$inferSelect;
 export type ContractCollection = 'checkout' | 'invoice' | 'manual';
 export type ContractEndReason = 'operator' | 'term_over' | 'stripe_subscription_deleted';
 
-/** Ledger type of the annual credit pool. */
-export const CONTRACT_GRANT_LEDGER_TYPE = 'contract_grant';
 /** Largest license or credit amount one contract may carry, USD. */
 export const MAX_CONTRACT_USD = 10_000_000;
 export const MAX_CONTRACT_TERM_MONTHS = 60;
@@ -103,7 +99,8 @@ async function getContract(id: string): Promise<ContractRow> {
 export type CreateContractInput = {
   accountId: string;
   licenseUsd: number;
-  creditsUsd: number;
+  /** Ignored: a license carries no credits (stored as 0). */
+  creditsUsd?: number;
   termMonths?: number;
   collection: ContractCollection;
   note?: string | null;
@@ -111,10 +108,9 @@ export type CreateContractInput = {
 };
 
 export function validateContractInput(input: Omit<CreateContractInput, 'accountId' | 'actorUserId'>): string | null {
-  for (const [name, value] of [['license_usd', input.licenseUsd], ['credits_usd', input.creditsUsd]] as const) {
-    if (!Number.isFinite(value) || value < 0 || value > MAX_CONTRACT_USD || Math.round(value * 100) !== value * 100) {
-      return `${name} must be a USD amount in [0, ${MAX_CONTRACT_USD}] with at most 2 decimals`;
-    }
+  const value = input.licenseUsd;
+  if (!Number.isFinite(value) || value < 0 || value > MAX_CONTRACT_USD || Math.round(value * 100) !== value * 100) {
+    return `license_usd must be a USD amount in [0, ${MAX_CONTRACT_USD}] with at most 2 decimals`;
   }
   const term = input.termMonths ?? 12;
   if (!Number.isInteger(term) || term < 1 || term > MAX_CONTRACT_TERM_MONTHS) {
@@ -127,8 +123,8 @@ export function validateContractInput(input: Omit<CreateContractInput, 'accountI
   if (input.collection !== 'manual' && term > 12) {
     return 'term_months is at most 12 for a contract collected through Stripe';
   }
-  if (input.collection !== 'manual' && input.licenseUsd + input.creditsUsd <= 0) {
-    return 'a contract collected through Stripe needs a license or credit amount above 0';
+  if (input.collection !== 'manual' && input.licenseUsd <= 0) {
+    return 'a license collected through Stripe needs a license amount above 0';
   }
   return null;
 }
@@ -173,10 +169,9 @@ async function contractLineItems(
 ): Promise<Array<{ product: string; amountCents: number; intervalCount: number }>> {
   const items: Array<{ product: string; amountCents: number; intervalCount: number }> = [];
   const intervalCount = contract.termMonths;
-  for (const kind of ['license', 'credits'] as const) {
-    const usd = Number(kind === 'license' ? contract.licenseUsd : contract.creditsUsd);
-    if (usd > 0) items.push({ product: await contractProductId(kind), amountCents: Math.round(usd * 100), intervalCount });
-  }
+  // A license carries no credits: credits are bought on the Credits plan.
+  const usd = Number(contract.licenseUsd);
+  if (usd > 0) items.push({ product: await contractProductId('license'), amountCents: Math.round(usd * 100), intervalCount });
   return items;
 }
 
@@ -224,7 +219,7 @@ export async function createContract(input: CreateContractInput): Promise<Contra
       accountId: input.accountId,
       status: 'offered',
       licenseUsd: input.licenseUsd.toFixed(2),
-      creditsUsd: input.creditsUsd.toFixed(2),
+      creditsUsd: '0.00',
       termMonths: input.termMonths ?? 12,
       collection: input.collection,
       note: input.note?.slice(0, 2000) ?? null,
@@ -296,7 +291,7 @@ export async function createOfferCheckout(params: {
     params.email || (await billingEmailFor(params.accountId)),
   );
   const metadata = contractMetadata(offer);
-  const session = await getStripe().checkout.sessions.create({
+  const session = await createHostedCheckout(getStripe(), {
     customer,
     mode: 'subscription',
     line_items: (await contractLineItems(offer)).map((item) => ({
@@ -335,11 +330,9 @@ export async function withdrawOffer(accountId: string, actorUserId: string | nul
 }
 
 /**
- * Activate a contract: the account moves to Enterprise, any trial converts,
- * and a self-serve credits subscription stops renewing (Enterprise replaces
- * it). A `manual` contract's pool is granted here; a Stripe contract's pool is
- * granted when its invoice is paid. Idempotent: an already-active contract is
- * returned as is.
+ * Activate a license: the account becomes Licensed (`enterprise_entitled`).
+ * Its billing plan and any credits subscription stay as they are. Idempotent:
+ * an already-active contract is returned as is.
  */
 export async function activateContract(
   contractId: string,
@@ -371,57 +364,21 @@ export async function activateContract(
     .returning();
   if (!active) return getContract(contractId);
 
+  // Licensed: the Enterprise features. The billing plan is not touched.
   await applyAdminOverride(
     contract.accountId,
-    { tier: 'enterprise', planMonthlyUsd: null },
+    { enterpriseEntitled: true },
     { userId: term.actorUserId ?? null, action: 'enterprise.contract.activate' },
   );
-  await markTrialConverted(contract.accountId, 'enterprise');
-  await stopCreditsSubscription(contract.accountId);
-  if (active.collection === 'manual') await grantContractPool(active, term.startsAt, term.endsAt);
   invalidateCaches(contract.accountId);
   logger.info(`[enterprise-contracts] contract ${contractId} active on ${contract.accountId} (${active.collection})`);
   return active;
 }
 
-/** A self-serve credits subscription stops renewing once a contract is active. */
-async function stopCreditsSubscription(accountId: string): Promise<void> {
-  const account = await getCreditAccount(accountId);
-  if (!account?.stripeSubscriptionId) return;
-  const stripe = getStripe();
-  const live = await stripe.subscriptions.retrieve(account.stripeSubscriptionId).catch(() => null);
-  if (!live || isDeadSubscriptionStatus(live.status) || live.cancel_at_period_end) return;
-  if (planForSubscription(live) !== 'credits' || live.metadata?.contract_id) return;
-  await stripe.subscriptions.update(live.id, { cancel_at_period_end: true });
-}
-
 /**
- * Grant one term's credit pool, expiring with the term. One ledger row per
- * (contract, term start), so a redelivered invoice cannot grant twice.
- */
-export async function grantContractPool(
-  contract: ContractRow,
-  termStartIso: string,
-  termEndIso: string | null,
-): Promise<boolean> {
-  const amount = Number(contract.creditsUsd);
-  if (!(amount > 0)) return false;
-  const result = await wallet.grant({
-    accountId: contract.accountId,
-    amount,
-    kind: CONTRACT_GRANT_LEDGER_TYPE,
-    description: `Enterprise contract credits${termEndIso ? ` until ${termEndIso.slice(0, 10)}` : ''}`,
-    expiring: termEndIso !== null,
-    expiresAt: termEndIso,
-    key: { request: `contract:${contract.id}:${new Date(termStartIso).getTime()}` },
-  });
-  return !result.replayed;
-}
-
-/**
- * End an active contract. The account returns to its base plan — Credits when
- * a credits subscription is still live, else Free — and keeps SSO and SCIM for
- * ACCESS_GRACE_DAYS so nobody is locked out of sign-in.
+ * End an active license. The Enterprise features end (the billing plan is not
+ * touched), and SSO and SCIM stay on for ACCESS_GRACE_DAYS so nobody is locked
+ * out of sign-in.
  */
 export async function endContract(
   contractId: string,
@@ -447,12 +404,6 @@ export async function endContract(
   }
 
   const account = await getCreditAccount(contract.accountId);
-  const credits = account?.stripeSubscriptionId
-    ? await getStripe().subscriptions.retrieve(account.stripeSubscriptionId).catch(() => null)
-    : null;
-  const base = credits && !isDeadSubscriptionStatus(credits.status) && planForSubscription(credits) === 'credits'
-    ? 'credits'
-    : 'free';
   const graceEnds = new Date(now.getTime() + ACCESS_GRACE_DAYS * DAY_MS).toISOString();
   const overrides = mergeOverridePatch(account?.entitlementOverrides, {
     sso: { value: true, expires_at: graceEnds },
@@ -461,7 +412,7 @@ export async function endContract(
 
   await applyAdminOverride(
     contract.accountId,
-    { tier: base, entitlementOverrides: toStoredOverrides(overrides) },
+    { enterpriseEntitled: false, entitlementOverrides: toStoredOverrides(overrides) },
     { userId: actorUserId, action: `enterprise.contract.end.${reason}` },
   );
   invalidateCaches(contract.accountId);
@@ -572,7 +523,6 @@ export async function routeContractEvent(event: Stripe.Event): Promise<boolean> 
       if (contract.status !== 'active') return true;
       const termStart = new Date(subscription.current_period_start * 1000).toISOString();
       const termEnd = new Date(subscription.current_period_end * 1000).toISOString();
-      await grantContractPool(contract, termStart, termEnd);
       await db
         .update(enterpriseContracts)
         .set({ startsAt: contract.startsAt ?? termStart, endsAt: termEnd, autoRenews: !subscription.cancel_at_period_end, updatedAt: new Date().toISOString() })

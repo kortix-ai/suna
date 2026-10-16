@@ -5,6 +5,7 @@ import * as realProviders from '../../../platform/providers';
 import * as realBoxQueries from '../../reaping/box-queries';
 import * as realInboxRows from '../inbox-rows';
 import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
+import * as realTurnLedger from '../../session-turn-ledger';
 
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
@@ -110,6 +111,9 @@ mock.module('../../../sandbox-proxy/backend', () => ({
     effectivePort: 8000,
     websocket: false,
   }),
+  invalidateSandbox: (externalId: string) => {
+    cacheInvalidations.push(externalId);
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -122,12 +126,6 @@ mock.module('../../../billing/services/compute-metering', () => ({
     pausedCompute.push(sandboxId);
   },
   endComputeSession: async () => {},
-}));
-
-mock.module('../../../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
-    cacheInvalidations.push(externalId);
-  },
 }));
 
 mock.module('../../lib/session-transcript-capture', () => ({
@@ -161,6 +159,15 @@ mock.module('../inbox-rows', () => ({
   ...realInboxRows,
   holdInboxPrompts: async () => 0,
 }));
+// The Stop's requested-stop stamp on the open turns: who it names, and how many
+// daemon aborts had already left when it was written.
+let stamps: Array<{ sessionId: string; name: string; scope: unknown; by: unknown; abortsBefore: number }> = [];
+mock.module('../../session-turn-ledger', () => ({
+  ...realTurnLedger,
+  markTurnStopRequested: async (sessionId: string, name: string, scope: unknown, by: unknown) => {
+    stamps.push({ sessionId, name, scope, by, abortsBefore: abortFetchCalls.length });
+  },
+}));
 const { stopSession } = await import('../stop');
 
 const baseInput = {
@@ -187,6 +194,7 @@ beforeEach(() => {
 
   callOrder = [];
   captureOptions = [];
+  stamps = [];
   abortServiceKey = 'daemon-service-key';
   abortFetchCalls = [];
   abortFetchImpl = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -475,6 +483,21 @@ describe('stopSession', () => {
 
   // T11: close the turn before the box loses power.
   describe('pre-stop abort', () => {
+    test('stamps the open turns as a stop this person asked for, BEFORE the abort', async () => {
+      // Without the stamp the abort's end frame, or the runtime_gone settle,
+      // reads as a failure nobody explained, and nobody sees who stopped it.
+      sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+      expect((await stopSession(baseInput)).status).toBe(200);
+      expect(stamps).toEqual([{ sessionId: 'sess-1', name: 'UserStop', scope: {}, by: 'user-1', abortsBefore: 0 }]);
+      expect(abortFetchCalls).toHaveLength(1);
+    });
+
+    test('an agent credential stops it under nobody', async () => {
+      sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+      await stopSession({ ...baseInput, stoppedBy: null });
+      expect(stamps.map((stamp) => stamp.by)).toEqual([null]);
+    });
+
     test('issues the daemon abort BEFORE provider.stop() on a running box', async () => {
       sandboxRow = {
         sandboxId: 'sess-1',

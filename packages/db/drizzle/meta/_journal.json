@@ -1128,6 +1128,20 @@
       "when": 1792030354602,
       "tag": "20261015021234_enterprise_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1792057728805,
+      "tag": "20261015094848_session_pin_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1792106777017,
+      "tag": "20261015232617_scheduled_monthly_usd",
+      "breakpoints": true
     }
   ]
 }

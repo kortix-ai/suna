@@ -30,7 +30,10 @@ compile_with_retry() {
   local delay=5
 
   while true; do
-    if bun build --compile --target="$target" --tsconfig-override ./tsconfig.json --outfile=dist/kortix-agent src/main.ts; then
+    # The codemode worker is a second entrypoint: in a compiled binary pi starts it as
+    # `./src/extensions/codemode/worker.ts`, resolved against `--root` (default: the
+    # entrypoints' common folder, `src/`, which would not match).
+    if bun build --compile --root=. --target="$target" --tsconfig-override ./tsconfig.json --outfile=dist/kortix-agent src/main.ts src/extensions/codemode/worker.ts; then
       return 0
     fi
 

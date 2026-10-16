@@ -28,6 +28,7 @@ export function GameOfLife() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    let disposed = false;
     const cellSize = 5;
     let cols = Math.floor(window.innerWidth / cellSize);
     let rows = Math.floor(window.innerHeight / cellSize);
@@ -69,7 +70,7 @@ export function GameOfLife() {
       img.src = logoPath;
 
       img.onload = () => {
-        if (!canvas || !ctx) return;
+        if (disposed) return;
 
         const aspectRatio = img.width / img.height;
 
@@ -205,10 +206,13 @@ export function GameOfLife() {
     // Debounced resize: the effect owns the pending timeout so the cleanup
     // can cancel it — a resize inside the debounce window before unmount
     // must not resurrect the animation loop against the detached canvas.
+    // The disposed check below keeps the callback side-effect-free even if a
+    // future path can still invoke it after cleanup (see the logo onload).
     let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
     const handleResize = () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
+        if (disposed) return;
         if (animationRef.current) {
           cancelAnimationFrame(animationRef.current);
         }
@@ -226,6 +230,7 @@ export function GameOfLife() {
     window.addEventListener('resize', handleResize);
 
     return () => {
+      disposed = true;
       window.removeEventListener('resize', handleResize);
       clearTimeout(resizeTimeout);
       if (animationRef.current) {
