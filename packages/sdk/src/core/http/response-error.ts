@@ -5,6 +5,7 @@ import {
   FEATURE_NOT_SUPPORTED_CODE,
   MODEL_NOT_SERVABLE_CODE,
   PROVISION_IN_FLIGHT_CODE,
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
 } from './api-client';
 import type { ApiResponse, ErrorContext } from './api-client';
 import { ApiError, RequestTooLargeError, parseBillingError } from './api/errors';
@@ -121,7 +122,9 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
     isConnectorsProviderUnavailableResponse(status, data) ||
     (status === 501 && data?.code === FEATURE_NOT_SUPPORTED_CODE) ||
     (status === 409 &&
-      (data?.code === MODEL_NOT_SERVABLE_CODE || data?.code === PROVISION_IN_FLIGHT_CODE)) ||
+      (data?.code === MODEL_NOT_SERVABLE_CODE ||
+        data?.code === PROVISION_IN_FLIGHT_CODE ||
+        data?.code === SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE)) ||
     (status === 503 &&
       (data?.code === ANALYTICS_UNAVAILABLE_CODE || data?.code === ACCOUNTS_LIST_UNAVAILABLE_CODE))
   );
