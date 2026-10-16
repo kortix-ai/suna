@@ -1,9 +1,0 @@
-{
-  "name": "kortix-extension-pty",
-  "private": true,
-  "//": "The pty extension's runtime dependencies: bun-pty, the native terminal it spawns, and zod, for the tool argument schemas. kortix.yaml registers this extension under `extensions.pty`.",
-  "dependencies": {
-    "bun-pty": "0.4.11",
-    "zod": "4.1.8"
-  }
-}

@@ -75,6 +75,7 @@ import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
   planCommandAttachments,
+  planUnresolvedCommandChip,
   readCommandChipLabel,
 } from './command-attachments';
 import {
@@ -191,6 +192,14 @@ export interface SessionChatInputProps {
    */
   noAccessibleAgents?: boolean;
   commands?: Command[];
+  /**
+   * Whether the live command list has EVER resolved — the hook's `data`
+   * present, not the `[]` the composer defaults to while it loads. The one
+   * bit that separates "the chip's command is still being looked up" from
+   * "the list answered and the command is gone": only the first may refuse a
+   * send that would otherwise carry attachments out as a prompt.
+   */
+  commandsResolved?: boolean;
   /**
    * The session's own files, as `/` palette rows — the Outputs card's
    * deliverables and the Context card's reads, built by
@@ -500,6 +509,8 @@ function ComposerImpl(props: SessionChatInputProps) {
   onAgentChange,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
+  /** Whether the live command list has EVER resolved — see `planUnresolvedCommandChip`. */
+  commandsResolved = false,
   slashFiles = EMPTY_SLASH_FILES,
   onCommand,
   onHoldCommand,
@@ -1591,6 +1602,25 @@ function ComposerImpl(props: SessionChatInputProps) {
         return;
       }
 
+      // A chip the live list cannot resolve YET must not ride out as an
+      // ordinary prompt while files are staged — the whole story, including
+      // why only the never-resolved list refuses, lives on
+      // `planUnresolvedCommandChip`'s doc comment (KRTX-1903). It sits below
+      // the question-lock reroute: an answer takes only the text and hands
+      // the files back to the stash, so there is nothing there to lose.
+      const unresolvedGuard = planUnresolvedCommandChip(
+        {
+          commandName: draft?.commandName,
+          commandsResolved,
+          attachmentCount: filesNow.length,
+        },
+        tI18nComplete,
+      );
+      if (unresolvedGuard.kind === 'refuse') {
+        errorToast(unresolvedGuard.message, { description: unresolvedGuard.description });
+        return;
+      }
+
       const content = draft ?? { text: '', mentions: [] };
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
@@ -1689,6 +1719,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       lockForApproval,
       disabled,
       commands,
+      commandsResolved,
       lockForQuestion,
       submitDisabled,
       clearOnSend,

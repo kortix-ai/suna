@@ -1,5 +1,6 @@
 /**
- * The internal-only feature flags (`session_log`, `session_log_restore`) are
+ * The internal-only feature flags (`session_log`, `session_log_restore`,
+ * `workspace_volume`) are
  * written by a platform operator only: `PATCH /v1/projects/:id/features`
  * answers 403 `feature_operator_only` to a project owner. Flows that need one
  * on (or cleared) go through the operator route as the run-scoped platform

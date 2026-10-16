@@ -1,0 +1,9 @@
+{
+  "name": "kortix-opencode-config",
+  "private": true,
+  "kortixToolAbi": 1,
+  "//": "Runtime dependencies for the OpenCode config: zod for the pty plugin. The Kortix tools (web_search, memory, show, ...) and the project tools (kortix.yaml `tools`) are hosted by the Kortix runtime on every harness, not installed here.",
+  "dependencies": {
+    "zod": "4.1.8"
+  }
+}

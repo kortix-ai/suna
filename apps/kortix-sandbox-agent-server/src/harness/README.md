@@ -160,7 +160,8 @@ restart (`this.stop()` inside the native lifecycle) leaves it running.
 The boot runs these steps when the native store is behind the log (P6.4, "When the
 boot restores" below):
 
-1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`.
+1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`,
+   or 413 `session_log_too_large` for a log over the API's cap (see "Memory" below).
    The claim raises the generation, and the ingest applies a put whose
    `(generation, rev)` is above the stored pair, so the box needs no rev seed.
 2. `sessionLogFromRestore(answer, apiTextReader(sandboxRelayContext()))`
@@ -265,7 +266,8 @@ root. No turn runs at either point.
   keeps the claimed generation, the ids the write left out, and the D3 notice:
   a crash before it reads as behind at the next boot, and a daemon restart
   journals at the claimed generation. A 404 (no stored log) or 503 (operator
-  switch off) claims nothing and restores nothing. Any other failure (5xx,
+  switch off) claims nothing and restores nothing. A 413 `session_log_too_large`
+  claimed but carries no message: see "Memory" below. Any other failure (5xx,
   408, 429, network, a body that does not parse, a write that throws) is
   retried, 3 attempts, each a new claim; then the boot fails
   (`initialRuntimeSessionError`, the proxy answers
@@ -322,20 +324,50 @@ root. No turn runs at either point.
   no entry. A log without a history (a converted log) starts with the harness
   its `harness.current` names. Limit: a box that never restored (flag off)
   sends its adapter's one-entry history, which replaces the stored one.
-- **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
-  all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
-  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the API
-  holds the same answer in memory once per claim. Dev accepts this risk (the flag
-  is on by default there since 2026-10-15) until the cap lands; elsewhere the
-  flag is operator-only.
-  Before default-on, cap it (413 above a stored size, or paging).
+- **Memory, and the cap.** A restore holds the whole log in memory on both
+  sides. Measured on a real Platinum box (pi, 2 vCPU, 3.9 GB, Bun 1.4.3) with a
+  synthetic 38.5 MB log (1,000 tool results of 40 kB): the daemon peaked at
+  1.57 GB RSS (+1.45 GB, about 38x the log) and settled at 272 MB; the API
+  (`POST …/log/restore`) rose by about 330 MB. Attachments cost less per
+  byte: 60 synthetic 500 kB images (30 MB of blobs, 83 kB of records) peaked
+  the daemon at 566 MB (+455 MB, about 15x) and the API by about 50 MB (the box
+  reads them one by one through the attachments route). So the API caps what
+  the box pulls: `SESSION_LOG_RESTORE_MAX_BYTES` (default 24 MiB) bounds the
+  live messages' stored JSON lengths plus the bytes of the session's live
+  `session_log_blobs` (full texts over 256 kB and attachments) at
+  `SESSION_LOG_BLOB_WEIGHT` = 2/5 (15x / 38x ≈ 0.39, rounded up), one sum in
+  daemon-memory terms. Effective maxima: 24 MiB of records alone, or 60 MiB of
+  blobs alone (about 125 screenshots of 500 kB); either peaks the daemon at
+  about 1 GB. 60 screenshots of 500 kB restore; 400 (200 MB) answer 413. p99.9 of
+  prod sessions is about 15 MB, p99 3.7 MB. The size query reads the records
+  inside Postgres before any record leaves it. Above the cap the claim still
+  happens and the answer is 413
+  `SessionLogRestoreTooLarge`: every thread without messages, every rev,
+  `seq_max`, `messages` (the count left out), `bytes` and `limit`; no record
+  leaves Postgres. The box writes the log's root with the D3 note alone
+  (above `seq_max`, so new messages number above every stored seq), keeps no
+  other thread, persists every stored id (`revs`) as unwritten so later boots
+  do not read the store as behind, and journals at the claimed generation. The
+  note tells the agent the size and the limit; the session patch carries
+  `restore_grade: 'partial'` and `dropped: { message: <count> }`, which P5.6
+  shows as "Missing: N earlier messages". The stored history stays in the
+  transcript. The same 38.5 MB log over the cap: the daemon peaked at 135 MB
+  (+29 MB) and the API rose by about 21 MB; the 30 MB of images over the cap:
+  128 MB and about 2 MB. The switch preflight (`POST …/log/switch-preflight`)
+  reports `restores: false` and a `history` loss for a log over the cap. A 413 with another body (a proxy)
+  claimed nothing and restores nothing, as a 404.
+  ponytail: an over-cap restore gives the agent none of the history; restore
+  the newest messages under the cap (paging) when sessions near it are common.
 
-Default-on blocker (do not turn `session_log_restore` on by default in prod
-before it is fixed): the restore memory above has no cap. Dev turns it on for
+Default-on: the cap above bounds what one restore makes the box hold (live
+records plus 2/5 of live blobs, 24 MiB by default). It does not bound the native
+store a box already holds: a box with a large store loads it at boot (`held()`)
+before any restore. A fresh box drops only an attachment whose record still
+says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a
+release whose kortixd handles the 413 (an older kortixd boots without the
+restore and its journal stops at 409). Dev turns `session_log_restore` on for
 every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
-`deploy-dev.yml`, 2026-10-15). Attachment bytes are no longer
-a blocker (P2.13): the journal uploads them, and a fresh box drops only an
-attachment whose record still says `blob:` (see the restore limits below).
+`deploy-dev.yml`, 2026-10-15); prod does not yet.
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
@@ -585,10 +617,10 @@ them dirty until apps/api acknowledges `(message_id, rev)`.
 Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
 orphan path through `relayTurnEnd`, OpenCode's normal turn end through
 `relayTurnEndToApi`. pi also flushes it when it stores a compaction between
-turns (`compact()`, `/session/:id/summarize`, P2.12): that compaction has no
-turn end, and it ends after the summarize request returns, so without this
-flush the log got it only at the next turn end. A compaction inside a turn
-(threshold, overflow) waits for the turn's end. The memory-guard turn end does not flush. The daemon
+turns (`compact()`, `/session/:id/summarize`, P2.12), and the `/summarize`
+turn end flushes it again (see "The conversation, compaction and slash
+commands"). A compaction inside a turn (threshold, overflow) waits for the
+turn's end. The memory-guard turn end does not flush. The daemon
 shutdown (SIGTERM, SIGINT, the agent swap) flushes it before `harness.stop()`.
 Each flush waits at most 3 s, or until the first failed post; a batch not
 acknowledged by then keeps retrying in the background. A provider stop is not
@@ -971,6 +1003,28 @@ message flagged `summary` with the summary text or an error,
 transcript keeps every message. A project's `settings.json` in the pi config
 dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
+
+A `/summarize` is a turn of its own, named by its compaction marker (the user
+message with the `compaction` part), as on OpenCode: when the compaction that
+`compact()` started begins, the runtime relays `turn_begin` with the marker id,
+and when it ends, the turn end with the same id (`onTurnBegin`/`onTurnEnd`).
+The boot relays the end after the begin settled, or after 5 s
+(`turnEndAfterBegin`). apps/api binds the id to the open `/summarize` turn and
+marks that turn durable (`log_durable_at`) when the log acknowledges the
+compaction record, whose `message_id` is the marker id (`markDurableTurns`,
+apps/api `session-log-ingest.ts`). A failure (the summary's model call) ends
+the turn `error` with pi's reason; a stop ends it `idle`. pi's two refusals
+end it `idle` too, because nothing changed: `Compaction failed: Nothing to
+compact (session too small)` (pi keeps the last `keepRecentTokens`) and
+`Compaction failed: Already compacted` (nothing after the last compaction).
+pi gives no code for them, so the runtime matches these exact strings
+(`PI_COMPACTION_REFUSALS`; the pi-harness tests fail when a pi bump rewords
+them). The summary message on the wire carries the refusal as its error, and
+the daemon logs `[pi] compaction failed`; the session log has no record (pi
+stores no entry). A Stop drops a `/summarize` still queued behind the running
+turn: no model call, no turn relay. An auto compaction (threshold, overflow)
+runs inside its prompt turn, and an extension's `ctx.compact()` is not a
+`/summarize`: neither relays a turn.
 
 Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
 block that another model wrote as visible assistant text. `pi/reasoning.ts`

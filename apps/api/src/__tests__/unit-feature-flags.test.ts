@@ -344,9 +344,15 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: session_log (the v2 session-log rollout) and session_log_restore (the boot restore from the session log)', () => {
+  test('only internal-only surfaces are hidden: session_log (the v2 session-log rollout), session_log_restore (the boot restore from the session log) and workspace_volume (stateless sandboxes step 1)', () => {
     // `apps` graduated (2026-10-14): Apps is generally available.
-    expect(HIDDEN_KEYS).toEqual(['session_log', 'session_log_restore']);
+    expect(HIDDEN_KEYS).toEqual(['session_log', 'session_log_restore', 'workspace_volume']);
+  });
+
+  test('workspace_volume is a behavioral flag that defaults off and needs Platinum', () => {
+    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'workspace_volume');
+    expect(def?.enforcement).toBe('behavioral');
+    expect(resolveFeatureFlag({}, 'workspace_volume')).toBe(false);
   });
 
   test('session_log is a behavioral flag that defaults off', () => {

@@ -23,6 +23,12 @@ const CODEX_SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 // (observed 2026-10-14). Drop the entry here once OpenAI removes it upstream.
 const REFUSED_MODEL_IDS: readonly string[] = ['gpt-5.5'];
 
+/** A slug the ChatGPT backend refuses. A default or pin saved before it left
+ *  the lineup must not reach the backend: the gateway calls it retired. */
+export function isRefusedCodexModelId(slug: string): boolean {
+  return REFUSED_MODEL_IDS.includes(slug);
+}
+
 /** Picker-visible Codex slugs from a Codex `models.json` body, in Codex's own
  *  priority order. Throws on a shape it does not recognise so the caller keeps
  *  its last good list. */
@@ -34,7 +40,7 @@ export function parseCodexModelIds(body: unknown): string[] {
       (m): m is { slug: string; priority?: number } =>
         m?.visibility === 'list' && typeof m.slug === 'string' && CODEX_SLUG.test(m.slug),
     )
-    .filter((m) => !REFUSED_MODEL_IDS.includes(m.slug))
+    .filter((m) => !isRefusedCodexModelId(m.slug))
     .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
     .map((m) => m.slug);
   if (ids.length === 0) throw new Error('codex models.json lists no models');

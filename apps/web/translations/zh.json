@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
+        },
+        "workspace_volume": {
+          "name": "工作区卷",
+          "description": "将每个新会话的 /workspace 保存在独立的卷上，而不是沙盒磁盘上。由 Kortix 按项目启用。"
         }
       }
     },
@@ -1272,9 +1276,9 @@
       "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
       "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
       "runUpgrade": "运行升级",
-      "manifestV3": {
-        "title": "将清单升级到 v3 (kortix.yaml)",
-        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
+      "manifestV2": {
+        "title": "将清单迁移到 v2 (kortix.yaml)",
+        "description": "将 v1 kortix.toml 转换为以治理为中心的 kortix.yaml，更新平台管理的技能，并打开变更请求供审查。"
       },
       "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
@@ -1594,8 +1598,8 @@
       "localComputer": "你的电脑"
     },
     "manifestUpgrade": {
-      "title": "升级到 v3",
-      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
+      "title": "升级到 v2",
+      "description": "此项目仍在使用 <toml>kortix.toml</toml>。代理会将其转换为 <yaml>kortix.yaml</yaml>，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
       "start": "开始升级"
     },
     "filter": {
@@ -1964,6 +1968,7 @@
       "restoreMissing": "缺少：{items}。",
       "restoreAgent": "智能体已获知缺少的内容。",
       "restoreDismiss": "关闭恢复通知",
+      "missingMessage": "{count, plural, other {# 条之前的消息}}",
       "missingAttachment": "{count, plural, other {# 个附件}}",
       "missingText": "{count, plural, other {# 段长文本}}",
       "missingToolInput": "{count, plural, other {# 个工具输入}}",
@@ -16660,7 +16665,6 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -17401,7 +17405,6 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init 负责搭建，kortix ship 负责上线。它们使用同一个仓库完成同一件事，因此本地开发和线上系统不再是两种不同的类别。",
       "textd864380a766f": "沙盒仅携带一个项目范围的 Kortix 令牌，不携带第三方密钥。你的跟踪器和帮助台凭据会在服务器端解密并附加到出站调用中。",
       "textd8707d411d99": "密钥",
@@ -20055,6 +20058,8 @@
       "textc3371113b9c5": "许可证在有效期内开启所有企业版功能，不含积分。",
       "text81e6bf495c98": "按账户显示套餐、积分、企业版、权益、成员和账单状态。",
       "textfe3436af86b4": "扩展",
+      "textdffd02b805cb": "命令仍在加载中",
+      "textd943cb31f962": "尚未发送任何内容。你的消息和文件会保留在输入框中 —— 请稍后重新发送。",
       "text8142608686a2": "预览了积分套餐变更",
       "text0f046f7588f9": "费用（积分）",
       "text42144adfea3c": "余额（积分）",
@@ -20065,7 +20070,9 @@
       "textb8fd28863a22": "积分数量（例如 2500）",
       "textc6813a9e41ac": "积分：{value0} LLM · {value1} 计算 · {value2} 其他。",
       "textc86ce3b8097b": "例如 5000",
-      "textfaaf56a699c2": "上限（积分）"
+      "textfaaf56a699c2": "上限（积分）",
+      "textc3d1545dd522": "将 v1 kortix.toml 转换为治理优先的 kortix.yaml，将平台管理的技能更新至最新 marketplace 基线，并创建变更请求以供审核。",
+      "textd85a383e851d": "将清单迁移到 v2 (kortix.yaml)"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20594,6 +20601,18 @@
     "setUp": "设置身份验证器"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP 服务器",
+    "addMcpMenuHint": "粘贴服务器 URL 并登录",
+    "addMcpTitle": "添加 MCP 服务器",
+    "addMcpDescription": "粘贴服务器的 URL，并选择谁可以使用它。Kortix 会为你登录并加载其工具。",
+    "addMcpUrlLabel": "服务器 URL",
+    "addMcpUrlHint": "服务器的远程端点，以 https:// 开头",
+    "addMcpUrlNamed": "添加连接器 {name}。",
+    "addMcpUrlInvalid": "请输入以 https:// 开头的 URL",
+    "addMcpConnect": "连接",
+    "addMcpConnected": "{name} 已连接。智能体可以使用其工具。",
+    "addMcpSignInFailed": "无法开始 {name} 的登录：{reason}",
+    "addMcpFailed": "无法添加 MCP 服务器",
     "install": "安装",
     "installNamed": "安装 {name}",
     "added": "已添加",
