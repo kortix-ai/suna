@@ -73,7 +73,7 @@ test.describe('18 — Kortix Apps UI', () => {
           const box = await appModal.boundingBox();
           return box && [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)];
         }).toEqual([0, 0, viewport.width, viewport.height]);
-        await expect(appModal.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
+        await expect(appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
       }
       // Host geometry is shared; emulate macOS's reserved control band.
       // Native hit testing remains the desktop parity journey's responsibility.
@@ -97,7 +97,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(compact).toHaveAttribute('aria-pressed', 'true');
       await seededCard.click();
       await expect(appModal).toBeVisible();
-      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+      await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
       await expect(seededCard).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
     } finally {
@@ -366,7 +366,7 @@ test.describe('18 — Kortix Apps UI', () => {
         await api(session.access_token, 'PATCH', `/projects/${project.id}/apps/${seeded.app_id}/access`, {
           mode: 'restricted', member_ids: [user.id], group_ids: [group.group_id], viewer_token_scope: 'identity',
         });
-        await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+        await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
         await page.reload({ waitUntil: 'domcontentloaded' });
         await seededCard.click();
         await appModal.getByRole('button', { name: 'More actions' }).click();
@@ -402,7 +402,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.getByRole('menuitem', { name: 'Hide earlier versions' }).click();
       await expect(appModal.getByText('No deployments yet.')).toBeHidden();
 
-      await appModal.getByRole('button', { name: 'Close' }).click();
+      await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
       await expect(appModal).toBeHidden();
 
       await page.evaluate(() => localStorage.setItem('theme', 'light'));
@@ -510,7 +510,7 @@ test.describe('18 — Kortix Apps UI', () => {
           if (failed) await expect(control).toBeEnabled();
         }
       }
-      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+      await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
 
       // A second App on the same page, linked to the first: no kind badge, a
       // preview tile like any App, a Used-by link, the Connect item for an App
@@ -589,7 +589,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
       await expect(appModal.getByText('v2', { exact: true })).toBeVisible();
       await expect(appModal.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0);
-      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+      await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
       await page.unroute('**/effective?*');
       await page.unroute('**/effective:batch');
       await page.unroute(appApi);
