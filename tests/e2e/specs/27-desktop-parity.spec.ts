@@ -347,7 +347,9 @@ for (const runtime of runtimes) {
       baseURL,
       desktopApp,
     }) => {
-      test.setTimeout(300_000);
+      // 3.9-5.1 min on the 4 vCPU CI runners (runs 38913477440, 38919869428):
+      // every route it visits compiles cold. 300 s timed out 1 of 4 attempts.
+      test.setTimeout(480_000);
       const resize = async (width: number, height: number) => {
         if (desktopApp) {
           const window = await desktopApp.browserWindow(page);
