@@ -34,7 +34,9 @@ describe('sign-in SSO entry points', () => {
   test('the explicit door skips the consumer-domain gate (intent beats heuristics)', () => {
     const handler = source.slice(
       source.indexOf('const handleSsoContinue'),
-      source.indexOf('const handleEntryContinue'),
+      // The SSO handler ends where the entry-submit path begins; the entry
+      // path legitimately gates on isWorkEmail — the explicit SSO door must not.
+      source.indexOf('const runEntrySubmit'),
     );
     expect(handler).not.toContain('isWorkEmail');
   });
