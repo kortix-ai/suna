@@ -40,6 +40,7 @@ const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPositio
 const { setupComputer } = require('./computer-tray');
 const { setAttentionBadge } = require('./attention-badge');
 const { setupQuickEntry } = require('./quick-entry');
+const { attachContextMenu } = require('./context-menu');
 const { SHORTCUTS, shortcutLabel } = require('./quick-entry-rules');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
@@ -354,6 +355,9 @@ function createMainWindow() {
   // Keep one canonical set of controls. Web-rendered traffic lights could
   // coexist with native buttons after focus/reload transitions.
   configureNativeWindowControls(mainWindow, isMac);
+
+  // Right-click: the menu every browser and text field has (KRTX-2555).
+  attachContextMenu(mainWindow.webContents, { Menu, shell, clipboard, getWindow: () => mainWindow });
 
   const syncRendererWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;

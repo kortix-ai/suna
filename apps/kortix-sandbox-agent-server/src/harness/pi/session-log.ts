@@ -97,6 +97,7 @@ import type { BytesReader } from '../shared/session-log-restore'
 import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore'
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
+import { imageTagPaths } from './images'
 
 export interface PiChildSnapshot {
   id: string
@@ -334,6 +335,7 @@ function deriveThread(input: {
       const system = msg.role === 'system' ? [typeof msg.content === 'string' ? msg.content : '', ...Object.values(msg.sections ?? {})].filter((x) => typeof x === 'string' && x).join('\n\n') : null
       const content: J[] = system !== null ? [{ type: 'text', text: system }] : typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : (msg.content ?? [])
       const sent: J[] | undefined = replacement ? (typeof replacement.content === 'string' ? [{ type: 'text', text: replacement.content }] : replacement.content) : undefined
+      const fromTags: J[] = []
       content.forEach((c, i) => {
         if (c.type === 'text') {
           const part = pool.take('text')
@@ -342,9 +344,15 @@ function deriveThread(input: {
           m.blocks.push({ type: 'text', id: (part?.id as string | undefined) ?? `${id}-n${i}`, text: display, ...(modelText !== display ? { model_text: modelText } : {}) })
         } else if (c.type === 'image') {
           const part = pool.take('file', (p) => String(p.mime).startsWith('image/'))
-          m.blocks.push({ type: 'attachment', id: (part?.id as string | undefined) ?? `${id}-n${i}`, ...attachment(c, input.images), ...(part?.filename ? { name: part.filename } : {}) })
+          const block: J = { type: 'attachment', id: (part?.id as string | undefined) ?? `${id}-n${i}`, ...attachment(c, input.images), ...(part?.filename ? { name: part.filename } : {}) }
+          if (!part) fromTags.push(block)
+          m.blocks.push(block as SessionLogBlock)
         }
       })
+      // An image with no v1 file part came from a `<file>` tag (images.ts), in tag order. Its
+      // `source_path` lets a view show it once. A tag image pi left out breaks the count: none is set.
+      const tags = msg.role === 'user' ? imageTagPaths(content.filter((c) => c.type === 'text').map((c) => String(c.text)).join('\n')) : []
+      if (fromTags.length && fromTags.length === tags.length) fromTags.forEach((block, k) => (block.source_path = tags[k]!.path))
       // A file pi never received: a harness block, never an attachment, so a restore does not present it to the model.
       for (const part of pool.rest('file')) {
         const url = String(part.url ?? '')

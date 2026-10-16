@@ -48,6 +48,7 @@ import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
+import { promptImages } from './images'
 import type { PiSessionSnapshot } from './session-log'
 import { flushSessionLogJournal } from '../shared/session-log-journal'
 
@@ -313,11 +314,6 @@ function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): {
   return message && turn?.messageId ? { id: turn.messageId, timestamp: message.timestamp } : null
 }
 
-function decodeDataUrl(url: string): { mime: string; data: string } | null {
-  const match = /^data:([^;,]+);base64,(.*)$/s.exec(url)
-  return match ? { mime: match[1]!, data: match[2]! } : null
-}
-
 export class PiRuntime {
   /** `ses_pi<sha>` of the session, or the root a restored dump names (adopted at `start`). */
   rootId: string
@@ -375,6 +371,10 @@ export class PiRuntime {
   private runningTools = 0
   /** Steered messages the running turn has not read, in send order (kortixd's queue in front of pi's). */
   private steered: Steered[] = []
+  /** Steers in arrival order: each loads its images, then reaches pi, after the one before it. */
+  private steerChain: Promise<unknown> = Promise.resolve()
+  /** Steers still loading their images, by message id; a retract marks its slot. */
+  private readonly loadingSteers = new Map<string, { retracted?: boolean }>()
   /** Steered ids the running turn read. */
   private readonly steerReads = new Set<string>()
   /** The user message the next assistant message answers: the turn's, then the newest steered one read. */
@@ -743,10 +743,11 @@ export class PiRuntime {
       // so a box that sleeps before anyone answers still has it.
       const slot: { retracted?: boolean } = {}
       this.waiting.set(messageId, slot)
-      const done = (this.queue = this.queue.then(() => {
+      const done = (this.queue = this.queue.then(async () => {
         if (this.waiting.get(messageId) === slot) this.waiting.delete(messageId)
         if (slot.retracted) return
-        const images = this.images(input)
+        const images = await this.images(input)
+        if (slot.retracted) return
         const session = this.pi!.session
         const message = { role: 'user' as const, content: images.length ? [{ type: 'text' as const, text: input.text }, ...images] : input.text, timestamp: this.now() }
         this.nativeIds.set(message, messageId)
@@ -788,21 +789,33 @@ export class PiRuntime {
    * then (`onAgentEvent`). `no_turn` when no turn would read it: none runs, or
    * the running one is being stopped. The turn's model, agent and variant apply.
    */
-  steer(input: PromptInput & { messageID: string }): 'steered' | 'duplicate' | 'no_turn' {
+  async steer(input: PromptInput & { messageID: string }): Promise<'steered' | 'duplicate' | 'no_turn'> {
     if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
     const messageId = input.messageID
-    if (this.knows(messageId)) return 'duplicate'
+    if (this.knows(messageId) || this.loadingSteers.has(messageId)) return 'duplicate'
     if (!this.active || this.active.stopRequested || this.abortAfterTool) return 'no_turn'
-    this.clock.observe(messageId)
-    const message: AgentMessage = {
-      role: 'user',
-      content: [{ type: 'text', text: input.text || '(attachment)' }, ...this.images(input)],
-      timestamp: this.now(),
-    }
-    this.steered.push({ messageId, input, message })
-    this.agent.steer(message)
-    this.dismissOpenQuestions()
-    return 'steered'
+    const slot: { retracted?: boolean } = {}
+    this.loadingSteers.set(messageId, slot)
+    const steered = this.steerChain.then(async () => {
+      const images = await this.images(input).finally(() => this.loadingSteers.delete(messageId))
+      // Retracted while its images loaded: nothing reached pi or the wire. `duplicate` (200) tells
+      // the caller it is handled; `no_turn` would make apps/api run it as a new prompt.
+      if (slot.retracted || this.knows(messageId)) return 'duplicate' as const
+      // The turn may have ended while the images loaded.
+      if (!this.agent || !this.active || this.active.stopRequested || this.abortAfterTool) return 'no_turn' as const
+      this.clock.observe(messageId)
+      const message: AgentMessage = {
+        role: 'user',
+        content: [{ type: 'text', text: input.text || '(attachment)' }, ...images],
+        timestamp: this.now(),
+      }
+      this.steered.push({ messageId, input, message })
+      this.agent.steer(message)
+      this.dismissOpenQuestions()
+      return 'steered' as const
+    })
+    this.steerChain = steered.catch(() => {})
+    return steered
   }
 
   /**
@@ -842,6 +855,13 @@ export class PiRuntime {
    * ran), null when the root holds no such message.
    */
   retract(messageId: string): 'retracted' | 'read' | null {
+    // A steer still loading its images: it never reaches pi (`steer`), and nothing of it is on the wire.
+    const loading = this.loadingSteers.get(messageId)
+    if (loading) {
+      loading.retracted = true
+      this.loadingSteers.delete(messageId)
+      return 'retracted'
+    }
     const steered = this.withdrawSteer(messageId)
     if (steered) return steered === 'removed' ? 'retracted' : 'read'
     const waiting = this.waiting.get(messageId)
@@ -1050,7 +1070,7 @@ export class PiRuntime {
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
       this.turnSystem = turn.input.system ?? null
       // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
-      const images = this.images(turn.input)
+      const images = await this.images(turn.input)
       // A transient model error continues the turn instead of ending it (transient-retry.ts).
       armWatchdog()
       await retry.run(agent, () => this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) }), () => this.omitFailedAttempt())
@@ -1622,16 +1642,10 @@ export class PiRuntime {
     }
   }
 
-  /** The prompt's image attachments, when the selected model reads images. */
-  private images(input: PromptInput): ImageContent[] {
-    const images: ImageContent[] = []
-    if (!this.selected?.images) return images
-    for (const file of input.files) {
-      if (!file.mime.startsWith('image/')) continue
-      const decoded = decodeDataUrl(file.url)
-      if (decoded) images.push({ type: 'image', data: decoded.data, mimeType: decoded.mime })
-    }
-    return images
+  /** The prompt's images (images.ts), when the selected model reads images. Otherwise its `<file>` tags carry the paths alone. */
+  private async images(input: PromptInput): Promise<ImageContent[]> {
+    if (!this.selected?.images || !this.coding) return []
+    return promptImages(input, this.cfg.workspace || '/workspace', this.coding.resizeImage)
   }
 
   // ── configuration ────────────────────────────────────────────────────────

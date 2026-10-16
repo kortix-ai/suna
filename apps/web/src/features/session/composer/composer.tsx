@@ -1510,6 +1510,7 @@ function ComposerImpl(props: SessionChatInputProps) {
         commandSplit: draft?.commandSplit,
         quotes: quotesNow.map((quote) => quote.text),
         pastes: pastesNow,
+        mentions: draft?.mentions,
       });
       if (plan.kind === 'command') {
         // A command cannot deliver the attached files, and the code below is
