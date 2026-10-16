@@ -110,6 +110,17 @@ function insertAt(rows: readonly V1MessageRow[], row: V1MessageRow): number {
   return at < 0 ? rows.length : at;
 }
 
+/** Where `message` goes among `messages` by `created_at` (the v1 rule of `insertAt`): before the first strictly newer one. */
+function messageInsertAt(messages: readonly SessionLogMessage[], message: SessionLogMessage): number {
+  const created = Date.parse(message.created_at);
+  if (!Number.isFinite(created)) return messages.length;
+  const at = messages.findIndex((other) => {
+    const t = Date.parse(other.created_at);
+    return Number.isFinite(t) && (t > created || (t === created && other.message_id > message.message_id));
+  });
+  return at < 0 ? messages.length : at;
+}
+
 const v1Order = (a: V1MessageRow, b: V1MessageRow) =>
   (createdOf(a) ?? -Infinity) - (createdOf(b) ?? -Infinity) || (a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0);
 
@@ -162,9 +173,11 @@ export function sessionLogRowsFor<R extends V1MessageRow>(
 const extended = new WeakMap<SessionLogThread, { held: Set<string>; extra: V1MessageRow[]; result: SessionLogThread }>();
 
 /**
- * `thread` (a thread of `state`) with the v1 store rows the log does not hold appended as
- * `fromV1` live messages, after the thread's own: an optimistic send shows until the log's put
- * of the same id, or of the id the control plane re-minted it under (`echoOf`), replaces it.
+ * `thread` (a thread of `state`) with the v1 store rows the log does not hold, as `fromV1` live
+ * messages placed by time as `sessionLogRowsFor` places them (an older page `loadOlder` read
+ * goes before the log's messages, an optimistic send after them). The log's messages keep
+ * their `seq`; an added one numbers after the last. An optimistic send shows until the log's
+ * put of the same id, or of the id the control plane re-minted it under (`echoOf`), replaces it.
  * A compaction marker and its summary row are one message, as on v1 (pi keeps no failed
  * compaction in its store, so only the v1 rows hold it).
  * A row the log holds, or tombstoned, stays out. The thread itself when no row is added; the
@@ -181,8 +194,13 @@ export function sessionLogThreadWithV1Rows(state: SessionLogState, thread: Sessi
   if (extra.length) {
     let seq = thread.messages[thread.messages.length - 1]?.seq ?? 0;
     const { paired, used } = pairCompactions(extra);
-    const added = extra.flatMap((r) => (used.has(r) ? [] : [convert(state.session.session_id ?? '', thread.thread_id, r, paired.get(r), ++seq).message]));
-    result = { ...thread, messages: [...thread.messages, ...added] };
+    const messages = [...thread.messages];
+    for (const r of extra) {
+      if (used.has(r)) continue;
+      const message = convert(state.session.session_id ?? '', thread.thread_id, r, paired.get(r), ++seq).message;
+      messages.splice(messageInsertAt(messages, message), 0, message);
+    }
+    result = { ...thread, messages };
   }
   extended.set(thread, { held, extra, result });
   return result;

@@ -46,15 +46,15 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, muted, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function EditTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const running = useContext(ToolRunningContext);
   const indent = useToolIndent();
   const { openFile } = useToolNavigation();
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const status = partStatus(part);
-  const file = useMemo(() => toToolView(part).files?.[0], [part]);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const status = partStatus(call);
+  const file = useMemo(() => toToolView(call).files?.[0], [call]);
   const { filePath, before, after, patch, patchStat, codeEdit, morphInstructions, hasDiff } = editSources(
     input,
     streamingInput,
@@ -64,9 +64,9 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     const name = getFilename(filePath) || '';
     return { filename: name, ext: name.split('.').pop() || '' };
   }, [filePath]);
-  const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
+  const diagnostics = useMemo(() => getToolDiagnostics(call, filePath), [call, filePath]);
   const isStalePending = isStalePendingFile({ running, filename, status });
-  const output = partOutput(part);
+  const output = partOutput(call);
   const isError = status === 'completed' && isErrorOutput(output);
   const diffCounts = useMemo(
     () => editStat({ status, hasDiff, before, after, patchStat }),
@@ -76,7 +76,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PencilSimpleIcon}
       trigger={{
         title: fileRowTitle('edit', { running, isError }),

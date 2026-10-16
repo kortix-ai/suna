@@ -11,14 +11,21 @@
  * `providerRemovalPendingAt` on the archived row in the same statement that
  * archives it, and only a CONFIRMED removal clears the stamp. This lane retries
  * every stamped row with a backoff until the provider confirms the box is gone.
+ *
+ * A session whose /workspace is a Platinum volume also has its volume deleted
+ * here, after the box: Platinum refuses to delete a volume a box still mounts.
+ * Such a row is stamped even with no box (a delete during the first create, or
+ * after a failed one), and the removal counts as confirmed only once the volume
+ * is gone too.
  */
 
 import { sessionSandboxes } from '@kortix/db';
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { deleteWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 
 export const PROVIDER_REMOVAL_PENDING_KEY = 'providerRemovalPendingAt';
@@ -121,7 +128,7 @@ async function markRemovalFailed(
  * next retry time. Never throws.
  */
 export async function attemptArchivedBoxRemoval(
-  row: { sandboxId: string; externalId: string; provider: string; metadata: unknown },
+  row: { sandboxId: string; externalId: string | null; provider: string; metadata: unknown },
   now = new Date(),
 ): Promise<'removed' | 'failed' | 'skipped'> {
   if (!isAllowedProvider(row.provider)) return 'skipped';
@@ -135,20 +142,23 @@ export async function attemptArchivedBoxRemoval(
     await markRemovalFailed(row.sandboxId, attempts + 1, error, now).catch(() => undefined);
     return 'failed';
   }
+  const externalId = row.externalId;
   try {
-    await provider.remove(row.externalId);
+    if (externalId) {
+      await provider.remove(externalId).catch(async (removeError) => {
+        // A remove that fails because the box is already gone is a success.
+        const status = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        if (status !== 'removed') throw removeError;
+      });
+    }
+    // sandbox_id == session_id.
+    await deleteWorkspaceVolume(row.sandboxId);
     await markRemoved(row.sandboxId, now);
     return 'removed';
   } catch (removeError) {
-    // A remove that fails because the box is already gone is a success.
-    const status = await provider.getStatus(row.externalId).catch(() => 'unknown' as const);
-    if (status === 'removed') {
-      await markRemoved(row.sandboxId, now);
-      return 'removed';
-    }
     await markRemovalFailed(row.sandboxId, attempts + 1, removeError, now).catch(() => undefined);
     console.warn(
-      `[archived-box-removal] remove failed for ${row.externalId} (attempt ${attempts + 1}):`,
+      `[archived-box-removal] remove failed for ${externalId ?? `the box-less row of ${row.sandboxId}`} (attempt ${attempts + 1}):`,
       removeError instanceof Error ? removeError.message : removeError,
     );
     return 'failed';
@@ -172,7 +182,6 @@ export async function removeArchivedProviderBoxes(now = new Date()): Promise<{
     .where(
       and(
         eq(sessionSandboxes.status, 'archived'),
-        isNotNull(sessionSandboxes.externalId),
         sql`${sessionSandboxes.metadata} ? ${sql.raw(`'${PROVIDER_REMOVAL_PENDING_KEY}'`)}`,
       ),
     )
@@ -183,7 +192,6 @@ export async function removeArchivedProviderBoxes(now = new Date()): Promise<{
   let removed = 0;
   let failed = 0;
   for (const row of rows) {
-    if (!row.externalId) continue;
     const metadata = (row.metadata ?? {}) as Record<string, unknown>;
     const retryAfter = Date.parse(String(metadata.providerRemovalRetryAfterAt ?? ''));
     const due = shouldAttemptRemoval({
@@ -193,10 +201,7 @@ export async function removeArchivedProviderBoxes(now = new Date()): Promise<{
     });
     if (!due) continue;
     examined += 1;
-    const outcome = await attemptArchivedBoxRemoval(
-      { ...row, externalId: row.externalId },
-      now,
-    );
+    const outcome = await attemptArchivedBoxRemoval(row, now);
     if (outcome === 'removed') removed += 1;
     else if (outcome === 'failed') failed += 1;
   }

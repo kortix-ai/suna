@@ -196,9 +196,9 @@ export function prepareMarkdownForKatex(text: string): string {
 }
 
 /**
- * `prepareMarkdownForKatex` that leaves inline code and fenced code as written.
- * Web's version escapes currency everywhere, so `` `echo $1` `` renders as
- * `echo \$1` there; the app renders code verbatim.
+ * `prepareMarkdownForKatex` that leaves inline code and fenced code as written,
+ * so `` `echo $1` `` and a generative UI fence's `"$10"` keep their dollars.
+ * Web and mobile both render through this.
  */
 export function prepareMarkdownForMath(text: string): string {
   if (!text || typeof text !== 'string') return text;

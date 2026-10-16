@@ -31,6 +31,7 @@ const fakes: Record<string, Record<string, unknown>> = {
     useWindowDimensions: () => ({ width: 400, height: 800 }),
   },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
+  'react-i18next': { useTranslation: () => ({ t: (key: string) => key }) },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
   '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries() {} }) },
   '@kortix/sdk/react': {

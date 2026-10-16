@@ -16,6 +16,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import {
@@ -26,10 +27,10 @@ import {
   getFileCategory,
   isUsableIntrinsicSize,
 } from '@/features/file-viewer';
+import { useContentRevision } from '@/features/file-viewer/use-content-revision';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { useFileRefresh } from '@/features/files/hooks/use-file-refresh';
-import { useContentRevision } from '@/features/file-viewer/use-content-revision';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
@@ -131,17 +132,20 @@ function PreviewShell({
             shareInput={fileShareInput(path, fileName)}
           />
         </ViewerPathPill>
-        <span className="flex shrink-0 items-center gap-1">
+        {/* `*:size-8`: every member matches the `h-8` path pill beside it. The
+            shared buttons default to `size-7` for the shorter app and detail
+            headers. */}
+        <ButtonGroup className="shrink-0 *:size-8">
           {/* Present is not a way of taking the deck with you — it changes what
               you are looking at — so it stays its own control outside the pill. */}
           {onPresent && (
             <Hint label={tI18nComplete.raw('text43f9b89c0b9d')} side="bottom">
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="icon"
                 aria-label={tI18nComplete.raw('text43f9b89c0b9d')}
                 onClick={onPresent}
-                className="size-7 active:scale-[0.96]"
+                className="active:scale-[0.96]"
               >
                 <Presentation className="size-3.5" />
               </Button>
@@ -150,7 +154,7 @@ function PreviewShell({
           <ViewerDownloadAction download={{ path, fileName }} />
           <PanelWidthButton isMobile={isMobile} />
           <CloseButton onClose={onClose} />
-        </span>
+        </ButtonGroup>
       </div>
       <div className="min-h-0 min-w-0 flex-1 overflow-auto">{children}</div>
     </div>

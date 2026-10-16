@@ -29,7 +29,7 @@ import {
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import { deleteManagedProjectRepo } from '../lib/project-deletion';
+import { deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
 import {
   requestProviderTransition,
   readPublicProjectTransitionState,
@@ -128,10 +128,11 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`apps`) starts billable machines, so Kortix
-  // decides it: only a platform operator writes it, never a project admin and
-  // never an agent session. An operator acting in a customer project through
-  // impersonation passes (`userId` stays the operator's).
+  // An internal-only flag (`session_log`, `session_log_restore`) changes what
+  // the platform records, so Kortix decides it: only a platform operator
+  // writes it, never a project admin and never an agent session. An operator
+  // acting in a customer project through impersonation passes (`userId`
+  // stays the operator's).
   if (isOperatorOnlyFeatureFlag(feature)) {
     const operator = !isProjectSessionPrincipal(c) && (await isPlatformAdmin(c.get('userId')));
     if (!operator) {
@@ -144,10 +145,6 @@ const patchFeatureFlagHandler = async (c: any) => {
         403,
       );
     }
-  }
-  // Stateless sessions run on Volumes.
-  if (feature === 'stateless_sessions' && enabled === true && !resolveFeatureFlag(loaded.row.metadata, 'volumes')) {
-    return c.json({ error: 'Turn on Volumes first' }, 400);
   }
   const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
@@ -240,7 +237,7 @@ export function registerProjectSettingsRoutes(): void {
         },
       responses: {
           200: json(z.any(), 'OK'),
-          ...errors(404, 502),
+          ...errors(404, 500, 502),
       },
     }),
     async (c: any) => {
@@ -270,6 +267,19 @@ export function registerProjectSettingsRoutes(): void {
       return c.json({ error: 'Failed to delete managed project repository' }, 502);
     }
 
+    // Purge the project's connector rows before the archive: after it the
+    // project answers 404, so a failed purge could never be retried.
+    // The row survives its archive as a tombstone, so the database's
+    // connectors FK cascade never fires and the rows would outlive the
+    // purged project (KRTX-1907). Same visibility rule as the repo delete:
+    // a failure leaves the project active and the deletion retryable.
+    try {
+      await purgeProjectConnectors(projectId);
+    } catch (error) {
+      logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
+      return c.json({ error: 'Failed to purge project connectors' }, 500);
+    }
+
     const [row] = await db
       .update(projects)
       .set({ status: 'archived', updatedAt: new Date() })
@@ -279,10 +289,6 @@ export function registerProjectSettingsRoutes(): void {
     if (!row) return c.json({ error: 'Not found' }, 404);
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
-    // Its sessions' state volumes go with it (durable queue, retried while a box still mounts one).
-    await import('../../platform/services/ephemeral-sandbox')
-      .then(({ queueProjectSessionStateVolumes }) => queueProjectSessionStateVolumes(projectId))
-      .catch((error) => logger.warn('[projects] could not queue the session state volumes', { projectId, error: String(error) }));
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );

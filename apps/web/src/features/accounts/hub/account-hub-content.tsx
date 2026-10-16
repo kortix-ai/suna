@@ -46,7 +46,6 @@ import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
-import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
@@ -252,7 +251,7 @@ export function AccountHubContent() {
   }, [accountId, activeSection, closeHubSheet]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
   }
 
   const account = accountQuery.data;
@@ -374,8 +373,8 @@ export function AccountHubContent() {
                   returnUrl={typeof window !== 'undefined' ? window.location.href : '/projects'}
                   isActive
                 />
-                {/* The "Subscribe to Team plan" button opens the global
-                    upgrade-dialog store; mount its renderer here (the global
+                {/* The plan picker's subscribe button starts checkout, and the
+                    top-up view opens the global upgrade-dialog store; mount its renderer here (the global
                     one lives only on share pages) so the dialog actually
                     appears, scoped to THIS account via the provider above. */}
                 <GlobalUpgradeModal />
@@ -491,7 +490,7 @@ export function AccountHubContent() {
               ) : auditEnabled ? (
                 <AuditTab accountId={account.account_id} />
               ) : (
-                <EnterpriseUpsell feature="audit" />
+                <EnterpriseUpsell feature="audit" accountId={account.account_id} />
               )}
               {/* Webhooks ship the same events the log above shows, so they
                   live on this tab rather than buried in Settings. Only
@@ -569,7 +568,7 @@ export function AccountHubContent() {
                   <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                 </>
               ) : (
-                <EnterpriseUpsell feature="identity" />
+                <EnterpriseUpsell feature="identity" accountId={account.account_id} />
               )}
             </div>
           ) : null}
@@ -584,7 +583,7 @@ export function AccountHubContent() {
             ) : brandingEnabled ? (
               <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
             ) : (
-              <EnterpriseUpsell feature="branding" />
+              <EnterpriseUpsell feature="branding" accountId={account.account_id} />
             )
           ) : null}
 
@@ -618,28 +617,6 @@ export function AccountHubContent() {
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>
-
-              {/* Tucked away, not headline: this reports whether the
-                  Enterprise surface (SSO/SCIM/RBAC/audit) is unlocked for
-                  evaluation, not a feature admins configure day-to-day. The
-                  toggle is platform-admin-only now; account admins see the
-                  state read-only (see EnterpriseDemoCard). Hidden entirely
-                  when a self-host operator's Enterprise license already
-                  forces every entitlement on — there's nothing left to
-                  demo-toggle or upsell in that case. */}
-              {!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available ? (
-                <SettingsGroup
-                  title={tI18nComplete.raw('textc2ef82e31689')}
-                  description={tI18nComplete.raw('text9c7d38b81f41')}
-                >
-                  <SettingsRowGroup>
-                    <EnterpriseDemoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                  </SettingsRowGroup>
-                </SettingsGroup>
-              ) : null}
 
               {canDeleteAccount ? (
                 <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>
@@ -764,7 +741,11 @@ function GitHubConnectionCard({
       ) : (
         <ul className="space-y-2">
           {installations.map((installation) => {
-            const contentsPermission = permissionLabel(installation.permissions?.contents);
+            const contents = installation.permissions?.contents;
+            const contentsPermission =
+              typeof contents === 'string' && contents
+                ? tI18nComplete('text65ef045d1ffa', { value0: contents })
+                : null;
             const repoSelection =
               installation.repository_selection === 'selected'
                 ? tI18nComplete.raw('texte0a8d25fe959')
@@ -865,11 +846,6 @@ function GitHubConnectionCard({
       />
     </div>
   );
-}
-
-function permissionLabel(value: unknown): string | null {
-  if (typeof value !== 'string' || !value) return null;
-  return `Contents ${value}`;
 }
 
 // ============================== SETTINGS ==============================
@@ -1292,7 +1268,9 @@ function MembersCard({
           userId,
           email: member?.email ?? userId,
           reason:
-            r.reason instanceof Error ? r.reason.message : String(r.reason ?? 'Unknown error'),
+            r.reason instanceof Error
+              ? r.reason.message
+              : String(r.reason ?? tI18nComplete.raw('text27c2ccd962c2')),
         });
       }
     });
@@ -1306,13 +1284,14 @@ function MembersCard({
 
     // Devtools-friendly dump. console.error renders one row per failure
     // so an admin can copy/paste or grep through them.
-    console.error(`[bulk:${label}] ${failures.length} failed`, failures);
+    console.error(`[bulk] ${failures.length} failed`, failures);
 
     // First failure is shown inline; rest summarised. Trim long
     // messages so a 500-char stack trace doesn't blow up the toast.
     const first = failures[0];
     const reasonShort = first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
-    const tail = failures.length > 1 ? ` (+${failures.length - 1} more — see console)` : '';
+    const tail =
+      failures.length > 1 ? tI18nComplete('text4e9efdcbbcbe', { count: failures.length - 1 }) : '';
     errorToast(
       tI18nComplete('text479974eaff88', {
         value0: label,
@@ -1665,15 +1644,18 @@ function MembersCard({
         open={bulkDialog === 'remove'}
         onOpenChange={(o) => !o && setBulkDialog(null)}
         title={tI18nComplete.raw('text914d43beac26')}
-        description={tI18nComplete('text37074af6784c', {
-          value0: selectedCount,
-          value1: selectedCount === 1 ? '' : 's',
-          value2: account.name,
+        description={tI18nComplete('text586a24125900', {
+          count: selectedCount,
+          account: account.name,
         })}
-        confirmLabel={`Remove ${selectedCount}`}
+        confirmLabel={tI18nComplete('text3028bf7d2dec', { value0: selectedCount })}
         confirmVariant="destructive"
         isPending={bulkBusy}
-        onConfirm={() => bulkRun('Removed', (uid) => removeAccountMember(account.account_id, uid))}
+        onConfirm={() =>
+          bulkRun(tI18nComplete.raw('text4118fb4fed0e'), (uid) =>
+            removeAccountMember(account.account_id, uid),
+          )
+        }
       />
     </div>
   );
@@ -1714,8 +1696,8 @@ function SelectCell({ select }: { select?: MemberSelect }) {
           onClick={(event) => event.stopPropagation()}
           aria-label={select.label}
           className={cn(
-            // A 14px box with a 32px hit area: the pseudo-element takes the clicks.
-            "relative size-3.5 rounded after:absolute after:-inset-2.5 after:content-['']",
+            // A 32px hit area: the pseudo-element takes the clicks.
+            "relative after:absolute after:-inset-2 after:content-['']",
             !select.visible &&
               'opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100',
           )}
@@ -1913,20 +1895,17 @@ function PendingInvitesSection({
         // admin the link directly so they can share it manually.
         warningToast(tI18nComplete.raw('text146fd497badf'), {
           duration: 8_000,
-          button: (
-            <Button
-              size="sm"
-              onClick={() =>
+          actions: [
+            {
+              label: tI18nComplete.raw('text9adff6870471'),
+              onClick: () =>
                 copyInviteLink(
                   res.invite_url,
                   tI18nComplete.raw('text0dc2f4c75de6'),
                   tI18nComplete.raw('textfa6453683837'),
-                )
-              }
-            >
-              {tI18nComplete.raw('text9adff6870471')}
-            </Button>
-          ),
+                ),
+            },
+          ],
         });
       }
       invalidate();

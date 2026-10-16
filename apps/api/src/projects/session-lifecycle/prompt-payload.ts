@@ -197,6 +197,11 @@ export interface QueuedContinueSessionPayload {
   /** The Kortix session whose agent sent this prompt. Absent when a person
    *  sent it. Set by the server from the caller's credential, never the body. */
   authorSessionId?: string;
+  /** The sender was the session owner or a project manager when they sent
+   *  this, so as a Quick Queue row it may end ANY running turn. Without it the
+   *  row ends only a turn its own sender prompted (`turn-stop-authority.ts`).
+   *  Absent on rows from before the rule. */
+  mayStopAnyTurn?: boolean;
   /** Deliver as OpenCode `noReply`: the message joins the transcript and no
    *  turn starts. The first message of a conversation with people. */
   noReply?: boolean;

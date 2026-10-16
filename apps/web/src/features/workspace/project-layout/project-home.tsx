@@ -28,6 +28,7 @@ import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { notificationCenterOn } from '@/features/notifications/use-notification-center';
 import { FirstChat } from './home/first-chat';
+import { MobileAppPromo } from './home/mobile-app-promo';
 import { SandboxPicker } from './home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
 
@@ -135,6 +136,12 @@ export function ProjectHome({
     ...contract('config'),
   });
   const accountId = projectDetailQuery.data?.project?.account_id;
+  // The onboarding wizard opens over this page until the project is stamped
+  // (`project-shell.tsx`); the promo waits for the stamp (KRTX-2378).
+  const onboarded = Boolean(
+    (projectDetailQuery.data?.project?.metadata as { onboarding_completed_at?: string } | undefined)
+      ?.onboarding_completed_at,
+  );
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
@@ -280,6 +287,8 @@ export function ProjectHome({
         to={accessRequestsTo}
         notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
       />
+      {/* Not over the first chat or the onboarding wizard: onboarding owns those screens. */}
+      {firstChat || !onboarded ? null : <MobileAppPromo />}
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the

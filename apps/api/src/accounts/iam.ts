@@ -35,13 +35,13 @@ import { registerIamResourceGrantsRoutes } from './iam/resource-grants'; // acco
 import { registerIamMfaRoutes } from './iam/mfa'; // account-wide MFA enforcement
 import { registerIamScimTokensRoutes } from './iam/scim-tokens'; // SCIM provisioning tokens
 import { registerIamSsoRoutes } from './iam/sso'; // SAML SSO provider + group mappings
-import { registerIamEnterpriseDemoRoutes } from './iam/enterprise-demo'; // self-serve enterprise-preview toggle
 import { registerIamPoliciesRoutes } from './iam/policies'; // session policy, active sessions / revoke, PAT policy
 import { registerIamServiceAccountsRoutes } from './iam/service-accounts'; // service accounts (non-human IAM principals)
 import { registerIamOauthClientsRoutes } from './iam/oauth-clients'; // Sign in with Kortix: OAuth client registry
 import { registerIamSessionOversightRoutes } from './iam/session-oversight'; // owner/admin access to every session (owner-only toggle)
 import { registerIamCustomRolesRoutes } from './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
 import { registerIamAssignmentsRoutes } from './iam/assignments'; // canonical: role_assignments CRUD + the permission catalog
+import { registerIamEnterpriseDemoRoutes } from './iam/enterprise-demo'; // self-serve Enterprise demo (owners and admins)
 
 /**
  * Registers every IAM route on `iamRouter`. accounts/index.ts calls it once,
@@ -59,11 +59,11 @@ export function registerIamRoutes(): void {
   registerIamMfaRoutes();
   registerIamScimTokensRoutes();
   registerIamSsoRoutes();
-  registerIamEnterpriseDemoRoutes();
   registerIamPoliciesRoutes();
   registerIamServiceAccountsRoutes();
   registerIamOauthClientsRoutes();
   registerIamSessionOversightRoutes();
+  registerIamEnterpriseDemoRoutes();
   registerIamAssignmentsRoutes();
 }
 

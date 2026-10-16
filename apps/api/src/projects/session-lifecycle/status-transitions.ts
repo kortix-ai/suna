@@ -49,6 +49,8 @@ interface SessionTransitionRule {
   appliesToDeleted?: true;
   /** Applies ONLY to a deleted session (`restoreSession`). */
   deletedOnly?: true;
+  /** Leaves `updated_at` as it was, so the session keeps its list position. */
+  keepsUpdatedAt?: true;
 }
 
 interface SandboxTransitionRule {
@@ -57,8 +59,12 @@ interface SandboxTransitionRule {
 }
 
 export const SESSION_TRANSITIONS = {
-  /** `deleteSession`: the write that tombstones the session. */
-  delete: { from: ANY_SESSION, to: 'stopped', appliesToDeleted: true },
+  /**
+   * `deleteSession`: the write that tombstones the session. It keeps
+   * `updated_at`: a delete that moved the tombstone to the head of the list
+   * order buried the owner's live sessions under it (KRTX-1727 scenario B).
+   */
+  delete: { from: ANY_SESSION, to: 'stopped', appliesToDeleted: true, keepsUpdatedAt: true },
   /**
    * `restoreSession`: the write that lifts the tombstone. The caller strips
    * `deletedAt`, so the session is live again and stopped, with no box.
@@ -114,10 +120,16 @@ export const SANDBOX_TRANSITIONS = {
   /**
    * `restoreSession`: the archived row of a deleted session whose box the
    * provider confirmed removed. It gives up its external id and becomes a
-   * retired row (`isRetiredEphemeralRow`), which the next open claims for a
+   * retired row (`isRetiredSandboxRow`), which the next open claims for a
    * fresh box from the session branch.
    */
   restore: { from: ['archived'], to: 'stopped' },
+  /**
+   * `recoverLostSession`: the stopped row of a lost session (provider removed
+   * the box, no in-place recovery). On a person's ask it becomes a retired row,
+   * as `restore` makes one, once the provider confirmed the box removed.
+   */
+  retireLost: { from: ['stopped'], to: 'stopped' },
   /** A `provisioning` row of a deleted session whose owner lapsed. */
   archiveProvisioning: { from: ['provisioning'], to: 'archived' },
   /** A restart or recovery claimed the row. */
@@ -180,7 +192,7 @@ export interface SandboxMetadataPatch {
 }
 
 interface SessionWrite {
-  /** Written as `updated_at`. Defaults to now. */
+  /** Written as `updated_at`, unless the transition keeps it. Defaults to now. */
   at?: Date;
   /** Keys removed from the session metadata, before `metadata` is merged. */
   stripMetadata?: readonly string[];
@@ -261,7 +273,7 @@ export async function transitionSession(
     .update(projectSessions)
     .set({
       status: rule.to,
-      updatedAt: write.at ?? new Date(),
+      ...(rule.keepsUpdatedAt ? {} : { updatedAt: write.at ?? new Date() }),
       ...(write.error !== undefined ? { error: write.error } : {}),
       ...(write.sandboxUrl !== undefined ? { sandboxUrl: write.sandboxUrl } : {}),
       ...(write.metadata || write.stripMetadata ? { metadata: patchedSessionMetadata(write) } : {}),

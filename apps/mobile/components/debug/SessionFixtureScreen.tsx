@@ -26,24 +26,18 @@ import { QuestionPrompt } from '@/components/session/QuestionPrompt';
 import { SessionBusyIndicator } from '@/components/session/session-busy-indicator';
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
-import {
-  usePendingPermissions,
-  usePendingQuestions,
-  useSessionRows,
-  useSessionStatus,
-} from '@/lib/session/session-store';
-import type { MessageWithParts, Turn } from '@/lib/session/types';
+import { usePendingPermissions, usePendingQuestions, useSessionStatus } from '@/lib/session/session-store';
 import { turnTopGap } from '@/lib/session/auto-scroll';
 import {
   isSuppressedFailedCompaction,
   lastCompactionTurnIndex as findLastCompactionTurnIndex,
   suppressWorkingTurnBusy,
   transcriptBusyRowVisible,
-  type TurnBodyTurn,
 } from '@/lib/session/turn-body';
 import { webSpace } from '@/lib/session/user-message';
 import { useThemeStore } from '@/stores/theme-store';
-import { compactionTurnInfo } from '@kortix/sdk';
+import type { SessionLogTurn } from '@kortix/sdk';
+import { useSessionLogThread } from '@kortix/sdk/react';
 import {
   fixturePendingTurnIds,
   fixtureQueueState,
@@ -56,7 +50,8 @@ const SESSION_ID = SESSION_FIXTURE.sessionId;
 const WORKING_TURN_ID = SESSION_FIXTURE.working.userMessageId;
 const PENDING_TURN_IDS = fixturePendingTurnIds();
 const AGENT_NAMES = SESSION_FIXTURE.agentNames;
-const EMPTY_MESSAGES = Object.freeze([]) as unknown as MessageWithParts[];
+/** The fixture's transcript: the session log of its root runtime session (no Kortix session behind it). */
+const FIXTURE_SOURCE = { projectId: '', sessionId: 'session-fixture', runtimeSessionId: SESSION_ID };
 /** `SessionPage` `INITIAL_TURNS_TO_RENDER`. */
 const INITIAL_TURNS_TO_RENDER = 4;
 const NOOP = () => {};
@@ -81,25 +76,15 @@ export function SessionFixtureScreen() {
   );
   const toggleTheme = useCallback(() => nativewindColorScheme.set(isDark ? 'light' : 'dark'), [isDark]);
 
-  const messages = useSessionRows(SESSION_ID) ?? EMPTY_MESSAGES;
+  const thread = useSessionLogThread(FIXTURE_SOURCE);
   const sessionStatus = useSessionStatus(SESSION_ID);
   const pendingQuestions = usePendingQuestions(SESSION_ID);
   const pendingPermissions = usePendingPermissions(SESSION_ID);
   const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  const turns = useMemo(() => fixtureTurns(messages), [messages]);
-  const lastCompactionTurnIndex = useMemo(
-    () => findLastCompactionTurnIndex(turns as unknown as TurnBodyTurn[]),
-    [turns],
-  );
-  const suppressWorkingBusy = useMemo(
-    () =>
-      suppressWorkingTurnBusy(turns as unknown as TurnBodyTurn[], {
-        workingTurnId: WORKING_TURN_ID,
-        pendingTurnIds: [...PENDING_TURN_IDS],
-      }),
-    [turns],
-  );
+  const turns = useMemo(() => fixtureTurns(thread, isBusy), [thread, isBusy]);
+  const lastCompactionTurnIndex = useMemo(() => findLastCompactionTurnIndex(turns), [turns]);
+  const suppressWorkingBusy = useMemo(() => suppressWorkingTurnBusy(turns), [turns]);
   const showTranscriptBusyRow = transcriptBusyRowVisible({
     isBusy,
     workingTurnId: WORKING_TURN_ID,
@@ -109,13 +94,13 @@ export function SessionFixtureScreen() {
   const markdownActions = useMemo(() => ({ onOpenFile: NOOP }), []);
 
   const renderTurn = useCallback(
-    ({ item, index }: { item: Turn; index: number }) => {
-      const id = item.userMessage.info.id;
-      const isWorkingTurn = id === WORKING_TURN_ID;
+    ({ item, index }: { item: SessionLogTurn; index: number }) => {
+      const id = item.id;
+      const isWorkingTurn = item.live;
       const suppressed =
         lastCompactionTurnIndex > index &&
         isSuppressedFailedCompaction({
-          info: compactionTurnInfo(item as never),
+          compaction: item.compaction,
           isTurnWorking: isWorkingTurn,
           turnIndex: index,
           lastCompactionTurnIndex,
@@ -126,16 +111,14 @@ export function SessionFixtureScreen() {
             index,
             working: isBusy,
             pending: PENDING_TURN_IDS.has(id),
-            previousPending: index > 0 && PENDING_TURN_IDS.has(turns[index - 1]!.userMessage.info.id),
+            previousPending: index > 0 && PENDING_TURN_IDS.has(turns[index - 1]!.id),
           });
       return (
         <View style={gap > 0 ? { marginTop: gap } : undefined}>
           {suppressed ? null : (
             <SessionTurn
               turn={item}
-              isWorkingTurn={isWorkingTurn}
               sessionStatus={isWorkingTurn ? sessionStatus : undefined}
-              isBusy={isWorkingTurn ? isBusy : false}
               suppressBusyIndicator={isWorkingTurn && suppressWorkingBusy}
               sessionId={SESSION_ID}
               permissions={pendingPermissions}
@@ -154,7 +137,7 @@ export function SessionFixtureScreen() {
     [lastCompactionTurnIndex, isBusy, turns, sessionStatus, suppressWorkingBusy, pendingPermissions, pendingQuestions],
   );
 
-  const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
+  const keyExtractor = useCallback((item: SessionLogTurn) => item.id, []);
   const activeQuestion = pendingQuestions[0];
 
   return (

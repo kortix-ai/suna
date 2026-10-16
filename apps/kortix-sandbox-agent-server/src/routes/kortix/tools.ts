@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { toolAllowed, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import { hostedTool, runTool, sessionEnv, toolBridgeKey } from '@/services/tools/host'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { authorizeControl, bearerMatches } from './control-auth'
 
 /**
@@ -50,7 +51,7 @@ export function createToolsRouter(cfg: Config, env: NodeJS.ProcessEnv = process.
 
 function compiledAgents(env: NodeJS.ProcessEnv): Partial<CompiledAgentSet> | null {
   try {
-    return JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG ?? 'null')
+    return JSON.parse(compiledAgentConfigFromEnv(env) ?? 'null')
   } catch {
     return null
   }

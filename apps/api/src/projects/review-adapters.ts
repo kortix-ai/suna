@@ -101,16 +101,25 @@ export function connectorCallToReviewItem(
   };
 }
 
+/**
+ * The inbox status each Change Request status shows as. An OPEN change is
+ * always reviewable (you can read the diff + ship or ask for more changes).
+ * Requested changes are shown as history — not a terminal state, so the item
+ * never gets stuck waiting. The paged inbox and the summary filter CRs in SQL
+ * by this table, so it is the one place the mapping lives.
+ */
+export const CR_REVIEW_STATUS: Record<ChangeRequestRow['status'], ReviewItemDTO['status']> = {
+  open: 'needs_you',
+  merged: 'approved',
+  closed: 'rejected',
+};
+
 /** A Change Request, presented as a `change` review item. */
 export function changeRequestToReviewItem(cr: ChangeRequestRow): ReviewItemDTO {
   const rc = (cr.metadata as Record<string, unknown> | null)?.requested_changes;
   const requested = (Array.isArray(rc) ? rc : []) as Array<{ text?: string }>;
   const lastFeedback = requested.length > 0 ? (requested[requested.length - 1].text ?? null) : null;
-  // An OPEN change is always reviewable (you can read the diff + ship or ask for
-  // more changes). Requested changes are shown as history — not a terminal state,
-  // so the item never gets stuck waiting.
-  const status: ReviewItemDTO['status'] =
-    cr.status === 'merged' ? 'approved' : cr.status === 'closed' ? 'rejected' : 'needs_you';
+  const status = CR_REVIEW_STATUS[cr.status] ?? 'needs_you';
   return {
     review_item_id: `${CR_ID_PREFIX}${cr.crId}`,
     account_id: cr.accountId,

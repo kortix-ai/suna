@@ -3,23 +3,27 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { EnvelopeOpenIcon as MailCheck } from '@phosphor-icons/react';
-import { FormEvent, Suspense, useState } from 'react';
+import { FormEvent, Suspense, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { errorToast } from '@/components/ui/toast';
 import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
-import { forgotPassword } from '../actions';
+import { submitAuthForm } from '@/lib/auth/submit-auth';
 
 function ForgotPasswordContent() {
   const t = useTranslations('auth.passwordReset');
   const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setErrorMessage(null);
     setPending(true);
 
@@ -28,19 +32,21 @@ function ForgotPasswordContent() {
     const email = (formData.get('email') as string)?.trim();
 
     try {
-      const result = await forgotPassword(null, formData);
-      if (result && typeof result === 'object' && 'success' in result && result.success) {
+      const outcome = await submitAuthForm('/api/auth/forgot-password', formData);
+      if (outcome.ok && outcome.result.success) {
         setSentTo(email);
         return;
       }
-      const msg = (result as any)?.message || t('errors.sendFailed');
+      const message = outcome.ok ? outcome.result.message : outcome.message;
+      const msg = typeof message === 'string' ? message : t('errors.sendFailed');
       setErrorMessage(msg);
       errorToast(msg);
-    } catch (err: any) {
-      const msg = err?.message || t('errors.unexpected');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t('errors.unexpected');
       setErrorMessage(msg);
       errorToast(msg);
     } finally {
+      inFlight.current = false;
       setPending(false);
     }
   };
@@ -71,6 +77,7 @@ function ForgotPasswordContent() {
       description={t('request.description')}
       footer={<BackToSignIn />}
     >
+      {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-3">
           <label htmlFor="email" className="text-muted-foreground text-sm font-medium">
@@ -99,7 +106,7 @@ function ForgotPasswordContent() {
 export default function ForgotPassword() {
   const t = useTranslations('auth.passwordReset');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={t('loading')} />}>
+    <Suspense fallback={<ConnectingScreen minimal title={t('loading')} />}>
       <ForgotPasswordContent />
     </Suspense>
   );

@@ -31,6 +31,7 @@ import {
   ToolMarkdown,
   partInput,
   partOutput,
+  partRawOutput,
   useToolRowVariant,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
@@ -95,19 +96,19 @@ function ScrapeResultItem({ result, first }: { result: ScrapeResult; first: bool
   );
 }
 
-export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ScrapeWebpageTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { chain } = useToolRowVariant();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
 
-  const rawOutput = part.state.status === 'completed' ? (part.state as { output?: unknown }).output : undefined;
+  const rawOutput = call.status === 'complete' ? partRawOutput(call) : undefined;
   const results = useMemo(() => resolveScrapeResults(rawOutput ?? output, input), [rawOutput, output, input]);
   const keys = useMemo(() => scrapeResultKeys(results), [results]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={GlobeIcon}
       trigger={
         <Text

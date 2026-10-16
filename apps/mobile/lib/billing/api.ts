@@ -13,18 +13,19 @@ export interface AccountState {
    * that predate it; read it through `getPlanFamily` (lib/billing/plan-action).
    */
   plan?: {
-    family: 'free' | 'team' | 'enterprise';
+    key?: string;
+    family: 'free' | 'credits' | 'enterprise';
     label: string;
     sublabel?: string | null;
-    is_grandfathered?: boolean;
+    /** The paid plan's monthly amount in USD; null for free and enterprise. */
+    monthly_usd?: number | null;
   } | null;
-  /** Team-plan checkout metadata (mirrors the web account-state contract). */
+  /** @deprecated Trials are removed: always null. */
+  trial?: { plan: 'credits' | 'enterprise'; ends_at: string; days_left: number } | null;
+  /** The Enterprise feature layer. Absent on older APIs. */
+  enterprise?: { state: 'off' | 'demo' | 'licensed' };
   can_manage_billing?: boolean;
-  member_count?: number;
-  seats?: {
-    count?: number;
-    price_per_seat_usd?: number;
-  };
+  /** USD amounts (1 credit = $0.01). Show them with `formatUsdAsCredits`. */
   credits: {
     total: number;
     daily: number;

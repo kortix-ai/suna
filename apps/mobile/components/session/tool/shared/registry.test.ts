@@ -22,3 +22,10 @@ test('an unregistered alias renders its kind’s renderer', () => {
   expect(ToolRegistry.get('multiedit')).toBe(edit);
   expect(ToolRegistry.get('oc_multiedit')).toBe(edit);
 });
+
+test('a kind registered with a hyphen still renders its aliases', () => {
+  const patch = (() => null) as never;
+  ToolRegistry.register('apply-patch', patch);
+  // OpenCode `patch` has no renderer of its own; its kind `apply_patch` is registered as `apply-patch`.
+  expect(ToolRegistry.get('patch')).toBe(patch);
+});

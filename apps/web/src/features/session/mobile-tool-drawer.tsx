@@ -24,9 +24,9 @@ import { CloseButton } from '@/features/session/action-panel/easy/detail-view';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useKortixComputerStore, type QuickView } from '@/stores/kortix-computer-store';
 import { sessionPreviewTabId } from '@/stores/session-browser-store';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import {
   FolderOpenIcon,
   GlobeIcon,
@@ -65,7 +65,7 @@ export function MobileToolDrawer({
               {meta && <meta.Icon className="text-muted-foreground size-4 shrink-0" />}
               {meta?.label}
             </span>
-            <CloseButton onClose={closeMobileTool} />
+            <CloseButton onClose={closeMobileTool} variant="ghost" />
           </DrawerTitle>
         </DrawerHeader>
         <div className="min-h-0 flex-1 overflow-hidden">

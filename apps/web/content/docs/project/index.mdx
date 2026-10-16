@@ -57,6 +57,7 @@ To create a project, follow the [Quickstart](/docs/quickstart).
 | `harnesses/opencode/` | `opencode.jsonc`, `plugins/`, `tools/`, `commands/`. | OpenCode only |
 | `harnesses/pi/` | `settings.json`, `extensions/`, `skills/`, `prompts/`. A new project does not have this folder. | pi only |
 
+- A `kortix_version: 3` project reads no harness folder. Its slash commands are declared in `kortix.yaml`; see [commands (v3)](/docs/project/manifest#commands-v3).
 - `agents.<name>.file`, `opencode.config_dir` and `pi.config_dir` in `kortix.yaml` move an agent file or a harness folder to another path.
 - The manifest path is a project setting, `kortix.yaml` by default. See [File and schema](/docs/project/manifest#file-and-schema).
 - A project that keeps agents and skills under `.kortix/opencode/` and memory under `.kortix/memory/` works unchanged. Every reader accepts both layouts.
@@ -72,7 +73,7 @@ A new project starts from the general starter. It commits these files to the def
 | `session-reviewer` agent | A subagent of `harness-reflector`. It reviews one session and reports what went wrong. |
 | `harness-reflector` trigger | A cron trigger that runs `harness-reflector` daily at 03:00 UTC. It ships with `enabled: false`. |
 | Skills | `kortix-cli`, `agent-browser`, `convert-documents-to-markdown`, `design-foundations`, `docx`, `pdf`, `presentations`, `web-publishing-and-deployments`, `webapp`, `website-building`, `xlsx`. |
-| Tools | The five Kortix tools under `tools:`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`. |
+| Tools | The seven Kortix tools under `tools:`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe`. |
 | `memory/MEMORY.md` | The empty memory index. |
 | `harnesses/opencode/` | `opencode.jsonc`, `package.json` and the terminal plugin under `plugins/`. |
 
@@ -142,7 +143,7 @@ The `marketplace` feature flag gates `install`. It is on by default. With the fl
 | An edit inside a session's `/workspace` | Never on its own. It takes effect only when a change request merges it into the default branch. |
 | A secret value | Kortix pushes it to the project's running sandboxes. |
 | A sandbox template | Sessions that start after the change. Running sandboxes keep their image. |
-| A feature flag | At once. `pi_harness` applies to new and restarted sessions. `us_region`, `drives` and `ephemeral_sandboxes` apply to new sessions. |
+| A feature flag | At once. `pi_harness` applies to new and restarted sessions. `us_region` and `drives` apply to new sessions. |
 
 To force a running session onto the newest config, run `kortix sessions reload <session_id>`. It restarts the agent runtime and refuses during a turn unless you pass `--force`. [Config comes from the base branch](/docs/git#config-comes-from-the-base-branch) explains releases and fallback.
 
@@ -210,20 +211,21 @@ A toggle of three flags also updates running state. The API response does not wa
 | `agentmail_email` | AgentMail Email | Off | Experimental | Always | Inbound email starts and continues sessions. See [Slack, Teams & email](/docs/connect/channels#email). |
 | `llm_gateway` | LLM Gateway | On | Experimental | When the deployment runs the LLM gateway (`LLM_GATEWAY_ENABLED`) | Model calls go through the Kortix LLM gateway. Off: provider keys load as environment variables and models are native `provider/model` refs. See [Models](/docs/project/models#without-the-gateway). |
 | `meta_agent` | Meta Agent | Off | Experimental | Always | Adds a platform coordinator agent that starts and manages other sessions. It becomes the default agent for a new session that names no agent. See [Agents & permissions](/docs/project/agents#which-agent-runs). |
-| `apps` | Apps | Off. Kortix turns it on per project on request. | Stable | Always | Deploy Apps. See [Apps](/docs/apps#turn-apps-on). |
 | `session_log` | Session log v2 | Off. Kortix turns it on per project. | Experimental | Always | Read a session through the v2 session log instead of the v1 transcript: the saved conversation of a stopped session, the open bundle, a public share and MCP `read_session` come from the session log, in the same shape as before, and the open bundle also returns the log's first page. Settings does not list this flag. |
-| `session_log_restore` | Session log restore | Off. Kortix turns it on per project. | Experimental | Always | A session whose sandbox lost the conversation (a new sandbox, or a sandbox whose saved conversation is older than the session log) gets it back from the session log when the sandbox starts. Off: the sandbox keeps what it has. Settings does not list this flag. |
+| `session_log_restore` | Session log restore | Off (on by default on the Kortix dev deployment). Kortix turns it on per project. | Experimental | Always | A session whose sandbox lost the conversation (a new sandbox, or a sandbox whose saved conversation is older than the session log) gets it back from the session log when the sandbox starts. A session log over the restore limit (24 MB by default; attachments count at two fifths of their size) is not loaded: the agent gets a note instead, and the session page shows a notice. Off: the sandbox keeps what it has. Settings does not list this flag. |
+| `workspace_volume` | Workspace volume | Off. Kortix turns it on per project. | Experimental | With Platinum (`PLATINUM_API_KEY`) | A new Platinum session keeps `/workspace` on its own volume instead of the sandbox disk. The sandbox still stops and resumes in place. A session that has a volume keeps it after the flag is turned off, and deleting the session deletes its volume. The volume takes one of the sandbox's 8 mounts, so a session mounts at most 7 `/drives` folders. Settings does not list this flag. |
 | `monitors` | Monitors | Off | Experimental | With Platinum sandboxes (`PLATINUM_API_KEY`) | 24/7 watchers from your repo fire trigger events into sessions. See [Monitors](/docs/connect/triggers#monitors). |
 | `reminders` | Reminders | Off | Beta | Always | Scheduled re-prompts of one session, and `kortix remind`. Off: existing reminders do not fire. See [Reminders](/docs/connect/triggers#reminders). |
 | `warm_sessions` | Warm Sessions | On | Beta | Always | Keeps one sandbox booted per person while the project is open, so a new session starts without a cold boot. The warm sandbox uses compute while it waits. See [Warm sessions](/docs/work/sessions#warm-sessions). |
 | `secrets_egress` | Network-Enforced Secrets | On | Experimental | Always | Offers the "Enforce at the network" option for a secret. Off: every secret loads into the sandbox environment. See [Secrets](/docs/project/secrets). |
 | `pooled_provider_secrets` | Pooled Provider Secrets | Off | Experimental | Always | Members connect their own ChatGPT subscriptions and provider keys, share them, and choose which ones each session uses. See [Models](/docs/project/models#shared-keys-and-chatgpt-accounts). |
 | `pi_harness` | Pi Harness (in-sandbox) | Off | Experimental | Always | New and restarted sessions boot pi instead of OpenCode. pi needs `llm_gateway` on. Off: `runtime: pi` in `kortix.yaml` still selects pi. See [Harnesses](/docs/project/agents#harnesses-opencode-and-pi). |
-| `us_region` | US Region | Off | Experimental | With Platinum and a configured US region (`PLATINUM_API_KEY`, `KORTIX_PLATINUM_US_REGION`) | New Platinum sandboxes start in the US region. This moves compute only, not the API, database or archives. Existing sandboxes keep their region. See [Sandboxes & previews](/docs/work/runtime#sandbox-providers). |
+| `genui` | Generative UI | Off | Experimental | Always | The agent may answer with cards, comparisons, charts, maps and tabs instead of long text. Each new session of the project lists the `kortix-genui` system skill, and the agent loads it when an answer needs UI. Off: the skill is hidden and the agent writes markdown only; blocks already in a transcript still render. A running or restarted session keeps its setting until you start a new session. See [Generative UI](/docs/sdk/genui). |
+| `us_region` | US Region | Off | Experimental | With Platinum and a configured US region (`PLATINUM_API_KEY`, `KORTIX_PLATINUM_US_REGION`) | New Platinum sandboxes start in the US region. This moves compute only, not the API, database or archives. Existing sandboxes keep their region. If the image cannot be copied to the region, the session starts in the home region. See [Sandboxes & previews](/docs/work/runtime#sandbox-providers). |
 | `event_triggers` | App event triggers | Off | Beta | Always | Events in connected apps start agents. Off: the event routes answer `feature_disabled`, and a `type: event` trigger has status `error`. See [App events](/docs/connect/triggers#app-events). |
 | `notification_center` | Notification Center | Off | Beta | Always | A bell inbox, browser push and email for the people a session concerns, plus trigger and reminder alerts. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing. See [Notifications](/docs/work/sessions#notifications). |
-| `drives` | Files | Follows the account's Volumes setting | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared folders under `/drives` in new sessions. See [Files](/docs/work/runtime#files). |
-| `ephemeral_sandboxes` | Ephemeral sandboxes | Follows the account's Volumes setting | Experimental | With Platinum (`PLATINUM_API_KEY`) | A stopped session keeps its files and conversation on a volume and gives up its sandbox. Waking it starts a new sandbox from the newest image. Running processes do not survive a stop. See [Persistent and ephemeral machines](/docs/work/runtime#persistent-and-ephemeral-machines). |
+| `volumes` | Volumes | Off | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared Files for the project: the Files page and the `drives` flag. See [Files](/docs/work/runtime#files). |
+| `drives` | Files | Follows the project's `volumes` flag | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared folders under `/drives` in new sessions. See [Files](/docs/work/runtime#files). |
 
 ### When a flag is off
 
@@ -242,12 +244,11 @@ Branch on `code`, never on `error`. The SDK exports `isFeatureDisabledError(erro
 | Flag kind | `error` |
 | --- | --- |
 | A normal flag | `<Name> is not enabled for this project. Enable it in Settings → Feature flags.` |
-| A flag managed by Kortix (`apps`) | `<Name> is not enabled for this project. Contact Kortix to enable it.` |
-| A flag that follows the project's Volumes flag (`drives`, `ephemeral_sandboxes`) | `<Name> is not enabled for this project. Turn on Volumes in Settings → Feature flags.` |
+| A flag managed by Kortix (`session_log`, `session_log_restore`, `workspace_volume`) | `<Name> is not enabled for this project. Contact Kortix to enable it.` |
+| A flag that follows the project's Volumes flag (`drives`) | `<Name> is not enabled for this project. Turn on Volumes in Settings → Feature flags.` |
 
-- **`apps`** is managed by Kortix. Kortix turns it on for a project on request. Settings and the CLI list it only while it is on, with a locked switch and origin `kortix`. A write from anyone else answers `403` `feature_operator_only`.
-- **`volumes`** and **`stateless_sessions`** are ordinary project flags. They are listed only on a deployment with Platinum. Turning `stateless_sessions` on while `volumes` is off answers `400` `Turn on Volumes first`.
-- **`drives`** and **`ephemeral_sandboxes`** follow the project's `volumes` flag. They are never listed. A write answers `400`. With Volumes off, every Files write answers `403` `feature_disabled`, and a file a session already wrote under `/drives` still opens.
+- **`volumes`** is an ordinary project flag. It is listed only on a deployment with Platinum.
+- **`drives`** follows the project's `volumes` flag. It is never listed. A write answers `400`. With Volumes off, every Files write answers `403` `feature_disabled`, and a file a session already wrote under `/drives` still opens.
 
 ## Delete a project
 

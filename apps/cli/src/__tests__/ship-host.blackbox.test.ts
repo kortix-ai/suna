@@ -10,6 +10,8 @@ let hits: Array<{ path: string; auth: string | null }>;
 let configFile: string;
 let bareRepo: string;
 let provisionBodies: unknown[];
+let refuseCreation: boolean;
+let useLocalRepo: boolean;
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), 'kortix-ship-host-'));
@@ -18,6 +20,8 @@ beforeEach(() => {
   Bun.spawnSync(['git', 'init', '-b', 'main'], { cwd });
   hits = [];
   provisionBodies = [];
+  refuseCreation = false;
+  useLocalRepo = false;
   bareRepo = join(cwd, 'remote.git');
   server = Bun.serve({
     port: 0,
@@ -27,6 +31,7 @@ beforeEach(() => {
       if (path === '/v1/accounts/me') return Response.json({ accounts: [] });
       if (path === '/v1/projects/provision') {
         provisionBodies.push(await req.json());
+        if (refuseCreation) return Response.json({ error: 'Free accounts are limited to 1 project.' }, { status: 403 });
         return Response.json({
           project_id: 'created_workspace',
           account_id: 'account_workspace',
@@ -42,7 +47,7 @@ beforeEach(() => {
           project_id: path.split('/').at(-1),
           account_id: 'account_workspace',
           name: 'Workspace',
-          repo_url: 'https://git.example.test/workspace.git',
+          repo_url: useLocalRepo ? bareRepo : 'https://git.example.test/workspace.git',
           default_branch: 'main',
           metadata: {},
         });
@@ -67,7 +72,7 @@ beforeEach(() => {
     configFile,
     JSON.stringify({
       active: 'workspace',
-      hosts: { workspace: host, other: { ...host, token: 'tok_other' } },
+      hosts: { workspace: host, other: { ...host, token: 'tok_other', default_project: { ...host.default_project, project_id: 'other_default' } } },
     }),
   );
 });
@@ -133,12 +138,51 @@ test('ship without --host uses the linked stored credential, not session auth', 
   expect((await cli(ship)).code).toBe(0);
   expect(hits).toEqual([{ path: '/v1/projects/workspace_project', auth: 'Bearer tok_other' }]);
 });
-test('first ship ignores session and global defaults and uses the configured account', async () => {
+test('unlinked ship uses the saved host default instead of creating or using the session project', async () => {
+  const result = await cli(ship);
+  expect(result.code).toBe(0);
+  expect(hits).toEqual([{ path: '/v1/projects/global_default', auth: 'Bearer tok_workspace' }]);
+  expect(result.stdout).toContain('global_default');
+  expect(result.stdout).toContain('sync');
+});
+
+test('unlinked ship targets the named host default, not the active host default', async () => {
+  const result = await cli([...ship, '--host', 'other']);
+  expect(result.code).toBe(0);
+  expect(hits).toEqual([{ path: '/v1/projects/other_default', auth: 'Bearer tok_other' }]);
+});
+
+test('unlinked ship honors explicit project before the saved default', async () => {
+  const result = await cli([...ship, '--project', 'explicit_project']);
+  expect(result.code).toBe(0);
+  expect(hits).toEqual([{ path: '/v1/projects/explicit_project', auth: 'Bearer tok_workspace' }]);
+});
+
+function clearDefaults() {
+  const config = JSON.parse(readFileSync(configFile, 'utf8'));
+  for (const host of Object.values(config.hosts)) {
+    if (typeof host === 'object' && host !== null) Reflect.deleteProperty(host, 'default_project');
+  }
+  writeFileSync(configFile, JSON.stringify(config));
+}
+
+test('first ship without a saved default ignores session project and uses the configured account', async () => {
+  clearDefaults();
   const result = await cli(ship);
   expect(result.code).toBe(0);
   expect(result.stdout).toContain('new project');
   expect(hits).toEqual([{ path: '/v1/accounts/me', auth: 'Bearer tok_workspace' }]);
 });
+test('refused creation names the existing-project link recovery command', async () => {
+  clearDefaults();
+  refuseCreation = true;
+  const result = await cli(['ship', '--no-verify', '--no-env', '--no-connect', '--origin', 'managed', '-y']);
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain('HTTP 403');
+  expect(result.stderr).toContain('kortix projects link <project_id>');
+  expect(provisionBodies).toHaveLength(1);
+});
+
 test('explicit project and host override both workspace and session', async () => {
   link();
   expect((await cli([...ship, '--project', 'explicit_project', '--host', 'other'])).code).toBe(0);
@@ -170,7 +214,25 @@ test.each([
     host_url: `http://127.0.0.1:${server.port}`,
   });
 });
+test('projects use then unlinked ship pushes twice to the saved default without provisioning', async () => {
+  useLocalRepo = true;
+  expect(Bun.spawnSync(['git', 'init', '--bare', bareRepo]).exitCode).toBe(0);
+  Bun.spawnSync(['git', 'config', 'user.name', 'Synthetic Agent'], { cwd });
+  Bun.spawnSync(['git', 'config', 'user.email', 'synthetic@example.test'], { cwd });
+  expect((await cli(['projects', 'use', 'chosen_project', '--host', 'workspace'])).code).toBe(0);
+  const args = ['ship', '--no-verify', '--no-env', '--no-connect', '-y'];
+  expect((await cli(args)).code).toBe(0);
+  writeFileSync(join(cwd, 'README.md'), 'Synthetic second ship\n');
+  expect((await cli(args)).code).toBe(0);
+  expect(provisionBodies).toEqual([]);
+  const pushed = Bun.spawnSync(['git', '--git-dir', bareRepo, 'show', 'main:README.md']);
+  expect(pushed.exitCode).toBe(0);
+  expect(pushed.stdout.toString()).toBe('Synthetic second ship\n');
+  expect(hits.filter((hit) => hit.path === '/v1/projects/chosen_project')).toHaveLength(3);
+});
+
 test('first ship provisions on the named host and pushes the actual commit to local Git', async () => {
+  clearDefaults();
   expect(Bun.spawnSync(['git', 'init', '--bare', bareRepo]).exitCode).toBe(0);
   expect(Bun.spawnSync(['git', 'config', 'user.name', 'Synthetic Agent'], { cwd }).exitCode).toBe(
     0,

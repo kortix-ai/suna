@@ -137,7 +137,7 @@ describe('collectInboxItems connector-call preview authorization', () => {
   };
 
   test('fails closed when no preview-authority callback is provided', async () => {
-    const [item] = await collectInboxItems(sources);
+    const [item] = (await collectInboxItems(sources)).items;
     expect(item.detail).not.toHaveProperty('args_preview');
     expect(item.detail).toMatchObject({
       args_preview_authorized: false,
@@ -146,7 +146,9 @@ describe('collectInboxItems connector-call preview authorization', () => {
   });
 
   test('includes the full redacted preview only for an authorized execution', async () => {
-    const [item] = await collectInboxItems(sources, {
+    const {
+      items: [item],
+    } = await collectInboxItems(sources, {
       connectorCallVerdict: (row) =>
         row.executionId === execution.executionId
           ? { canResolve: true, resolvers: 'managers_and_launcher' }
@@ -162,7 +164,7 @@ describe('collectInboxItems connector-call preview authorization', () => {
   // KRTX-1724: one verdict per call, the resolve route's. The resolver finds it
   // under Needs you; everyone else finds it under Waiting, with no decision.
   test('a call the caller may resolve is needs_you with can_resolve true', async () => {
-    const items = await collectInboxItems(sources, {
+    const { items } = await collectInboxItems(sources, {
       segment: 'needs_you',
       connectorCallVerdict: () => ({ canResolve: true, resolvers: 'managers_and_launcher' }),
     });
@@ -172,12 +174,12 @@ describe('collectInboxItems connector-call preview authorization', () => {
   });
 
   test('a call the caller may not resolve is waiting with can_resolve false', async () => {
-    const needsYou = await collectInboxItems(sources, {
+    const { items: needsYou } = await collectInboxItems(sources, {
       segment: 'needs_you',
       connectorCallVerdict: () => ({ canResolve: false, resolvers: 'managers' }),
     });
     expect(needsYou).toEqual([]);
-    const waiting = await collectInboxItems(sources, {
+    const { items: waiting } = await collectInboxItems(sources, {
       segment: 'waiting',
       connectorCallVerdict: () => ({ canResolve: false, resolvers: 'managers' }),
     });
@@ -187,7 +189,7 @@ describe('collectInboxItems connector-call preview authorization', () => {
   });
 
   test('a call with no verdict (it raced the read) fails closed and names nobody', async () => {
-    const [item] = await collectInboxItems(sources, { connectorCallVerdict: () => undefined });
+    const [item] = (await collectInboxItems(sources, { connectorCallVerdict: () => undefined })).items;
     expect([item.status, item.can_resolve, item.resolvers]).toEqual(['waiting', false, null]);
   });
 });

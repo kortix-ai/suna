@@ -276,10 +276,16 @@ export async function ensureLocalSupabase(
     if (!options.autoStart) throw error;
   }
 
+  // `studio` (the dashboard) and `imgproxy` (storage image transforms): no
+  // test uses either, and they were the largest pulls of a CI lane's
+  // 108 s `supabase start` (browser-1, run 38777589705). scripts/dev-local.sh
+  // excludes the same two.
   const command = [
     ...localSupabaseCommand(topology),
     "start",
     "--ignore-health-check",
+    "-x",
+    "studio,imgproxy",
   ];
   const started = Bun.spawn(command, {
     cwd: topology.root,
@@ -641,6 +647,9 @@ export async function ensureLocalStack(
           KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
           // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
           KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
+          // TRG-19 and SCOPE-6 push kortix.yaml and poll until the API's git
+          // mirror sees it. The 60 s default refresh made them wait ~180 s.
+          KORTIX_GIT_REFRESH_INTERVAL_MS: "1000",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),
@@ -682,6 +691,18 @@ export async function ensureLocalStack(
           ...(S3_PROTOCOL_ACCESS_KEY_SECRET
             ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
             : {}),
+          // Kortix Capture reads the same endpoint, bucket `kortix-capture`
+          // (migration). Supabase Storage has no STS: device credentials answer
+          // 503 here and the CAP flows write as a static-credential device.
+          KORTIX_CAPTURE_S3_BUCKET: "kortix-capture",
+          KORTIX_CAPTURE_S3_REGION: "local",
+          KORTIX_CAPTURE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+          KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: "true",
+          ...(S3_PROTOCOL_ACCESS_KEY_ID ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID } : {}),
+          ...(S3_PROTOCOL_ACCESS_KEY_SECRET ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET } : {}),
+          KORTIX_CAPTURE_INDEX_POLL_SECONDS: "2",
+          // No network in the deterministic profile: fleet health skips the newest-version check.
+          KORTIX_CAPTURE_UPDATE_MANIFEST_URL: "",
           SCHEDULER_ENABLED: "false",
           // OAU-7 replays a rotated refresh token after this window; keep it short.
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",

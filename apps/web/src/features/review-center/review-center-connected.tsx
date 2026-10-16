@@ -14,7 +14,6 @@ import { useTranslations } from '@/i18n/use-translations';
  * prototype.
  */
 
-import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
 import { useProjectContext } from '@/features/project-files/context';
 import { useChangeRequestRecovery } from '@/features/project-files/hooks/use-change-request-recovery';
@@ -26,17 +25,20 @@ import {
 import { useProjectCans } from '@/lib/use-project-can';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
+  type ReviewSegment,
   type ReviewVerdict,
+  getReviewItem,
   listProjectSessions,
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   REVIEW_CONTROL_ACTIONS,
   reviewVerdictAllowed,
 } from '@kortix/sdk';
-import { clearStartStash, contract, qk } from '@kortix/sdk/react';
+import { clearStartStash, contract, qk, reviewItemsOf } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  invalidateReviewInbox,
   useActReviewItem,
   useBulkActReviewItems,
   useResolveReviewApproval,
@@ -47,9 +49,9 @@ import { connectorCallId, crChangeRequestId, itemDeepLink, planBulkAction } from
 import { ReviewCenter } from './review-center';
 
 /**
- * How many session deep links the inbox warms up front. The inbox is unbounded
- * — a busy project can hold dozens — and each prefetch is a real dynamic RSC
- * render. Eight covers the rows a user can see and click without scrolling.
+ * How many session deep links the inbox warms up front. A page holds up to 50
+ * items, and each prefetch is a real dynamic RSC render. Eight covers the rows
+ * a user can see and click without scrolling.
  */
 const PREFETCH_LIMIT = 8;
 
@@ -69,7 +71,35 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const qc = useQueryClient();
   const router = useRouter();
   const closeCustomize = useSettingsPanelStore((s) => s.close);
-  const { data, isLoading, isFetching, isFetched, isError, refetch } = useReviewItems();
+  // The segment is a server filter: each one is its own paged read (KRTX-2316).
+  const [segment, setSegment] = useState<ReviewSegment>('needs_you');
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isFetched,
+    isError,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useReviewItems(segment);
+  const rows = useMemo(() => reviewItemsOf(data), [data]);
+  // A link names one item (`?id=cr:…` from a session's change list). It may be
+  // in another segment or past the loaded pages: read it by id.
+  const idParam = useSearchParams()?.get('id') ?? null;
+  const linkedMissing = Boolean(
+    idParam && isFetched && !rows.some((row) => row.review_item_id === idParam),
+  );
+  const linked = useQuery({
+    queryKey: [...qk.project.reviewItemsScope(projectId), 'item', idParam ?? ''],
+    queryFn: async () => (await getReviewItem(projectId, idParam!)).review_item,
+    enabled: Boolean(projectId) && linkedMissing,
+    staleTime: 5_000,
+    retry: false,
+  });
+  const linkedRow = linkedMissing ? linked.data : undefined;
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
   const resolve = useResolveReviewApproval();
@@ -96,8 +126,10 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
 
   const items = useMemo(
     () =>
-      (data?.review_items ?? []).map((row) => mapApiReviewItem(row, projectName, sessionLabels)),
-    [data, projectName, sessionLabels],
+      (linkedRow ? [...rows, linkedRow] : rows).map((row) =>
+        mapApiReviewItem(row, projectName, sessionLabels),
+      ),
+    [rows, linkedRow, projectName, sessionLabels],
   );
 
   // The inbox's "Open session" and "See it in the session" controls are buttons
@@ -130,7 +162,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     for (const href of warmKey ? warmKey.split('|') : []) router.prefetch(href);
   }, [warmKey, router]);
 
-  const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
+  const refreshInbox = () => invalidateReviewInbox(qc, projectId);
 
   function recoverChange(
     item: Extract<(typeof items)[number], { kind: 'change' }>,
@@ -189,11 +221,12 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
                 errorToast(tI18nComplete.raw('text3923e8556e27'), {
                   description: tI18nComplete.raw('text3d33bdd92001'),
                   duration: CONFLICT_TOAST_MS,
-                  button: (
-                    <Button size="sm" onClick={() => recoverChange(item, conflicts)}>
-                      {tI18nComplete.raw('texte8a1fa10c8d2')}
-                    </Button>
-                  ),
+                  actions: [
+                    {
+                      label: tI18nComplete.raw('texte8a1fa10c8d2'),
+                      onClick: () => recoverChange(item, conflicts),
+                    },
+                  ],
                 });
                 return;
               }
@@ -283,9 +316,21 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   return (
     <ReviewCenter
       initialItems={items}
+      segment={segment}
+      onSegmentChange={setSegment}
+      loadMore={
+        hasNextPage
+          ? {
+              onLoadMore: () => void fetchNextPage(),
+              isLoading: isFetchingNextPage,
+              isError: isFetchNextPageError,
+            }
+          : undefined
+      }
       isLoading={isLoading}
       isFetching={isFetching}
-      isFetched={isFetched}
+      // A linked item outside the pages holds the skeleton until its own read settles.
+      isFetched={isFetched && (!linkedMissing || linked.isFetched)}
       isError={isError}
       sessionLabels={sessionLabels}
       onAct={handleAct}

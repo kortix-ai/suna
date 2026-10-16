@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // status" order was carried by a comment repeated in each copy.
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 import { RUNTIME_WAKE_LEASE_MS } from '../session-lifecycle/runtime-wake-fence';
 import { mockConfigModule } from './test-support/mock-config';
 
@@ -83,8 +84,9 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-mock.module('../../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
+mock.module('../../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));

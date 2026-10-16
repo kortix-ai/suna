@@ -439,16 +439,25 @@ export interface RequestedStopScope {
  * Stamp a requested stop on the session's open turns. A row whose OpenCode
  * session is not recorded yet still matches: it cannot be proved to be another
  * session's turn, and an unmarked stop reads as a failure.
+ *
+ * `by` is the person who asked for the stop, shown to everyone else as
+ * "Stopped by <name>". A later stamp of the same stop without a person (the
+ * hold settle's re-abort) keeps the one already recorded.
  */
 export async function markTurnStopRequested(
   sessionId: string,
   name: RequestedStopName,
   scope: RequestedStopScope = {},
+  by: string | null = null,
 ): Promise<void> {
-  const mark = JSON.stringify({ name, message: null });
+  const mark = JSON.stringify(by ? { name, message: null, by } : { name, message: null });
   await recordTurnLedger(
     sql`UPDATE kortix.session_turns
-           SET end_error = ${mark}::jsonb,
+           SET end_error = CASE
+                 WHEN ${by}::text IS NULL AND end_error->>'name' = ${name} AND end_error ? 'by'
+                   THEN end_error
+                 ELSE ${mark}::jsonb
+               END,
                updated_at = now()
          WHERE session_id = ${sessionId}
            AND state <> 'ended'

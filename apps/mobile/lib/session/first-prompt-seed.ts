@@ -13,9 +13,9 @@
  * would send it twice. The echo replaces the seed through the SDK store's
  * ordinary optimistic swap. Pure, so `bun test` runs it.
  */
-import type { MessageWithParts } from './types';
 import type { AttachedFile } from './attachments';
 import { optimisticUserParts } from './optimistic-parts';
+import type { OptimisticMessage } from './session-store';
 import { mintWireMessageId } from './wire-message-id';
 
 /**
@@ -32,7 +32,7 @@ export function firstPromptSeed(i: {
   /** Ids the store already holds for this root. Any id means no seed. */
   knownMessageIds: string[];
   nowMs: number;
-}): MessageWithParts | null {
+}): OptimisticMessage | null {
   const text = i.text.trim();
   if (!text && i.files.length === 0) return null;
   // The store already holds this root (a reopen, or the echo won the race).
@@ -49,13 +49,14 @@ export function firstPromptSeed(i: {
       time: { created: i.nowMs },
     },
     parts,
-  } as unknown as MessageWithParts;
+  };
 }
 
 /**
  * True while nothing but the seed is in the transcript: no real user message
- * and no reply yet. An empty or missing list counts as undelivered.
+ * and no reply yet. `messageIds` are the ids the store holds; none counts as
+ * undelivered.
  */
-export function seedUndelivered(messages: MessageWithParts[] | undefined, seedId: string): boolean {
-  return (messages ?? []).every((message) => message.info.id === seedId);
+export function seedUndelivered(messageIds: readonly string[], seedId: string): boolean {
+  return messageIds.every((id) => id === seedId);
 }

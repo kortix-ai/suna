@@ -1,6 +1,6 @@
 ---
 name: design-foundations
-description: "Artifact-agnostic design guidance — works for CSS, PowerPoint, matplotlib, PDF, or any visual output. Also includes a curated catalog of named font/color themes for slides, docs, and reports (non-web assets)."
+description: "Artifact-agnostic design guidance — works for CSS, PowerPoint, matplotlib, PDF, or any visual output. Also includes a curated catalog of named font/color themes for slides, docs, and reports (non-web assets). Not for a chart, table or cards inside a chat reply: those are kortix-genui blocks."
 defaultProjectInstall: true
 ---
 

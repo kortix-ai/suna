@@ -11,6 +11,7 @@ import {
 } from '../browser/session-sync/session-cache-ownership';
 import {
   getSessionSyncController,
+  loadSessionExportMessages,
   loadSessionRuntimeStatus,
   loadSessionTranscriptMessages,
   resetSessionSyncControllersForSession,
@@ -30,12 +31,12 @@ import { chooseOlderSource, mirrorCursorAfter } from '../browser/session-sync/mi
 import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
-import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/sync-store';
+import { hasOnlyCacheSourcedMessages, hasRuntimeConfirmedMessage, useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
 import { canQueryRuntimeSession } from './use-opencode-sessions';
 
-export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
+export { loadSessionExportMessages, loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
 /** The two store slices the fragment check reads. Local so this file does not
  *  depend on the store's full published shape. */
@@ -65,6 +66,14 @@ interface UseSessionSyncOptions {
    * session then decides.
    */
   streamConnected?: boolean;
+  /**
+   * The saved copy the host already read: `useSession` passes its one
+   * saved-history read's answer, `null` while that read runs or when it found
+   * none. This hook then reads no transcript itself. Omit it and the hook
+   * reads the copy once (the session-open snapshot's window, else
+   * `GET …/transcript?shape=sync&history=true`; a `savedChild` reads its own
+   * window).
+   */
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
@@ -540,13 +549,22 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     mirrorPageInFlight.current = null;
   }, [kortixSessionScope, sessionId]);
 
+  // The saved window's cursor names its oldest message. Once the runtime holds that message
+  // and has no older page of its own, the runtime holds every older saved message too: the
+  // saved copy has nothing older to offer. A box that lost its state never confirms the
+  // cursor, so its saved history still pages.
+  const savedCursorCovered = useSyncStore(
+    () => !!mirrorCursor && !sync.hasOlder && hasRuntimeConfirmedMessage(sessionId, mirrorCursor),
+  );
+  const savedCursor = savedCursorCovered ? null : mirrorCursor;
+
   const loadOlder = useCallback((): Promise<void> => {
     const source = chooseOlderSource({
       runtimeHasOlder: sync.hasOlder,
-      mirrorCursor,
+      mirrorCursor: savedCursor,
     });
     if (source === 'runtime') return controller.loadOlder();
-    if (source !== 'mirror' || !mirrorCursor) return Promise.resolve();
+    if (source !== 'mirror' || !savedCursor) return Promise.resolve();
     // One request per cursor. The scroll sentinel and the print drain can both
     // ask at once, and a second request for the same cursor would hydrate the
     // same window twice and then advance the cursor past a page nobody read.
@@ -554,7 +572,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     setIsLoadingOlderMirror(true);
     const pending = loadOlderSessionTranscriptMirror({
       kortixSessionScope,
-      before: mirrorCursor,
+      before: savedCursor,
       child: savedChild ? sessionId : undefined,
     })
       .then((envelope) => {
@@ -577,7 +595,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       });
     mirrorPageInFlight.current = pending;
     return pending;
-  }, [controller, kortixSessionScope, mirrorCursor, savedChild, sessionId, sync.hasOlder]);
+  }, [controller, kortixSessionScope, savedCursor, savedChild, sessionId, sync.hasOlder]);
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a
@@ -602,7 +620,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
      * `savedTranscript`.
      */
     mirrorState,
-    hasOlder: sync.hasOlder || Boolean(mirrorCursor),
+    hasOlder: sync.hasOlder || Boolean(savedCursor),
     isLoadingOlder: sync.isLoadingOlder || isLoadingOlderMirror,
     loadOlder,
     diffs: diffs ?? EMPTY_DIFFS,

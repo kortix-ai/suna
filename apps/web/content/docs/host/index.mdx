@@ -221,7 +221,6 @@ Platform admins open `/admin`. On a self-hosted instance, a platform admin is a 
 | Projects | `/admin/projects` | Every project across every account, most active first, with its operator-managed [feature flags](/docs/project#feature-flags). |
 | Analytics | `/admin/analytics` | Daily platform activity, by UTC day. |
 | Sandboxes | `/admin/sandboxes` | Where new sandboxes are placed, and the live fleet. |
-| Boot modes | `/admin/volumes` | How new sessions of a project with Volumes on boot: the default mode, the kill switch, the fallback steps and the last 24 hours. Volumes itself is a [project feature flag](/docs/project#feature-flags). Needs Platinum. |
 | Git | `/admin/git` | The instance's managed GitHub identity. When `MANAGED_GIT_*` environment variables set it, the page is read-only. |
 | Maintenance | `/admin/utils` | System-wide notices and the full-lockdown switch. |
 
@@ -241,7 +240,7 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
 | `AGENTMAIL_API_KEY` | Managed inboxes for the email channel. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/connect/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
-| `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project drives and ephemeral sandboxes. |
+| `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project Files (`volumes`). |
 
 OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
 

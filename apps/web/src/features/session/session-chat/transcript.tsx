@@ -14,6 +14,8 @@ import { isQuestionTool } from '../session-activity-groups';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
+import { GenuiTelemetryContext } from '@/features/genui/block-telemetry';
+import { copyGenuiText } from '@/features/genui/to-markdown';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   type SessionLogBlock,
@@ -44,6 +46,7 @@ import {
   CheckIcon,
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
+  StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -310,6 +313,22 @@ export function messageAborted(message: SessionLogMessage): boolean {
 }
 
 /**
+ * The prompts a Stop stranded: the newest turn that got a reply ended by abort, and these
+ * prompts came after it with no reply. The runtime holds them; nothing runs them until the
+ * next send. A reply counts when `messages` (the whole thread) holds it, so a turn whose only
+ * reply the transcript hides (a failed attempt out of context) ran, and is not stranded.
+ */
+export function strandedPromptIds(turns: readonly SessionLogTurn[], messages: readonly SessionLogMessage[] | undefined): Set<string> {
+  const answered = new Set<string>();
+  for (const m of messages ?? []) if (m.role === 'assistant' && m.reply_to) answered.add(m.reply_to);
+  const newest = turns.findLastIndex((t) => t.assistant.length > 0 || answered.has(t.id));
+  if (newest < 0 || newest === turns.length - 1) return new Set();
+  const last = turns[newest].assistant.at(-1);
+  if (!last || !messageAborted(last)) return new Set();
+  return new Set(turns.slice(newest + 1).map((t) => t.id));
+}
+
+/**
  * What a turn's error row shows. An abort renders nothing — but an abort is the
  * EFFECT of whatever stopped the turn. `turnEndNotice` (SDK) decides whether the
  * control plane has something to say about THIS turn and what kind; this only
@@ -355,6 +374,9 @@ interface SessionTurnProps {
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
+  /** The member who stopped this turn, when it was not the viewer
+   *  (`stoppedByName`). Null or absent: nothing to say. */
+  stoppedBy?: string | null;
   /** The models that answered this turn and what Kortix billed for it, from
    *  the gateway's request record. Keep its identity stable: the row is memoized. */
   servedModel?: TurnServedModel;
@@ -1019,7 +1041,13 @@ const commandForTurn = useMemo(() => {
   if (!userMessageText) return undefined;
   return detectCommandFromText(userMessageText, commands);
 }, [commandMessages, turn.id, userMessageText, commands]);
-  return { sessionReport, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn };
+// A skill run as `/name` answers like any chat turn; only a real command's output sits in the command card.
+const commandOutput = useMemo(() => {
+  if (!commandForTurn) return undefined;
+  const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
+  return source === 'skill' ? undefined : commandForTurn;
+}, [commandForTurn, commands]);
+  return { sessionReport, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1711,8 +1739,8 @@ function TurnSegment({
 }
 
 /** What the turn says: the completion announce, the streaming text, and
- *  either the inline text-and-questions flow or the settled response. */
-function TurnAssistantBlock(
+ *  either the inline text-and-questions flow or the settled response. Exported for its test. */
+export function TurnAssistantBlock(
   props: Pick<SessionTurnProps, 'turn'> & {
     model: TurnModelState;
     answered: TurnAnsweredState;
@@ -1734,11 +1762,6 @@ function TurnAssistantBlock(
     </div>
     {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
-    {working && !hasSteps && !shouldUseInlineContent && response && (
-      <div className="min-w-0 text-sm">
-        <ThrottledMarkdown content={response} isStreaming />
-      </div>
-    )}
       {shouldUseInlineContent ? (
         <TurnInlineContent working={working} parts={inlineContentParts!} />
       ) : (
@@ -1747,7 +1770,7 @@ function TurnAssistantBlock(
           hasSteps={hasSteps}
           hasReasoning={hasReasoning}
           response={response}
-          commandForTurn={userContent.commandForTurn}
+          commandForTurn={userContent.commandOutput}
           answeredQuestionCalls={answered.answeredQuestionCalls}
         />
       )}
@@ -1781,13 +1804,10 @@ function TurnInlineContent({
             if (item.type === 'text') {
               const isStreaming = idx === lastTextIdx;
               const text = isStreaming ? item.block.text : item.block.text.trim();
+              // One component across the turn's end, so the generative UI blocks in the text keep their state.
               return (
                 <div key={item.id} className="min-w-0 text-sm">
-                  {isStreaming ? (
-                    <ThrottledMarkdown content={text} isStreaming />
-                  ) : (
-                    <SandboxUrlDetector content={text} isStreaming={false} />
-                  )}
+                  <ThrottledMarkdown content={text} isStreaming={isStreaming} response />
                 </div>
               );
             }
@@ -1817,7 +1837,14 @@ function TurnSettledResponse({
 }) {
   return (
       <>
-        {/* Response section for text-only turns (no tools/steps content) */}
+        {/* Response text for text-only turns (no tools/steps content). One element from the first streamed
+            word to the settled turn, so the generative UI blocks in it do not remount when the turn ends. */}
+        {!hasSteps && response && (working || !commandForTurn) ? (
+          <div className={working ? 'min-w-0 text-sm' : 'text-sm'}>
+            <ThrottledMarkdown content={response} isStreaming={working} response />
+          </div>
+        ) : null}
+        {/* A command's output settles into its card. */}
         {!working &&
           !hasSteps &&
           response &&
@@ -1841,16 +1868,12 @@ function TurnSettledResponse({
                   fadeClassName="from-secondary"
                   contentClassName="px-4 py-3 text-sm"
                 >
-                  <SandboxUrlDetector content={response} isStreaming={false} />
+                  <SandboxUrlDetector content={response} isStreaming={false} genui />
                 </ExpandableOutput>
               </div>
               <CodeBlockEndpoints content={response} />
             </div>
-          ) : (
-            <div className="text-sm">
-              <SandboxUrlDetector content={response} isStreaming={false} />
-            </div>
-          ))}
+          ) : null)}
 
         {/* Answered question parts — shown after the response text only when
 				    NONE of the upstream renderers fire. The steps section above is
@@ -1873,10 +1896,21 @@ function TurnSettledResponse({
   );
 }
 
+/** A turn someone else stopped names them, quietly, in the activity lane. */
+function TurnStoppedBy({ name }: { name: string }) {
+  const t = useTranslations('threads');
+  return (
+    <div role="note" className="flex w-full items-center gap-3 text-left text-sm">
+      <StopCircleIcon className="text-muted-foreground size-4 flex-none" />
+      <span className="text-muted-foreground min-w-0 wrap-anywhere">{t('stoppedBy', { name })}</span>
+    </div>
+  );
+}
+
 /** The turn's footer: the working row, the error banner, the outcomes, the
- *  action bar, and the connect-provider dialog. */
+ *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1890,7 +1924,7 @@ function TurnFooter(
 ) {
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
-    connectProviderOpen, onConnectProviderOpenChange, servedModel,
+    connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -1914,6 +1948,8 @@ function TurnFooter(
         isAbort={turnErrorRow.isAbort}
       />
     )}
+    {/* ── Who stopped it, when it was someone else: an own stop is not news ── */}
+    {!working && stoppedBy && <TurnStoppedBy name={stoppedBy} />}
     {/* ── Outcomes — what this turn left behind ──
         Always visible, unlike the hover-revealed action bar below. A hidden
         record of a change request is a trust bug: the point of
@@ -2036,9 +2072,13 @@ const handleCopy = async () => {
         .join('\n\n')
     : response;
   if (!textToCopy) return;
-  await navigator.clipboard.writeText(textToCopy);
-  setCopied(true);
-  setTimeout(() => setCopied(false), 2000);
+  try {
+    await copyGenuiText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  } catch {
+    // The browser refused the write; `copied` stays false.
+  }
 };
   return (
     <div className="duration-normal flex items-center gap-0.5 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
@@ -2116,6 +2156,14 @@ function SessionTurnImpl(props: SessionTurnProps) {
   // working projection cannot see, because it deliberately knows nothing
   // about compaction.
   const compactionInfo = isCompaction ? turn.compaction : null;
+  // genui_block telemetry: one scope per turn, shared by the streaming and the settled render.
+  // Keyed on strings, not on `turn`, so a streaming frame does not re-render every block of the turn.
+  const genuiModel = turn.assistant.at(-1)?.model?.model;
+  const genuiScope = turn.id;
+  const genuiTelemetry = useMemo(
+    () => ({ scope: genuiScope, ...(genuiModel ? { model: genuiModel } : {}) }),
+    [genuiScope, genuiModel],
+  );
 
   // Shell mode: a synthetic prompt answered by one bare `bash` call.
   if (turn.shell) {
@@ -2147,15 +2195,17 @@ function SessionTurnImpl(props: SessionTurnProps) {
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
-      <TurnToolBlocks
-        {...props}
-        model={model}
-        segments={segments}
-        conversationDensity={conversationDensity}
-        fold={!answered.shouldUseInlineContent}
-        durationMs={meta.turnDurationMs}
-      />
-      <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+      <GenuiTelemetryContext.Provider value={genuiTelemetry}>
+        <TurnToolBlocks
+          {...props}
+          model={model}
+          segments={segments}
+          conversationDensity={conversationDensity}
+          fold={!answered.shouldUseInlineContent}
+          durationMs={meta.turnDurationMs}
+        />
+        <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+      </GenuiTelemetryContext.Provider>
       <TurnFooter {...props} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
     </div>
   );

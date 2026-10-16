@@ -19,18 +19,19 @@
  *   3. inline content (text + answered questions in natural order), or a
  *      slash-command reply in its card
  *   4. busy slot (`space-y-2`) — `SessionRetryDisplay` + `SessionBusyIndicator`
- *   5. turn error — `TurnErrorDisplay` (an abort renders nothing)
+ *   5. turn error — `TurnErrorDisplay` (an abort renders nothing), then
+ *      "Stopped by {name}" when another member stopped the turn
  *   6. change requests the turn opened — `SessionChangeRequests`, when not working
  *   7. action bar — Copy + turn details, whenever the turn is not working
  *
  * A compaction turn is one `CompactionMarker` (running / landed) or one
  * `CompactionFailedRow` — no user message, no body (web `isCompaction`
- * branch). Only the WORKING turn (`resolveWorkingTurn`) reads the session
+ * branch). Only the live turn (`SessionLogTurn.live`) reads the session
  * status, so only it can be working or show a retry.
  *
- * Which parts land in which section is decided by `lib/session/turn-body.ts`
- * and the SDK's `segmentTurn`. The rows live beside this file: turn/* and
- * tool/*.
+ * The turn is the SDK's block turn (`sessionLogTurns`). Which blocks land in
+ * which section is decided by `lib/session/turn-body.ts` and the SDK's
+ * `sessionLogTurnSegments`. The rows live beside this file: turn/* and tool/*.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -39,48 +40,35 @@ import { LoopMotionContext } from '@/components/kortix/text-shimmer';
 import { useColorScheme } from 'nativewind';
 import type { AvatarPerson } from '@/lib/session/participants';
 import {
-  collectTurnParts,
-  compactionTurnInfo,
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
-  getShellModePart,
-  getTurnCost,
-  getTurnErrorDetails,
-  getWorkingState,
-  segmentTurn,
   shouldShowToolPart,
-  type Part as SdkPart,
-  type ToolPart as SdkToolPart,
+  type SessionLogTurn,
 } from '@kortix/sdk';
-import type {
-  PermissionRequest,
-  QuestionRequest,
-  SessionStatus,
-  Turn,
-} from '@/lib/session/types';
+import type { PermissionRequest, QuestionRequest, SessionStatus } from '@/lib/session/types';
 import type { Command } from '@/lib/session/runtime-data';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import {
-  answeredQuestionParts as selectAnsweredQuestionParts,
-  busyStatusParts,
+  answeredQuestionCalls,
   commandPromptText,
   compactionTurnView,
   inlineContentItems,
-  lastTextPartId,
-  segmentInputParts,
+  lastTextBlockId,
+  segmentInputBlocks,
   showTurnActions,
   showTurnBusyIndicator,
   standaloneCallIdsFor,
   toDisplayPath,
+  turnBlocks,
   turnErrorIsAbort,
   turnErrorText,
   turnHasSteps,
   turnBodyLayout,
   turnResponse,
+  turnSegments,
   turnWorkSplit,
-  withoutReasoning,
-  type TurnBodyTurn,
+  type TurnSegment,
 } from '@/lib/session/turn-body';
 import { turnDurationMs } from '@/lib/session/turn-meta';
 import type { ChangeItem } from '@/lib/session/session-change-requests';
@@ -97,6 +85,7 @@ import { CommandOutputCard } from './turn/command-output';
 import { CompactionFailedRow, CompactionMarker } from './turn/compaction-divider';
 import { TextPartBlock } from './turn/text-part';
 import { TurnActions } from './turn/turn-actions';
+import { TurnStoppedBy } from './turn/turn-stopped-by';
 import { SessionChangeRequests } from './SessionChangeRequests';
 import { UserMessage, type SessionSourceAuthor, type UserMessageUploadStatus } from './turn/user-message';
 import { WorkRow } from './turn/work-row';
@@ -114,15 +103,13 @@ const displayPath = (path: string) => toDisplayPath(path);
 // ─── SessionTurn ─────────────────────────────────────────────────────────────
 
 interface SessionTurnProps {
-  turn: Turn;
   /**
-   * True for the session's working turn (`resolveWorkingTurn`). Only it can be
-   * working, and only it reads the retry frame (web `isWorkingTurn`).
+   * The SDK's block turn. `turn.live` marks the session's working turn: only
+   * it can be working, and only it reads the retry frame (web `isWorkingTurn`).
    */
-  isWorkingTurn: boolean;
-  /** Only the working turn receives these; other turns get stable defaults. */
+  turn: SessionLogTurn;
+  /** Only the live turn receives it; other turns get a stable default. */
   sessionStatus?: SessionStatus;
-  isBusy: boolean;
   /**
    * The working turn's answer is complete while prompts wait below it: draw no
    * busy row here (web `suppressBusyIndicator`); the transcript draws it.
@@ -152,6 +139,8 @@ interface SessionTurnProps {
   sender?: AvatarPerson | null;
   /** Another Kortix session sent this prompt — see `UserMessage`. */
   sessionAuthor?: SessionSourceAuthor | null;
+  /** The member who stopped this turn, when not the viewer (`turnStoppedBy`). */
+  stoppedBy?: string | null;
   /**
    * False while the working turn is scrolled out of the list's viewport: its
    * shimmer and busy dot matrix hold still (KRTX-1638). Defaults to on screen.
@@ -168,9 +157,7 @@ const EMPTY_PERMISSIONS: PermissionRequest[] = Object.freeze([]) as unknown as P
 
 function SessionTurnImpl({
   turn,
-  isWorkingTurn,
   sessionStatus,
-  isBusy,
   suppressBusyIndicator = false,
   sessionId,
   permissions = EMPTY_PERMISSIONS,
@@ -190,31 +177,25 @@ function SessionTurnImpl({
   uploadStatus,
   sender,
   sessionAuthor,
+  stoppedBy,
   onScreen = true,
   changeRequests,
   onOpenChangeRequest,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const bodyTurn = turn as unknown as TurnBodyTurn;
+  // Every reply block but reasoning, each call in its open shape.
+  const blocks = turnBlocks(turn);
 
-  // Mobile's wire types are a local copy of the SDK's; the turn rules take SDK parts.
-  const rawParts = useMemo(() => collectTurnParts(turn) as unknown as ReadonlyArray<{ part: SdkPart }>, [turn]);
-  const allParts = useMemo(() => withoutReasoning(rawParts), [rawParts]);
-  const busyParts = useMemo(() => busyStatusParts(rawParts), [rawParts]);
+  // Web: `working = isWorkingTurn && sessionWorking`: the SDK's `live`. Any other turn is never working.
+  const working = turn.live;
 
-  // Web: `working = isWorkingTurn && sessionWorking`. Any other turn is never working.
-  const working = useMemo(
-    () => isWorkingTurn && (getWorkingState(sessionStatus, true) || isBusy),
-    [sessionStatus, isWorkingTurn, isBusy],
-  );
-
-  const hasSteps = useMemo(() => turnHasSteps(allParts), [allParts]);
-  const hasAssistantContent = turn.assistantMessages.length > 0;
+  const hasSteps = useMemo(() => turnHasSteps(blocks), [blocks]);
+  const hasAssistantContent = turn.assistant.length > 0;
 
   const response = useMemo(
-    () => turnResponse({ turn: bodyTurn, allParts, working, hasSteps }),
-    [bodyTurn, allParts, working, hasSteps],
+    () => turnResponse({ turn, blocks, working, hasSteps }),
+    [turn, blocks, working, hasSteps],
   );
 
   // ── Answered questions ──
@@ -225,27 +206,27 @@ function SessionTurnImpl({
         pendingCallIds.add(question.tool.callID);
       }
     }
-    return selectAnsweredQuestionParts(bodyTurn, pendingCallIds);
-  }, [bodyTurn, pendingQuestions, sessionId]);
+    return answeredQuestionCalls(turn.assistant, pendingCallIds);
+  }, [turn.assistant, pendingQuestions, sessionId]);
   const answeredById = useMemo(
-    () => new Map(answeredQuestions.map((part) => [part.id, part])),
+    () => new Map(answeredQuestions.map((call) => [call.id, call])),
     [answeredQuestions],
   );
-  const inlineItems = useMemo(() => inlineContentItems(allParts, answeredById), [allParts, answeredById]);
+  const inlineItems = useMemo(() => inlineContentItems(blocks, answeredById), [blocks, answeredById]);
   const showInlineContent = !hasSteps && !!inlineItems;
 
   // ── Segments ──
   // Pending permissions and connector calls that ask the user to connect or
   // approve (COR-158) render as their own transcript rows, not in a burst.
   const standaloneCallIds = useMemo(
-    () => standaloneCallIdsFor(permissions, sessionId, allParts),
-    [permissions, sessionId, allParts],
+    () => standaloneCallIdsFor(permissions, sessionId, blocks),
+    [permissions, sessionId, blocks],
   );
   const segments = useMemo(
-    () => segmentTurn(segmentInputParts(allParts, answeredById, showInlineContent), { standaloneCallIds }),
-    [allParts, answeredById, showInlineContent, standaloneCallIds],
+    () => turnSegments(segmentInputBlocks(blocks, answeredById, showInlineContent), standaloneCallIds),
+    [blocks, answeredById, showInlineContent, standaloneCallIds],
   );
-  const streamingTextId = useMemo(() => (working ? lastTextPartId(segments) : undefined), [working, segments]);
+  const streamingTextId = useMemo(() => (working ? lastTextBlockId(segments) : undefined), [working, segments]);
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
   const durationMs = useMemo(() => (workSplit ? turnDurationMs(turn) : null), [workSplit, turn]);
@@ -254,38 +235,35 @@ function SessionTurnImpl({
   const toggleWork = useCallback(() => setWorkOpen((open) => !open), []);
 
   // ── Errors, retry, status ──
-  const turnError = useMemo(() => turnErrorText(bodyTurn), [bodyTurn]);
-  const errorIsAbort = useMemo(() => turnErrorIsAbort(bodyTurn), [bodyTurn]);
-  const errorDetails = useMemo(() => getTurnErrorDetails(turn as never), [turn]);
+  const turnError = useMemo(() => turnErrorText(turn), [turn]);
+  const errorIsAbort = useMemo(() => turnErrorIsAbort(turn), [turn]);
+  const errorDetails = turn.error?.details;
   // The retry frame belongs to the WORKING turn (web session-chat.tsx).
   const retryInfo = useMemo(
-    () => (isWorkingTurn ? getRetryInfo(sessionStatus) : undefined),
-    [sessionStatus, isWorkingTurn],
+    () => (working ? getRetryInfo(sessionStatus) : undefined),
+    [sessionStatus, working],
   );
   const retryMessage = useMemo(
-    () => (isWorkingTurn ? getRetryMessage(sessionStatus) : undefined),
-    [sessionStatus, isWorkingTurn],
+    () => (working ? getRetryMessage(sessionStatus) : undefined),
+    [sessionStatus, working],
   );
   const retrySecondsLeft = useRetrySecondsLeft(retryInfo);
   // Throttled status + stall clock; "Thinking" until the turn has an assistant message.
-  const { statusText, elapsedLabel } = useTurnBusyStatus({ allParts: busyParts, working, hasAssistantContent });
+  const { statusText, elapsedLabel } = useTurnBusyStatus({ blocks: turn.blocks, working, hasAssistantContent });
 
-  // ── Compaction ──
-  const compactionInfo = useMemo(() => compactionTurnInfo(turn as never), [turn]);
-
-  const costInfo = useMemo(() => (working ? undefined : getTurnCost(allParts as never)), [working, allParts]);
+  const costInfo = working ? undefined : (turn.cost ?? undefined);
 
   // ── Slash command ──
   const commandForTurn = useMemo(() => {
-    const prompt = commandPromptText(turn.userMessage.parts as never);
+    const prompt = commandPromptText(turn.user.blocks);
     return prompt ? detectCommandFromText(prompt, commands) : undefined;
-  }, [turn.userMessage.parts, commands]);
+  }, [turn.user.blocks, commands]);
 
   /** Copy writes every inline text part when the inline content renders. */
   const copyText = useMemo(() => {
     if (!inlineItems) return response;
     return inlineItems
-      .flatMap((item) => (item.type === 'text' && item.part.text?.trim() ? [item.part.text.trim()] : []))
+      .flatMap((item) => (item.type === 'text' && item.block.text.trim() ? [item.block.text.trim()] : []))
       .join('\n\n');
   }, [inlineItems, response]);
 
@@ -313,17 +291,17 @@ function SessionTurnImpl({
   );
 
   // ── Shell mode: the one shell call is the whole answer ──
-  const shellModePart = useMemo(() => getShellModePart(turn as never) as SdkToolPart | undefined, [turn]);
-  if (shellModePart) {
+  const shellCall = turn.shell;
+  if (shellCall) {
     return (
       <View style={{ gap: TURN_STACK_GAP }}>
         {userMessage}
         <TurnLiveContext.Provider value={working}>
           <View className="px-4" style={{ gap: webSpace(1) }}>
             <ToolPartRenderer
-              part={shellModePart}
+              call={shellCall}
               sessionId={sessionId}
-              permission={getPermissionForTool(permissions, shellModePart.callID)}
+              permission={getPermissionForTool(permissions, shellCall.call_id)}
               onPermissionReply={onPermissionReply}
               defaultOpen
             />
@@ -335,6 +313,7 @@ function SessionTurnImpl({
                 style={{ marginTop: webSpace(2) }}
               />
             ) : null}
+            {!working && stoppedBy ? <TurnStoppedBy name={stoppedBy} /> : null}
           </View>
         </TurnLiveContext.Provider>
       </View>
@@ -342,11 +321,13 @@ function SessionTurnImpl({
   }
 
   // ── Compaction: the marker, or the failed row, IS the whole turn ──
-  if (compactionInfo.isCompaction) {
+  if (turn.compaction) {
+    // The summary is folded onto the marker: a reply text, else the compaction block's own summary.
+    const summary = response || turn.compaction.block?.summary || '';
     const view = compactionTurnView({
       working,
-      info: compactionInfo,
-      response,
+      compaction: turn.compaction,
+      response: summary,
       turnError,
       turnErrorIsAbort: errorIsAbort,
     });
@@ -354,7 +335,7 @@ function SessionTurnImpl({
       <View className="px-4">
         {view.kind === 'marker' ? (
           // Mobile has no side panel, so the summary expands inline.
-          <CompactionMarker running={view.running} summary={response} />
+          <CompactionMarker running={view.running} summary={summary} />
         ) : (
           <CompactionFailedRow error={view.error} isAbort={view.isAbort} />
         )}
@@ -373,7 +354,7 @@ function SessionTurnImpl({
 
   // 2. Segments
   if (layout.segments && segments.length > 0) {
-    const renderSegment = (segment: (typeof segments)[number], inFold = false) => {
+    const renderSegment = (segment: TurnSegment, inFold = false) => {
       // Trailing is structural (`burstIsRunning` keeps the trailing burst
       // running between calls); only loop motion follows the viewport.
       // A running burst's "Working · N steps" always sweeps on screen
@@ -382,7 +363,7 @@ function SessionTurnImpl({
       const shimmerSegment = onScreen && trailing;
       if (segment.kind === 'burst') {
         return (
-          <LoopMotionContext.Provider key={`burst-${segment.parts[0]?.id ?? 'empty'}`} value={onScreen}>
+          <LoopMotionContext.Provider key={`burst-${segment.blocks[0]?.id ?? 'empty'}`} value={onScreen}>
             <ActivityBurst
               segment={segment}
               turnLive={working}
@@ -397,13 +378,13 @@ function SessionTurnImpl({
         );
       }
       if (segment.kind === 'standalone') {
-        if (!shouldShowToolPart(segment.part)) return null;
+        if (!shouldShowToolPart(segment.block)) return null;
         return (
-          <LoopMotionContext.Provider key={segment.part.id} value={shimmerSegment}>
+          <LoopMotionContext.Provider key={segment.block.id} value={shimmerSegment}>
             <ToolPartRenderer
-              part={segment.part}
+              call={segment.block}
               sessionId={sessionId}
-              permission={getPermissionForTool(permissions, segment.part.callID)}
+              permission={getPermissionForTool(permissions, segment.block.call_id)}
               onPermissionReply={onPermissionReply}
             />
           </LoopMotionContext.Provider>
@@ -411,14 +392,14 @@ function SessionTurnImpl({
       }
       // Text renders here for the whole stream (`turnBodyLayout`).
       if (layout.text !== 'segments') return null;
-      const text = segment.part.text?.trim();
+      const text = segment.block.text.trim();
       if (!text) return null;
       return (
         <TextPartBlock
-          key={segment.part.id}
+          key={segment.block.id}
           text={text}
           isDark={isDark}
-          isStreaming={segment.part.id === streamingTextId}
+          isStreaming={segment.block.id === streamingTextId}
         />
       );
     };
@@ -473,10 +454,10 @@ function SessionTurnImpl({
           {inlineItems.map((item, index) => {
             if (item.type === 'text') {
               const streaming = index === lastTextIndex;
-              const text = streaming ? item.part.text ?? '' : (item.part.text ?? '').trim();
+              const text = streaming ? item.block.text : item.block.text.trim();
               return <TextPartBlock key={item.id} text={text} isDark={isDark} isStreaming={streaming} />;
             }
-            return <ToolPartRenderer key={item.id} part={item.part} sessionId={sessionId} turnLive={working} />;
+            return <ToolPartRenderer key={item.id} call={item.call} sessionId={sessionId} turnLive={working} />;
           })}
         </View>
       </LoopMotionContext.Provider>,
@@ -485,8 +466,8 @@ function SessionTurnImpl({
     if (!hasSteps && !working && answeredQuestions.length > 0) {
       body.push(
         <View key="answered" style={{ marginTop: SEGMENT_STACK_GAP, gap: SMALL_STACK_GAP }}>
-          {answeredQuestions.map((part) => (
-            <ToolPartRenderer key={part.id} part={part} sessionId={sessionId} turnLive={false} />
+          {answeredQuestions.map((call) => (
+            <ToolPartRenderer key={call.id} call={call} sessionId={sessionId} turnLive={false} />
           ))}
         </View>,
       );
@@ -528,6 +509,10 @@ function SessionTurnImpl({
     body.push(
       <TurnErrorDisplay key="error" errorText={turnError} errorDetails={errorDetails} isAbort={errorIsAbort} />,
     );
+  }
+  // Who stopped the turn, once it has ended. The viewer's own stop is silent.
+  if (!working && stoppedBy) {
+    body.push(<TurnStoppedBy key="stopped-by" name={stoppedBy} />);
   }
 
   // 6. Change requests — what this turn left behind (web `TurnOutcomes`).

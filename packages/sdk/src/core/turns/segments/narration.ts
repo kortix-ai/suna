@@ -40,6 +40,7 @@ export type StepFamily =
   | 'explore'
   | 'edit'
   | 'run'
+  | 'script'
   | 'web'
   | 'create'
   | 'plan'
@@ -66,6 +67,11 @@ const FAMILY_OF_KIND: Record<ToolKind, StepFamily | 'hidden'> = {
   apply_patch: 'edit',
   bash: 'run',
   pty: 'run',
+  // pi's codemode: a script the model wrote that calls the other tools. Its own
+  // family — its sentence ("Ran a script") is what the registered renderer's
+  // own card says ("Ran script"), and a registered tool must never land in the
+  // `other` fallback that exists for unknown MCP tools.
+  script: 'script',
   web_search: 'web',
   webfetch: 'web',
   media: 'create',
@@ -608,6 +614,8 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
     }
     case 'run':
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;
+    case 'script':
+      return n === 1 ? 'Ran a script' : `Ran ${n} scripts`;
     case 'web': {
       const isSearch = (p: ToolPart) => {
         const t = normalizeName(p.tool);
@@ -798,6 +806,8 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
     }
     case 'run':
       return 'A command failed';
+    case 'script':
+      return 'A script failed';
     case 'web':
       return "Couldn't finish searching the web";
     case 'create':

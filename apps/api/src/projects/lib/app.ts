@@ -28,6 +28,9 @@ export const projectsApp = makeOpenApiApp<AppEnv>();
 
 export const projectWebhooksApp = makeOpenApiApp<AppEnv>();
 
+/** `/v1/sessions`: one session by id, in any project (routes/project-sessions.ts). */
+export const sessionsApp = makeOpenApiApp<AppEnv>();
+
 // ─── Reusable OpenAPI schemas (these power the docs, not runtime response
 // validation). Core project-domain surfaces come from @kortix/api-contract —
 // the shared wire contract — while large/dynamic shapes are still modeled

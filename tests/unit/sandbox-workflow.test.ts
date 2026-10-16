@@ -17,7 +17,7 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs ten root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
+  test('runs seven root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
@@ -25,26 +25,32 @@ describe('native test-lane workflow', () => {
     );
     expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}");
     expect(testWorkflow).toContain('- lane: core');
-    expect(testWorkflow).toContain('- lane: packages');
-    // Eight one-worker browser shards since 2026-10-08: four two-worker
-    // shards overran a 16 GB GitHub-hosted runner (run 37812339796).
-    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
-      expect(testWorkflow).toContain(`- lane: browser-${n}`);
-      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/8`);
+    // Package quality in four slices on four runners since 2026-10-16: on one
+    // runner the API, CLI and kortixd suites shared 4 vCPU (run 38777589705).
+    for (const group of ['api', 'cli', 'kortixd', 'rest']) {
+      expect(testWorkflow).toContain(`- lane: packages-${group}`);
+      expect(testWorkflow).toContain(`args: --packages-only --package-group=${group}`);
     }
-    expect(testWorkflow).not.toContain('--browser-shard=1/4');
+    expect(testWorkflow).not.toContain('- lane: packages\n');
+    // Two one-worker browser shards since 2026-10-16: the suite is the
+    // money-path specs (testing reset). One worker each: two workers overran a
+    // 16 GB GitHub-hosted runner (run 37812339796).
+    for (const n of [1, 2]) {
+      expect(testWorkflow).toContain(`- lane: browser-${n}`);
+      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/2`);
+    }
+    expect(testWorkflow).not.toContain('- lane: browser-3');
     expect(testWorkflow).toContain('if [[ "$TEST_LANE" == browser-* ]]; then');
     expect(testWorkflow).toContain('export E2E_BROWSER_WORKERS=1');
     // Never job-wide: the core lane's runner unit tests assert the default.
     expect(testWorkflow).not.toContain('E2E_BROWSER_WORKERS: "1"');
-    expect(testWorkflow).toContain('args: --packages-only');
-    // Package quality runs once per CI run, in the `packages` lane.
+    // Package quality runs once per CI run, in the `packages-*` lanes.
     expect(testWorkflow).toMatch(/- lane: core\n\s+mode: core\n\s+args: --no-packages\n/);
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     // Every run is a full run now, so the packages guard keys off the lane
     // alone. `TEST_MODE` went away with `workflow_call`.
-    expect(testWorkflow).toContain('if [[ "$TEST_LANE" == "packages" ]]; then');
+    expect(testWorkflow).toContain('if [[ "$TEST_LANE" == packages-* ]]; then');
     expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
     expect(testWorkflow).not.toContain('TEST_MODE');
     expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
@@ -57,7 +63,7 @@ describe('native test-lane workflow', () => {
 
   test('gives the browser lanes Chromium and a prestarted Supabase', () => {
     expect(testWorkflow).toContain('pnpm --dir tests exec playwright install --with-deps chromium');
-    expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check');
+    expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check -x studio,imgproxy');
   });
 
   test('stops Supabase on every lane and frees its ports before one starts', () => {
@@ -155,8 +161,8 @@ describe('native test-lane workflow', () => {
     // four shards of 137 flows were all killed by their cap ~60% through.
     expect(release).toContain('shard: [1, 2, 3, 4, 5, 6]');
     expect(release).toContain('pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6');
-    // Six browser shards, split by measured duration (tests/src/core/browser-shard.ts).
-    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/6');
+    // Two browser shards, split by measured duration (tests/src/core/browser-shard.ts).
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/2');
     expect(release).toContain('fail-fast: false');
     // A cap is a hang detector, not a throttle. 40 minutes throttled: it killed
     // shards that were passing 76/87 and 68/77 of what they had run.
@@ -274,59 +280,43 @@ describe('native test-lane workflow', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('every push to dev runs the suite, queued, and a red run names its suspects once', () => {
-    // 2026-10-12. Half of all release delay over v0.13.45 to v0.13.56 (49 of
-    // 96 hours) was a break merged to `dev` that no check saw before the
-    // staging pull request. A push to `dev` runs every lane; it blocks nothing.
+  test('the suite runs nightly and on the staging pull request, never on a push to dev', () => {
+    // Testing reset, 2026-10-16: one tree, one run. The per-push run on `dev`
+    // (2026-10-12) was red on 43 of 43 completed runs and cost ~2,600 job-min a
+    // week. The nightly run warns before the next promote; the pull request
+    // into `staging` is the gate.
     const on = testWorkflow.slice(testWorkflow.indexOf('\non:'), testWorkflow.indexOf('\nconcurrency:'));
-    expect(on).toMatch(/^ {2}push:\n {4}branches: \[dev\]\n/m);
+    expect(on).not.toMatch(/^ {2}push:/m);
     expect(on).toMatch(/^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '/m);
     expect(on).toContain('workflow_dispatch:');
     // The suite parses markdown (tests/spec/end-to-end.md feeds route coverage).
     expect(testWorkflow).not.toMatch(/^\s+paths-ignore:/m);
-
-    // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
-    expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    // A PR cancels its superseded run. A run on `dev` queues: GitHub keeps one
-    // pending run per group, so a burst of merges costs one extra run.
-    expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    // No reuse lookup: nothing else runs the lanes on the same tree.
+    expect(testWorkflow).not.toContain('\n  reuse:');
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
     expect(report).toContain('needs: lane');
-    // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
-    // so `failure()` would miss it. `cancelled()` covers a replaced queued run.
-    expect(report).toContain(
-      "if: (github.event_name == 'push' || github.event_name == 'schedule') && !cancelled() && needs.lane.result != 'success'",
-    );
+    // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`.
+    expect(report).toContain("if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'");
     expect(report).not.toMatch(/^\s+if:.*failure\(\)/m);
     // Top level is `contents: read`; the commit comment 403s without this.
     expect(report).toContain('contents: write');
-
-    // A red trunk has to reach someone, or nobody learns dev is broken. It
-    // comments once per new set of failing lanes, not on every merge.
+    // A red nightly comments once per new set of failing lanes.
     expect(testWorkflow).toContain('repos/$REPO/commits/$SHA/comments');
     expect(testWorkflow).toContain('::error::dev is red at $SHA');
     expect(report).toContain('[ "$failed" = "$prev_failed" ]');
   });
 
-  test('a pull request into staging reuses a green dev run for its head SHA', () => {
-    // A promotion pushes a `dev` SHA unchanged, and the lanes check out the
-    // head SHA, so a green run on `dev` for that SHA is the same proof.
-    const reuse = testWorkflow.slice(testWorkflow.indexOf('\n  reuse:'), testWorkflow.indexOf('\n  lane:'));
-    expect(reuse).toContain(
-      "if: github.event_name == 'pull_request' && github.base_ref == 'staging' && github.event.action != 'labeled'",
-    );
-    // Only runs on `dev` count, never a labelled pull request run.
-    expect(reuse).toContain('branch=dev&head_sha=$HEAD_SHA&status=success');
-    expect(reuse).toContain('select(.event == "push" or .event == "schedule")');
-    // A failed lookup runs the lanes; it never skips them.
-    expect(reuse).toContain('|| true');
-    expect(reuse).not.toContain('set -e');
-    const lane = testWorkflow.slice(testWorkflow.indexOf('\n  lane:'), testWorkflow.indexOf('\n  trunk-report:'));
-    expect(lane).toContain('needs: reuse');
-    expect(lane).toContain("!cancelled() && needs.reuse.outputs.reuse != 'true'");
-    // The lanes test the head SHA, which is what makes the reuse sound.
-    expect(lane).toContain('TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}');
+  test('the prod pull request re-runs no tree check: its tree is the staging tree plus VERSION', () => {
+    // Testing reset, 2026-10-16. `Tests - release` tests the deployed staging;
+    // every tree check already ran on the pull request into `staging`.
+    const dir = resolve(root, '.github/workflows');
+    for (const file of ['ci.yml', 'codeql.yml', 'db-migrations.yml', 'secret-scan.yml', 'secrets-guard.yml', 'i18n-catalogs.yml']) {
+      const text = readFileSync(resolve(dir, file), 'utf8');
+      expect(text, file).toMatch(/^ {2}pull_request:\n(?: {4}.*\n)*? {4}branches: \[staging\]$/m);
+    }
+    expect(readFileSync(resolve(dir, 'codeql.yml'), 'utf8')).not.toMatch(/^ {2}push:/m);
+    expect(testWorkflow).toContain('branches: [dev, staging]');
   });
 
   test('a failed release gate or staging pull request run reruns its failed jobs exactly once', () => {
@@ -386,7 +376,7 @@ describe('native test-lane workflow', () => {
 
   test('pre-push requires no test attestation; the author picks the tests', () => {
     // 2026-10-13: the attestation gate blocked docs-only pushes behind a ~6 min
-    // run that failed 36 of 80 times. `dev` is gated by the Tests run on every push.
+    // run that failed 36 of 80 times.
     const hook = readFileSync(resolve(root, '.githooks/pre-push'), 'utf8');
     expect(hook).not.toContain('verify-attestation');
   });
@@ -394,8 +384,7 @@ describe('native test-lane workflow', () => {
   test('a push to dev triggers only the cheap guards and path-gated infra applies', () => {
     // 2026-10-03 (Actions minutes). Dev deploy, CI, CodeQL, Drata and the
     // desktop build are dispatch, schedule, or release-branch only. Tests runs
-    // on every push since 2026-10-12: GitHub-hosted runners are free on this
-    // public repo, and a break found at staging cost a release round.
+    // nightly and on the staging pull request (testing reset, 2026-10-16).
     const dir = resolve(root, '.github/workflows');
     const pushesToMain = (file: string): boolean => {
       const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
@@ -420,7 +409,6 @@ describe('native test-lane workflow', () => {
       'secret-scan.yml', // ~15 s
       'secrets-guard.yml', // ~15 s
       'terraform-apply-global.yml', // path-gated: infra/terraform roots
-      'tests.yml', // every lane, queued; blocks nothing
     ]);
     // Release branches keep their gates.
     for (const file of ['ci.yml', 'tests.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {

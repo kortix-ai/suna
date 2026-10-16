@@ -61,7 +61,7 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       if ('status' in prompt) return prompt
       if (!prompt.messageID) return answer(400, { error: 'message_id is required' })
       try {
-        const steered = rt.steer({ ...prompt, messageID: prompt.messageID })
+        const steered = await rt.steer({ ...prompt, messageID: prompt.messageID })
         if (steered === 'duplicate') return answer(200, { deduplicated: true })
         if (steered === 'no_turn') return answer(409, { code: STEER_NO_ACTIVE_TURN_CODE })
         return answer(202, { message_id: prompt.messageID, steered: true })

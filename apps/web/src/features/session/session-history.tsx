@@ -9,8 +9,9 @@
  * - `TranscriptMarker`: one line in the transcript, rule, pill, rule (the compaction marker's
  *   grammar), for the restore note and for a harness switch.
  * - `FullTextControl`: a turn that shows a 16 kB preview of a long text loads the whole text
- *   on request, never on its own: inline up to 1 MB in all, as a downloaded file above
- *   (`sessionLogFullTextAction`).
+ *   on request, never on its own: inline up to 1 MB in all; above it the large texts download
+ *   as files and the small ones still show inline (`sessionLogFullTextAction`,
+ *   `sessionLogFullTextPlan`).
  */
 import { ArrowsLeftRightIcon, ClockCounterClockwiseIcon, XIcon } from '@phosphor-icons/react';
 import {
@@ -42,20 +43,35 @@ export function formatTextSize(bytes: number, locale: string): string {
 export const hasOutOfContext = (messages: readonly SessionLogMessage[] | undefined) =>
   !!messages?.some((m) => !m.in_context && m.status !== 'streaming');
 
-const MISSING_KEY = {
-  attachment: 'missingAttachment',
-  text: 'missingText',
-  tool_input: 'missingToolInput',
-  tool_result: 'missingToolResult',
-  cut_point: 'missingCutPoint',
-  other: 'missingOther',
-} as const;
+/** One literal `t()` call per kind, so the i18n audit resolves every key. */
+function missingLabel(
+  t: ReturnType<typeof useTranslations>,
+  kind: SessionLogRestoreNotice['missing'][number]['kind'],
+  count: number,
+): string {
+  switch (kind) {
+    case 'message':
+      return t('missingMessage', { count });
+    case 'attachment':
+      return t('missingAttachment', { count });
+    case 'text':
+      return t('missingText', { count });
+    case 'tool_input':
+      return t('missingToolInput', { count });
+    case 'tool_result':
+      return t('missingToolResult', { count });
+    case 'cut_point':
+      return t('missingCutPoint', { count });
+    default:
+      return t('missingOther', { count });
+  }
+}
 
 export function RestoreNotice({ notice, onDismiss }: { notice: SessionLogRestoreNotice; onDismiss: () => void }) {
   const t = useTranslations('sessionUi.history');
   const locale = useLocale();
   const items = new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' }).format(
-    notice.missing.map((m) => t(MISSING_KEY[m.kind], { count: m.count })),
+    notice.missing.map((m) => missingLabel(t, m.kind, m.count)),
   );
   return (
     // `info`: the neutral tone keeps `Alert`'s default fill under a hairline (two boundaries).

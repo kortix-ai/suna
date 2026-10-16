@@ -2,6 +2,7 @@ import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
+import { sessionHasWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
@@ -17,13 +18,6 @@ import { scheduleSessionConfigConvergence } from '../lib/session-config-converge
 import { refreshResumedSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
-  claimRetiredEphemeralRow,
-  isRetiredEphemeralRow,
-  recordedSessionStateVolume,
-  scheduleSessionStateVolumeDelete,
-} from '../../platform/services/ephemeral-sandbox';
-import { isRootVolumeBox, persistentMachineFromSessionMetadata } from '../../platform/services/persistent-machine';
-import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
   repositoryAccessFromSessionMetadata,
@@ -35,7 +29,7 @@ import {
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../session-open';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -47,6 +41,7 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
+import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { sessionRestoreUntil } from '../session-log-purge';
 import { claimInPlaceRestart } from './runtime-restart-claim';
@@ -62,6 +57,10 @@ import {
   restartClaimIsActive,
 } from './runtime-restart-fence';
 
+/** Warm (pre-created, never prompted) and not tombstoned. See ../lib/warm-sessions.ts. */
+const UNCLAIMED_WARM_SESSION = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'
+  AND coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
+
 /** The in-place restart claim. The restart finalize and failure writes drop it. */
 const RESTART_CLAIM_KEYS = [
   'runtimeRestartId',
@@ -75,8 +74,10 @@ export async function deleteSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
+  /** Delete only a still-warm, untombstoned session: the tombstone CAS loses to a claim. */
+  warmOnly?: boolean;
 }): Promise<{ ok: true; restore_until: string } | { error: string; status: number }> {
-  const { projectId, sessionId, accountId, userId } = input;
+  const { projectId, sessionId, accountId, userId, warmOnly } = input;
   const [sandbox] = await db
     .select()
     .from(sessionSandboxes)
@@ -92,19 +93,24 @@ export async function deleteSession(input: {
   // Release the session's prompt attachments before the tombstone, so a failed
   // release fails a delete that can still be retried. The cleanup sweep then
   // removes each unreferenced object before its metadata.
-  const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
-  await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
+  // A warm session holds no prompt yet. Skipped there, because a claim that wins
+  // the race below inserts its prompt first, and this release would drop it.
+  if (!warmOnly) {
+    const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
+    await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
+  }
 
   const deletedAt = new Date();
   // Merged in SQL: the tombstone must not write back a metadata object read
   // earlier, which would erase any key a concurrent writer added since.
   const tombstone = { deletedAt: deletedAt.toISOString(), deletedBy: userId };
+  // The transition keeps `updated_at`: the session keeps its list position.
   const deleted = await transitionSession('delete', sessionId, {
-    at: deletedAt,
     metadata: tombstone,
     guard: and(
       eq(projectSessions.projectId, projectId),
       eq(projectSessions.accountId, accountId),
+      warmOnly ? UNCLAIMED_WARM_SESSION : undefined,
     ),
   });
 
@@ -123,9 +129,11 @@ export async function deleteSession(input: {
     });
 
   if (sandbox) {
+    // A /workspace volume is removed with the box, and also when there is none
+    // (a delete during or after a failed first create).
     const removable =
-      !!sandbox.externalId &&
-      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider);
+      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider) &&
+      (!!sandbox.externalId || (await sessionHasWorkspaceVolume(sessionId)));
     // One statement, merged in SQL, from the row the UPDATE locks:
     //   - strip every lifecycle fence (restart, wake, recovery, turn
     //     authority), so a detached restart or recovery that is still running
@@ -155,7 +163,7 @@ export async function deleteSession(input: {
       return null;
     });
 
-    if (removable && sandbox.externalId) {
+    if (removable) {
       if (archived) {
         // First attempt now; the maintenance lane retries a failure.
         void attemptArchivedBoxRemoval({
@@ -164,7 +172,7 @@ export async function deleteSession(input: {
           provider: sandbox.provider,
           metadata: archivePatch,
         });
-      } else {
+      } else if (sandbox.externalId) {
         // The intent could not be recorded. Keep the old best-effort remove.
         const provider = getProvider(sandbox.provider as SandboxProviderName);
         void provider.remove(sandbox.externalId).catch((err) => {
@@ -176,9 +184,6 @@ export async function deleteSession(input: {
       }
     }
   }
-
-  // Ephemeral sandboxes: the session's state volume ends with the session.
-  void scheduleSessionStateVolumeDelete(sessionId);
 
   // Keyed by SANDBOX id — `getOpenComputeSession` matches on
   // sandbox_compute_sessions.sandbox_id, so the sessionId this used to pass
@@ -210,6 +215,33 @@ export async function deleteSession(input: {
   return { ok: true, restore_until: sessionRestoreUntil(tombstone.deletedAt)!.toISOString() };
 }
 
+/**
+ * Delete every unclaimed warm session of a project, all users. A warm box boots
+ * with the project's env of that moment (KORTIX_GENUI is boot-only), so a flag
+ * change must not let a box provisioned before it be adopted. Deleting also
+ * removes the box, so it stops billing.
+ *
+ * The tombstone keeps the `warm` marker, so the row stays out of every list, and
+ * both adoption CASes (claim, `/start`) refuse a tombstoned row. A claim that
+ * commits first keeps its session and the old value.
+ */
+export async function retireWarmProjectSessions(projectId: string): Promise<void> {
+  const rows = await db
+    .select({ sessionId: projectSessions.sessionId, accountId: projectSessions.accountId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), UNCLAIMED_WARM_SESSION));
+  for (const row of rows) {
+    await deleteSession({
+      projectId,
+      sessionId: row.sessionId,
+      accountId: row.accountId,
+      // No user deleted it. The tombstone is hidden from every list anyway.
+      userId: 'system',
+      warmOnly: true,
+    });
+  }
+}
+
 type RestartSessionInput = {
   loaded: {
     row: {
@@ -231,10 +263,6 @@ type RestartSessionInput = {
   };
   projectId: string;
   sessionId: string;
-  /** Persistent machines: discard the disk and boot a fresh box from the current image. */
-  resetMachine?: boolean;
-  /** With resetMachine: reset even when the chat cannot be carried across (it is then lost). */
-  discardState?: boolean;
 };
 
 export async function restartSession(
@@ -242,12 +270,6 @@ export async function restartSession(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const { session, sessionId } = input;
   const providerName = session.sandboxProvider as SandboxProviderName;
-  if (input.resetMachine && !persistentMachineFromSessionMetadata(session.metadata)) {
-    return {
-      status: 400,
-      body: { error: 'Only a session on a persistent machine can reset its machine', code: 'NOT_A_PERSISTENT_MACHINE' },
-    };
-  }
   if (
     !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
       providerName,
@@ -274,108 +296,6 @@ export async function restartSession(
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sandboxId, sessionId))
     .limit(1);
-
-  // Persistent machine reset: delete the box (its root volume goes with it),
-  // then provision a fresh one from the current image like a recovery. A plain
-  // restart of a persistent machine stays the in-place stop+start below: a
-  // cold boot of the same disk.
-  if (input.resetMachine) {
-    if (existingSandbox && !existingSandbox.externalId && !isRetiredEphemeralRow(existingSandbox)) {
-      return {
-        status: 409,
-        body: { error: 'The machine is starting; reset it once it is up', code: 'LIFECYCLE_TRANSITION_IN_PROGRESS' },
-      };
-    }
-    // null: there was no box left to carry from (an earlier reset already retired it).
-    let stateCarried: boolean | null = null;
-    if (existingSandbox?.externalId) {
-      const { retirePersistentMachineBox, ResetStateNotPreservedError } = await import('../reaping/stop-box');
-      try {
-        ({ stateCarried } = await retirePersistentMachineBox({
-          sandboxId: existingSandbox.sandboxId,
-          sessionId,
-          externalId: existingSandbox.externalId,
-          provider: existingSandbox.provider,
-          metadata: existingSandbox.metadata,
-          discardState: input.discardState === true,
-          now: new Date(),
-        }));
-      } catch (err) {
-        if (err instanceof ResetStateNotPreservedError) {
-          logger.warn('[projects] persistent machine reset: chat not preserved, nothing deleted', {
-            session_id: sessionId,
-            external_id: existingSandbox.externalId,
-            error: err.message,
-          });
-          return {
-            status: 409,
-            body: {
-              error:
-                'The chat could not be saved, so the machine was not reset and nothing was deleted. Try again, or reset with discard_state: true to reset anyway and lose the chat history.',
-              code: 'reset_state_not_preserved',
-              state_carried: false,
-            },
-          };
-        }
-        logger.warn('[projects] persistent machine reset: delete failed', {
-          session_id: sessionId,
-          external_id: existingSandbox.externalId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return { status: 502, body: { error: 'Failed to reset the machine; try again' } };
-      }
-    }
-    const resetReport = {
-      state_carried: stateCarried,
-      ...(stateCarried === false ? { warning: 'The chat could not be saved; this session\'s chat history was lost.' } : {}),
-    };
-    if (!existingSandbox || (await claimRetiredEphemeralRow(existingSandbox.sandboxId))) {
-      await provisionReplacementRuntime(input, providerName);
-      return {
-        status: 202,
-        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'machine_reset', ...resetReport },
-      };
-    }
-    return {
-      status: 202,
-      body: {
-        ok: true,
-        session_id: sessionId,
-        status: 'provisioning',
-        reason: 'lifecycle_transition_in_progress',
-        ...resetReport,
-      },
-    };
-  }
-
-  // Ephemeral sandboxes: a restart is a new box from the current image. The
-  // current one commits its session volume and is deleted; a box whose runtime
-  // wedged (its own disk filled, a daemon stuck on a boot error) does not come
-  // back with it, which an in-place restart of the same VM cannot promise.
-  // A persistent machine that mounts its session volume (after a reset) is
-  // still a persistent machine: its restart is the in-place one below.
-  if (
-    existingSandbox?.externalId &&
-    recordedSessionStateVolume(existingSandbox.metadata) &&
-    !isRootVolumeBox(existingSandbox.metadata)
-  ) {
-    const { retireEphemeralOnStop } = await import('../reaping/stop-box');
-    const retired = await retireEphemeralOnStop({
-      sandboxId: existingSandbox.sandboxId,
-      sessionId,
-      externalId: existingSandbox.externalId,
-      stopReason: 'manual',
-      now: new Date(),
-      metadata: { retiredForRestart: true },
-    });
-    if (retired === 'retired' && (await claimRetiredEphemeralRow(existingSandbox.sandboxId))) {
-      await provisionReplacementRuntime(input, providerName);
-      return {
-        status: 202,
-        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'ephemeral_restart' },
-      };
-    }
-  }
 
   if (
     existingSandbox?.externalId &&
@@ -673,7 +593,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'before_stop'))) return;
   await provider.stop(externalId).catch(() => {});
   if (!(await ownsRestart(restart, 'after_stop'))) return;
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   await db
     .update(sessionSandboxes)
     .set({
@@ -707,7 +627,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'after_start'))) return;
   // Provider ingress credentials can change on every stop/start cycle.
   // Remove any link resolved while the sandbox was stopped.
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   // A provider may acknowledge start before discovering that the backing
   // runtime is gone. A confirmed `removed` status starts recovery.
   // `unknown` remains non-terminal because it does not prove runtime loss.

@@ -90,3 +90,30 @@ export function toolCallMetadata(call: ToolCallBlock): Record<string, unknown> {
     ? (metadata as Record<string, unknown>)
     : EMPTY;
 }
+
+/** The text items of a result, joined: what `toV1` gives a v1 part as `output` or `error`. */
+const textOf = (call: ToolCallBlock) => (call.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
+
+/** The call's status in the words a renderer compares: `pending`, `running`, `completed` or `error`. */
+export function toolCallStatus(call: ToolCallBlock): 'pending' | 'running' | 'completed' | 'error' {
+  return call.status === 'complete' ? 'completed' : call.status;
+}
+
+const rawOutputs = new WeakMap<ToolCallBlock, string>();
+
+/** A completed call's output text as the tool returned it; `''` for any other call. One string per call object. */
+export function toolCallRawOutput(call: ToolCallBlock): string {
+  if (call.status !== 'complete') return '';
+  let text = rawOutputs.get(call);
+  if (text === undefined) rawOutputs.set(call, (text = textOf(call)));
+  return text;
+}
+
+/**
+ * A failed call's error text: its semantic error, else its result text (a native export closes
+ * a failed call with `is_error` and the tool's text only), as `toV1` gives `state.error`.
+ * `undefined` for a call that did not fail.
+ */
+export function toolCallError(call: ToolCallBlock): string | undefined {
+  return call.status === 'error' ? call.result?.error?.message || textOf(call) : undefined;
+}

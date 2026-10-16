@@ -10,6 +10,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
+import { toolCallBlock, type ToolPart } from '@kortix/sdk';
 
 type HostProps = React.PropsWithChildren<Record<string, unknown>>;
 const View = ({ children, ...props }: HostProps) => React.createElement('view', props, children);
@@ -22,7 +23,6 @@ mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light'
 mock.module('@/components/ui/text', () => ({ Text }));
 mock.module('@/lib/session/session-store', () => ({
   usePendingPermissions: () => [],
-  useSessionRows: () => undefined,
   useSessionStatus: () => childStatus,
 }));
 mock.module('@/components/session/session-retry-display', () => ({
@@ -81,13 +81,13 @@ afterEach(() => {
   tree = undefined;
 });
 
-const runningChildCall = {
+const runningChildCall = toolCallBlock({
   type: 'tool',
   id: 'child-part',
   callID: 'child-call',
   tool: 'probe',
   state: { status: 'running', input: { q: 1 } },
-};
+} as unknown as ToolPart);
 
 function render(parentLive: boolean) {
   const Activity = SubAgentActivity as unknown as React.ComponentType<Record<string, unknown>>;
@@ -96,7 +96,7 @@ function render(parentLive: boolean) {
       React.createElement(
         infrastructure.TurnLiveContext.Provider,
         { value: parentLive },
-        React.createElement(Activity, { childSessionId: 'child', parts: [runningChildCall] }),
+        React.createElement(Activity, { childSessionId: 'child', calls: [runningChildCall] }),
       ),
     );
   });

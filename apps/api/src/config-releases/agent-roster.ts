@@ -68,6 +68,7 @@ async function readRoster(project: GitBackedProject, commit: string): Promise<De
     defaultAgent: loaded.defaultAgent && enabled.includes(loaded.defaultAgent) ? loaded.defaultAgent : null,
     readable: true,
     governed: true,
+    ...((loaded.schemaVersion ?? 0) >= 3 ? { onlyDeclared: true } : {}),
   };
 }
 

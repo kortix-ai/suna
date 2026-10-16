@@ -69,18 +69,18 @@
  *
  * ## Derived flags (`derivedFrom: 'volumes'`)
  *
- * `drives` and `ephemeral_sandboxes` are not choices of their own: they follow
- * the project's `volumes` flag and are never offered as a toggle. Every flag is
+ * `drives` is not a choice of its own: it follows
+ * the project's `volumes` flag and is never offered as a toggle. Every flag is
  * per project; none is set for a whole organization (2026-10-13).
  *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves an INTERNAL-ONLY surface (`apps`):
- * not offered in Settings, enabled per project by a Kortix operator on
- * request. Its 403 says "contact Kortix" instead of naming a toggle the caller
- * cannot see (gate.ts).
+ * The same state also serves INTERNAL-ONLY surfaces (`session_log`,
+ * `session_log_restore`): not offered in Settings, enabled per project by a
+ * Kortix operator on request. Their 403 says "contact Kortix" instead of
+ * naming a toggle the caller cannot see (gate.ts).
  */
 import { config } from '../config';
 import { platinumUsRegion } from '../shared/platinum-region';
@@ -211,19 +211,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
       'the default for new sessions (projects/lib/platform-meta-agent.ts).',
   },
-  {
-    key: 'apps',
-    name: 'Apps',
-    description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
-    stability: 'stable',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'routes',
-    // Internal-only (2026-10-06): not offered in Settings.
-    // Projects already on keep it; Kortix enables others on request.
-    catalogHidden: true,
-  },
+  // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
+  // every project can create and deploy Apps and there is no flag, no row and
+  // no operator lever. A stored `experimental.apps` override is inert.
   {
     key: 'monitors',
     name: 'Monitors',
@@ -319,10 +309,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
   {
+    key: 'genui',
+    name: 'Generative UI',
+    description:
+      'The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text. On ⇒ every new session of this project (and any session rebuilt from scratch) lists the kortix-genui system skill, which teaches the agent the Kortix generative UI catalog when an answer needs it (KORTIX_GENUI=1 in kortixd). Off ⇒ the agent writes markdown only; blocks already in a transcript still render.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its skill list until a new session starts. kortixd hides the kortix-genui skill while the flag is off (OpenCode: kortixd does not write the skill files, and removes a copy a reused config release still holds, because the `"*": "allow"` of a project config outranks any skill deny; pi: the skill is dropped from its list); the catalog is never in the system prompt. A flag change deletes every unclaimed warm session of the project (pre-created by the web client before the user types, projects/lib/warm-sessions.ts; feature-flags/toggle-effects.ts → retireWarmProjectSessions), so the next prompt starts a session with the new value. The deletion runs in the background after the change is saved: a warm session claimed before it runs keeps the old value. The API kill switch GENUI_ENABLED=false forces it off for every project; it is read at API boot, and a warm session provisioned before an API restart keeps its old value until it is used or idles out.',
+  },
+  {
     key: 'us_region',
     name: 'US Region',
     description:
-      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region.",
+      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region. If that copy fails, the session starts in the provider's home region instead.",
     stability: 'experimental',
     // Two operator gates: Platinum must be the configured provider, and the
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
@@ -380,31 +382,15 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'volumes',
     name: 'Volumes',
     description:
-      'Shared Files and volume-backed sessions for this project.',
+      'Shared Files for this project.',
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
-      'BEHAVIORAL only, through the flags derived from it: drives (Files routes and ' +
-      'session drive mounts) and ephemeral_sandboxes (session volumes), and the session ' +
-      'boot mode (platform/services/boot-mode.ts resolveBootMode).',
-  },
-  {
-    key: 'stateless_sessions',
-    name: 'Stateless sessions',
-    description:
-      'Fresh computer on every wake; only files and chat are kept. Needs Volumes on.',
-    stability: 'experimental',
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    // Effective only with `volumes` on (resolveFeatureFlag).
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only: on, a new box of the project boots in `volume` mode ' +
-      '(platform/services/boot-mode.ts resolveBootMode). PATCH /features refuses to ' +
-      'turn it on while Volumes is off.',
+      'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
+      'session drive mounts).',
   },
   {
     key: 'drives',
@@ -426,28 +412,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
       'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
       'folder when off (drives/service.ts sessionVolumeMounts).',
-  },
-  {
-    key: 'ephemeral_sandboxes',
-    name: 'Ephemeral sandboxes',
-    description:
-      'A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop.',
-    stability: 'experimental',
-    // The session state lives on a Platinum volume. Follows the project's
-    // `volumes` flag (the boot mode decides which sessions are ephemeral).
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
-    derivedFrom: 'volumes',
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. Session provisioning mounts the session volume and sets ' +
-      'KORTIX_PERSIST_ROOT (platform/services/session-sandbox.ts); the idle reaper and ' +
-      'the Stop route commit the volume and delete the box instead of stopping it ' +
-      '(projects/reaping/stop-box.ts, projects/session-lifecycle/stop.ts); /start ' +
-      'provisions a fresh box for a retired row (projects/routes/shared.ts). A box ' +
-      'booted with the flag stays ephemeral if the flag is turned off, because its ' +
-      'state already lives on the volume.',
   },
   {
     key: 'session_log',
@@ -472,20 +436,44 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'session_log_restore',
     name: 'Session log restore',
     description:
-      'Rebuild a session from its saved session log when its computer lost the conversation. Off by default and not offered in Settings: Kortix enables it per project.',
+      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: Kortix enables it per project, or for a whole deployment (on by default on dev).',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
-    // Internal-only (2026-10-13): not offered in Settings.
-    // A Kortix operator enables it per project.
+    // Off unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev does, 2026-10-15).
+    platformDefault: () => config.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+    // Internal-only (2026-10-13): not a Settings toggle. A Kortix operator sets it per project
+    // (PUT /v1/admin/api/projects/:id/features). While on, Settings lists it read-only.
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only. Session provisioning sets KORTIX_SESSION_LOG_RESTORE=1 in the box env ' +
       '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
       'from the session log at boot when the store is missing or behind the log ' +
-      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. Not default-on ' +
-      'before the journal uploads pi images and OpenCode attachment bytes.',
+      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
+      'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
+      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
+      '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
+  },
+  {
+    key: 'workspace_volume',
+    name: 'Workspace volume',
+    description:
+      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk. The box still stops and resumes in place. Not a Settings toggle: Kortix enables it per project.",
+    stability: 'experimental',
+    // Every workspace volume is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    // Internal-only (2026-10-16), step 1 of stateless sandboxes. A Kortix operator
+    // sets it per project (PUT /v1/admin/api/projects/:id/features).
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Read once per session, at the first provisioning of a Platinum box ' +
+      '(platform/services/workspace-volume.ts): on, the session records `workspace_volume` and ' +
+      'every box it ever gets mounts volume kws-<session_id> at /workspace, in the region the ' +
+      'volume was created in, with KORTIX_WORKSPACE_VOLUME=1. Turning the flag off changes no ' +
+      'session that already has a volume. KORTIX_WORKSPACE_VOLUMES=off stops new volumes everywhere. ' +
+      'A session delete deletes the volume after the box is removed (reaping/archived-box-removal.ts).',
   },
 ];
 
@@ -529,8 +517,6 @@ export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): bool
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
   if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom);
-  // Stateless sessions run on Volumes: without it the choice is kept but inert.
-  if (key === 'stateless_sessions' && !resolveFeatureFlag(metadata, 'volumes')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 

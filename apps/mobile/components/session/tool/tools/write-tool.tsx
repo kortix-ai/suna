@@ -40,27 +40,27 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function WriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const running = useContext(ToolRunningContext);
   const { openFile } = useToolNavigation();
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const status = partStatus(call);
   const filePath = inputPath(input) || inputPath(streamingInput);
   const filename = useMemo(() => getFilename(filePath) || '', [filePath]);
   const content = (input.content as string) || (streamingInput.content as string) || '';
   const ext = useMemo(() => filename.split('.').pop() || '', [filename]);
-  const output = partOutput(part);
+  const output = partOutput(call);
   const isError = useMemo(() => status === 'completed' && isErrorOutput(output), [status, output]);
   const stat = useMemo(() => writeTriggerStat({ isError, content }), [isError, content]);
-  const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
+  const diagnostics = useMemo(() => getToolDiagnostics(call, filePath), [call, filePath]);
   const isStalePending = isStalePendingFile({ running, filename, status });
   const kind = writeBodyKind({ isError, content, isStalePending });
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PencilSimpleIcon}
       trigger={{
         title: fileRowTitle('write', { running, isError }),

@@ -15,10 +15,11 @@
  * - `seq`: minted once per message (the seq rule below); `fromV1` numbers by position.
  * - `producer`: `opencode` with the store's OpenCode version, not `kortix-v1-import`.
  * - attachments: `ref: blob:<sha256>`, `bytes` and `sha256` of the bytes in the store
- *   (an offloaded attachment's sidecar file). The bytes stay in the store; nothing
- *   uploads them yet (P2.3). `fromV1` without a resolver sets neither (F13), and
- *   the mirror row of a prompt file can carry the `kortix-attachment://` `url` of
- *   the copy the API's capture uploaded, which the daemon never sees.
+ *   (an offloaded attachment's sidecar file). The journal uploads the bytes (`blob`)
+ *   and replaces the ref with the stored object's `kortix-attachment://` ref (P2.13).
+ *   `fromV1` without a resolver sets neither (F13), and the mirror row of a prompt
+ *   file can carry the `kortix-attachment://` `url` of the copy the API's capture
+ *   uploaded, which the daemon never sees (so a prompt file is stored twice).
  * - session: `title`, `created_at` and `todos` from the store, `restore_grade: 'native'`
  *   without `grade_counts`, and the harness history. Thread `title` from the store.
  * The mirror also cuts strings over 200,000 characters, drops `data:` strings
@@ -64,8 +65,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import {
   fromV1,
-  type AdapterCapabilities,
-  type CapabilityFeatures,
+  OPENCODE_CAPABILITIES,
   type ExportCursor,
   type SessionLog,
   type V1Attachment,
@@ -87,32 +87,12 @@ import { restoreOpenCodeSessionLog, type OpenCodeRestoreTarget } from './session
 
 export const OPENCODE_ADAPTER_VERSION = '1.0.0'
 
-const native: CapabilityFeatures = {
-  tool_error_channel: false, // openai-chat role:tool has no error flag
-  attachments: { user: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'], tool_result: false },
-  compaction: ['summary_first_tail'],
-  subagents: 'sync', // `task` runs a child session
-  todos: true,
-  reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
-  freeform_tool_input: false,
-}
-/**
- * `harness_versions` and `schema_minors` name what the oracle suites (`opencode-session-log-restore.test.ts`,
- * `opencode-session-log.test.ts`) passed against, written by hand: `session-log-adapter-versions.test.ts`
- * fails when the pin (runtime-versions.json) or `SESSION_LOG_MINOR` leaves them (README "Bumping a harness").
- */
-export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
-  harness: 'opencode',
-  harness_versions: '1.18.23',
-  schema_minors: [1],
-  dialects: ['openai-chat'],
-  native,
-  // A tool-result attachment becomes a follow-up user turn; a layout is emulated.
-  rendered: { ...native, attachments: { ...native.attachments, tool_result: true }, compaction: ['summary_first_tail', 'layout'] },
-}
+/** The manifest (C12, F9) lives in `@kortix/api-contract/session-log` (`capabilities.ts`): apps/api reads it for the switch preflight. */
+export { OPENCODE_CAPABILITIES }
 
 type J = Record<string, any>
-type Resolved = V1Attachment & { sha256: string }
+/** `read` gives the bytes again, for `SessionLogPort.blob`. */
+type Resolved = V1Attachment & { sha256: string; read: () => Buffer | null }
 const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
 const parse = (data: string): J | null => {
   try {
@@ -174,10 +154,10 @@ function takeBytes(file: J, sidecar: (path: string) => Resolved | null): Resolve
     return null // a malformed url: unresolved, as the mirror holds it
   }
   const digest = sha256(bytes)
-  return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest }
+  return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, read: () => bytes }
 }
 
-/** The whole store as a session log, each message's native hash, and the seqs it issued. */
+/** The whole store as a session log, each message's native hash, the seqs it issued, and each attachment's bytes by sha256. */
 export function openCodeSessionLog(input: {
   sessionId: string
   rootId: string
@@ -185,7 +165,7 @@ export function openCodeSessionLog(input: {
   seqs: SeqState
   ids?: IdMap
   sidecar?: (path: string) => Resolved | null
-}): { log: SessionLog; hashes: Map<string, string>; issued: boolean } {
+}): { log: SessionLog; hashes: Map<string, string>; issued: boolean; blobs: Map<string, () => Buffer | null> } {
   const { store } = input
   const sidecar = input.sidecar ?? (() => null)
   const toLog = (id: string) => input.ids?.[id] ?? id
@@ -271,7 +251,7 @@ export function openCodeSessionLog(input: {
   log.todos = store.todos
     .filter((t) => toLog(t.session_id) === rootId)
     .map((t) => ({ content: t.content, status: t.status as SessionLog['todos'][number]['status'], priority: t.priority as SessionLog['todos'][number]['priority'] }))
-  return { log, hashes, issued }
+  return { log, hashes, issued, blobs: new Map([...attachments.values()].map((r) => [r.sha256, r.read])) }
 }
 
 export function openCodeSessionLogStatePath(): string {
@@ -325,13 +305,14 @@ export function createOpenCodeSessionLogPort(options: {
     try {
       const bytes = readFileSync(path)
       const digest = sha256(bytes)
-      const resolved = { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest }
+      const resolved = { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, read: () => readFileOrNull(path) }
       sidecars.set(path, resolved)
       return resolved
     } catch {
       return null
     }
   }
+  let blobs = new Map<string, () => Buffer | null>()
   const read = (): StoreSnapshot | null => (existsSync(options.dbPath) && options.db.probe().supported ? options.db.storeSnapshot() : null)
   let lastSession: string | null = null
   let unsaved = false
@@ -341,7 +322,8 @@ export function createOpenCodeSessionLogPort(options: {
       const rootId = options.rootId()
       const store = rootId ? read() : null
       if (!rootId || !store) return { messages: [], tombstones: [], threads: [] }
-      const { log, hashes, issued } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, ids, sidecar })
+      const { log, hashes, issued, blobs: bytes } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, ids, sidecar })
+      blobs = bytes
       // The seqs are durable before any record that carries one leaves the box.
       if (issued || unsaved) {
         try {
@@ -393,6 +375,15 @@ export function createOpenCodeSessionLogPort(options: {
       }
       return { seq: state.seqs[messageId]! }
     },
+    blob: (sha256: string) => blobs.get(sha256)?.() ?? null,
+  }
+}
+
+function readFileOrNull(path: string): Buffer | null {
+  try {
+    return readFileSync(path)
+  } catch {
+    return null
   }
 }
 
@@ -401,11 +392,12 @@ export function createOpenCodeSessionLogPort(options: {
  * (`shared/session-log-boot.ts`, which restores into `opencode.db` when the store is
  * missing or behind the log), then the journal at the generation it returns, before the
  * event loop and the first prompt so the first turn's end flushes it. `target` is the
- * binary and the directory OpenCode serves: `opencode import` runs there. True when it
+ * binary and the directory OpenCode serves (`opencode import` runs there), and the
+ * running OpenCode's URL (its version). True when it
  * restored. Throws when the reconcile fails: no journal starts. A box without a control
  * plane journals nothing.
  */
-export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd'>): Promise<boolean> {
+export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd' | 'url'>): Promise<boolean> {
   const sessionId = readControlPlaneEnv().sessionId
   if (!sessionId) return false
   const dbPath = opencodeDbPath(OPENCODE_HOME)

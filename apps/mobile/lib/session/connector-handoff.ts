@@ -29,7 +29,7 @@
  * inside another sheet would stack two overlays.
  */
 
-import { isToolPart, type Part } from '@kortix/sdk';
+import type { SessionLogBlock } from '@kortix/sdk';
 
 import { partInput, partOutput } from './tool-part-accessors';
 import { parseConnectorOutput } from './tool-output-parsers';
@@ -149,19 +149,19 @@ export function isConnectorCallTool(tool: string): boolean {
 }
 
 /**
- * The call ids of `kortix-connectors_call` parts that ask a human for
+ * The call ids of `kortix-connectors_call` calls that ask a human for
  * something — connect an app (`connectorConnectNeed`) or approve a call
  * (`connectorApprovalNeed`). `standaloneCallIdsFor` breaks these out of their
  * burst, so their Connect row and approval prompt render in the transcript.
  */
-export function connectorHandoffCallIds(parts: ReadonlyArray<{ part: Part }>): string[] {
+export function connectorHandoffCallIds(blocks: ReadonlyArray<SessionLogBlock>): string[] {
   const ids: string[] = [];
-  for (const { part } of parts) {
-    if (!isToolPart(part) || !isConnectorCallTool(part.tool)) continue;
-    const parsed = parseConnectorOutput(partOutput(part));
+  for (const block of blocks) {
+    if (block.type !== 'tool_call' || !isConnectorCallTool(block.name)) continue;
+    const parsed = parseConnectorOutput(partOutput(block));
     if (!parsed) continue;
-    const input = partInput(part);
-    if (connectorConnectNeed(input, parsed) || connectorApprovalNeed(input, parsed)) ids.push(part.callID);
+    const input = partInput(block);
+    if (connectorConnectNeed(input, parsed) || connectorApprovalNeed(input, parsed)) ids.push(block.call_id);
   }
   return ids;
 }
@@ -190,8 +190,8 @@ export type ConnectorApprovalState =
 
 export interface ConnectorApprovalStateInput {
   executionId: string;
-  /** The project's review list (`reviewKeys.list`, the query `ReviewPage`
-   *  reads). The API adapts only still-pending connector calls into it, as
+  /** The project's pending approvals (`useReviewItems` with `kind: 'approval'`).
+   *  The API adapts only still-pending connector calls into the review list, as
    *  `call:<execution_id>`. `undefined` until it loads. `canResolve` is the
    *  call's own verdict (`ReviewApprovalAction.canResolve`), when known.
    *  A failed request holds no list, so no verdict: `unknown`. */

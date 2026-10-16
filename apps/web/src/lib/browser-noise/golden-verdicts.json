@@ -50,14 +50,14 @@
 {"input":{"exception":{"values":[{"value":"Unhandled promise rejection: ApiError: Out of credits. Top up to continue."}]}},"runtime":false,"sentry":true},
 {"input":{"message":"No credit account found. Complete account setup first."},"runtime":true,"sentry":true},
 {"input":{"exception":{"values":[{"value":"No credit account found. Complete account setup first."}]}},"runtime":false,"sentry":true},
-{"input":{"message":"Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage."},"runtime":true,"sentry":true},
-{"input":{"exception":{"values":[{"value":"Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage."}]}},"runtime":false,"sentry":true},
+{"input":{"message":"Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage."},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage."}]}},"runtime":false,"sentry":false},
 {"input":{"message":"Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage."},"runtime":false,"sentry":false},
 {"input":{"exception":{"values":[{"value":"Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage."}]}},"runtime":false,"sentry":false},
 {"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"Out of credits. Top up to continue.","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":true},
 {"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"Unhandled promise rejection: ApiError: Out of credits. Top up to continue.","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":true},
 {"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"No credit account found. Complete account setup first.","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":true},
-{"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":true},
+{"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":false},
 {"input":{"message":"Unhandled promise rejection: Out of credits. Top up to continue."},"runtime":true,"sentry":true},
 {"input":{"exception":{"values":[{"value":"Internal server error"}]}},"runtime":false,"sentry":false},
 {"input":{"message":"Internal server error"},"runtime":false,"sentry":false},
@@ -1908,5 +1908,8 @@
 {"input":{"message":"Window message \"chrome: call method\" timed out."},"runtime":true,"sentry":true},
 {"input":{"message":"Unhandled promise rejection: Window message \"chrome: call method\" timed out."},"runtime":true,"sentry":true},
 {"input":{"exception":{"values":[{"value":"Window message \"chrome: call method\" timed out.","mechanism":{"type":"auto.browser.global_handlers.onunhandledrejection","handled":false},"stacktrace":{"frames":[{"filename":"app:///_next/static/immutable/chunks/1tbu2q8v5lwc7.js","function":"r"},{"filename":"app:///assets/js/content.js","function":"?"}]}}]}},"runtime":false,"sentry":true},
-{"input":{"message":"Request timed out after 30000ms"},"runtime":false,"sentry":false}
+{"input":{"message":"Request timed out after 30000ms"},"runtime":false,"sentry":false},
+{"input":{"message":"undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')"},"runtime":true,"sentry":true},
+{"input":{"request":{"url":"https://kortix.com/projects/00000000-0000-0000-0000-000000000001/sessions/ses_current"},"exception":{"values":[{"type":"RangeError","value":"Maximum call stack size exceeded.","mechanism":{"type":"auto.browser.global_handlers.onerror","handled":false},"stacktrace":{"frames":[{"function":"?","filename":"app:///projects/00000000-0000-0000-0000-000000000001/sessions/00000000-0000-0000-0000-000000000002","lineno":192,"colno":41},{"function":"Hk","filename":"app:///projects/00000000-0000-0000-0000-000000000001","lineno":228,"colno":63},{"function":"Jk","filename":"app:///projects/00000000-0000-0000-0000-000000000001","lineno":228,"colno":409}]}}]}},"runtime":false,"sentry":true},
+{"input":{"extra":{"__serialized__":{"code":-32603,"message":"Internal JSON-RPC error."}},"exception":{"values":[{"type":"UnhandledRejection","value":"Object captured as promise rejection with keys: code, message","mechanism":{"type":"auto.browser.global_handlers.onunhandledrejection","handled":false}}]}},"runtime":false,"sentry":true}
 ]
