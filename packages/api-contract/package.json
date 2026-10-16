@@ -14,7 +14,8 @@
     "./fallback-models": "./src/fallback-models.ts",
     "./egress-shim-rules": "./src/egress-shim-rules.ts",
     "./sandbox-layout": "./src/sandbox-layout.ts",
-    "./compiled-agent-config-env": "./src/compiled-agent-config-env.ts"
+    "./compiled-agent-config-env": "./src/compiled-agent-config-env.ts",
+    "./permission-rules": "./src/permission-rules.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",

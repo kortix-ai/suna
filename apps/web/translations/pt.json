@@ -20082,7 +20082,13 @@
       "textb8fd28863a22": "Valor em créditos (ex.: 2500)",
       "textc6813a9e41ac": "Em créditos: {value0} LLM · {value1} computação · {value2} outros.",
       "textc86ce3b8097b": "ex.: 5000",
-      "textfaaf56a699c2": "Limite (créditos)"
+      "textfaaf56a699c2": "Limite (créditos)",
+      "texte7a241debad5": "URL",
+      "text3dd46a7b552c": "Adicionar app",
+      "text68cf13547e38": "Adicionar um app por URL",
+      "text46bc646c9bfe": "Mostre neste projeto um site hospedado em qualquer lugar. O Kortix o abre aqui mesmo, ao lado dos apps que executa.",
+      "text08e6480e9b78": "{value0} adicionado",
+      "text6241684827b2": "Este site não permite que o Kortix o mostre aqui."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -1727,6 +1727,22 @@ gate). Narrowing the policy to one group keeps that group's members in and
 cuts the other group's; widening back restores them — under OR, no policy
 change can lock an admitted member out.
 
+`APP-14` External App by URL — `POST /projects/:projectId/apps` with
+`external_url` (https, no credentials; `http:`, userinfo or another scheme →
+`400`, nothing created) creates an App hosted elsewhere: `201`, `url` and
+`external_url` are the site, `active_deployment_id: null`,
+`estimated_monthly_usd: 0`. The API reads the site's `X-Frame-Options` and CSP
+`frame-ancestors` once, through the SSRF guard: a site that allows the web
+origin to frame it (or one the API cannot reach, such as a private address)
+gets `capabilities: ["preview"]` and `warnings: []`; one that refuses gets
+`capabilities: []` and the warning `app_external_not_frameable`. List and get
+carry it. Deploy and `…/token` answer `409 app_capability_unsupported`.
+`…/access-session` answers `200` with the site URL itself. A request to the
+App's Kortix host that passes its access gate answers `302` to the site.
+`PATCH` with `external_url` moves it; the same `PATCH` on an App Kortix runs
+answers `409 app_not_external`. An external App takes no App slot. Delete
+removes it from the list.
+
 ---
 
 ## Browser-agent pilot (opt-in)

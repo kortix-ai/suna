@@ -37,6 +37,7 @@
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
+import { orderPermissionRules } from '@kortix/api-contract/permission-rules';
 import {
   agentFileCandidates,
   defaultAgentFile,
@@ -387,7 +388,7 @@ function compileAgentBlock(
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);
   }
-  if (out.permission !== undefined) out.permission = denyToolsBehindDeniedPermission(out.permission);
+  if (out.permission !== undefined) out.permission = orderPermissionRules(denyToolsBehindDeniedPermission(out.permission));
 
   return out;
 }
@@ -456,7 +457,6 @@ const OTHER_PERMISSION_KEYS: readonly string[] = [
 function skillsGrantToPermissionRule(skills: GrantSetV2): PermissionRuleV2 {
   if (skills === 'all') return 'allow';
   if (skills === 'none' || skills.length === 0) return 'deny';
-  // `*` first: OpenCode applies the LAST matching rule, so a trailing `*` would deny every name.
   const rule: Record<string, PermissionActionV2> = { '*': 'deny' };
   for (const name of skills) rule[name] = 'allow';
   return rule;
@@ -527,7 +527,6 @@ function grantedNames(value: unknown, universe: string[]): string[] {
 /** An allowlist rule: everything `deny`, then each name `allow`. No names: `deny`. */
 function allowlistRule(names: string[]): PermissionRuleV2 {
   if (names.length === 0) return 'deny';
-  // `*` first: OpenCode applies the LAST matching rule, so a trailing `*` would deny every name.
   return { '*': 'deny', ...Object.fromEntries(names.map((name) => [name, 'allow' as const])) };
 }
 
@@ -639,7 +638,7 @@ function compileAgentV3(
   // Omitted permission is `allow`: a tool never waits for an answer unless the agent says `ask`.
   let permission = withPermissionRule(block.permission ?? 'allow', 'skill', allowlistRule(grantedNames(block.skills, universe.skills)));
   permission = withPermissionRule(permission, 'task', allowlistRule(grantedNames(block.subagents, universe.subagents)));
-  out.permission = denyToolsBehindDeniedPermission(permission);
+  out.permission = orderPermissionRules(denyToolsBehindDeniedPermission(permission));
 
   const extensions = grantedNames(block.extensions, universe.extensions);
   if (extensions.length > 0) out.extensions = extensions;

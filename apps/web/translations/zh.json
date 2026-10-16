@@ -20082,7 +20082,13 @@
       "textb8fd28863a22": "积分数量（例如 2500）",
       "textc6813a9e41ac": "积分：{value0} LLM · {value1} 计算 · {value2} 其他。",
       "textc86ce3b8097b": "例如 5000",
-      "textfaaf56a699c2": "上限（积分）"
+      "textfaaf56a699c2": "上限（积分）",
+      "texte7a241debad5": "URL",
+      "text3dd46a7b552c": "添加应用",
+      "text68cf13547e38": "通过 URL 添加应用",
+      "text46bc646c9bfe": "在此项目中显示托管在任何地方的网站。Kortix 会在原处打开它，与其运行的应用并列。",
+      "text08e6480e9b78": "已添加 {value0}",
+      "text6241684827b2": "此网站不允许 Kortix 在此显示。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

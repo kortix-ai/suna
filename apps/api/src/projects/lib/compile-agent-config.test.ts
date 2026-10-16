@@ -1244,3 +1244,50 @@ describe('allowlist rules put * first: OpenCode applies the last matching rule',
     expect(Object.entries((set.agent.a!.permission as Record<string, Record<string, string>>).skill!)).toEqual([['*', 'deny'], ['probe', 'allow']]);
   });
 });
+
+/**
+ * OpenCode 1.18.23 (permission/index.ts `fromConfig` + `evaluate`): every
+ * (key, pattern) rule in key order, the LAST match wins. `toEqual` ignores key
+ * order, so only an evaluation like this one sees the order bug.
+ */
+function openCodeAction(permission: unknown, name: string, subject: string): string | undefined {
+  const glob = (value: string, pattern: string) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/ \.\*$/, '( .*)?')}$`, 's').test(value);
+  const block = typeof permission === 'string' ? { '*': permission } : (permission as Record<string, unknown>);
+  const rules = Object.entries(block).flatMap(([key, rule]) =>
+    typeof rule === 'string' ? [[key, '*', rule]] : Object.entries(rule as Record<string, string>).map(([pattern, action]) => [key, pattern, action]),
+  );
+  return rules.filter(([key, pattern]) => glob(name, key!) && glob(subject, pattern!)).at(-1)?.[2];
+}
+
+describe('compileAgentConfig — the most specific rule wins on OpenCode, whatever the authored order', () => {
+  const wire = (set: unknown) => JSON.parse(JSON.stringify(set)) as CompiledAgents;
+
+  test('v2: a skills list allows each listed skill and denies the rest (the prod failure shape)', () => {
+    const set = wire(compileAgentConfig({ kortix_version: 2, default_agent: 'a', agents: { a: { skills: ['aie-os', 'probe'] } } }));
+    const permission = set.agent.a!.permission;
+    expect(openCodeAction(permission, 'skill', 'aie-os')).toBe('allow');
+    expect(openCodeAction(permission, 'skill', 'probe')).toBe('allow');
+    expect(openCodeAction(permission, 'skill', 'other')).toBe('deny');
+  });
+
+  test('v2: an agent file bash map with `*` last keeps its specific rule', () => {
+    const set = wire(
+      compileAgentConfig({ kortix_version: 2, default_agent: 'a', agents: { a: { skills: ['probe'] } } }, 'opencode', {
+        'agents/a.md': supportMd(['permission:', '  bash:', '    "git push *": ask', '    "*": allow'].join('\n'), 'Body.'),
+      }),
+    );
+    const permission = set.agent.a!.permission;
+    expect(openCodeAction(permission, 'bash', 'git push origin main')).toBe('ask');
+    expect(openCodeAction(permission, 'bash', 'ls')).toBe('allow');
+  });
+
+  test('v3: a tool key outranks a `*` written after it', () => {
+    const set = wire(
+      compileAgentConfig(parseYaml('kortix_version: 3\ndefault_agent: a\nagents:\n  a:\n    prompt: Hi.\n    permission:\n      bash: ask\n      edit:\n        "*.env": deny\n        "*": allow\n      "*": allow\n')),
+    );
+    const permission = set.agent.a!.permission;
+    expect(openCodeAction(permission, 'bash', 'ls')).toBe('ask');
+    expect(openCodeAction(permission, 'edit', 'apps/api/.env')).toBe('deny');
+    expect(openCodeAction(permission, 'read', 'x')).toBe('allow');
+  });
+});

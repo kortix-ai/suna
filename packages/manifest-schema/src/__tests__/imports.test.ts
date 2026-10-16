@@ -294,6 +294,24 @@ describe('kortix_version 3 imports', () => {
     );
     expect(resolved.raw.harnesses).toBeUndefined();
   });
+
+  // skills, commands and extensions became importable for v3. A v2 manifest
+  // that compiled on 0.13.57 with a non-map root `skills` must still resolve.
+  test('a v2 root keeps skills, commands and extensions out of the import merge', async () => {
+    const resolved = await resolveManifestImports(
+      {
+        path: 'kortix.yaml',
+        raw: parseManifestText(
+          'kortix_version: 2\ndefault_agent: a\nimports: [x.yaml]\nagents: {a: {}}\nskills: [a-skill]\ncommands: [c]\n',
+          'yaml',
+        ),
+      },
+      repo({ 'x.yaml': 'triggers: []\nextensions: [e]\n' }),
+    );
+    expect(resolved.raw.skills).toEqual(['a-skill']);
+    expect(resolved.raw.commands).toEqual(['c']);
+    expect(resolved.raw.extensions).toBeUndefined();
+  });
 });
 
 describe('splitManifestByOrigin', () => {
