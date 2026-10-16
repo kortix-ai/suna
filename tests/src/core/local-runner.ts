@@ -71,6 +71,17 @@ function deployedFlowTimeoutMs(): string {
   return override === undefined || override === '' ? DEPLOYED_FLOW_TIMEOUT_MS : override;
 }
 
+/**
+ * The flow tag the deployed API lanes (`--target-api-full`, `--target-full`)
+ * select. The `Tests` lanes already ran every flow on the same tree, so a
+ * deployed run proves only what a deployment can break: auth against the real
+ * Supabase, real sandbox boot and wake, the runtime proxy and SSE through the
+ * edge, the LLM gateway, Stripe, object storage, managed git push, email,
+ * health and SHA, CORS and domains. The seam-to-flow table is in
+ * tests/README.md ("Release gate"). `--require-all` applies to this set.
+ */
+export const DEPLOYED_FLOW_TAG = 'deployed';
+
 const flowFilterFlags = new Set(['--domain', '--id', '--tag', '--smoke']);
 
 function hasFlowFilter(args: string[]): boolean {
@@ -111,8 +122,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
   const targetFull = args.includes('--target-full');
-  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs, each
-  // sharded, so `max(api, browser)` replaces a contended sum on one 2-vCPU
+  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs (the
+  // browser lane sharded), so `max(api, browser)` replaces a contended sum on one 2-vCPU
   // runner. `--target-full` still runs both lanes in one process for
   // deploy-preview (one sandbox origin, one job by construction) and local use.
   const targetApiFullOnly = args.includes('--target-api-full');
@@ -272,6 +283,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      DEPLOYED_FLOW_TAG,
       ...(apiShard ? ['--shard', apiShard] : []),
     ],
     // KE2E_API_WORKERS was 3. `provision.ts`'s global KE2E_PROVISION_CONCURRENCY
@@ -279,8 +292,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     // measured parallelism at 1.43x. 6 is the paired half of raising provision
     // concurrency to 4; raising either alone does almost nothing. Sandbox
     // workers stay at 3 because those boot real cloud sandboxes.
-    // The release gate's shards override BOTH so the fleet total stays bounded
-    // — see the arithmetic in tests-release.yml.
+    // The release gate's API job overrides BOTH so the fleet total stays
+    // bounded — see the arithmetic in tests-release.yml.
     env: {
       KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '6',
       KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',

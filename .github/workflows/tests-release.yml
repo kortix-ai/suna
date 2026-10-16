@@ -8,7 +8,7 @@ on:
   # this input the gate could not be exercised without opening a release PR into
   # `prod` — a gate that has never been green could never be rehearsed either.
   # `expected_sha` supplies the same value the file would, and nothing else
-  # changes: the same shards, the same staging URLs, the same SHA assertion.
+  # changes: the same jobs, the same staging URLs, the same SHA assertion.
   #
   #   gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>
   #
@@ -62,10 +62,12 @@ env:
   # - KE2E_OWNER_EMAIL / KE2E_OWNER_PASSWORD: optional, not stored today.
 
 jobs:
-  # Reclaim debris left by EARLIER runs before this one adds load. `--older-than
-  # 2h` cannot touch an account this run just created, so a concurrent release
-  # gate is safe. continue-on-error keeps a janitorial failure from blocking the
-  # release: the shards still run, and the next run sweeps again.
+  # Reclaim debris left by EARLIER runs. `--older-than 2h` cannot touch an
+  # account this run just created, so it runs BESIDE the deployed jobs, not in
+  # front of them: as a prerequisite it added ~1.5 min to every gate run
+  # (38495058722: 01:44:55 -> 01:46:29 before any shard started).
+  # continue-on-error keeps a janitorial failure from blocking the release: the
+  # next run sweeps again.
   sweep-before:
     name: sweep stale test accounts
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
@@ -125,95 +127,54 @@ jobs:
       # continue-on-error absorbs) — never as a job *cancelled*: on run
       # 32226539107 the 15-minute job cap fired while gc was still deleting a
       # day's worth of debris, GitHub recorded the job as cancelled, and every
-      # dependent shard was skipped. A janitor must never be able to skip the
-      # gate. Whatever it did not reach, the next run's sweep gets.
+      # shard (then a dependent) was skipped. A janitor must never be able to
+      # skip the gate. Whatever it did not reach, the next run's sweep gets.
       - name: Reclaim test accounts older than 2h
         timeout-minutes: 12
         run: bun tests/bin/ke2e.ts gc --older-than 2h
 
-  # The deployed API suite, sharded by tests/src/core/shard.ts. Shard 1 owns
-  # every serial + global flow and nothing else (see that file); shards 2-6
-  # split the 409 parallel flows longest-first. The partition is computed from
-  # the live flow registry, so a newly added flow always lands in exactly one
-  # shard.
+  # The deployed API smoke: the flows tagged `deployed`
+  # (tests/src/core/local-runner.ts DEPLOYED_FLOW_TAG, seam table in
+  # tests/README.md "Release gate"). The staging pull request's `Tests` lanes
+  # already ran every flow on this tree, so this job proves only what a
+  # deployment can break: real Supabase auth, real sandbox boot and wake, the
+  # runtime proxy and SSE through the edge, the LLM gateway, Stripe, object
+  # storage, managed git push, email, health and SHA, CORS and domains.
+  #
+  # One job, no matrix. Before 2026-10-16 this was 6 shards of the whole
+  # registry (~700 flows), 10-17 min each (green run 38495058722), and 5 gate
+  # rounds for v0.13.57 on shared-staging flakes. The `deployed` set is ~45
+  # flows: about 1 min of runner setup, the sandbox image/runtime check, then
+  # ~2-3 min of flows. `--require-all` applies to the whole set.
   api:
-    name: deployed api shard
-    needs: sweep-before
-    # The pre-run sweep is best-effort. Run the shards whether it passed,
-    # failed, or was cancelled by its own cap — its result must never gate the
-    # release (see the note on sweep-before).
-    if: ${{ !cancelled() }}
+    name: deployed api smoke
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
-    # A ceiling that turns a hang into a readable failure — never a throttle.
-    #
-    # Run 32240074477 killed all four API shards on the 40-minute cap at once
-    # (10:35:41 -> 11:20:42) while they were still passing what they ran: shard
-    # 3 had 76/87, shard 4 68/77. The cap destroyed the verdict, not the suite.
-    #
-    # Why 60 alone would not have been enough, and why 6 shards is the fix.
-    # Measured from those two logs, over a 38.4-minute window each:
-    #   shard 3: 87 of 137 flows -> 2.266 flows/min
-    #   shard 4: 77 of 137 flows -> 1.998 flows/min
-    # plus ~1.7 min of checkout/install/provision before the first flow. At 137
-    # flows that projects to 62 and 70 minutes — over a 60-minute cap. At the 82
-    # flows a 6-way split gives each shard it projects to 38 and 43 minutes,
-    # inside 60 with room for the extra load 6 shards offer staging. Both rates
-    # were measured while staging was returning laundered 503s, so treat them as
-    # a floor, not a clean baseline.
-    #
-    # Shard 1 is the exception to watch. Its 35-flow serial+global tail runs
-    # one-at-a-time and its declared timeouts sum to 121 minutes (CR-9 alone is
-    # 20). Its log blob for that run has expired, so there is no observed
-    # duration to check against. 60 minutes bounds it; it does not guarantee it.
-    # If shard 1 caps out, cut the tail's own timeouts — not this number.
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+    # A ceiling that turns a hang into a readable failure, never a throttle.
+    # The normal run is ~5 min. The cap is larger because runner.ts waits up to
+    # 15 min for a cold default sandbox image and 10 min for its runtime before
+    # the first sandbox flow (unit/gate-setup-budgets.test.ts). A cold image
+    # right after a staging deploy is a slow pass, not a failure.
+    timeout-minutes: 30
     env:
       # Pin the run id so the post-run sweep below can reclaim exactly THIS
-      # shard's principals (`principals.ts` names them `e2e-<runId>-…`).
+      # job's principals (`principals.ts` names them `e2e-<runId>-…`).
       #
       # The ATTEMPT is part of the identity, or `gh run rerun --failed` collides
       # with its own debris: `github.run_id` is identical across attempts, so
-      # every run-scoped fixture name is too, and attempt 2's world bootstrap
-      # re-derives names attempt 1 already claimed. Run 32330628092 attempt 2
-      # failed KAAB-7 in 2.2s with `409 IDEMPOTENCY_KEY_CONFLICT` on its first
-      # `POST /sessions` for exactly this reason — a green flow reported as a
-      # failure, on the release gate, during a release.
-      #
-      # Attempt 1 keeps the OLD id byte-for-byte, so nothing that greps existing
-      # logs or artifacts changes; only a re-run gets the suffix. The reclaim
-      # step below reads this same variable, so the sweep stays exact.
-      KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}${{ github.run_attempt != 1 && format('-a{0}', github.run_attempt) || '' }}
-      # Fleet arithmetic, not per-job tuning, and UNCHANGED per shard by the
-      # move to 6 — the throughput comes from fewer flows per shard, not from
-      # more workers inside one.
-      #
-      # Run 32231251280 fanned out 4x3 API + 4x2 sandbox + 3x2 browser = 26
-      # concurrent workers against ONE staging (2 x 1 vCPU tasks, Medium DB
-      # after #6544) and ~50% of flows failed with "exceeded 120000ms": staging
-      # slowed until the 120s flow budget tripped, and with #6543 a timeout is
-      # no longer retried. Run 32240074477 halved that to these values — 15
-      # workers — and staging held: 87-88% of what ran, passed. That is the
-      # proven-safe point, and these numbers are it.
-      #
-      # 6 shards raise the peak from 15 to 19 (shard 1 contributes 1, not 3:
-      # its flows are serial by definition). 19 sits nearer the 15 that held
-      # than the 26 that collapsed. Lower these first if MAINTENANCE_MODE 503s
-      # reappear; dropping KE2E_API_WORKERS to 1 returns the fleet to 13.
-      # 2026-08-20: dropped to 1 — dry-run 32323656671 saw sustained origin
-      # 5xx on the team-create/addMember write paths at 19 concurrent workers
-      # (POST /v1/accounts costs 2-15s even idle over the cross-region DB, and
-      # under load it crosses the origin timeout). Staging API also scaled
-      # 3 -> 6 tasks. Shards finish in 25-40m at 2 workers; 1 worker stays
-      # under the 60m cap.
-      KE2E_API_WORKERS: '1'
-      KE2E_SANDBOX_WORKERS: '1'
+      # every run-scoped fixture name is too. Run 32330628092 attempt 2 failed
+      # KAAB-7 in 2.2s with `409 IDEMPOTENCY_KEY_CONFLICT` for exactly this
+      # reason. Only a re-run gets the suffix. The reclaim step below reads this
+      # same variable, so the sweep stays exact.
+      KE2E_RUN_ID: ${{ github.run_id }}-api${{ github.run_attempt != 1 && format('-a{0}', github.run_attempt) || '' }}
+      # Staging concurrency, the fleet total: 4 API + 5 sandbox workers here
+      # plus 2 browser workers = 11. Run 32231251280 collapsed staging at 26;
+      # 15 held (32240074477); 19 produced origin 5xx on team-create
+      # (32323656671). Lower these first if MAINTENANCE_MODE 503s reappear.
+      KE2E_API_WORKERS: '4'
+      KE2E_SANDBOX_WORKERS: '5'
       KE2E_TIMEOUT_ATTEMPTS: '2'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -289,13 +250,13 @@ jobs:
         # install (run 33995649798, release/v0.13.11).
         env:
           npm_config_engine_strict: "false"
-      - name: Run this shard of the deployed staging API suite
-        run: pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6
+      - name: Run the deployed staging API smoke
+        run: pnpm test -- --target-api-full
       # A cancelled job is SIGKILLed before the runner's `finally` teardown, so
       # every cancel used to leak its whole world. `always()` covers cancelled,
-      # failed and passed; --run-id scopes the sweep to this shard so it cannot
-      # delete a sibling shard's live accounts.
-      - name: Reclaim this shard's test accounts
+      # failed and passed; --run-id scopes the sweep to this job so it cannot
+      # delete another run's live accounts.
+      - name: Reclaim this job's test accounts
         if: always()
         continue-on-error: true
         run: bun tests/bin/ke2e.ts gc --run-id "$KE2E_RUN_ID"
@@ -325,7 +286,7 @@ jobs:
         # Cancellation can leave raw Playwright traces before reporter scrubbing.
         if: ${{ always() && steps.artifact-secrets.outcome == 'success' }}
         with:
-          name: tests-release-api-shard-${{ matrix.shard }}
+          name: tests-release-api
           path: |
             tests/test-results/**
             !tests/test-results/deployment-bypass-state.json
@@ -336,8 +297,6 @@ jobs:
   # (tests/src/core/browser-shard.ts, table in tests/e2e/shard-durations.json).
   browser:
     name: deployed browser shard
-    needs: sweep-before
-    if: ${{ !cancelled() }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -466,9 +425,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-  # Backstop for an API shard that was killed before its own post-run sweep ran.
-  # Every shard's run id starts with `<github.run_id>-`, so this one filter
-  # reclaims all of them, and it runs only after every shard has finished.
+  # Backstop for an API job that was killed before its own post-run sweep ran.
+  # Every attempt's run id starts with `<github.run_id>-`, so this one filter
+  # reclaims all of them, and it runs only after every deployed job has finished.
   sweep-after:
     name: sweep this run's test accounts
     needs: [api, browser]
@@ -540,21 +499,21 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
-      - name: Require every deployed shard to pass
+      - name: Require every deployed job to pass
         run: |
           set -euo pipefail
           api='${{ needs.api.result }}'
           browser='${{ needs.browser.result }}'
-          echo "api shards: $api"
+          echo "api smoke: $api"
           echo "browser shards: $browser"
           failed=0
           [ "$api" = "success" ] || failed=1
           [ "$browser" = "success" ] || failed=1
           if [ "$failed" -ne 0 ]; then
-            echo "::error::A deployed staging shard did not pass (api=$api browser=$browser)."
+            echo "::error::A deployed staging job did not pass (api=$api browser=$browser)."
             exit 1
           fi
-          echo "Every deployed staging API shard and browser shard passed."
+          echo "The deployed staging API smoke and every browser shard passed."
 
   # A run that github-actions[bot] started or approved (promote.yml approves the
   # release pull request's run) gets no workflow_run event, so

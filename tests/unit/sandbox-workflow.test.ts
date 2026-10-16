@@ -148,7 +148,7 @@ describe('native test-lane workflow', () => {
     expect(workflows).not.toContain('qa.kortix.com');
   });
 
-  test('release tests prove every deployed staging flow and browser journey', () => {
+  test('release tests prove the deployed seams and every browser journey', () => {
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
 
     // Branch protection on `prod` requires exactly this one context, so the
@@ -156,21 +156,24 @@ describe('native test-lane workflow', () => {
     // breaks the required check silently.
     expect(release).toContain('name: full suite + quality gates');
     expect(release).toContain('needs: [api, browser]');
-    // Six API shards, and the workflow must ask for the same denominator that
-    // `unit/shard.test.ts` proves the partition against. On run 32240074477
-    // four shards of 137 flows were all killed by their cap ~60% through.
-    expect(release).toContain('shard: [1, 2, 3, 4, 5, 6]');
-    expect(release).toContain('pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6');
+    // One API job runs the `deployed` seam flows (unit/deployed-set.test.ts),
+    // not the whole registry: the staging pull request's `Tests` lanes already
+    // ran every flow on this tree. Six shards of ~700 flows took 10-17 min.
+    expect(release).not.toContain('--api-shard');
+    expect(release).toContain('pnpm test -- --target-api-full\n');
+    expect(release).toContain('name: deployed api smoke');
     // Two browser shards, split by measured duration (tests/src/core/browser-shard.ts).
     expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/2');
     expect(release).toContain('fail-fast: false');
-    // A cap is a hang detector, not a throttle. 40 minutes throttled: it killed
-    // shards that were passing 76/87 and 68/77 of what they had run.
-    expect(release).toMatch(/^ {4}timeout-minutes: 60$/m);
-    // Keep each shard below staging's proven concurrency ceiling.
-    expect(release).toContain("KE2E_API_WORKERS: '1'");
-    expect(release).toContain("KE2E_SANDBOX_WORKERS: '1'");
-    expect(release).toContain("KE2E_TIMEOUT_ATTEMPTS: '2'");
+    // A cap is a hang detector, not a throttle. The API smoke runs ~5 min; 30
+    // covers the runner's cold-image (15 min) and runtime (10 min) waits.
+    const apiJob = release.slice(release.indexOf('\n  api:\n'), release.indexOf('\n  browser:\n'));
+    expect(apiJob).toMatch(/^ {4}timeout-minutes: 30$/m);
+    expect(apiJob).not.toContain('matrix');
+    // Staging's proven concurrency ceiling: 4 + 5 here plus 2 browser workers.
+    expect(apiJob).toContain("KE2E_API_WORKERS: '4'");
+    expect(apiJob).toContain("KE2E_SANDBOX_WORKERS: '5'");
+    expect(apiJob).toContain("KE2E_TIMEOUT_ATTEMPTS: '2'");
     // Dry run against staging without a release PR. `RELEASE_SOURCE_SHA` only
     // exists on a `release/*` branch, so without this input the gate could
     // never be rehearsed — which is how it stayed un-green.
@@ -190,15 +193,15 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('bun tests/bin/ke2e.ts gc --run-id');
     // The pre-run sweep is a janitor, never a gate. On run 32226539107 its
     // job cap fired mid-delete, the job went `cancelled`, and every shard was
-    // skipped. Two guards: a bounded gc STEP, and shards that run unless the
-    // whole workflow was cancelled.
+    // skipped. Two guards: a bounded gc STEP, and deployed jobs that do not
+    // wait for it at all (it added ~1.5 min in front of every run).
     const sweepBefore = release.slice(release.indexOf('  sweep-before:'), release.indexOf('  api:'));
     expect(sweepBefore).toContain('continue-on-error: true');
     expect(sweepBefore).toMatch(/- name: Reclaim test accounts older than 2h\n\s+timeout-minutes: 12/);
     for (const job of ['  api:', '  browser:']) {
       const start = release.indexOf(job);
       const block = release.slice(start, release.indexOf('runs-on:', start));
-      expect(block, `${job.trim()} must not depend on the janitor's result`).toContain('if: ${{ !cancelled() }}');
+      expect(block, `${job.trim()} must not wait for the janitor`).not.toContain('sweep-before');
     }
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
