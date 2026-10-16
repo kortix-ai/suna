@@ -1,5 +1,5 @@
 {
-  "source_hash": "6a7c016a573955bbc8640ff9058f20a74d142276841ba881da0e5d975fd1c2ec",
+  "source_hash": "7d37349fb25ffe0e04ba913f300b96e4888717203a4817bda3fd09987e37873f",
   "diff_files": [
     "apps/web/src/features/workspace/command-palette-search.test.ts",
     "apps/web/src/features/workspace/settings-palette-items.ts",
@@ -7,10 +7,12 @@
     "apps/web/translations/en.json"
   ],
   "diff_hash": "a69fec769cb43d1b8eb1cda51ab085c09b33371631842f0ea4df170a672ea4ff",
-  "head": "8a3da19513025124038742dbeaae42e044d78298",
+  "head": "394963553e1f9b84102ba8c96438400f3aa17ab9",
   "passed": true,
   "lanes": {
-    "packages": "pass"
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-16T04:59:11.749Z"
+  "at": "2026-10-16T05:18:04.974Z"
 }
