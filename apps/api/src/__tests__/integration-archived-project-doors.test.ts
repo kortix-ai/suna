@@ -6,7 +6,7 @@
  * chat message kept starting or continuing a session.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accounts, apps, projectSessions, projects } from '@kortix/db';
+import { accounts, apps, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { createGatewayKey, validateGatewayKey } from '../llm-gateway/gateway-keys';
@@ -46,6 +46,18 @@ beforeAll(async () => {
     visibility: 'project',
   });
   await db.insert(apps).values({ accountId: ACCOUNT, projectId: PROJECT, name: 'archived-doors-app', slug: ROUTE_KEY, routeKey: ROUTE_KEY });
+  // The share door is only "open" while the session's sandbox is up: a file
+  // share without a provisioned sandbox answers 503 ("Sandbox is not ready"),
+  // not ok. Seed the sandbox row so the pre-delete assertion proves the share
+  // link itself resolves, and the post-delete one proves it is gone (410).
+  await db.insert(sessionSandboxes).values({
+    sandboxId: crypto.randomUUID(),
+    sessionId: SESSION,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    externalId: 'sandbox-archived-doors',
+    status: 'active',
+  });
   gatewaySecret = (await createGatewayKey({ accountId: ACCOUNT, projectId: PROJECT, name: 'ci', createdBy: OWNER })).secret_key;
   const share = await createPublicShare({ file: { path: '/workspace/door-probe.md' } }, { sessionId: SESSION, projectId: PROJECT, accountId: ACCOUNT, userId: OWNER });
   if (!share.ok) throw new Error('share not created');
