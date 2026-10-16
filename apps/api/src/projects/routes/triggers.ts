@@ -34,6 +34,7 @@ import {
 // its exports would otherwise lose this name.
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
+import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 import { notificationsEnabled } from '../../notifications/enabled';
@@ -868,6 +869,8 @@ export function registerTriggersRoutes(): void {
         source: 'manual',
         request: requestAuditContext(c),
       });
+      // Every fire is a run in the trigger's history (KRTX-1743).
+      await recordTriggerRun({ projectId, slug, source: 'manual', spec, payload, ...triggerRunFromFire(result), now });
 
       if (result.status === 'queued') {
         // Not run yet: its delivery ends an alert streak, not this handoff (KRTX-1742).

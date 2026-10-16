@@ -40,6 +40,7 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_MIN_MAX_LATENESS_SECONDS,
   EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
@@ -194,6 +195,7 @@ export {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_MIN_MAX_LATENESS_SECONDS,
   EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
   formatDurationSeconds,
@@ -1422,6 +1424,14 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
         message: 'prompt is required and may not be empty.',
         severity: 'error',
       });
+    }
+    // The misfire bound (KRTX-1743): cron only, a duration of at least 60s.
+    if (entry.max_lateness !== undefined) {
+      if (type === 'cron') {
+        validateMonitorDuration(entry.max_lateness, `${where}.max_lateness`, TRIGGER_MIN_MAX_LATENESS_SECONDS, issues);
+      } else {
+        issues.push({ path: `${where}.max_lateness`, message: 'max_lateness is only valid on a cron trigger.', severity: 'error' });
+      }
     }
     if (type === 'cron') {
       const cron =

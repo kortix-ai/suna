@@ -108,6 +108,8 @@ export const MONITOR_MODES = ['poll', 'stream'] as const;
 export const MONITOR_MIN_INTERVAL_SECONDS = 30;
 /** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
 export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
+export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
 /** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
 export const MONITOR_RUN_MAX_LENGTH = 1024;
 

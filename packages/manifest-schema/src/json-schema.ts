@@ -428,6 +428,9 @@ function triggerSchema(): JsonSchemaFragment {
       run_at: { type: 'string', minLength: 1 },
       runAt: { type: 'string', minLength: 1 },
       timezone: { type: 'string' },
+      // `type: cron` only — the misfire bound. Its 60s floor is the imperative
+      // validator's, like the monitor duration floors below.
+      max_lateness: durationSchema,
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,
@@ -499,6 +502,11 @@ function triggerSchema(): JsonSchemaFragment {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
+      },
+      {
+        // The misfire bound exists only on a cron trigger.
+        if: { properties: { type: { enum: ['webhook', 'monitor', 'event'] } }, required: ['type'] },
+        then: { properties: { max_lateness: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.

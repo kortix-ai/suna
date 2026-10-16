@@ -1,9 +1,11 @@
 import { projectTriggerExecutions, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, asc, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { db } from '../shared/db';
 import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
+import type { TriggerFireSource } from './lib/trigger-webhook-auth';
 import { exponentialBackoffMs } from '../shared/backoff';
 import { logger } from '../lib/logger';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
@@ -122,6 +124,13 @@ export async function claimDueScheduleSlots(input: {
 
       if (!advanced[0]) return null;
 
+      // KRTX-1743: a slot later than the trigger's `max_lateness` is recorded
+      // as a skipped run and fires nothing. No `max_lateness` fires it once.
+      const lateMs = input.now.getTime() - scheduledFor.getTime();
+      const missed = spec.maxLatenessSeconds && lateMs > spec.maxLatenessSeconds * 1000
+        ? `missed: ${Math.floor(lateMs / 60_000)} min late, beyond max_lateness ${formatDurationSeconds(spec.maxLatenessSeconds)}`
+        : null;
+
       const inserted = await tx
         .insert(projectTriggerExecutions)
         .values({
@@ -129,7 +138,9 @@ export async function claimDueScheduleSlots(input: {
           slug: candidate.slug,
           scheduleRevision,
           scheduledFor,
-          status: 'queued',
+          status: missed ? 'skipped' : 'queued',
+          lastError: missed,
+          completedAt: missed ? input.now : null,
           spec: scheduleSpec,
           payload: triggerPayload({
             spec,
@@ -151,6 +162,7 @@ export async function claimDueScheduleSlots(input: {
         })
         .returning();
 
+      if (missed) return null;
       if (inserted[0]) return { execution: inserted[0], inserted: true };
 
       const [existing] = await tx
@@ -309,6 +321,8 @@ export async function markTriggerExecutionSucceeded(input: {
       status: 'succeeded',
       sessionId: input.sessionId ?? null,
       commandId: input.commandId ?? null,
+      // The agent turn this fire dispatched; recordTriggerRunEnd closes it.
+      runStatus: input.sessionId ? 'running' : null,
       completedAt: input.completedAt,
       lockedBy: null,
       lockedUntil: null,
@@ -444,6 +458,129 @@ export async function markTriggerRuntimeDeliveryFailed(input: {
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: { lastStatus: 'failed', lastError, lastAttemptAt: input.when, updatedAt: input.when },
     });
+}
+
+/** A stored run payload larger than this is replaced by a size marker (KRTX-1743). */
+export const TRIGGER_RUN_PAYLOAD_MAX_BYTES = 64 * 1024;
+
+export type TriggerRunStatus = 'succeeded' | 'failed' | 'skipped' | 'rejected';
+
+/** The payload as stored on a run: over 64 KiB it is a marker and cannot be replayed. */
+export function cappedRunPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const bytes = Buffer.byteLength(JSON.stringify(payload));
+  return bytes > TRIGGER_RUN_PAYLOAD_MAX_BYTES ? { truncated: true, bytes } : payload;
+}
+
+/**
+ * Record one non-cron fire as a run (KRTX-1743, rulings 1 and 3). The row is
+ * written in a terminal status with a unique `<source>:<uuid>` revision, so
+ * the claim worker never picks it up. A fire that reached a session starts
+ * with `run_status = running`; recordTriggerRunEnd closes it.
+ *
+ * Never throws: the history must not fail a fire. Returns the run's
+ * `execution_id`, or null when the write failed.
+ */
+export async function recordTriggerRun(input: {
+  projectId: string;
+  slug: string;
+  source: TriggerFireSource;
+  spec: GitTriggerSpec | Record<string, unknown>;
+  payload: Record<string, unknown>;
+  verified?: boolean;
+  status: TriggerRunStatus;
+  sessionId?: string | null;
+  commandId?: string | null;
+  error?: string | null;
+  replayOf?: string | null;
+  now: Date;
+}): Promise<string | null> {
+  try {
+    const [row] = await db
+      .insert(projectTriggerExecutions)
+      .values({
+        projectId: input.projectId,
+        slug: input.slug,
+        scheduleRevision: `${input.source}:${crypto.randomUUID()}`,
+        scheduledFor: input.now,
+        source: input.source,
+        status: input.status,
+        spec: input.spec as unknown as Record<string, unknown>,
+        payload: cappedRunPayload(input.payload),
+        payloadVerified: input.verified ?? true,
+        sessionId: input.sessionId ?? null,
+        commandId: input.commandId ?? null,
+        runStatus: input.status === 'succeeded' && input.sessionId ? 'running' : null,
+        lastError: input.error?.slice(0, 2_000) ?? null,
+        replayOf: input.replayOf ?? null,
+        availableAt: input.now,
+        completedAt: input.now,
+        createdAt: input.now,
+        updatedAt: input.now,
+      })
+      .returning({ executionId: projectTriggerExecutions.executionId });
+    return row?.executionId ?? null;
+  } catch (error) {
+    logger.warn('[trigger-runs] run not recorded', {
+      projectId: input.projectId,
+      slug: input.slug,
+      source: input.source,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/** The run row a fire result maps to: a deduped fire ran nothing new. */
+export function triggerRunFromFire(result: {
+  status: 'fired' | 'queued' | 'failed';
+  sessionId?: string;
+  commandId?: string;
+  error?: string;
+  reason?: string;
+  deduped?: boolean;
+}): { status: TriggerRunStatus; sessionId: string | null; commandId: string | null; error: string | null } {
+  const ids = { sessionId: result.sessionId ?? null, commandId: result.commandId ?? null };
+  if (result.status === 'failed') {
+    return { status: 'failed', ...ids, error: result.error ?? result.reason ?? 'trigger fire failed' };
+  }
+  if (result.deduped) return { status: 'skipped', ...ids, error: 'deduped' };
+  return { status: 'succeeded', ...ids, error: null };
+}
+
+const RUN_RETENTION_DAYS = 30;
+const REJECTED_RUN_RETENTION_DAYS = 7;
+const RUN_RETENTION_BATCH = 500;
+
+/**
+ * Ruling 5 retention: non-cron runs older than 30 days and rejected runs
+ * older than 7 days. Cron slot rows stay. One bounded batch per call.
+ */
+export async function purgeExpiredTriggerRuns(now = new Date()): Promise<number> {
+  const day = 24 * 60 * 60_000;
+  const doomed = await db
+    .select({ executionId: projectTriggerExecutions.executionId })
+    .from(projectTriggerExecutions)
+    .where(
+      or(
+        and(
+          ne(projectTriggerExecutions.source, 'cron'),
+          lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - RUN_RETENTION_DAYS * day)),
+        ),
+        and(
+          eq(projectTriggerExecutions.status, 'rejected'),
+          lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - REJECTED_RUN_RETENTION_DAYS * day)),
+        ),
+      ),
+    )
+    .limit(RUN_RETENTION_BATCH);
+  if (doomed.length === 0) return 0;
+  await db.delete(projectTriggerExecutions).where(
+    inArray(
+      projectTriggerExecutions.executionId,
+      doomed.map((row) => row.executionId),
+    ),
+  );
+  return doomed.length;
 }
 
 export async function countUncatalogedTriggerProjects(): Promise<number> {

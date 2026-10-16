@@ -1,5 +1,5 @@
-import { projectSessions, projectTriggerRuntime } from '@kortix/db';
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { projectSessions, projectTriggerExecutions, projectTriggerRuntime } from '@kortix/db';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { classifyTurnError } from '../../channels/slack/errors';
 import { projectNotificationsEnabled } from '../../notifications/enabled';
 import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
@@ -61,6 +61,37 @@ export function triggerRunFailureText(error: { name?: string; message?: string }
   return `${title}: ${reason}`.slice(0, 1000);
 }
 
+/**
+ * KRTX-1743 ruling 3: the run this turn finished is the newest open run of
+ * the trigger in this session. It gets the turn's outcome.
+ */
+async function closeTriggerRun(end: TriggerRunEnd, slug: string, now: Date): Promise<void> {
+  const failed = end.status === 'error';
+  const newestOpen = db
+    .select({ executionId: projectTriggerExecutions.executionId })
+    .from(projectTriggerExecutions)
+    .where(
+      and(
+        eq(projectTriggerExecutions.projectId, end.projectId),
+        eq(projectTriggerExecutions.slug, slug),
+        eq(projectTriggerExecutions.sessionId, end.sessionId),
+        eq(projectTriggerExecutions.runStatus, 'running'),
+        isNull(projectTriggerExecutions.runEndedAt),
+      ),
+    )
+    .orderBy(desc(projectTriggerExecutions.createdAt))
+    .limit(1);
+  await db
+    .update(projectTriggerExecutions)
+    .set({
+      runStatus: failed ? 'failed' : 'succeeded',
+      runError: failed ? triggerRunFailureText(end.error) : null,
+      runEndedAt: now,
+      updatedAt: now,
+    })
+    .where(inArray(projectTriggerExecutions.executionId, newestOpen));
+}
+
 export async function recordTriggerRunEnd(
   end: TriggerRunEnd,
   legacyPush: typeof notifySessionPushLegacy = notifySessionPushLegacy,
@@ -72,6 +103,7 @@ export async function recordTriggerRunEnd(
   if (end.status === 'error' && ABORT_END_ERROR_NAMES.includes(end.error?.name ?? '')) return 'not_a_trigger_run';
   const now = end.now ?? new Date();
   const row = and(eq(projectTriggerRuntime.projectId, end.projectId), eq(projectTriggerRuntime.slug, slug));
+  await closeTriggerRun(end, slug, now);
 
   if (end.status === 'idle') {
     const recovered = await db
