@@ -28,7 +28,7 @@ import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from
 import { stopAllSessionRefresh, type SupabaseSessionAuth } from './supabase-session';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
-import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
+import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-access';
 import {
   createDatabaseProject,
   createDatabaseSession,
@@ -323,21 +323,17 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
       if (opts?.enterprise) {
-        // The enterprise-demo PUT is platform-admin-only — the OWNER of this
-        // fixture account gets 403 {code:'admin_required'}. Unlock through the
-        // run-scoped platform admin provisioned above.
+        // Enterprise is a feature layer: the fixture account gets the
+        // Enterprise demo (fixtures/enterprise-access.ts), switched on by the
+        // run-scoped platform admin so it does not depend on the owner.
         if (!env.adminToken) {
           throw new Error(`enterprise team fixture needs a platform admin — ${NO_ADMIN_TOKEN_HINT}`);
         }
-        const enabled = await adminClient
+        const granted = await adminClient
           .withBearer(env.adminToken, ADMIN_TOKEN_LABEL)
-          .put(
-            '/v1/accounts/:accountId/iam/enterprise-demo',
-            { enabled: true },
-            { params: { accountId } },
-          );
-        if (enabled.statusCode !== 200 || enabled.json<any>()?.enabled !== true) {
-          throw new Error(`enterprise team enable failed: ${enabled.text()}`);
+          .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId } });
+        if (granted.statusCode !== 200 || granted.json<any>()?.state !== 'demo') {
+          throw new Error(`enterprise team demo failed: ${granted.text()}`);
         }
       }
       return {

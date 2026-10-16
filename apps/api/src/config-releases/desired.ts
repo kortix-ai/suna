@@ -13,6 +13,7 @@
  * make sessions unbootable nor read as up to date.
  */
 
+import { COMPILED_AGENT_CONFIG_ENV, COMPILED_AGENT_CONFIG_GZ_CAPABILITY, fitsInEnvString } from '@kortix/api-contract/compiled-agent-config-env';
 import { readMirrorCommitSha, resolveCommitSha } from '../projects/git/commits';
 import type { GitBackedProject } from '../projects/git/types';
 import {
@@ -26,7 +27,6 @@ import {
 import { loadAgentRosterAtCommit } from './agent-roster';
 import { releaseVariantFor, resolveSessionReleaseAgent, type DeclaredAgentRoster } from './session-agent';
 import { dbConfigReleaseLedger, PROJECT_QUARANTINE_SESSIONS, type ConfigReleaseLedger } from './quarantine';
-import { sharedBaseTip } from './base-tip';
 
 
 export class BaseRefUnresolvedError extends Error {
@@ -116,7 +116,9 @@ const defaultDeps: DesiredReleaseDeps = {
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
   readBase: readMirrorCommitSha,
-  checkBase: (project, ref) => sharedBaseTip(project, ref),
+  // Loaded on first use: base-tip reaches projects/surface, whose session code imports the
+  // sandbox proxy root, which reaches back here through turn-start (an import cycle).
+  checkBase: async (project, ref) => (await import('./base-tip')).sharedBaseTip(project, ref),
   loadRoster: loadAgentRosterAtCommit,
 };
 
@@ -125,6 +127,20 @@ const defaultDeps: DesiredReleaseDeps = {
  * different release ID (governance only) than one with access, so the two
  * never share a fallback.
  */
+/**
+ * The descriptor a daemon receives. A kortixd built before the gzip form
+ * (@kortix/api-contract/compiled-agent-config-env) stores a release's
+ * governance raw in its env; over 128 KiB every exec on the box then fails
+ * with E2BIG. Such a daemon gets no governance and keeps the config it has.
+ * `capabilities` is what the daemon declared in its descriptor request.
+ */
+export function governanceForDaemon<T extends { compiled_governance: string | null }>(descriptor: T, capabilities: readonly string[]): T {
+  const governance = descriptor.compiled_governance;
+  if (governance === null || fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, governance)) return descriptor;
+  if (capabilities.includes(COMPILED_AGENT_CONFIG_GZ_CAPABILITY)) return descriptor;
+  return { ...descriptor, compiled_governance: null };
+}
+
 export function ledgerVariant(variant: ConfigReleaseVariant, repositoryAccess: boolean): string {
   return repositoryAccess ? variant : `${variant}#governance-only`;
 }

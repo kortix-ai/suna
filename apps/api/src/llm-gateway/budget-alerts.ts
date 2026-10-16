@@ -17,6 +17,7 @@ import { actionButton, renderEmail, renderText, S } from '../lib/email/template'
 import { db } from '../shared/db';
 import { escapeHtml } from '../shared/html';
 import { type BudgetCrossing, type Period, startOfBudgetPeriod } from './budgets';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 const PERIOD_DAYS: Record<Period, number> = { day: 1, week: 7, month: 31 };
 const PERIOD_WORD: Record<Period, string> = { day: 'daily', week: 'weekly', month: 'monthly' };
@@ -80,10 +81,10 @@ async function emailBudgetManagers(projectId: string, crossing: BudgetCrossing):
   if (recipients.length === 0) return 0;
 
   const projectName = project.name?.trim() || 'a project';
-  const usd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+  const credits = (usd: number) => `${formatUsdAsCredits(usd)} credits`;
   const member = crossing.subjectUserId ? emails.get(crossing.subjectUserId) || 'A member' : null;
   const whose = member ? `${member}'s ${PERIOD_WORD[crossing.period]} budget in ${projectName}` : `The ${PERIOD_WORD[crossing.period]} budget of ${projectName}`;
-  const status = `${whose} is at ${usd(crossing.spentUsd)} of ${usd(crossing.limitUsd)} (${Math.floor((crossing.spentUsd / crossing.limitUsd) * 100)}%).`;
+  const status = `${whose} is at ${formatUsdAsCredits(crossing.spentUsd)} of ${credits(crossing.limitUsd)} (${Math.floor((crossing.spentUsd / crossing.limitUsd) * 100)}%).`;
   const consequence =
     crossing.action === 'warn'
       ? 'It is a warn-only budget: requests keep running.'

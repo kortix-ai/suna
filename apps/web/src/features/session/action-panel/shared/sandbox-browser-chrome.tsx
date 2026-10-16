@@ -22,24 +22,27 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
+import { Home } from '@/features/icon/icons/home';
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
-import { recentDisplayLabel } from '@/stores/browser-recents-store';
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
-  GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
 } from '@phosphor-icons/react';
 import type { FormEvent, ReactNode, RefObject } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 /** Split a URL so the hostname can be rendered brighter than the rest. */
-export function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: string } | null {
+export function splitUrlForDisplay(
+  url: string,
+): { prefix: string; host: string; rest: string } | null {
   try {
     const host = new URL(url).host;
     const idx = url.indexOf(host);
@@ -53,18 +56,23 @@ export function splitUrlForDisplay(url: string): { prefix: string; host: string;
 /**
  * Normalize an address-bar draft into the internal localhost URL it names.
  *
- * This bar controls the sandbox's local PORTS only — not arbitrary external
- * sites — so we accept a bare port, `:port`, `localhost:port`,
- * `127.0.0.1:port`, or a full localhost URL (each optionally followed by a
- * path). Anything else (e.g. `google.com`) is rejected inline rather than
- * attempting to browse it.
+ * This bar controls the sandbox's local PORTS and Kortix Apps only — not
+ * arbitrary external sites — so we accept a bare port, `:port`,
+ * `localhost:port`, `127.0.0.1:port`, or a full localhost URL (each optionally
+ * followed by a path), and a Kortix App URL with or without its scheme.
+ * Anything else (e.g. `google.com`) is rejected inline rather than attempting
+ * to browse it.
  *
- * Returns `http://localhost:<port><path>`, or null when the input is empty or
- * names no sandbox port.
+ * Returns `http://localhost:<port><path>` or the App URL, or null when the
+ * input is empty or names neither.
  */
 export function parseAddressInput(value: string): string | null {
   let url = value.trim();
   if (!url) return null;
+
+  const scheme = /\.apps\.localhost(?::\d+)?(?:[/?#]|$)/i.test(url) ? 'http' : 'https';
+  const appUrl = /^https?:\/\//i.test(url) ? url : `${scheme}://${url}`;
+  if (isKortixAppUrl(appUrl)) return appUrl;
 
   if (/^\d{1,5}(?:[/?#]|$)/.test(url)) {
     url = `http://localhost:${url}`;
@@ -80,9 +88,8 @@ export function parseAddressInput(value: string): string | null {
 }
 
 /**
- * The back / forward buttons and the address pill every sandbox preview
- * surface renders, with the hostname highlighted at rest and Reload inside the
- * pill. The bar
+ * The back / forward buttons and the home / address / reload group every
+ * sandbox preview surface renders, with the hostname highlighted at rest. The bar
  * owns its own draft state; the surface keeps its history model and hands in
  * the current address via `displayValue`. The surface composes its own row
  * controls around it (`BrowserPanel`'s overflow menu, `AppPreview`'s viewer
@@ -97,7 +104,9 @@ export function SandboxAddressBar({
   onBack,
   onForward,
   onReload,
+  onHome,
   onNavigate,
+  suggestions = [],
   placeholder,
   ariaLabel,
   inputRef,
@@ -113,9 +122,14 @@ export function SandboxAddressBar({
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
-  /** Called with the internal `http://localhost:<port><path>` URL after the
-   *  draft parses as a sandbox port. */
+  /** Back to the browser's landing (the project's Apps and recents). */
+  onHome: () => void;
+  /** Called with the internal `http://localhost:<port><path>` URL or a Kortix
+   *  App URL, after the draft parses as one, or names a `suggestions` entry. */
   onNavigate: (internalUrl: string) => void;
+  /** Named destinations the bar completes (the project's Apps). Typing a
+   *  label opens its URL. */
+  suggestions?: readonly { label: string; url: string }[];
   placeholder: string;
   ariaLabel?: string;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -123,7 +137,7 @@ export function SandboxAddressBar({
    *  preview — its landing tab keeps the user's draft — so it passes
    *  `hasPreview` here; `AppPreview` always restores. */
   resetOnEscape?: boolean;
-  /** Actions on the open page, rendered inside the pill after Reload —
+  /** Actions on the open page, rendered at the address's trailing edge —
    *  `AppPreview` puts `Copy link` here. */
   trailing?: ReactNode;
 }) {
@@ -152,7 +166,10 @@ export function SandboxAddressBar({
       e.preventDefault();
       if (!addressValue.trim()) return;
 
-      const internal = parseAddressInput(addressValue);
+      const wanted = addressValue.trim().toLowerCase();
+      const internal =
+        suggestions.find((entry) => entry.label.toLowerCase() === wanted)?.url ??
+        parseAddressInput(addressValue);
       if (!internal) {
         setAddressError(true);
         return;
@@ -162,105 +179,130 @@ export function SandboxAddressBar({
       setIsEditing(false);
       onNavigate(internal);
     },
-    [addressValue, onNavigate],
+    [addressValue, onNavigate, suggestions],
   );
+  const suggestionsId = useId();
 
   return (
     <>
-      <Hint label={tI18nComplete.raw('text76900f1bfd16')} side="bottom">
-        <Button variant="ghost" size="icon" onClick={onBack} disabled={!hasPreview || !canGoBack}>
-          <ArrowLeft className="size-4" />
-        </Button>
-      </Hint>
+      <ButtonGroup className="shrink-0">
+        <Hint label={tI18nComplete.raw('text76900f1bfd16')} side="bottom">
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onBack}
+            disabled={!hasPreview || !canGoBack}
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
+        </Hint>
 
-      <Hint label={tI18nComplete.raw('textf1c65e14817e')} side="bottom">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onForward}
-          disabled={!hasPreview || !canGoForward}
-        >
-          <ArrowRight className="size-4" />
-        </Button>
-      </Hint>
+        <Hint label={tI18nComplete.raw('textf1c65e14817e')} side="bottom">
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onForward}
+            disabled={!hasPreview || !canGoForward}
+          >
+            <ArrowRight className="size-4" />
+          </Button>
+        </Hint>
+      </ButtonGroup>
 
-      {/* The address pill: what is open, with the actions on it — Reload and
-          the surface's `trailing` — at its trailing edge. */}
+      {/* Home, the address, Reload: one group, built like Back / Forward. The
+          page's own actions (`trailing`) sit at the address's trailing edge. */}
       <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1 items-center px-1">
-        <div
-          className={cn(
-            'bg-muted focus-within:border-border flex h-8 w-full items-center gap-1 rounded-md border border-transparent px-1 text-xs tracking-tight transition-colors',
-            addressError &&
-              'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
-          )}
-        >
-          <span className="flex size-6 shrink-0 items-center justify-center">
-            <Globe aria-hidden className="text-muted-foreground size-3.5" />
-          </span>
-          <div className="group/address relative flex h-full min-w-0 flex-1 items-center">
-            <Input
-              ref={inputRef}
-              type="text"
-              size="xs"
-              value={urlParts ? displayValue : addressValue}
-              aria-label={ariaLabel}
-              onChange={(e) => {
-                setAddressValue(e.target.value);
-                if (addressError) setAddressError(false);
-              }}
-              onFocus={() => {
-                setIsEditing(true);
-                setTimeout(() => inputRef.current?.select(), 0);
-              }}
-              onBlur={() => setIsEditing(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setIsEditing(false);
-                  setAddressError(false);
-                  if (resetOnEscape) setAddressValue(displayValue);
-                  inputRef.current?.blur();
-                }
-              }}
-              placeholder={placeholder}
-              className={cn(
-                'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none',
-                urlParts && 'text-transparent',
-              )}
-            />
-            {urlParts && (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 right-0 left-0 flex items-center overflow-hidden whitespace-nowrap"
-              >
-                <span className="text-muted-foreground group-hover/address:text-foreground truncate transition-colors">
-                  {urlParts.prefix}
-                  <span className="text-foreground">{urlParts.host}</span>
-                  {urlParts.rest}
+        <ButtonGroup className="w-full min-w-0">
+          <Hint label={tI18nComplete.raw('text3a78695388b3')} side="bottom">
+            <Button
+              type="button"
+              variant="secondary"
+              size="icon"
+              onClick={onHome}
+              disabled={!hasPreview}
+              aria-label={tI18nComplete.raw('text3a78695388b3')}
+            >
+              <Home className="size-3.5" />
+            </Button>
+          </Hint>
+          <div
+            className={cn(
+              'bg-muted flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md border border-transparent px-2 text-xs tracking-tight transition-colors',
+              addressError && 'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
+            )}
+          >
+            <div className="group/address relative flex h-full min-w-0 flex-1 items-center">
+              <Input
+                ref={inputRef}
+                type="text"
+                size="xs"
+                value={urlParts ? displayValue : addressValue}
+                aria-label={ariaLabel}
+                list={suggestions.length ? suggestionsId : undefined}
+                onChange={(e) => {
+                  setAddressValue(e.target.value);
+                  if (addressError) setAddressError(false);
+                }}
+                onFocus={() => {
+                  setIsEditing(true);
+                  setTimeout(() => inputRef.current?.select(), 0);
+                }}
+                onBlur={() => setIsEditing(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsEditing(false);
+                    setAddressError(false);
+                    if (resetOnEscape) setAddressValue(displayValue);
+                    inputRef.current?.blur();
+                  }
+                }}
+                placeholder={placeholder}
+                className={cn(
+                  // The `<datalist>` suggestions must not paint Chrome's dropdown arrow.
+                  'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none focus:ring-0 [&::-webkit-calendar-picker-indicator]:hidden',
+                  urlParts && 'text-transparent',
+                )}
+              />
+              {urlParts && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 right-0 left-0 flex items-center overflow-hidden whitespace-nowrap"
+                >
+                  <span className="text-muted-foreground group-hover/address:text-foreground truncate transition-colors">
+                    {urlParts.prefix}
+                    <span className="text-foreground">{urlParts.host}</span>
+                    {urlParts.rest}
+                  </span>
                 </span>
+              )}
+            </div>
+            {suggestions.length ? (
+              <datalist id={suggestionsId}>
+                {suggestions.map((entry) => (
+                  <option key={entry.url} value={entry.label} />
+                ))}
+              </datalist>
+            ) : null}
+            {addressError && (
+              <span className="text-kortix-red shrink-0 text-xs">
+                {tI18nComplete.raw('textce1e609b7bf5')}
               </span>
             )}
-          </div>
-          {addressError && (
-            <span className="text-kortix-red shrink-0 text-xs">
-              {tI18nComplete.raw('textce1e609b7bf5')}
-            </span>
-          )}
-          <span className="flex shrink-0 items-center gap-0.5">
-            <Hint label={tI18nComplete.raw('text0e9161011702')} side="bottom">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={onReload}
-                disabled={!hasPreview}
-                className="size-6 shrink-0 rounded-sm"
-              >
-                <GrRefresh className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
-              </Button>
-            </Hint>
             {trailing}
-          </span>
-        </div>
+          </div>
+          <Hint label={tI18nComplete.raw('text0e9161011702')} side="bottom">
+            <Button
+              type="button"
+              variant="secondary"
+              size="icon"
+              onClick={onReload}
+              disabled={!hasPreview}
+              aria-label={tI18nComplete.raw('text0e9161011702')}
+            >
+              <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
+            </Button>
+          </Hint>
+        </ButtonGroup>
       </form>
     </>
   );
@@ -278,54 +320,6 @@ export function PreviewLoadingOverlay({ label }: { label: string }) {
         <Loading className="size-4" />
         <p className="text-xs">{label}</p>
       </div>
-    </div>
-  );
-}
-
-/**
- * The landing list of recently opened URLs, shared by both surfaces'
- * empty-state landings. `renderIcon` overrides the default Globe span —
- * `BrowserPanel` shows a favicon for external URLs.
- */
-export function PreviewRecentsLanding({
-  recents,
-  onOpen,
-  renderIcon,
-}: {
-  recents: readonly { url: string }[];
-  onOpen: (url: string) => void;
-  renderIcon?: (url: string) => ReactNode;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <div className="mx-auto w-full max-w-md px-6 py-12">
-      <section className="space-y-3">
-        <h3 className="text-muted-foreground px-2 text-sm">
-          {tI18nComplete.raw('text41a86988751a')}
-        </h3>
-        <ul className="space-y-1">
-          {recents.map((recent) => (
-            <li key={recent.url}>
-              <button
-                type="button"
-                onClick={() => onOpen(recent.url)}
-                className="hover:bg-foreground/5 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors active:scale-[0.99]"
-              >
-                {renderIcon ? (
-                  renderIcon(recent.url)
-                ) : (
-                  <span className="flex size-5 shrink-0 items-center justify-center">
-                    <Globe className="text-muted-foreground/60 size-4" />
-                  </span>
-                )}
-                <span className="text-foreground/90 min-w-0 flex-1 truncate text-sm">
-                  {recentDisplayLabel(recent.url)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
     </div>
   );
 }

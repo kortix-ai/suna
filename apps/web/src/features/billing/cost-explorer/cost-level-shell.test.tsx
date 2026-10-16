@@ -44,7 +44,7 @@ describe('CostLevelShell', () => {
     expect(html).toContain('table-slot');
     expect(html).toContain('aria-label="Loading cost summary"');
     expect(html).toContain('aria-label="Loading spend chart"');
-    expect(html).not.toContain('$0.00');
+    expect(html).not.toContain('>0<');
   });
 
   test('surfaces the summary error message while the tiles show their loading skeleton, not empty tiles', () => {
@@ -118,7 +118,7 @@ describe('CostLevelShell', () => {
       </CostLevelShell>,
     );
     expect(html).toContain('data-slot="chart"');
-    expect(html).toContain('$46.42');
+    expect(html).toContain('>4,642<');
     expect(html).not.toContain('aria-label="Loading cost summary"');
   });
 

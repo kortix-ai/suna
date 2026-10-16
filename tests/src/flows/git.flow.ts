@@ -933,6 +933,7 @@ flow(
   'GH-19',
   {
     domain: 'git',
+    tags: ['deployed'],
     requires: ['database'],
     routes: [
       'POST /v1/accounts/tokens',

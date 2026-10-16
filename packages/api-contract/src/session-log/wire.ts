@@ -42,6 +42,11 @@
  *   tombstoned messages included: number new messages above it) and `blobs` (each text the
  *   API stored by reference: the record holds its 16 kB preview; read the full text with `GET /v1/projects/:p/sessions/:s/attachments/<id>`,
  *   the id being the last segment of `ref`, and check `sha256`).
+ * - 413 `SessionLogRestoreTooLarge`: the restore is over `SESSION_LOG_RESTORE_MAX_BYTES` (`bytes`, the
+ *   live messages' stored JSON lengths plus 2/5 of the session's live blob bytes, against `limit`). The claim still happens, so the box
+ *   journals above it: the answer is `SessionLogRestore` with every thread and no message, every
+ *   rev, `seq_max` and no blob, plus `messages` (the live messages left out). The box writes the D3
+ *   note alone into its root and boots: the model does not see the earlier conversation.
  * - 404 `SessionLogRestoreMissing`: the session has no stored log; nothing was claimed. Boot
  *   without a restore. A 404 with another body is an API that predates the route.
  * - 503: the operator switch `SESSION_LOG_RESTORE_ENABLED` is off; nothing was claimed.
@@ -136,6 +141,15 @@ export const SessionLogRestoreSchema = z.object({
   blobs: z.array(SessionLogRestoreBlobSchema),
 });
 export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_session_log') });
+export const SessionLogRestoreTooLargeSchema = SessionLogRestoreSchema.extend({
+  error: z.literal('session_log_too_large'),
+  /** The live messages' stored JSON lengths plus 2/5 of the bytes of the session's live blobs (full texts, attachments), rounded up. */
+  bytes: z.number().int().nonnegative(),
+  /** The API's `SESSION_LOG_RESTORE_MAX_BYTES`. */
+  limit: z.number().int().nonnegative(),
+  /** The live messages left out of `log`. */
+  messages: z.number().int().nonnegative(),
+});
 
 /** A harness a session can run on: the adapters with a capability manifest (`capabilities.ts`). */
 export const SessionLogHarnessSchema = z.enum(['pi', 'opencode']);
@@ -163,7 +177,7 @@ export const SessionLogSwitchPreflightSchema = z.object({
   available: z.boolean(),
   /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
   reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
-  /** The new box restores the log (`session_log_restore` on). False: it starts without the conversation (`losses` begins with `history`). */
+  /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */
   losses: z.array(SessionLogSwitchLossSchema),
@@ -188,3 +202,4 @@ export type SessionLogManifest = z.infer<typeof SessionLogManifestSchema>;
 export type SessionLogPage = z.infer<typeof SessionLogPageSchema>;
 export type SessionLogRestoreBlob = z.infer<typeof SessionLogRestoreBlobSchema>;
 export type SessionLogRestore = z.infer<typeof SessionLogRestoreSchema>;
+export type SessionLogRestoreTooLarge = z.infer<typeof SessionLogRestoreTooLargeSchema>;

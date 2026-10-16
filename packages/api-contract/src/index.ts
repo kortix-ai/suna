@@ -55,7 +55,6 @@ export const FeatureFlagMapSchema = z.object({
   agentmail_email: z.boolean(),
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
-  apps: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
@@ -70,6 +69,7 @@ export const FeatureFlagMapSchema = z.object({
   drives: z.boolean(),
   session_log: z.boolean(),
   session_log_restore: z.boolean(),
+  workspace_volume: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -1148,6 +1148,11 @@ export const ProjectSessionSchema = z.object({
     .optional(),
   deleted_at: z.string().nullable().optional(),
   deleted_by: z.string().nullable().optional(),
+  /** When the requesting person pinned / archived it (KRTX-2418). Present on
+   *  the list and the read by id for a person; absent for an agent, an API
+   *  key or a service account, and on other responses. */
+  pinned_at: z.string().nullable().optional(),
+  archived_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -1670,6 +1675,12 @@ export const SessionTurnStatusSchema = z.object({
   recent_failures: z.array(SessionTurnFailureSchema).optional(),
   /** Present on the session stream's `kortix.control.turn` frame. */
   working: SessionWorkingSchema.optional(),
+  /**
+   * May THIS caller stop the running turn: its prompter, the session owner or
+   * a project manager. True when nothing runs. Present on `GET .../turn` and
+   * the snapshot's turn leg; absent on the stream frame, which is not per caller.
+   */
+  can_stop: z.boolean().optional(),
 });
 export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 
@@ -2140,3 +2151,45 @@ export const GrantSecretToAgentResultSchema = z.object({
   adopted_governance: z.boolean(),
 });
 export type GrantSecretToAgentResult = z.infer<typeof GrantSecretToAgentResultSchema>;
+
+// ─── Kortix Capture data API (`/v1/accounts/:accountId/capture/*`) ──────────
+// What apps/api/src/capture serializes for the account switch and search.
+// A Kortix API key reads the same bodies.
+
+export const CaptureWorkspaceSchema = z.object({
+  account_id: z.string(),
+  enabled: z.boolean(),
+  /** IAM `capture.read_all`: you read every member's devices and timeline. */
+  can_read_all: z.boolean(),
+  /** IAM `capture.manage`: you turn Capture on or off, set the policy, revoke any device. */
+  can_manage: z.boolean(),
+  updated_at: z.string().nullable(),
+});
+export type CaptureWorkspace = z.infer<typeof CaptureWorkspaceSchema>;
+
+export const CaptureSearchKindSchema = z.enum(['screen', 'actions', 'audio']);
+
+export const CaptureSearchHitSchema = z.object({
+  kind: CaptureSearchKindSchema,
+  id: z.string(),
+  ts: z.string(),
+  user_id: z.string(),
+  device_id: z.string(),
+  chunk_id: z.string(),
+  app: z.string().nullable(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  /** The display a screen hit shows; null for actions, audio and one-display devices. */
+  display_id: z.number().nullable(),
+  display_name: z.string().nullable(),
+  snippet: z.string(),
+});
+export type CaptureSearchHit = z.infer<typeof CaptureSearchHitSchema>;
+
+export const CaptureSearchResultSchema = z.object({
+  /** The person searched; null for an account-wide search (`scope=account`). */
+  user_id: z.string().nullable(),
+  q: z.string(),
+  hits: z.array(CaptureSearchHitSchema),
+});
+export type CaptureSearchResult = z.infer<typeof CaptureSearchResultSchema>;

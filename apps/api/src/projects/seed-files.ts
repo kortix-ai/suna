@@ -40,7 +40,8 @@ function mergeSeedFiles(
 
 /**
  * Seed a brand-new project's deterministic scaffold: just the starter's own
- * runtime files (kortix.yaml, opencode config, base skills) for `template`.
+ * files (a kortix_version 3 kortix.yaml, agent prompts, skills, the pty
+ * extension) for `template`.
  * No lock, no dependency engine — marketplace items are never deterministically
  * installed at provision time; adding one to a project is an agent import.
  */
@@ -75,8 +76,8 @@ export interface ProjectSeedFilesFromItemInput {
 
 /**
  * Seed a brand-new project by cloning a `registry:project` marketplace item.
- * The internal minimal layer gives the new repo its four runtime profiles,
- * canonical skills, and OpenCode compatibility files;
+ * The internal minimal layer gives the new repo the starter's v3 floor (its
+ * kortix.yaml, agent prompts and the pty extension);
  * the project item's own files (its kortix.yaml, agent personas, …) are
  * already inline on the catalog entry (`entry.item.files`, see
  * `buildProjectTemplateRegistry` in apps/api/src/marketplace/catalog.ts) — no

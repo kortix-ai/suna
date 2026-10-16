@@ -16,8 +16,18 @@
  *   that collides rolls the whole batch back and answers 422 with its pair.
  * - Durable turns. The first acknowledged assistant message of a turn that is not
  *   streaming sets `session_turns.log_durable_at`: the turn whose `message_id` (the
- *   client-minted user message id) is the assistant message's `reply_to`. A later
- *   acknowledgement (a restarted daemon re-sends everything) keeps the first time.
+ *   client-minted user message id) is the assistant message's `reply_to`. No
+ *   assistant message answers a compaction: both harnesses fold the summary into
+ *   the compaction message. So a compaction that is not streaming marks its
+ *   `/summarize` turn itself, also when it failed or was aborted (`error` set),
+ *   like an errored assistant reply: the turn whose `message_id` is the
+ *   compaction's id. Both daemons relay `turn_begin` with that id when the
+ *   compaction starts (pi: its marker), and apps/api binds it to the open
+ *   `/summarize` turn (`adoptRuntimeSandboxTurn`). A turn whose bind failed (two
+ *   open id-less turns, a lost relay) stays unmarked: guessing it by time marked
+ *   the wrong turn (P2.11). An auto compaction inside a prompt turn marks nothing:
+ *   the turn's reply marks it. A later acknowledgement (a restarted daemon
+ *   re-sends everything) keeps the first time.
  *
  * Records keep the values the daemon sent, not the zod parse: the parse drops
  * fields this API does not know, and the record would lose them (the same rule
@@ -79,6 +89,7 @@ import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
 import { jsonbSafeValue } from './lib/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
+import { toolInputOrderOf } from './session-log-input-order';
 
 export interface SessionLogScope {
   sessionId: string;
@@ -90,6 +101,7 @@ export type SessionLogJournalOutcome =
   | { status: 200; body: SessionLogJournalResponse }
   | { status: 404; body: { error: string } }
   | { status: 409; body: SessionLogJournalConflict }
+  | { status: 429; body: { error: string } }
   | { status: 422; body: SessionLogJournalSeqConflict };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -106,6 +118,13 @@ export const SESSION_LOG_CAPTURE_REV_LIMIT = 2 ** 31;
 /** A capture write: `current` runs under the lock and answers false when a newer mirror capture ran. */
 type CaptureWrite = { current: (tx: Tx) => Promise<boolean> };
 const NO_SESSION = { status: 404, body: { error: 'Session not found' } } as const;
+/**
+ * Another batch of the session holds its lock. Waiting for it queued every retry of the
+ * daemon behind a batch the daemon had already abandoned (its post times out at 15 s, the
+ * transaction runs on), until the 25 s statement timeout cancelled the wait: 57014 in a loop,
+ * hundreds per session (KRTX-2344). The daemon backs off on 429 and keeps its dirty set.
+ */
+const BUSY = { status: 429, body: { error: 'Session log busy' } } as const;
 
 class SeqConflict extends Error {
   constructor(readonly body: SessionLogJournalSeqConflict) {
@@ -114,7 +133,7 @@ class SeqConflict extends Error {
 }
 
 /** The session row, only when it belongs to this project and account. */
-async function sessionExists(scope: SessionLogScope): Promise<boolean> {
+export async function sessionExists(scope: SessionLogScope): Promise<boolean> {
   const [row] = await db
     .select({ sessionId: projectSessions.sessionId })
     .from(projectSessions)
@@ -179,7 +198,10 @@ async function applyBatch(
   for (const put of batch.puts) records.push(await offloadLargeTexts(scope, put.message));
   try {
     return await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
+      const [lock] = await tx.execute<{ locked: boolean }>(
+        sql`SELECT pg_try_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`})) AS locked`,
+      );
+      if (!lock?.locked) return capture ? ('skipped' as const) : BUSY;
       if (capture && !(await capture.current(tx))) return 'skipped' as const;
       const current = await upsertSession(tx, scope, batch, capture !== null);
       if (current === 'journal') return 'skipped' as const;
@@ -389,6 +411,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         contentHash: sessionLogContentHash(m),
         deletedAt: null,
         record: record as unknown as Record<string, unknown>,
+        toolInputOrder: toolInputOrderOf(record),
       })
       .onConflictDoUpdate({
         target: [sessionLogMessages.sessionId, sessionLogMessages.messageId],
@@ -406,6 +429,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
           contentHash: sql`excluded.content_hash`,
           deletedAt: null,
           record: sql`excluded.record`,
+          toolInputOrder: sql`excluded.tool_input_order`,
           updatedAt: sql`now()`,
         },
         // An unchanged re-put (a restarted daemon re-sends every message) leaves the row; it is still acknowledged.
@@ -421,19 +445,20 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
 }
 
 async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
-  const userMessageIds = [
+  // An assistant reply marks the turn of the message it answers; a compaction marks its own turn.
+  const turnMessageIds = [
     ...new Set(
       puts.flatMap(({ message: m }) =>
-        m.role === 'assistant' && m.status !== 'streaming' && m.reply_to ? [m.reply_to] : [],
+        m.status === 'streaming' ? [] : m.kind === 'compaction' ? [m.message_id] : m.role === 'assistant' && m.reply_to ? [m.reply_to] : [],
       ),
     ),
   ];
-  if (userMessageIds.length === 0) return;
+  if (turnMessageIds.length === 0) return;
   await tx
     .update(sessionTurns)
     // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
     .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
-    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, userMessageIds)));
+    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds)));
 }
 
 /** The boot-reconcile manifest, or null when the session is not this project's. */

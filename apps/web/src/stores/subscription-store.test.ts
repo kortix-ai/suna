@@ -25,7 +25,7 @@ describe('subscription store', () => {
 
   test('setAccountState, setLoading and setError update the store', () => {
     const error = new Error('billing unavailable');
-    const accountState = { subscription: null } as AccountState;
+    const accountState = { subscription: null } as unknown as AccountState;
 
     useSubscriptionStore.getState().setAccountState(accountState);
     useSubscriptionStore.getState().setLoading(true);

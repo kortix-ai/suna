@@ -63,12 +63,15 @@ import { openPastedText } from '@/stores/pasted-text-store';
 import { webSpace } from '@/lib/session/user-message';
 import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson } from '@/lib/session/participants';
+import { turnStoppedBy } from '@/lib/session/turn-stop';
 
 export interface SessionConnectError {
   title: string;
   message: string;
   /** Raw runtime failure detail (e.g. the git clone error). Shown verbatim. */
   detail?: string;
+  /** The provider removed the box: the primary action is Continue (`recover`), not Restart. */
+  lost?: boolean;
 }
 
 /** The first prompt has no session mentions yet. */
@@ -320,6 +323,7 @@ function SavedThread({
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
   // The floating composer area's height: the newest turn rests above it.
   const [bottomHeight, setBottomHeight] = React.useState(0);
   // Laid out exactly as `SessionPage`'s list: no list-level side padding (each
@@ -342,12 +346,8 @@ function SavedThread({
                 sessionId={sessionId}
                 onFileMention={openFilePreview}
                 rewindDisabled
-                sender={messageAvatarPerson(
-                  messageAuthors,
-                  participants,
-                  participants?.participants.find((person) => person.is_viewer)?.user_id,
-                  turn.id,
-                )}
+                sender={messageAvatarPerson(messageAuthors, participants, viewerId, turn.id)}
+                stoppedBy={turnStoppedBy(messageAuthors, viewerId, turn.id)}
               />
             </View>
           );
@@ -380,7 +380,8 @@ function openFilePreview(path: string) {
 
 /**
  * The failure: the composer card's surface, the words on top, and Back to
- * project · Restart side by side, 50/50, the primary on the right. Centred in
+ * project · Restart (Continue for a lost computer) side by side, 50/50, the
+ * primary on the right. Centred in
  * the page when there is no conversation; in the composer's slot under a
  * saved copy.
  */
@@ -425,7 +426,11 @@ function ConnectErrorState({
             ) : (
               <Icon as={RotateCcw} size={15} />
             )}
-            <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
+            <Text>
+              {error.lost
+                ? restarting ? 'Continuing…' : 'Continue session'
+                : restarting ? 'Restarting…' : 'Restart session'}
+            </Text>
           </Button>
         ) : null}
       </View>

@@ -137,7 +137,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       agentmail_email: false,
       llm_gateway: true,
       meta_agent: false,
-      apps: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
@@ -152,6 +151,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       drives: false,
       session_log: false,
       session_log_restore: false,
+      workspace_volume: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -757,13 +757,14 @@ describe('envelopes', () => {
   });
 
   test('feature flag keys stay in sync with the map schema', () => {
-    expect(FEATURE_FLAG_KEYS).toEqual([
+    // The static tuple order of a zod `keyof()` follows union order, which tsgo
+    // (TypeScript 7) sorts differently from tsc 5; the runtime order is the contract.
+    expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
       'llm_gateway',
       'meta_agent',
-      'apps',
       'monitors',
       'reminders',
       'warm_sessions',
@@ -778,6 +779,7 @@ describe('envelopes', () => {
       'drives',
       'session_log',
       'session_log_restore',
+      'workspace_volume',
     ]);
   });
 

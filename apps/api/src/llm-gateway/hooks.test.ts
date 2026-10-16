@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { tierGrantsAllModels } from '../billing/services/tiers';
-let accountTier = 'per_seat';
+let accountTier = 'credits';
 let billingCalls = 0;
 let budgetCalls = 0;
 
@@ -100,7 +100,7 @@ const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
   beforeEach(() => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     billingCalls = 0;
     budgetCalls = 0;
     billingThrow = null;
@@ -109,7 +109,7 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
   test.each([
     ['insufficient_credits', 'Out of credits. Top up to continue.'],
     ['no_account', 'No credit account found.'],
-    ['subscription_required', 'Subscribe to activate your seat.'],
+    ['subscription_required', 'Subscribe to activate your plan.'],
   ] as const)('%s survives the RPC boundary', async (reason, message) => {
     billingThrow = () => {
       throw new BillingGateError(reason, 0, message, 'acct-1');
@@ -142,7 +142,7 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
   });
 
   test('a paid tier keeps the LLM admission hold', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
 
     const result = await authorizeRequest('good');
 
@@ -155,7 +155,7 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
   });
 
   test('a new gateway defers the paid-tier hold until model resolution', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
 
     const result = await authorizeRequest('good', { deferBilling: true });
 
@@ -216,7 +216,7 @@ describe('authorizeRequest — a project-less principal cannot run inference (KR
 
 describe('assertLlmBillingActive — the wallet floor follows the credits request, not just the entitlement', () => {
   beforeEach(() => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     billingCalls = 0;
   });
 

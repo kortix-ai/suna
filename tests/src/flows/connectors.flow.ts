@@ -9,7 +9,6 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
-import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { stagingAppsEdgeQuarantine } from '../fixtures/apps-edge';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
@@ -5169,7 +5168,6 @@ flow(
       });
 
       await ctx.step('an App viewer token (api scope) acts as the viewer: their private account and the shared one', async () => {
-        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await owner.post('/v1/projects/:projectId/apps',
           { slug: `ident-${stamp}`, name: 'ke2e connector identities' }, { params: projectParams });
         created.status(201);

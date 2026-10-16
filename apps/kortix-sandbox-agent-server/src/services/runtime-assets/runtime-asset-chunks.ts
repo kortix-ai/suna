@@ -12,7 +12,7 @@
  * HOLD. 87.3% is what two binaries compiled by the SAME Bun share. The shipped
  * API image compiles them with two different ones — `apps/api/Dockerfile`
  * builds the daemon on `SANDBOX_AGENT_BUN_VERSION=1.3.11` (a deliberate pin:
- * Bun 1.2 breaks `Bun.spawn({terminal})`) and the CLI on `BUN_VERSION=1.2`,
+ * Bun 1.2 breaks `Bun.spawn({terminal})`) and the CLI on `BUN_VERSION=1.4.3`,
  * the API's own runtime. Different runtimes, different bytes: measured against
  * a deployed preview, the two share 0 of 111 chunks, and even their FIRST MiB
  * differs. So cross-artifact reuse is 0% until those two pins agree, and that

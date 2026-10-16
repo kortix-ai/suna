@@ -88,10 +88,11 @@ export function cardBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), 'utf8');
 }
 
-function planContainer(title: string, steps: StreamTaskChunk[]): CardElement[] {
-  const elements: CardElement[] = [
-    { type: 'TextBlock', text: title, weight: 'bolder', size: 'medium', wrap: true },
-  ];
+/** No `title`, no header: a finished answer needs no "Task complete" above it. */
+function planContainer(title: string | undefined, steps: StreamTaskChunk[]): CardElement[] {
+  const elements: CardElement[] = title
+    ? [{ type: 'TextBlock', text: title, weight: 'bolder', size: 'medium', wrap: true }]
+    : [];
   // Newest steps first into the budget: the step in flight is the one a
   // reader needs, and the oldest ones are what a long run can spare.
   const shown: CardElement[][] = [];
@@ -173,7 +174,7 @@ export function buildPlanCard(
 }
 
 export function buildFinalCard(opts: {
-  title: string;
+  title?: string;
   steps: StreamTaskChunk[];
   body?: string;
   sessionUrl?: string;
@@ -181,7 +182,7 @@ export function buildFinalCard(opts: {
   const elements: CardElement[] = planContainer(opts.title, opts.steps);
   if (opts.body) {
     const [first, ...rest] = markdownToCardElements(opts.body);
-    if (first) elements.push({ ...first, spacing: 'medium' }, ...rest);
+    if (first) elements.push(elements.length ? { ...first, spacing: 'medium' } : first, ...rest);
   }
   if (opts.sessionUrl) {
     elements.push({
@@ -233,7 +234,7 @@ export function buildAnswerCard(
   sessionUrl?: string,
   customCard?: Record<string, unknown>,
   /** The live card's steps. A custom card replaced them outright; Slack keeps its plan above the blocks. */
-  plan?: { title: string; steps: StreamTaskChunk[] },
+  plan?: { title?: string; steps: StreamTaskChunk[] },
 ): Record<string, unknown> {
   // The agent handed us a full Adaptive Card (`teams send --card-file`): use
   // it verbatim, with the run's steps above it and the session link below.

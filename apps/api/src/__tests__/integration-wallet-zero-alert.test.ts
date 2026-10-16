@@ -32,9 +32,9 @@ beforeAll(async () => {
     await insertIntoView(db, accountMembers, { userId: OWNER, accountId: account.account_id, accountRole: 'owner' });
   }
   await db.insert(creditAccounts).values([
-    { accountId: paid.account_id, tier: 'tier_2_20', autoTopupEnabled: false },
+    { accountId: paid.account_id, tier: 'credits', autoTopupEnabled: false },
     { accountId: free.account_id, tier: 'free', autoTopupEnabled: false },
-    { accountId: refilling.account_id, tier: 'tier_2_20', autoTopupEnabled: true },
+    { accountId: refilling.account_id, tier: 'credits', autoTopupEnabled: true },
   ]);
   setOwnerAlertSenderForTest(async (message) => {
     sent.push(message);
@@ -61,7 +61,7 @@ describe('a wallet at $0', () => {
     expect(await alertWalletAtZero(paid.account_id, -0.5)).toBe(1);
     expect(sent.map((m) => m.to)).toEqual([[ownerEmail]]);
     expect(sent[0]!.subject).toBe('wallet-zero-paid-account is out of credits');
-    expect(sent[0]!.text).toContain('The balance of wallet-zero-paid-account reached -$0.50.');
+    expect(sent[0]!.text).toContain('The balance of wallet-zero-paid-account reached -50 credits.');
     expect(sent[0]!.text).toContain('Agents pause, and triggers stop starting sessions, until credits are added.');
     expect(sent[0]!.text).toContain(`/projects?accountId=${paid.account_id}&accountTab=billing`);
     expect(sent[0]!.category).toBe('billing-wallet-zero');

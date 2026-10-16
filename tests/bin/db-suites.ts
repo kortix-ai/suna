@@ -14,6 +14,7 @@ import { mapWithConcurrency } from '../src/core/concurrency';
 import {
   DB_SUITE_QUARANTINE,
   type DbSuite,
+  LOCAL_SUPERUSER,
   SUITE_DATABASE_PREFIX,
   dbSuiteVerdict,
   discoverDbSuites,
@@ -26,6 +27,7 @@ import {
   suiteEnvironment,
   templateDatabaseName,
   withDatabase,
+  withUser,
 } from '../src/core/db-suites';
 import { ensureLocalSupabase, resolveLocalTopology } from '../src/core/local-stack';
 
@@ -170,6 +172,22 @@ async function dumpPlatformAuthSchema(adminUrl: string): Promise<string> {
     throw new Error(`pg_dump of the auth schema exited with code ${dumped.exitCode}:\n${dumped.output}`);
   }
   return dumpAsSql(dumped.stdout);
+}
+
+/**
+ * Every suite connects as `postgres`, which a fresh Supabase stack demotes
+ * from superuser (`ALTER ROLE postgres NOSUPERUSER`, KRTX-2026). Supabase's
+ * own supautils extension lets that role SET `session_replication_role` on
+ * current images, but the allowance belongs to the image, not to the stack —
+ * a stack without it made a suite die mid-run with `permission denied to set
+ * parameter`. Grant the SET privilege once per run as the cluster superuser,
+ * so a fixture on the suites' own connection can write past a trigger on any
+ * stack, image included or not. Idempotent: the catalog keeps one ACL row.
+ */
+async function grantSessionReplicationRole(adminUrl: string): Promise<void> {
+  await withClient(withUser(adminUrl, LOCAL_SUPERUSER), (client) =>
+    client.query('grant set on parameter session_replication_role to postgres'),
+  );
 }
 
 /**
@@ -322,6 +340,7 @@ async function main(): Promise<number> {
   const apiUrl = supabase.environment.API_URL;
   if (!adminUrl || !apiUrl) throw new Error('local Supabase reports no DB_URL or API_URL');
   await waitForPlatformAuth(apiUrl);
+  await grantSessionReplicationRole(adminUrl);
 
   const templateStartedAt = performance.now();
   const template = await ensureTemplate(adminUrl);

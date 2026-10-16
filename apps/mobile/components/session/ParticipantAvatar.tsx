@@ -1,6 +1,6 @@
 /**
  * ParticipantAvatar — a person in a shared session, drawn like web's
- * `UserAvatar` (Avatar v2): a circle with one solid fill keyed on the email,
+ * `UserAvatar` (Avatar v2): a `rounded-sm` tile with one solid fill keyed on the email,
  * white initials, and the profile photo over it when one loads. No border.
  * A face under 28pt holds one initial, as web's `xs`/`sm`. Used above a user
  * message, in the header stack, the people sheet and the share form.
@@ -31,7 +31,8 @@ export function ParticipantAvatar({ person, size = PARTICIPANT_AVATAR_SIZE, styl
   const text = participantAvatarText(person);
   // Web's seed: the email, else the name, so one person is one colour everywhere.
   const fill = avatarFill(person.email || text || '');
-  const radius = size / 2;
+  // Web `rounded-sm`: `--radius` (10) minus 4. Never a circle (Jay, 2026-10-14).
+  const radius = 6;
   const initials = participantInitials(person).slice(0, size < 28 ? 1 : 2);
   // A local-stack photo is served from `127.0.0.1`, which on a phone is the
   // phone: remap it like every other local URL. The image loader does not go

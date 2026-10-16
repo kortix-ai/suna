@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { DASHBOARD_TAB_ID, useTabStore, type Tab } from './tab-store';
+import { DASHBOARD_TAB_ID, useTabStore, withoutAppAccessTokens, type Tab } from './tab-store';
 
 /**
  * Characterization tests for the live tab surface: openTab, closeTab,
@@ -149,5 +149,28 @@ describe('setActiveTab', () => {
     useTabStore.getState().setActiveTab('missing');
 
     expect(useTabStore.getState().activeTabId).toBe('a');
+  });
+});
+
+describe('withoutAppAccessTokens — what the tab store persists', () => {
+  const app = 'https://dev-crm-0123456789abcdef.apps.kortix.com/deals?id=4';
+
+  test("a preview tab's url and originalUrl lose the App access token", () => {
+    const persisted = withoutAppAccessTokens({
+      p: {
+        id: 'p',
+        title: 'CRM',
+        type: 'preview',
+        href: '/p/web',
+        openedAt: 1,
+        metadata: { url: `${app}&__kortix_access=tok`, originalUrl: `${app}&__kortix_access=tok`, port: 0 },
+      },
+    });
+    expect(persisted.p!.metadata).toEqual({ url: app, originalUrl: app, port: 0 });
+  });
+
+  test('tabs without a token come back as the same object', () => {
+    const tabs = { d: { id: 'd', title: 'Home', type: 'dashboard' as const, href: '/', openedAt: 1 } };
+    expect(withoutAppAccessTokens(tabs)).toBe(tabs);
   });
 });

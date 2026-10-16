@@ -2,10 +2,10 @@
  * When the boot restores a session log (P6.4, `harness/shared/session-log-boot.ts`), against a
  * fake native store and a fake API (`Bun.serve`: manifest, restore, attachments). The real
  * harnesses run the same reconcile in `pi-session-log-restore.test.ts` and
- * `opencode-session-log-restore.test.ts`.
+ * `opencode-session-log-restore-boot-reconcile.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
@@ -16,6 +16,7 @@ import type {
   SessionLogManifest,
   SessionLogMessage,
   SessionLogRestore,
+  SessionLogRestoreTooLarge,
 } from '@kortix/api-contract/session-log'
 import type { SessionLogPort } from '@/harness/contract/session-log'
 import { WIRE_MESSAGE_ID } from '@kortix/sdk/wire-message-id'
@@ -124,6 +125,8 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
   const journal: SessionLogJournalRequest[] = []
   const take = (queue: Response[] | undefined, i: number): Response => queue?.[Math.min(i, queue.length - 1)]?.clone() as Response ?? new Response('no route', { status: 500 })
   const count = { manifest: 0, restore: 0, claimed: 0 }
+  /** The persisted `claiming` mark as each restore POST arrives. */
+  const marks: unknown[] = []
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
@@ -133,6 +136,7 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
       expect(request.headers.get('authorization')).toBe('Bearer session-token')
       if (url.pathname.endsWith('/log/manifest')) return take(routes.manifest, count.manifest++)
       if (url.pathname.endsWith('/log/restore')) {
+        marks.push(existsSync(sessionLogBootStatePath()) ? state().claiming : undefined)
         // claimSessionLog commits the claim before the answer leaves the API, whatever the answer is.
         const answer = take(routes.restore, count.restore++)
         if (answer.status !== 404 && answer.status !== 503) count.claimed++
@@ -149,7 +153,7 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
   })
   servers.push(server)
   process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
-  return { requests, journal, count }
+  return { requests, journal, count, marks }
 }
 
 const manifest = (generation: number, messages: Array<[string, boolean?]>): Response =>
@@ -177,6 +181,44 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(store.restores[0]!.seqMax).toEqual({ thr_root: 2 })
     expect(boot).toEqual({ generation: 1, cursors: [{ thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } }], harness: carry(3) })
     expect(state()).toEqual({ version: 1, generation: 1, unwritten: [], harness: carry(3) })
+  })
+
+  test('413 session_log_too_large: the claimed generation, the root alone with the D3 note above seq_max, every stored id unwritten; the restart restores nothing', async () => {
+    const child = { ...STORED.threads[0]!, thread_id: 'thr_child', parent_thread_id: 'thr_root', messages: [] }
+    const bare = { ...STORED, threads: [{ ...STORED.threads[0]!, messages: [] }, child] }
+    const tooLarge = Response.json(
+      { generation: 1, log: bare, revs: { m1: 1, m2: 1, m0: 1 }, seq_max: { thr_root: 7, thr_child: 3 }, blobs: [], error: 'session_log_too_large', bytes: 38_588_834, limit: 24 * 1024 * 1024, messages: 2 } satisfies SessionLogRestoreTooLarge,
+      { status: 413 },
+    )
+    const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [tooLarge] })
+    const store = fakeStore(null)
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    const written = store.restores.at(-1)!.log
+    expect(written.threads.map((t) => t.thread_id)).toEqual(['thr_root'])
+    expect(written.threads[0]!.messages).toEqual([expect.objectContaining({ seq: 8, origin: 'notification', blocks: [expect.objectContaining({ id: 'prt_kortix_restore_g1' })] })])
+    expect((written.threads[0]!.messages[0]!.blocks[0] as { text: string }).text).toBe(
+      'Kortix: this session was restored from its saved session log. Its earlier conversation (2 messages, 36.8 MiB) is above the 24 MiB restore limit and was not restored. If you need it, ask the user to send it again.',
+    )
+    expect(boot).toMatchObject({ generation: 1, session: { restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: 2 }, truncated: 0 } } } } } })
+    expect(state()).toMatchObject({ generation: 1, unwritten: ['m1', 'm2', 'm0'] })
+
+    resetSessionLogJournalForTests()
+    const again = fakeApi({ manifest: [manifest(1, LIVE)] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toMatchObject({ generation: 1, cursors: [] })
+    expect(again.count.restore).toBe(0)
+  })
+
+  test('a 413 that is not session_log_too_large (a proxy) claims nothing: no restore, no retry, the mark is cleared', async () => {
+    const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [new Response('Request Entity Too Large', { status: 413 })] })
+    const store = fakeStore(null)
+
+    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(api.count.restore).toBe(1)
+    expect(store.restores).toHaveLength(0)
+    expect(state().claiming).toBeUndefined()
   })
 
   test('current native state (every live id held, same generation): no restore, the persisted generation', async () => {
@@ -326,7 +368,80 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     const again = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [restoreAnswer(1, STORED)] })
     await expect(reconcileSessionLog(fakeStore(['m1', 'm2'], { failures: 99 }).port, RETRY)).rejects.toThrow(/the native write failed/)
     expect(again.count.claimed).toBe(3)
-    expect(() => state()).toThrow()
+    // Only the mark the POSTs left: the generation is still the one this box wrote at.
+    expect(state()).toEqual({ version: 1, generation: 0, unwritten: [], claiming: true })
+  })
+
+  test('the claiming mark is on disk before the restore POST: a box that claimed and died fails its next boot when the manifest cannot be read, even with a store', async () => {
+    const stale: Array<[string]> = [...LIVE, ['m3']]
+    // Boot 1: every restore POST claims, then fails (or the box dies before the answer lands).
+    const first = fakeApi({ manifest: [manifest(0, stale)], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow(/restore failed/)
+    expect(first.marks).toEqual([true, true, true])
+
+    // Boot 2: the manifest is down. The store is below the claim the API holds (generation 3): the boot fails, and no journal posts below it.
+    const down = fakeApi({ manifest: [new Response('down', { status: 500 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow(/manifest/)
+    expect(down.count.restore).toBe(0)
+
+    // Boot 3: the manifest answers above this box's generation; the box restores, and the mark is gone.
+    fakeApi({ manifest: [manifest(3, stale)], restore: [restoreAnswer(4, log([...STORED.threads[0]!.messages, message('m3', 3, 'three')]))] })
+    expect((await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY))?.generation).toBe(4)
+    expect(state().claiming).toBeUndefined()
+  })
+
+  test('a 503 after an attempt that may have claimed (502, then 503 from the edge) settles nothing: the mark stays and the boot fails', async () => {
+    const api = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 }), new Response('{}', { status: 503 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow(/restore failed/)
+    expect(api.count.claimed).toBe(1)
+    expect(state()).toEqual({ version: 1, generation: 0, unwritten: [], claiming: true })
+  })
+
+  test('while the mark stands, a manifest that answers 403/404 boots on the store and keeps the mark', async () => {
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
+    for (const status of [403, 404]) {
+      const api = fakeApi({ manifest: [new Response('{}', { status })] })
+      expect(await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+      expect(api.count.restore).toBe(0)
+      expect(state().claiming).toBe(true)
+    }
+  })
+
+  test('the ingest kill switch (503 manifest) with the mark: the box boots and keeps the mark; the next boot with a readable manifest above it restores and clears it', async () => {
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
+    const off = fakeApi({ manifest: [new Response('{}', { status: 503 })] })
+    expect(await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(off.count.restore).toBe(0)
+    expect(state().claiming).toBe(true)
+    const on = fakeApi({ manifest: [manifest(3, [...LIVE, ['m3']])], restore: [restoreAnswer(4, log([...STORED.threads[0]!.messages, message('m3', 3, 'three')]))] })
+    expect((await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY))?.generation).toBe(4)
+    expect(on.count.restore).toBe(1)
+    expect(state().claiming).toBeUndefined()
+  })
+
+  test('a manifest above this box\'s generation whose messages are all tombstoned restores; it does not clear the mark as current', async () => {
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
+    const api = fakeApi({ manifest: [manifest(3, [['m1', true], ['m2', true]])], restore: [restoreAnswer(4, log([]))] })
+    expect((await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY))?.generation).toBe(4)
+    expect(api.count.restore).toBe(1)
+    expect(state().claiming).toBeUndefined()
+  })
+
+  test('a claiming mark the manifest shows no claim for (the POST never reached the API) is cleared; a 404/503 restore answer clears it too', async () => {
+    fakeApi({ manifest: [manifest(0, [...LIVE, ['m3']])], restore: [new Response('down', { status: 502 })] })
+    await expect(reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).rejects.toThrow()
+    // The manifest still names generation 0 and the store holds every live id: nothing to restore, no claim stands.
+    fakeApi({ manifest: [manifest(0, LIVE)] })
+    expect(await reconcileSessionLog(fakeStore(['m1', 'm2']).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(state()).toEqual({ version: 1, generation: 0, unwritten: [] })
+
+    const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [new Response('{}', { status: 404 })] })
+    expect(await reconcileSessionLog(fakeStore(null).port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(api.marks).toEqual([true])
+    expect(state().claiming).toBeUndefined()
   })
 })
 

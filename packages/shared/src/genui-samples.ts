@@ -10,6 +10,7 @@ export const CHILD_ONLY: Readonly<Record<string, string>> = {
   Series: 'BarChart',
   Slice: 'PieChart',
   Marker: 'Map',
+  Step: 'Steps',
   Tab: 'Tabs',
   AccordionItem: 'Accordion',
 };
@@ -62,7 +63,7 @@ img = Image("https://kortix.com/banner.png", "The Kortix banner", "The Kortix ba
   {
     component: 'Image',
     title: 'Image gallery, 3 images',
-    note: 'Two or more Images and nothing else in one Stack render as one gallery: a lead tile and two stacked.',
+    note: 'Three Images and nothing else in one Stack render as one row, each at its own shape.',
     source: `root = Stack([i1, i2, i3])
 i1 = Image("https://kortix.com/banner.png", "Placeholder image 1", "Placeholder caption 1")
 i2 = Image("https://kortix.com/banner.png", "Placeholder image 2", "Placeholder caption 2")
@@ -247,6 +248,35 @@ sea = Badge("Sea views")
 ult = Badge("Ultra-luxury")
 mod = Badge("Modern")
 rom = Badge("Romantic")`,
+  },
+  {
+    component: 'Card',
+    title: 'Card list, options with a pick',
+    note: 'layout list: cropped photo, route subtitle, price, and the pick as a pill.',
+    source: `root = Stack([a, b], "col", "list")
+a = Card("Option A: taxi", "No changes and easiest with big bags.", "60 to 90 min", "https://kortix.com/banner.png", "https://example.com/taxi", [pick], null, null, "about 40 USD")
+pick = Badge("Best for a first flight", "good")
+b = Card("Option B: train", "Cheaper, but you carry your bags through two stations.", "70 to 100 min", "https://kortix.com/banner.png", null, null, null, null, "about 5 USD")`,
+  },
+  {
+    component: 'Steps',
+    source: `root = Steps([s1, s2, s3])
+s1 = Step("Home → Central Station", "Take a taxi or the bus.", "https://kortix.com/banner.png", "about 20 min")
+s2 = Step("Central Station → Airport One", "Take the airport train to Terminal 2.\\nTrains leave every 15 minutes.", "https://kortix.com/banner.png", "about 35 min")
+s3 = Step("Airport One", "Check in, drop your bag, pass security, and board.", "https://kortix.com/banner.png")`,
+  },
+  {
+    component: 'Steps',
+    title: 'Steps, no photos',
+    note: 'Without photos each row shows its number on the rail.',
+    source: `root = Steps([a, b, c])
+a = Step("Check in your bag", "Find your airline on the screens.")
+b = Step("Immigration and security", "Show your passport and visa.", null, "about 30 min")
+c = Step("Find your gate", "Check the screens: gates can change.")`,
+  },
+  {
+    component: 'Checklist',
+    source: `root = Checklist("Your travel checklist", ["Valid passport", "Visa or entry permit", "Flight booking and boarding passes", "Hotel address", "Bank card and some cash"])`,
   },
   {
     component: 'Tabs',

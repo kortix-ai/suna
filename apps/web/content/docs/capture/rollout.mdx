@@ -1,0 +1,204 @@
+---
+title: IT rollout
+description: Install Kortix Capture on many Windows, macOS and Linux computers with one enrollment token. Each computer enrolls and records on its own, with no sign-in to Kortix, and you link it to a person when you want.
+---
+
+IT installs Kortix Capture, the separate recorder app, on every Windows, macOS
+or Linux computer with one command. The installer adds a machine service. At
+each sign-in the service enrolls the computer and starts recording. Nobody signs in to Kortix
+by hand, nobody needs a Kortix account, and nobody can quit the recorder
+except IT.
+
+This page is for the IT team and the Kortix account admins. For one person on
+their own computer, see [Capture → Install Kortix Capture](/docs/capture#install-kortix-capture).
+
+## How it works
+
+1. An account admin creates an **enrollment token** in Kortix.
+2. IT installs `KortixCapture-x64.msi` on each computer with the Kortix URL and the
+   token. The installer writes both to the registry and starts the
+   **Kortix Capture** Windows service.
+3. At each Windows sign-in the service reads the person's Windows sign-in
+   name (the user principal name, for example `jane@corp.example`) and enrolls
+   the computer with the token.
+4. The computer gets a device token and starts recording. It belongs to the
+   account. A personal token links it to its person. Any other computer
+   records **linked to no one**, which is a normal state: an admin links it to
+   a person when that is wanted.
+5. The Kortix Capture icon in the notification area shows that it records.
+   Nothing else interrupts the person. When the policy sets a notice, the
+   person sees it once.
+
+The service runs as `LocalSystem`. It starts the recorder in each signed-in
+session as that person, and starts it again within seconds when it stops.
+The enrollment token stays with the service: the registry key that holds it is
+readable by SYSTEM and administrators only, and the person's processes never
+see it.
+
+## Before you start
+
+- Turn on Capture for the account and set the policy: what is recorded, the
+  frame rate, exclusions, retention and **the notice** the person sees. See
+  [Capture → The policy](/docs/capture#the-policy).
+- People do not need Kortix accounts. A computer records for the account
+  whether or not it is linked to a person. To link computers to members as
+  they enroll, turn on **Approve each computer**: Kortix suggests the member
+  with the computer's sign-in email, and you confirm it.
+- You need the `capture.manage` permission. Account owners and admins have it.
+
+## 1. Create an enrollment token
+
+In Kortix, open **Capture → Devices**, then **Company install**. Fill in:
+
+| Field | What it does |
+|---|---|
+| Name | A name for the token, for example the computer group. |
+| For | **Anyone at the company**: one token for many computers. They enroll linked to no one; you link them, or confirm the suggested member with **Approve each computer**. **A member**: a personal token. Every computer it installs links to that person, whoever signs in. It stops working when that person leaves the account. |
+| Email domains | Anyone tokens only. Only people who sign in to the computer with these domains enroll. Empty: anyone. |
+| Computer limit | A cap in case the token leaks. A personal token starts at 1. Empty: no limit. |
+| Expires | 7, 30 or 90 days, or never. Computers enrolled before it expires keep recording. |
+| Approve each computer | Every new computer waits for an admin, also when its person is a member. |
+
+Kortix shows the token (`kortix_enr_…`) once. Copy it with the install
+command next to it. Anyone who has the token can enroll computers into the
+account until you revoke it, so handle it like a password.
+
+From the API: `POST /v1/accounts/<account_id>/capture/enrollment-tokens` with
+`{"name": "Pilot laptops", "email_domains": ["corp.example"], "max_devices": 20}`.
+For a personal token, add `"user_id": "<member>"`: the member must belong to the
+account, else the API answers `400` `capture_enrollment_invalid`.
+
+## 2. Install on each Windows computer
+
+Run as an administrator:
+
+```powershell
+msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_...
+```
+
+`KORTIX_URL` is the address of your Kortix API without `/v1`. Self-hosted
+Kortix uses its own API address. The installer marks `ENROLLMENT_TOKEN` as
+hidden, so it does not appear in installer logs.
+
+With Microsoft Intune, add the MSI as a line-of-business or Win32 app and use
+the command line above. With Group Policy or another tool, install the MSI
+without properties and write the two registry values yourself:
+
+| Key | Value | Type |
+|---|---|---|
+| `HKLM\SOFTWARE\Policies\Kortix\Capture` | `Url` | `REG_SZ` |
+| `HKLM\SOFTWARE\Policies\Kortix\Capture` | `EnrollmentToken` | `REG_SZ` |
+
+An upgrade (`msiexec /i` with a newer MSI) keeps the registry values when you
+pass no properties.
+
+## 3. Check the rollout
+
+**Capture → Devices** lists every enrolled computer with an **IT rollout**
+badge, under its person or under **Linked to no one**, with its live state:
+recording, paused, offline. A computer reports within a minute of the first
+Windows sign-in.
+
+To link a computer to a person, choose **Link to a person…** on it. What it
+recorded linked to no one moves to that person. See
+[Capture → Link a computer to a person](/docs/capture#link-a-computer-to-a-person).
+
+**Waiting for approval** lists computers that wait for an admin: the token
+approves each computer, or an admin revoked this one. For each, choose
+**Approve** (and, if you like, the person it records for) or **Deny**. An
+approved computer starts recording within a minute.
+
+On the computer:
+
+```powershell
+sc query KortixCapture
+Get-Process kortix-capture | Select-Object Id, SessionId
+```
+
+The service is `RUNNING`, and a `kortix-capture` process runs in each
+signed-in session.
+
+## Remove a computer or stop a rollout
+
+| To | Do |
+|---|---|
+| Stop new computers from enrolling | Revoke the token in **Company install**. Enrolled computers keep recording. |
+| Stop one computer | Revoke the device in **Devices**, or deny it in **Waiting for approval**. Its device token stops working at once. The computer does not enroll again until an admin approves it. |
+| Remove Kortix Capture | `msiexec /x KortixCapture-x64.msi /qn`. The service and the program files go away. Recordings on the computer stay in each person's profile until retention deletes them. |
+
+## What the enrollment token can and cannot do
+
+- It enrolls computers into one account, within its domains, limit and
+  expiry. It cannot read anything.
+- A device token, which each enrolled computer gets, uploads that computer's
+  recordings and reads the account's policy. It cannot read recordings.
+- The sign-in name a computer reports is not proof of who uses it: an
+  administrator of that computer can change it. So the name never links a
+  computer on its own. It is a suggestion you confirm under **Approve each
+  computer**.
+- An enrolled computer proves itself with its current device token when it
+  enrolls again. A copy of its machine key alone gets a new token only after
+  an admin approves it, for example after a reinstall.
+- Every enrollment, token change and decision is in the account's audit log:
+  `capture.device.enroll`, `capture.enrollment_token.create`,
+  `capture.enrollment_token.revoke`, `capture.enrollment.approve`,
+  `capture.enrollment.deny`, `capture.device.link`.
+
+## Answers from enroll
+
+The service shows these in its log (`%ProgramData%\Kortix\Capture\logs`) and
+retries on its own.
+
+| Answer | Means | The computer |
+|---|---|---|
+| `enrolled` | The token is valid. `member` names the linked person, or is `null` while the computer is linked to no one. | records |
+| `pending` `approval_required` | The token approves each computer, an admin revoked this one, or it asked for a new token without its current one. | waits; asks again every minute |
+| `401` `enrollment_token_invalid` | The token is unknown, revoked or expired. | asks again every hour |
+| `403` `enrollment_domain_not_allowed` | The sign-in domain is not one of the token's. | asks again every 6 hours |
+| `403` `enrollment_limit_reached` | The token reached its computer limit. | asks again every hour |
+| `403` `enrollment_denied` | An admin denied this computer. | asks again every 6 hours |
+| `403` `capture_disabled` | Capture is off for the account. | asks again every hour |
+
+## macOS
+
+IT writes the Kortix URL and the token to a root-only file, then installs the
+package. The package installs `Kortix Capture.app` (Developer ID signed and
+notarized), a machine service (LaunchDaemon) that holds the token and enrolls
+each person who signs in, and an agent that records in every session.
+
+```bash
+sudo mkdir -p "/Library/Application Support/Kortix/Capture"
+echo '{"url":"https://api.kortix.com","enrollment_token":"kortix_enr_..."}' | sudo tee "/Library/Application Support/Kortix/Capture/config.json" >/dev/null
+sudo chmod 600 "/Library/Application Support/Kortix/Capture/config.json"
+sudo installer -pkg KortixCapture-universal.pkg -target /
+```
+
+With an MDM, deploy the package and a configuration profile for the domain
+`ai.kortix.capture` with the keys `Url` and `EnrollmentToken`. A profile is
+readable by every user on the computer; use the root-only file when the token
+must stay secret.
+
+macOS asks the person to allow Screen Recording once. A Privacy Preferences
+Policy Control (PPPC) profile can pre-approve Accessibility and Input
+Monitoring for `ai.kortix.capture`; for Screen Recording it can only let a
+standard user approve it. To remove Kortix Capture:
+`sudo "/Applications/Kortix Capture.app/Contents/Resources/uninstall.sh"`.
+
+## Linux
+
+```bash
+sudo install -d -m 755 /etc/kortix
+echo '{"url":"https://api.kortix.com","enrollment_token":"kortix_enr_..."}' | sudo tee /etc/kortix/capture.json >/dev/null
+sudo chmod 600 /etc/kortix/capture.json
+sudo apt install ./kortix-capture_amd64.deb
+```
+
+The package installs a machine service (`kortix-capture-machine`) that holds
+the token and enrolls each person who signs in to a graphical session, and a
+user service that records in every session. Kortix Capture records X11
+sessions; a Wayland session enrolls but records nothing yet. To remove it:
+`sudo apt purge kortix-capture`.
+
+Without the config file on macOS or Linux, each person chooses
+**Sign in with Kortix…** from the Kortix Capture icon
+([Capture → Install Kortix Capture](/docs/capture#install-kortix-capture)).

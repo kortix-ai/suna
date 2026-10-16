@@ -1,12 +1,14 @@
 /**
- * The internal-only feature flag `apps` is written by a platform
- * operator only: `PATCH /v1/projects/:id/features` answers 403
- * `feature_operator_only` to a project owner. Flows that need it on (or
- * cleared) go through the operator route as the run-scoped platform admin.
+ * The internal-only feature flags (`session_log`, `session_log_restore`,
+ * `workspace_volume`) are
+ * written by a platform operator only: `PATCH /v1/projects/:id/features`
+ * answers 403 `feature_operator_only` to a project owner. Flows that need one
+ * on (or cleared) go through the operator route as the run-scoped platform
+ * admin.
  */
 import type { FeatureFlagKey } from "@kortix/api-contract";
 import type { FlowContext } from "../core/types";
-import { asPlatformAdmin } from "./enterprise-demo";
+import { asPlatformAdmin } from "./enterprise-access";
 
 
 /** Sets (`true`/`false`) or clears (`null`) a flag as the platform operator. Asserts 200. */

@@ -2,6 +2,7 @@
 
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { resolvedPlan, useAccountState } from '@/hooks/billing';
+import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -43,17 +44,10 @@ function useSidebarUpgrade(accountId?: string) {
     return { show: false as const, handleClick };
   }
 
-  const hasActiveSubscription = !!accountState.subscription?.subscription_id;
-  // The RESOLVED plan family (free = the keys `free` and `none`), so an admin
-  // trial and a self-healed per-seat team both read as Team here, exactly as
-  // the server's gates read them.
+  // The RESOLVED plan family (free = the keys `free` and `none`), exactly as
+  // the server's gates read it. A live subscription already pays.
   const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
-  // Kept on top of that: a per-seat account with no live Stripe subscription
-  // does NOT self-heal, so the resolver still reports it free. It is never "on
-  // Free" from the customer's side — it gets the balance/top-up warning instead
-  // of an "Upgrade plan" pitch.
-  const isPerSeat = accountState.billing_model === 'per_seat';
-  const show = isFreeOrNoPlan && !hasActiveSubscription && !isPerSeat;
+  const show = isFreeOrNoPlan && !accountHasLiveSubscription(accountState);
 
   return { show, handleClick };
 }
@@ -66,12 +60,7 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        type="button"
-        variant="primary"
-        className={cn(className)}
-        onClick={handleClick}
-      >
+      <SidebarMenuButton type="button" variant="primary" className={cn(className)} onClick={handleClick}>
         {t('upgradePlan')}
       </SidebarMenuButton>
     </SidebarMenuItem>

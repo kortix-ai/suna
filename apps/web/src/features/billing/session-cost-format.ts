@@ -1,26 +1,21 @@
-const SUB_CENT_LABEL = '<$0.01';
+import { CREDITS_PER_DOLLAR, formatUsdAsCredits } from '@kortix/shared';
 
-function toUsd(cost: number, maximumFractionDigits: number): string {
-  return cost.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits,
+// A session's cost is an amount the account SPENT, so it reads in credits
+// (1 credit = $0.01). The API sends USD; only the display converts.
+//
+// Whole credits from 10 up, up to two decimals below that, and `<0.01` for a
+// non-zero amount under one hundredth of a credit, so a column stays short.
+// The exact value stays reachable via formatSessionCostExactCredits
+// (tooltips, the session ledger), so precision is relocated, not lost.
+export function formatSessionCostCredits(value: number, locale?: string): string {
+  return formatUsdAsCredits(Number.isFinite(value) ? value : 0, { locale });
+}
+
+export function formatSessionCostExactCredits(value: number, locale = 'en-US'): string {
+  const credits = (Number.isFinite(value) ? value : 0) * CREDITS_PER_DOLLAR;
+  return credits.toLocaleString(locale, {
+    maximumFractionDigits: Math.abs(credits) < 10 ? 8 : 2,
   });
-}
-
-// Sub-cent costs collapse to a threshold label so every column decimal-aligns.
-// The exact value stays reachable via formatSessionCostExactUsd (tooltips, the
-// session ledger), so precision is relocated, not lost.
-export function formatSessionCostUsd(value: number): string {
-  const cost = Number.isFinite(value) ? value : 0;
-  if (cost > 0 && cost < 0.01) return SUB_CENT_LABEL;
-  return toUsd(cost, 2);
-}
-
-export function formatSessionCostExactUsd(value: number): string {
-  const cost = Number.isFinite(value) ? value : 0;
-  return toUsd(cost, Math.abs(cost) > 0 && Math.abs(cost) < 0.01 ? 10 : 2);
 }
 
 export function formatSessionCostDuration(value: number): string {

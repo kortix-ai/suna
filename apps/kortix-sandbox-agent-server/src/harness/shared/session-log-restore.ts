@@ -19,6 +19,7 @@
 import { createHash } from 'node:crypto'
 import type { CompactionBlock, SessionLog, SessionLogMessage, SessionLogRestore, SessionLogThread } from '@kortix/api-contract/session-log'
 import type { SandboxRelayContext } from '@/lib/kortix-api/relay-context'
+import { mapLimit } from '@/lib/map-limit'
 import { logger } from '@/lib/log/logger'
 
 export type TruncatedText = { message_id: string; block_id: string; ref: string; reason: 'not_listed' | 'unreadable' | 'sha256_mismatch' }
@@ -97,7 +98,8 @@ export type BytesReader = (ref: string, signal?: AbortSignal) => Promise<Buffer 
  * The bytes of every attachment the log names (blocks and tool results), by `ref`, checked
  * against `sha256` (or the digest a `blob:` ref names). Null when `read` has no bytes for it,
  * they do not match, or the reads ran past their budget (60 s for all of them, separate from
- * the texts' budget). An adapter's restore writes what it gets and counts the rest.
+ * the texts' budget). Reads run 4 at a time: since P2.13 a log names an object per image and
+ * file, up to 50 MiB each. An adapter's restore writes what it gets and counts the rest.
  */
 export async function attachmentBytes(log: SessionLog, read: BytesReader | undefined, { budgetMs = 60_000 } = {}): Promise<Map<string, Buffer | null>> {
   const budget = AbortSignal.timeout(budgetMs)
@@ -108,13 +110,13 @@ export async function attachmentBytes(log: SessionLog, read: BytesReader | undef
       if (b.type === 'tool_call') for (const c of [...(b.result?.content ?? []), ...(b.result?.model_content ?? [])]) if (c.type === 'attachment' && c.ref) refs.set(c.ref, c.sha256)
     }
   }
-  const out = new Map<string, Buffer | null>()
-  for (const [ref, digest] of refs) {
+  const entries = [...refs]
+  const got = await mapLimit(entries, 4, async ([ref, digest]) => {
     const bytes = read && !budget.aborted ? await read(ref, budget).catch(() => null) : null
     const want = digest ?? (ref.startsWith('blob:') ? ref.slice(5) : undefined)
-    out.set(ref, bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null)
-  }
-  return out
+    return bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null
+  })
+  return new Map(entries.map(([ref], i) => [ref, got[i]!]))
 }
 
 /**

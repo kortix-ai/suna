@@ -7,6 +7,8 @@ import type {
 } from '@kortix/llm-gateway';
 import { BillingGateError, assertBillingActive } from '../billing/services/billing-gate';
 import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/services/entitlements';
+import { resolveAccountBilling } from '../billing/services/billing-cache';
+import { byokFeeUsd, byokMonthToDateUsd, noteByokUsage } from '../billing/services/byok-fee';
 import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { wallet } from '../billing/wallet';
@@ -270,8 +272,7 @@ export async function assertLlmBillingActive(
  * — this reconciles it to the real `finalCost` instead of a flat deduct: tops
  * up the remainder if the real cost exceeds the hold, refunds the unused
  * portion otherwise (always the case for a pure hold-refund, where finalCost
- * is 0). Otherwise (no hold — billing disabled, self-host, or an active
- * per-seat subscription that bypasses the wallet floor) falls back to the
+ * is 0). Otherwise (no hold — billing disabled or self-host) falls back to the
  * original flat deduct, skipped entirely when the route isn't billable
  * (billingMode === 'none').
  */
@@ -309,6 +310,38 @@ function extendDeadlineForLlmActivity(sessionId: string | null | undefined): voi
   );
 }
 
+/**
+ * The BYOK platform fee this request owes (billing/services/byok-fee.ts), or 0.
+ * A failed lookup charges nothing: it must never fail the settlement.
+ */
+async function byokFeeFor(event: UsageEvent): Promise<number> {
+  if (event.billingMode !== 'none' || !config.KORTIX_BILLING_INTERNAL_ENABLED) return 0;
+  const cost = event.upstreamCost ?? 0;
+  if (cost <= 0) return 0;
+  try {
+    const [monthToDateUsd, billing] = await Promise.all([
+      byokMonthToDateUsd(event.accountId),
+      resolveAccountBilling(event.accountId),
+    ]);
+    const fee = byokFeeUsd({
+      provider: event.provider,
+      upstreamCostUsd: cost,
+      monthToDateUsd,
+      // An entitlement, on by default: Enterprise turns it off, and an
+      // operator override turns it off (or on) for one account.
+      feeApplies: billing.entitlements.byokFee,
+    });
+    noteByokUsage(event.accountId, event.provider, cost);
+    return fee;
+  } catch (err) {
+    logger.warn('[byok-fee] lookup failed; no fee charged', {
+      accountId: event.accountId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return 0;
+  }
+}
+
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   // The request is over: its cost is in the logged spend (or it cost nothing),
   // so its in-flight budget reservation must stop counting.
@@ -316,6 +349,8 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   const pureHoldRefund = isPureHoldRefund(event);
   // A pure hold refund observed nothing — no upstream call happened.
   if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
+  // On a customer's own key the only Kortix charge is the BYOK fee.
+  const byokFee = pureHoldRefund ? 0 : await byokFeeFor(event);
 
   const usageEventId = pureHoldRefund
     ? null
@@ -331,7 +366,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         outputTokens: event.completionTokens,
         cachedTokens: event.cachedTokens,
         cacheWriteTokens: event.cacheWriteTokens,
-        costUsd: event.finalCost,
+        costUsd: byokFee > 0 ? byokFee : event.finalCost,
         streaming: event.streaming,
         // One row per gateway request: a retried settlement finds this row,
         // and the debit keyed on its id (`llm:<event id>`) runs once.
@@ -341,6 +376,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
           markup: llmPriceMarkup(),
           requestId: event.requestId,
           billingMode: event.billingMode,
+          ...(byokFee > 0 ? { byokFeeUsd: byokFee } : {}),
           // The stream ended before the provider reported usage; the token
           // counts are the gateway's estimate (see usage/estimate.ts).
           ...(event.usageEstimated ? { usageEstimated: true } : {}),
@@ -374,7 +410,10 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     return;
   }
 
-  if (event.billingMode === 'none') return;
+  if (event.billingMode === 'none') {
+    if (byokFee > 0) await settleLlmUsage(event, byokFee, usageEventId, 'BYOK fee');
+    return;
+  }
   await settleLlmUsage(event, event.finalCost, usageEventId);
 }
 
@@ -384,14 +423,19 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
  * drained wallet and the spend would disappear from the ledger — which is
  * exactly what happened for a full billing period.
  */
-async function settleLlmUsage(event: UsageEvent, costUsd: number, usageEventId: string | null): Promise<void> {
+async function settleLlmUsage(
+  event: UsageEvent,
+  costUsd: number,
+  usageEventId: string | null,
+  label = 'LLM',
+): Promise<void> {
   if (costUsd <= 0) return;
   const markup = llmPriceMarkup();
   const hasAudit = Boolean(usageEventId) || event.upstreamCost != null;
   await settleAndCheckAutoTopup({
     accountId: event.accountId,
     amount: costUsd,
-    description: `LLM · ${event.provider ? `${event.provider}/` : ''}${event.model}`,
+    description: `${label} · ${event.provider ? `${event.provider}/` : ''}${event.model}`,
     kind: 'llm_debit',
     key: usageEventId ? { request: `llm:${usageEventId}` } : null,
     audit: hasAudit

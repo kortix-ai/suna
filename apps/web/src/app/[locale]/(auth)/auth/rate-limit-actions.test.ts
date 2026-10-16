@@ -27,6 +27,8 @@ mock.module('@/lib/supabase/server', () => ({
 }));
 
 const { sendEmailCode, signInWithPassword, signUpWithPassword } = await import('./actions');
+const { POST } = await import('../../../(system)/api/auth/send-code/route');
+const { NextRequest } = await import('next/server');
 
 function form() {
   const data = new FormData();
@@ -58,9 +60,35 @@ for (const action of [sendEmailCode, signInWithPassword, signUpWithPassword]) {
   });
 }
 
+for (const code of ['over_email_send_rate_limit', 'over_request_rate_limit', 'over_sms_send_rate_limit']) {
+  test(`send-code returns 429 for ${code}, preserving localized guidance`, async () => {
+    error = { code, message: 'Rate limit exceeded' };
+    const response = await POST(new NextRequest('http://localhost:13000/api/auth/send-code', {
+      method: 'POST', body: form(), headers: { origin: 'http://localhost:13000', host: 'localhost:13000' },
+    }));
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('3600');
+    expect(await response.json()).toMatchObject({
+      message: code === 'over_email_send_rate_limit'
+        ? messages.hardcodedUi.i18nComplete.authEmailRateLimit
+        : messages.hardcodedUi.i18nComplete.authRequestRateLimit,
+    });
+  });
+}
+
+test('send-code returns 400 for an ordinary rejected send', async () => {
+  error = { code: 'email_address_invalid', message: 'Invalid email address' };
+  const response = await POST(new NextRequest('http://localhost:13000/api/auth/send-code', {
+    method: 'POST', body: form(), headers: { origin: 'http://localhost:13000', host: 'localhost:13000' },
+  }));
+  expect(response.status).toBe(400);
+  expect(response.headers.has('retry-after')).toBe(false);
+  expect(await response.json()).toMatchObject({ message: error.message });
+});
+
 test('email action preserves non-rate-limit messages', async () => {
   error = { code: 'email_address_invalid', message: 'Invalid email address' };
-  expect(await sendEmailCode(null, form())).toEqual({ message: error.message });
+  expect(await sendEmailCode(null, form())).toEqual({ message: error.message, status: 400 });
 });
 
 test('password action preserves credential codes and messages', async () => {

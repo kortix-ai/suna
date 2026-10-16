@@ -1,8 +1,17 @@
-import { THEME_OPTIONS } from '@/features/layout/user-menu';
+import { INTERFACE_THEME_OPTIONS } from '@/features/layout/interface-theme';
+import { TERMINAL_THEMES } from '@/lib/interface-themes';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AppearanceTabView } from './appearance-tab';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { AppearanceTabView, DEFAULT_APPEARANCE_TAB_COPY, themeRowValue } from './appearance-tab';
+
+/** A row's expected trigger label: the catalog entry for a Kortix row, the
+ *  terminal theme's own name verbatim otherwise — mirrors `nameFor` in
+ *  `appearance-tab.tsx`, which is not exported. */
+const labelFor = (option: (typeof INTERFACE_THEME_OPTIONS)[number]): string =>
+  option.kind === 'labelled' ? DEFAULT_APPEARANCE_TAB_COPY.themes[option.labelKey] : option.name;
 
 /** Every heading in document order, as `h<level>:<text>` — the LEVEL is the
  *  point: the pane title is the one `h2`, every section an `h3` under it. */
@@ -32,7 +41,19 @@ describe('AppearanceTabView', () => {
           richAnswersDescription: 'Прикажи поређења као визуелне приказе.',
           wallpaper: 'Позадина',
           wallpaperDescription: 'Позадина радног простора.',
-          themes: { light: 'Светла', dark: 'Тамна', system: 'Системска' },
+          themes: {
+            system: 'Системска',
+            light: 'Светла',
+            pureLight: 'Чиста светла',
+            dark: 'Тамна',
+            pureDark: 'Чиста тамна',
+          },
+          themeGroups: {
+            kortix: 'Kortix',
+            lightThemes: 'Светле теме',
+            darkThemes: 'Тамне теме',
+          },
+          themeSearch: { placeholder: 'Претражи теме…', empty: 'Нема пронађених тема' },
           densities: {
             normal: { label: 'Нормално', description: 'Пуни приказ' },
             minimal: { label: 'Минимално', description: 'Сажети приказ' },
@@ -62,11 +83,40 @@ describe('AppearanceTabView', () => {
     expect(headings(html())).toEqual(EXPECTED_HEADINGS);
   });
 
-  test('offers exactly the themes the user menu offers, in the same order', () => {
-    const out = html();
-    for (const { label } of THEME_OPTIONS) expect(out).toContain(label);
-    const positions = THEME_OPTIONS.map((o) => out.indexOf(o.label));
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  // The Select's own option list renders in a Radix portal, which static
+  // markup cannot reach — `INTERFACE_THEME_OPTIONS` is locked in
+  // user-menu.test.tsx. What IS reachable is the trigger: it names and
+  // previews the selection, for every one of the 117 rows (System, the 4
+  // Kortix palettes, and all 39 terminal themes).
+  test('the theme trigger names and previews every selectable theme', () => {
+    expect(INTERFACE_THEME_OPTIONS.length).toBe(1 + 4 + TERMINAL_THEMES.length);
+    for (const option of INTERFACE_THEME_OPTIONS) {
+      const out = renderToStaticMarkup(<AppearanceTabView theme={option.value} />);
+      expect(out).toContain(`>${labelFor(option)}<`);
+      expect(out).toContain('id="appearance-theme"');
+    }
+  });
+
+  // Every terminal theme's label is its own proper noun, sourced from the
+  // generated JSON, never a translated `settings.appearance.themes` entry —
+  // "Iceberg Dark" must never be looked up as a catalog key. (Sample ids avoid
+  // names that are also Shiki code-theme ids; see code-theme.test.ts.)
+  test('a terminal theme shows its own name, not a translation lookup', () => {
+    const iceberg = INTERFACE_THEME_OPTIONS.find((o) => o.value === 'iceberg-dark');
+    expect(iceberg?.kind).toBe('named');
+    const out = renderToStaticMarkup(<AppearanceTabView theme="iceberg-dark" />);
+    expect(out).toContain('>Iceberg Dark<');
+  });
+
+  test('each swatch previews its own palette scope', () => {
+    const blue = renderToStaticMarkup(<AppearanceTabView theme="pure-dark" />);
+    expect(blue).toContain('data-theme-preview="pure-dark"');
+    // System previews both sides at the chosen palettes.
+    const system = renderToStaticMarkup(
+      <AppearanceTabView theme="system" themeChoice={{ light: 'light', dark: 'dark' }} />,
+    );
+    expect(system).toContain('data-theme-preview="light"');
+    expect(system).toContain('data-theme-preview="dark"');
   });
 
   test('renders every wallpaper option', () => {
@@ -110,5 +160,30 @@ describe('AppearanceTabView', () => {
   test('conversation density marks the selected card', () => {
     const minimal = renderToStaticMarkup(<AppearanceTabView conversationDensity="minimal" />);
     expect(densityChecks(minimal)).toEqual({ normal: 'false', minimal: 'true' });
+  });
+});
+
+/**
+ * KRTX-2468: cmdk marks the HIGHLIGHTED row `aria-selected`, and it highlights
+ * the first row (System) when the list opens. A screen reader announced System
+ * while Dark was applied. The list now opens with the applied theme's row
+ * highlighted, as a native listbox does.
+ */
+describe('theme picker opening highlight', () => {
+  const copy = DEFAULT_APPEARANCE_TAB_COPY;
+  const option = (value: string) => INTERFACE_THEME_OPTIONS.find((o) => o.value === value)!;
+
+  test('the list opens on the applied theme', () => {
+    const source = readFileSync(join(import.meta.dir, 'appearance-tab.tsx'), 'utf8');
+    expect(source).toContain('defaultValue={themeRowValue(theme, copy)}');
+  });
+
+  test('a row value names the theme, its id and its group: what search reads and the highlight names', () => {
+    expect(themeRowValue('dark', copy)).toBe(`${labelFor(option('dark'))} dark ${copy.themeGroups.kortix}`);
+    expect(themeRowValue('system', copy)).toBe(`${labelFor(option('system'))} system ${copy.themeGroups.kortix}`);
+    const darkTerminal = INTERFACE_THEME_OPTIONS.find((o) => o.kind === 'named' && o.group === 'dark')!;
+    const lightTerminal = INTERFACE_THEME_OPTIONS.find((o) => o.kind === 'named' && o.group === 'light')!;
+    expect(themeRowValue(darkTerminal.value, copy)).toBe(`${labelFor(darkTerminal)} ${darkTerminal.value} ${copy.themeGroups.darkThemes}`);
+    expect(themeRowValue(lightTerminal.value, copy)).toBe(`${labelFor(lightTerminal)} ${lightTerminal.value} ${copy.themeGroups.lightThemes}`);
   });
 });

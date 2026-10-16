@@ -4,8 +4,9 @@
  * Single hook for all billing data with proper invalidation
  */
 
-import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
-import { cancelScheduledChange, getAccountState } from '@kortix/sdk';
+import { useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { getAccountState } from '@kortix/sdk';
+import { dollarsToCredits } from '@kortix/shared';
 import { accountStateSelectors, type AccountState } from './api';
 
 export type { AccountState };
@@ -86,25 +87,12 @@ export function useAccountState(options?: UseAccountStateOptions) {
 }
 
 // =============================================================================
-// MUTATION HOOKS - All invalidate account state after success
-// =============================================================================
-
-export function useCancelScheduledChange() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => cancelScheduledChange(),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
-// =============================================================================
 // BACKWARD COMPATIBILITY HOOKS - Wrappers for BillingContext
 // =============================================================================
 
-// Types matching what BillingContext expects
+// Types matching what BillingContext expects. Every credit amount below is a
+// credit count (1 credit = $0.01); the account state carries USD, converted
+// once in the transforms.
 export interface SubscriptionInfo {
   status: string;
   plan_name: string;
@@ -186,14 +174,14 @@ function transformToSubscriptionInfo(
     tier: {
       name: state.tier.name,
       display_name: state.tier.display_name,
-      credits: state.tier.monthly_credits,
+      credits: dollarsToCredits(state.tier.monthly_credits),
     },
     credits: {
-      balance: state.credits.total,
-      tier_credits: state.tier.monthly_credits,
-      lifetime_granted: state.credits.lifetime_granted ?? 0,
-      lifetime_purchased: state.credits.lifetime_purchased ?? 0,
-      lifetime_used: state.credits.lifetime_used ?? 0,
+      balance: dollarsToCredits(state.credits.total),
+      tier_credits: dollarsToCredits(state.tier.monthly_credits),
+      lifetime_granted: dollarsToCredits(state.credits.lifetime_granted ?? 0),
+      lifetime_purchased: dollarsToCredits(state.credits.lifetime_purchased ?? 0),
+      lifetime_used: dollarsToCredits(state.credits.lifetime_used ?? 0),
       can_purchase_credits: state.subscription.can_purchase_credits,
     },
     is_trial: state.subscription.is_trial,
@@ -209,9 +197,9 @@ function transformToCreditBalance(state: AccountState | undefined): CreditBalanc
   if (!state) return undefined;
 
   return {
-    balance: state.credits.total,
-    expiring_credits: state.credits.daily + state.credits.monthly,
-    non_expiring_credits: state.credits.extra,
+    balance: dollarsToCredits(state.credits.total),
+    expiring_credits: dollarsToCredits(state.credits.daily + state.credits.monthly),
+    non_expiring_credits: dollarsToCredits(state.credits.extra),
     tier: state.subscription.tier_key,
     can_purchase_credits: state.subscription.can_purchase_credits,
   };
@@ -224,7 +212,7 @@ function transformToBillingStatus(state: AccountState | undefined): BillingStatu
   return {
     can_run: state.credits.can_run,
     has_credits: state.credits.total > 0,
-    credits_remaining: state.credits.total,
+    credits_remaining: dollarsToCredits(state.credits.total),
   };
 }
 
@@ -322,27 +310,3 @@ export function useSubscriptionCommitment(
     refetch: async () => {},
   };
 }
-
-/**
- * Scheduled changes hook - placeholder for now
- */
-export function useScheduledChanges(options?: { enabled?: boolean }) {
-  const { data: accountState } = useAccountState({ enabled: options?.enabled });
-
-  return {
-    data: accountState?.subscription.scheduled_change
-      ? {
-          scheduled_change: accountState.subscription.scheduled_change,
-          has_scheduled_change: accountState.subscription.has_scheduled_change,
-        }
-      : null,
-    isLoading: false,
-    error: null,
-    refetch: async () => {},
-  };
-}
-
-// =============================================================================
-// REVENUECAT PRICING HOOK
-// =============================================================================
-export { useRevenueCatPricing } from '../../hooks/billing/useRevenueCatPricing';

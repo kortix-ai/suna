@@ -225,7 +225,7 @@ describe('docs Markdown negotiation without the middleware', () => {
         record.htmlPath === '/docs'
           ? '/markdown/docs/index.md'
           : `/markdown/docs/${record.htmlPath.slice('/docs/'.length)}.md`;
-      expect(target).toBe(record.markdownPath);
+      expect(record.markdownPath).toBe(target);
       expect(resolvePublicMarkdown(target.replace(/^\/markdown\//, '').split('/'))).toBeTruthy();
     }
   });

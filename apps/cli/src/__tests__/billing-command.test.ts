@@ -38,21 +38,19 @@ function writeConfig(apiBase: string): string {
 const ACCOUNT_STATE = {
   credits: { total: 42.5, daily: 0, monthly: 0, extra: 0, can_run: true },
   billing_state: 'active',
-  plan: { key: 'per_seat', family: 'team', label: 'Team', sublabel: '$20/seat/mo' },
+  plan: { key: 'credits', family: 'credits', label: 'Credits', monthly_usd: 20 },
   subscription: {
-    tier_key: 'per_seat',
-    tier_display_name: 'Team',
+    tier_key: 'credits',
+    tier_display_name: 'Credits',
     status: 'active',
     billing_period: 'monthly',
     cancel_at_period_end: false,
     current_period_end: 1800000000,
     has_scheduled_change: false,
   },
-  tier: { name: 'per_seat', display_name: 'Team' },
-  billing_model: 'per_seat',
-  seats: { count: 3, price_per_seat_usd: 20 },
-  member_count: 3,
+  tier: { name: 'credits', display_name: 'Credits' },
   auto_topup: { enabled: true, threshold: 10, amount: 25 },
+  usage_this_period: { total_usd: 0.0042 },
   can_manage_billing: true,
 };
 
@@ -266,10 +264,13 @@ describe('kortix billing', () => {
     expect(r.code).toBe(0);
     const c = call('GET', '/v1/billing/account-state');
     expect(c?.search).toBe(`?account_id=${ACCOUNT}`);
-    expect(r.stdout).toContain('Team');
+    expect(r.stdout).toContain('Credits · 2,000 credits/month');
     expect(r.stdout).toContain('4,250 credits');
-    expect(r.stdout).toContain('3 × $20.00/mo');
-    expect(r.stdout).toContain('on — buy $25.00 under $10.00');
+    expect(r.stdout).not.toMatch(/seat|members|model/i);
+    // The top-up amount is a price (dollars); the threshold is a balance (credits).
+    expect(r.stdout).toContain('on — buy $25.00 under 1,000 credits');
+    // A sub-credit spend never reads 0.
+    expect(r.stdout).toMatch(/this period\s+0\.42 credits\n/);
   });
 
   test('human credit output matches web units while JSON and spend remain USD', async () => {
@@ -304,8 +305,9 @@ describe('kortix billing', () => {
     [2, '200 credits'],
     [0, '0 credits'],
     [-2, '-200 credits'],
-    [0.005, '1 credits'],
-    [-0.004, '0 credits'],
+    [0.005, '0.5 credits'],
+    [-0.004, '-0.4 credits'],
+    [0.00004, '<0.01 credits'],
     [undefined, '—'],
   ])('status converts USD balance %s once to %s', async (balance, expected) => {
     creditBalance = balance;
@@ -322,7 +324,7 @@ describe('kortix billing', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['billing', 'status', '--json'], config);
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).plan.key).toBe('per_seat');
+    expect(JSON.parse(r.stdout).plan.key).toBe('credits');
   });
 
   test('transactions sends limit/offset/type_filter; --breakdown hits credit-breakdown', async () => {
@@ -361,13 +363,21 @@ describe('kortix billing', () => {
     const summary = call('GET', '/v1/usage/cost-summary');
     expect(summary?.search).toContain('from=2026-08-01T00%3A00%3A00.000Z');
     expect(summary?.search).toContain('to=2026-08-08T00%3A00%3A00.000Z');
-    expect(s.stdout).toContain('$5.00');
-    expect(s.stdout).toContain('anthropic/opus');
+    expect(s.stdout).toMatch(/total\s+500 credits\n/);
+    expect(s.stdout).toMatch(/previous\s+400 credits\n/);
+    expect(s.stdout).toMatch(/llm\s+350 credits\n/);
+    expect(s.stdout).toMatch(/compute\s+150 credits\n/);
+    expect(s.stdout).toMatch(/anthropic\/opus\s+350 credits\n/);
+    expect(s.stdout).not.toContain('$');
+    const raw = await runCli(['billing', 'costs', '--json'], config);
+    expect(JSON.parse(raw.stdout).totals.total_cost).toBe(5);
 
     const p = await runCli(['billing', 'costs', '--by', 'project', '--sort', 'name_asc'], config);
     expect(p.code).toBe(0);
     expect(call('GET', '/v1/usage/cost-by-project')?.search).toContain('sort=name_asc');
     expect(p.stdout).toContain('Atlas');
+    expect(p.stdout).toMatch(/350\s+150\s+500\n/);
+    expect(p.stdout).toContain('amounts in credits');
     const scoped = await runCli(
       ['billing', 'costs', '--by', 'project', '--project', 'project-self'],
       config,
@@ -404,8 +414,8 @@ describe('kortix billing', () => {
     expect(c?.search).toContain('project_id=project-self');
     expect(c?.search).toContain('sort=recent');
     expect(r.stdout).toContain('Atlas');
-    expect(r.stdout).toContain('$4.00');
-    expect(r.stdout).toContain('1 of 1');
+    expect(r.stdout).toMatch(/300\s+100\s+400\n/);
+    expect(r.stdout).toContain('1 of 1 · amounts in credits');
   });
 
   test('costs refuses a bogus --sort, name_asc off the project roll, and a bogus --by', async () => {
