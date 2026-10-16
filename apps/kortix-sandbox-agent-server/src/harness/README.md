@@ -932,14 +932,23 @@ rules; a `deny` from either wins, so delegating never unlocks a denied call.
   each PNG, JPEG, GIF or WebP a tag names inside the inbox, resized by pi
   (`promptImages`, `pi/images.ts`): on a prompt, a steer and a `noReply` message. The tag stays,
   so the agent still has the path. A model without image input gets the tag alone.
-  pi then records the image in the session log as an attachment (P2.13).
+  Each path is read once, at most 20 images per prompt, one at a time. A file is read only when
+  its real path stays in the inbox (no symlink out), it is a regular file and it is at most
+  50 MiB. Steers run on one chain, so they reach pi in arrival order; a retract while a steer
+  loads its images cancels it (`retracted`; the steer answers `duplicate`).
+- **Session log.** pi records each image as an attachment (P2.13). An image from a tag carries
+  `source_path` (the tag's path, matched by order: when pi left out a tag image, none is set).
+  A restore writes no v1 file part for it, and the web draws it once, through its tag
+  (`normalizeAttachments`).
 - **Resize.** pi resizes every image (`read` and prompt images) with photon
   (`@silvia-odwyer/photon-node`), which reads `photon_rs_bg.wasm` from its own `__dirname`.
   A compiled daemon bakes the build machine's path there, so before 2026-10-16 photon never
   loaded on a box and pi dropped every image ("[Image omitted: could not be resized below the
   inline image size limit.]"). `pi/images.ts` embeds the wasm in the binary and redirects that
   one file name to the embedded copy. In a binary pi's resize worker does not load, so pi
-  resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop).
+  resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop; at most
+  20 per prompt). Follow-up: build `src/utils/image-resize-worker.ts` as an entrypoint, as
+  codemode's worker (`scripts/build.sh`); that worker must install the wasm redirect itself.
   `pi-images.test.ts` builds a binary against a copy of photon-node, deletes the copy, and runs
   pi's `read` and `promptImages` in it.
 

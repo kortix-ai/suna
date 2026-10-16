@@ -365,6 +365,10 @@ export class PiRuntime {
   private runningTools = 0
   /** Steered messages the running turn has not read, in send order (kortixd's queue in front of pi's). */
   private steered: Steered[] = []
+  /** Steers in arrival order: each loads its images, then reaches pi, after the one before it. */
+  private steerChain: Promise<unknown> = Promise.resolve()
+  /** Steers still loading their images, by message id; a retract marks its slot. */
+  private readonly loadingSteers = new Map<string, { retracted?: boolean }>()
   /** Steered ids the running turn read. */
   private readonly steerReads = new Set<string>()
   /** The user message the next assistant message answers: the turn's, then the newest steered one read. */
@@ -776,22 +780,30 @@ export class PiRuntime {
   async steer(input: PromptInput & { messageID: string }): Promise<'steered' | 'duplicate' | 'no_turn'> {
     if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
     const messageId = input.messageID
-    if (this.knows(messageId)) return 'duplicate'
+    if (this.knows(messageId) || this.loadingSteers.has(messageId)) return 'duplicate'
     if (!this.active || this.active.stopRequested || this.abortAfterTool) return 'no_turn'
-    const images = await this.images(input)
-    // The turn may have ended or taken the same id while the images loaded.
-    if (this.knows(messageId)) return 'duplicate'
-    if (!this.agent || !this.active || this.active.stopRequested || this.abortAfterTool) return 'no_turn'
-    this.clock.observe(messageId)
-    const message: AgentMessage = {
-      role: 'user',
-      content: [{ type: 'text', text: input.text || '(attachment)' }, ...images],
-      timestamp: this.now(),
-    }
-    this.steered.push({ messageId, input, message })
-    this.agent.steer(message)
-    this.dismissOpenQuestions()
-    return 'steered'
+    const slot: { retracted?: boolean } = {}
+    this.loadingSteers.set(messageId, slot)
+    const steered = this.steerChain.then(async () => {
+      const images = await this.images(input).finally(() => this.loadingSteers.delete(messageId))
+      // Retracted while its images loaded: nothing reached pi or the wire. `duplicate` (200) tells
+      // the caller it is handled; `no_turn` would make apps/api run it as a new prompt.
+      if (slot.retracted || this.knows(messageId)) return 'duplicate' as const
+      // The turn may have ended while the images loaded.
+      if (!this.agent || !this.active || this.active.stopRequested || this.abortAfterTool) return 'no_turn' as const
+      this.clock.observe(messageId)
+      const message: AgentMessage = {
+        role: 'user',
+        content: [{ type: 'text', text: input.text || '(attachment)' }, ...images],
+        timestamp: this.now(),
+      }
+      this.steered.push({ messageId, input, message })
+      this.agent.steer(message)
+      this.dismissOpenQuestions()
+      return 'steered' as const
+    })
+    this.steerChain = steered.catch(() => {})
+    return steered
   }
 
   /**
@@ -831,6 +843,13 @@ export class PiRuntime {
    * ran), null when the root holds no such message.
    */
   retract(messageId: string): 'retracted' | 'read' | null {
+    // A steer still loading its images: it never reaches pi (`steer`), and nothing of it is on the wire.
+    const loading = this.loadingSteers.get(messageId)
+    if (loading) {
+      loading.retracted = true
+      this.loadingSteers.delete(messageId)
+      return 'retracted'
+    }
     const steered = this.withdrawSteer(messageId)
     if (steered) return steered === 'removed' ? 'retracted' : 'read'
     const waiting = this.waiting.get(messageId)

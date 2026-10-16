@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
@@ -64,6 +64,30 @@ describe('promptImages', () => {
       tag(join(inbox, '..', '..', '..', 'outside.png')),
       tag(join(inbox, 'missing.png')),
     ].join('\n')
+    expect(await promptImages({ text, files: [] }, workspace, passThrough)).toEqual([])
+  })
+
+  test('a path named twice is read once; at most 20 images per prompt', async () => {
+    const one = tag(join(inbox, '1-swatch.png'))
+    expect(await promptImages({ text: Array.from({ length: 500 }, () => one).join('\n'), files: [] }, workspace, passThrough)).toHaveLength(1)
+    const many = join(workspace, 'uploads', '.kortix-inbox', 'cmd_many')
+    mkdirSync(many, { recursive: true })
+    const reads: string[] = []
+    for (let i = 0; i < 25; i++) writeFileSync(join(many, `${i}-x.png`), PNG)
+    const text = Array.from({ length: 25 }, (_, i) => tag(join(many, `${i}-x.png`))).join('\n')
+    const counted = async (bytes: Uint8Array, mime: string) => (reads.push(mime), passThrough(bytes, mime))
+    expect(await promptImages({ text, files: [] }, workspace, counted)).toHaveLength(20)
+    expect(reads).toHaveLength(20)
+  })
+
+  test('a symlink out of the inbox, a device and a file over 50 MiB are left out', async () => {
+    const links = join(workspace, 'uploads', '.kortix-inbox', 'cmd_links')
+    mkdirSync(links, { recursive: true })
+    symlinkSync(join(workspace, 'outside.png'), join(links, '1-out.png'))
+    symlinkSync('/dev/zero', join(links, '2-zero.png'))
+    writeFileSync(join(links, '3-big.png'), '')
+    truncateSync(join(links, '3-big.png'), 50 * 1024 * 1024 + 1)
+    const text = ['1-out.png', '2-zero.png', '3-big.png'].map((name) => tag(join(links, name))).join('\n')
     expect(await promptImages({ text, files: [] }, workspace, passThrough)).toEqual([])
   })
 
