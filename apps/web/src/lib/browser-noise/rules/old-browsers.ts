@@ -659,9 +659,7 @@ function isScriptAssetSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   if (normalized === '' || normalized === 'undefined') return false;
   if (isExtensionSource(filename)) return true;
-  if (normalized.startsWith('app:///_next') || /^https?:\/\/[^/]+\/_next\//.test(normalized)) {
-    return true;
-  }
+  if (isNextAssetSource(filename)) return true;
   return /\.(?:js|mjs|cjs)$/i.test(normalized.split('?')[0]);
 }
 
