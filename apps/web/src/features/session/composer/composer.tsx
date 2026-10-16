@@ -47,6 +47,7 @@ import type { ServedModelNotice } from '../turn/served-model';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
+import { finishedDraftUploads, keepUnsentUploadFile, restoreDraftUploads } from './draft/draft-uploads';
 import { useComposerDraft } from './draft/use-composer-draft';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 import {
@@ -696,6 +697,46 @@ function ComposerImpl(props: SessionChatInputProps) {
   }, []);
 
   /**
+   * The tray's finished uploads. The draft keeps their handles, so a session
+   * switch or a reload brings the files back (`draft/draft-uploads.ts`).
+   */
+  const finishedUploads = useMemo(
+    () => finishedDraftUploads(attachedFiles, promptAttachmentItems),
+    [attachedFiles, promptAttachmentItems],
+  );
+  const draftUploads = useMemo(() => finishedUploads.map(({ upload }) => upload), [finishedUploads]);
+  const finishedUploadsRef = useRef(finishedUploads);
+  useEffect(() => {
+    finishedUploadsRef.current = finishedUploads;
+  }, [finishedUploads]);
+  const keepFilesForThisTab = useCallback(() => {
+    for (const { upload, file } of finishedUploadsRef.current) {
+      if (file) keepUnsentUploadFile(upload.attachment_id, file);
+    }
+  }, []);
+  // A replacement composer (the boot shell hands its draft to the live chat)
+  // restores in a passive effect, after this layout effect: keep the Files
+  // first, so its tiles come back with their pictures.
+  useLayoutEffect(() => {
+    if (draftActive === false) keepFilesForThisTab();
+  }, [draftActive, keepFilesForThisTab]);
+  // A finished upload outlives this composer while a draft keeps its handle:
+  // release it from the controller, so the controller's dispose does not delete
+  // it. Without a draft scope nothing keeps the handle, and dispose deletes it.
+  const draftScopedRef = useRef(!!draftScope);
+  useEffect(() => {
+    draftScopedRef.current = !!draftScope;
+  }, [draftScope]);
+  useEffect(
+    () => () => {
+      if (!draftScopedRef.current) return;
+      keepFilesForThisTab();
+      promptAttachmentsRef.current.forget(finishedUploadsRef.current.map(({ uploadId }) => uploadId));
+    },
+    [keepFilesForThisTab],
+  );
+
+  /**
    * Put a stored draft back into the live editor.
    *
    * `setDocumentWithoutStealingFocus`, not `setDocument`: this fires on mount,
@@ -703,19 +744,33 @@ function ComposerImpl(props: SessionChatInputProps) {
    * yank focus into the composer on every reload.
    *
    * Attachments are only seeded into an EMPTY tray. Anything already attached
-   * was added by the person in this mount and outranks a stored list. Local
-   * attachments were never storable, so nothing is restored for them.
+   * was added by the person in this mount and outranks a stored list. A
+   * finished upload comes back by its handle (`restoreDraftUploads`); an
+   * unfinished one was never stored.
    */
   const handleDraftRestore = useCallback(
     (draft: StoredDraft) => {
       setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
-      if (draft.files.length > 0) {
-        setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+      const uploads = draft.uploads ?? [];
+      if ((draft.files.length > 0 || uploads.length > 0) && attachedFilesRef.current.length === 0) {
+        let restored: AttachedFile[] = [];
+        try {
+          restored = restoreDraftUploads(uploads, {
+            restore: promptAttachmentsRef.current.restore,
+            createObjectURL: (file) => URL.createObjectURL(file),
+          });
+        } catch (error) {
+          // Over a message limit: the stored files are not restored.
+          errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotAttach'));
+        }
+        const next = [...draft.files, ...restored];
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
       }
       restoreQuoteTexts(draft.quotes ?? []);
       restorePastes(draft.pastes ?? []);
     },
-    [restoreQuoteTexts, restorePastes],
+    [restoreQuoteTexts, restorePastes, tComposerAttachments],
   );
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
@@ -726,6 +781,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     attachedFiles,
     quotes: quoteTexts,
     pastes,
+    uploads: draftUploads,
     hasPrefill: !!prefill,
     onRestore: handleDraftRestore,
   });
@@ -1225,7 +1281,11 @@ function ComposerImpl(props: SessionChatInputProps) {
         const liveIds = new Set(
           promptAttachmentsRef.current.attachments.map((attachment) => attachment.id),
         );
-        const localToStage = prefillFiles.filter(
+        // A restored upload has no File to stage again: it carries over only while listed.
+        const usableFiles = prefillFiles.filter(
+          (file) => file.kind !== 'uploaded' || liveIds.has(file.uploadId),
+        );
+        const localToStage = usableFiles.filter(
           (file): file is Extract<AttachedFile, { kind: 'local' }> =>
             file.kind === 'local' && (!file.uploadId || !liveIds.has(file.uploadId)),
         );
@@ -1238,7 +1298,7 @@ function ComposerImpl(props: SessionChatInputProps) {
           },
         );
         let localIndex = 0;
-        const prepared = prefillFiles.map((file): AttachedFile => {
+        const prepared = usableFiles.map((file): AttachedFile => {
           if (file.kind === 'remote') return file;
           if (file.uploadId && liveIds.has(file.uploadId)) return file;
           return newlyStaged[localIndex++]!;

@@ -65,7 +65,7 @@ export function stageComposerFiles(
 }
 
 export function attachedFileUploadId(file: AttachedFile): string | undefined {
-  return file.kind === 'local' ? file.uploadId : undefined;
+  return file.kind === 'remote' ? undefined : file.uploadId;
 }
 
 /** Resources owned only by a replaced composer tray. Active submissions keep ownership. */

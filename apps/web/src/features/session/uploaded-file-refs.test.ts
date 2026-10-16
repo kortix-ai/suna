@@ -236,6 +236,24 @@ describe('promptFileParts', () => {
     expect(JSON.stringify(parts)).not.toContain('data:');
   });
 
+  test('a finished upload restored from a draft takes its ready handle, and its ref names the upload', () => {
+    const restored = {
+      kind: 'uploaded' as const,
+      uploadId: 'local-restored',
+      filename: 'notes.pdf',
+      mime: 'application/pdf',
+      isImage: false,
+    };
+    const parts = promptFileParts([restored], [ready('att-restored', 'notes.pdf')]);
+    expect(parts.map((part) => part.attachment_id)).toEqual(['att-restored']);
+    expect(optimisticUploadedFileRef(restored)).toEqual({
+      path: '',
+      mime: 'application/pdf',
+      filename: 'notes.pdf',
+      attachment: 'local-restored',
+    });
+  });
+
   test('a local file with no ready handle is refused: Send never uploads bytes itself', () => {
     expect(() => promptFileParts([localFile('legacy.txt')], [])).toThrow(
       'A staged attachment is missing its completed upload handle',
