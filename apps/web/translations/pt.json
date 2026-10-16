@@ -1258,10 +1258,6 @@
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."
-        },
-        "workspace_volume": {
-          "name": "Volume do espaço de trabalho",
-          "description": "Mantém o /workspace de cada nova sessão em um volume próprio em vez do disco do sandbox. A Kortix ativa por projeto."
         }
       }
     },

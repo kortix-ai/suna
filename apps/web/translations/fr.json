@@ -1258,10 +1258,6 @@
         "session_log_restore": {
           "name": "Restauration du journal de session",
           "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."
-        },
-        "workspace_volume": {
-          "name": "Volume de l'espace de travail",
-          "description": "Place /workspace de chaque nouvelle session sur son propre volume au lieu du disque du sandbox. Kortix l'active par projet."
         }
       }
     },

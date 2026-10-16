@@ -1258,10 +1258,6 @@
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
-        },
-        "workspace_volume": {
-          "name": "Volumen radnog prostora",
-          "description": "Čuva /workspace svake nove sesije na zasebnom volumenu umesto na disku sandboksa. Kortix ga uključuje po projektu."
         }
       }
     },

@@ -1258,10 +1258,6 @@
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
-        },
-        "workspace_volume": {
-          "name": "Workspace-Volume",
-          "description": "Speichert /workspace jeder neuen Sitzung auf einem eigenen Volume statt auf der Sandbox-Festplatte. Kortix aktiviert es pro Projekt."
         }
       }
     },
