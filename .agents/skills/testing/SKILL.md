@@ -5,7 +5,20 @@ description: Use for every Kortix test task, behavior change, bug fix, refactor,
 
 # Testing
 
-Use one repository-level command: `pnpm test`.
+**During development, never run a full suite.** Run T0 (`tsc`, lint) for the
+packages you touched, the one test file or flow that covers your change, and
+the change itself through its real surface. Seconds, not minutes. The full
+suite runs once, at Promote to Production, on the release pull request into
+`prod`: it is the only gate (`AGENTS.md`, "Testing philosophy").
+
+**Keep tests small and isolated.** Every test file runs standalone in seconds.
+When the test that covers your change takes more than ~10 s, or needs setup
+unrelated to it, split it into a smaller isolated test in the same change. Fake
+the clock; never wait on real time. A test that breaks on a refactor with no
+bug is deleted, not updated.
+
+The repository-level command is `pnpm test`; on a Mac only its targeted modes
+run (`--id`, `--domain`, `--db-only <filter>`, `--sdk-only`).
 
 Read `tests/README.md` before changing the runner or adding a product flow. Read
 the **sdk** skill before editing the SDK.
