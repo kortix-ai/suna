@@ -49,6 +49,19 @@ describe('Share dialog public link', () => {
     expect(section).not.toContain('window.location.origin');
     expect(section).not.toContain('proxy_path');
   });
+
+  test('an active share also offers the embed snippet (KRTX-2358)', () => {
+    // The snippet is the same public path through the embed helper, so the
+    // iframe can never drift from the link the visitor opens.
+    expect(section).toContain('embedChatUrl(active.public_path)');
+    // The affordance only exists while a snippet exists, copies the snippet
+    // (not the bare URL), and its copied feedback is its own state, separate
+    // from the page link's.
+    expect(section).toContain('{embedSnippet ? (');
+    expect(section).toContain("aria-label={t('embed')}");
+    expect(section).toContain('onClick={() => void copyEmbed()}');
+    expect(section).toContain("embedCopied ? t('embedCopied') : t('embed')");
+  });
 });
 
 describe('copy feedback timer', () => {
