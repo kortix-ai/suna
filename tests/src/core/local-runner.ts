@@ -555,8 +555,34 @@ function dockerAvailable(): boolean {
   }
 }
 
+/**
+ * A suite-wide run on a developer Mac: the default `pnpm test`, `--full`,
+ * `--packages-only`, `--browser-only`, or `--db-only` with no path filter.
+ * These run in CI and on Linux boxes only. 2026-10-16: five agent sessions ran
+ * the suite at once on one laptop (load average 112, 16.5 of 17.4 GB swap).
+ * `KORTIX_FULL_TEST=1` overrides.
+ */
+export function refusesSuiteRun(plan: LocalTestPlan, platform: string, env: Record<string, string | undefined>): boolean {
+  if (platform !== 'darwin' || env.KORTIX_FULL_TEST === '1') return false;
+  if (plan.mode === 'db') return plan.lanes[0]!.command.length <= 2;
+  return plan.mode === 'core' || plan.mode === 'full' || plan.mode === 'packages' || plan.mode === 'browser';
+}
+
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   let plan = buildLocalTestPlan(args);
+  if (refusesSuiteRun(plan, process.platform, process.env)) {
+    console.error(
+      [
+        `[test] REFUSED: mode=${plan.mode} runs a whole suite. A Mac runs targeted tests only; the suite runs in CI.`,
+        '  One flow:        pnpm test -- --id <ID>   (or --domain <d>)',
+        '  DB suites:       pnpm test -- --db-only <path-filter>',
+        '  SDK:             pnpm test -- --sdk-only',
+        '  One package:     pnpm --filter <pkg> test <file>',
+        '  The whole suite: add the `test` label to the PR (CI), or KORTIX_FULL_TEST=1 pnpm test',
+      ].join('\n'),
+    );
+    return 2;
+  }
   // The source this run tests. The attestation write refuses when the tree
   // differs at the end: a commit made while the lanes ran was never tested.
   const fingerprint = ATTESTED_MODES.has(plan.mode)

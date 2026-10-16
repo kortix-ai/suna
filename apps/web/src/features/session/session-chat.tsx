@@ -265,6 +265,12 @@ import {
   shouldLoadOlderHistory,
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
+import {
+  HELD_COMMAND_ROW_PREFIX,
+  canReleaseHeldCommand,
+  heldCommandRows,
+  type HeldCommand,
+} from './held-commands';
 import { useReadinessSettling } from './use-readiness-settling';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import { downloadBlob } from '@/lib/utils/download';
@@ -1368,6 +1374,9 @@ export function SessionChat({
     queueRowsRef.current = queueRows.rows;
   }, [queueRows.rows]);
   const canTakeBackQueue = queueRows.rows.some((row) => row.takeBackEligible);
+  // `/` commands typed while the session could not run them. `SessionChat` is
+  // keyed by session, so the list never crosses sessions.
+  const [heldCommands, setHeldCommands] = useState<HeldCommand[]>([]);
 
   // Removing used to be a local-store delete with an undo toast that restored
   // the entry into that store. The row is durable now, so a removal is a real
@@ -3078,6 +3087,9 @@ export function SessionChat({
       console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
       return;
     }
+    // Stop means stop: a held command would otherwise start a new turn the
+    // moment this one ends.
+    setHeldCommands([]);
     console.log(`[handleStop] Stopping session ${sessionId}`);
     // Optimistically mark the session idle + patch an abort error onto the
     // last assistant message (so the turn reads as stopped instantly — no
@@ -3438,6 +3450,33 @@ export function SessionChat({
     ],
   );
 
+  const handleHoldCommand = useCallback(
+    (command: Command, args?: string, split?: { before: string; after: string }) => {
+      setHeldCommands((held) => [...held, { id: crypto.randomUUID(), command, args, split }]);
+    },
+    [],
+  );
+  // Release the oldest held command once nothing else can run first. One at a
+  // time: the dispatch takes a send receipt, so `effectiveBusy` closes the gate
+  // again before the next one is considered.
+  useEffect(() => {
+    const next = heldCommands[0];
+    if (!next) return;
+    if (
+      !canReleaseHeldCommand({
+        sessionWorking: effectiveBusy,
+        runtimeReady,
+        awaitingUserInput,
+        inboxRows: queueRows.rows,
+      })
+    ) {
+      return;
+    }
+    if (handleCommand(next.command, next.args, next.split)) {
+      setHeldCommands((held) => held.filter((entry) => entry.id !== next.id));
+    }
+  }, [heldCommands, effectiveBusy, runtimeReady, awaitingUserInput, queueRows.rows, handleCommand]);
+
   const pathname = usePathname();
   const router = useRouter();
 
@@ -3661,14 +3700,21 @@ export function SessionChat({
   const chatAboveSlot = useMemo(
     () => (
       <QueuedPromptList
-        rows={queueRows.rows}
+        rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
         heldCount={queueRows.heldCount}
         resumePending={resumePending}
         onResume={() => void handleResumeQueue()}
         onEdit={(id) => {
           queueEdit.takeBack(id);
         }}
-        onRemove={(id) => void handleRemoveQueuedMessage(id)}
+        onRemove={(id) => {
+          if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
+            const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
+            setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
+            return;
+          }
+          void handleRemoveQueuedMessage(id);
+        }}
         onRetry={handleRetryQueuedMessage}
         onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
         editing={queueEdit.editing}
@@ -3676,6 +3722,7 @@ export function SessionChat({
       />
     ),
     [
+      heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
       queueEdit.takeBack,
@@ -4650,6 +4697,7 @@ export function SessionChat({
                 slashFiles={chatSlashFiles}
                 onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                 onCommand={handleCommand}
+                onHoldCommand={handleHoldCommand}
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}

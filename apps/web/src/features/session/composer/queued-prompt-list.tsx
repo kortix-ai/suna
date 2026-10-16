@@ -63,6 +63,7 @@ export function queuedRowActions(
   // to hurry — the turn reads it at its next step — so it keeps only Remove.
   if (
     onRetry &&
+    !row.command &&
     !row.fromAnotherMember &&
     (row.retryable || (row.state === 'queued' && !(row.steer && !row.steerFallback)))
   ) {
@@ -247,6 +248,11 @@ export function QueuedPromptList({
                       {row.fromAnotherMember && (
                         <p className="text-muted-foreground text-xs" data-queued-author="other">
                           {t('queuedByAnotherMember')}
+                        </p>
+                      )}
+                      {row.command && (
+                        <p className="text-muted-foreground text-xs" data-queued-command>
+                          {t('commandRunsWhenDone')}
                         </p>
                       )}
                       {!failed && (row.steer || row.steerFallback) && (
