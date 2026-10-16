@@ -37,7 +37,9 @@ jobs:
           languages: javascript-typescript
           # security-extended: every security query of security-and-quality.
           # The dropped half is maintainability ("quality") queries: no SOC 2
-          # control rests on them, and they roughly doubled the analysis (2026-10-16).
+          # control rests on them. With test code excluded too
+          # (.github/codeql/codeql-config.yml) the analysis step went from
+          # 1136 s (run 38935179266) to 502 s (run 38943876690).
           queries: security-extended
           config-file: ./.github/codeql/codeql-config.yml
 
