@@ -5,7 +5,7 @@
  * halves:
  *
  *  1. The registry (`upgrade-defs.ts`): known upgrades with a detection rule
- *     (today: the v1/v2 → v3 manifest upgrade). Rows appear only while
+ *     (today: the v1→v2 manifest migration). Rows appear only while
  *     applicable and disappear for good once done.
  *  2. A freeform one-off runner: describe a single change ("bump X",
  *     "restructure Y") and a session makes it and opens a change request —
@@ -115,10 +115,10 @@ export const DEFAULT_UPGRADES_COPY: UpgradesCopy = {
   oneOffPlaceholder: "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
   runUpgrade: 'Run upgrade',
   upgrades: {
-    'manifest-v3': {
-      title: 'Upgrade manifest to v3 (kortix.yaml)',
+    'manifest-v2': {
+      title: 'Migrate manifest to v2 (kortix.yaml)',
       description:
-        'Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.',
+        'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.',
     },
   },
 };
@@ -262,9 +262,9 @@ export function UpgradesView({ projectId }: { projectId: string }) {
         oneOffPlaceholder: t('oneOffPlaceholder'),
         runUpgrade: t('runUpgrade'),
         upgrades: {
-          'manifest-v3': {
-            title: t('manifestV3.title'),
-            description: t('manifestV3.description'),
+          'manifest-v2': {
+            title: t('manifestV2.title'),
+            description: t('manifestV2.description'),
           },
         },
       }}

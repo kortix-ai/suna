@@ -11,7 +11,7 @@ import { buildEmbeddedSnapshot } from '../../scripts/generate-embedded';
  * content. Regenerate with `bun run scripts/generate-embedded.ts`.
  */
 describe('embedded starter snapshot', () => {
-  test('base manifest keeps every Kortix tool, connector tools included, in source and shipped snapshots', () => {
+  test('base manifest selects connector tools for shellless agents in source and shipped snapshots', () => {
     for (const snapshot of [buildEmbeddedSnapshot(), embeddedStarter]) {
       const manifest = snapshot.base.files.find((file) => file.path === 'kortix.yaml');
       if (!manifest) throw new Error('Missing base manifest');

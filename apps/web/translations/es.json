@@ -1272,9 +1272,9 @@
       "oneOffDescription": "Describe un solo cambio. Una sesión lo realiza, lo valida y abre una solicitud de cambio.",
       "oneOffPlaceholder": "p. ej. Cambia el agente release-bot a deploy-bot en todas las referencias",
       "runUpgrade": "Ejecutar actualización",
-      "manifestV3": {
-        "title": "Actualizar el manifiesto a v3 (kortix.yaml)",
-        "description": "Lleva kortix.toml o un kortix.yaml de la versión 2 a la versión 3: el proyecto registra habilidades, herramientas, comandos y extensiones, y cada agente los habilita por nombre. Actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla."
+      "manifestV2": {
+        "title": "Migrar el manifiesto a v2 (kortix.yaml)",
+        "description": "Convierte el kortix.toml v1 al kortix.yaml orientado a gobernanza, actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla."
       },
       "agentEditorHint": "Este proyecto usa un manifiesto de la versión 1. Actualízalo a <code>kortix.yaml</code> versión 3 para editar aquí las instrucciones, el modelo, los permisos de herramientas y el acceso de este agente."
     },
@@ -1594,8 +1594,8 @@
       "localComputer": "Tu ordenador"
     },
     "manifestUpgrade": {
-      "title": "Actualizar a v3",
-      "description": "Este proyecto usa un manifiesto anterior. Un agente lo lleva a <yaml>kortix.yaml</yaml> versión 3, actualiza las habilidades administradas y abre una solicitud de cambio. Nada cambia hasta que la apruebes.",
+      "title": "Actualizar a v2",
+      "description": "Este proyecto todavía usa <toml>kortix.toml</toml>. Un agente lo convierte a <yaml>kortix.yaml</yaml>, actualiza las habilidades administradas y abre una solicitud de cambio. Nada cambia hasta que la apruebes.",
       "start": "Iniciar actualización"
     },
     "filter": {
@@ -16660,7 +16660,6 @@
       "textc3bf78fdd3b9": "No se pudo enviar tu solicitud",
       "textc3c25857485f": "Sí hace",
       "textc3c709a999c1": "Leyendo memoria…",
-      "text7823a1f3af93": "Lleva kortix.toml o un kortix.yaml de la versión 2 a la versión 3: el proyecto registra habilidades, herramientas, comandos y extensiones, y cada agente los habilita por nombre. Actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Términos y condiciones",
       "textc3e58a73609d": "Destructivo",
@@ -17401,7 +17400,6 @@
       "textd83a0d814c59": "API Status muestra un «Enabled» en verde, el parámetro «SCIM Username» está asignado a Email y el aprovisionamiento está habilitado sin la retención de aprobación del administrador.",
       "textd84b8be91e7b": "Kortix — Presentaciones",
       "textd84ee1e1e08b": "prueba kortix init o / para ver los comandos",
-      "text08edd5b6dcdc": "Actualizar el manifiesto a v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init la estructura y kortix ship la pone en producción. Es el mismo repo haciendo lo mismo, así que el desarrollo local y el sistema activo dejaron de ser categorías diferentes.",
       "textd864380a766f": "El sandbox contiene un token de Kortix con alcance de proyecto y ninguna clave de terceros. Las credenciales del tracker y del helpdesk se descifran en el servidor y se adjuntan a la llamada saliente.",
       "textd8707d411d99": "Secretos",
@@ -20055,6 +20053,8 @@
       "textc3371113b9c5": "Una licencia activa todas las funciones Enterprise durante su vigencia. No incluye créditos.",
       "text81e6bf495c98": "Planes, créditos, Enterprise, derechos, miembros y estado de facturación por cuenta.",
       "textfe3436af86b4": "Extensiones",
+      "textdffd02b805cb": "Los comandos siguen cargando",
+      "textd943cb31f962": "No se envió nada. Tu mensaje y tus archivos se quedan en el compositor — envíalo de nuevo en un momento.",
       "text8142608686a2": "Vista previa de un cambio del plan de créditos",
       "text0f046f7588f9": "Coste (créditos)",
       "text42144adfea3c": "Saldo (créditos)",
@@ -20065,7 +20065,9 @@
       "textb8fd28863a22": "Importe en créditos (p. ej., 2500)",
       "textc6813a9e41ac": "En créditos: {value0} LLM · {value1} cómputo · {value2} otros.",
       "textc86ce3b8097b": "p. ej., 5000",
-      "textfaaf56a699c2": "Límite (créditos)"
+      "textfaaf56a699c2": "Límite (créditos)",
+      "textc3d1545dd522": "Convierte el kortix.toml v1 en el kortix.yaml centrado en la gobernanza, actualiza las habilidades gestionadas por la plataforma a la base más reciente del marketplace y abre una solicitud de cambio para revisión.",
+      "textd85a383e851d": "Migrar el manifiesto a v2 (kortix.yaml)"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

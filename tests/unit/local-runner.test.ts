@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, refusesSuiteRun, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
   it('keeps agentic tests opt-in and rejects combining them with another mode', () => {
@@ -345,6 +345,16 @@ describe('local test runner', () => {
 
   it('rejects --latency combined with another mode', () => {
     expect(() => buildLocalTestPlan(['--latency', '--sdk-only'])).toThrow('choose only one');
+  });
+
+  it('refuses a suite-wide run on a Mac and allows targeted runs, Linux, and the override', () => {
+    const refused = (args: string[], platform = 'darwin', env: Record<string, string> = {}) =>
+      refusesSuiteRun(buildLocalTestPlan(args), platform, env);
+    for (const args of [[], ['--full'], ['--packages-only'], ['--browser-only'], ['--db-only']]) expect(refused(args)).toBe(true);
+    for (const args of [['--id', 'ACC-4'], ['--domain', 'access'], ['--sdk-only'], ['--db-only', 'tests/migration'], ['--target-smoke']])
+      expect(refused(args)).toBe(false);
+    expect(refused([], 'linux')).toBe(false);
+    expect(refused([], 'darwin', { KORTIX_FULL_TEST: '1' })).toBe(false);
   });
 
   it('retries a cold local web route until it is ready', async () => {

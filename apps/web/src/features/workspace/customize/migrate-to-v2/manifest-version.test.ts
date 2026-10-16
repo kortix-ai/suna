@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { detectManifestVersion, manifestFilename } from './manifest-version';
+import { detectManifestVersion, manifestFilename, manifestNeedsUpgrade, type ManifestVersion } from './manifest-version';
 
 describe('detectManifestVersion', () => {
   test('TOML v1 manifest ("kortix_version = 1")', () => {
@@ -46,5 +46,11 @@ describe('manifestFilename', () => {
       'kortix.yaml',
       'kortix.toml',
     ]);
+  });
+});
+
+describe('manifestNeedsUpgrade', () => {
+  test('only a v1 project is offered an upgrade; v3 is opt-in', () => {
+    expect([1, 2, 3, null].map((v) => manifestNeedsUpgrade(v as ManifestVersion | null))).toEqual([true, false, false, false]);
   });
 });
