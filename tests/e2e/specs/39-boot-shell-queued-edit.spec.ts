@@ -20,7 +20,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, dismissWelcomeCard } from "../helpers/ui";
+import { dismissOnboarding, dismissWelcomeCard, openQueuedRowMenu } from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
 const authOptions = {
@@ -240,7 +240,7 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
           new URL(response.url()).pathname === promptsPath,
       );
       // Ctrl+Enter is the explicit queue intent: the row joins the list above
-      // the composer, where Edit lives.
+      // the composer, whose actions menu holds Edit.
       await input.press("Control+Enter");
       const accepted = await queued;
       expect(accepted.status()).toBe(202);
@@ -275,8 +275,8 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       const writesBefore = promptWrites.length;
       const row = page.locator("[data-queued-prompt-id]").filter({ hasText: QUEUED });
       await dismissWelcomeCard(page);
-      await row.hover();
-      await row.getByRole("button", { name: "Edit", exact: true }).click();
+      const menu = await openQueuedRowMenu(page, row);
+      await menu.getByRole("menuitem", { name: "Edit", exact: true }).click();
       await expect(input).toHaveText(QUEUED);
       // The row stays in its slot, drawn as the editing row.
       await expect(row).toHaveCount(0);

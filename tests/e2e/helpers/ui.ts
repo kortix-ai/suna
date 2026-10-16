@@ -105,6 +105,23 @@ export async function dismissWelcomeCard(page: Page): Promise<void> {
   await welcome.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
 }
 
+/**
+ * Opens a queued prompt row's actions menu and returns the menu.
+ *
+ * Since #9993 a Queue List row draws its actions (Edit, Send now, Stop and
+ * send, Remove from queue) as items of one "Message actions" menu
+ * (`queuedRowActions`, `queued-prompt-list.tsx`), not as row buttons. A row
+ * with no action for the viewer has no trigger at all. Press Escape to close
+ * the menu without choosing an item.
+ */
+export async function openQueuedRowMenu(page: Page, row: Locator): Promise<Locator> {
+  await row.hover();
+  await row.getByRole("button", { name: "Message actions", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
 export async function dismissOnboarding(page: Page): Promise<void> {
   const onboarding = page
     .getByRole("dialog")

@@ -15,7 +15,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, dismissWelcomeCard } from "../helpers/ui";
+import { dismissOnboarding, dismissWelcomeCard, openQueuedRowMenu } from "../helpers/ui";
 
 /**
  * A queued prompt runs as its author: the drain binds the session credential
@@ -174,9 +174,11 @@ test("41 — only a queued prompt's author edits or sends it", async ({ page, br
       await ownerRow.hover();
       await expect(ownerRow.getByRole("button")).toHaveCount(0);
       await expect(memberRow.locator('[data-queued-author="other"]')).toHaveCount(0);
-      await memberRow.hover();
-      await expect(memberRow.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+      const memberMenu = await openQueuedRowMenu(page, memberRow);
+      await expect(memberMenu.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
       await testInfo.attach("member-view", { body: await page.screenshot(), contentType: "image/png" });
+      await page.keyboard.press("Escape");
+      await expect(memberMenu).toBeHidden();
     });
 
     await test.step("Up in the empty composer opens the member's own row, never the owner's", async () => {
@@ -199,12 +201,14 @@ test("41 — only a queued prompt's author edits or sends it", async ({ page, br
         const own = ownerPage.locator("[data-queued-prompt-id]").filter({ hasText: OWNER_ROW });
         const theirs = ownerPage.locator("[data-queued-prompt-id]").filter({ hasText: MEMBER_ROW });
         await expect(own).toHaveCount(1, { timeout: 30_000 });
-        await own.hover();
-        await expect(own.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+        const ownMenu = await openQueuedRowMenu(ownerPage, own);
+        await expect(ownMenu.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
+        await ownerPage.keyboard.press("Escape");
+        await expect(ownMenu).toBeHidden();
         await expect(theirs.locator('[data-queued-author="other"]')).toHaveText(NOT_YOURS);
-        await theirs.hover();
-        await expect(theirs.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
-        await expect(theirs.getByRole("button", { name: "Remove from queue", exact: true })).toBeVisible();
+        const theirMenu = await openQueuedRowMenu(ownerPage, theirs);
+        await expect(theirMenu.getByRole("menuitem", { name: "Edit", exact: true })).toHaveCount(0);
+        await expect(theirMenu.getByRole("menuitem", { name: "Remove from queue", exact: true })).toBeVisible();
         await testInfo.attach("owner-view", { body: await ownerPage.screenshot(), contentType: "image/png" });
       } finally {
         await ownerContext.close();
