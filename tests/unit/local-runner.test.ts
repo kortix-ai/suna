@@ -156,6 +156,18 @@ describe('local test runner', () => {
     ]);
   });
 
+  it('runs one package group for a parallel CI lane, and only with --packages-only', () => {
+    expect(buildLocalTestPlan(['--packages-only', '--package-group=api']).lanes).toEqual([
+      {
+        name: 'package-quality',
+        command: ['bun', 'tests/bin/package-quality.ts'],
+        env: { KORTIX_PACKAGE_GROUP: 'api' },
+      },
+    ]);
+    expect(() => buildLocalTestPlan(['--package-group=api'])).toThrow('requires --packages-only');
+    expect(() => buildLocalTestPlan(['--packages-only', '--package-group=web'])).toThrow('api, cli, kortixd or rest');
+  });
+
   it('runs deployed API and browser smoke through the same root command', () => {
     const plan = buildLocalTestPlan(['--target-smoke']);
 

@@ -17,7 +17,7 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs ten root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
+  test('runs thirteen root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
@@ -25,7 +25,13 @@ describe('native test-lane workflow', () => {
     );
     expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}");
     expect(testWorkflow).toContain('- lane: core');
-    expect(testWorkflow).toContain('- lane: packages');
+    // Package quality in four slices on four runners since 2026-10-16: on one
+    // runner the API, CLI and kortixd suites shared 4 vCPU (run 38777589705).
+    for (const group of ['api', 'cli', 'kortixd', 'rest']) {
+      expect(testWorkflow).toContain(`- lane: packages-${group}`);
+      expect(testWorkflow).toContain(`args: --packages-only --package-group=${group}`);
+    }
+    expect(testWorkflow).not.toContain('- lane: packages\n');
     // Eight one-worker browser shards since 2026-10-08: four two-worker
     // shards overran a 16 GB GitHub-hosted runner (run 37812339796).
     for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
@@ -37,14 +43,13 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toContain('export E2E_BROWSER_WORKERS=1');
     // Never job-wide: the core lane's runner unit tests assert the default.
     expect(testWorkflow).not.toContain('E2E_BROWSER_WORKERS: "1"');
-    expect(testWorkflow).toContain('args: --packages-only');
-    // Package quality runs once per CI run, in the `packages` lane.
+    // Package quality runs once per CI run, in the `packages-*` lanes.
     expect(testWorkflow).toMatch(/- lane: core\n\s+mode: core\n\s+args: --no-packages\n/);
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     // Every run is a full run now, so the packages guard keys off the lane
     // alone. `TEST_MODE` went away with `workflow_call`.
-    expect(testWorkflow).toContain('if [[ "$TEST_LANE" == "packages" ]]; then');
+    expect(testWorkflow).toContain('if [[ "$TEST_LANE" == packages-* ]]; then');
     expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
     expect(testWorkflow).not.toContain('TEST_MODE');
     expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
@@ -57,7 +62,7 @@ describe('native test-lane workflow', () => {
 
   test('gives the browser lanes Chromium and a prestarted Supabase', () => {
     expect(testWorkflow).toContain('pnpm --dir tests exec playwright install --with-deps chromium');
-    expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check');
+    expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check -x studio,imgproxy');
   });
 
   test('stops Supabase on every lane and frees its ports before one starts', () => {
