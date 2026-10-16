@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
+import { withoutAppAccessToken } from '@/lib/utils/app-access-token';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 export interface BrowserRecent {
@@ -24,15 +25,8 @@ const MAX_RECENTS = 8;
 export function normalizeRecentUrl(url: string): string {
   let trimmed = url.trim();
   if (!/^https?:\/\/[^/\s]+/i.test(trimmed)) return '';
-  if (trimmed.includes('__kortix_access=')) {
-    try {
-      const parsed = new URL(trimmed);
-      parsed.searchParams.delete('__kortix_access');
-      trimmed = parsed.toString();
-    } catch {
-      return '';
-    }
-  }
+  trimmed = withoutAppAccessToken(trimmed);
+  if (!trimmed) return '';
   return trimmed.replace(/\/+$/, '');
 }
 

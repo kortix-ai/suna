@@ -11,13 +11,15 @@
  */
 
 import { isKortixAppUrl } from '@/features/session/kortix-app-url';
+import { APP_ACCESS_PARAM, withoutAppAccessToken } from '@/lib/utils/app-access-token';
 import type { App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useRef } from 'react';
 
 import { appCan } from './app-shared';
 
-const ACCESS_PARAM = '__kortix_access';
+export { withoutAppAccessToken };
+
 
 function hostOf(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -43,22 +45,10 @@ export function appForUrl(apps: readonly App[] | undefined, url: string): App | 
 /** `url` carrying the one-shot token from an access-session URL. */
 export function withAppAccessToken(url: string, sessionUrl: string): string {
   try {
-    const token = new URL(sessionUrl).searchParams.get(ACCESS_PARAM);
+    const token = new URL(sessionUrl).searchParams.get(APP_ACCESS_PARAM);
     if (!token) return url;
     const target = new URL(url);
-    target.searchParams.set(ACCESS_PARAM, token);
-    return target.toString();
-  } catch {
-    return url;
-  }
-}
-
-/** `url` without an access token: the form that is safe to copy or share. */
-export function withoutAppAccessToken(url: string): string {
-  if (!url.includes(`${ACCESS_PARAM}=`)) return url;
-  try {
-    const target = new URL(url);
-    target.searchParams.delete(ACCESS_PARAM);
+    target.searchParams.set(APP_ACCESS_PARAM, token);
     return target.toString();
   } catch {
     return url;
@@ -77,7 +67,7 @@ export function useAppInBrowser(projectId: string | undefined, url: string | nul
   const apps = useProjectApps(projectId);
   const app = url ? appForUrl(apps.data, url) : null;
   const needsSession =
-    !!app && !url!.includes(`${ACCESS_PARAM}=`) && app.viewer_can_access !== false && appCan(app, 'preview');
+    !!app && !url!.includes(`${APP_ACCESS_PARAM}=`) && app.viewer_can_access !== false && appCan(app, 'preview');
   const access = useAppAccess(projectId, app?.app_id, { policy: false, session: needsSession });
 
   let resolved: string | null = url;
