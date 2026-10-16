@@ -1599,6 +1599,93 @@ for (const runtime of runtimes) {
       },
     );
     nativeTest?.(
+      "right-click shows the platform menu: spelling, edit and link (KRTX-2555)",
+      async ({ page, desktopApp }) => {
+        if (!desktopApp)
+          throw new Error("native Electron application is required");
+        // Record each menu the shell builds instead of showing it: a native
+        // popup runs its own event loop and waits for a person.
+        await desktopApp.evaluate(({ Menu }) => {
+          const state = globalThis as unknown as {
+            menus: string[][];
+            realBuild: typeof Menu.buildFromTemplate;
+          };
+          state.menus = [];
+          state.realBuild = Menu.buildFromTemplate;
+          Menu.buildFromTemplate = ((template: Electron.MenuItemConstructorOptions[]) => {
+            state.menus.push(
+              template.map((item) =>
+                item.type === "separator" ? "-" : String(item.role ?? item.label),
+              ),
+            );
+            return { popup: () => undefined } as unknown as Electron.Menu;
+          }) as typeof Menu.buildFromTemplate;
+        });
+        const menus = () =>
+          desktopApp.evaluate(
+            () => (globalThis as unknown as { menus: string[][] }).menus,
+          );
+        try {
+          await page.evaluate(() => {
+            const box = document.createElement("div");
+            box.style.cssText =
+              "position:fixed;left:40px;top:40px;z-index:2147483647;background:#fff;padding:8px";
+            box.innerHTML = [
+              '<textarea id="ctx-field" spellcheck="true" style="width:320px;height:40px;font-size:16px">recieve</textarea>',
+              '<a id="ctx-link" href="https://example.com/docs" style="display:block;padding:4px">docs</a>',
+              '<div id="ctx-plain" style="width:200px;height:24px">plain</div>',
+              '<div id="ctx-own" style="width:200px;height:24px">own menu</div>',
+            ].join("");
+            document.body.appendChild(box);
+            document
+              .getElementById("ctx-own")
+              ?.addEventListener("contextmenu", (event) => event.preventDefault());
+          });
+          const field = page.locator("#ctx-field");
+          await field.focus();
+          // The spell checker marks the word a moment after focus.
+          await expect
+            .poll(
+              async () => {
+                await field.click({ button: "right", position: { x: 24, y: 14 } });
+                return (await menus()).at(-1) ?? [];
+              },
+              { timeout: 20_000 },
+            )
+            .toEqual(
+              expect.arrayContaining([
+                "receive",
+                "Add to Dictionary",
+                "undo",
+                "cut",
+                "copy",
+                "paste",
+                "pasteAndMatchStyle",
+                "selectAll",
+              ]),
+            );
+          await page.locator("#ctx-link").click({ button: "right" });
+          await expect.poll(async () => (await menus()).at(-1)).toEqual([
+            "Open Link in Browser",
+            "Copy Link",
+          ]);
+          // A plain area offers nothing, and an element with its own menu
+          // (the page calls preventDefault) gets no shell menu on top.
+          const shown = (await menus()).length;
+          await page.locator("#ctx-plain").click({ button: "right" });
+          await page.locator("#ctx-own").click({ button: "right" });
+          await page.waitForTimeout(500);
+          expect((await menus()).length).toBe(shown);
+        } finally {
+          await desktopApp.evaluate(({ Menu }) => {
+            Menu.buildFromTemplate = (
+              globalThis as unknown as { realBuild: typeof Menu.buildFromTemplate }
+            ).realBuild;
+          });
+        }
+      },
+    );
+    nativeTest?.(
       "Quick Entry starts a session in the open project from the prompt bar",
       async ({ page, desktopApp, baseURL }) => {
         if (!desktopApp)
