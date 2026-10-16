@@ -8,6 +8,7 @@ import {
   createDatabaseProject,
   deleteDatabaseProject,
   mergeDatabaseProjectMetadata,
+  setDatabaseEnterpriseDemo,
 } from "../src/fixtures/database-project";
 import { createLocalGitRepository } from "../src/fixtures/local-git";
 import { buildWorld } from "../src/fixtures/world";
@@ -243,6 +244,17 @@ describe("database-only project fixture", () => {
       ),
     ).rejects.toThrow("KE2E_DATABASE_URL is required");
     expect(db.open).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("sets demo_enterprise=%s and writes no retired trial column", async (enabled) => {
+    const db = database();
+    const accountId = "00000000-0000-4000-8000-000000000001";
+    await setDatabaseEnterpriseDemo(env(), accountId, enabled, db.open);
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain("demo_enterprise");
+    expect(sql).not.toContain("trial");
+    expect(params).toEqual([accountId, enabled]);
+    expect(db.end).toHaveBeenCalledOnce();
   });
 });
 

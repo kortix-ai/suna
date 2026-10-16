@@ -100,22 +100,23 @@ function component(input: {
 
 /**
  * A model string as inline markdown text: newlines collapse to one space, and the characters that
- * open links, emphasis, code, fences, or HTML are escaped. Every `toMarkdown` passes model strings
- * through this, so a string can never add markdown structure (a link, a fence, a new block).
+ * open links, emphasis, code, fences, HTML, or table cells are escaped. Every `toMarkdown` passes
+ * model strings through this, so a string can never add markdown structure (a link, a fence, a new
+ * block, a table cell).
  */
-const escapeLine = (value: string): string => value.replace(/[\\`*_[\]()<]/g, '\\$&');
+const escapeLine = (value: string): string => value.replace(/[\\`*_[\]()<|]/g, '\\$&');
 const inline = (value: unknown): string => escapeLine(String(value ?? '').replace(/\s*[\r\n]+\s*/g, ' '));
 
 /** A safe URL as a markdown link target: parentheses would end the target early. */
 const target = (value: unknown): string => String(value ?? '').replace(/\(/g, '%28').replace(/\)/g, '%29');
 
-/** A table cell: a string goes through `inline`, a number prints as is; `|` is escaped. */
-const cell = (value: unknown): string => (typeof value === 'number' ? String(value) : inline(value)).replace(/\|/g, '\\|');
+/** A table cell: a string goes through `inline` (which escapes `|`), a number prints as is. */
+const cell = (value: unknown): string => (typeof value === 'number' ? String(value) : inline(value));
 
-/** `head` is markdown already (escaped); `rows` are raw cell values. */
+/** `head` is markdown already (passed through `inline`, so `|` is escaped); `rows` are raw cell values. */
 const mdTable = (head: string[], rows: unknown[][]): string =>
   [
-    `| ${head.map((text) => text.replace(/\|/g, '\\|')).join(' | ')} |`,
+    `| ${head.join(' | ')} |`,
     `| ${head.map(() => '---').join(' | ')} |`,
     ...rows.map((row) => `| ${head.map((_, i) => cell(row[i] ?? '')).join(' | ')} |`),
   ].join('\n');

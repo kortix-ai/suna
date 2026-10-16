@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { createHash, randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { SessionLogRestoreSchema, type SessionLogRestore } from '@kortix/api-contract/session-log';
+import { SessionLogRestoreSchema, SessionLogRestoreTooLargeSchema, type SessionLogRestore } from '@kortix/api-contract/session-log';
 import { accountMembers, sessionLogMessages, sessionLogs, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
@@ -109,8 +109,13 @@ beforeAll(async () => {
   expect((await journal(session, { generation: 0, puts: [], threads: [], tombstones: [{ message_id: 'msg_gone3', rev: REV + 20 }] })).status).toBe(200);
 });
 
+const MAX_BYTES = config.SESSION_LOG_RESTORE_MAX_BYTES;
+const RESTORE_DEFAULT = config.SESSION_LOG_RESTORE_DEFAULT_ENABLED;
+
 afterAll(async () => {
   config.SESSION_LOG_RESTORE_ENABLED = true;
+  config.SESSION_LOG_RESTORE_MAX_BYTES = MAX_BYTES;
+  config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = RESTORE_DEFAULT;
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, project.account_id));
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${project.account_id}`);
   await removeSeeded([project]);
@@ -248,6 +253,41 @@ describe('POST .../log/restore', () => {
     expect({ ...plainBody, generation: 1 }).toEqual(body);
   });
 
+  test('the cap: a log at SESSION_LOG_RESTORE_MAX_BYTES answers 200; one byte over → 413 session_log_too_large, claimed, every thread, rev and seq, no message', async () => {
+    // The 500-message session of the gzip test: 1 tombstone more, which the size leaves out.
+    expect((await journal(big, { generation: 2, puts: [], threads: [], tombstones: [{ message_id: 'msg_q0', rev: REV + 1_000 }] })).status).toBe(200);
+    const [row] = await db.execute<{ bytes: string }>(sql`select sum(octet_length(record::text)) as bytes from kortix.session_log_messages where session_id = ${big} and deleted_at is null`);
+    const bytes = Number(row!.bytes);
+    expect(bytes).toBeGreaterThan(100_000);
+    try {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = bytes;
+      const at = await restore(big);
+      expect(at.status).toBe(200);
+      expect(SessionLogRestoreSchema.parse(await at.json()).log.threads[0]!.messages).toHaveLength(499);
+      expect(await generationOf(big)).toBe(3);
+
+      config.SESSION_LOG_RESTORE_MAX_BYTES = bytes - 1;
+      const over = await restore(big, tokens[big]!, { 'Accept-Encoding': 'gzip' });
+      expect(over.status).toBe(413);
+      expect(over.headers.get('content-encoding')).toBe('gzip');
+      const text = gunzipSync(new Uint8Array(await over.arrayBuffer())).toString('utf8');
+      const body = SessionLogRestoreTooLargeSchema.parse(JSON.parse(text));
+      console.info(`[restore size] over the cap: ${text.length} bytes for a ${bytes}-byte log`);
+      expect(body).toMatchObject({ error: 'session_log_too_large', bytes, limit: bytes - 1, messages: 499, generation: 4, seq_max: { main: 499 }, blobs: [] });
+      // The claim stands: the box journals at 4, and the old claimant gets 409.
+      expect(await generationOf(big)).toBe(4);
+      expect(body.log.session_id).toBe(big);
+      expect(body.log.title).toBe('Synthetic session');
+      expect(body.log.threads).toEqual([{ ...main, messages: [] }] as never);
+      expect(Object.keys(body.revs)).toHaveLength(500);
+      expect(body.revs.msg_q0).toBe(REV + 1_000);
+      expect((await journal(big, { generation: 3, puts: [{ rev: REV + 2_000, message: message('msg_late', 'main', 500) }], tombstones: [], threads: [] })).status).toBe(409);
+      expect((await journal(big, { generation: 4, puts: [{ rev: REV + 2_001, message: message('msg_note', 'main', 500) }], tombstones: [], threads: [] })).status).toBe(200);
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = MAX_BYTES;
+    }
+  });
+
   test('a tool_call input keeps the key order the harness wrote, at every depth; a row without the order restores as jsonb sorted it', async () => {
     // Keys out of jsonb order (jsonb sorts by length, then bytes) at every depth, in objects inside arrays,
     // and an integer-like key (a JS object puts it first, in the harness as here).
@@ -275,5 +315,40 @@ describe('POST .../log/restore', () => {
     // The contract parse keeps the order too.
     const parsed = SessionLogRestoreSchema.parse(JSON.parse(text)).log.threads[0]!.messages[0]!.blocks[1]!;
     expect(JSON.stringify((parsed as { input: unknown }).input)).toBe(JSON.stringify(input));
+  });
+  test('the cap counts the blobs the box pulls at 2/5: records + 2/5 of the 400 kB stored text at the cap → 200, one byte over → 413; the switch preflight reports the history lost', async () => {
+    const [row] = await db.execute<{ records: string; blobs: string }>(sql`select
+      (select sum(octet_length(record::text)) from kortix.session_log_messages where session_id = ${session} and deleted_at is null) as records,
+      (select sum(bytes) from kortix.session_log_blobs where session_id = ${session} and deleted_at is null) as blobs`);
+    const records = Number(row!.records);
+    expect(Number(row!.blobs)).toBe(400_000);
+    const preflight = async () => {
+      const res = await app.request(`${base(session)}/log/switch-preflight`, {
+        method: 'POST', headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ to: 'pi' }),
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as { restores: boolean; losses: Array<{ feature: string; used: number; status: string }> };
+    };
+    try {
+      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = true;
+      // 2/5 of 400,000 = 160,000.
+      config.SESSION_LOG_RESTORE_MAX_BYTES = records + 160_000;
+      expect((await restore(session)).status).toBe(200);
+      const fits = await preflight();
+      expect(fits.restores).toBe(true);
+      expect(fits.losses.some((l) => l.feature === 'history')).toBe(false);
+
+      config.SESSION_LOG_RESTORE_MAX_BYTES = records + 159_999;
+      const over = await restore(session);
+      expect(over.status).toBe(413);
+      expect(SessionLogRestoreTooLargeSchema.parse(await over.json())).toMatchObject({ bytes: records + 160_000, limit: records + 159_999, blobs: [] });
+      const lost = await preflight();
+      expect(lost.restores).toBe(false);
+      expect(lost.losses[0]).toEqual({ feature: 'history', used: expect.any(Number), status: 'lost' });
+      expect(lost.losses[0]!.used).toBeGreaterThan(0);
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = MAX_BYTES;
+      config.SESSION_LOG_RESTORE_DEFAULT_ENABLED = RESTORE_DEFAULT;
+    }
   });
 });

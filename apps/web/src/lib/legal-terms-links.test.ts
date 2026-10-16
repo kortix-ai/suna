@@ -89,5 +89,5 @@ test('the legal page renders the Terms as a tab, with no link out', () => {
   expect(src.includes('<TermsOfService />'), 'terms document not rendered').toBe(true);
   // The Terms no longer live in an external Drive file: no link out of the rail.
   expect(src.includes(`href="/legal/terms"`), 'legal page still links Terms out').toBe(false);
-  expect(src.includes('drive.google.com'), 'legal page still names the Drive file').toBe(false);
+  expect(src, 'legal page still names the Drive file').not.toContain('drive.google.com');
 });
