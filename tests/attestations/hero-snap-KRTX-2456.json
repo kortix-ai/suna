@@ -1,15 +1,15 @@
 {
-  "source_hash": "2be1847c713bf1f0f0150de955b5e3462376de9fa3893ea0a34d3b5294312974",
+  "source_hash": "03921313dad415e1c836c1ac92d3ff78bfebb508dd9e56bbe48caad2464377b8",
   "diff_files": [
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap"
   ],
   "diff_hash": "211e28ba536aae05a0dad5126cb918ccfc2d69dadda2c92619e48165c57cf2fe",
-  "head": "4e323bf78d769ca0d3008c86f8720f8487ea91f6",
+  "head": "d057d59caefbd3f16264fc6368c590345ae87973",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T23:44:23.834Z"
+  "at": "2026-10-16T00:11:40.840Z"
 }
