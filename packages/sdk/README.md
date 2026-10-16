@@ -216,12 +216,19 @@ cannot retry: `retry` throws, and the item error carries code
 resolves at once. It deletes unbound storage best-effort and never rejects; a
 failed or refused DELETE leaves the object to the 24-hour expiry.
 `abort(localId)` cancels unfinished work. `dispose()` aborts listed work and
-deletes its uploads best-effort: no send holds them, and drafts keep no handle.
-Call it on non-React cleanup; the hook handles unmount and project changes.
-Unused uploads expire after 24 hours.
+deletes its uploads best-effort: no send holds them. Call it on non-React
+cleanup; the hook handles unmount and project changes. Unused uploads expire
+after 24 hours.
 
-Selections live in memory only. Never persist a File, blob URL, signed URL, or
-upload handle in a draft.
+A draft may keep a finished upload, so a reload or another composer brings the
+file back. Store its metadata (`item.attachment`: `attachment_id`, `filename`,
+`mime`, `size`, `expires_at`) and call `forget(ids)` before `dispose()`, so the
+upload is not deleted. Later, `restore([{ attachment, file? }])` lists it again
+as `ready` with no request, and returns its new id (`undefined` for an expired or
+invalid one). Send uses it like any ready upload. The server binds an attachment
+only for its own account, project and person, so the id grants nothing to
+anyone else. Never persist a File, a blob URL, or a signed URL: an unfinished
+upload cannot be kept.
 
 For non-composer uploads, call `kortix.project(projectId).attachments.upload(file,
 { signal, onProgress, onUpload, resume })`. The server selects the transport in the
