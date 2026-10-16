@@ -715,6 +715,16 @@ describe('sandboxRecents (AppPreview landing "Recents")', () => {
     ]);
   });
 
+  test('keeps Kortix App recents: the address bar opens those too', () => {
+    const recents = [
+      { url: 'https://dev-crm-0123456789abcdef.apps.kortix.com/deals', visitedAt: 1 },
+      { url: 'https://example.com', visitedAt: 2 },
+    ];
+    expect(sandboxRecents(recents).map((r) => r.url)).toEqual([
+      'https://dev-crm-0123456789abcdef.apps.kortix.com/deals',
+    ]);
+  });
+
   test('empty in, empty out — the landing falls back to the search hint', () => {
     expect(sandboxRecents([])).toEqual([]);
   });
