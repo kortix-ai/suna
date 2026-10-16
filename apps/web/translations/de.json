@@ -20082,7 +20082,13 @@
       "textb8fd28863a22": "Betrag in Credits (z. B. 2500)",
       "textc6813a9e41ac": "In Credits: {value0} LLM · {value1} Compute · {value2} Sonstiges.",
       "textc86ce3b8097b": "z. B. 5000",
-      "textfaaf56a699c2": "Limit (Credits)"
+      "textfaaf56a699c2": "Limit (Credits)",
+      "texte7a241debad5": "URL",
+      "text3dd46a7b552c": "App hinzufügen",
+      "text68cf13547e38": "App per URL hinzufügen",
+      "text46bc646c9bfe": "Zeige eine beliebig gehostete Website in diesem Projekt. Kortix öffnet sie direkt hier, neben den Apps, die es betreibt.",
+      "text08e6480e9b78": "{value0} hinzugefügt",
+      "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
