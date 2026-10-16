@@ -183,7 +183,7 @@ export default function PublicSessionSharePage() {
       });
       setMeta(body);
     } catch (err) {
-      setStartError(err instanceof Error ? err.message : tCommon.raw('error'));
+      setStartError((err instanceof Error && err.message) || tCommon.raw('error'));
     } finally {
       setStarting(false);
     }

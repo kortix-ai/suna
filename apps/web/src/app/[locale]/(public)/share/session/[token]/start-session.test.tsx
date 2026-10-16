@@ -16,6 +16,7 @@ const stopped = {
 let calls = 0;
 let failRefresh = false;
 let reads = 0;
+let emptyMessage = false;
 mock.module('@kortix/sdk', () => ({
   SANDBOX_PORTS: {},
   getPublicSessionShare: async () => ({ session: { title: 'Synthetic preview' } }),
@@ -26,7 +27,7 @@ mock.module('@kortix/sdk', () => ({
   },
   startSessionWithToken: async () => {
     calls++;
-    if (!failRefresh && calls === 1) throw new Error('Session start failed');
+    if (!failRefresh && calls === 1) throw new Error(emptyMessage ? '' : 'Session start failed');
   },
 }));
 mock.module('@/lib/auth-token', () => ({ getAuthToken: async () => 'synthetic-token' }));
@@ -43,6 +44,10 @@ mock.module('@/i18n/use-translations', () => ({
 const host = ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) =>
   createElement('button', props, children);
 mock.module('@/components/ui/button', () => ({ Button: host }));
+const presentation = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
+mock.module('@/features/auth/auth-card-shell', () => ({ AuthFrame: presentation }));
+mock.module('@/features/auth/auth-consent', () => ({ OutcomeTitle: presentation }));
+mock.module('@/features/auth/auth-primitives', () => ({ Rise: presentation, StepHeader: presentation }));
 mock.module('@/components/ui/hint', () => ({
   default: ({ children }: { children?: ReactNode }) => children,
 }));
@@ -55,11 +60,12 @@ afterEach(async () => {
   await act(async () => renderer?.unmount());
 });
 
-for (const refresh of [false, true]) {
-  test(`${refresh ? 'metadata refresh' : 'session start'} failure is handled and Retry starts again`, async () => {
+for (const failure of ['session start', 'metadata refresh', 'empty message']) {
+  test(`${failure} failure is handled and Retry starts again`, async () => {
     calls = 0;
     reads = 0;
-    failRefresh = refresh;
+    failRefresh = failure === 'metadata refresh';
+    emptyMessage = failure === 'empty message';
     await act(async () => {
       renderer = create(createElement(Page));
     });
@@ -71,7 +77,7 @@ for (const refresh of [false, true]) {
       await start.props.onClick();
     });
     expect(JSON.stringify(page.toJSON())).toContain(
-      refresh ? 'Share refresh failed' : 'Session start failed',
+      failRefresh ? 'Share refresh failed' : emptyMessage ? 'error' : 'Session start failed',
     );
     const retry = page.root.findAllByType('button').find((node) => node.children.includes('retry'));
     if (!retry) throw new Error('Retry button missing');
@@ -81,6 +87,9 @@ for (const refresh of [false, true]) {
     });
     expect(calls).toBe(2);
     expect(JSON.stringify(page.toJSON())).not.toContain('failed');
-    expect(JSON.stringify(page.toJSON())).not.toContain('This shared preview is offline');
+    expect(page.root.findAllByType('button').some((node) => node.children.includes('retry'))).toBe(false);
+    expect(JSON.stringify(page.toJSON())).not.toContain(
+      'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
+    );
   });
 }
