@@ -280,8 +280,9 @@ export async function previewPlan(params: { accountId: string; monthlyUsd: numbe
     subscription_items: onCreditsPrice
       ? [{ id: livePaid.items.data[0].id, quantity: monthlyUsd * 100 }]
       : [...livePaid.items.data.map((item) => ({ id: item.id, deleted: true })), { price: priceId, quantity: monthlyUsd * 100 }],
+    // No proration_date: Stripe's own "now" is the instant setPlan's update
+    // will use (and follows a test clock).
     subscription_proration_behavior: 'always_invoice',
-    subscription_proration_date: Math.floor(Date.now() / 1000),
   });
   const prorationCents = upcoming.lines.data
     .filter((line) => line.proration)
