@@ -43,6 +43,10 @@ function writeConfig(apiBase: string): string {
   return path;
 }
 
+// What the mock's GET /keys reports as gateway_url. null = the API serves the
+// gateway itself (no LLM_GATEWAY_BASE_URL) — the case the CLI must resolve.
+let keysGatewayUrl: string | null = 'https://gw.test/v1/llm';
+
 // A routing policy the mock mutates on PUT so a set→get round-trip is observable.
 let routingProject = {
   defaultModel: null as string | null,
@@ -115,7 +119,7 @@ function startServer(): string {
         return Response.json({ ok: true });
       }
       if (url.pathname === `${base}/keys` && req.method === 'GET') {
-        return Response.json({ gateway_url: 'https://gw.test/v1/llm', keys: [] });
+        return Response.json({ gateway_url: keysGatewayUrl, keys: [] });
       }
       if (url.pathname === `${base}/keys` && req.method === 'POST') {
         return Response.json({
@@ -123,6 +127,7 @@ function startServer(): string {
           name: (entry.body as { name: string }).name,
           key_prefix: 'kortix_gw_ab',
           secret_key: 'kortix_gw_secretshownonce',
+          gateway_url: keysGatewayUrl,
         });
       }
       if (url.pathname === `${base}/overview`) {
@@ -165,7 +170,10 @@ function startServer(): string {
         });
       }
       if (url.pathname === `${base}/logs/req_1`) {
-        return Response.json({ log_id: '11111111-1111-4111-8111-111111111111', request_id: 'req_1' });
+        return Response.json({
+          log_id: '11111111-1111-4111-8111-111111111111',
+          request_id: 'req_1',
+        });
       }
       if (url.pathname === `${base}/playground` && req.method === 'POST') {
         const models = (entry.body as { models: string[] }).models;
@@ -217,6 +225,7 @@ describe('kortix gateway command', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-gw-'));
     requests = [];
     routingProject = { defaultModel: null, visionModel: null, defaultFallback: null, rules: [] };
+    keysGatewayUrl = 'https://gw.test/v1/llm';
     process.env = { ...ORIGINAL_ENV };
     for (const key of SANDBOX_ENV_OVERRIDES) delete process.env[key];
   });
@@ -288,6 +297,56 @@ describe('kortix gateway command', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('kortix_gw_secretshownonce');
     expect(requests.find((q) => q.method === 'POST')?.body).toMatchObject({ name: 'ci-key' });
+  }, 15_000);
+
+  test('keys ls --json: an API-reported gateway_url passes through', async () => {
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'ls', '--json', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).gateway_url).toBe('https://gw.test/v1/llm');
+  }, 15_000);
+
+  test("keys ls --json: no API-reported URL falls back to the API host's own gateway mount (regression KRTX-1750)", async () => {
+    keysGatewayUrl = null;
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'ls', '--json', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.gateway_url).not.toBeNull();
+    expect(out.gateway_url).toBe(`${apiBase}/v1/llm`);
+  }, 15_000);
+
+  test('keys ls: prints the resolved gateway URL, never the string "null" (regression KRTX-1750)', async () => {
+    keysGatewayUrl = null;
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'ls', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`Gateway URL: ${apiBase}/v1/llm`);
+    expect(r.stdout).not.toContain('Gateway URL: null');
+  }, 15_000);
+
+  test('keys new: prints the full gateway URL the key works against (regression KRTX-1750)', async () => {
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'new', 'ci-key', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    // The complete OpenAI-compatible endpoint, not an unnamed "the gateway URL".
+    expect(r.stdout).toContain('https://gw.test/v1/llm/v1/chat/completions');
+  }, 15_000);
+
+  test('keys new --json: includes the gateway_url the new key works against', async () => {
+    keysGatewayUrl = null;
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(
+      ['gateway', 'keys', 'new', 'ci-key', '--json', '--project', PROJECT],
+      cfg,
+    );
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).gateway_url).toBe(`${apiBase}/v1/llm`);
   }, 15_000);
 
   test('usage: aggregates overview + breakdown', async () => {
