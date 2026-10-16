@@ -946,6 +946,8 @@ impl Ctx {
             "member_email": k["member_email"],
             // A build without a baked-in Kortix address asks for it where the person connects.
             "default_issuer_missing": k["issuer_url"].is_null(),
+            // The Kortix API this computer signs in to: the saved address, else the build's.
+            "issuer_url": k["issuer_url"],
             "state": cli::recording_state(&self.paths),
             "service": cli::service_status_value(&self.paths),
             // A personal install with nothing connected: the window starts on onboarding.

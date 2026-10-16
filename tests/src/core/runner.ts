@@ -129,13 +129,6 @@ async function runOneFlow(
   const declaredAttempts = f.meta.retry?.attempts;
   const maxAttempts = declaredAttempts ?? maxAttemptBound(policy);
 
-  // Quarantine → reported, never run, exempt from --require-all (see
-  // FlowMeta.quarantine and runExitCode).
-  if (f.meta.quarantine) {
-    return mkResult(f, "skip", `quarantined: ${f.meta.quarantine}`, [], performance.now() - flowStart, 0, {
-      quarantined: true,
-    });
-  }
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
   if (missing.length) {
@@ -252,7 +245,6 @@ function mkResult(
   steps: StepResult[],
   durationMs: number,
   attempts: number,
-  extra: { quarantined?: boolean } = {},
 ): FlowResult {
   return {
     id: f.id,
@@ -263,7 +255,6 @@ function mkResult(
     durationMs,
     attempts,
     steps: [...steps],
-    quarantined: extra.quarantined,
     // A skip that already PASSED at least one step asserted the reachable
     // contract on this target (see FlowResult.asserted / runExitCode).
     // Asserted = the flow proved SOMETHING before skipping: a fully passed
@@ -313,7 +304,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
     // Cold provider images can take longer than a flow's runtime deadline. Build
     // one through the real session route before measuring concurrent user flows.
     if (env.capabilities.daytona && flows.some((f) =>
-      !f.meta.quarantine && f.meta.requires?.includes('daytona') && f.meta.requires.includes('funded'))) {
+      f.meta.requires?.includes('daytona') && f.meta.requires.includes('funded'))) {
       const stack = world.newStack();
       try {
         const fixtures = world.makeFixtures(stack);

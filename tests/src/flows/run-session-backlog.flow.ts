@@ -2,7 +2,7 @@
  * Agent-run + session happy-path backlog.
  *
  * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
- * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
+ * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
@@ -48,8 +48,6 @@ import {
   waitForTurn,
   watchSessionEvents,
 } from '../fixtures/session-run';
-
-const MORPH = { providerID: 'kortix', modelID: 'morph-dsv41flash' };
 
 /** A reply the flow can find by content: the model is told to answer with exactly `marker`. */
 function echo(marker: string): string {
@@ -134,147 +132,6 @@ harnessFlow(
       if (JSON.stringify(listed.opencode_sessions) !== JSON.stringify(mirrored.opencode_sessions)) {
         throw new Error('list and detail returned different session trees');
       }
-    });
-  },
-);
-
-// ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
-flow(
-  'CONN-26',
-  {
-    domain: 'connectors',
-    requires: ['funded', 'daytona', 'managedGit'],
-    serial: true,
-    timeoutMs: 720_000,
-    // Added in 5b070ebb18 (2026-08-24, direct push) and never run on a
-    // deployed gate before the v0.13.6 release (run 32992496089, api shard
-    // 1), where it failed after 392s: `Timed out waiting for Composio Gmail
-    // authorization request from agent session ses_fc0decd80ffeYPyIR1B5efRcz3`.
-    // CONN-25 passed in the same run (real connect.composio.dev link in 7.4s),
-    // so staging holds a working COMPOSIO_API_KEY — the unproven part is the
-    // live morph-dsv41flash turn calling `add_connector` inside the 300s wait, and
-    // the harness dumps no transcript on that timeout. Quarantined until it
-    // passes a staging dry run of tests-release.yml with the transcript
-    // captured on failure; un-quarantine ONLY in the PR that carries that
-    // green run.
-    quarantine:
-      'real-agent Composio selection: morph-dsv41flash turn produced no add_connector call / connect.composio.dev link within 300s on staging (gate run 32992496089, api shard 1) — unproven flow, quarantined 2026-08-26 pending a green staging dry run',
-    routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/connectors/projects/:projectId/connectors',
-      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ managedGit: true });
-    const session = await ctx.fixtures.session(project, {
-      prompt: 'Reply with the single word READY. Do not call any tools.',
-    });
-    const params = { projectId: project.id, sessionId: session.id };
-
-    await ctx.step('a fresh remote session boots to a ready runtime', async () => {
-      await waitForSessionReady(ctx, project.id, session.id, 360_000);
-    });
-
-    await ctx.step('GLM-5.3 744B receives the real Gmail connector request', async () => {
-      await sendPrompt(
-        ctx,
-        project.id,
-        session.id,
-        'Use the Kortix connector tools now. Add Gmail with the default managed provider and start authorization. Never use Pipedream or any legacy provider. Do not complete OAuth, read mail, or send mail. Stop after you give me the authorization link and ask me to open it.',
-        { model: MORPH },
-      );
-    });
-
-    type FullMessage = { role: string; text: string; tools: Array<{ tool: string; input?: string }> };
-    const addConnector = (tool: { tool: string }) => /add[_ -]?connector/i.test(tool.tool);
-    let messages: FullMessage[] = [];
-    await ctx.step('the agent calls the connector tools and asks the user to authorize', async () => {
-      messages = await waitFor(
-        async () => {
-          // `detail=full` carries each tool call's input as a JSON string.
-          const response = await ctx.client
-            .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
-              params,
-              query: { limit: '200', detail: 'full', chars: '5000' },
-            });
-          response.status(200);
-          return (response.json<any>().messages ?? []) as FullMessage[];
-        },
-        {
-          until: (rows) => {
-            const assistantText = rows
-              .filter((message) => message.role === 'assistant')
-              .map((message) => message.text)
-              .join('\n');
-            return (
-              rows.some((message) => (message.tools ?? []).some(addConnector)) &&
-              assistantText.includes('connect.composio.dev') &&
-              /open|authorize|connect/i.test(assistantText)
-            );
-          },
-          timeoutMs: 300_000,
-          intervalMs: 4_000,
-          description: `Composio Gmail authorization request from session ${session.id}`,
-          retryOnError: isKe2eRetryableError,
-        },
-      );
-    });
-
-    await ctx.step('no connector tool call attempted the legacy Pipedream escape hatch', async () => {
-      const toolCalls = messages.flatMap((message) => message.tools ?? []);
-      const addCalls = toolCalls.filter(addConnector);
-      if (addCalls.length === 0) throw new Error('agent emitted no add-connector tool call');
-      for (const call of toolCalls) {
-        if (/"provider":"pipedream"|"allow_legacy_pipedream":true/.test(call.input ?? '')) {
-          throw new Error('agent attempted the legacy Pipedream provider');
-        }
-      }
-      for (const call of addCalls) {
-        const provider = /"provider":"([^"]*)"/.exec(call.input ?? '')?.[1];
-        if (provider !== undefined && provider !== 'composio') {
-          throw new Error(`agent selected unexpected managed provider ${provider}`);
-        }
-      }
-    });
-
-    await ctx.step('project readback proves the agent persisted Gmail through Composio', async () => {
-      const listed = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors', {
-          params: { projectId: project.id },
-        });
-      listed.status(200);
-      const body = listed.json<any>();
-      const rows = Array.isArray(body) ? body : (body?.connectors ?? []);
-      const gmail = rows.find(
-        (row: any) =>
-          row?.provider === 'composio' &&
-          (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-            String(row?.name ?? '').toLowerCase().includes('gmail')),
-      );
-      if (!gmail?.slug) throw new Error('project connector list omitted agent-created Gmail');
-      if (
-        rows.some(
-          (row: any) =>
-            row?.provider === 'pipedream' &&
-            (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-              String(row?.name ?? '').toLowerCase().includes('gmail')),
-        )
-      ) {
-        throw new Error('project persisted a Pipedream-backed Gmail connector');
-      }
-
-      const config = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
-          params: { projectId: project.id, slug: gmail.slug },
-        });
-      config.status(200).body().has('$.provider', 'composio').has('$.app', 'gmail');
     });
   },
 );

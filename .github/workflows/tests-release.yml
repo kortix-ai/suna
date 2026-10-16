@@ -43,6 +43,8 @@ env:
   KE2E_TARGET: staging
   KE2E_LIVE_CONFIRM: ci
   KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
+  # Staging serves App hosts (staging-*.apps.kortix.com) through the apps-router Worker.
+  KE2E_CAP_APP_HOST: '1'
   # Credentials are NOT here: a workflow-level env cannot read AWS. Every job
   # that talks to staging reads them first thing through .github/actions/aws-env
   # (the "Read staging credentials" step), from kortix-staging-env,
@@ -312,10 +314,6 @@ jobs:
       # own and splits the other 8 specs over two: 217/190/176/180 s.
       # Two shards ran 9.5-12.8 min each; the release suite targets <= 10 min.
       E2E_BROWSER_WORKERS: '1'
-      # No spec is quarantined; the exclusion stays as a guard against a stray tag.
-      # Playwright applies this at collection, so an excluded spec is absent,
-      # not "skipped" — the strict-skip reporter stays strict. See #6584.
-      E2E_EXCLUDE_TAGS: '@quarantine'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
