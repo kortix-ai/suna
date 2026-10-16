@@ -497,7 +497,12 @@ jobs:
     needs: [api, browser]
     if: always()
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
-    timeout-minutes: 5
+    # Waits for the other workflows on the release commit (CI and CodeQL are
+    # the long pole, ~15 min) after the deployed jobs end.
+    timeout-minutes: 45
+    permissions:
+      checks: read
+      contents: read
     steps:
       - name: Require every deployed job to pass
         run: |
@@ -514,6 +519,43 @@ jobs:
             exit 1
           fi
           echo "The deployed staging API smoke and every browser shard passed."
+      # The release suite is ONE gate: this check is the only one the `prod`
+      # ruleset requires, so it also requires every other check on the release
+      # commit (CI, CodeQL, DB Migrations, scanners) to finish green. A check
+      # that is still running is waited for; a skipped or neutral one passes.
+      - name: Require every other check on the release commit to pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 40 * 60 ))
+          while :; do
+            # Latest attempt per check name, excluding this run's own jobs.
+            latest="$(RID="$RUN_ID" gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --paginate \
+              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)' \
+              | jq -s 'group_by(.name) | map(max_by(.started_at // ""))')"
+            pending="$(jq -r '.[] | select(.status != "completed") | .name' <<<"$latest")"
+            red="$(jq -r '.[] | select(.status == "completed") | select((.conclusion // "") | IN("success","skipped","neutral") | not) | "\(.name): \(.conclusion)"' <<<"$latest")"
+            if [ -n "$red" ]; then
+              echo "::error::Checks on the release commit are not green:"
+              echo "$red"
+              exit 1
+            fi
+            if [ -z "$pending" ]; then
+              echo "Every check on $SHA is green ($(jq length <<<"$latest") checks)."
+              exit 0
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Checks still running after 40 min:"
+              echo "$pending"
+              exit 1
+            fi
+            echo "Waiting for: $(echo "$pending" | paste -sd, -)"
+            sleep 30
+          done
 
   # A run that github-actions[bot] started or approved (promote.yml approves the
   # release pull request's run) gets no workflow_run event, so
