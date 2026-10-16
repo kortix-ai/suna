@@ -310,8 +310,7 @@ jobs:
       # Two shards, one browser each (testing reset, 2026-10-16): the gate runs
       # the money-path specs; spec 27 fills one shard, the rest the other.
       E2E_BROWSER_WORKERS: '1'
-      # Specs tagged @quarantine (today: tests in 13-sdk-only-session) run in the non-blocking
-      # nightly lane (tests-browser-nightly.yml), never in the release gate.
+      # No spec is quarantined; the exclusion stays as a guard against a stray tag.
       # Playwright applies this at collection, so an excluded spec is absent,
       # not "skipped" — the strict-skip reporter stays strict. See #6584.
       E2E_EXCLUDE_TAGS: '@quarantine'
@@ -492,9 +491,22 @@ jobs:
   # Sharding turned one job into seven, so this aggregator keeps the single
   # context that branch protection already requires. Do not rename it without
   # updating repos/kortix-ai/suna/branches/prod/protection in the same change.
+  # The contract lanes (core-flows, core-db, packages-*) on the release tree:
+  # the same lanes the nightly run on `dev` uses (tests.yml), run once here so
+  # the release suite is the one gate. They run beside the deployed jobs, so
+  # the gate's wall clock is the slowest job, not the sum.
+  contract:
+    name: contract
+    uses: ./.github/workflows/tests.yml
+    # tests.yml's trunk-report job declares these; a called workflow may not
+    # ask for more than its caller grants. trunk-report runs only on schedule.
+    permissions:
+      contents: write
+      actions: read
+
   release-gate:
     name: full suite + quality gates
-    needs: [api, browser]
+    needs: [api, browser, contract]
     if: always()
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # Waits for the other workflows on the release commit (CI and CodeQL are
@@ -509,16 +521,19 @@ jobs:
           set -euo pipefail
           api='${{ needs.api.result }}'
           browser='${{ needs.browser.result }}'
+          contract='${{ needs.contract.result }}'
           echo "api smoke: $api"
           echo "browser shards: $browser"
+          echo "contract lanes: $contract"
           failed=0
           [ "$api" = "success" ] || failed=1
           [ "$browser" = "success" ] || failed=1
+          [ "$contract" = "success" ] || failed=1
           if [ "$failed" -ne 0 ]; then
-            echo "::error::A deployed staging job did not pass (api=$api browser=$browser)."
+            echo "::error::A release suite job did not pass (api=$api browser=$browser contract=$contract)."
             exit 1
           fi
-          echo "The deployed staging API smoke and every browser shard passed."
+          echo "The contract lanes, the deployed API smoke and every browser shard passed."
       # The release suite is ONE gate: this check is the only one the `prod`
       # ruleset requires, so it also requires every other check on the release
       # commit (CI, CodeQL, DB Migrations, scanners) to finish green. A check

@@ -322,7 +322,6 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     cwd: 'tests',
     env: {
       E2E_BROWSER_WORKERS: process.env.E2E_BROWSER_WORKERS ?? '2',
-      E2E_ENABLE_SDK_ONLY_SESSION: '1',
       E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
     },

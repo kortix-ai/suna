@@ -189,31 +189,12 @@ The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
 DEPLOYED staging.
 
-## Quarantine a browser test
+## No quarantine
 
-A `@quarantine` tag removes one test from the blocking release gate. It does
-not remove the test. The nightly lane runs it.
-
-1. **When.** Quarantine a test only when its root cause is outside our code:
-   a real third-party service (Composio toolkit, Google or GitHub OAuth pages),
-   a real model reply, or a real cloud sandbox boot. A race, a stale locator, a
-   shared fixture, or a product bug is never a reason. Fix those.
-2. **Scope.** Tag the one test that depends on the third party. Our own UI
-   contract (dialogs, requests, validation) stays in an untagged test with a
-   stubbed or no-auth backend. `test.describe.serial` shares a fixture across
-   tests, so split the fixture before you tag only part of a file.
-3. **Write the reason.** Put a comment above the tag: what is external, the
-   run id that showed it, and the condition for removing the tag.
-4. **Watcher.** `.github/workflows/tests-browser-nightly.yml` runs
-   `@quarantine` against deployed staging every night at 04:20 UTC. It fails
-   when a quarantined test is red or when no quarantined test ran, and it
-   comments on the commit. It lists each test with its green-night streak.
-5. **Owner.** The author who tagged the test owns it. A red nightly run is a
-   ticket for that owner, not a release blocker.
-6. **Un-quarantine.** When the nightly comment reports a test green for 7
-   nights in a row, remove its tag in the next pull request. The blocking gate
-   then runs it. A quarantined test with a streak under 7 and no open reason
-   is a defect: fix or delete it.
+Do not quarantine a browser test (testing reset, 2026-10-16). A test that fails
+twice without a bug is fixed at its root or deleted the same day. A test that
+depends on a third party (OAuth pages, a real model reply) asserts only what
+Kortix controls, or it goes.
 
 ## Run CI lanes natively on GitHub-hosted runners
 

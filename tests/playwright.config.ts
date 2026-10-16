@@ -77,10 +77,8 @@ const LOCAL_ONLY_TAG = '@local-only';
  * Tag and title filters for the browser lane, read from the environment.
  *
  * A journey that cannot be made deterministic against a deployed target is
- * tagged `@quarantine` at its `test.describe`. The blocking release gate
- * excludes that tag; `tests-browser-nightly.yml` runs exactly that tag and
- * nothing else. Both directions come from here so neither lane needs a custom
- * command line.
+ * tagged `@quarantine` at its `test.describe`, and every lane excludes that tag.
+ * No journey carries it since the testing reset (2026-10-16): fix or delete.
  *
  * - `E2E_EXCLUDE_TAGS` / `E2E_INCLUDE_TAGS` — comma-separated tag or title
  *   fragments. Each entry is escaped, so `@quarantine` matches literally and
@@ -111,9 +109,8 @@ export function resolveGrepFilters(env: NodeJS.ProcessEnv = process.env): GrepFi
   // the promise the tag makes, rather than repeating the tag in each workflow
   // and waiting for the next one to forget it.
   //
-  // An explicit include wins: `tests-browser-nightly.yml` sets
-  // `E2E_INCLUDE_TAGS=@quarantine` precisely to run these, and injecting the
-  // exclusion there would select and reject the same journeys, running nothing.
+  // An explicit include wins: injecting the exclusion beside an include of the
+  // tag would select and reject the same journeys, running nothing.
   if (includes.length === 0 && !excludes.includes(QUARANTINE_TAG)) {
     excludes.unshift(QUARANTINE_TAG);
   }

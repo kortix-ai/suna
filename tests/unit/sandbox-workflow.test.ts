@@ -18,7 +18,7 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs eight root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
+  test('runs six contract lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
@@ -37,18 +37,10 @@ describe('native test-lane workflow', () => {
       expect(testWorkflow).toContain(`args: --packages-only --package-group=${group}`);
     }
     expect(testWorkflow).not.toContain('- lane: packages\n');
-    // Two one-worker browser shards since 2026-10-16: the suite is the
-    // money-path specs (testing reset). One worker each: two workers overran a
-    // 16 GB GitHub-hosted runner (run 37812339796).
-    for (const n of [1, 2]) {
-      expect(testWorkflow).toContain(`- lane: browser-${n}`);
-      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/2`);
-    }
-    expect(testWorkflow).not.toContain('- lane: browser-3');
-    expect(testWorkflow).toContain('if [[ "$TEST_LANE" == browser-* ]]; then');
-    expect(testWorkflow).toContain('export E2E_BROWSER_WORKERS=1');
-    // Never job-wide: the core-db lane's runner unit tests assert the default.
-    expect(testWorkflow).not.toContain('E2E_BROWSER_WORKERS: "1"');
+    // No browser lane: the journeys run once, in the release suite, against
+    // deployed staging (testing reset, 2026-10-16).
+    expect(testWorkflow).not.toMatch(/- lane: browser-/);
+    expect(testWorkflow).not.toContain('--browser-only');
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     // Every run is a full run now, so the packages guard keys off the lane
@@ -66,9 +58,11 @@ describe('native test-lane workflow', () => {
 
   test('the matrix lanes together run exactly the lanes of `pnpm test -- --full`', () => {
     const matrixArgs = [...testWorkflow.matchAll(/^ {12}args: (.+)$/gm)].map((m) => m[1]!.split(' '));
-    expect(matrixArgs).toHaveLength(8);
+    expect(matrixArgs).toHaveLength(6);
     const ran = matrixArgs.flatMap((args) => buildLocalTestPlan(args).lanes.map((lane) => lane.name));
-    const full = buildLocalTestPlan(['--full']).lanes.map((lane) => lane.name);
+    // Everything `--full` runs except the browser journeys, which run against
+    // deployed staging in the release suite.
+    const full = buildLocalTestPlan(['--full']).lanes.map((lane) => lane.name).filter((name) => name !== 'browser');
     expect(new Set(ran)).toEqual(new Set(full));
     // Sliced lanes (browser shards, package groups) repeat by design; every
     // other lane runs on exactly one runner.
@@ -77,9 +71,10 @@ describe('native test-lane workflow', () => {
     expect(once.sort()).toEqual(full.filter((name) => !sliced.has(name)).sort());
   });
 
-  test('gives the browser lanes Chromium and a prestarted Supabase', () => {
+  test('gives packages-rest Chromium (apps/web layout test) and no lane a browser prestart', () => {
     expect(testWorkflow).toContain('pnpm --dir tests exec playwright install --with-deps chromium');
-    expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check -x studio,imgproxy');
+    expect(testWorkflow).toContain("if: matrix.lane == 'packages-rest'");
+    expect(testWorkflow).not.toContain('Prestart Supabase for the browser lane');
   });
 
   test('stops Supabase on every lane and frees its ports before one starts', () => {
@@ -240,11 +235,11 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('runs the local suite on a schedule, on a release pull request, or when a person adds `test`', () => {
+  test('runs the contract lanes nightly, inside the release suite, or when a person adds `test`', () => {
     // 2026-09-28. Labels ran the suite on nearly every pull request into
     // `dev`: every agent PR carried `preview`, and each push re-ran six lanes.
     // Into `dev`, only the act of adding `test` runs it, once; a push does not.
-    expect(testWorkflow).toContain('branches: [dev, staging]');
+    expect(testWorkflow).toMatch(/ {2}pull_request:\n {4}branches: \[dev\]\n/);
     expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
     expect(testWorkflow).not.toContain('labels.*.name');
     expect(testWorkflow).not.toContain("'preview'");
@@ -253,7 +248,8 @@ describe('native test-lane workflow', () => {
       testWorkflow.indexOf('\n  trunk-report:'),
     );
     expect(laneJob).toContain("github.event_name != 'pull_request'");
-    expect(laneJob).toContain("|| (github.base_ref == 'staging' && github.event.action != 'labeled')");
+    // Called from tests-release.yml on the pull request into `prod`.
+    expect(laneJob).toContain("|| github.base_ref == 'prod'");
     expect(laneJob).toContain("|| (github.event.action == 'labeled' && github.event.label.name == 'test')");
     // A later push must not cancel the run a person asked for.
     expect(testWorkflow).toContain(
@@ -263,9 +259,9 @@ describe('native test-lane workflow', () => {
     // `trunk-report` finds failed lanes by `endswith("lane")` on this name.
     expect(laneJob).toContain('name: ${{ matrix.lane }} lane');
 
-    // One file, one gate. The reusable-workflow plumbing and its `decide` job
-    // are gone; a second dispatch path is how the gate drifts.
-    expect(testWorkflow).not.toContain('workflow_call');
+    // One lane definition, two callers: the nightly schedule and the release
+    // suite (workflow_call, no inputs: the lanes never fork by caller).
+    expect(testWorkflow).toMatch(/^ {2}workflow_call:\n/m);
     expect(testWorkflow).not.toContain('inputs.mode');
     expect(testWorkflow).not.toMatch(/^  decide:/m);
   });
@@ -347,10 +343,8 @@ describe('native test-lane workflow', () => {
       expect(text, file).toMatch(/^ {2}pull_request:\n(?: {4}.*\n)*? {4}branches: \[prod\]$/m);
     }
     expect(readFileSync(resolve(dir, 'codeql.yml'), 'utf8')).not.toMatch(/^ {2}push:/m);
-    // tests.yml is folded into the release suite in the same change set.
-    const exempt = new Set(['tests.yml']);
     const intoStaging = readdirSync(dir)
-      .filter((file) => /\.ya?ml$/.test(file) && !exempt.has(file))
+      .filter((file) => /\.ya?ml$/.test(file))
       .filter((file) => {
         const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
         const on = lines.indexOf('on:');
@@ -509,13 +503,14 @@ describe('native test-lane workflow', () => {
     expect(deployDev).toMatch(/^ {6}surface:\n(?:.*\n)*? {8}default: changed/m);
   });
 
-  test('does not repeat local tests after staging merge or on the production PR', () => {
+  test('runs the contract lanes once per release, inside the release suite', () => {
     expect(existsSync(resolve(root, '.github/workflows/qa-pr.yml'))).toBe(false);
     expect(existsSync(resolve(root, '.github/workflows/qa-staging.yml'))).toBe(false);
     expect(existsSync(resolve(root, '.github/workflows/qa-release.yml'))).toBe(false);
 
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
-    expect(release).not.toContain('uses: ./.github/workflows/tests.yml');
+    expect(release.match(/uses: \.\/\.github\/workflows\/tests\.yml/g)).toHaveLength(1);
+    expect(release).toContain('needs: [api, browser, contract]');
     expect(release).not.toContain('mode: full');
   });
 
@@ -530,11 +525,12 @@ describe('native test-lane workflow', () => {
     // nobody decided on.
     expect(existsSync(resolve(workflowRoot, 'tests-pr.yml'))).toBe(false);
     expect(existsSync(resolve(workflowRoot, 'tests-main.yml'))).toBe(false);
+    // The release suite is the only caller (testing reset, 2026-10-16).
     expect(
       workflows
         .filter(({ source }) => source.includes('uses: ./.github/workflows/tests.yml'))
         .map(({ name }) => name),
-    ).toEqual([]);
+    ).toEqual(['tests-release.yml']);
     // deploy-preview drives ONE sandbox origin from one job, so it keeps the
     // combined `--target-full` command. The release gate splits the same two
     // lanes across parallel GitHub jobs, so it calls the per-lane commands.

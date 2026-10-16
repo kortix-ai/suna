@@ -229,7 +229,6 @@ describe('local test runner', () => {
       cwd: 'tests',
       env: {
         E2E_BROWSER_WORKERS: '2',
-        E2E_ENABLE_SDK_ONLY_SESSION: '1',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       },
@@ -243,7 +242,6 @@ describe('local test runner', () => {
       const plan = buildLocalTestPlan(['--target-full']);
       expect(plan.lanes[1]?.env).toEqual({
         E2E_BROWSER_WORKERS: '2',
-        E2E_ENABLE_SDK_ONLY_SESSION: '1',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       });

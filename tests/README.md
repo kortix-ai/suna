@@ -632,7 +632,6 @@ cannot work around when they break. Since 2026-10-16 it has these spec files:
 | `34-instant-session-loads` | A session opens instantly from its saved copy. |
 | `27-desktop-parity`, `27-desktop-parity-desktop` | Send, steer and queue a prompt; the web and desktop gate (journeys in `e2e/helpers/desktop-parity.ts`). |
 | `55-session-own-model` | A session keeps the model it was started with. |
-| `13-sdk-only-session` | A real sandbox streams a real prompt (deployed, `@quarantine`). |
 | `49-connector-connect-landing` | Connect a connector and land on its page. |
 | `45-invite-lands-in-invited-project` | Accept a project invite and land in the project. |
 
@@ -672,33 +671,12 @@ Entries in the same direction are unioned. Playwright applies both at
 collection, before `--shard`, so an excluded journey is never loaded, never
 counted, and never lands in a shard.
 
-### Quarantined journeys
+### No quarantined journeys
 
-A browser journey that cannot be made deterministic against a deployed target
-carries the `@quarantine` tag on its `test.describe`. Today that is
-`17-oauth-provider-initiation` (it clicks through to `accounts.google.com` and
-`github.com` and asserts what those pages do, so a third-party interstitial
-turns a gate red with no Kortix defect behind it), `13-sdk-only-session`, and
-`08-accounts-project-access` (cross-task IAM cache propagation — the spec's own
-header explains what the product needs before it can be un-quarantined).
-
-- **Every gate excludes the tag by default.** `resolveGrepFilters` injects it
-  whenever the environment names no include filter, so a workflow cannot block
-  a build on a quarantined journey by forgetting to set `E2E_EXCLUDE_TAGS` —
-  which is exactly what `tests.yml` did.
-- The blocking release gate also names the tag explicitly; that is now
-  belt-and-braces rather than the only thing holding the line.
-- `.github/workflows/tests-browser-nightly.yml` runs exactly the tag, nightly
-  and on dispatch, against the same staging origin with the same secrets. It
-  gates nothing. A red run there is a ticket, not a block.
-
-An excluded journey does not count as a skip. `strict-skip-reporter.ts` fails
-the strict lane on a `skipped` RESULT, and a grep-excluded journey produces no
-result at all. Prove the set with `playwright test --list`.
-
-To return a journey to the blocking gate, remove its tag — no workflow edit is
-needed. Remove it only once the non-determinism is gone at the source, not
-because the nightly happened to be green.
+No browser journey is quarantined (testing reset, 2026-10-16). A journey that
+fails twice without a Kortix defect is fixed or deleted the same day. The
+`@quarantine` filter in `playwright.config.ts` still excludes a tagged journey
+from every lane, but nothing runs the tag.
 
 ### Deployed-target resilience
 
