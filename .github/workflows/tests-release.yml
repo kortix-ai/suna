@@ -346,16 +346,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2]
     env:
-      # Six shards, one browser each: 6 concurrent browsers, the same staging
-      # load as the earlier 3 shards x 2 workers. Three shards split by test
-      # count left shard 2 at ~28 min against a 30-min cap (cancelled in 3 of 4
-      # v0.13.54 runs). The duration table predicts <= 10 min per shard at six.
-      # See the fleet arithmetic on the api job.
+      # Two shards, one browser each (testing reset, 2026-10-16): the gate runs
+      # the 9 money-path specs; spec 27 fills one shard, the rest the other.
       E2E_BROWSER_WORKERS: '1'
-      # Specs tagged @quarantine (today: 17-oauth-provider-initiation, which
-      # asserts on accounts.google.com / github.com) run in the non-blocking
+      # Specs tagged @quarantine (today: tests in 13-sdk-only-session) run in the non-blocking
       # nightly lane (tests-browser-nightly.yml), never in the release gate.
       # Playwright applies this at collection, so an excluded spec is absent,
       # not "skipped" — the strict-skip reporter stays strict. See #6584.
@@ -432,7 +428,7 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Run this shard of the deployed staging browser journeys
-        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/6
+        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/2
       # No --run-id sweep here: the Playwright specs mint their own Supabase
       # users (@example.test / @kortix.test) with no run-scoped prefix, so there
       # is nothing to scope to. sweep-before now covers those domains, which it

@@ -17,7 +17,7 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs ten root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
+  test('runs four root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
@@ -26,13 +26,14 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}");
     expect(testWorkflow).toContain('- lane: core');
     expect(testWorkflow).toContain('- lane: packages');
-    // Eight one-worker browser shards since 2026-10-08: four two-worker
-    // shards overran a 16 GB GitHub-hosted runner (run 37812339796).
-    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    // Two one-worker browser shards since 2026-10-16: the suite is 9
+    // money-path specs (testing reset). One worker each: two workers overran a
+    // 16 GB GitHub-hosted runner (run 37812339796).
+    for (const n of [1, 2]) {
       expect(testWorkflow).toContain(`- lane: browser-${n}`);
-      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/8`);
+      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/2`);
     }
-    expect(testWorkflow).not.toContain('--browser-shard=1/4');
+    expect(testWorkflow).not.toContain('- lane: browser-3');
     expect(testWorkflow).toContain('if [[ "$TEST_LANE" == browser-* ]]; then');
     expect(testWorkflow).toContain('export E2E_BROWSER_WORKERS=1');
     // Never job-wide: the core lane's runner unit tests assert the default.
@@ -155,8 +156,8 @@ describe('native test-lane workflow', () => {
     // four shards of 137 flows were all killed by their cap ~60% through.
     expect(release).toContain('shard: [1, 2, 3, 4, 5, 6]');
     expect(release).toContain('pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6');
-    // Six browser shards, split by measured duration (tests/src/core/browser-shard.ts).
-    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/6');
+    // Two browser shards, split by measured duration (tests/src/core/browser-shard.ts).
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/2');
     expect(release).toContain('fail-fast: false');
     // A cap is a hang detector, not a throttle. 40 minutes throttled: it killed
     // shards that were passing 76/87 and 68/77 of what they had run.

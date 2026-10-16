@@ -181,11 +181,12 @@ not remove the test. The nightly lane runs it.
 
 ## Run CI lanes natively on GitHub-hosted runners
 
-Keep the test commands unchanged. `.github/workflows/tests.yml` runs ten lanes
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs four lanes
 in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
 `ubuntu-24.04`: 4 vCPU / 16 GB on this public repo).
-Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight
-browser lanes run shards `1/8` through `8/8`, one Playwright worker each, via
+Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Two
+browser lanes run shards `1/2` and `2/2` over the 9 money-path specs (list in
+`tests/README.md`), one Playwright worker each, via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
 requested SHA.
 

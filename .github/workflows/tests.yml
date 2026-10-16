@@ -65,41 +65,17 @@ jobs:
           - lane: core
             mode: core
             args: --no-packages
-          # Eight browser shards, one Playwright worker each, since 2026-10-08.
-          # The lanes moved from Blacksmith 8 vCPU / 32 GB to free GitHub-hosted
-          # 4 vCPU / 16 GB runners. Four shards x two workers ran ~3x slower
-          # there (browser-1 17.7 min vs 6.1), a 180 s journey timed out, and
-          # one runner died mid-lane (run 37812339796). Half the tests per
-          # runner and one worker keep each test near its old CPU budget.
-          # `--browser-shard=N/M` splits whole spec files by measured duration
-          # (tests/src/core/browser-shard.ts; refresh the table with
-          # tests/bin/refresh-shard-durations.ts). Since 2026-10-12: Playwright's
-          # own `--shard` split by test count, and browser-4 took 21-29 min while
-          # browser-8 took 7-10.
+          # Two browser shards, one Playwright worker each (testing reset,
+          # 2026-10-16): the suite is 9 money-path specs. `--browser-shard=N/M`
+          # splits whole spec files by measured duration
+          # (tests/src/core/browser-shard.ts, tests/e2e/shard-durations.json):
+          # spec 27 (desktop parity, ~520 s) fills one shard, the rest the other.
           - lane: browser-1
             mode: browser
-            args: --browser-only --browser-shard=1/8
+            args: --browser-only --browser-shard=1/2
           - lane: browser-2
             mode: browser
-            args: --browser-only --browser-shard=2/8
-          - lane: browser-3
-            mode: browser
-            args: --browser-only --browser-shard=3/8
-          - lane: browser-4
-            mode: browser
-            args: --browser-only --browser-shard=4/8
-          - lane: browser-5
-            mode: browser
-            args: --browser-only --browser-shard=5/8
-          - lane: browser-6
-            mode: browser
-            args: --browser-only --browser-shard=6/8
-          - lane: browser-7
-            mode: browser
-            args: --browser-only --browser-shard=7/8
-          - lane: browser-8
-            mode: browser
-            args: --browser-only --browser-shard=8/8
+            args: --browser-only --browser-shard=2/2
           - lane: packages
             mode: packages
             args: --packages-only
@@ -315,7 +291,7 @@ jobs:
           {
             echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
             echo
-            echo "Full local suite (\`core\`, \`browser-1..8\`, \`packages\`)."
+            echo "Full local suite (\`core\`, \`browser-1..2\`, \`packages\`)."
             if [ -n "$failed" ]; then
               echo
               echo "Failing lanes: \`$failed\`"
