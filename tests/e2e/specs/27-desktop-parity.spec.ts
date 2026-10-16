@@ -1626,6 +1626,8 @@ for (const runtime of runtimes) {
             () => (globalThis as unknown as { menus: string[][] }).menus,
           );
         try {
+          // The app window may still be loading its first document.
+          await page.waitForFunction(() => document.body !== null, undefined, { timeout: 60_000 });
           await page.evaluate(() => {
             const box = document.createElement("div");
             box.style.cssText =
