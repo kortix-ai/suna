@@ -662,7 +662,7 @@ function isScriptAssetSource(filename: unknown): boolean {
   if (normalized.startsWith('app:///_next') || /^https?:\/\/[^/]+\/_next\//.test(normalized)) {
     return true;
   }
-  return /\.(?:js|mjs|cjs)$/i.test(normalized.split('?')[0] ?? '');
+  return /\.(?:js|mjs|cjs)$/i.test(normalized.split('?')[0]);
 }
 
 /**
