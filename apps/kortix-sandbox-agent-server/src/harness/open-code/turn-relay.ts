@@ -107,6 +107,12 @@ export async function relayTurnBeginToApi(
   }
 }
 
+let relayRetryStepMs = 1_000
+/** Tests shorten the turn-end retry backoff (1 s, 2 s, 3 s in the product). */
+export function setRelayRetryStepMsForTests(ms: number): void {
+  relayRetryStepMs = ms
+}
+
 export async function relayTurnEndToApi(
   opencodeSessionId: string,
   status: 'idle' | 'error',
@@ -220,7 +226,7 @@ export async function relayTurnEndToApi(
               error = eventError ?? turn.error
               effectiveStatus = error ? 'error' : status
             }
-            await new Promise((r) => setTimeout(r, 1_000 * attempt))
+            await new Promise((r) => setTimeout(r, relayRetryStepMs * attempt))
           }
           continue
         }
@@ -241,7 +247,7 @@ export async function relayTurnEndToApi(
     } catch (err) {
       logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
     }
-    if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
+    if (attempt < 4) await new Promise((r) => setTimeout(r, relayRetryStepMs * attempt))
   }
   logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId: ctx.sessionId, status: effectiveStatus })
 }

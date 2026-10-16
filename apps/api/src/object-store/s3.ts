@@ -227,10 +227,10 @@ export class ObjectStore {
 
   private async resolveBody(body: ObjectBody): Promise<{ Body: PutObjectCommandInput['Body']; ContentLength?: number }> {
     if (typeof body === 'string' || Buffer.isBuffer(body)) return { Body: body };
-    // Whole-file Buffer, not `createReadStream`: on the API image's Bun
-    // (`BUN_VERSION=1.2`, 1.2.23) a PutObject with a Node ReadStream body
-    // never completes and pins a core (scripts/project-snapshot-s3-probe.ts
-    // reproduces it; a Buffer body of the same bytes finishes in ~30 ms).
+    // Whole-file Buffer, not `createReadStream`: on Bun 1.2.23 (the API image
+    // until 2026-10-14) a PutObject with a Node ReadStream body never completes
+    // and pins a core (scripts/project-snapshot-s3-probe.ts reproduces it; a
+    // Buffer body of the same bytes finishes in ~30 ms).
     // ponytail: archives are capped by the caller (512 MiB for snapshots,
     // 4 MiB for config archives) and are single-digit MB in practice; switch
     // to @aws-sdk/lib-storage multipart if that ceiling is ever approached.
@@ -324,9 +324,14 @@ export class ObjectStore {
     }
   }
 
-  async getBytes(key: string): Promise<Uint8Array | null> {
+  /** One object's bytes, or null when it is missing. `maxBytes` refuses a larger object before its body is read. */
+  async getBytes(key: string, opts: { maxBytes?: number } = {}): Promise<Uint8Array | null> {
     try {
       const res = await this.client().send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      if (opts.maxBytes !== undefined && (res.ContentLength ?? 0) > opts.maxBytes) {
+        res.Body?.transformToWebStream().cancel().catch(() => undefined);
+        throw new Error(`object too large: ${key}: ${res.ContentLength} > ${opts.maxBytes} bytes`);
+      }
       return res.Body ? await res.Body.transformToByteArray() : new Uint8Array();
     } catch (err) {
       if (isMissing(err)) return null;

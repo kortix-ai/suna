@@ -1,7 +1,7 @@
 /**
  * session-cache-write — writes one session change into the cached session
- * lists, so a rename, a delete and a new session show at once instead of
- * after the refetch that follows the server's answer.
+ * lists, so a rename, a delete, a new session, a pin and an archive show at
+ * once instead of after the refetch that follows the server's answer.
  *
  * A project's sessions are cached in two shapes (lib/projects/hooks.ts):
  *
@@ -21,9 +21,10 @@
  * query client: `bun test` cannot load native modules.
  */
 
-import type { ProjectSession } from '@/lib/projects/projects-client';
+import type { ProjectSession, SessionListState } from '@/lib/projects/projects-client';
 
-import type { SessionPage } from './session-pages';
+import { flattenSessionPages, type SessionPage } from './session-pages';
+import type { SessionListView } from './session-tree';
 
 interface SessionRow {
   session_id: string;
@@ -40,17 +41,39 @@ function isPagedSessions<T>(value: unknown): value is PagedSessions<T> {
   );
 }
 
+/** One session row: the by-id read (`projectKeys.projectSession`). */
+function isSessionRow(value: unknown): value is SessionRow {
+  return typeof value === 'object' && value !== null && typeof (value as SessionRow).session_id === 'string';
+}
+
 /**
- * Apply `update` to one cached list, flat or paged. A page whose rows come
- * back unchanged keeps its identity, and so does the whole cache when no page
- * changed. Any other value is returned as is.
+ * The session rows one cache entry under `projectSessions` holds: a flat page,
+ * a paged list, or one row (the by-id read). Other entries under the prefix
+ * (participants, message authors) hold none.
+ */
+export function sessionRowsOf<T extends SessionRow>(cached: unknown): T[] {
+  if (Array.isArray(cached)) return cached as T[];
+  if (isPagedSessions<T>(cached)) return flattenSessionPages(cached);
+  return isSessionRow(cached) ? [cached as T] : [];
+}
+
+/**
+ * Apply `update` to one cached list, flat or paged, or to one cached row (the
+ * by-id read: it takes the update of its own session only). A page whose rows
+ * come back unchanged keeps its identity, and so does the whole cache when no
+ * page changed. Any other value is returned as is.
  */
 export function applyToSessionCache<T extends SessionRow>(
   cached: unknown,
   update: (rows: T[]) => T[]
 ): unknown {
   if (Array.isArray(cached)) return update(cached as T[]);
-  if (!isPagedSessions<T>(cached)) return cached;
+  if (!isPagedSessions<T>(cached)) {
+    if (!isSessionRow(cached)) return cached;
+    // A delete (no row back) leaves the entry: the thread that reads it closes.
+    const [row] = update([cached as T]).filter((next) => next.session_id === cached.session_id);
+    return row ?? cached;
+  }
   let changed = false;
   const pages = cached.pages.map((page) => {
     const items = update(page.items);
@@ -176,6 +199,71 @@ export function createdSessionListRow(value: unknown, projectId: string): Projec
   return { ...session, metadata: trimmed };
 }
 
+// ── Pin and archive (KRTX-2418) ─────────────────────────────────────────────
+
+/** A change of the viewer's own list: `PUT …/pin {pinned}` or `PUT …/archive {archived}`. */
+export type SessionListChange = { pinned: boolean } | { archived: boolean };
+
+/**
+ * The pin and archive a change leaves, as the server writes them: archiving
+ * unpins, pinning unarchives, and a repeat keeps the first time.
+ */
+export function listStateAfter(
+  row: { pinned_at?: string | null; archived_at?: string | null },
+  change: SessionListChange,
+  now: string
+): SessionListState {
+  const pinnedAt = row.pinned_at ?? null;
+  const archivedAt = row.archived_at ?? null;
+  if ('pinned' in change) {
+    return change.pinned ? { pinned_at: pinnedAt ?? now, archived_at: null } : { pinned_at: null, archived_at: archivedAt };
+  }
+  return change.archived ? { pinned_at: null, archived_at: archivedAt ?? now } : { pinned_at: pinnedAt, archived_at: null };
+}
+
+/**
+ * What a cached entry under `projectSessions` lists: `'pinned'` or
+ * `'archived'` for those views; `null` for the list and a parent's children,
+ * which leave out archived sessions; `undefined` for an entry that is not a
+ * list of its own (the flat lookup page, the by-id read, participants).
+ */
+export function sessionListView(key: readonly unknown[]): SessionListView | null | undefined {
+  if (key[2] === 'children') return null;
+  if (key[2] !== 'paged') return undefined;
+  const filter = key[3];
+  const view = typeof filter === 'object' && filter !== null ? (filter as { view?: unknown }).view : undefined;
+  return view === 'pinned' || view === 'archived' ? view : null;
+}
+
+/**
+ * A pin or archive, written into one cached entry (`key` says what it lists).
+ * The session's row takes `state`. A list the row no longer belongs in drops
+ * it: an archived row leaves the list and the pinned view, an unarchived row
+ * the archived view, an unpinned row the pinned view. A list the row now
+ * belongs in gets it from the refetch, in the server's order.
+ */
+export function writeListState(
+  cached: unknown,
+  key: readonly unknown[],
+  sessionId: string,
+  state: SessionListState
+): unknown {
+  const view = sessionListView(key);
+  const belongs =
+    view === undefined ||
+    (view === 'pinned' ? !!state.pinned_at : view === 'archived' ? !!state.archived_at : !state.archived_at);
+  return applyToSessionCache<ProjectSession>(cached, (rows) => {
+    const index = rows.findIndex((row) => row.session_id === sessionId);
+    if (index === -1) return rows;
+    if (!belongs) return withoutSession(rows, sessionId);
+    const row = rows[index];
+    if ((row.pinned_at ?? null) === state.pinned_at && (row.archived_at ?? null) === state.archived_at) return rows;
+    const next = rows.slice();
+    next[index] = { ...row, pinned_at: state.pinned_at, archived_at: state.archived_at };
+    return next;
+  });
+}
+
 /** The slice of a TanStack `QueryClient` the writer uses. */
 export interface SessionListCache {
   getQueryData(queryKey: readonly unknown[]): unknown;
@@ -184,19 +272,21 @@ export interface SessionListCache {
 
 /**
  * Write `change` into each cached list under `keys`, skipping a list that is
- * not cached or that the change leaves as it is. Returns the undo: every
- * written list back exactly as it was, for the write the server refuses.
+ * not cached or that the change leaves as it is. `change` gets the list's key
+ * too, for a write that depends on what the list holds (`writeListState`).
+ * Returns the undo: every written list back exactly as it was, for the write
+ * the server refuses.
  */
 export function writeSessionLists(
   client: SessionListCache,
   keys: readonly (readonly unknown[])[],
-  change: (cached: unknown) => unknown
+  change: (cached: unknown, key: readonly unknown[]) => unknown
 ): () => void {
   const written: [readonly unknown[], unknown][] = [];
   for (const key of keys) {
     const cached = client.getQueryData(key);
     if (cached === undefined) continue;
-    const next = change(cached);
+    const next = change(cached, key);
     if (next === cached) continue;
     written.push([key, cached]);
     client.setQueryData(key, next);

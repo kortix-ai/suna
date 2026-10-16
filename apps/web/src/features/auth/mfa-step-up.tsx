@@ -22,18 +22,17 @@
  * `challengeAndVerify`, and dispatches `kortix:mfa-verified` on success so
  * deferred actions resume.
  *
- * Members with NO enrolled factor get pointed at Settings → Security instead
- * of a dead-end code prompt.
+ * Members with NO enrolled factor get a "Set up authenticator" action that
+ * opens Settings → Security instead of a dead-end code prompt.
  */
 
-import { ShieldWarningIcon as ShieldWarning } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
@@ -119,7 +118,7 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
     },
   });
   const canVerify = code.length === 6 && !verify.isPending;
-
+  const noFactor = !factorsQuery.isLoading && !factor;
   return (
     <Dialog
       open={open}
@@ -139,9 +138,11 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
         <div className="flex w-full max-w-sm flex-col">
           {/* The mark above the title, as on the (auth) pages. */}
           <KortixLogo variant="icon" size={22} className="text-foreground" />
-          <DialogTitle className="mt-6 text-xl font-medium tracking-tight">{t('title')}</DialogTitle>
+          <DialogTitle className="mt-6 text-xl font-medium tracking-tight">
+            {noFactor ? t('noFactorTitle') : t('title')}
+          </DialogTitle>
           <DialogDescription className="text-muted-foreground mt-3 text-sm text-pretty">
-            {dismissible ? t('actionDescription') : t('gateDescription')}
+            {noFactor ? t('noFactorDescription') : dismissible ? t('actionDescription') : t('gateDescription')}
           </DialogDescription>
 
           {factorsQuery.isLoading ? (
@@ -198,26 +199,25 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
                 </Button>
               </div>
             </form>
-          ) : (
-            <div className="mt-8 flex flex-col gap-5">
-              <InfoBanner tone="warning" icon={ShieldWarning} title={t('noFactorTitle')}>
-                {t('noFactorDescription')}
-              </InfoBanner>
-              {dismissible ? (
-                <Button type="button" variant="secondary" className="self-start" onClick={() => onDismiss?.()}>
-                  {t('cancel')}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="self-start"
-                  onClick={() => void performSignOut()}
-                >
-                  {t('signOut')}
-                </Button>
-              )}
+          ) : dismissible ? (
+            <div className="mt-10 flex items-center justify-between">
+              <Button type="button" variant="secondary" onClick={() => onDismiss?.()}>
+                {t('cancel')}
+              </Button>
+              {/* A route, not the settings overlay store: the overlay is not
+                  mounted where the denied request came from (a project the
+                  gate denied renders no `ProjectShell`). Dismissing drops the
+                  armed action; the user retries it once enrolled. */}
+              <Button asChild>
+                <Link href="/settings/security" onClick={() => onDismiss?.()}>
+                  {t('setUp')}
+                </Link>
+              </Button>
             </div>
+          ) : (
+            <Button type="button" variant="secondary" className="mt-10 self-start" onClick={() => void performSignOut()}>
+              {t('signOut')}
+            </Button>
           )}
         </div>
       </DialogContent>

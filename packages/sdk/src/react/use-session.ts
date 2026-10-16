@@ -100,8 +100,9 @@ import { useSessionLogSync } from './use-session-log';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
-import { useSessionTurnOutcome, useSessionWorking } from './use-session-working';
+import { useSessionCanStop, useSessionTurnOutcome, useSessionWorking } from './use-session-working';
 import { cancelSessionTurn } from './session-stop';
+import { useTurnEndHandoff } from './turn-end-handoff';
 import { useVisibleAgents } from './use-visible-agents';
 import { createKortix } from '../core/client/kortix';
 import { platformConfig } from '../core/http/config';
@@ -1083,7 +1084,8 @@ export interface UseSessionOptions {
    * When `false`: `messages`/`diffs`/`todos` are empty arrays, `status` is the
    * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions` stay
    * live (populated by SSE via the still-active event stream, just without the
-   * self-heal poll backstop), and `replayStartStash` is force-disabled (it reads
+   * self-heal poll backstop), the session log (v2) is still negotiated, so
+   * `useSessionLogThread` serves the log's records, and `replayStartStash` is force-disabled (it reads
    * the now-empty chat state, so it would never fire correctly). Everything the
    * boot/lifecycle fields need — `start`/`switch`/`runtimePhase`/`sandbox`/`stage`/
    * `runtimeSessionId` — is unaffected.
@@ -1442,9 +1444,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // whole chat path (SSE, sync, send) rides this single global switch — there is no
   // separate per-session client to keep in sync.
   //
-  // Keyed on the box (`external_id`), not on `sandbox_id`: an ephemeral session
-  // keeps its `sandbox_id` (= the session id) across a stop that deletes its box
-  // and a wake that boots a new one. Keyed on `sandbox_id`, the switch never
+  // Keyed on the box (`external_id`), not on `sandbox_id`: a session keeps its
+  // `sandbox_id` (= the session id) when its box is replaced (a restore, a
+  // re-provision). Keyed on `sandbox_id`, the switch never
   // re-ran for the new box, and every read stayed on the deleted one until a
   // reload ("Lost contact with this session's computer").
   const [switchedBoxId, setSwitchedBoxId] = useState<string | null>(null);
@@ -1483,8 +1485,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [switched, switchedBoxId]);
 
-  // 3b. The proxy says the box behind our runtime URL is gone (deleted by an
-  // ephemeral stop; another tab or the send path may already have woken the
+  // 3b. The proxy says the box behind our runtime URL is gone (deleted or
+  // replaced; another tab or the send path may already have woken the
   // session on a new box). The URL can never answer again, so ask `/start`
   // now instead of waiting out its once-a-minute recheck.
   const refetchStart = start.refetch;
@@ -1511,8 +1513,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
   // 5a. The session log (v2) when negotiated; until then a no-op and the
-  // transcript below stays the only source (`use-session-log.ts`).
-  useSessionLogSync(projectId, sessionId, { enabled: transcriptHistoryEnabled });
+  // transcript below stays the only source (`use-session-log.ts`). Also without
+  // the chat engine: a host that reads its own transcript renders the log's
+  // threads (`useSessionLogThread`).
+  useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
   const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
@@ -1546,6 +1550,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled,
     runtimeSessionId: ocSessionId,
   });
+  const canStop = useSessionCanStop(projectId, sessionId);
   // A turn keeps the computer on and moves presence's cap (2 h after the
   // latest turn), so the window from before it is wrong after it (KRTX-1729):
   // a turn that starts clears it, and a turn that ends reads it again.
@@ -1577,9 +1582,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
     streamConnected,
-    // Until the saved-history read answers with a copy, the session-open
-    // bundle's copy of the same mirror may paint (`undefined` = read it).
-    mirror: transcriptHistory.envelope ?? undefined,
+    // The saved-history read above is this open's ONE transcript read: its
+    // copy, or `null` while it runs and when it found none. Never `undefined`,
+    // which would make the sync layer read the same window again (KRTX-189).
+    mirror: transcriptHistory.envelope,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
@@ -1637,6 +1643,19 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     lastEndedSeenRef.current = lastEndedToken;
     if (seen !== undefined && seen !== lastEndedToken) presenceReporterRef.current?.refresh();
   }, [turnRead, lastEndedToken]);
+  // This view's stream is the only thing that announces a turn's end. A turn
+  // still running when the view unmounts (the person opened another page) is
+  // handed to a `/turn` watch that announces it instead; mounting again takes
+  // it back (`turn-end-handoff.ts`).
+  useTurnEndHandoff({
+    enabled,
+    projectId,
+    sessionId,
+    runtimeSessionId: ocSessionId || null,
+    working: turnRunning,
+    openTurnToken: working.serverOpenTurnToken,
+    lastEndedToken,
+  });
   const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
@@ -2104,6 +2123,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      *  and for which turn. The one answer; `isBusy` is its boolean face. */
     working,
     isBusy: working.state === 'working',
+    /**
+     * May this viewer stop the running turn? In a shared session only the
+     * member who started it, the session owner or a project manager may. False
+     * only when the server's latest `/turn` answer says so (`can_stop`); a host
+     * then shows no Stop and a send queues. True when nothing runs, and when
+     * the server did not say. A stop the server refuses still ends as a
+     * `failed` settlement (403 `not_turn_prompter`).
+     */
+    canStop,
     /**
      * Until when this person's presence keeps the session's computer on
      * (KRTX-1729): `until` is the computer's stop time after the latest

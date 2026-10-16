@@ -8,7 +8,6 @@ export interface NewSessionCreateInput {
   connector_bindings?: SessionConnectorBindingsInput;
   inherit_unbound?: boolean;
   provider_secret_pools?: Record<string, string[]>;
-  persistent_machine?: boolean;
 }
 
 /**
@@ -28,8 +27,7 @@ export interface NewSessionCreateInput {
 export function buildNewSessionCreateInput(
   options: Pick<ComposerOptions, 'agent' | 'scope' | 'providerSecretPools'> & {
     sandbox_slug?: string;
-    persistent_machine?: boolean;
-  } = {},
+    } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
   if (isMetaAgentName(options.agent)) {
@@ -38,7 +36,6 @@ export function buildNewSessionCreateInput(
     input.sandbox_slug = options.sandbox_slug;
   }
   if (options.agent) input.agent_name = options.agent;
-  if (options.persistent_machine && !isMetaAgentName(options.agent)) input.persistent_machine = true;
   if (options.providerSecretPools && Object.keys(options.providerSecretPools).length > 0) {
     input.provider_secret_pools = options.providerSecretPools;
   }

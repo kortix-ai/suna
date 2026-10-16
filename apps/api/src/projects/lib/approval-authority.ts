@@ -123,6 +123,22 @@ export function approvalResolvers(target: {
     : 'managers';
 }
 
+export interface ApprovalTarget {
+  createdBy: string | null;
+  origin: string | null;
+}
+
+/** `created_by` + origin of the session a gated call belongs to — the inputs
+ *  of the launcher half of the authority rule. A call with no session belongs
+ *  to the user it ran as. `session` is the call's session row, if it exists. */
+export function approvalTargetOf(
+  row: { sessionId: string | null; actingUserId: string | null },
+  session: { createdBy: string | null; origin: string | null } | undefined,
+): ApprovalTarget {
+  if (!row.sessionId) return { createdBy: row.actingUserId, origin: 'user' };
+  return { createdBy: session?.createdBy ?? null, origin: session?.origin ?? null };
+}
+
 /**
  * May this caller SEE a session's pending approvals?
  *

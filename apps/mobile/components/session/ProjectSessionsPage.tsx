@@ -20,6 +20,12 @@
  *            sheet and the no-match state share one Reset (search + statuses).
  *            Search and filter live in `useSessionFilterStore` per project, so
  *            they survive opening a session and coming back (KRTX-250).
+ *   archived The filter sheet's Archived row (KRTX-2418) swaps the list for
+ *            the viewer's archived sessions (`view: 'archived'`), sub-agent
+ *            ones too; scope, search and statuses still narrow it. The chip
+ *            under the search names it, and Reset returns to the list. Long
+ *            press, then Unarchive. Empty: "Sessions you archive will show up
+ *            here."
  *   list     Today / Yesterday / This week / Older, each a group of
  *            `SettingsRow`s (the settings screens' layout); a group's title
  *            shows only when more than one group has sessions. One virtualised
@@ -44,8 +50,8 @@
  *
  * Tap a row → the session opens in the view route, which replaces this page
  * (useCoveringRoute), so the stack stays one screen over project home.
- * Long press → `SessionActionsSheet` (Rename, Share, Restart sandbox, Stop,
- * Delete), opened through `openSessionActions` on `ProjectRouteValue` — the
+ * Long press → `SessionActionsSheet` (Rename, Share, Pin, Archive, Restart
+ * sandbox, Stop, Delete), opened through `openSessionActions` on `ProjectRouteValue` — the
  * same sheet instance the thread's `···` and the drawer's session-row long
  * press use (COR-140 Task 5, `components/session/SessionActionsSheet.tsx`).
  *
@@ -56,13 +62,14 @@
 
 import * as React from 'react';
 import { FlatList, RefreshControl, View, type ListRenderItem } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { directSubsessions } from '@kortix/sdk';
 import { useSessionsNeedingInput } from '@kortix/sdk/react';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
-import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
+import { ArchiveIcon, FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -93,14 +100,14 @@ import {
   SESSION_SCOPES,
   childCountOf,
   isParentExpanded,
-  rootRowsOnly,
   searchQueryParam,
-  startedByForScope,
+  sessionsPageFilter,
+  sessionsPageRows,
 } from '@/lib/session/session-tree';
 import { useAuthContext } from '@/contexts';
 import { parentKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { useReviewItems } from '@/lib/review/use-review';
+import { useReviewNeedsYou } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import type { SessionStarter } from '@/lib/session/session-tree';
 import {
@@ -348,6 +355,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const { t } = useTranslation();
 
   // Poll for provisioning rows only while this page is on top.
   // KRTX-639: the server searches and filters. Top-level sessions, a page (50)
@@ -360,13 +368,16 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const query = storedFilter.query;
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
   const serverQuery = searchQueryParam(debouncedQuery);
+  // Archived (KRTX-2418): the viewer's archived sessions instead of the list.
+  const archived = storedFilter.archived;
   const sessionsQuery = useProjectSessionsPaged(projectId, {
     poll: isFocused,
-    parent: 'root',
-    startedBy: startedByForScope(storedFilter.scope),
-    q: serverQuery,
+    ...sessionsPageFilter({ scope: storedFilter.scope, archived, q: serverQuery }),
   });
-  const allSessions = React.useMemo(() => rootRowsOnly(sessionsQuery.sessions), [sessionsQuery.sessions]);
+  const allSessions = React.useMemo(
+    () => sessionsPageRows(sessionsQuery.sessions, archived),
+    [sessionsQuery.sessions, archived]
+  );
 
   // No haptic on a row tap: ProjectScreen's open handler fires the one tap.
 
@@ -390,7 +401,16 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   );
   const hasSessions = allSessions.length > 0;
   const statusFilterActive = statusFilter.size > 0;
-  const filterActive = query.trim().length > 0 || statusFilterActive || storedFilter.scope !== 'all';
+  // Statuses or Archived, the sheet's two choices: the funnel fills and the chip shows.
+  const sheetFilterActive = statusFilterActive || archived;
+  const filterActive = query.trim().length > 0 || sheetFilterActive || storedFilter.scope !== 'all';
+  // The chip's text: Archived, then the picked statuses.
+  const sheetFilterSummary = [
+    archived ? t('sessions.archivedView') : null,
+    statusFilterActive ? sessionStatusFilterSummary(statusFilter) : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   const setQuery = React.useCallback(
     (text: string) => useSessionFilterStore.getState().setQuery(projectId, text),
@@ -404,7 +424,11 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     },
     [projectId]
   );
-  // The page's one Reset: search and statuses together (chip, sheet, no-match state).
+  const toggleArchived = React.useCallback(() => {
+    haptics.selection();
+    useSessionFilterStore.getState().toggleArchived(projectId);
+  }, [projectId]);
+  // The page's one Reset: search, statuses, scope and Archived together (chip, sheet, no-match state).
   const resetFilters = React.useCallback(() => {
     haptics.tap();
     useSessionFilterStore.getState().resetProject(projectId);
@@ -414,11 +438,11 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   // sessions whose agent waits on a question (KRTX-1739). ProjectScreen, the
   // project stack's layout, polls both while this route shows; this reads the
   // same query caches without a second poll.
-  const reviewItems = useReviewItems(projectId, { poll: false });
+  const reviewNeedsYou = useReviewNeedsYou(projectId, { poll: false });
   const needsInput = useSessionsNeedingInput(projectId, { enabled: false });
   const needsYou = React.useMemo(
-    () => needsYouBySession(reviewItems.data ?? [], needsInput.data),
-    [reviewItems.data, needsInput.data]
+    () => needsYouBySession(reviewNeedsYou.items, needsInput.data),
+    [reviewNeedsYou.items, needsInput.data]
   );
 
   // The status filter is client-side over the loaded rows (the server has no
@@ -583,11 +607,15 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const loadFailed = rawListState === 'error';
   // The project has no sessions at all: only knowable with no filter on.
   const projectEmpty = !filterActive && rawListState === 'empty';
+  // Archived with nothing else narrowing it: nothing is archived yet.
+  const archiveEmpty = archived && !statusFilterActive && !query.trim() && storedFilter.scope === 'all';
   const emptyMessage = loadFailed
     ? 'Unable to load sessions. Pull to refresh.'
     : projectEmpty
       ? 'No sessions yet'
-      : 'No matching sessions';
+      : archiveEmpty
+        ? t('sessions.archivedEmpty')
+        : 'No matching sessions';
   // Rows may exist on later pages: none loaded yet (`more`), or none of the
   // loaded ones pass the status filter. Offer the next page instead of a
   // verdict.
@@ -612,8 +640,8 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
             <Icon
               as={Funnel}
               size={20}
-              className={statusFilterActive ? 'text-primary' : 'text-foreground'}
-              weight={statusFilterActive ? 'fill' : undefined}
+              className={sheetFilterActive ? 'text-primary' : 'text-foreground'}
+              weight={sheetFilterActive ? 'fill' : undefined}
             />
           </Button>
         }
@@ -651,18 +679,19 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                 </Button>
               ))}
             </View>
-            {statusFilterActive ? (
-              // The active status filter, visible without opening the sheet.
-              // Tap = Reset (search + statuses).
+            {sheetFilterActive ? (
+              // The active status filter and the Archived view, visible
+              // without opening the sheet. Tap = Reset (search, statuses,
+              // scope and Archived).
               <View className="flex-row px-4 pb-2">
                 <Button
                   variant="secondary"
                   size="sm"
                   className="rounded-full"
                   onPress={resetFilters}
-                  accessibilityLabel={`Filtered by ${sessionStatusFilterSummary(statusFilter)}. Reset`}
+                  accessibilityLabel={`Filtered by ${sheetFilterSummary}. Reset`}
                   accessibilityHint="Shows every session again">
-                  <Text>{sessionStatusFilterSummary(statusFilter)}</Text>
+                  <Text>{sheetFilterSummary}</Text>
                   <Icon as={XIcon} size={14} className="text-muted-foreground" />
                 </Button>
               </View>
@@ -763,25 +792,38 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
       )}
 
       {/* Filter: which statuses show in the timeline. Empty selection = every
-          status. A basic, single group of toggleable rows — no date range or
-          sort, unlike web's fuller filter panel. */}
+          status. A basic group of toggleable rows — no date range or sort,
+          unlike web's fuller filter panel — then, 18pt below (the settings
+          screens' gap), Archived: the viewer's archived sessions instead of
+          the list (KRTX-2418). */}
       <KortixBottomSheetModal ref={filterSheetRef} title="Filter sessions" enableDynamicSizing enablePanDownToClose>
         <BottomSheetScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
-          <SettingsGroup>
-            {SESSION_STATUS_FILTERS.map((status) => (
+          <View style={{ gap: GROUP_GAP }}>
+            <SettingsGroup>
+              {SESSION_STATUS_FILTERS.map((status) => (
+                <SettingsRow
+                  key={status}
+                  leading={<SessionStatusMark status={status} />}
+                  label={sessionStatusLabel(status)}
+                  checked={statusFilter.has(status)}
+                  right={null}
+                  onPress={() => toggleStatusFilter(status)}
+                />
+              ))}
+            </SettingsGroup>
+            <SettingsGroup>
               <SettingsRow
-                key={status}
-                leading={<SessionStatusMark status={status} />}
-                label={sessionStatusLabel(status)}
-                checked={statusFilter.has(status)}
+                icon={ArchiveIcon}
+                label={t('sessions.archivedView')}
+                checked={archived}
                 right={null}
-                onPress={() => toggleStatusFilter(status)}
+                onPress={toggleArchived}
               />
-            ))}
-          </SettingsGroup>
-          {statusFilterActive ? (
+            </SettingsGroup>
+          </View>
+          {sheetFilterActive ? (
             <Button variant="secondary" size="lg" className="mt-4 rounded-full" onPress={resetFilters}>
               <Text>Reset</Text>
             </Button>

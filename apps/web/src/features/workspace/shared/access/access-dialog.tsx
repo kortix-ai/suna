@@ -1108,11 +1108,12 @@ function PrincipalAccessDialog({
         const url = (undeliveredInvite.value as { invite_url?: string }).invite_url ?? '';
         warningToast(tI18nComplete.raw('textc32c6c7ee51b'), {
           duration: 10_000,
-          button: (
-            <Button size="sm" onClick={() => void navigator.clipboard.writeText(url)}>
-              {tI18nComplete.raw('text6aaa89b8157c')}
-            </Button>
-          ),
+          actions: [
+            {
+              label: tI18nComplete.raw('text6aaa89b8157c'),
+              onClick: () => void navigator.clipboard.writeText(url),
+            },
+          ],
         });
       } else if (failedIndexes.length > 0 && ok > 0) {
         errorToast(tI18nComplete('textb0cdf63b8387', { value0: ok, value1: total }));

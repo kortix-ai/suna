@@ -179,6 +179,10 @@ export interface ProjectSession {
   child_count?: number;
   /** Present only with `q` + `parent=root`. */
   search_match?: 'self' | 'child';
+  /** When you pinned / archived the session in your own list; null when not.
+   *  Absent for an agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
 }
 
 export interface ProjectSessionInitiator {
@@ -354,6 +358,9 @@ export interface ChangeRequest {
 
 export interface ChangeRequestsListResponse {
   change_requests: ChangeRequest[];
+  /** The next page's `cursor`; null on the last page. Absent on an API
+   *  older than KRTX-2316, which returned the whole list. */
+  next_cursor?: string | null;
 }
 
 export interface ChangeRequestDetailResponse {

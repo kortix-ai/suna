@@ -12,7 +12,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { retryOnDeadlock } from '../../shared/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';
@@ -215,12 +215,6 @@ export interface StoppedStateWrite {
   stopReason: StopReason;
   /** Extra keys to record about the stop. Merged, never assigned. */
   metadata?: Record<string, unknown>;
-  /**
-   * An ephemeral box was deleted, not stopped: the row gives up its external
-   * id in the same write (the identity guard admits exactly this, keyed on the
-   * `ephemeralRetiredExternalId` marker the metadata carries).
-   */
-  retiredExternalId?: boolean;
   now?: Date;
 }
 
@@ -421,7 +415,6 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       {
         at: now,
         metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch },
-        ...(write.retiredExternalId ? { columns: { externalId: null, baseUrl: null } } : {}),
       },
       tx,
     );
@@ -527,7 +520,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       .then((m) => m.drainSessionLifecycleQueue({ limit: 5 }))
       .catch(() => undefined);
   }
-  if (write.externalId) invalidateProviderCache(write.externalId);
+  if (write.externalId) invalidateSandbox(write.externalId);
 }
 
 export interface StoppedReconcileOptions {
@@ -643,6 +636,6 @@ export async function reconcileSandboxRemovedByExternalId(
       err,
     ),
   );
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   return true;
 }

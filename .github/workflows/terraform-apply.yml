@@ -164,8 +164,8 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      # Unconditional: the state-copy guard below lives here too.
       - name: Check out the aws-env action
+        if: inputs.cloudflare
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
@@ -207,13 +207,6 @@ jobs:
           fi
           printf 'TF_VAR_api_image=%s\n' "$API_IMAGE" >> "$GITHUB_ENV"
           echo "$TF_ROOT plans api_image=${API_IMAGE}."
-
-      # Fails before init when the root's regional state may miss writes made
-      # to its old us-west-2 key (.github/actions/state-copy-guard).
-      - name: Check the regional state copy
-        uses: ./.aws-env/.github/actions/state-copy-guard
-        with:
-          root: ${{ env.TF_ROOT }}
 
       - name: terraform init
         run: terraform -chdir="$TF_ROOT" init -input=false -no-color

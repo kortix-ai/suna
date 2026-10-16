@@ -31,7 +31,7 @@ import {
   CaretRightIcon as ChevronRight,
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@/lib/icons';
-import { formatCredits } from '@kortix/shared';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 import {
   SettingsGroup,
@@ -41,7 +41,6 @@ import {
 } from '@/components/kortix/settings-list';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { useToast } from '@/components/kortix/toast-provider';
-import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
@@ -178,25 +177,6 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
   }
 
   const credits = accountState.credits;
-  const dailyRefreshInfo = credits?.daily_refresh;
-
-  // Hours until daily credits refresh, e.g. "in 3h"
-  const getDailyRefreshTime = (): string | null => {
-    if (!dailyRefreshInfo?.enabled) return null;
-
-    let hours: number;
-    if (dailyRefreshInfo.seconds_until_refresh) {
-      hours = Math.ceil(dailyRefreshInfo.seconds_until_refresh / 3600);
-    } else if (dailyRefreshInfo.next_refresh_at) {
-      const diffMs = new Date(dailyRefreshInfo.next_refresh_at).getTime() - Date.now();
-      hours = Math.ceil(diffMs / (1000 * 60 * 60));
-    } else {
-      return null;
-    }
-
-    if (hours <= 0 || isNaN(hours)) return null;
-    return hours === 1 ? t('billing.in1Hour', 'in 1 hour') : `in ${hours}h`;
-  };
 
   const subscription = accountState.subscription;
   // The API's trial-aware plan family: Free, Team or Enterprise. Legacy tier
@@ -205,7 +185,6 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
   const nextBillingDate = subscription?.current_period_end
     ? formatDate(subscription.current_period_end)
     : null;
-  const dailyRefreshTime = getDailyRefreshTime();
   const commitment = subscription?.commitment;
   const commitmentEndDate =
     commitment?.has_commitment && commitment.commitment_end_date
@@ -216,7 +195,6 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
       ? formatDate(subscription.cancellation_effective_date, 'short')
       : null;
 
-  const scheduledChange = subscription?.scheduled_change ?? null;
   // iOS (App Store guideline 3.1.1): no external-purchase action, so Buy
   // credits / Change plan / Manage on kortix.com never render there.
   const canPurchase = canShowExternalPurchase(Platform.OS);
@@ -247,7 +225,7 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
           <View className="items-center gap-1 pb-2 pt-4">
             <Text variant="muted">{t('billing.availableCredits', 'Available credits')}</Text>
             <Text variant="h1" className="tabular-nums">
-              {formatCredits(credits?.total || 0)}
+              {formatUsdAsCredits(credits?.total ?? 0)}
             </Text>
             {planName ? (
               <Text variant="muted">
@@ -266,28 +244,12 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
           </View>
         }>
         <SettingsGroup title={t('billing.credits', 'Credits')}>
-          {dailyRefreshInfo?.enabled ? (
-            <SettingsRow
-              label={t('billing.daily', 'Daily')}
-              value={
-                dailyRefreshTime
-                  ? `${formatCredits(credits?.daily || 0)} · ${t('billing.refreshes', 'refreshes')} ${dailyRefreshTime}`
-                  : formatCredits(credits?.daily || 0)
-              }
-            />
-          ) : null}
-          {!dailyRefreshInfo?.enabled || (credits?.monthly || 0) > 0 ? (
-            <SettingsRow
-              label={t('billing.monthly', 'Monthly')}
-              value={formatCredits(credits?.monthly || 0)}
-            />
-          ) : null}
-          <SettingsRow label={t('billing.extra', 'Extra')} value={formatCredits(credits?.extra || 0)} />
+          <SettingsRow
+            label={t('billing.monthly', 'Monthly')}
+            value={formatUsdAsCredits(credits?.monthly ?? 0)}
+          />
+          <SettingsRow label={t('billing.extra', 'Extra')} value={formatUsdAsCredits(credits?.extra ?? 0)} />
         </SettingsGroup>
-
-        {scheduledChange ? (
-          <ScheduledDowngradeCard scheduledChange={scheduledChange} onCancel={() => void refetch()} />
-        ) : null}
 
         {subscription ? (
           <SettingsGroup title={t('billing.plan', 'Plan')}>

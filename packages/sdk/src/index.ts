@@ -524,7 +524,9 @@ export {
 export * from './core/session-sync/saved-copy-store';
 export {
   type EmptyConversationInput,
+  type SavedSessionCopy,
   isEmptyConversation,
+  readSavedSessionCopy,
   savedCopyEmptyRoot,
 } from './core/session-sync/saved-transcript';
 export * from './core/session/url';
@@ -608,7 +610,9 @@ export {
   type PickerProviderListInput,
 } from './core/models/provider-selection';
 export {
+  latestPromptModel,
   resolveComposerModel,
   resolveModelDefault,
+  sessionModelCandidates,
   type ComposerModelResolution,
 } from './core/models/composer-model';

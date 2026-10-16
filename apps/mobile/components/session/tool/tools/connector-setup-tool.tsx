@@ -25,9 +25,9 @@ import { ToolResultCard } from '../shared/result-card';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ConnectorSetupTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const output = partOutput(part);
+  const output = partOutput(call);
   const data = useMemo(() => parseConnectorSetupOutput(output || ''), [output]);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over it.
   const isError = useMemo(() => isErrorOutput(output), [output]);
@@ -35,7 +35,7 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PlugIcon}
       trigger={connectorSetupTrigger(data, isError)}
       defaultOpen={defaultOpen}

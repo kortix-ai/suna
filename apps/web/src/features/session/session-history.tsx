@@ -9,8 +9,9 @@
  * - `TranscriptMarker`: one line in the transcript, rule, pill, rule (the compaction marker's
  *   grammar), for the restore note and for a harness switch.
  * - `FullTextControl`: a turn that shows a 16 kB preview of a long text loads the whole text
- *   on request, never on its own: inline up to 1 MB in all, as a downloaded file above
- *   (`sessionLogFullTextAction`).
+ *   on request, never on its own: inline up to 1 MB in all; above it the large texts download
+ *   as files and the small ones still show inline (`sessionLogFullTextAction`,
+ *   `sessionLogFullTextPlan`).
  */
 import { ArrowsLeftRightIcon, ClockCounterClockwiseIcon, XIcon } from '@phosphor-icons/react';
 import {
@@ -43,6 +44,7 @@ export const hasOutOfContext = (messages: readonly SessionLogMessage[] | undefin
   !!messages?.some((m) => !m.in_context && m.status !== 'streaming');
 
 const MISSING_KEY = {
+  message: 'missingMessage',
   attachment: 'missingAttachment',
   text: 'missingText',
   tool_input: 'missingToolInput',

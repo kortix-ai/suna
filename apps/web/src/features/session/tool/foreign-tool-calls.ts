@@ -58,6 +58,9 @@ export const FOREIGN_TOOL_CALLS: ToolCallBlock[] = [
   call('cc-ls', 'LS', 'list', { path: '/workspace/src' }, '- /workspace/src/\n  - index.ts\n  - util.ts\n'),
   call('cc-edit', 'Edit', 'edit', { file_path: '/workspace/src/util.ts', old_string: 'const a = 1;', new_string: 'const a = 2;' }, 'The file /workspace/src/util.ts has been updated.'),
   call('cc-multiedit', 'MultiEdit', 'edit', { file_path: '/workspace/src/index.ts', edits: [{ old_string: 'foo', new_string: 'bar' }] }, 'Applied 1 edit to /workspace/src/index.ts'),
+  call('cc-notebook', 'NotebookEdit', 'edit', { notebook_path: '/workspace/analysis.ipynb', cell_id: 'cell-2', new_source: 'print(total)', edit_mode: 'replace' }, 'Updated cell cell-2 with print(total)'),
+  call('cc-task-create', 'TaskCreate', 'todo', { subject: 'Map the block kind', description: 'Read the registry first.' }, 'Task #1 created successfully: Map the block kind'),
+  call('cc-task-update', 'TaskUpdate', 'todo', { taskId: '1', status: 'completed' }, 'Updated task #1 status'),
   call('cc-grep', 'Grep', 'grep', { pattern: 'TODO', path: '/workspace/src', glob: '*.ts' }, 'Found 1 file\n/workspace/src/index.ts'),
   call('cc-agent', 'Agent', 'task', { description: 'List files', prompt: 'List the files in the workspace', subagent_type: 'general-purpose' }, 'Found hello.txt'),
   call('cc-question', 'AskUserQuestion', 'question', {

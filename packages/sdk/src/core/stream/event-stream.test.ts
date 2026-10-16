@@ -389,6 +389,40 @@ describe('openEventStream text-delta coalescing', () => {
 
     handle.close();
   });
+
+  test('a burst read while the host is busy dispatches in one batch, not one event per yield', async () => {
+    // The host renders inside every yield; here each render takes 100 ms. That
+    // wait is not reading time, so it must not spend the next 8 ms read budget.
+    // Spent, the loop yields after every event: one delta per render reaches
+    // the store, and the transcript trails the wire by seconds.
+    const clock = createFakeClock();
+    const timers: EventStreamTimers = {
+      now: clock.now,
+      setTimeout: (handler, ms = 0) => clock.setTimeout(handler, ms === 0 ? 100 : ms),
+      clearTimeout: clock.clearTimeout,
+    };
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers });
+    await tick();
+    await clock.advance(10);
+
+    const wire = Array.from({ length: 50 }, (_, i) => partDelta(`evt_${i}`, `w${i} `));
+    for (const event of wire) channels[0].push(event);
+    // Reading takes no clock time here: every pending microtask runs before the
+    // clock moves on.
+    for (let ms = 0; ms < 1_000; ms += 10) {
+      await tick(400);
+      await clock.advance(10);
+    }
+
+    expect(dispatched.map((e) => (e.properties as { delta: string }).delta).join('')).toBe(
+      wire.map((e) => (e.properties as { delta: string }).delta).join(''),
+    );
+    expect(dispatched.length).toBeLessThanOrEqual(2);
+
+    handle.close();
+  });
 });
 
 describe('openEventStream vendor-retry containment (connection-leak regression)', () => {

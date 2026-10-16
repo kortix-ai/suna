@@ -588,7 +588,7 @@ export function childSessionReferences(
 }
 
 /**
- * Pure: which sub-agent transcripts one capture reads, at most `limit`.
+ * Pure: which sub-agent transcripts a capture reads.
  *
  * A sub-agent whose dispatching call ended, and whose saved transcript has no
  * open message, is final: it is never read again. One that is new, still
@@ -599,15 +599,62 @@ export function childSessionsToCapture(input: {
   references: ReadonlyArray<ChildSessionReference>;
   /** Sub-agent session id -> every stored message of it has ended. */
   stored: ReadonlyMap<string, { settled: boolean }>;
-  limit: number;
 }): string[] {
   return input.references
     .filter((reference) => {
       const saved = input.stored.get(reference.id);
       return !saved || !reference.settled || !saved.settled;
     })
-    .map((reference) => reference.id)
-    .slice(0, Math.max(0, input.limit));
+    .map((reference) => reference.id);
+}
+
+/** Only an OpenCode session id may reach a URL or a row. */
+const CHILD_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
+
+/**
+ * The sub-agent transcripts one capture saves, read through `read`, and whether
+ * another capture saves more.
+ *
+ * Breadth-first from `references`, following each read's own sub-agents. At most
+ * `cap` reads that return rows: a failed read and an empty one take no slot (the
+ * capture's deadline bounds them), so neither starves the sub-agents after it.
+ *
+ * `more`: sub-agents are left unread AND this capture read rows of one never saved
+ * before. A sub-agent that reads empty, fails, or was saved already (an unsettled
+ * one read again) is no progress, so a run of captures ends.
+ */
+export async function readChildTranscripts(input: {
+  references: ReadonlyArray<ChildSessionReference>;
+  stored: ReadonlyMap<string, { settled: boolean }>;
+  cap: number;
+  /** The root: never read as a sub-agent. */
+  root?: string;
+  read: (id: string) => Promise<{ rows: unknown[]; complete: boolean }>;
+  onError?: (id: string, error: unknown) => void;
+}): Promise<{
+  children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }>;
+  more: boolean;
+}> {
+  const children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }> = [];
+  const seen = new Set(input.root ? [input.root] : []);
+  const queue = childSessionsToCapture(input);
+  let savedNew = false;
+  while (queue.length > 0 && children.length < input.cap) {
+    const child = queue.shift()!;
+    if (seen.has(child) || !CHILD_SESSION_ID.test(child)) continue;
+    seen.add(child);
+    try {
+      const walk = await input.read(child);
+      queue.push(...childSessionsToCapture({ references: childSessionReferences(walk.rows as Array<{ parts: unknown }>), stored: input.stored }));
+      if (mirrorRowsFromOpencodePayload(walk.rows).length === 0) continue;
+      children.push({ opencodeSessionId: child, payload: walk.rows, complete: walk.complete });
+      savedNew ||= walk.complete && !input.stored.has(child);
+    } catch (error) {
+      input.onError?.(child, error);
+    }
+  }
+  const unread = queue.some((child) => !seen.has(child) && CHILD_SESSION_ID.test(child));
+  return { children, more: unread && savedNew };
 }
 
 /**

@@ -174,25 +174,41 @@ async function reviewLs(f: Record<string, string | undefined>, json: boolean): P
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
 
-  const query = new URLSearchParams();
-  if (f.segment) query.set('segment', f.segment);
-  if (f.kind) query.set('kind', f.kind);
-  const qs = query.toString();
-
-  let resp: { review_items: ReviewItem[] };
+  // The inbox is paged (KRTX-2316): follow `next_cursor`, 200 a page after the
+  // first. The first request sends no `limit`, so an older API, which returned
+  // the whole inbox, still answers in full. The walk is not a snapshot: an item
+  // decided between two pages moves to a later segment and comes back, so the
+  // later copy (the newer status) replaces the earlier one.
+  const byId = new Map<string, ReviewItem>();
   try {
-    resp = await ctx.client.get<{ review_items: ReviewItem[] }>(
-      `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
-    );
+    let cursor: string | null | undefined;
+    do {
+      const query = new URLSearchParams();
+      if (f.segment) query.set('segment', f.segment);
+      if (f.kind) query.set('kind', f.kind);
+      if (cursor) {
+        query.set('limit', '200');
+        query.set('cursor', cursor);
+      }
+      const qs = query.toString();
+      const page = await ctx.client.get<{ review_items: ReviewItem[]; next_cursor?: string | null }>(
+        `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
+      );
+      for (const item of page.review_items) {
+        byId.delete(item.review_item_id);
+        byId.set(item.review_item_id, item);
+      }
+      cursor = page.next_cursor;
+    } while (cursor);
   } catch (err) {
     return surfaceApiError(err);
   }
+  const items = [...byId.values()];
 
   if (json) {
-    emitJson(resp);
+    emitJson({ review_items: items });
     return 0;
   }
-  const items = resp.review_items;
   if (items.length === 0) {
     process.stdout.write(
       `  ${C.dim}Nothing in the inbox${f.segment ? ` for ${f.segment}` : ''}${f.kind ? ` (kind ${f.kind})` : ''}.${C.reset}\n`,
@@ -228,26 +244,28 @@ async function reviewShow(
 
   let item: ReviewItem | null = null;
   try {
-    if (adaptedSource(id)) {
-      // A `cr:` / `call:` row has its source of truth in another table; the
-      // per-item GET only reads native rows and would 404. The list endpoint is
-      // where the adapters fold them in, so read it from there.
+    // The per-item GET reads `cr:` and `call:` rows too (KRTX-2316), so an
+    // item is found off every page of the inbox.
+    const resp = await ctx.client.get<{ review_item: ReviewItem }>(
+      `/projects/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
+    );
+    item = resp.review_item;
+  } catch (err) {
+    if (!adaptedSource(id)) return surfaceApiError(err);
+    // An older API reads only native rows by id: the list is where its
+    // adapters fold the others in, and it returned the whole inbox.
+    try {
       const { review_items } = await ctx.client.get<{ review_items: ReviewItem[] }>(
         `/projects/${ctx.projectId}/review/items`,
       );
       item = review_items.find((row) => row.review_item_id === id) ?? null;
-      if (!item) {
-        process.stderr.write(`${status.err(`No review item "${id}" in the inbox.`)}\n`);
-        return 1;
-      }
-    } else {
-      const resp = await ctx.client.get<{ review_item: ReviewItem }>(
-        `/projects/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
-      );
-      item = resp.review_item;
+    } catch (listErr) {
+      return surfaceApiError(listErr);
     }
-  } catch (err) {
-    return surfaceApiError(err);
+    if (!item) {
+      process.stderr.write(`${status.err(`No review item "${id}" in the inbox.`)}\n`);
+      return 1;
+    }
   }
 
   if (json) {

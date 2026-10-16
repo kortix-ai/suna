@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { PgClient } from './helpers/pg-client';
-import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
+import {
+  captureSessionTranscriptMirror,
+  transcriptCapturesSettledForTests,
+} from '../projects/lib/session-transcript-capture';
 import {
   mirrorHoldsStrippedRows,
   readSessionTranscriptMirror,
@@ -379,6 +382,111 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
     // A partial one writes nothing: a saved sub-agent is whole or absent.
     await capture(rootRows, [{ payload: [], complete: false }]);
     expect(await count(child)).toBe(2);
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}, 20_000);
+
+// One turn that starts more sub-agents than one capture reads (`MAX_CHILD_READS_PER_CAPTURE`,
+// 12): on dev a pi turn with 22 left 10 of them unsaved until a next turn end that may never
+// come. The capture that leaves some unread queues the next one, which saves the rest.
+test('a capture that leaves sub-agents unread queues the next capture, which saves them', async () => {
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject('transcript-capture-more-children-test');
+    const sessionId = await seedSession(project, randomUUID());
+    const root = 'ses_fanout';
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [sessionId, root]);
+    const message = (session: string, id: string) => ({
+      info: { id, sessionID: session, role: 'user', time: { created: 1 } },
+      parts: [{ id: `p_${id}`, type: 'text', text: 'Synthetic task.' }],
+    });
+    const child = (id: string) => ({ opencodeSessionId: id, payload: [message(id, `msg_${id}`)], complete: true });
+    const reads: number[] = [];
+    // The first read reaches one sub-agent and reports more; the second reaches the last one.
+    const readMessages = async () => {
+      reads.push(reads.length);
+      const first = reads.length === 1;
+      return {
+        opencodeSessionId: root,
+        payload: [message(root, 'msg_root')],
+        headComplete: true,
+        complete: true,
+        children: [child(first ? 'ses_first' : 'ses_second')],
+        moreChildren: first,
+      };
+    };
+    const saved = async () =>
+      (
+        await db.query(
+          'SELECT DISTINCT opencode_session_id AS id FROM kortix.session_transcript_messages WHERE session_id = $1 ORDER BY 1',
+          [sessionId],
+        )
+      ).rows.map((row: { id: string }) => row.id);
+
+    const settled = () => transcriptCapturesSettledForTests(sessionId);
+    await captureSessionTranscriptMirror(sessionId, { readMessages });
+    await settled();
+    expect(await saved()).toEqual(['ses_fanout', 'ses_first', 'ses_second']);
+    // The second capture reported nothing more: no third read.
+    expect(reads.length).toBe(2);
+
+    // A stop's `tail` capture never queues another: the box powers off next.
+    await captureSessionTranscriptMirror(sessionId, { readMessages: async () => ({ ...(await readMessages()), moreChildren: true }) }, { scope: 'tail' });
+    await settled();
+    expect(reads.length).toBe(3);
+
+    // A box that always reports more, and a new sub-agent each time: the run stops after
+    // 8 queued captures (9 reads).
+    let always = 0;
+    const alwaysMore = async () => {
+      always += 1;
+      return { ...(await readMessages()), children: [child(`ses_always${always}`)], moreChildren: true };
+    };
+    await captureSessionTranscriptMirror(sessionId, { readMessages: alwaysMore });
+    await settled();
+    expect(always).toBe(9);
+
+    // A sub-agent whose message is already stored unchanged under another session (a forked
+    // copy) writes nothing: no progress, so nothing is queued although the read says more.
+    let copies = 0;
+    const forkCopy = async () => {
+      copies += 1;
+      const copy = { opencodeSessionId: 'ses_forkcopy', payload: [message(root, 'msg_root')], complete: true };
+      return { ...(await readMessages()), children: [copy], moreChildren: true };
+    };
+    await captureSessionTranscriptMirror(sessionId, { readMessages: forkCopy });
+    await settled();
+    expect(copies).toBe(1);
+
+    // A stop asked for after a run was queued, even before the run started, drops the run's
+    // queued capture: the tail runs next, and nothing reads the box after it.
+    let gate!: () => void;
+    const opened = new Promise<void>((r) => (gate = r));
+    const order: string[] = [];
+    let fresh = 0;
+    const busy = captureSessionTranscriptMirror(sessionId, {
+      readMessages: async () => (order.push('busy'), await opened, readMessages()),
+    });
+    const run = captureSessionTranscriptMirror(sessionId, {
+      readMessages: async () => {
+        order.push('run');
+        fresh += 1;
+        return { ...(await readMessages()), children: [child(`ses_run${fresh}`)], moreChildren: true };
+      },
+    });
+    const tail = captureSessionTranscriptMirror(
+      sessionId,
+      { readMessages: async () => (order.push('tail'), readMessages()) },
+      { scope: 'tail' },
+    );
+    gate();
+    await Promise.all([busy, run, tail]);
+    await settled();
+    expect(order).toEqual(['busy', 'run', 'tail']);
   } finally {
     if (project) await removeSeeded([project]);
     await db.end();

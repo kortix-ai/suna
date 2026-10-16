@@ -7,7 +7,6 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   SubAgentActivity,
   SubAgentStatusBanner,
-  subAgentCalls,
   useSubAgentThread,
 } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -20,6 +19,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
+import { subAgentCalls } from '@kortix/sdk';
 
 export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

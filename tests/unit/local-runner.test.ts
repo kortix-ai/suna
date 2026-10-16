@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, refusesSuiteRun, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
   it('keeps agentic tests opt-in and rejects combining them with another mode', () => {
@@ -25,7 +25,7 @@ describe('local test runner', () => {
       'sdk',
       'package-quality',
     ]);
-    // Package quality is its own stage: the attestation's `packages` lane.
+    // Package quality is its own stage.
     // The SDK gets one too: it owns the gate's only wall-clock assertions
     // (the ReDoS guards), which the start burst of the heavy lanes pushes
     // past their bounds (PR #9266 measured 1272 ms against 1000 ms there).
@@ -156,6 +156,18 @@ describe('local test runner', () => {
     ]);
   });
 
+  it('runs one package group for a parallel CI lane, and only with --packages-only', () => {
+    expect(buildLocalTestPlan(['--packages-only', '--package-group=api']).lanes).toEqual([
+      {
+        name: 'package-quality',
+        command: ['bun', 'tests/bin/package-quality.ts'],
+        env: { KORTIX_PACKAGE_GROUP: 'api' },
+      },
+    ]);
+    expect(() => buildLocalTestPlan(['--package-group=api'])).toThrow('requires --packages-only');
+    expect(() => buildLocalTestPlan(['--packages-only', '--package-group=web'])).toThrow('api, cli, kortixd or rest');
+  });
+
   it('runs deployed API and browser smoke through the same root command', () => {
     const plan = buildLocalTestPlan(['--target-smoke']);
 
@@ -189,15 +201,13 @@ describe('local test runner', () => {
       env: {
         E2E_BROWSER_WORKERS: '2',
         E2E_ENABLE_SDK_ONLY_SESSION: '1',
-        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-        E2E_OAUTH_PROVIDER_INITIATION: '1',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       },
     });
   });
 
-  it('keeps strict browser coverage but records the authorized preview OAuth exclusion', () => {
+  it('runs the same strict browser lane on a preview target', () => {
     const previous = process.env.KE2E_TARGET;
     process.env.KE2E_TARGET = 'preview';
     try {
@@ -205,11 +215,8 @@ describe('local test runner', () => {
       expect(plan.lanes[1]?.env).toEqual({
         E2E_BROWSER_WORKERS: '2',
         E2E_ENABLE_SDK_ONLY_SESSION: '1',
-        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-        E2E_OAUTH_PROVIDER_INITIATION: '0',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
-        E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1',
       });
     } finally {
       if (previous === undefined) delete process.env.KE2E_TARGET;
@@ -345,6 +352,16 @@ describe('local test runner', () => {
 
   it('rejects --latency combined with another mode', () => {
     expect(() => buildLocalTestPlan(['--latency', '--sdk-only'])).toThrow('choose only one');
+  });
+
+  it('refuses a suite-wide run on a Mac and allows targeted runs, Linux, and the override', () => {
+    const refused = (args: string[], platform = 'darwin', env: Record<string, string> = {}) =>
+      refusesSuiteRun(buildLocalTestPlan(args), platform, env);
+    for (const args of [[], ['--full'], ['--packages-only'], ['--browser-only'], ['--db-only']]) expect(refused(args)).toBe(true);
+    for (const args of [['--id', 'ACC-4'], ['--domain', 'access'], ['--sdk-only'], ['--db-only', 'tests/migration'], ['--target-smoke']])
+      expect(refused(args)).toBe(false);
+    expect(refused([], 'linux')).toBe(false);
+    expect(refused([], 'darwin', { KORTIX_FULL_TEST: '1' })).toBe(false);
   });
 
   it('retries a cold local web route until it is ready', async () => {

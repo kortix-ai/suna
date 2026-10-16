@@ -28,6 +28,7 @@ import {
   type TriggerKind,
 } from '@/components/projects/schedule/schedule-copy';
 import { TriggerComposer } from '@/components/projects/schedule/trigger-composer';
+import { triggerRunActions, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { ScheduleDetailSheet } from '@/components/projects/schedule/schedule-detail-sheet';
 import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
 import { Badge } from '@/components/ui/badge';
@@ -128,19 +129,22 @@ export function AgentTriggersSection({
   // The same two mutations the Triggers tab owns, against the same key.
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
-    onSuccess: (res) => {
+    onSuccess: (res, trigger) => {
+      const entity = triggerToastEntity(trigger);
       if (res.status === 'fired') {
         successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          description: res.session_id
-            ? `Session ${res.session_id.slice(0, 8)}…`
-            : 'Getting a session ready',
+          entity,
+          ...(res.session_id
+            ? { actions: triggerRunActions(projectId, res.session_id, tI18nComplete.raw('textb205bb47f81a')) }
+            : { description: tI18nComplete.raw('text747e9e0e8e92') }),
         });
       } else if (res.status === 'queued') {
         successToast(tI18nComplete.raw('text661ff40a07e0'), {
-          description: res.reason ?? 'Busy right now — it will retry',
+          entity,
+          description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
         });
       } else {
-        errorToast(tI18nComplete.raw('textfc56800b00af'), { description: res.error });
+        errorToast(tI18nComplete.raw('textfc56800b00af'), { entity, description: res.error });
       }
       void invalidate();
     },
@@ -155,6 +159,7 @@ export function AgentTriggersSection({
         : 'trigger';
       successToast(
         tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
+        { entity: triggerToastEntity(trigger) },
       );
       setDeleteTarget(null);
       setSelectedSlug(null);
@@ -250,8 +255,7 @@ export function AgentTriggersSection({
           onCreated={(slug) => {
             setCreateOpen(false);
             void invalidate();
-            successToast(tI18nComplete.raw('textffdc6918b359'));
-            // Straight into the new entry, as the Triggers tab does.
+            // The composer toasts the creation; straight into the new entry, as the Triggers tab does.
             setSelectedSlug(slug);
           }}
         />

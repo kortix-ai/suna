@@ -22,13 +22,19 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
  * second meter per member — a dashboard for one number. What is left is the
  * cap itself: the limit, the period, and what happens at the limit.
  *
- *  - The project cap renders as ONE line (`$12.40 of $50 per month`) with a
+ *  - The project cap renders as ONE line (`1,240 of 5,000 credits this month`) with a
  *    meter under it and what happens at the limit. No second big number.
  *  - Per-member caps stay — they are a real capability, not decoration — as
- *    one row per member under the project cap: spend, a meter and "N% of $cap"
+ *    one row per member under the project cap: spend, a meter and "N% of cap"
  *    when capped, Edit cap / Remove or Set cap.
  *  - `BudgetDialog` is unchanged in shape and already IS the plain form the
  *    brief asks for: an amount, a period, block-or-warn. Both scopes use it.
+ *
+ * ## Credits on screen, USD on the wire
+ *
+ * Spend and limits read in credits (1 credit = $0.01): a cap is an amount the
+ * project spends, not a price. The API keeps `limit_usd` and `spent_usd`; the
+ * dialog takes credits and sends `credits / 100` (`budgetLimitUsd`).
  *
  * ## Every meter reads its own budget's period
  *
@@ -80,7 +86,9 @@ import {
 import type { GatewayBudgetRow, GatewayMemberSpend } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
 
-import { CostSection, fmtUsd } from './_metrics';
+import { CREDITS_PER_DOLLAR } from '@kortix/shared';
+
+import { CostSection, fmtCredits } from './_metrics';
 
 const PERIODS: { value: 'day' | 'week' | 'month'; label: string }[] = [
   { value: 'day', label: 'Daily' },
@@ -163,7 +171,7 @@ function Meter({ spent, limit, className }: { spent: number; limit: number; clas
   );
 }
 
-/** The budget line per period: "$31.20 of $50.00 this month". */
+/** The budget line per period: "3,120 of 5,000 credits this month". */
 const BUDGET_LINE = {
   day: 'budgetToday',
   week: 'budgetThisWeek',
@@ -189,6 +197,7 @@ export function GatewayBudgetSection({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('gatewayCosts');
   const locale = useLocale();
+  const credits = (usd: number) => fmtCredits(usd, locale);
   const { data } = useGatewayBudgets(projectId);
   const setBudget = useSetGatewayBudget(projectId);
   const delBudget = useDeleteGatewayBudget(projectId);
@@ -293,10 +302,10 @@ export function GatewayBudgetSection({
               <span className="text-foreground">
                 {projectSpend
                   ? t(BUDGET_LINE[projectBudget.period] ?? 'budgetThisMonth', {
-                      spent: fmtUsd(projectSpend.spent),
-                      limit: fmtUsd(projectBudget.limit_usd),
+                      spent: credits(projectSpend.spent),
+                      limit: credits(projectBudget.limit_usd),
                     })
-                  : `${fmtUsd(projectBudget.limit_usd)} ${tI18nComplete.raw(PER_PERIOD_KEY[projectBudget.period])}`}
+                  : `${credits(projectBudget.limit_usd)} ${tI18nComplete.raw('textbe379a30f1aa')} ${tI18nComplete.raw(PER_PERIOD_KEY[projectBudget.period])}`}
               </span>{' '}
               · {projectBudget.action === 'block' ? t('blocksAtLimit') : t('warnsAtLimit')}
             </span>
@@ -382,7 +391,7 @@ export function GatewayBudgetSection({
 
 /**
  * One member's spend and cap, on one row. A member with a cap gets a real
- * meter and "N% of $cap"; without one, the row says so instead of charting the
+ * meter and "N% of cap"; without one, the row says so instead of charting the
  * member against the biggest spender, which looks like a limit and is not one.
  * With a cap, the figure is the spend in the cap's period; without one, it is
  * this month's spend. A cap whose spend is unknown (`spend` null) shows its
@@ -405,6 +414,8 @@ export function MemberRow({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('gatewayCosts');
+  const locale = useLocale();
+  const credits = (usd: number) => fmtCredits(usd, locale);
   const label = member.email ?? tI18nComplete.raw('text29824c5acaf8');
   return (
     <div
@@ -414,7 +425,7 @@ export function MemberRow({
       <UserAvatar email={member.email ?? ''} size="sm" />
       <span className="text-foreground min-w-0 flex-1 truncate text-xs">{label}</span>
       <span className="text-foreground w-20 shrink-0 text-right text-xs tabular-nums">
-        {fmtUsd(budget && spend ? spend.spent : member.cost)}
+        {credits(budget && spend ? spend.spent : member.cost)}
       </span>
       {budget ? (
         <div className="hidden w-48 shrink-0 items-center gap-3 sm:flex">
@@ -422,12 +433,13 @@ export function MemberRow({
             <>
               <Meter spent={spend.spent} limit={budget.limit_usd} className="flex-1" />
               <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                {t('ofLimit', { pct: Math.round(spend.pct), limit: fmtUsd(budget.limit_usd) })}
+                {t('ofLimit', { pct: Math.round(spend.pct), limit: credits(budget.limit_usd) })}
               </span>
             </>
           ) : (
             <span className="text-muted-foreground flex-1 text-right text-xs tabular-nums">
-              {fmtUsd(budget.limit_usd)} {tI18nComplete.raw(PER_PERIOD_KEY[budget.period])}
+              {credits(budget.limit_usd)} {tI18nComplete.raw('textbe379a30f1aa')}{' '}
+              {tI18nComplete.raw(PER_PERIOD_KEY[budget.period])}
             </span>
           )}
         </div>
@@ -465,7 +477,19 @@ function TextAction({ onClick, children }: { onClick: () => void; children: Reac
   );
 }
 
-/** The whole budget form: an amount, a period, and what happens at the limit. */
+/** The limit field's starting text: the stored USD limit in whole credits. */
+export function budgetLimitInput(existing: Pick<GatewayBudgetRow, 'limit_usd'> | null): string {
+  return existing ? String(Math.round(existing.limit_usd * CREDITS_PER_DOLLAR)) : '';
+}
+
+/** The limit field (whole credits) as the `limit_usd` the API takes, or null when not a positive amount. */
+export function budgetLimitUsd(input: string): number | null {
+  const credits = Number(input);
+  if (!input || !Number.isFinite(credits) || credits <= 0) return null;
+  return credits / CREDITS_PER_DOLLAR;
+}
+
+/** The whole budget form: an amount in credits, a period, and what happens at the limit. */
 function BudgetDialog({
   target,
   existing,
@@ -486,13 +510,12 @@ function BudgetDialog({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const periods = useLocalizedUiCatalog(PERIODS);
   const actions = useLocalizedUiCatalog(ACTIONS);
-  const [limit, setLimit] = useState(existing ? String(existing.limit_usd) : '');
+  const [limit, setLimit] = useState(() => budgetLimitInput(existing));
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>(existing?.period ?? 'month');
   const [action, setAction] = useState<'block' | 'warn'>(existing?.action ?? 'block');
 
   const who = target.scope === 'project' ? 'this project' : (target.email ?? 'this member');
-  const amount = Number(limit);
-  const valid = Number.isFinite(amount) && amount > 0;
+  const limitUsd = budgetLimitUsd(limit);
 
   return (
     <Modal open onOpenChange={(next) => (next ? undefined : onClose())}>
@@ -509,13 +532,14 @@ function BudgetDialog({
         </ModalHeader>
         <ModalBody className="space-y-4">
           <div className="space-y-1.5">
-            <Label>{tI18nComplete.raw('textc6f380561a26')}</Label>
+            <Label>{tI18nComplete.raw('textfaaf56a699c2')}</Label>
             <Input
               autoFocus
-              inputMode="decimal"
-              placeholder={tI18nComplete.raw('text5f448b8c41a4')}
+              inputMode="numeric"
+              className="tabular-nums"
+              placeholder={tI18nComplete.raw('textc86ce3b8097b')}
               value={limit}
-              onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ''))}
+              onChange={(e) => setLimit(e.target.value.replace(/[^0-9]/g, ''))}
               variant="popover"
             />
           </div>
@@ -550,8 +574,8 @@ function BudgetDialog({
             {tI18nComplete.raw('text19766ed6ccb2')}
           </Button>
           <Button
-            disabled={!valid || saving}
-            onClick={() => valid && onSave({ limit_usd: amount, period, action })}
+            disabled={limitUsd === null || saving}
+            onClick={() => limitUsd !== null && onSave({ limit_usd: limitUsd, period, action })}
           >
             {saving ? <Loading className="size-4 shrink-0" /> : null}
             {tI18nComplete.raw('text6520b66830b2')}

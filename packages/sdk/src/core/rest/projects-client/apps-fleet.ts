@@ -30,7 +30,12 @@ export interface AppVolume {
   process_group: string;
   /** The machine it belongs to; null for an unattached (pre-created or forked) volume. */
   machine_id: string | null;
+  /** The size the provider allots at create (fixed: a volume cannot grow). */
   size_gb: number;
+  /** Bytes in use, read live from the provider; null when unknown. */
+  used_bytes?: number | null;
+  /** When the provider last committed the volume's contents; null when unknown. */
+  last_commit_at?: string | null;
   status: 'creating' | 'ready' | 'destroying' | 'destroyed' | 'error';
   /** A machine mounts it now (one writer at a time). */
   attached: boolean;
@@ -95,10 +100,22 @@ export async function destroyAppMachine(projectId: string, appId: string, machin
   ).machines;
 }
 
-/** Machines per process group (0-20). Applied in the background. */
-export async function scaleApp(projectId: string, appId: string, count: Record<string, number>): Promise<{ scale: Record<string, number>; machines: AppMachine[] }> {
+/**
+ * Machines per process group (0-20). Applied in the background. A group with a
+ * volume runs one machine unless `newVolumes` accepts that each new machine
+ * gets its own, empty volume (and serves different data).
+ */
+export async function scaleApp(
+  projectId: string,
+  appId: string,
+  count: Record<string, number>,
+  options: { newVolumes?: boolean } = {},
+): Promise<{ scale: Record<string, number>; machines: AppMachine[] }> {
   return unwrap(
-    await backendApi.put<{ scale: Record<string, number>; machines: AppMachine[] }>(`${app(projectId, appId)}/scale`, { count }),
+    await backendApi.put<{ scale: Record<string, number>; machines: AppMachine[] }>(
+      `${app(projectId, appId)}/scale`,
+      { count, ...(options.newVolumes ? { new_volumes: true } : {}) },
+    ),
     'Failed to scale the App',
   );
 }
@@ -116,7 +133,7 @@ export async function createAppVolume(projectId: string, appId: string, input: C
   return unwrap(await backendApi.post<AppVolume>(`${app(projectId, appId)}/volumes`, input), 'Failed to create the volume');
 }
 
-/** Grow a volume (it never shrinks) or change its snapshot retention. */
+/** Change a volume's snapshot retention. A `size_gb` above its fixed size is refused (`volume_fixed_size`). */
 export async function updateAppVolume(
   projectId: string,
   appId: string,

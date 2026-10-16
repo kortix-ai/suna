@@ -98,9 +98,10 @@ export function sendBlocker(input: SendBlockerInput): SendBlocker | null {
  *     when the box answers, which is what the composer's "Waking this session
  *     up…" notice promises.
  *
- * Until a command is an inbox row too, the honest answer is to refuse it and
- * say when it can run, rather than to hold it in a second, tab-local queue that
- * a closed tab loses.
+ * Both only DELAY a command. `SessionChat` holds one in either state
+ * (`onHoldCommand`, `held-commands.ts`) and runs it when the session can take
+ * it. A host without a hold shows the refusal, and the draft stays in the
+ * editor.
  */
 export function commandBlocker(
   input: SendBlockerInput & { isWorking: boolean; runtimeReady: boolean },
@@ -134,8 +135,8 @@ export function sendBlockerMessage(
       return { message: tI18nComplete.raw('text3e11e93e0f42') };
     case 'session_working':
       return {
-        message: tI18nComplete.raw('textd780563bef66'),
-        description: tI18nComplete.raw('text968cf44e4d9c'),
+        message: tI18nComplete.raw('text634e8a443a91'),
+        description: tI18nComplete.raw('text1d28e1a19048'),
       };
     case 'runtime_waking':
       return {

@@ -714,7 +714,7 @@ export function agentGrantSnippet(
   current?: readonly string[] | 'all' | null,
 ): string {
   const secrets = mergeAgentSecretGrant(current, identifier);
-  return `kortix_version: 2\nagents:\n  ${agent ?? 'my-agent'}:\n    secrets: [${secrets.join(', ')}]`;
+  return `kortix_version: 3\nagents:\n  ${agent ?? 'my-agent'}:\n    secrets: [${secrets.join(', ')}]`;
 }
 
 /** One agent needs no picker, so the button carries the name instead. */
@@ -791,7 +791,7 @@ export function agentGrantErrorMessage(error: unknown): string {
   const fields =
     typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
   if (fields.code === 'manifest_v1_unsupported') {
-    return 'This project uses a kortix_version 1 manifest. Edit kortix.toml directly, or upgrade the project to kortix_version 2.';
+    return 'This project uses a kortix_version 1 manifest. Edit kortix.toml directly, or upgrade the project to kortix_version 3.';
   }
   if (fields.code === 'secret_not_grantable') {
     return 'This secret is disabled. Change its delivery policy before granting it.';

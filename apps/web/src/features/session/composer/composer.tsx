@@ -14,7 +14,7 @@ import type {
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
 import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
-import { newPastedContentId, type PastedContent, splitPastedContent } from '@kortix/shared';
+import { newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
 import {
@@ -66,7 +66,9 @@ import {
   dispatchLatched,
   type DispatchOutcome,
   planAttachmentReplacement,
+  refusedFilesToast,
   runComposerSend,
+  splitComposerFiles,
   stageComposerFiles,
   takeNewBillingRefusals,
   type AttachmentSubmission,
@@ -75,6 +77,7 @@ import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
   planCommandAttachments,
+  planUnresolvedCommandChip,
   readCommandChipLabel,
 } from './command-attachments';
 import {
@@ -100,7 +103,6 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
-import type { ComputerAwakeLine } from './computer-awake';
 import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
@@ -166,6 +168,8 @@ export interface SessionChatInputProps {
   runtimeReady?: boolean;
   onStop?: () => void;
   stopDisabled?: boolean;
+  /** See `SendStopControl`. Default true. */
+  canStop?: boolean;
   isSending?: boolean;
   /**
    * The session sits on a rewound path: sending commits it, restoring keeps
@@ -190,6 +194,14 @@ export interface SessionChatInputProps {
    */
   noAccessibleAgents?: boolean;
   commands?: Command[];
+  /**
+   * Whether the live command list has EVER resolved — the hook's `data`
+   * present, not the `[]` the composer defaults to while it loads. The one
+   * bit that separates "the chip's command is still being looked up" from
+   * "the list answered and the command is gone": only the first may refuse a
+   * send that would otherwise carry attachments out as a prompt.
+   */
+  commandsResolved?: boolean;
   /**
    * The session's own files, as `/` palette rows — the Outputs card's
    * deliverables and the Context card's reads, built by
@@ -217,6 +229,12 @@ export interface SessionChatInputProps {
    * mid-sentence (`explain /webapp to me`) came back reordered to the front.
    */
   onCommand?: (command: Command, args?: string, split?: { before: string; after: string }) => void;
+  /**
+   * Hold a command the session cannot run yet (a turn is running, or the box
+   * is waking) and run it when it can — `held-commands.ts`. A host without it
+   * refuses the command instead and keeps the draft.
+   */
+  onHoldCommand?: (command: Command, args?: string, split?: { before: string; after: string }) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
@@ -323,12 +341,6 @@ export interface SessionChatInputProps {
   /** The newest answer came from a fallback model instead of the selected
    *  one: the toolbar names it beside the model selector. */
   servedModel?: ServedModelNotice | null;
-  /**
-   * The session's computer stays on while the person is here (KRTX-1729):
-   * a strip above the card, decided by `computerAwakeLine`. The "still
-   * waking" notice outranks it.
-   */
-  computerAwake?: ComputerAwakeLine | null;
   /**
    * Where the under-row's controls live — attach, the agent picker and the
    * context ring.
@@ -499,8 +511,11 @@ function ComposerImpl(props: SessionChatInputProps) {
   onAgentChange,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
+  /** Whether the live command list has EVER resolved — see `planUnresolvedCommandChip`. */
+  commandsResolved = false,
   slashFiles = EMPTY_SLASH_FILES,
   onCommand,
+  onHoldCommand,
   models = EMPTY_MODELS,
   selectedModel = null,
   onModelChange,
@@ -742,8 +757,22 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const appendAttachedFiles = useCallback(
     (files: Iterable<File>) => {
+      // One empty or oversized file must not refuse the whole drop: the SDK
+      // checks a batch at once, so the files that fit are split off first and
+      // each refused one is named (KRTX-2557).
+      const held = attachedFilesRef.current.flatMap((attached) =>
+        attached.kind === 'local' ? [attached.file.size] : [],
+      );
+      const { accepted, refused } = splitComposerFiles(Array.from(files), {
+        count: held.length,
+        bytes: held.reduce((sum, size) => sum + size, 0),
+      });
+      if (refused.length > 0) {
+        const toast = refusedFilesToast(refused, tComposerAttachments);
+        errorToast(toast.title, { description: toast.description });
+      }
       try {
-        const newFiles = stageComposerFiles(Array.from(files), {
+        const newFiles = stageComposerFiles(accepted, {
           addMany: addPromptAttachments,
           createObjectURL: (file) => URL.createObjectURL(file),
           isImage: isImageFile,
@@ -888,7 +917,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       if (kind === 'tile') {
         const id = newPastedContentId();
         pasteUndoRef.current.push(id);
-        setPasteList((current) => [...current, { id, text }]);
+        setPasteList((current) => [...current, { id, text: trimPastedText(text) }]);
         return;
       }
       const names = attachedFilesRef.current.map((af) =>
@@ -1497,6 +1526,7 @@ function ComposerImpl(props: SessionChatInputProps) {
         commandSplit: draft?.commandSplit,
         quotes: quotesNow.map((quote) => quote.text),
         pastes: pastesNow,
+        mentions: draft?.mentions,
       });
       if (plan.kind === 'command') {
         // A command cannot deliver the attached files, and the code below is
@@ -1518,25 +1548,18 @@ function ComposerImpl(props: SessionChatInputProps) {
           return;
         }
 
-        // A command is REFUSED while the session is working — or while its
-        // sandbox is still waking — not queued.
+        // A command cannot go out while the session is working or its sandbox
+        // is waking. A PROMPT never waits here: it is a server-side inbox row,
+        // and the admission gate orders it. A COMMAND has no row — `runCommand`
+        // dispatches it, never `POST .../prompts` — so one put on the wire
+        // mid-turn aborts the answer in progress, and one sent at a box that is
+        // not up is swallowed by `runCommand`'s `runtimeActionReady` guard.
         //
-        // A PROMPT is never held here: it goes to the server-side inbox, which
-        // admits it only when the session can take it, so ordering is decided by
-        // server truth rather than by this component's read of `isBusy`, and a
-        // sleeping box just means the row is delivered a little later. A COMMAND
-        // has no such row — it is dispatched by `runCommand`, never by
-        // `POST .../prompts` — so no admission gate ever sees it, putting one on
-        // the wire mid-turn aborts the answer in progress, and dispatching one at
-        // a box that is not up is swallowed by `runCommand`'s own
-        // `runtimeActionReady` guard with no request and no error.
-        //
-        // It used to wait in a browser-local queue for that reason. That queue is
-        // gone: it lived in this tab's localStorage, so a closed tab lost it, a
-        // second tab could not see it, and its release timing was a guess at a
-        // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
-        // in the editor and says when the command can run — nothing is stored,
-        // and nothing can be lost.
+        // So the host HOLDS it (`onHoldCommand`, `held-commands.ts`): a visible
+        // row in the queued list, released by server turn authority once the
+        // inbox is empty — not by the debounced `isBusy` the old localStorage
+        // queue guessed from. A host without a hold refuses it and keeps the
+        // draft in the editor.
         const blocker = commandBlocker({
           hasActiveQuestion: lockForQuestion,
           // The composer only knows "something is pending", not how many.
@@ -1545,15 +1568,22 @@ function ComposerImpl(props: SessionChatInputProps) {
           isWorking: sessionWorking ?? isBusy,
           runtimeReady,
         });
-        if (blocker) {
+        // A turn or a waking box only DELAYS a command: a host that can hold
+        // it does, and the queued list shows it with a Remove (KRTX-2464). A
+        // question, a permission or a read-only viewer refuse it outright.
+        const holdable = blocker === 'session_working' || blocker === 'runtime_waking';
+        if (blocker && holdable && onHoldCommand) {
+          onHoldCommand(plan.command, plan.args, plan.split);
+        } else if (blocker) {
           const copy = sendBlockerMessage(blocker, tI18nComplete);
           errorToast(
             copy.message,
             copy.description ? { description: copy.description } : undefined,
           );
           return;
+        } else {
+          onCommand?.(plan.command, plan.args, plan.split);
         }
-        onCommand?.(plan.command, plan.args, plan.split);
         // The command is on its way; the draft that produced it is spent.
         // Deliberately NOT on either refusal path above (`guard.kind ===
         // 'refuse'`, `blocker`) — those keep the text in the editor on
@@ -1586,6 +1616,25 @@ function ComposerImpl(props: SessionChatInputProps) {
           onQuestionAction();
           return;
         }
+        return;
+      }
+
+      // A chip the live list cannot resolve YET must not ride out as an
+      // ordinary prompt while files are staged — the whole story, including
+      // why only the never-resolved list refuses, lives on
+      // `planUnresolvedCommandChip`'s doc comment (KRTX-1903). It sits below
+      // the question-lock reroute: an answer takes only the text and hands
+      // the files back to the stash, so there is nothing there to lose.
+      const unresolvedGuard = planUnresolvedCommandChip(
+        {
+          commandName: draft?.commandName,
+          commandsResolved,
+          attachmentCount: filesNow.length,
+        },
+        tI18nComplete,
+      );
+      if (unresolvedGuard.kind === 'refuse') {
+        errorToast(unresolvedGuard.message, { description: unresolvedGuard.description });
         return;
       }
 
@@ -1687,6 +1736,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       lockForApproval,
       disabled,
       commands,
+      commandsResolved,
       lockForQuestion,
       submitDisabled,
       clearOnSend,
@@ -1695,6 +1745,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       isBusy,
       runtimeReady,
       onCommand,
+      onHoldCommand,
       clearSavedDraft,
       handleDocChange,
       setQuoteList,

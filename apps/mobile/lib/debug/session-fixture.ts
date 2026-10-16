@@ -1,22 +1,17 @@
 /**
  * Seeds the COR-91 parity fixture (`@kortix/shared/session-fixture`) into the
- * SDK's session store, so the debug screen renders it through the same store read,
- * `groupMessagesIntoTurns`, and `SessionTurn` rows as `SessionPage`.
+ * SDK's session store, so the debug screen renders it through the same session
+ * log read (`useSessionLogThread`), `sessionLogTurns`, and `SessionTurn` rows as
+ * `SessionPage`.
  *
  * Nothing here touches the network: the store is a plain zustand store, and
  * the fixture session ids (`ses_FixtureParity…`) never reach a sandbox.
  */
 
-import { groupMessagesIntoTurns } from '@kortix/sdk';
+import { sessionLogTurns, type SessionLogThread, type SessionLogTurn } from '@kortix/sdk';
 import { SESSION_FIXTURE, type SessionFixture } from '@kortix/shared/session-fixture';
 import { useRuntimePendingStore, useSessionStateStore } from '@kortix/sdk/react';
-import type {
-  MessageWithParts,
-  PermissionRequest,
-  QuestionRequest,
-  SessionStatus,
-  Turn,
-} from '@/lib/session/types';
+import type { PermissionRequest, QuestionRequest, SessionStatus } from '@/lib/session/types';
 import type { QueuedPromptState } from '@/lib/session/user-message';
 
 export type FixtureStatusMode = 'busy' | 'retry';
@@ -50,9 +45,9 @@ export function seedSessionFixture(
   };
   evict();
   // The fixture satisfies the SDK types (lib/debug/session-fixture.types.test.ts).
-  store.hydrate(fixture.sessionId, fixture.messages as unknown as MessageWithParts[]);
+  store.hydrate(fixture.sessionId, fixture.messages as never);
   for (const [childId, messages] of Object.entries(fixture.childSessions)) {
-    store.hydrate(childId, messages as unknown as MessageWithParts[]);
+    store.hydrate(childId, messages as never);
   }
   store.setStatus(fixture.sessionId, fixtureStatus(mode, fixture));
   for (const [childId, status] of Object.entries(fixture.childStatuses)) store.setStatus(childId, { ...status });
@@ -61,9 +56,13 @@ export function seedSessionFixture(
   return evict;
 }
 
-/** Groups store messages into turns, as `SessionPage` does. */
-export function fixtureTurns(messages: readonly MessageWithParts[]): Turn[] {
-  return groupMessagesIntoTurns(messages as MessageWithParts[]) as unknown as Turn[];
+/** The fixture thread's turns, as `SessionPage` builds them; the fixture names the working turn. */
+export function fixtureTurns(
+  thread: SessionLogThread | null,
+  busy: boolean,
+  fixture: SessionFixture = SESSION_FIXTURE,
+): SessionLogTurn[] {
+  return thread ? sessionLogTurns(thread, { busy, liveMessageId: fixture.working.userMessageId }) : [];
 }
 
 /** The queue state a turn row shows (`interrupted` before a run, `queued` behind the working turn). */

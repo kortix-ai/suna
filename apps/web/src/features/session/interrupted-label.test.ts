@@ -33,8 +33,9 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogOfV1Rows, sessionLogTurns, type SessionLogMessage } from '@kortix/sdk';
 import { deriveTurnErrorAbortState, deriveTurnErrorPresentation } from './session-chat';
+import { strandedPromptIds } from './session-chat/transcript';
 import { TurnErrorDisplay } from './session-error-banner';
 
 // This file is `.ts`, not `.tsx` (filename is pinned — see T17), so
@@ -245,5 +246,39 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
       isAbort: false,
       suggestion: undefined,
     });
+  });
+});
+
+// ============================================================================
+// 3. strandedPromptIds — prompts a Stop left unrun ("interrupted before run").
+// ============================================================================
+
+describe('strandedPromptIds', () => {
+  let n = 0;
+  const msg = (id: string, role: 'user' | 'assistant', over: Partial<SessionLogMessage> = {}): SessionLogMessage => ({
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: id, thread_id: 't', seq: ++n, role, kind: 'turn', status: 'complete',
+    in_context: true, model: null, usage: null, finish: role === 'assistant' ? 'stop' : null, error: null,
+    created_at: new Date(1_700_000_000_000 + n * 1000).toISOString(), completed_at: null,
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1' },
+    blocks: [{ type: 'text', id: `${id}-t`, text: id }], ...over,
+  });
+  const thread = (messages: SessionLogMessage[]) => ({
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages,
+  });
+  const aborted = (id: string, to: string) => msg(id, 'assistant', { reply_to: to, status: 'aborted' });
+  const failedAttempt = (id: string, to: string) =>
+    msg(id, 'assistant', { reply_to: to, status: 'error', in_context: false, error: { code: 'model_not_found', message: 'unknown model' } });
+
+  test('a prompt after a stopped turn, with no reply, is stranded', () => {
+    const messages = [msg('u1', 'user'), aborted('a1', 'u1'), msg('u2', 'user')];
+    expect([...strandedPromptIds(sessionLogTurns(thread(messages)), messages)]).toEqual(['u2']);
+  });
+
+  test('a prompt whose only reply is a hidden failed attempt ran: it is not stranded', () => {
+    const messages = [msg('u1', 'user'), aborted('a1', 'u1'), msg('u2', 'user'), failedAttempt('a2', 'u2')];
+    const hidden = sessionLogTurns(thread(messages), { hideOutOfContext: true });
+    expect(hidden.find((t) => t.id === 'u2')?.assistant).toEqual([]);
+    expect([...strandedPromptIds(hidden, messages)]).toEqual([]);
+    expect([...strandedPromptIds(sessionLogTurns(thread(messages)), messages)]).toEqual([]);
   });
 });

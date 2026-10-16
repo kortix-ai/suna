@@ -1,6 +1,5 @@
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { listBillingTransactions, type BillingTransactionsPage } from '@kortix/sdk';
-import { dollarsToCredits } from '@kortix/shared';
 import { useQuery } from '@tanstack/react-query';
 import { accountStateKeys } from './use-account-state';
 
@@ -33,14 +32,9 @@ export function useTransactions(
         offset,
         typeFilter: normalizedTypeFilter,
       });
-      return {
-        ...data,
-        transactions: data.transactions.map((tx) => ({
-          ...tx,
-          amount: dollarsToCredits(tx.amount),
-          balance_after: dollarsToCredits(tx.balance_after),
-        })),
-      };
+      // USD, as the API sends it: the ledger table converts each cell to
+      // credits once (`formatUsdAsCredits`), keeping sub-credit amounts.
+      return data;
     },
     staleTime: 30000,
   });

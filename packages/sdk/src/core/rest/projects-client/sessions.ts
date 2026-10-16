@@ -150,6 +150,11 @@ export interface ProjectSession {
   /** Server-managed soft-deletion audit fields, present in project inventory mode. */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** When the caller pinned / archived this session in their own list
+   *  (KRTX-2418). Present for a person's list and read by id; absent for an
+   *  agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -244,11 +249,7 @@ export interface CreateProjectSessionInput {
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
-  /**
-   * Run on a persistent machine (Platinum): the whole root disk persists
-   * across stops. A stop ends running processes; the machine keeps its image
-   * until it is reset (`restartProjectSession(..., { reset_machine: true })`).
-   */
+  /** @deprecated Withdrawn — persistent machines left the product. The API ignores it. Removed in the next major. */
   persistent_machine?: boolean;
   branch_already_created?: boolean;
   /**
@@ -359,6 +360,9 @@ export interface ListProjectSessionsOptions {
   q?: string;
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
+  /** Only the caller's pinned or archived sessions. Omit for the list, which
+   *  leaves out the sessions the caller archived. */
+  view?: 'pinned' | 'archived';
 }
 
 /** One keyset page of a project's sessions. */
@@ -378,6 +382,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const q = options?.q?.trim();
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
+  if (options?.view) params.set(options.view, 'only');
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -496,6 +501,34 @@ export async function setSessionWatch(projectId: string, sessionId: string, watc
     await backendApi.put<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
       watching,
     }),
+  );
+}
+
+/** The caller's own pin and archive of one session. */
+export interface SessionListState {
+  pinned_at: string | null;
+  archived_at: string | null;
+}
+
+/**
+ * Pin (`true`) or unpin (`false`) a session at the top of the caller's own
+ * list. Pinning takes it out of the archive; no one else's list changes.
+ * Needs a person's credential; an agent token gets 403.
+ */
+export async function setSessionPinned(projectId: string, sessionId: string, pinned: boolean) {
+  return unwrap(
+    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/pin`, { pinned }),
+  );
+}
+
+/**
+ * Archive (`true`) or unarchive (`false`) a session in the caller's own list.
+ * An archived session leaves the list (`view: 'archived'` lists it) and loses
+ * its pin; no one else's list changes. Needs a person's credential.
+ */
+export async function setSessionArchived(projectId: string, sessionId: string, archived: boolean) {
+  return unwrap(
+    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/archive`, { archived }),
   );
 }
 
@@ -1072,6 +1105,11 @@ export interface SessionTurnStatus {
    *  Reported whether or not a turn is running; `last_ended` is only one row.
    *  Absent when there are none. */
   recent_failures?: SessionTurnFailure[];
+  /** May the CALLER stop the running turn? In a shared session only the member
+   *  who started it, the session owner or a project manager may; a refused
+   *  stop answers 403 `not_turn_prompter`. True when nothing runs. Absent from
+   *  an older server: treat it as allowed. */
+  can_stop?: boolean;
 }
 
 /** Server truth about this session's running turns (`GET .../turn`), answered
@@ -1086,9 +1124,15 @@ export interface SessionTurnStatus {
 export async function getSessionTurn(
   projectId: string,
   sessionId: string,
+  /** `showErrors: false` keeps a failed read from the host's `onError`: for a
+   *  background read the person did not ask for. */
+  options?: { showErrors?: boolean },
 ): Promise<SessionTurnStatus> {
   return unwrap(
-    await backendApi.get<SessionTurnStatus>(`/projects/${projectId}/sessions/${sessionId}/turn`),
+    await backendApi.get<SessionTurnStatus>(
+      `/projects/${projectId}/sessions/${sessionId}/turn`,
+      options?.showErrors === false ? { showErrors: false } : undefined,
+    ),
   );
 }
 
@@ -1657,6 +1701,27 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
 }
 
 /**
+ * Continue a lost session on a new computer (KRTX-2419). A session is lost when
+ * the provider removed its sandbox (`/start` answers `failed` with reason
+ * `runtime_identity_unavailable`). Its next start boots a fresh sandbox from the
+ * session branch, which restores the saved conversation. A refusal rejects with
+ * an `ApiError` and changes nothing: 409 `session_not_lost`, 409
+ * `session_transcript_missing` (no saved conversation to continue from), 409
+ * `session_sandbox_removal_pending` (retry in a minute), 503
+ * `session_log_restore_off`.
+ */
+export async function recoverProjectSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ ok: true }>(
+      `/projects/${projectId}/sessions/${sessionId}/recover`,
+      {},
+      // The caller shows the refusal in place (the lost-session banner).
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
  * Restore a deleted session before its `restore_until`. Its messages, stored
  * files and branch come back; its next start boots a fresh sandbox from the
  * branch. A refusal rejects with an `ApiError`: 409 `session_not_deleted`
@@ -1675,31 +1740,23 @@ export async function restoreProjectSession(projectId: string, sessionId: string
   );
 }
 
-/**
- * Restart a session's sandbox. `reset_machine` (persistent machines only)
- * discards the machine's disk and boots a fresh one from the current image;
- * the session's branch and chat are restored, anything else on the old disk is
- * gone. When the chat cannot be saved first the reset is refused (409
- * `reset_state_not_preserved`) and nothing is deleted; `discard_state: true`
- * resets anyway and loses the chat (`state_carried: false` in the response).
- */
+/** Restart a session's sandbox. */
 export async function restartProjectSession(
   projectId: string,
   sessionId: string,
-  opts: { reset_machine?: boolean; discard_state?: boolean } = {},
+  /** @deprecated Withdrawn with persistent machines. Ignored. Removed in the next major. */
+  _opts: { reset_machine?: boolean; discard_state?: boolean } = {},
 ) {
   return unwrap(
     await backendApi.post<{
       ok: boolean;
       session_id: string;
       status: string;
-      /** Reset only: whether the chat was carried onto the fresh machine (null: no machine to carry from). */
+      /** @deprecated Never sent: persistent machines left the product. Removed in the next major. */
       state_carried?: boolean | null;
+      /** @deprecated Never sent: persistent machines left the product. Removed in the next major. */
       warning?: string;
-    }>(
-      `/projects/${projectId}/sessions/${sessionId}/restart`,
-      opts.reset_machine ? { reset_machine: true, ...(opts.discard_state ? { discard_state: true } : {}) } : {},
-    ),
+    }>(`/projects/${projectId}/sessions/${sessionId}/restart`, {}),
   );
 }
 
@@ -2216,6 +2273,10 @@ export interface SessionMessageAuthors {
   /** A spawned session's first message came from its parent's agent. Null
    *  when the session was not spawned with a first prompt. */
   initial_author: SessionMessageAuthor | null;
+  /** Who stopped a turn, keyed by the user message that started it (the same
+   *  ids as `authors`). Only stops a known member asked for are listed. Absent
+   *  from an older server. */
+  stops?: Record<string, SessionMessageAuthor>;
 }
 
 /** Who wrote each message of a session, from the server's authenticated

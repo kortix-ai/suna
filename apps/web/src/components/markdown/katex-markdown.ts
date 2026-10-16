@@ -8,7 +8,7 @@ import type { PluggableList } from 'unified';
 // Streamdown ships remark-math + rehype-katex but:
 //  1. Standard `\(…\)` and `\[…\]` delimiters need normalization to remark-math delimiters.
 //  2. singleDollarTextMath is enabled for `$E = mc^2$` inline math; currency like `$4M` /
-//     `$50K` is escaped to `\$4M` / `\$50K` in prepareMarkdownForKatex() before parsing.
+//     `$50K` is escaped to `\$4M` / `\$50K` in prepareMarkdownForMath() before parsing.
 //  3. Default rehype order (raw → katex → sanitize) lets sanitize strip KaTeX SVG/MathML.
 //  4. rehype-sanitize's GitHub schema strips KaTeX output if order regresses.
 // ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ export {
 
 /**
  * Remark plugins for UnifiedMarkdown.
- * Inline `$…$` math is on; currency amounts are escaped upstream via prepareMarkdownForKatex().
+ * Inline `$…$` math is on; currency amounts are escaped upstream via prepareMarkdownForMath().
  */
 export const katexRemarkPlugins: PluggableList = Object.entries(defaultRemarkPlugins).map(
   ([key, plugin]) => {

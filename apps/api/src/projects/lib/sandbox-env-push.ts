@@ -1,5 +1,5 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { accountTokens, sessionSandboxes } from '@kortix/db';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
@@ -57,7 +57,9 @@ export const FANOUT_CONCURRENCY = 6;
  * correctness boundary, so each replica's copy of this memo may miss what
  * another replica confirmed.
  */
-const lastPromptModelSignature = new Map<string, EnvSyncMemoryState & { agent: string }>();
+/** `person` = the session token's `on_behalf_of` when the env was confirmed:
+ *  whose personal secrets the box holds. */
+const lastPromptModelSignature = new Map<string, EnvSyncMemoryState & { agent: string; person: string | null }>();
 /**
  * How stale a CONFIRMED-current record (memory or durable) may get before a
  * skip also fires a detached background re-push. This is not a correctness
@@ -159,13 +161,35 @@ function rememberPromptModelSignature(
   signature: string,
   appliedAtMs: number,
   agent: string,
+  person: string | null,
 ): void {
   lastPromptModelSignature.delete(externalId);
   if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
     const oldest = lastPromptModelSignature.keys().next();
     if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
   }
-  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs, agent });
+  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs, agent, person });
+}
+
+/**
+ * The human the session's live token acts for (`on_behalf_of`), or null. A
+ * private session's personal secrets are theirs; it changes when another person
+ * prompts (projects/lib/on-behalf-of.ts). One indexed read.
+ */
+async function sessionTokenPerson(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ onBehalfOf: accountTokens.onBehalfOfUserId })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.sessionId, sessionId),
+        eq(accountTokens.status, 'active'),
+        isNull(accountTokens.revokedAt),
+        isNotNull(accountTokens.serviceAccountId),
+      ),
+    )
+    .limit(1);
+  return row?.onBehalfOf ?? null;
 }
 
 /**
@@ -200,6 +224,7 @@ function scheduleBackgroundEnvRefresh(args: {
   llmGatewayBaseUrl?: string;
   signature: string;
   agent: string;
+  person: string | null;
 }): void {
   if (inFlightBackgroundEnvRefresh.has(args.externalId)) return;
   const run = (async () => {
@@ -215,7 +240,7 @@ function scheduleBackgroundEnvRefresh(args: {
         llmGatewayBaseUrl: args.llmGatewayBaseUrl,
       });
       const appliedAtMs = Date.now();
-      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs, args.agent);
+      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs, args.agent, args.person);
       await persistEnvSyncDurableState(args.sessionId, args.signature, appliedAtMs);
       console.log(
         `[env-sync] background refresh confirmed current sandbox=${args.externalId} session=${args.sessionId}`,
@@ -271,18 +296,21 @@ interface PromptEnvSyncArgs {
  * and a broker-held secret is checked against the grant on every use.
  *
  * Never trusted: a different agent (its grant is resolved and pushed before it
- * runs), a caller's explicit `opencodeEnv`, and a process that has not
- * confirmed this box itself.
+ * runs), a different person (the session token now acts for someone else: the
+ * box may hold the previous person's personal secrets), a caller's explicit
+ * `opencodeEnv`, and a process that has not confirmed this box itself.
  */
 export async function syncSandboxEnvForPrompt(args: PromptEnvSyncArgs): Promise<void> {
   if (!args.serviceKey) return;
   const known = lastPromptModelSignature.get(args.externalId);
+  const person = await sessionTokenPerson(args.sessionId);
   if (
     !args.opencodeEnv &&
     known?.agent === (args.requestedAgent ?? '') &&
+    known.person === person &&
     Date.now() - known.pushedAtMs < ENV_SYNC_BACKGROUND_REFRESH_STALE_MS
   ) {
-    const check = resolveAndSyncEnv(args, 'check')
+    const check = resolveAndSyncEnv(args, 'check', person)
       .catch((err) => {
         lastPromptModelSignature.delete(args.externalId);
         logger.warn('[env-sync] background check failed; the next prompt syncs synchronously', {
@@ -295,11 +323,11 @@ export async function syncSandboxEnvForPrompt(args: PromptEnvSyncArgs): Promise<
     logger.info('[env-sync] push=trusted', { sandbox: args.externalId });
     return;
   }
-  await resolveAndSyncEnv(args, 'sync');
+  await resolveAndSyncEnv(args, 'sync', person);
 }
 
 /** `check`: resolve and compare only — a difference drops the memo, nothing is pushed. */
-async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'): Promise<void> {
+async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check', person: string | null): Promise<void> {
   if (!args.serviceKey) return;
   const agent = args.requestedAgent ?? '';
   const t0 = performance.now();
@@ -457,7 +485,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     // turn pays only the proxy hop, never the daemon RTT or a respawn wait.
     // Same single writer as a push, so the capacity bound holds here too and
     // the confirmed-at time stays exactly what the durable record said.
-    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs, agent);
+    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs, agent, person);
     if (decision.scheduleBackgroundRefresh) {
       // Self-heal for drift THIS process did not cause. Detached: never
       // awaited here, and a failure inside it never touches this turn.
@@ -473,6 +501,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
         llmGatewayBaseUrl,
         signature,
         agent,
+        person,
       });
     }
     // Bookkeeping, and on this path the stored flag already matches in the
@@ -502,7 +531,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   // this replica or any other, retries with a real push again instead of
   // assuming the failed attempt landed.
   const appliedAtMs = Date.now();
-  rememberPromptModelSignature(args.externalId, signature, appliedAtMs, agent);
+  rememberPromptModelSignature(args.externalId, signature, appliedAtMs, agent, person);
   await persistEnvSyncDurableState(args.sessionId, signature, appliedAtMs);
   lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt

@@ -9,8 +9,11 @@ import { isEmptyShowPart } from '../turns/segments/session-activity-groups';
 import { createArtifactKind, familyForTool, narrateFailedStep, narrateStep } from '../turns/segments/narration';
 import { groupSteps } from '../turns/segments/group-steps';
 import { stepLabel } from '../turns/segments/step-label';
-import { toolCallBlock, toolCallMetadata } from './tool-call';
-import type { ToolCallBlock } from './types';
+import { subAgentCalls } from './turns';
+import { toolCallBlock, toolCallError, toolCallMetadata, toolCallRawOutput, toolCallStatus, toolPartOf } from './tool-call';
+import type { SessionLog, SessionLogThread, ToolCallBlock } from './types';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fromV1, type V1Row } from './v1';
 
 // Synthetic tool parts: every id and value is invented.
@@ -180,4 +183,47 @@ describe('a call the closure rule closed, reopened, reads as its stored v1 part'
       expect(getChildSessionId(reopened)).toBe(getChildSessionId(stored));
     });
   }
+});
+
+describe('block readers a host draws a call with: toolCallStatus, toolCallRawOutput, toolCallError, subAgentCalls', () => {
+  const blocks = atRest();
+  const live = (p: ToolPart) => toolCallBlock(p);
+
+  test('toolCallStatus names the status in the words a renderer compares', () => {
+    expect(toolCallStatus(blocks.get('prt_bash')!)).toBe('completed');
+    expect(toolCallStatus(live(PARTS.task!))).toBe('running');
+    expect(toolCallStatus(live(PARTS.pending!))).toBe('pending');
+    expect(toolCallStatus(blocks.get('prt_err')!)).toBe('error');
+  });
+
+  test('toolCallRawOutput is a completed call\'s text as the tool returned it, one string per call object', () => {
+    const bash = blocks.get('prt_bash')!;
+    expect(toolCallRawOutput(bash)).toBe('a\nb\n');
+    expect(toolCallRawOutput(bash)).toBe(toolCallRawOutput(bash));
+    expect(toolCallRawOutput(live(PARTS.task!))).toBe('');
+    expect(toolCallRawOutput(blocks.get('prt_err')!)).toBe('');
+  });
+
+  test('toolCallError is a failed call\'s error: the semantic error, else the result text, as `toV1` gives `state.error`', () => {
+    expect(toolCallError(blocks.get('prt_err')!)).toBe('File not found');
+    expect(toolCallError(blocks.get('prt_bash')!)).toBeUndefined();
+    // Native exports close a failed call with `is_error` and its text, no `error`: the body is never empty.
+    for (const [name, text] of [['claude-code', 'Exit code 1'], ['golden', 'exit code 1']] as const) {
+      const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, `../../../../api-contract/src/__tests__/fixtures/session-log/${name}.v2.json`), 'utf8'));
+      const failed = log.threads.flatMap((t) => t.messages.flatMap((m) => m.blocks)).find((b): b is ToolCallBlock => b.type === 'tool_call' && b.status === 'error')!;
+      expect(failed.result?.error).toBeUndefined();
+      expect(toolCallError(failed)).toBe(text);
+      expect(toolCallError(failed)).toBe((toolPartOf(failed).state as { error?: string }).error);
+    }
+  });
+
+  test('subAgentCalls lists the shown calls of a thread\'s replies, in order; the same array per thread', () => {
+    const reply = { role: 'assistant', blocks: [...blocks.values()] };
+    const thread = { thread_id: CHILD, messages: [{ role: 'user', blocks: [blocks.get('prt_bash')!] }, reply] } as unknown as SessionLogThread;
+    const calls = subAgentCalls(thread);
+    expect(calls.map((c) => c.id)).toEqual([...blocks.values()].filter((b) => shouldShowToolPart(b)).map((b) => b.id));
+    expect(calls.map((c) => c.id)).not.toContain('prt_todo');
+    expect(subAgentCalls(thread)).toBe(calls);
+    expect(subAgentCalls(null)).toEqual([]);
+  });
 });

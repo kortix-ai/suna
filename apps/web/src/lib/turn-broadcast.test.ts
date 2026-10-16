@@ -37,8 +37,13 @@ class FakeBroadcastChannel {
 const world = globalThis as { BroadcastChannel?: unknown };
 world.BroadcastChannel = FakeBroadcastChannel;
 
-const { broadcastTurnComplete, onTurnComplete, createTurnCompleteGate, resetTurnBroadcastForTests } =
-  await import('./turn-broadcast');
+const {
+  broadcastTurnComplete,
+  onTurnComplete,
+  createTurnCompleteGate,
+  noteTurnCompleteShown,
+  resetTurnBroadcastForTests,
+} = await import('./turn-broadcast');
 
 function msg(overrides: Partial<{ sessionId: string; at: number }> = {}) {
   return { sessionId: 'sess1', projectId: 'proj1', at: 1_000, ...overrides };
@@ -119,6 +124,19 @@ describe('createTurnCompleteGate — what a receiving tab does with a relayed tu
 
     // Two session pages of the same sandbox publish; one copy survives.
     expect(notified).toEqual(['sess1', 'sess2']);
+  });
+
+  test('a relay for an end this tab announced itself a moment ago is folded', () => {
+    // This tab's turn-end watch (the session page is not mounted here) found
+    // the end first; another tab's stream publishes the same end just after.
+    const notified: string[] = [];
+    const gate = createTurnCompleteGate(() => false, (m) => notified.push(m.sessionId));
+
+    noteTurnCompleteShown('sess1', 1_000);
+    gate(msg({ at: 2_000 }));
+    gate(msg({ sessionId: 'sess2', at: 2_000 }));
+
+    expect(notified).toEqual(['sess2']);
   });
 
   test('a later completion of the same session after the fold window notifies again', () => {

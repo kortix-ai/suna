@@ -137,6 +137,9 @@ const ignoredPathParts = [
   '/src/components/ui/',
   '/src/app/fonts/',
   '/src/app/[locale]/(system)/debug/',
+  // Tool-call fixtures (#9815): sample harness output rendered only by the tool
+  // tests and /debug/session-fixture, never product copy.
+  '/src/features/session/tool/foreign-tool-calls.ts',
   '/src/types/',
   '/__harness__/',
   // Unannounced, noindex launch film and /launch page (#8023, #8045): the copy
@@ -997,10 +1000,10 @@ function scanFile(file) {
         (file ===
           path.join(srcDir, 'features/workspace/customize/sections/view/grant-mode-field.tsx') &&
           catalogRoot === 'GRANT_MODES') ||
-        (file === path.join(srcDir, 'features/workspace/customize/migrate-to-v2/upgrade-defs.ts') &&
+        (file === path.join(srcDir, 'features/workspace/customize/migrate-to-v3/upgrade-defs.ts') &&
           catalogRoot === 'PROJECT_UPGRADES') ||
         (file ===
-          path.join(srcDir, 'features/workspace/customize/migrate-to-v2/upgrade-view.tsx') &&
+          path.join(srcDir, 'features/workspace/customize/migrate-to-v3/upgrade-view.tsx') &&
           catalogRoot === 'DEFAULT_UPGRADES_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/account-memberships.tsx') &&
           catalogRoot === 'DEFAULT_ACCOUNT_MEMBERSHIPS_COPY') ||

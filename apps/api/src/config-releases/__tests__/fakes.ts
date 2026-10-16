@@ -79,6 +79,11 @@ export class MemoryConfigArchiveStore implements ConfigArchiveStore {
     return `memory://config-archives/${key}?expiresIn=${ttlSeconds}`;
   }
 
+  async signedUrl(key: string, ttlSeconds: number): Promise<string> {
+    if (this.failWith) throw this.failWith;
+    return `https://store.example.com/${key}?expiresIn=${ttlSeconds}`;
+  }
+
   async exists(key: string): Promise<boolean> {
     if (this.failWith) throw this.failWith;
     return this.objects.has(key);

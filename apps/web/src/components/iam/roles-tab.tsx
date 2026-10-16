@@ -110,7 +110,7 @@ interface RolePrefill {
 
 export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  if (!rbacEnabled) return <EnterpriseUpsell feature="roles" />;
+  if (!rbacEnabled) return <EnterpriseUpsell feature="roles" accountId={accountId} />;
   return (
     <div className="space-y-6">
       {/* Where the "Custom-role assignments" table used to be. A role is

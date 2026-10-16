@@ -43,6 +43,8 @@ describe('local test runner contract', () => {
     const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
 
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
+    // No test uses the dashboard or image transforms; they were the largest pulls.
+    expect(source).toMatch(/"-x",\s+"studio,imgproxy"/);
   });
 
   it('snapshots fixture counts into results before teardown starts', () => {
@@ -74,8 +76,8 @@ describe('local test runner contract', () => {
     expect(source).toContain(
       "await when('apps/kortix-sandbox-agent-server', () => runWorkspaceTests(['kortixd'], 1))",
     );
-    // A diff-scoped run narrows every step to the affected packages; unset runs all.
-    expect(source).toContain('process.env.KORTIX_TEST_SCOPE');
+    // `when` gates a step by --package-group only: no diff scope.
+    expect(source).not.toContain('KORTIX_TEST_SCOPE');
     expect(source).toContain("'--no-bail'");
     expect(source).not.toContain("['@kortix/cli', 'kortixd']");
     expect(source).toContain("runWorkspaceTests(['@kortix/db'], 1)");

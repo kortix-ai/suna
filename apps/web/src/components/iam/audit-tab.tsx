@@ -124,19 +124,22 @@ export function auditFilterWire(filter: AuditFilterState): ListAuditFilter {
   };
 }
 
+// `id` is the tab value. The label is translated (`localizeUiCatalog`), so a
+// tab keyed by its label matched nothing outside English (KRTX-2399).
 const QUICK_FILTERS: Array<{
+  id: string;
   label: string;
   action?: string;
   actorType?: ActorType;
   outcome?: Outcome;
   resourceType?: string;
 }> = [
-  { label: 'All activity' },
-  { label: 'People', actorType: 'human' },
-  { label: 'Agents', actorType: 'agent' },
-  { label: 'Sessions', resourceType: 'project_session' },
-  { label: 'Connectors', action: 'connector.' },
-  { label: 'Failures', outcome: 'failure' },
+  { id: 'all', label: 'All activity' },
+  { id: 'people', label: 'People', actorType: 'human' },
+  { id: 'agents', label: 'Agents', actorType: 'agent' },
+  { id: 'sessions', label: 'Sessions', resourceType: 'project_session' },
+  { id: 'connectors', label: 'Connectors', action: 'connector.' },
+  { id: 'failures', label: 'Failures', outcome: 'failure' },
 ];
 
 const RESOURCE_TYPES = [
@@ -254,7 +257,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
   const hasFilter = filterCount > 0;
   const activeQuickFilter = QUICK_FILTERS.find((preset) =>
     isQuickFilterActive(filter, preset),
-  )?.label;
+  )?.id;
 
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, filter],
@@ -360,13 +363,13 @@ export function AuditTab({ accountId }: { accountId: string }) {
       <Tabs
         value={activeQuickFilter}
         onValueChange={(value) => {
-          const preset = QUICK_FILTERS.find((item) => item.label === value);
+          const preset = QUICK_FILTERS.find((item) => item.id === value);
           if (preset) setFilter((current) => applyQuickFilter(current, preset));
         }}
       >
         <TabsList type="underline" className="h-auto w-full flex-wrap justify-start">
           {quickFilters.map((preset) => (
-            <TabsTrigger key={preset.label} value={preset.label} className="w-fit flex-none pb-3">
+            <TabsTrigger key={preset.id} value={preset.id} className="w-fit flex-none pb-3">
               {preset.label}
             </TabsTrigger>
           ))}

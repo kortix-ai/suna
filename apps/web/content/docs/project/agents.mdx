@@ -238,7 +238,7 @@ Set grants in one of three ways. Each one commits `kortix.yaml` on the default b
 <Tabs>
 
 <Tab title="Dashboard">
-Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. **Apps** shows only when the project has the Apps feature flag on. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
+Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
 </Tab>
 
 <Tab title="CLI">
@@ -281,7 +281,7 @@ A session runs one agent. The request picks it, else the project's `default_agen
 | Key | Default | Effect |
 | --- | --- | --- |
 | `enabled` | `true` | `false`: no session can start the agent, and it cannot be `default_agent`. |
-| `repository_access` | `true` | `false`: new sessions of this agent start without a checkout of the project repository. Set it in **Workspace → Project repository access**. A running session keeps the setting it started with. |
+| `workspace.project_repository` | `true` | `false`: new sessions of this agent start without a checkout of the project repository. Set it in **Workspace → Project repository access**. A running session keeps the setting it started with. See [`workspace`](/docs/project/manifest#agent-workspace). |
 | `sandbox` | the project default | The sandbox template for this agent's sessions. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates). |
 | `harnesses` | none | Per-agent pi packages and OpenCode plugins. See [`kortix.yaml`](/docs/project/manifest#harnesses-opencode-and-pi). |
 
@@ -441,6 +441,8 @@ The optional features are capabilities:
 | `session.config` | The runtime config document (`/global/config`) | Yes | No |
 
 A pi session answers a request for a feature it does not serve with `501` and `code: "feature_not_supported"`, and `/global/config` with `404`. pi also refuses message part edits with `501`. [Connectors](/docs/connect/connectors) work on both harnesses through the `kortix connectors` CLI. pi subagents are `general`, `explore` (read-only) and every agent with `mode: subagent` or `all`. A pi subagent cannot start another subagent.
+
+pi has one tool OpenCode does not: `codemode`. The model writes a script that calls the other tools, and only the script's output returns to it, so one step can run several calls and filter their output. It is on by default; [`harnesses.pi.codemode`](/docs/project/manifest#harnesses-opencode-and-pi) turns it off or makes it the only tool. The session view shows a script as its calls, its code and its output. A subagent does not get `codemode`.
 
 ### Harness-only files
 

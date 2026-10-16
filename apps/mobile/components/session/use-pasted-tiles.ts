@@ -17,6 +17,7 @@ import {
   PASTED_INLINE_MAX_BYTES,
   newPastedContentId,
   serializePromptWithPastes,
+  trimPastedText,
   utf8Bytes,
   type PastedContent,
 } from '@kortix/shared';
@@ -62,7 +63,7 @@ export function usePastedTiles(addFile: (files: AttachedFile[]) => void, initial
       if (!hit) return next;
       // The field changes under the caret; the next selection event says where it is.
       selectionRef.current = null;
-      const paste = { id: newPastedContentId(), text: hit.paste };
+      const paste = { id: newPastedContentId(), text: trimPastedText(hit.paste) };
       const all = [...pastesRef.current, paste];
       if (utf8Bytes(serializePromptWithPastes(hit.text, all)) > PASTED_INLINE_MAX_BYTES) {
         try {

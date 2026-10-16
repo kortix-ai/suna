@@ -404,12 +404,11 @@ async function claimFailedProvisionRow(row: typeof sessionSandboxes.$inferSelect
 }
 
 /**
- * A provision (a new session, or an ephemeral wake) that failed for a reason a
+ * A provision (a new session, or a retired row's wake) that failed for a reason a
  * later attempt can clear — the provider at capacity, rate limited, a transient
  * 5xx — is re-attempted by `/start` itself, with backoff, instead of replaying
  * the failure until someone presses Restart. Nothing is lost: the failed row
- * never had a box, and an ephemeral session's state stays on its volume, which
- * the fresh box mounts.
+ * never had a box.
  *
  * Three answers, each with a `retriable` its message agrees with: waiting
  * (`starting`, retriable, "retrying automatically"), re-provisioning

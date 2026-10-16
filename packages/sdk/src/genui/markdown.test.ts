@@ -1,0 +1,249 @@
+import { describe, expect, test } from 'bun:test';
+
+import { genuiToMarkdown } from './markdown';
+import { BROKEN_TABS, HOTEL } from './test-fixtures';
+
+describe('markdown fallback', () => {
+  test('replaces blocks, keeps prose, never leaks source', () => {
+    const md = genuiToMarkdown(`Here you go.\n\n\`\`\`openui\n${HOTEL}\n\`\`\`\n\nThanks.`);
+    expect(md).toContain('Here you go.');
+    expect(md).toContain('- **Options checked:** 24');
+    expect(md).toContain('1. **Option A** — Closest to the venue (4.7 stars) [Open](https://example.com/a)');
+    expect(md).toContain('> **Tip** Book by Friday');
+    expect(md).toContain('Thanks.');
+    expect(md).not.toContain('root =');
+  });
+
+  test('prose and blocks are separated by exactly one blank line', () => {
+    expect(genuiToMarkdown('Done.\n\n```openui\nroot = Stack([b])\nb = Badge("shipped")\n```\n\nBye.')).toBe('Done.\n\n[shipped]\n\nBye.');
+  });
+
+  test('text without a block is returned as the same string', () => {
+    const text = 'No UI here, even with the word openui.';
+    expect(genuiToMarkdown(text)).toBe(text);
+  });
+
+  test('charts and maps carry their source', () => {
+    const md = genuiToMarkdown(
+      '```openui\nroot = Stack([c, m])\nc = BarChart(["Q1","Q2"], [s], "billing export", "USD")\ns = Series("Revenue", [1200, 1500])\nm = Map([p], "places tool")\np = Marker(48.85, 2.35, "Center")\n```',
+    );
+    expect(md).toContain('| Q1 | 1,200 |');
+    expect(md).toContain('Source: billing export');
+    expect(md).toContain('https://www.openstreetmap.org/?mlat=48.85&mlon=2.35');
+    expect(md).toContain('Source: places tool');
+  });
+
+  test('Steps become a numbered list without photos; text lines collapse to one line', () => {
+    const md = genuiToMarkdown(
+      '```openui\nroot = Steps([a, b, c])\na = Step("Home → Central Station", "Take a taxi or the bus.", "https://example.com/p/a.jpg", "about 20 min")\nb = Step("Central Station → Airport One", "Take the airport train\\nto Terminal 2.", null, "about 35 min")\nc = Step("Hub Airport", "Change planes inside the international transfer area.")\n```',
+    );
+    expect(md).toBe(
+      [
+        '1. **Home → Central Station** — Take a taxi or the bus. (about 20 min)',
+        '2. **Central Station → Airport One** — Take the airport train to Terminal 2. (about 35 min)',
+        '3. **Hub Airport** — Change planes inside the international transfer area.',
+      ].join('\n'),
+    );
+  });
+
+  test('a Checklist becomes an unticked task list under its title', () => {
+    expect(genuiToMarkdown('```openui\nroot = Checklist("Your travel checklist", ["Valid passport", "Visa or entry permit"])\n```')).toBe(
+      '**Your travel checklist**\n\n- [ ] Valid passport\n- [ ] Visa or entry permit',
+    );
+  });
+
+  test('an Image with text keeps the text under the picture', () => {
+    expect(
+      genuiToMarkdown('```openui\nroot = Image("https://example.com/photo.jpg", "A valid photo", null, "Plain light background, face forward.")\n```'),
+    ).toBe('![A valid photo](https://example.com/photo.jpg)\n\nPlain light background, face forward.');
+  });
+
+  test('tabs and accordion expand every panel', () => {
+    const md = genuiToMarkdown(
+      '```openui\nroot = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [b1])\ny = Tab("Two", [b2])\nb1 = Badge("first")\nb2 = Badge("second")\n```',
+    );
+    expect(md).toContain('#### One\n\n[first]');
+    expect(md).toContain('#### Two\n\n[second]');
+  });
+
+  test('a block whose nodes fail up to the root keeps its valid statements (copy, export)', () => {
+    const md = genuiToMarkdown(`Intro.\n\n\`\`\`openui\n${BROKEN_TABS}\n\`\`\`\n\nAfter.`);
+    const table = (value: string) => `| k |\n| --- |\n| ${value} |`;
+    expect(md).toBe(['Intro.', table('1'), table('2'), table('3'), 'After.'].join('\n\n'));
+  });
+
+  test('a broken block yields no raw source, only a one-line note', () => {
+    expect(genuiToMarkdown('Hi\n\n```openui\nthis is not openui at all\n```')).toBe('Hi\n\n*This content could not be displayed.*');
+  });
+
+  test('a settled block with no valid root says so; a streaming one stays empty', () => {
+    const text = '```openui\nroot = Stack([ci])\nci = CompareItem("x", ["a"])\n```';
+    expect(genuiToMarkdown(text)).toBe('*This content could not be displayed.*');
+    expect(genuiToMarkdown('```openui\nroot = Stack([ci])\nci = CompareItem("x", ["a"])', { streaming: true })).toBe('');
+  });
+
+  test('a block cut off before any statement finished shows only the cut-off note', () => {
+    expect(genuiToMarkdown('```openui\nroot = Stack([b])\nb = Callout("info", "unfin')).toBe('*Response was cut off.*');
+  });
+
+  test('a block cut off mid-statement keeps its valid parts and says so', () => {
+    expect(genuiToMarkdown('```openui\nroot = Stack([a, b])\na = Badge("kept")\nb = Callout("info", "unfin')).toBe(
+      '[kept]\n\n*Response was cut off.*',
+    );
+  });
+
+  test('a capitalized fence tag is still a block', () => {
+    expect(genuiToMarkdown('Hi\n\n```OpenUI\nroot = Stack([b])\nb = Badge("x")\n```')).toBe('Hi\n\n[x]');
+  });
+
+  test('a newer version yields the unsupported note', () => {
+    expect(genuiToMarkdown('```openui-v2\nroot = Stack([])\n```')).toBe('*This content needs a newer version of Kortix.*');
+  });
+
+  test('streaming: an unfinished statement is left out and no cut-off note is shown', () => {
+    const text = '```openui\nroot = Stack([a, b])\na = Badge("kept")\nb = Callout("info", "unfin';
+    expect(genuiToMarkdown(text, { streaming: true })).toBe('[kept]');
+    expect(genuiToMarkdown(text, { streaming: false })).toBe('[kept]\n\n*Response was cut off.*');
+  });
+
+  test('streaming applies only to the unclosed last block', () => {
+    const closed = '```openui\nroot = Stack([a, b])\na = Badge("one")\nb = Callout("info", "unfin\n```';
+    expect(genuiToMarkdown(`${closed}\n\nMore.`, { streaming: true })).toBe('[one]\n\n*Response was cut off.*\n\nMore.');
+  });
+});
+
+const BLOCK = '```openui\nroot = Stack([b])\nb = Badge("x")\n```';
+const prefixed = (text: string, prefix: string) =>
+  text
+    .split('\n')
+    .map((line) => prefix + line)
+    .join('\n');
+
+describe('blocks inside lists and blockquotes', () => {
+  test('a block indented under a nested list item converts and keeps the indentation', () => {
+    expect(genuiToMarkdown(`Intro.\n\n- Item\n  - Nested\n\n${prefixed(BLOCK, '    ')}`)).toBe(
+      'Intro.\n\n- Item\n  - Nested\n\n    [x]',
+    );
+  });
+
+  test('a block in a blockquote converts and keeps the quote marker on every line', () => {
+    expect(genuiToMarkdown(`Intro.\n\n${prefixed(BLOCK, '> ')}`)).toBe('Intro.\n\n> [x]');
+    const tabs =
+      '```openui\nroot = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [b1])\ny = Tab("Two", [b2])\nb1 = Badge("first")\nb2 = Badge("second")\n```';
+    expect(genuiToMarkdown(prefixed(tabs, '> '))).toBe('> #### One\n>\n> [first]\n>\n> #### Two\n>\n> [second]');
+  });
+
+  test('a CRLF block in a blockquote converts', () => {
+    const text = `Intro.\r\n\r\n${prefixed(BLOCK, '> ').replace(/\n/g, '\r\n')}`;
+    const md = genuiToMarkdown(text);
+    expect(md).not.toContain('root =');
+    expect(md).toBe('Intro.\r\n\r\n> [x]');
+  });
+
+  test('the block ends where its blockquote ends', () => {
+    expect(genuiToMarkdown('> ```openui\n> root = Stack([b])\n> b = Badge("x")\nAfter.')).toBe('> [x]\nAfter.');
+  });
+
+  test('a fence opened on the list-marker line converts; the marker stays on the first line', () => {
+    expect(genuiToMarkdown('Steps:\n\n- ```openui\n  root = Stack([b])\n  b = Badge("x")\n  ```\n- next')).toBe(
+      'Steps:\n\n- [x]\n- next',
+    );
+    const tabs = '```openui\nroot = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [b1])\ny = Tab("Two", [b2])\nb1 = Badge("first")\nb2 = Badge("second")\n```';
+    const listed = tabs.split('\n').map((line, i) => (i === 0 ? `12. ${line}` : `    ${line}`)).join('\n');
+    expect(genuiToMarkdown(listed)).toBe('12. #### One\n\n    [first]\n\n    #### Two\n\n    [second]');
+  });
+
+  test('blockquote body lines may space the marker differently from the opener', () => {
+    expect(genuiToMarkdown('> ```openui\n>root = Stack([b])\n>  b = Badge("x")\n>```')).toBe('> [x]');
+  });
+
+  test('an example inside another fence is left alone', () => {
+    const text = `\`\`\`\`md\n${prefixed(BLOCK, '> ')}\n\`\`\`\`\n\n- Item\n\n    \`\`\`text\n    > \`\`\`openui\n    \`\`\``;
+    expect(genuiToMarkdown(text)).toBe(text);
+  });
+});
+
+describe('a closer glued to the last statement', () => {
+  test('the block parses and the prose after it is kept', () => {
+    expect(genuiToMarkdown('Hi\n\n```openui\nroot = Stack([b])\nb = Badge("x")```\n\nAfter.')).toBe('Hi\n\n[x]\n\nAfter.');
+  });
+
+  test('in a list item and in a blockquote', () => {
+    expect(genuiToMarkdown('- item\n  - sub\n\n    ```openui\n    root = Stack([b])\n    b = Badge("x")```\n\nAfter.')).toBe(
+      '- item\n  - sub\n\n    [x]\n\nAfter.',
+    );
+    expect(genuiToMarkdown('1. ```openui\n   root = Stack([b])\n   b = Badge("x")```\n\nAfter.')).toBe('1. [x]\n\nAfter.');
+    expect(genuiToMarkdown('> ```openui\n> root = Stack([b])\n> b = Badge("x")```  \n\nAfter.')).toBe('> [x]\n\nAfter.');
+  });
+});
+
+describe('hostile input', () => {
+  test('80,000 newlines convert in linear time', () => {
+    const started = performance.now();
+    expect(genuiToMarkdown(`a${'\n'.repeat(80_000)}z\n${BLOCK}\n${'\n'.repeat(80_000)}`)).toBe(`a${'\n'.repeat(80_000)}z\n\n[x]`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('a 40 KB fence-like line converts in linear time', () => {
+    const started = performance.now();
+    const line = `\`\`\`${'a'.repeat(40_000)}\``;
+    expect(genuiToMarkdown(`openui\n${line}`)).toBe(`openui\n${line}`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('20,000 nested brackets never throw', () => {
+    const block = `root = ${'Stack(['.repeat(20_000)}Badge("x")${'])'.repeat(20_000)}`;
+    expect(genuiToMarkdown(`hi\n\n\`\`\`openui\n${block}\n\`\`\``)).toBe('hi\n\n*This content could not be displayed.*');
+  });
+
+  test('a 1 MB block is dropped quickly', () => {
+    const started = performance.now();
+    const md = genuiToMarkdown(`hi\n\n\`\`\`openui\nroot = Stack([c])\nc = Callout("info", "${'a'.repeat(1_000_000)}")\n\`\`\``);
+    expect(md).toBe('hi\n\n*This content could not be displayed.*');
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('many fences convert in bounded time', () => {
+    const started = performance.now();
+    const md = genuiToMarkdown(Array.from({ length: 1_000 }, () => BLOCK).join('\n\n'));
+    expect(md.split('\n\n')).toHaveLength(1_000);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+});
+
+
+describe('model strings cannot inject markdown structure', () => {
+  test('a Callout body cannot open a live openui fence; every body line stays quoted', () => {
+    const md = genuiToMarkdown(
+      'Hi\n\n```openui\nroot = Stack([c])\nc = Callout("info", "line\\n```openui\\nroot = Stack([b])\\nb = Badge(\\"injected\\")\\n```")\n```',
+    );
+    expect(md.split('\n').some((line) => line.trimStart().startsWith('```'))).toBe(false);
+    expect(md.split('\n').slice(2).every((line) => line.startsWith('>'))).toBe(true);
+    // Converting the output again changes nothing: no block survives inside it.
+    expect(genuiToMarkdown(md)).toBe(md);
+  });
+
+  test('a Link label cannot close the link and open a javascript: one', () => {
+    const md = genuiToMarkdown('```openui\nroot = Stack([l])\nl = Link("x](javascript:alert(1)) [y", "https://ok.example")\n```');
+    expect(md).not.toContain('](javascript:');
+    expect(md).toContain('(https://ok.example/)');
+  });
+
+  test('inline text collapses newlines and escapes markdown characters', () => {
+    expect(genuiToMarkdown('```openui\nroot = Stack([b])\nb = Badge("a\\n*b* `c`")\n```')).toBe('[a \\*b\\* \\`c\\`]');
+  });
+
+  test('inline text escapes a pipe, so a model string cannot start a table row', () => {
+    expect(genuiToMarkdown('```openui\nroot = Stack([b])\nb = Badge("a | b")\n```')).toBe('[a \\| b]');
+  });
+
+  test('a pipe or backslash in a table header or cell stays inside its cell', () => {
+    const md = genuiToMarkdown('```openui\nroot = Stack([t])\nt = Table(["a|b"], [["c\\\\|d"], [7]])\n```');
+    expect(md).toBe('| a\\|b |\n| --- |\n| c\\\\\\|d |\n| 7 |');
+  });
+
+  test('a table cell cannot form a link', () => {
+    const md = genuiToMarkdown('```openui\nroot = Stack([t])\nt = Table(["k"], [["[x](javascript:alert(1))"]])\n```');
+    expect(md).not.toContain('](javascript:');
+  });
+});

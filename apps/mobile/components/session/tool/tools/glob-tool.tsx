@@ -55,11 +55,11 @@ function GlobTrigger({ label, isPathLike, badge }: { label: string; isPathLike: 
   );
 }
 
-export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+export function GlobTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const { enabled: navigationEnabled, openFile } = useToolNavigation();
   const pattern = input.pattern || streamingInput.pattern;
   const path = input.path || streamingInput.path;
@@ -70,7 +70,7 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={MagnifyingGlassIcon}
       trigger={<GlobTrigger label={trigger.label} isPathLike={trigger.isPathLike} badge={trigger.badge} />}
       defaultOpen={defaultOpen}

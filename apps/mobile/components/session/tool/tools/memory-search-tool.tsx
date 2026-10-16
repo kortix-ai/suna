@@ -38,11 +38,11 @@ import { ToolResultCard } from '../shared/result-card';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function MemorySearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseMemorySearchOutput(output), [output]);
   const query = ((input.query as string) || parsed.query || '').trim();
@@ -51,7 +51,7 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={MagnifyingGlassIcon}
       trigger={{
         title: memorySearchTitle(parsed.label),

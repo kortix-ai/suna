@@ -19,8 +19,9 @@
  * directly again, with the blank page fixed properly instead of avoided. The
  * reasoning lives in one place: `standalone-settings-route.tsx`'s header.
  *
- * Retired account tabs open their replacement in the account hub. Unknown
- * segments still open the account-scoped default rather than 404ing.
+ * Retired account tabs open their replacement in the account hub. A renamed
+ * tab opens under its new name (`/settings/api-keys` → `tokens`, KRTX-2291).
+ * Unknown segments still open the account-scoped default rather than 404ing.
  */
 
 import { useParams, useRouter } from 'next/navigation';
@@ -37,7 +38,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import {
   isAccountGraduatedSection,
   legacySectionRedirect,
-  parseSettingsTab,
+  resolveOverlayTab,
 } from '@/features/workspace/settings/settings-tabs';
 import {
   STANDALONE_DEFAULT_SETTINGS_TAB,
@@ -46,7 +47,7 @@ import {
 
 export default function SettingsTabPage() {
   const params = useParams<{ tab: string }>();
-  const tab = parseSettingsTab(params?.tab);
+  const tab = resolveOverlayTab(params?.tab);
   const router = useRouter();
   useEnsureSelectedAccount();
   const accounts = useAccountsList();

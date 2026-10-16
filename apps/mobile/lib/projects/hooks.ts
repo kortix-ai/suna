@@ -19,6 +19,7 @@ import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-p
 import { normalizeSessionListFilter, type SessionListFilter } from '@/lib/session/session-tree';
 import {
   createdSessionListRow,
+  sessionRowsOf,
   upsertIntoSessionCache,
   writeSessionLists,
 } from '@/lib/session/session-cache-write';
@@ -54,6 +55,7 @@ import {
   getSlackMode,
   getProject,
   getProjectDetail,
+  getProjectSession,
   getModelDefaults,
   getProjectLlmCatalog,
   getProjectLlmCatalogProviders,
@@ -144,6 +146,12 @@ export const projectKeys = {
   /** One parent's children (`parent=<id>`), optionally narrowed by a search. */
   sessionChildren: (projectId: string | null | undefined, parentId: string | null | undefined, q?: string) =>
     ['project-sessions', projectId, 'children', parentId, q?.trim() || null] as const,
+  /**
+   * One session's row by id (`useProjectSession`). Under `projectSessions`, so
+   * every session-list invalidation and write reaches it too.
+   */
+  projectSession: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'session', sessionId] as const,
   /** A session's public shares (KRTX-248: the transcript link). */
   /** Under `projectSessions`, so a sharing save (which invalidates that key) refetches it. */
   sessionParticipants: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
@@ -215,17 +223,36 @@ export function sessionListKeys(queryClient: QueryClient, projectId: string) {
     .map((query) => query.queryKey);
 }
 
-/** A session's freshest cached row, from any cached list of the project. */
+/**
+ * A session's freshest cached row, from any cached list of the project or its
+ * by-id read. An entry under the prefix that holds no rows (message authors)
+ * is skipped.
+ */
 export function cachedSessionRow(queryClient: QueryClient, projectId: string, sessionId: string): ProjectSession | null {
   for (const key of sessionListKeys(queryClient, projectId)) {
-    const data = queryClient.getQueryData(key);
-    const rows = Array.isArray(data)
-      ? (data as ProjectSession[])
-      : flattenSessionPages(data as Parameters<typeof flattenSessionPages<ProjectSession>>[0]);
-    const row = rows.find((r) => r.session_id === sessionId);
+    const row = sessionRowsOf<ProjectSession>(queryClient.getQueryData(key)).find((r) => r.session_id === sessionId);
     if (row) return row;
   }
   return null;
+}
+
+/**
+ * One session's row by its Kortix id: `GET /projects/:id/sessions/:sid`
+ * (KRTX-2316). A session older than the first list page has a row too. While
+ * the read runs, the row any cached list holds shows (`cachedSessionRow`).
+ */
+export function useProjectSession(projectId: string | null | undefined, sessionId: string | null | undefined) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: projectKeys.projectSession(projectId, sessionId),
+    queryFn: () => getProjectSession(projectId!, sessionId!, { showErrors: false }),
+    enabled: !!projectId && !!sessionId,
+    // A new function each render: TanStack recomputes it, so the seed follows
+    // the lists until the read answers. Never the previous session's row.
+    placeholderData: () =>
+      projectId && sessionId ? (cachedSessionRow(queryClient, projectId, sessionId) ?? undefined) : undefined,
+    staleTime: 10_000,
+  });
 }
 
 /** Where a session the viewer just started belongs: their top-level "Sessions" list. */
@@ -446,12 +473,14 @@ const AUTHOR_RETRY_DELAYS_MS = [2000, 5000, 12000];
  * any of `wantedMessageIds` (the transcript's user messages and the queued
  * prompts) has no author, it asks again on `AUTHOR_RETRY_DELAYS_MS`, per set
  * of missing ids. A message that never gets an author (a slash command) stops
- * after the last delay.
+ * after the last delay. When `busy` goes from true to false (a turn ended), it
+ * asks once more: a stop records who stopped the turn (`stops`).
  */
 export function useSessionMessageAuthors(
   projectId: string | null | undefined,
   sessionId: string | null | undefined,
   wantedMessageIds: readonly string[] = [],
+  busy = false,
 ) {
   const query = useQuery({
     queryKey: projectKeys.sessionMessageAuthors(projectId, sessionId),
@@ -473,6 +502,11 @@ export function useSessionMessageAuthors(
     }, delay);
     return () => clearTimeout(timer);
   }, [missing, data, refetch]);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy && projectId && sessionId) void refetch();
+    wasBusy.current = busy;
+  }, [busy, projectId, sessionId, refetch]);
   return query;
 }
 

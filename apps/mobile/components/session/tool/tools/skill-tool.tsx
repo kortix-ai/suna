@@ -31,12 +31,12 @@ import { ToolResultCard } from '../shared/result-card';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SkillTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { openFile } = useToolNavigation();
-  const input = partInput(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
   const skill = useMemo(() => skillBody(input, output, status), [input, output, status]);
   const { docPath } = skill;
   const openSkillDoc = useCallback(() => {
@@ -45,7 +45,7 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={FileDashedIcon}
       trigger={skill.trigger}
       onSubtitleClick={docPath ? openSkillDoc : undefined}

@@ -6,6 +6,7 @@ import { EMPTY_SESSION_LOG_STATE, applySessionLogEvent, applySessionLogPage, sel
 import type { SessionLog } from './types';
 import { fromV1, toV1, type V1Transcript } from './v1';
 import { sessionLogOfV1Rows, sessionLogRowsFor, sessionLogThreadWithV1Rows, type V1MessageRow } from './v1-view';
+import { sessionLogTurns } from './turns';
 
 const CONTRACT_FIXTURES = join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log');
 const fixtures: Array<[string, SessionLog]> = readdirSync(CONTRACT_FIXTURES)
@@ -174,7 +175,7 @@ describe('sessionLogThreadWithV1Rows: a v2 thread with the v1 rows the log lacks
     const stub = optimistic('msg_stub', 1, 'sent');
     const echoOf = (id: string) => (id === 'msg_stub' ? echo : undefined);
     expect(sessionLogThreadWithV1Rows(state, thread, [stub], echoOf)).toBe(thread);
-    expect(sessionLogThreadWithV1Rows(state, thread, [stub]).messages.at(-1)!.message_id).toBe('msg_stub');
+    expect(sessionLogThreadWithV1Rows(state, thread, [stub]).messages.map((m) => m.message_id)).toContain('msg_stub');
     const rows = sessionLogRowsFor({ kses_1: state }, ROOT, [stub], echoOf);
     expect(rows.map((r) => r.info.id)).not.toContain('msg_stub');
     expect(sessionLogRowsFor({ kses_1: state }, ROOT, [stub]).map((r) => r.info.id)).toContain('msg_stub');
@@ -199,15 +200,31 @@ describe('sessionLogThreadWithV1Rows: a v2 thread with the v1 rows the log lacks
     expect(added.map(({ seq: _s, ...m }) => m)).toEqual(expected.map(({ seq: _s, ...m }) => m));
   });
 
+  test('an older v1 row the log lacks (a loadOlder page) goes in by its time, before the log\'s messages: its turn is turn 0', () => {
+    const state = stateOf(v1Golden);
+    const thread = selectSessionLogThread(state)!;
+    const first = Date.parse(thread.messages[0]!.created_at);
+    const older = optimistic('msg_older', first - 60_000, 'an earlier prompt');
+    const newer = optimistic('msg_newer', Date.parse(thread.messages.at(-1)!.created_at) + 1_000, 'just sent');
+    const merged = sessionLogThreadWithV1Rows(state, thread, [older, newer]);
+    expect(merged.messages.map((m) => m.message_id)).toEqual(['msg_older', ...thread.messages.map((m) => m.message_id), 'msg_newer']);
+    // The log's own messages keep their seq.
+    expect(merged.messages.slice(1, -1)).toEqual(thread.messages);
+    expect(sessionLogTurns(merged)[0]!.id).toBe('msg_older');
+    expect(sessionLogTurns(merged).at(-1)!.id).toBe('msg_newer');
+  });
+
   test('identity: the same inputs give the same thread; no extra row gives the thread itself; a changed row renews only its message', () => {
     const state = stateOf(v1Golden);
     const thread = selectSessionLogThread(state)!;
     expect(sessionLogThreadWithV1Rows(state, thread, [])).toBe(thread);
     expect(sessionLogThreadWithV1Rows(state, thread, [optimistic(thread.messages[0]!.message_id, 1, 'held')])).toBe(thread);
-    const v1Rows = [optimistic('msg_o1', 1, 'one'), optimistic('msg_o2', 2, 'two')];
+    // Optimistic sends: newer than every message, so they go last.
+    const after = Date.parse(thread.messages.at(-1)!.created_at);
+    const v1Rows = [optimistic('msg_o1', after + 1, 'one'), optimistic('msg_o2', after + 2, 'two')];
     const first = sessionLogThreadWithV1Rows(state, thread, v1Rows);
     expect(sessionLogThreadWithV1Rows(state, thread, v1Rows)).toBe(first);
-    const second = sessionLogThreadWithV1Rows(state, thread, [v1Rows[0]!, optimistic('msg_o2', 2, 'two, edited')]);
+    const second = sessionLogThreadWithV1Rows(state, thread, [v1Rows[0]!, optimistic('msg_o2', after + 2, 'two, edited')]);
     expect(second).not.toBe(first);
     expect(second.messages.at(-2)).toBe(first.messages.at(-2)!);
     expect(second.messages.at(-1)).not.toBe(first.messages.at(-1)!);

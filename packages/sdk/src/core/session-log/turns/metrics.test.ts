@@ -30,6 +30,10 @@ const thread = (messages: SessionLogMessage[]): SessionLogThread => ({
 });
 const lookup = () => ({ inputPer1M: 1, outputPer1M: 2, cacheReadPer1M: 0.1, cacheWritePer1M: 2 });
 
+test('COST_MARKUP is the 5.5% platform fee on managed model usage', () => {
+  expect(COST_MARKUP).toBe(1.055);
+});
+
 describe('sessionLogThreadMetrics', () => {
   test('an empty thread is all zeros', () => {
     expect(sessionLogThreadMetrics(thread([]))).toEqual({
