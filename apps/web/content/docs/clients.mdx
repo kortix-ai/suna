@@ -39,7 +39,7 @@ To create a project, open the project menu at the top of the sidebar and select 
 | Search | Opens the command palette. |
 | **New session** | Opens the project home with an empty composer. |
 | **Customize** | Every project setting. See [Where settings live](#where-settings-live). |
-| **Apps** | The project's Apps. Shown when the project has the `apps` flag on. See [Apps](/docs/apps). |
+| **Apps** | The project's Apps. Available in every project. See [Apps](/docs/apps). |
 | Session list | Your sessions, grouped and filtered. See below. |
 | **Review** | Work waiting on a person before it can continue, such as change requests. See [Git](/docs/git). |
 | **Reminders** | The project's reminders. Shown when the `reminders` flag is on and a reminder is not done. See [Triggers & reminders](/docs/connect/triggers). |
@@ -250,6 +250,8 @@ The app updates itself from the stable channel. It checks at launch and every 6 
 - On macOS, run the app from `/Applications`. A connected computer needs that fixed path.
 - With a connected computer, closing the last window keeps the app in the menu bar or tray. The computer agent runs as a separate service and stays connected after you quit. See [Computers](/docs/connect/computers).
 - The desktop app has no push service. While its window is open it polls for notifications and shows them as OS notifications. See [Where they appear](/docs/work/sessions#where-they-appear).
+- Right-click shows the menu a browser shows: spelling suggestions and **Add to Dictionary** on a misspelled word; Cut, Copy and Paste in a text field; **Copy Link** and **Open Link in Browser** on a link; **Copy Image** on an image.
+- A turn that finishes while the window is not in focus adds 1 to a count on the app icon. The count shows on the Dock icon on macOS, as a dot on the taskbar icon on Windows, and on the launcher icon on Linux desktops that support counts. Coming back to the session takes it off the count. The count does not need the `notification_center` flag.
 
 ## Mobile app
 

@@ -1,3 +1,4 @@
+import { COMPILED_AGENT_CONFIG_GZ_CAPABILITY } from '@kortix/api-contract/compiled-agent-config-env'
 import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
 import {
   ACCEPTED_FORMATS,
@@ -133,7 +134,8 @@ export async function fetchConfigReleaseDescriptor(
     res = await fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.token}` },
-      body: JSON.stringify({ accept: ACCEPTED_FORMATS, ...(opts.baseSha ? { base_sha: opts.baseSha } : {}) }),
+      // The gzip form: this daemon holds a governance over 128 KiB encoded (compiled-agent-config.ts).
+      body: JSON.stringify({ accept: ACCEPTED_FORMATS, capabilities: [COMPILED_AGENT_CONFIG_GZ_CAPABILITY], ...(opts.baseSha ? { base_sha: opts.baseSha } : {}) }),
       redirect: 'error',
       signal: AbortSignal.timeout(opts.timeoutMs ?? DESCRIPTOR_TIMEOUT_MS),
     })

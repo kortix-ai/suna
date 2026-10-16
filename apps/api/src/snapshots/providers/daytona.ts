@@ -93,6 +93,8 @@ function observeSnapshotState(snapshotName: string): InvalidatableObservation<Pr
 
 class DaytonaAdapter implements SandboxProviderAdapter {
   readonly id = 'daytona' as const;
+  /** The pause before build attempt N+1 is `buildRetryBaseMs * N`. A test lowers it. */
+  buildRetryBaseMs = BUILD_RETRY_BASE_MS;
 
   isConfigured(): boolean {
     return isDaytonaConfigured();
@@ -179,7 +181,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         );
         // Rate-limited attempts back off much longer — retrying a 429 in
         // seconds just spends another request against an exhausted quota.
-        const retryBaseMs = isDaytonaRateLimitError(err) ? RATE_LIMIT_RETRY_BASE_MS : BUILD_RETRY_BASE_MS;
+        const retryBaseMs = isDaytonaRateLimitError(err) ? RATE_LIMIT_RETRY_BASE_MS : this.buildRetryBaseMs;
         await new Promise((r) => setTimeout(r, retryBaseMs * attempt));
       } finally {
         await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});

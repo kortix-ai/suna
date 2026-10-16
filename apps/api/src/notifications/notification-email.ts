@@ -26,6 +26,8 @@ export const KIND_LABELS: Record<NotificationKindName, string> = {
   shared: 'Shared with you',
   automation_failed: 'Automation failing',
   automation_recovered: 'Automation recovered',
+  capture_device_down: 'Computer not recording',
+  capture_device_recovered: 'Computer recording again',
 };
 
 /** The settings pane that holds the per-kind Push and Email switches. */
@@ -91,6 +93,7 @@ function message(parts: {
  * are emailed only in the digest.
  */
 export function renderImmediateNotificationEmail(item: NotificationEmailItem): RenderedEmail | null {
+  if (item.kind === 'capture_device_down' || item.kind === 'capture_device_recovered') return renderCaptureEmail(item);
   const cta = { url: absoluteAppUrl(item.url), label: opensRemindersPage(item.url) ? 'Open reminders' : 'Open automations' };
   // True for the creator, the last editor, a reminder's owner and a project
   // manager who gets the alert because nobody else can read the trigger.
@@ -119,6 +122,33 @@ export function renderImmediateNotificationEmail(item: NotificationEmailItem): R
     });
   }
   return null;
+}
+
+/** A Kortix Capture computer stopped recording, or records again. Sent to the people who manage Capture. */
+function renderCaptureEmail(item: NotificationEmailItem): RenderedEmail {
+  const cta = { url: absoluteAppUrl(item.url), label: 'Open devices' };
+  const note = 'You get this email because you manage Kortix Capture for this account.';
+  if (item.kind === 'capture_device_down') {
+    return message({
+      subject: `Computer not recording: ${item.title}`,
+      kicker: 'Capture alert',
+      title: 'A computer is not recording',
+      lead: { strong: item.title, text: 'is not recording.' },
+      detail: item.body || undefined,
+      next: 'A sleeping or locked computer does not trigger this alert. Open the device list to see why, and what to fix.',
+      cta,
+      note,
+    });
+  }
+  return message({
+    subject: `Computer recording again: ${item.title}`,
+    kicker: 'Capture alert',
+    title: 'A computer records again',
+    lead: { strong: item.title, text: 'is recording again.' },
+    next: 'No action needed. If it stops again, you get a new alert.',
+    cta,
+    note,
+  });
 }
 
 /** One email for a user's unread notifications: up to 10 listed, then "and N more". */

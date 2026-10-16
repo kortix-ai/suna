@@ -8,7 +8,7 @@ import {
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -105,6 +105,12 @@ const CustomConnectorForm = dynamic(
   { ssr: false, loading: () => <ModalFormFallback /> },
 );
 
+/** New → MCP server. A closed dialog needs no code before the click either. */
+const AddMcpServerDialog = dynamic(
+  () => import('./add-mcp/add-mcp-server-dialog').then((m) => m.AddMcpServerDialog),
+  { ssr: false },
+);
+
 /** Holds the Add modal's height while its form chunk arrives. */
 function ModalFormFallback() {
   return (
@@ -198,7 +204,7 @@ function parseScope(value: string | null): ConnectorScope | null {
 }
 
 /** Which page-level modal is open, if any. Only one can be at a time. */
-type Panel = 'custom';
+type Panel = 'custom' | 'mcp';
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalogue.
@@ -254,6 +260,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const tSharing = useI18nTranslations('accessSharing');
+  const tPages = useI18nTranslations('connectorPages');
 
   const search = useSearchParams();
   const router = useRouter();
@@ -494,6 +501,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 label={tI18nComplete.raw('text18fdd549b2ed')}
                 pending={configure.pending}
                 onChat={() => configure.start(newConfigPrompt('connector'))}
+                quick={{
+                  icon: PlugsConnectedIcon,
+                  label: tPages('addMcpMenu'),
+                  description: tPages('addMcpMenuHint'),
+                  onSelect: () => setPanel('mcp'),
+                }}
                 manual={{
                   label: tI18nComplete.raw('text90ccaee30bdc'),
                   description: tI18nComplete.raw('textb0fbe9dc1fcc'),
@@ -643,6 +656,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               invalidate();
               router.push(connectorHref(projectId, connection.connector_alias));
             }}
+          />
+
+          <AddMcpServerDialog
+            projectId={projectId}
+            open={panel === 'mcp'}
+            onOpenChange={(open) => setPanel(open ? 'mcp' : null)}
+            takenSlugs={connectors.map((connector) => connector.slug)}
+            onAdded={invalidate}
           />
 
           {/* Custom upload only. `CustomConnectorForm` prints no heading of its

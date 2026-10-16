@@ -60,6 +60,7 @@
     "./session/url": "./src/deprecated/session-url.ts",
     "./message-queue": "./src/core/session/message-queue.ts",
     "./wire-message-id": "./src/core/session/wire-message-id.ts",
+    "./capture-rules": "./src/core/capture/rules.ts",
     "./turns": "./src/deprecated/turns.ts",
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
@@ -159,6 +160,10 @@
         "types": "./dist/core/session/wire-message-id.d.ts",
         "import": "./dist/core/session/wire-message-id.js"
       },
+      "./capture-rules": {
+        "types": "./dist/core/capture/rules.d.ts",
+        "import": "./dist/core/capture/rules.js"
+      },
       "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
       "./sync-store": {
         "types": "./dist/deprecated/sync-store.d.ts",
@@ -192,8 +197,8 @@
   },
   "files": ["dist", "src", "README.md"],
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
-    "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | sort -z | xargs -0 -n1 -P4 bun test --isolate",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo && tsgo --noEmit -p examples/tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsgo-examples.tsbuildinfo",
+    "test": "node ../../scripts/test-guard.mjs \"find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | sort -z | xargs -0 -n1 -P4 bun test --isolate\"",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "build:bundles": "pnpm run build && tsup",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && tsup",
@@ -205,6 +210,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.3",
     "@types/react-test-renderer": "^19.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-test-renderer": "^19.2.0",

@@ -19,7 +19,8 @@
  *   3. inline content (text + answered questions in natural order), or a
  *      slash-command reply in its card
  *   4. busy slot (`space-y-2`) — `SessionRetryDisplay` + `SessionBusyIndicator`
- *   5. turn error — `TurnErrorDisplay` (an abort renders nothing)
+ *   5. turn error — `TurnErrorDisplay` (an abort renders nothing), then
+ *      "Stopped by {name}" when another member stopped the turn
  *   6. change requests the turn opened — `SessionChangeRequests`, when not working
  *   7. action bar — Copy + turn details, whenever the turn is not working
  *
@@ -84,6 +85,7 @@ import { CommandOutputCard } from './turn/command-output';
 import { CompactionFailedRow, CompactionMarker } from './turn/compaction-divider';
 import { TextPartBlock } from './turn/text-part';
 import { TurnActions } from './turn/turn-actions';
+import { TurnStoppedBy } from './turn/turn-stopped-by';
 import { SessionChangeRequests } from './SessionChangeRequests';
 import { UserMessage, type SessionSourceAuthor, type UserMessageUploadStatus } from './turn/user-message';
 import { WorkRow } from './turn/work-row';
@@ -137,6 +139,8 @@ interface SessionTurnProps {
   sender?: AvatarPerson | null;
   /** Another Kortix session sent this prompt — see `UserMessage`. */
   sessionAuthor?: SessionSourceAuthor | null;
+  /** The member who stopped this turn, when not the viewer (`turnStoppedBy`). */
+  stoppedBy?: string | null;
   /**
    * False while the working turn is scrolled out of the list's viewport: its
    * shimmer and busy dot matrix hold still (KRTX-1638). Defaults to on screen.
@@ -173,6 +177,7 @@ function SessionTurnImpl({
   uploadStatus,
   sender,
   sessionAuthor,
+  stoppedBy,
   onScreen = true,
   changeRequests,
   onOpenChangeRequest,
@@ -308,6 +313,7 @@ function SessionTurnImpl({
                 style={{ marginTop: webSpace(2) }}
               />
             ) : null}
+            {!working && stoppedBy ? <TurnStoppedBy name={stoppedBy} /> : null}
           </View>
         </TurnLiveContext.Provider>
       </View>
@@ -503,6 +509,10 @@ function SessionTurnImpl({
     body.push(
       <TurnErrorDisplay key="error" errorText={turnError} errorDetails={errorDetails} isAbort={errorIsAbort} />,
     );
+  }
+  // Who stopped the turn, once it has ended. The viewer's own stop is silent.
+  if (!working && stoppedBy) {
+    body.push(<TurnStoppedBy key="stopped-by" name={stoppedBy} />);
   }
 
   // 6. Change requests — what this turn left behind (web `TurnOutcomes`).

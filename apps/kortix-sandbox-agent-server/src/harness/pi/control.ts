@@ -11,6 +11,8 @@ import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
 import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
+import { compiledAgentConfigFromEnv, setCompiledAgentConfigEnv } from '@/services/config-provider/compiled-agent-config'
+import { COMPILED_AGENT_CONFIG_ENV } from '@kortix/api-contract/compiled-agent-config-env'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import type { HarnessControlOperations, HarnessControlService, HarnessEnvironmentInput, HarnessRefreshInput } from '../contract/control'
 import type { PiConfigReleases } from './config-release'
@@ -34,6 +36,14 @@ function setRuntimeEnv(next: Record<string, string | null>): { changed: boolean;
   for (const [rawName, value] of Object.entries(next)) {
     const name = rawName.trim().toUpperCase()
     if (!RUNTIME_ENV_NAMES.has(name)) continue
+    if (name === COMPILED_AGENT_CONFIG_ENV) {
+      // Compared and stored in whichever form fits: every child the daemon spawns inherits this env.
+      if (compiledAgentConfigFromEnv(process.env) !== (value ?? undefined)) {
+        setCompiledAgentConfigEnv(process.env, value)
+        changed.push(name)
+      }
+      continue
+    }
     if (value === null) {
       if (process.env[name] !== undefined) {
         delete process.env[name]

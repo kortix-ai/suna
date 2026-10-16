@@ -59,6 +59,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Calendar } from '@/components/ui/calendar';
 import { CheckboxGroup, CheckboxGroupItem } from '@/components/ui/checkbox-group';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -492,6 +493,7 @@ const TOC_SECTIONS = [
     label: 'Components',
     children: [
       { id: 'comp-button', label: 'Button' },
+      { id: 'comp-button-group', label: 'Button Group' },
       { id: 'comp-badge', label: 'Badge' },
       { id: 'comp-card', label: 'Card' },
       { id: 'comp-input', label: 'Input' },
@@ -1777,6 +1779,94 @@ export default function BrandPage() {
                             <Loading className="size-4" />{' '}
                             {tI18nHardcoded.raw('i18nComplete.textdc380888c4e2')}
                           </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </DemoContainer>
+                </div>
+
+                <div id="comp-button-group" className="mb-12">
+                  <ComponentLabel>{tI18nHardcoded.raw('i18nComplete.text7193a9579bbc')}</ComponentLabel>
+                  <ComponentDesc>
+                    {tI18nHardcoded.raw('i18nComplete.text07b547d6911c')}{' '}
+                    <code className="bg-muted rounded-sm px-1 font-mono text-xs">
+                      orientation=&quot;vertical&quot;
+                    </code>
+                    .
+                  </ComponentDesc>
+                  <DemoContainer>
+                    <div className="space-y-6">
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          {tI18nHardcoded.raw('i18nComplete.text0abba441f16e')}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-4">
+                          {(['secondary', 'muted', 'ghost', 'outline', 'default'] as const).map(
+                            (variant) => (
+                              <ButtonGroup key={variant}>
+                                <Button variant={variant} size="sm">
+                                  {tI18nHardcoded.raw('i18nComplete.text8f2364e11b8b')}
+                                </Button>
+                                <Button variant={variant} size="sm">
+                                  {tI18nHardcoded.raw('i18nComplete.texte78041ab51a8')}
+                                </Button>
+                                <Button variant={variant} size="sm">
+                                  {tI18nHardcoded.raw('i18nComplete.text310ca503ef36')}
+                                </Button>
+                              </ButtonGroup>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          {tI18nHardcoded.raw('i18nComplete.texteae96e02bbc4')}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-4">
+                          {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
+                            <ButtonGroup key={variant}>
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.text49c266baaaa7')}>
+                                <Search />
+                              </Button>
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.texte21f935f11d7')}>
+                                <Copy />
+                              </Button>
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}>
+                                <Trash2 />
+                              </Button>
+                            </ButtonGroup>
+                          ))}
+                          <ButtonGroup>
+                            <Button variant="secondary" size="sm">
+                              <Plus /> {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
+                            </Button>
+                            <Button variant="secondary" size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.textbc79cdffbaa8')}>
+                              <ChevronsUpDown />
+                            </Button>
+                          </ButtonGroup>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          {tI18nHardcoded.raw('i18nComplete.text727cd3a64d79')}
+                        </p>
+                        <div className="flex flex-wrap items-start gap-6">
+                          {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
+                            <ButtonGroup key={variant} orientation="vertical" className="w-60">
+                              <Button variant={variant} className="justify-start">
+                                <Mail /> {tI18nHardcoded.raw('i18nComplete.textcecd0c56d299')}
+                                <Badge variant="new" className="ml-auto">
+                                  {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
+                                </Badge>
+                              </Button>
+                              <Button variant={variant} className="justify-start">
+                                <Users /> {tI18nHardcoded.raw('i18nComplete.texte85663498c96')}
+                              </Button>
+                              <Button variant={variant} className="justify-start">
+                                <Settings /> {tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}
+                              </Button>
+                            </ButtonGroup>
+                          ))}
                         </div>
                       </div>
                     </div>

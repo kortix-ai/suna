@@ -48,9 +48,9 @@ describe('restartPendingStartSeed — the optimistic /start payload', () => {
 
   test('is writable and readable under the real /start cache key', () => {
     const qc = client();
-    const key = sessionStartKey(PROJECT, SESSION);
+    const key: readonly unknown[] = sessionStartKey(PROJECT, SESSION);
     qc.setQueryData(key, restartPendingStartSeed());
-    expect(qc.getQueryData(key)).toEqual(restartPendingStartSeed());
+    expect(qc.getQueryData<ReturnType<typeof restartPendingStartSeed>>(key)).toEqual(restartPendingStartSeed());
   });
 });
 
@@ -58,6 +58,12 @@ describe('restartFailureMessage', () => {
   test('passes the real rejection message through', () => {
     expect(restartFailureMessage(new Error('SESSION_RUNTIME_IDENTITY_UNAVAILABLE'))).toBe(
       'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+    );
+  });
+
+  test('a recover names its own fallback', () => {
+    expect(restartFailureMessage(undefined, 'Could not continue the session. Try again in a moment.')).toBe(
+      'Could not continue the session. Try again in a moment.',
     );
   });
 
@@ -69,9 +75,11 @@ describe('restartFailureMessage', () => {
 });
 
 describe('the hook wires the full restart behavior — the source the component runs', () => {
-  test('the scan found the single restart mutation', () => {
+  test('the scan found the single mutation, shared by restart and recover (KRTX-2419)', () => {
     expect(mutationCount).toBe(1);
-    expect(code).toContain('mutationFn: () => restartProjectSession(projectId, sessionId),');
+    expect(code).toContain('mutationFn: () => run(projectId, sessionId),');
+    expect(code).toContain('useSessionBootAction(projectId, sessionId, restartProjectSession)');
+    expect(code).toContain('useSessionBootAction(projectId, sessionId, recoverProjectSession,');
   });
 
   test('onMutate seeds the /start cache and snapshots it for rollback', () => {
@@ -94,6 +102,6 @@ describe('the hook wires the full restart behavior — the source the component 
     // nothing was cached, invalidate so the real state refetches.
     expect(code).toContain('queryClient.setQueryData(startKey, context.previous);');
     expect(code).toContain("queryClient.invalidateQueries({ queryKey: startKey });");
-    expect(code).toContain('errorToast(restartFailureMessage(error));');
+    expect(code).toContain('errorToast(restartFailureMessage(error, fallback));');
   });
 });

@@ -3,6 +3,7 @@
  * it is unit-testable without a DOM.
  */
 
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import type { BrowserRecent } from '@/stores/browser-recents-store';
 import type { PreviewPortProbe, ToolCallBlock } from '@kortix/sdk';
@@ -90,12 +91,13 @@ export function pathOutput(path: string): OutputItem {
 /**
  * The recents `AppPreview`'s no-app landing can actually navigate to. The
  * shared recents store also holds external browsing history (BrowserPanel's
- * web mode), but the in-panel browser is sandbox-ports-only — offering a
- * github.com row it would refuse to open is a dead affordance. Pure for the
+ * web mode), but the in-panel browser opens sandbox ports and Kortix Apps
+ * only — offering a github.com row it would refuse to open is a dead
+ * affordance. Pure for the
  * same testability reason as the rest of this file.
  */
 export function sandboxRecents(recents: BrowserRecent[]): BrowserRecent[] {
-  return recents.filter((r) => !!parseLocalhostUrl(r.url));
+  return recents.filter((r) => !!parseLocalhostUrl(r.url) || isKortixAppUrl(r.url));
 }
 
 /** Viewer padding + scrollbar allowance around a fitted preview, px — added

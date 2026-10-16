@@ -22,6 +22,8 @@ const SLOT: Connection = {
 };
 let rows: Connection[] = [];
 const calls: string[] = [];
+/** Set: the sign-in start fails with this message. */
+let signInError: string | null = null;
 
 const sdk = await import('@kortix/sdk');
 mock.module('@kortix/sdk', () => ({
@@ -53,16 +55,19 @@ mock.module('@/features/workspace/shared/access/access-dialog-share', () => ({
     calls.push(`grant:${connectionId}`);
   },
 }));
+const oauth2Start = await import('@/features/workspace/customize/sections/connector-oauth2-start');
 mock.module('@/features/workspace/customize/sections/connector-oauth2-start', () => ({
+  ...oauth2Start,
   // No one-click OAuth: the hook falls through to credential entry.
   startDiscoveredSignIn: async (_projectId: string, connectionId: string) => {
     calls.push(`sign-in:${connectionId}`);
+    if (signInError) throw new Error(signInError);
     return null;
   },
 }));
 mock.module('@/components/ui/toast', () => ({
   successToast: () => undefined,
-  warningToast: () => undefined,
+  warningToast: (message: string) => calls.push(`warning:${message}`),
   errorToast: (message: string) => calls.push(`error:${message}`),
 }));
 mock.module('@/i18n/use-translations', () => ({
@@ -84,8 +89,8 @@ const connector = {
 
 /** Submit one Add account draft; return the account credential entry opened for. */
 async function addAccount(draft: Partial<NewAccountDraft>, target: AdminConnector = connector) {
-  let submit: ((draft: NewAccountDraft) => void) | null = null;
-  let opened: { connectionId: string; owner: 'project' | 'me' } | null = null;
+  let submit = null as ((draft: NewAccountDraft) => void) | null;
+  let opened = null as { connectionId: string; owner: 'project' | 'me' } | null;
   let settle = () => undefined as void;
   const done = new Promise<void>((resolve) => (settle = resolve));
   function Probe() {
@@ -121,6 +126,7 @@ async function addAccount(draft: Partial<NewAccountDraft>, target: AdminConnecto
 beforeEach(() => {
   rows = [SLOT];
   calls.length = 0;
+  signInError = null;
 });
 
 describe('a new shared account reuses the empty one made with the connector', () => {
@@ -167,5 +173,16 @@ describe('a new shared account reuses the empty one made with the connector', ()
       owner: 'me',
     });
     expect(calls).toEqual(['reconcile-member:Vendor 2', 'sign-in:mine-1']);
+  });
+});
+
+// KRTX-2185: a sign-in start that failed was swallowed (`catch {}`), and
+// credential entry opened with no reason, so an OAuth server looked like it
+// wanted a pasted token.
+describe('a sign-in that cannot start', () => {
+  test('says why, then opens credential entry', async () => {
+    signInError = 'OAuth2 client registration failed (400): invalid_redirect_uri';
+    expect(await addAccount({ audience: 'private' })).toEqual({ connectionId: 'mine-1', owner: 'me' });
+    expect(calls).toEqual(['reconcile-member:Vendor 2', 'sign-in:mine-1', 'warning:addMcpSignInFailed']);
   });
 });

@@ -1,7 +1,16 @@
+import type { PromptAttachment } from '@kortix/sdk';
 import type { PastedContent } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 
 import type { AttachedFile } from '../types';
+
+/**
+ * A finished upload the draft keeps by its server handle. The bytes stay on the
+ * server for 24 hours (`expires_at`), so a reload or a session switch brings
+ * the file back instead of asking for it again. `isImage` restores the picture
+ * when this tab still holds the File.
+ */
+export type StoredUpload = PromptAttachment & { isImage: boolean };
 
 /**
  * What a persisted composer draft is keyed by.
@@ -65,6 +74,8 @@ export interface StoredDraft {
   quotes?: string[];
   /** The pasted-text tiles, in order. Optional, no version bump, written only when non-empty — as `quotes`. */
   pastes?: PastedContent[];
+  /** Finished uploads, in tray order. Optional, no version bump, written only when non-empty — as `quotes`. */
+  uploads?: StoredUpload[];
 }
 
 /** The `<kind>:<id>` half of the storage key. The family prefix is the store's. */
@@ -92,13 +103,21 @@ export function serializeDraft(input: {
   files: readonly AttachedFile[];
   quotes?: readonly string[];
   pastes?: readonly PastedContent[];
+  uploads?: readonly StoredUpload[];
   userId: string;
 }): StoredDraft | null {
   if (!input.userId) return null;
   const files = input.files.filter(isRemote);
   const quotes = input.quotes ?? [];
   const pastes = input.pastes ?? [];
-  if (input.documentIsEmpty && files.length === 0 && quotes.length === 0 && pastes.length === 0)
+  const uploads = input.uploads ?? [];
+  if (
+    input.documentIsEmpty &&
+    files.length === 0 &&
+    quotes.length === 0 &&
+    pastes.length === 0 &&
+    uploads.length === 0
+  )
     return null;
   const draft: StoredDraft = {
     v: DRAFT_ENVELOPE_VERSION,
@@ -107,6 +126,7 @@ export function serializeDraft(input: {
     files,
     ...(quotes.length > 0 ? { quotes: [...quotes] } : {}),
     ...(pastes.length > 0 ? { pastes: [...pastes] } : {}),
+    ...(uploads.length > 0 ? { uploads: [...uploads] } : {}),
   };
   if (JSON.stringify(draft).length <= MAX_DRAFT_BYTES) return draft;
   // Over the cap: drop the pastes (the likeliest bulk) and keep the typed text.
@@ -144,6 +164,11 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
     const { id, text } = (p ?? {}) as Partial<PastedContent>;
     return typeof id === 'string' && id && typeof text === 'string' && text ? [{ id, text }] : [];
   });
+  const storedUploads: unknown[] = Array.isArray(candidate.uploads) ? candidate.uploads : [];
+  const uploads = storedUploads.flatMap((value) => {
+    const upload = storedUpload(value);
+    return upload ? [upload] : [];
+  });
   return {
     v: candidate.v,
     u: candidate.u,
@@ -151,7 +176,20 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
     files: candidate.files.filter(isRemote),
     quotes,
     pastes,
+    uploads,
   };
+}
+
+/** A stored upload that is whole and not yet expired; anything else is dropped. */
+function storedUpload(value: unknown): StoredUpload | null {
+  const candidate = (value ?? {}) as Partial<StoredUpload>;
+  const { attachment_id, filename, mime, size, expires_at, isImage } = candidate;
+  if (typeof attachment_id !== 'string' || !attachment_id) return null;
+  if (typeof filename !== 'string' || !filename) return null;
+  if (typeof mime !== 'string' || !mime) return null;
+  if (typeof size !== 'number' || !Number.isSafeInteger(size) || size <= 0) return null;
+  if (typeof expires_at !== 'string' || !(Date.parse(expires_at) > Date.now())) return null;
+  return { attachment_id, filename, mime, size, expires_at, isImage: isImage === true };
 }
 
 /** The node type an earlier build of the composer used for in-editor quotes. */

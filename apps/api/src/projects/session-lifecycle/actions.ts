@@ -2,6 +2,7 @@ import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
+import { sessionHasWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
@@ -28,7 +29,7 @@ import {
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../session-open';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -128,9 +129,11 @@ export async function deleteSession(input: {
     });
 
   if (sandbox) {
+    // A /workspace volume is removed with the box, and also when there is none
+    // (a delete during or after a failed first create).
     const removable =
-      !!sandbox.externalId &&
-      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider);
+      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider) &&
+      (!!sandbox.externalId || (await sessionHasWorkspaceVolume(sessionId)));
     // One statement, merged in SQL, from the row the UPDATE locks:
     //   - strip every lifecycle fence (restart, wake, recovery, turn
     //     authority), so a detached restart or recovery that is still running
@@ -160,7 +163,7 @@ export async function deleteSession(input: {
       return null;
     });
 
-    if (removable && sandbox.externalId) {
+    if (removable) {
       if (archived) {
         // First attempt now; the maintenance lane retries a failure.
         void attemptArchivedBoxRemoval({
@@ -169,7 +172,7 @@ export async function deleteSession(input: {
           provider: sandbox.provider,
           metadata: archivePatch,
         });
-      } else {
+      } else if (sandbox.externalId) {
         // The intent could not be recorded. Keep the old best-effort remove.
         const provider = getProvider(sandbox.provider as SandboxProviderName);
         void provider.remove(sandbox.externalId).catch((err) => {
@@ -590,7 +593,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'before_stop'))) return;
   await provider.stop(externalId).catch(() => {});
   if (!(await ownsRestart(restart, 'after_stop'))) return;
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   await db
     .update(sessionSandboxes)
     .set({
@@ -624,7 +627,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'after_start'))) return;
   // Provider ingress credentials can change on every stop/start cycle.
   // Remove any link resolved while the sandbox was stopped.
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   // A provider may acknowledge start before discovering that the backing
   // runtime is gone. A confirmed `removed` status starts recovery.
   // `unknown` remains non-terminal because it does not prove runtime loss.

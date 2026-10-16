@@ -27,6 +27,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
+import { triggerRunActions, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -298,19 +299,22 @@ export function ScheduleView({ projectId }: { projectId: string }) {
 
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
-    onSuccess: (res) => {
+    onSuccess: (res, trigger) => {
+      const entity = triggerToastEntity(trigger);
       if (res.status === 'fired') {
         successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          description: res.session_id
-            ? `Session ${res.session_id.slice(0, 8)}…`
-            : tI18nComplete.raw('text747e9e0e8e92'),
+          entity,
+          ...(res.session_id
+            ? { actions: triggerRunActions(projectId, res.session_id, tI18nComplete.raw('textb205bb47f81a')) }
+            : { description: tI18nComplete.raw('text747e9e0e8e92') }),
         });
       } else if (res.status === 'queued') {
         successToast(tI18nComplete.raw('text661ff40a07e0'), {
+          entity,
           description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
         });
       } else {
-        errorToast(tI18nComplete.raw('text9c18cb990345'), { description: res.error });
+        errorToast(tI18nComplete.raw('text9c18cb990345'), { entity, description: res.error });
       }
       invalidate();
     },
@@ -326,6 +330,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         trigger.enabled
           ? tI18nComplete.raw('texte159b06187d3')
           : tI18nComplete.raw('texta97d32ddb6ba'),
+        { entity: triggerToastEntity(trigger) },
       );
       invalidate();
     },
@@ -341,6 +346,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       const noun = kindCopy[trigger.type as TriggerKind].noun;
       successToast(
         tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
+        { entity: triggerToastEntity(trigger) },
       );
       setDeleteTarget(null);
       setSelectedSlug(null);

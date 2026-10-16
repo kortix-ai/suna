@@ -22,7 +22,7 @@ on:
   schedule:
     - cron: "37 6 * * *" # 06:37 UTC daily
   pull_request:
-    branches: [staging, prod]
+    branches: [prod]
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"

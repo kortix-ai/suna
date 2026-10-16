@@ -9,7 +9,7 @@ import { flow } from "../core/flow";
 
 flow(
   "FILE-1",
-  { domain: "files", tags: ["smoke"], routes: ["GET /v1/projects/:projectId/files"] },
+  { domain: "files", tags: ["deployed", "smoke"], routes: ["GET /v1/projects/:projectId/files"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER lists repo tree → 200 array", async () => {

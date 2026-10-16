@@ -31,11 +31,15 @@ describe('relayTextRejection', () => {
     expect(relayTextRejection(undefined, '')).toEqual({ error: 'text is required' });
     expect(relayTextRejection('   ', '')).toEqual({ error: 'text is required' });
   });
-  test('a block-only answer that renders to nothing is rejected, never relayed raw', () => {
+  test('a block-only answer with nothing valid relays the SDK note, never the raw source', () => {
     const raw = '```openui\nroot = Stack([missing])\n```';
     const text = relayAnswerText(raw);
-    expect(text).toBe('');
-    expect(relayTextRejection(raw, text)).toEqual({
+    expect(text).toBe('*This content could not be displayed.*');
+    expect(text).not.toContain('openui');
+    expect(relayTextRejection(raw, text)).toBeNull();
+  });
+  test('a non-empty answer that renders to empty text is rejected as unrenderable', () => {
+    expect(relayTextRejection('```openui\n```', '')).toEqual({
       error: 'text is required',
       reason: 'genui_block_unrenderable',
     });

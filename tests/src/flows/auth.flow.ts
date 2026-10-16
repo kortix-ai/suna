@@ -38,7 +38,7 @@ flow(
 
 flow(
   "AUTH-1",
-  { domain: "auth", routes: ["POST /v1/auth/logout", "POST /v1/p/auth", "GET /v1/accounts/me"] },
+  { domain: "auth", tags: ["deployed"], routes: ["POST /v1/auth/logout", "POST /v1/p/auth", "GET /v1/accounts/me"] },
   async (ctx) => {
     const session = await ctx.fixtures.user({ label: "LOGOUT" });
     await ctx.step("logout revokes only this flow's session, not the shared OWNER", async () => {

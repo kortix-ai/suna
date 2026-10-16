@@ -18,7 +18,7 @@ import {
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
 } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { errorSqlstate } from '../../shared/error-cause';
@@ -39,11 +39,11 @@ import {
   MIRROR_CAPTURE_LIMIT,
   capturedMessageIndex,
   childSessionReferences,
-  childSessionsToCapture,
   capturedPageGate,
   headCompleteAfterCapture,
   mirrorHoldsStrippedRows,
   mirrorRowsFromOpencodePayload,
+  readChildTranscripts,
 } from './session-transcript-mirror';
 
 const CAPTURE_TIMEOUT_MS = 8_000;
@@ -66,6 +66,8 @@ export interface CaptureOptions {
   scope?: 'auto' | 'tail';
   /** Use the authenticated caller for a manual stop, not a possibly revoked creator. */
   actorUserId?: string;
+  /** Internal: this capture was queued by the one before it (`moreChildren`). */
+  chain?: { step: number; startedAt: number };
 }
 
 export interface CaptureDeps {
@@ -91,15 +93,21 @@ export interface CaptureDeps {
      *  `childSessionsToCapture`). Written only when `complete`: a sub-agent's
      *  saved transcript is whole or absent. */
     children?: Array<{ opencodeSessionId: string; payload: unknown; complete?: boolean }>;
+    /** Another capture saves more sub-agents: this one left some unread and saved rows of one
+     *  never saved before (`readChildTranscripts`). */
+    moreChildren?: boolean;
   } | null>;
 }
 
-/** Sub-agent transcripts one capture reads at most. A finished sub-agent is
- *  read once in its life, so this bounds only a backlog (a history captured
- *  before sub-agents were saved), which later captures work through. */
+/** Sub-agent transcripts with rows one capture saves at most. A finished
+ *  sub-agent is read once in its life. A capture that leaves sub-agents unread
+ *  (one turn that started more than this, or a history captured before
+ *  sub-agents were saved) queues the next capture at once (`moreChildren`), up
+ *  to `MAX_CAPTURE_CHAIN` in a row, so the rest are saved without waiting for
+ *  another turn end. */
 const MAX_CHILD_READS_PER_CAPTURE = 12;
-/** Only an OpenCode session id may reach a URL or a row. */
-const OPENCODE_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
+/** Captures one capture may queue in a row: a hard stop under `moreChildren`'s progress rule. */
+const MAX_CAPTURE_CHAIN = 8;
 
 const liveCaptureDeps: CaptureDeps = {
   async readMessages(sessionId, options) {
@@ -216,7 +224,6 @@ const liveCaptureDeps: CaptureDeps = {
       reached is read too. A finished sub-agent is final and is never read
       again; its own sub-agents are followed the same way.
     */
-    const children: Array<{ opencodeSessionId: string; payload: unknown; complete: boolean }> = [];
     const savedChildren = new Map<string, { settled: boolean }>();
     for (const row of stored) {
       if (!row.opencodeSessionId || row.opencodeSessionId === resolved.opencodeSessionId) continue;
@@ -224,37 +231,27 @@ const liveCaptureDeps: CaptureDeps = {
       entry.settled &&= row.role !== 'assistant' || row.messageCompletedAt !== null;
       savedChildren.set(row.opencodeSessionId, entry);
     }
-    const seen = new Set([resolved.opencodeSessionId]);
-    const queue = childSessionsToCapture({
+    const failed: { count: number; first?: string } = { count: 0 };
+    const { children, more } = await readChildTranscripts({
       references: childSessionReferences([...result.rows, ...previous]),
       stored: savedChildren,
-      limit: MAX_CHILD_READS_PER_CAPTURE,
-    });
-    while (queue.length > 0 && children.length < MAX_CHILD_READS_PER_CAPTURE) {
-      const child = queue.shift()!;
-      if (seen.has(child) || !OPENCODE_SESSION_ID.test(child)) continue;
-      seen.add(child);
-      try {
-        const walk = await readTranscriptPages(
+      cap: MAX_CHILD_READS_PER_CAPTURE,
+      root: resolved.opencodeSessionId,
+      read: (child) =>
+        readTranscriptPages(
           pageOf(child),
           true,
           recoveryFor(partsById(stored.filter((row) => row.opencodeSessionId === child))),
-        );
-        children.push({ opencodeSessionId: child, payload: walk.rows, complete: walk.complete });
-        queue.push(
-          ...childSessionsToCapture({
-            references: childSessionReferences(walk.rows),
-            stored: savedChildren,
-            limit: MAX_CHILD_READS_PER_CAPTURE,
-          }),
-        );
-      } catch (err) {
-        // One unreadable sub-agent never costs the conversation its capture.
-        console.warn('[transcript-mirror] sub-agent read failed', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+        ),
+      // One unreadable sub-agent never costs the conversation its capture.
+      onError: (_child, err) => {
+        failed.count += 1;
+        failed.first ??= err instanceof Error ? err.message : String(err);
+      },
+    });
+    // One line per capture: past the deadline every remaining read fails the same way.
+    if (failed.count > 0) {
+      console.warn('[transcript-mirror] sub-agent reads failed', { sessionId, ...failed });
     }
 
     return {
@@ -264,6 +261,7 @@ const liveCaptureDeps: CaptureDeps = {
       complete: result.complete,
       caughtUp: result.caughtUp,
       children,
+      moreChildren: more,
     };
   },
 };
@@ -286,8 +284,10 @@ export function timeField(info: Record<string, unknown>, key: 'created' | 'compl
  */
 async function captureSessionTranscript(
   sessionId: string,
-  deps: CaptureDeps = liveCaptureDeps,
-  options?: CaptureOptions,
+  deps: CaptureDeps,
+  options: CaptureOptions | undefined,
+  /** When this capture's run was queued: a stop asked for after it drops the rest of the run. */
+  chainStartedAt: number,
 ): Promise<CaptureResult | null> {
   try {
     const [session] = await db
@@ -301,6 +301,7 @@ async function captureSessionTranscript(
     if (!session) return null;
 
     const fullHistory = options?.scope !== 'tail';
+    let moreChildren = false;
     const capture = async (): Promise<CaptureResult | null> => {
       const startedAt = new Date();
       const read = await deps.readMessages(sessionId, {
@@ -405,17 +406,33 @@ async function captureSessionTranscript(
 
         // A sub-agent has no rewind, so its rows only ever merge. A partial
         // read writes nothing, so a saved sub-agent starts whole.
-        for (const child of read.children ?? []) {
-          if (child.complete !== true) continue;
+        const written = (read.children ?? []).filter((child) => child.complete === true);
+        const savedBefore = await savedRuntimeSessions(tx, sessionId, written.map((child) => child.opencodeSessionId));
+        for (const child of written) {
           const childRows = mirrorRowsFromOpencodePayload(child.payload);
           await upsertMirrorRows(tx, sessionId, child.opencodeSessionId, childRows, now);
         }
+        // Progress is what was WRITTEN: a sub-agent whose message ids are already stored
+        // unchanged under another session (a forked copy) writes nothing and is no progress.
+        const savedAfter = read.moreChildren
+          ? await savedRuntimeSessions(tx, sessionId, written.map((child) => child.opencodeSessionId))
+          : savedBefore;
+        moreChildren = read.moreChildren === true && [...savedAfter].some((id) => !savedBefore.has(id));
         return { captured: rows.length, head_complete: headComplete };
       });
     };
     const result = fullHistory ? await retryTranscriptCapture(capture) : await capture();
     // P2.7: a box without a journal also gets its v2 log, from the mirror just written. Never throws.
     if (result) await writeSessionLogFromMirror(sessionId);
+    // Queued behind this one (`captureSessionTranscriptMirror` runs one capture per session at a
+    // time). Not for a `tail`: the stop that asked for it powers the box off next.
+    const step = options?.chain?.step ?? 0;
+    if (result && fullHistory && moreChildren && step < MAX_CAPTURE_CHAIN) {
+      void captureSessionTranscriptMirror(sessionId, deps, {
+        ...options,
+        chain: { step: step + 1, startedAt: chainStartedAt },
+      });
+    }
     return result;
   } catch (err) {
     console.warn(
@@ -521,6 +538,16 @@ async function applyRecordedRewind(
         eq(sessionTranscriptMirrors.rewindMessageId, marker),
       ),
     );
+}
+
+/** The runtime sessions among `ids` that hold at least one saved row of this session. */
+async function savedRuntimeSessions(tx: Tx, sessionId: string, ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await tx
+    .selectDistinct({ id: sessionTranscriptMessages.runtimeSessionId })
+    .from(sessionTranscriptMessages)
+    .where(and(eq(sessionTranscriptMessages.sessionId, sessionId), inArray(sessionTranscriptMessages.runtimeSessionId, ids)));
+  return new Set(rows.map((row) => row.id).filter((id): id is string => !!id));
 }
 
 /** Merge one OpenCode session's rows into the mirror, 100 per statement. */
@@ -687,20 +714,42 @@ export function backfillSessionTranscriptMirrorOnWake(
   })();
 }
 
+/** Test seam: resolves once no capture of this session is queued or running (a run queues its
+ *  next capture before its own promise settles). */
+export async function transcriptCapturesSettledForTests(sessionId: string): Promise<void> {
+  for (let pending = captures.get(sessionId); pending; pending = captures.get(sessionId)) {
+    await pending.catch(() => null);
+    if (captures.get(sessionId) === pending) captures.delete(sessionId);
+  }
+}
+
 /** Test seam: the memo is process-global and would leak between cases. */
 export function resetTranscriptBackfillMemoForTests(): void {
   backfillAttempts.clear();
 }
 
 const captures = new Map<string, Promise<CaptureResult | null>>();
+/** replica-local: when a stop last asked for a `tail` capture, per session. A queued chain
+ *  capture started before it is dropped: it would sit ahead of the next stop's tail, then
+ *  read a box that is off. Bounded like `backfillAttempts`. */
+const tailRequestedAt = new Map<string, number>();
 
 export function captureSessionTranscriptMirror(
   sessionId: string,
   deps: CaptureDeps = liveCaptureDeps,
   options?: CaptureOptions,
 ): Promise<CaptureResult | null> {
+  if (options?.scope === 'tail') {
+    if (tailRequestedAt.size >= BACKFILL_MEMO_MAX) tailRequestedAt.clear();
+    tailRequestedAt.set(sessionId, Date.now());
+  }
+  // A run is as old as the moment its first capture was queued, not when it started to run.
+  const startedAt = options?.chain?.startedAt ?? Date.now();
   const previous = captures.get(sessionId) ?? Promise.resolve(null);
-  const pending = previous.then(() => captureSessionTranscript(sessionId, deps, options));
+  const pending = previous.then(() => {
+    if (options?.chain && (tailRequestedAt.get(sessionId) ?? -Infinity) >= startedAt) return null;
+    return captureSessionTranscript(sessionId, deps, options, startedAt);
+  });
   captures.set(sessionId, pending);
   void pending.finally(() => {
     if (captures.get(sessionId) === pending) captures.delete(sessionId);

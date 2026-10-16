@@ -256,7 +256,7 @@ describe('a reply with prose, a block, prose and a sources line', () => {
     expect(count(text, 'Sources:')).toBe(1);
   });
 
-  test('streamed tick by tick and then settled, no tick shows the source', { timeout: 30_000 }, async () => {
+  test('streamed tick by tick and then settled, no tick shows the source', async () => {
     const renderer = await mount(<UnifiedMarkdown trust="agent" genui isStreaming content={reply.slice(0, 40)} />);
     const tick = () => act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
     for (let cut = 80; cut < reply.length; cut += 37) {
@@ -270,5 +270,5 @@ describe('a reply with prose, a block, prose and a sources line', () => {
     expect(leaks(text)).toEqual([]);
     expect(count(text, 'Feature-wise')).toBe(1);
     expect(count(text, 'Sources:')).toBe(1);
-  });
+  }, { timeout: 30_000 });
 });

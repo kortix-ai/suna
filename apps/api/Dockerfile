@@ -4,7 +4,7 @@
 # Build from repo root: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile .
 
 # The API runs on the same Bun as every test lane (`bun-version` in
-# .github/workflows/tests.yml). tests/unit/api-image-bun.test.ts fails when the
+# .github/workflows/tests.yml). tests/unit/image-bun.test.ts fails when the
 # two differ: a Web API the image's Bun lacks passes every test and answers 500
 # on dev (CompressionStream on Bun 1.2, 2026-08-26 and 2026-10-13).
 ARG BUN_VERSION=1.4.3

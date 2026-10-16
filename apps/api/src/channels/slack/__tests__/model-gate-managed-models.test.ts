@@ -74,7 +74,7 @@ async function gateFor(row: Record<string, unknown> | null) {
   return resolved as NonNullable<typeof resolved>;
 }
 
-describe('channelModelContext — freeManagedOnly honors managed_models_override', () => {
+describe('channelModelContext — freeManagedOnly honors the managedModels override', () => {
   beforeEach(() => {
     billingEnabled = true;
     invalidateAccountBilling();
@@ -85,41 +85,41 @@ describe('channelModelContext — freeManagedOnly honors managed_models_override
   });
 
   test('paid plan, no override → managed models offered (unchanged)', async () => {
-    expect((await gateFor({ tier: 'per_seat' })).freeManagedOnly).toBe(false);
+    expect((await gateFor({ tier: 'credits' })).freeManagedOnly).toBe(false);
   });
 
   test('THE BUG: override=true on a free plan now grants managed models', async () => {
     // Old behavior: freeManagedOnly stayed true because the tier string was
     // still 'free'. The operator grant was invisible to Slack only.
-    expect((await gateFor({ tier: 'free', managedModelsOverride: true })).freeManagedOnly).toBe(
+    expect((await gateFor({ tier: 'free', entitlementOverrides: { managedModels: { value: true } } })).freeManagedOnly).toBe(
       false,
     );
   });
 
   test('THE BUG, other direction: override=false on a paid plan withdraws them', async () => {
     expect(
-      (await gateFor({ tier: 'per_seat', managedModelsOverride: false })).freeManagedOnly,
+      (await gateFor({ tier: 'credits', entitlementOverrides: { managedModels: { value: false } } })).freeManagedOnly,
     ).toBe(true);
   });
 
   test('override=null defers to the plan', async () => {
-    expect((await gateFor({ tier: 'free', managedModelsOverride: null })).freeManagedOnly).toBe(
+    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(
       true,
     );
     invalidateAccountBilling();
-    expect((await gateFor({ tier: 'pro', managedModelsOverride: null })).freeManagedOnly).toBe(
+    expect((await gateFor({ tier: 'pro' })).freeManagedOnly).toBe(
       false,
     );
   });
 
-  test('an active trial of a paid plan grants managed models', async () => {
+  test('trials are removed: a leftover active trial row grants nothing', async () => {
     const row = {
       tier: 'free',
       trialStatus: 'active',
       trialTier: 'tier_25_200',
       trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
     };
-    expect((await gateFor(row)).freeManagedOnly).toBe(false);
+    expect((await gateFor(row)).freeManagedOnly).toBe(true);
   });
 
   test('no credit row at all → fail closed', async () => {

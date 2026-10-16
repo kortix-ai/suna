@@ -16,6 +16,9 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
+// A person's pins and archive (consumed by account erasure and offboarding).
+export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
+
 // Session helpers (consumed by channels and provisioning).
 export {
   buildSessionSandboxEnvVars,
@@ -109,3 +112,7 @@ export { backfillSessionLogs, newBackfillState } from './session-log-backfill';
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
 export { refreshIntervalMs, refreshMirror } from './git/mirror';
 export type { GitBackedProject } from './git/types';
+
+// Who may stop a running turn (consumed by channels/core/turn-stop.ts and
+// sandbox-proxy/forward/abort-authority.ts).
+export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';

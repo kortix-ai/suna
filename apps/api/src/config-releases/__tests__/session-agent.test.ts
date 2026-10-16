@@ -91,3 +91,14 @@ describe('releaseVariantFor', () => {
     expect(releaseVariantFor(null, false)).toBe('none');
   });
 });
+
+describe('resolveSessionReleaseAgent on kortix_version 3', () => {
+  test('an undeclared built-in the v3 config disables re-points to the default', () => {
+    expect(resolveSessionReleaseAgent('build', roster({ onlyDeclared: true }))).toEqual({ kind: 'repoint', agent: 'kortix', dropped: 'build' });
+  });
+
+  test('a declared built-in name and a runtime-internal agent are kept', () => {
+    expect(resolveSessionReleaseAgent('plan', roster({ onlyDeclared: true, enabled: ['kortix', 'plan'] }))).toEqual({ kind: 'declared', agent: 'plan' });
+    expect(resolveSessionReleaseAgent('title', roster({ onlyDeclared: true }))).toEqual({ kind: 'declared', agent: 'title' });
+  });
+});

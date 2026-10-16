@@ -10,7 +10,7 @@ import {
   query,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, credits, money, pad, status } from '../style.ts';
+import { C, creditAmount, credits, pad, status } from '../style.ts';
 import type { Flags } from './billing.ts';
 
 const COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
@@ -23,7 +23,7 @@ function integer(value: string | undefined, label: string): number | undefined {
 }
 
 function row(label: string, value: string): string {
-  return `  ${C.dim}${label}${C.reset}${value}`;
+  return `  ${C.dim}${pad(label, 16)}${C.reset}${value}\n`;
 }
 
 // ── Costs ───────────────────────────────────────────────────────────────────
@@ -242,10 +242,10 @@ async function costsByProject(
   );
   for (const p of page.projects) {
     process.stdout.write(
-      `  ${pad(p.project_name, nameW)}  ${pad(String(p.session_count), 8)}  ${pad(money(p.llm_cost), 10)}  ${pad(money(p.compute_cost), 10)}  ${money(p.total_cost)}\n`,
+      `  ${pad(p.project_name, nameW)}  ${pad(String(p.session_count), 8)}  ${pad(creditAmount(p.llm_cost), 10)}  ${pad(creditAmount(p.compute_cost), 10)}  ${creditAmount(p.total_cost)}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${page.projects.length} of ${page.total}${C.reset}\n\n`);
+  process.stdout.write(`\n  ${C.dim}${page.projects.length} of ${page.total} · amounts in credits${C.reset}\n\n`);
   return 0;
 }
 
@@ -287,10 +287,10 @@ async function costsBySession(
   );
   for (const s of page.sessions) {
     process.stdout.write(
-      `  ${pad(s.session_id.slice(0, 8), 10)}  ${pad(s.project_name, projW)}  ${pad(String(s.request_count), 6)}  ${pad(money(s.llm_cost), 10)}  ${pad(money(s.compute_cost), 10)}  ${money(s.total_cost)}\n`,
+      `  ${pad(s.session_id.slice(0, 8), 10)}  ${pad(s.project_name, projW)}  ${pad(String(s.request_count), 6)}  ${pad(creditAmount(s.llm_cost), 10)}  ${pad(creditAmount(s.compute_cost), 10)}  ${creditAmount(s.total_cost)}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${page.sessions.length} of ${page.total}${C.reset}\n\n`);
+  process.stdout.write(`\n  ${C.dim}${page.sessions.length} of ${page.total} · amounts in credits${C.reset}\n\n`);
   return 0;
 }
 
@@ -312,17 +312,17 @@ async function costsSummary(
   }
   const t = summary.totals;
   process.stdout.write(`\n  ${C.bold}Spend${C.reset}\n\n`);
-  process.stdout.write(row('total', money(t.total_cost)));
-  process.stdout.write(row('previous', money(summary.previous?.total_cost)));
-  process.stdout.write(row('llm', money(t.llm_cost)));
-  process.stdout.write(row('compute', money(t.compute_cost)));
+  process.stdout.write(row('total', credits(t.total_cost)));
+  process.stdout.write(row('previous', credits(summary.previous?.total_cost)));
+  process.stdout.write(row('llm', credits(t.llm_cost)));
+  process.stdout.write(row('compute', credits(t.compute_cost)));
   process.stdout.write(row('requests', String(t.request_count)));
   process.stdout.write(row('sessions', String(t.session_count)));
   process.stdout.write(row('projects', String(t.project_count)));
   if (summary.models?.length) {
     process.stdout.write(`\n  ${C.bold}By model${C.reset}\n`);
     for (const m of summary.models) {
-      process.stdout.write(`  ${pad(`${m.provider}/${m.model}`, 40)}  ${money(m.cost)}\n`);
+      process.stdout.write(`  ${pad(`${m.provider}/${m.model}`, 40)}  ${credits(m.cost)}\n`);
     }
   }
   process.stdout.write('\n');

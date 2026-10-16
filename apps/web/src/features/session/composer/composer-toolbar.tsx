@@ -99,6 +99,8 @@ export interface ComposerToolbarProps {
   isBusy: boolean;
   onStop?: () => void;
   stopDisabled: boolean;
+  /** See `SendStopControl`. */
+  canStop?: boolean;
   escCount: number;
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
@@ -142,6 +144,7 @@ export function ComposerToolbar({
   isBusy,
   onStop,
   stopDisabled,
+  canStop,
   escCount,
   lockForQuestion,
   questionButtonLabel,
@@ -230,6 +233,7 @@ export function ComposerToolbar({
           isBusy={isBusy}
           onStop={onStop}
           stopDisabled={stopDisabled}
+          canStop={canStop}
           escCount={escCount}
           lockForQuestion={lockForQuestion}
           questionButtonLabel={questionButtonLabel}

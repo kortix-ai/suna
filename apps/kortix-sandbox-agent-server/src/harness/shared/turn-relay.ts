@@ -209,6 +209,25 @@ export async function relayTurnBegin(runtimeSessionId: string, messageId: string
 }
 
 /**
+ * A turn's end waits for its begin relay, at most `waitMs`: an end that lands first lets the late
+ * begin adopt a turn that nothing ends (a refused pi `/summarize` ends within milliseconds). The
+ * bound keeps a hung begin (2 attempts of a 30 s request) from delaying the end.
+ */
+export function turnEndAfterBegin(waitMs = 5_000) {
+  const begins = new Map<string, Promise<unknown>>()
+  return {
+    begin(messageId: string, relay: Promise<unknown>): void {
+      begins.set(messageId, relay)
+    },
+    async end(messageId: string): Promise<void> {
+      const begun = begins.get(messageId)
+      begins.delete(messageId)
+      if (begun) await Promise.race([begun, Bun.sleep(waitMs)])
+    },
+  }
+}
+
+/**
  * The running turn read a steered message at a step boundary (`steer_read`).
  * apps/api closes that message's inbox row as delivered. 3 attempts; a
  * non-ok answer other than 5xx is definitive. Skipped while the session

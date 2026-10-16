@@ -28,7 +28,9 @@ import { Window } from 'happy-dom';
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 const win = new Window({ width: 1440, height: 900 });
-const globals = globalThis as Record<string, unknown>;
+const globals = globalThis as unknown as Record<string, unknown>;
+// happy-dom's nodes are not the lib.dom types the helpers below take.
+const doc = win.document as unknown as Document;
 globals.window = win;
 globals.document = win.document;
 globals.navigator = win.navigator;
@@ -39,7 +41,7 @@ globals.cancelAnimationFrame = (id: number) => clearTimeout(id);
 // @pierre/diffs touches DOM classes by bare global name (SVGElement, …) and
 // happy-dom keeps them on its Window, not on globalThis.
 for (const key of Object.getOwnPropertyNames(win)) {
-  if (/^[A-Z]/.test(key) && !(key in globals)) globals[key] = (win as Record<string, unknown>)[key];
+  if (/^[A-Z]/.test(key) && !(key in globals)) globals[key] = (win as unknown as Record<string, unknown>)[key];
 }
 
 import { ChangeList, DiffLayoutToggle, useChangeExpansion } from './change-list';
@@ -136,11 +138,10 @@ describe('DiffLayoutToggle through a real click', () => {
   test(
     'stacked → side by side → stacked re-renders the diff each way',
     async () => {
-    const host = win.document.createElement('div');
-    win.document.body.appendChild(host);
-    let root: Root | null = null;
+    const host = doc.createElement('div');
+    doc.body.appendChild(host);
+    const root: Root = createRoot(host);
     await act(async () => {
-      root = createRoot(host);
       root.render(<Harness />);
     });
 
@@ -184,7 +185,7 @@ describe('DiffLayoutToggle through a real click', () => {
     expect(stacked.getAttribute('aria-pressed')).toBe('true');
     await waitFor(host, () => columns(host)[0] === 'data-unified', 'unified column again');
 
-    root?.unmount();
+    root.unmount();
     },
     30_000,
   );
@@ -192,11 +193,10 @@ describe('DiffLayoutToggle through a real click', () => {
   test(
     'a new file (a one-sided patch) also switches to side by side, and back',
     async () => {
-      const host = win.document.createElement('div');
-      win.document.body.appendChild(host);
-      let root: Root | null = null;
+      const host = doc.createElement('div');
+      doc.body.appendChild(host);
+      const root: Root = createRoot(host);
       await act(async () => {
-        root = createRoot(host);
         root.render(<Harness entries={NEW_FILE_ENTRIES} />);
       });
 
@@ -232,7 +232,7 @@ describe('DiffLayoutToggle through a real click', () => {
         'the new-file unified column again',
       );
 
-      root?.unmount();
+      root.unmount();
     },
     30_000,
   );
