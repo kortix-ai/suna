@@ -102,6 +102,7 @@ import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { useSessionCanStop, useSessionTurnOutcome, useSessionWorking } from './use-session-working';
 import { cancelSessionTurn } from './session-stop';
+import { useTurnEndHandoff } from './turn-end-handoff';
 import { useVisibleAgents } from './use-visible-agents';
 import { createKortix } from '../core/client/kortix';
 import { platformConfig } from '../core/http/config';
@@ -1643,6 +1644,19 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     lastEndedSeenRef.current = lastEndedToken;
     if (seen !== undefined && seen !== lastEndedToken) presenceReporterRef.current?.refresh();
   }, [turnRead, lastEndedToken]);
+  // This view's stream is the only thing that announces a turn's end. A turn
+  // still running when the view unmounts (the person opened another page) is
+  // handed to a `/turn` watch that announces it instead; mounting again takes
+  // it back (`turn-end-handoff.ts`).
+  useTurnEndHandoff({
+    enabled,
+    projectId,
+    sessionId,
+    runtimeSessionId: ocSessionId || null,
+    working: turnRunning,
+    openTurnToken: working.serverOpenTurnToken,
+    lastEndedToken,
+  });
   const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer

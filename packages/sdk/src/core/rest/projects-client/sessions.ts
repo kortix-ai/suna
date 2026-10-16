@@ -1124,9 +1124,15 @@ export interface SessionTurnStatus {
 export async function getSessionTurn(
   projectId: string,
   sessionId: string,
+  /** `showErrors: false` keeps a failed read from the host's `onError`: for a
+   *  background read the person did not ask for. */
+  options?: { showErrors?: boolean },
 ): Promise<SessionTurnStatus> {
   return unwrap(
-    await backendApi.get<SessionTurnStatus>(`/projects/${projectId}/sessions/${sessionId}/turn`),
+    await backendApi.get<SessionTurnStatus>(
+      `/projects/${projectId}/sessions/${sessionId}/turn`,
+      options?.showErrors === false ? { showErrors: false } : undefined,
+    ),
   );
 }
 

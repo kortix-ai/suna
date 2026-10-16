@@ -1,26 +1,22 @@
 'use client';
 
 /**
- * /projects/[id]/settings — deep-link entry into the merged Settings overlay
- * (see `features/workspace/settings/settings-panel.tsx`), opened on its
- * default tab.
+ * /projects/[id]/settings — the project's settings.
  *
- * Mirrors `customize/page.tsx`'s "set store state, then `router.replace` away
- * to a real destination" shape. That used to NOT be true here: this page
- * used to render `SettingsPanel` directly, because the panel wasn't mounted
- * anywhere else yet. Now that `ProjectShell` mounts `SettingsPanel`
- * persistently (see the settings-panel plan, Task 5b), rendering it a SECOND
- * time here would stack two full-viewport `Modal`s on the same store. This
- * page's only job is to set state and bounce to a page that actually renders
- * something — closing the overlay from here now lands on the project home
- * behind it, not a blank page.
+ * The project's own settings page is `/customize/settings` (General, Git
+ * repository, Sandbox templates, Feature flags, Upgrades). This URL used to
+ * open the merged ACCOUNT settings overlay on Profile instead, so a person
+ * looking for "Delete project" met a danger zone that offered "Delete
+ * account" (KRTX-2491). It is also where the project-scoped fallbacks land
+ * (`/settings/<unknown tab>`, `/customize/<unknown section>`, `/members`), so
+ * they now land on the project's settings too.
+ *
+ * Account tabs keep their deep links: `/projects/[id]/settings/[tab]` opens
+ * the overlay on that tab.
  */
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-
-import { DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/settings-tabs';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 export default function ProjectSettingsPage() {
   const params = useParams<{ id: string }>();
@@ -29,8 +25,7 @@ export default function ProjectSettingsPage() {
 
   useEffect(() => {
     if (!projectId) return;
-    useSettingsPanelStore.getState().openSettings(DEFAULT_SETTINGS_TAB);
-    router.replace(`/projects/${projectId}`);
+    router.replace(`/projects/${projectId}/customize/settings`);
   }, [projectId, router]);
 
   return null;

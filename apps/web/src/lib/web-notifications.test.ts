@@ -770,6 +770,72 @@ describe('notifyTaskComplete — completions reach tabs that cannot hear the str
     expect(useTurnAttentionStore.getState().unseen).toEqual(['sess1']);
   });
 
+  test('a turn the page left running announces in this tab when it ends (KRTX-2520 follow-up)', () => {
+    // Same window, visible and focused, now on the project home: the session
+    // page and its stream are gone. The SDK's turn-end watch raised this.
+    setPreferences({});
+    visibility = { hidden: false, hasFocus: true };
+    broadcastHub.posted.length = 0;
+
+    notifyTaskComplete('away0', 'Long job', t, { watchedSinceMs: Date.now() });
+
+    expect(toastCalls).toHaveLength(1);
+    expect(useTurnAttentionStore.getState().unseen).toEqual(['away0']);
+    expect(broadcastHub.posted).toHaveLength(1);
+  });
+
+  test('a watch completion is skipped when another tab already relayed this end', () => {
+    // Window A still shows the session: its stream announced the end and the
+    // relay reached this tab. This tab left the session mid-turn, so its own
+    // watch reads the same end seconds later. One toast, one sound, not two.
+    setPreferences({});
+    visibility = { hidden: true, hasFocus: false };
+    const watchedSinceMs = Date.now() - 60_000;
+    notifyTaskCompleteFor({ sessionId: 'away1', sessionTitle: 'Long job', projectId: 'proj1' }, t);
+    toastCalls.length = 0;
+    soundCalls.length = 0;
+    broadcastHub.posted.length = 0;
+
+    notifyTaskComplete('away1', 'Long job', t, { watchedSinceMs });
+
+    expect(toastCalls).toHaveLength(0);
+    expect(soundCalls).toHaveLength(0);
+    expect(broadcastHub.posted).toHaveLength(0);
+  });
+
+  test('a watch completion opens its own project, not the project on screen', () => {
+    // The person left session away3 of projA mid-turn and now works in projB.
+    setPreferences({});
+    visibility = { hidden: true, hasFocus: false };
+    softNavigateCalls.length = 0;
+    broadcastHub.posted.length = 0;
+    const win = world.window as { location: { pathname: string } };
+    const before = win.location.pathname;
+    win.location.pathname = '/projects/projB';
+    try {
+      notifyTaskComplete('away3', 'Long job', t, { watchedSinceMs: Date.now(), projectId: 'projA' });
+      expect(broadcastHub.posted[0]).toMatchObject({ sessionId: 'away3', projectId: 'projA' });
+      openAction(toastCalls[0])();
+      expect(softNavigateCalls).toEqual([expect.stringContaining('/projects/projA/')]);
+    } finally {
+      win.location.pathname = before;
+    }
+  });
+
+  test('a completion shown BEFORE the watch started does not hide the watched turn', () => {
+    setPreferences({});
+    visibility = { hidden: true, hasFocus: false };
+    // An earlier turn of the session, announced before the page left it.
+    notifyTaskCompleteFor({ sessionId: 'away2', sessionTitle: 'Long job', projectId: 'proj1' }, t);
+    toastCalls.length = 0;
+    broadcastHub.posted.length = 0;
+
+    notifyTaskComplete('away2', 'Long job', t, { watchedSinceMs: Date.now() + 1 });
+
+    expect(toastCalls).toHaveLength(1);
+    expect(broadcastHub.posted).toHaveLength(1);
+  });
+
   test('the local-only path does not publish — a relayed completion cannot loop', () => {
     setPreferences({});
     visibility = { hidden: true, hasFocus: false };

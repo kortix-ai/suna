@@ -1,0 +1,17 @@
+{
+  "source_hash": "4fc271a9c9547cf9f2d0a31eff52dae1d2958989e0c0e13804ecf6b383d5e9d0",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-database-role-privileges.test.ts",
+    "tests/README.md",
+    "tests/bin/db-suites.ts"
+  ],
+  "diff_hash": "0ff15d17fc35c04d3bf832958af54f9e878785efadf5d317e6892cf72373dc12",
+  "head": "be68b6a68725939c0bc9afb0c0fc87858db203e9",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T10:55:19.449Z"
+}

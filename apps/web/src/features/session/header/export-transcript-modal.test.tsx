@@ -64,3 +64,48 @@ describe('transcript export with generative UI', () => {
     expect(seen).not.toContain('error');
   });
 });
+
+/**
+ * KRTX-2525: export the conversation the page shows while the computer sleeps.
+ * The runtime cannot answer then, so the messages come from the saved copy and
+ * the header from the session row.
+ */
+describe('export while the computer is asleep, stopped or failed', () => {
+  test('the messages come from the export loader, which falls back to the saved copy', () => {
+    expect(source).toContain('loadSessionExportMessages(sessionId, kortixSessionScope)');
+    expect(source).not.toContain('loadSessionTranscriptMessages(');
+  });
+
+  const row = {
+    session_id: 's1',
+    custom_name: null,
+    name: 'Fix the build',
+    metadata: {},
+    created_at: '2026-10-16T08:00:00.000Z',
+    updated_at: '2026-10-16T09:30:00.000Z',
+  } as never;
+
+  test('the header comes from the session row when the runtime has no session', async () => {
+    const { transcriptSessionHeader } = await import('./export-transcript-modal');
+    expect(transcriptSessionHeader(undefined, row, 'ses_root')).toEqual({
+      id: 'ses_root',
+      title: 'Fix the build',
+      time: { created: Date.parse('2026-10-16T08:00:00.000Z'), updated: Date.parse('2026-10-16T09:30:00.000Z') },
+    });
+  });
+
+  test('a running computer keeps the runtime header', async () => {
+    const { transcriptSessionHeader } = await import('./export-transcript-modal');
+    const runtime = { id: 'ses_root', title: '', slug: 'brave-otter', time: { created: 1, updated: 2 } };
+    expect(transcriptSessionHeader(runtime, row, 'ses_root')).toEqual({
+      id: 'ses_root',
+      title: 'brave-otter',
+      time: { created: 1, updated: 2 },
+    });
+  });
+
+  test('with neither, there is no header and nothing to export', async () => {
+    const { transcriptSessionHeader } = await import('./export-transcript-modal');
+    expect(transcriptSessionHeader(undefined, null, 'ses_root')).toBeNull();
+  });
+});

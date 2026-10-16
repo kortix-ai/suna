@@ -432,6 +432,12 @@ kortix sessions warm --exclude <session_id> # never hand back this session
 
 A notification tells you that a session or a trigger needs you. Kortix writes each one to the bell, then sends it to your phone, your browser, or your email, as your settings allow.
 
+### In the app
+
+These need no flag and no browser permission. A turn that ends while you are elsewhere in the web or desktop app shows a **Task complete** toast with **Open session**. A failed turn shows **Session error**. Elsewhere means another page, another session, another tab or another app. The browser tab's icon gets a dot until you open the session.
+
+This covers the sessions you open in that window, also one you leave while its turn runs. The session on your screen shows no toast: its transcript shows the end. For turns that start elsewhere, such as a trigger or another device, turn on the notification center below.
+
 ### Turn notifications on
 
 Notifications need the per-project `notification_center` flag. It is off by default. Turn it on in **Customize → Settings → Feature flags**, or:
