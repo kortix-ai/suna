@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
+  agentConfigSectionKeys,
   AGENT_MODE_LABEL,
   AGENT_MODES,
   grantSummary,
@@ -16,6 +17,7 @@ import {
   PERMISSION_RULE_GROUPS,
   PERMISSION_RULE_KEYS,
   behaviorBlock,
+  registryGrantOptions,
   stableStringify,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
@@ -43,6 +45,73 @@ describe('behaviorBlock', () => {
 
   test('a block without behavior stays without it', () => {
     expect(behaviorBlock({ secrets: 'all' } as never)).toEqual({ secrets: 'all' } as never);
+  });
+});
+
+describe('kortix_version 3 grants — subagents, commands, extensions', () => {
+  test('a v3 agent gets the three registry grant pages; a v1 or v2 agent does not', () => {
+    const v3 = agentConfigSectionKeys(3);
+    for (const key of ['subagents', 'commands', 'extensions'] as const) {
+      expect(v3).toContain(key);
+      expect(agentConfigSectionKeys(2)).not.toContain(key);
+      expect(agentConfigSectionKeys(1)).not.toContain(key);
+    }
+    expect(agentConfigSectionKeys(2)).toContain('skills');
+  });
+
+  test('a v3 block renders each grant through the shared grant section', () => {
+    expect(editorSource).toContain('<RegistryGrantSection');
+    expect(accessFieldsSource).toContain('export function RegistryGrantSection');
+    // Every grant page has its copy in the catalog (`agents.grants.<grant>`).
+    const catalog = JSON.parse(read('../../../../../../translations/en.json')).agents.grants;
+    for (const grant of ['subagents', 'commands', 'extensions']) {
+      expect(Object.keys(catalog[grant]).sort()).toEqual(['all', 'description', 'empty', 'title']);
+    }
+  });
+
+  const manifest = [
+    'kortix_version: 3',
+    'default_agent: lead',
+    'commands:',
+    '  weekly-report:',
+    '    description: Write the weekly report.',
+    '    prompt_file: commands/weekly-report.md',
+    '  summarize:',
+    '    prompt: Summarize $ARGUMENTS.',
+    'extensions:',
+    '  audit:',
+    '    opencode: extensions/audit.ts',
+    'agents:',
+    '  lead: { mode: primary }',
+  ].join('\n');
+  const agents = [
+    { name: 'lead', mode: 'primary', description: null },
+    { name: 'researcher', mode: 'subagent', description: 'Looks things up.' },
+    { name: 'helper', mode: 'all', description: null },
+    { name: 'off', mode: 'subagent', description: null, enabled: false },
+  ];
+
+  test('options come from the manifest registries and the declared subagents', () => {
+    const options = registryGrantOptions({ manifest_raw: manifest, agents }, 'lead');
+    expect(options.commands.map((o) => [o.id, o.description])).toEqual([
+      ['summarize', undefined],
+      ['weekly-report', 'Write the weekly report.'],
+    ]);
+    expect(options.extensions.map((o) => o.id)).toEqual(['audit']);
+    // A subagent is a declared, enabled agent with mode subagent or all — never the agent itself.
+    expect(options.subagents.map((o) => [o.id, o.description])).toEqual([
+      ['helper', undefined],
+      ['researcher', 'Looks things up.'],
+    ]);
+    expect(registryGrantOptions({ manifest_raw: manifest, agents }, 'helper').subagents.map((o) => o.id)).toEqual([
+      'researcher',
+    ]);
+  });
+
+  test('a manifest that does not parse yields empty registries, never a throw', () => {
+    const options = registryGrantOptions({ manifest_raw: 'commands: [unclosed', agents: [] }, 'lead');
+    expect(options).toEqual({ subagents: [], commands: [], extensions: [] });
+    expect(registryGrantOptions({ manifest_raw: null, agents: [] }, 'lead').commands).toEqual([]);
   });
 });
 

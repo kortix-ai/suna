@@ -46,7 +46,6 @@ import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
-import { EnterpriseAccessRow } from '@/features/billing/enterprise-access-row';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
@@ -174,7 +173,6 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
 
 export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tAccess = useTranslations('billing.access');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
   // onto the page it floats over. See `account-hub-location.tsx`.
   const accountId = useAccountPanelId();
@@ -492,7 +490,7 @@ export function AccountHubContent() {
               ) : auditEnabled ? (
                 <AuditTab accountId={account.account_id} />
               ) : (
-                <EnterpriseUpsell feature="audit" />
+                <EnterpriseUpsell feature="audit" accountId={account.account_id} />
               )}
               {/* Webhooks ship the same events the log above shows, so they
                   live on this tab rather than buried in Settings. Only
@@ -570,7 +568,7 @@ export function AccountHubContent() {
                   <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                 </>
               ) : (
-                <EnterpriseUpsell feature="identity" />
+                <EnterpriseUpsell feature="identity" accountId={account.account_id} />
               )}
             </div>
           ) : null}
@@ -585,7 +583,7 @@ export function AccountHubContent() {
             ) : brandingEnabled ? (
               <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
             ) : (
-              <EnterpriseUpsell feature="branding" />
+              <EnterpriseUpsell feature="branding" accountId={account.account_id} />
             )
           ) : null}
 
@@ -619,21 +617,6 @@ export function AccountHubContent() {
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>
-
-              {/* Whether the Enterprise features are on, and why: the plan
-                  decides (a contract or an Enterprise trial). Hidden when a
-                  self-host operator's Enterprise license already forces every
-                  entitlement on. */}
-              {accountStateQuery.data && !accountStateQuery.data?.enterprise_license_available ? (
-                <SettingsGroup
-                  title={tI18nComplete.raw('textc2ef82e31689')}
-                  description={tAccess('featuresSection')}
-                >
-                  <SettingsRowGroup>
-                    <EnterpriseAccessRow state={accountStateQuery.data} />
-                  </SettingsRowGroup>
-                </SettingsGroup>
-              ) : null}
 
               {canDeleteAccount ? (
                 <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>

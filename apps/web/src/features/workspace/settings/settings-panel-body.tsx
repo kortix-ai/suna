@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
 import { Close } from '@/features/icon/icons/close';
-import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
+import { UpgradesView } from '@/features/workspace/customize/migrate-to-v3/upgrade-view';
 import {
   SettingsNavProvider,
   type SettingsNav,

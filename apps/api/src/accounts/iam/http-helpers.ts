@@ -35,7 +35,7 @@ export async function requireEntitlement(
   if (await accountHasEntitlement(accountId, key)) return null;
   return c.json(
     {
-      error: `${ENTITLEMENT_LABEL[key]} is available on the Enterprise plan. Contact sales to enable it.`,
+      error: `${ENTITLEMENT_LABEL[key]} needs Enterprise. An owner or admin can turn on the Enterprise demo, or talk to sales for a license.`,
       code: 'entitlement_required',
       entitlement: key,
     },

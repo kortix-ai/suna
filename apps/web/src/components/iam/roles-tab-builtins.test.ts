@@ -34,7 +34,7 @@ describe('roles tab built-in list', () => {
 // Role tags carry no lock glyph, and View capabilities is an inline button.
 describe('roles tab enterprise gate and row tags', () => {
   test('an account without rbac sees EnterpriseUpsell only', () => {
-    expect(source).toContain('if (!rbacEnabled) return <EnterpriseUpsell feature="roles" />;');
+    expect(source).toContain('if (!rbacEnabled) return <EnterpriseUpsell feature="roles" accountId={accountId} />;');
     expect(source).not.toContain('InfoBanner');
   });
 

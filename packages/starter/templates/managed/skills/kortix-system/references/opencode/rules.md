@@ -4,6 +4,10 @@
 
 Set custom instructions for opencode.
 
+> **In a Kortix project:** both harnesses read the root `AGENTS.md`, else
+> `CLAUDE.md`. `opencode.json` `instructions` is not read in a
+> `kortix_version: 3` project.
+
 You can provide custom instructions to opencode by creating an `AGENTS.md` file. This is similar to Cursor's rules. It contains instructions that will be included in the LLM's context to customize its behavior for your specific project.
 
 ---

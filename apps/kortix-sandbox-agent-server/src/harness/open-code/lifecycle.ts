@@ -131,6 +131,8 @@ import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
+import { applyV3, compiledV3, v3OpencodeEnv } from './manifest-v3'
+import type { ExtensionDepsOptions } from './extension-deps'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -381,6 +383,10 @@ export async function buildOpencodeConfigContent(
     servesRelease?: boolean
     /** The hosted tools' bridge plugin (tool-bridge.ts), when one was written. */
     toolBridgeSpec?: string | null
+    /** kortix.yaml v3: where registered skill folders and extensions resolve (the active release root, else /workspace). */
+    configRoot?: string | null
+    /** Test seam: the baked tree and installer for v3 extension dependencies (extension-deps.ts). */
+    extensionDeps?: Omit<ExtensionDepsOptions, 'cacheRoot'>
   } = {},
 ): Promise<string | undefined> {
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
@@ -408,6 +414,8 @@ export async function buildOpencodeConfigContent(
   // agent behavior itself.
   const compiledAgentConfigRaw = compiledAgentConfigFromEnv(env)
   const hasCompiledAgentConfig = !!compiledAgentConfigRaw
+  // kortix.yaml v3: the compiled set is the only input (manifest-v3.ts).
+  const v3 = compiledV3(env)
   // (5) The daemon-injected managed skills dir (`ensureInjectedManagedSkills`).
   // OpenCode loads skills from config-declared `skills.paths` — the overlay dir
   // must be declared or the baked `kortix-*` skills are never discovered on a
@@ -418,7 +426,7 @@ export async function buildOpencodeConfigContent(
   // only while OpenCode serves the working tree: a config release carries its
   // skills inside the release, and `/workspace` never decides a release's config.
   const projectSkillsDir =
-    opts.projectSkillsDir && existsSync(opts.projectSkillsDir) ? opts.projectSkillsDir : null
+    opts.projectSkillsDir && existsSync(opts.projectSkillsDir) && !v3 ? opts.projectSkillsDir : null
   const secretCapabilitiesInstructionPath =
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
@@ -469,7 +477,7 @@ export async function buildOpencodeConfigContent(
       logger.warn('[opencode] KORTIX_COMPILED_AGENT_CONFIG present but not valid JSON; ignoring')
     }
   }
-  if (env.OPENCODE_CONFIG_CONTENT) {
+  if (env.OPENCODE_CONFIG_CONTENT && !v3) {
     try {
       const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -482,6 +490,7 @@ export async function buildOpencodeConfigContent(
   // The daemon's tool host reads the tool keys (tool-bridge.ts); OpenCode's schema has neither.
   delete out.project_tools
   delete out.kortix_tools
+  if (v3) await applyV3(out, v3, env, opts.configRoot ?? null, opts.extensionDeps)
 
   // Instruction files the platform contributes. Appended, never clobbering
   // what the project's own config declares.
@@ -1007,6 +1016,7 @@ export async function writeKortixOpencodeConfig(
     servesRelease?: boolean
     /** Write the hosted tools' bridge plugin (tool-bridge.ts) for this daemon and checkout. */
     toolBridge?: { daemonPort: number; projectRoot: string | null; configDir: string | null }
+    configRoot?: string | null
   } = {},
 ): Promise<string | null> {
   if (opts.servesRelease) writeReleaseInstructionsPlugin(RELEASE_INSTRUCTIONS_PLUGIN_PATH)
@@ -1025,6 +1035,7 @@ export async function writeKortixOpencodeConfig(
     configReleaseNoticePath: opts.configReleaseNoticePath,
     servesRelease: opts.servesRelease,
     toolBridgeSpec,
+    configRoot: opts.configRoot,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -2045,6 +2056,8 @@ export function createOpencodeLifecycle(
   // env, which a dispose cannot change, so a reload whose patch differs from
   // the live one must respawn (tryDisposeReload).
   const agentModelPatches = new WeakMap<ChildProcess, string | undefined>()
+  /** Whether each process was spawned for a kortix.yaml v3 set (`v3OpencodeEnv`). */
+  const spawnedV3 = new WeakMap<ChildProcess, boolean>()
   function agentModelPatchFor(baseEnv: NodeJS.ProcessEnv): Promise<string | undefined> {
     return hasKortixLlmGateway(baseEnv) ? gatewayAgentModelPatch(bootLinkPath()) : Promise.resolve(undefined)
   }
@@ -2159,6 +2172,7 @@ export function createOpencodeLifecycle(
       const skillsDir = join(managedOverlayRoot(served, projectRoot), 'skills')
       await syncFlaggedManagedSkills(skillsDir, { env: baseEnv, unseal: isInReleaseStore(skillsDir) })
     }
+    const releaseRoot = await readBootReleaseRoot()
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
@@ -2167,7 +2181,8 @@ export function createOpencodeLifecycle(
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
       // Project tools load from the served release (or checkout), config dir or not.
-      toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: await readBootReleaseRoot(), configDir: served },
+      toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: releaseRoot, configDir: served },
+      configRoot: releaseRoot ?? currentCfg.projectTarget,
     })
   }
 
@@ -2206,6 +2221,8 @@ export function createOpencodeLifecycle(
       // through a shell. Safe for model traffic: NO_PROXY carries 127.0.0.1 (the
       // local LLM proxy) and the Kortix API host.
       ...egressShimEnv(),
+      // kortix.yaml v3: no project config discovery (manifest-v3.ts).
+      ...v3OpencodeEnv(baseEnv),
       PORT: undefined,
       APP_PORT: undefined,
     })
@@ -2253,6 +2270,7 @@ export function createOpencodeLifecycle(
     childPorts.set(proc, port)
     spawnedAt.set(proc, Date.now())
     agentModelPatches.set(proc, agentModelPatch)
+    spawnedV3.set(proc, !!compiledV3(baseEnv))
     watchListeningLine(proc)
     proc.on('error', (err) => {
       logger.error('[opencode] spawn error', err)
@@ -2680,6 +2698,11 @@ export function createOpencodeLifecycle(
     // rides the env (see agentModelPatches).
     if (child && (await agentModelPatchFor(baseEnv)) !== agentModelPatches.get(child)) {
       logger.info('[opencode] an agent model ref changed; restarting instead of disposing')
+      return false
+    }
+    // The v3 discovery switches ride the env too: a v2 <-> v3 change respawns.
+    if (child && !!compiledV3(baseEnv) !== spawnedV3.get(child)) {
+      logger.info('[opencode] the kortix.yaml version changed; restarting instead of disposing')
       return false
     }
     const written = await writeComposedConfig(baseEnv).catch((err) => {

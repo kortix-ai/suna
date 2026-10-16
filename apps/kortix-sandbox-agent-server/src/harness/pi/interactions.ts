@@ -87,11 +87,12 @@ function matchPatterns(subject: string, patterns: Record<string, PermissionRule>
 /**
  * The string a pattern is tested against, per tool — the subject OpenCode sends
  * as the permission request's pattern: the command line for `bash`, the skill
- * name for `skill`, the target path for the workspace tools.
+ * name for `skill`, the subagent name for `task`, the target path for the workspace tools.
  */
 export function permissionSubject(tool: string, args: unknown): string | undefined {
   if (!args || typeof args !== 'object') return undefined
-  const value = (args as Record<string, unknown>)[tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : 'path']
+  const key = tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : tool === 'task' ? 'subagent_type' : 'path'
+  const value = (args as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : undefined
 }
 

@@ -903,14 +903,14 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.claude', 'CLAUDE.md'))).toBe(false);
     expect(existsSync(join(root, '.codex', 'AGENTS.md'))).toBe(false);
     expect(existsSync(join(root, '.pi', 'README.md'))).toBe(false);
-    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
-    // Managed / served-live skills still aren't committed into the repo.
+    // Managed / served-live skills, kortix-cli included, aren't committed into the repo.
+    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(false);
     expect(existsSync(join(root, 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
     // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
     expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    // The Kortix tools are hosted by the runtime on every harness: no copies in the project.
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
+    expect(existsSync(join(root, 'extensions', 'pty', 'pty.ts'))).toBe(true);
+    // kortix_version 3 has no harness folder; the runtime hosts the Kortix tools.
+    expect(existsSync(join(root, 'harnesses'))).toBe(false);
     // The full kit is the default now, so domain skills like pdf ARE present.
     expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
@@ -938,7 +938,7 @@ describe('kortix CLI black-box behavior', () => {
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
-    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
     expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
@@ -950,10 +950,9 @@ describe('kortix CLI black-box behavior', () => {
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
-    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
+    expect(existsSync(join(root, 'extensions', 'pty', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses'))).toBe(false);
 
     const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(listBeforeLink.code).toBe(0);

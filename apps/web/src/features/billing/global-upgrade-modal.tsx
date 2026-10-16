@@ -23,7 +23,7 @@ import { TopupControls } from '@/features/billing/topup-controls';
 import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
 import { useUpgradePlans } from '@/features/billing/use-pricing-plans';
 import { useUpgradeModalHost } from '@/features/billing/use-upgrade-modal-host';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { useTalkToSales } from '@/features/billing/use-enterprise-sales';
 import { invalidateAccountState, useAccountState, useCreatePortalSession } from '@/hooks/billing';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
@@ -33,15 +33,11 @@ import {
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
 import { cn } from '@/lib/utils';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { BillingAccountProvider, useBillingAccountId } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { type AccountState, type BillingState, canManageBilling } from '@kortix/sdk';
-import { formatCredits } from '@kortix/shared';
-import {
-  ArrowRightIcon as ArrowRight,
-  CreditCardIcon as CreditCardPlusSolid,
-  UserPlusIcon as UserPlus,
-} from '@phosphor-icons/react';
+import { formatUsdAsCredits } from '@kortix/shared';
+import { ArrowRightIcon as ArrowRight, UserPlusIcon as UserPlus } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
@@ -59,8 +55,25 @@ export interface UpgradePlansModalProps {
   billingState?: BillingState;
   balance?: number;
   /** True while account state is doing its first load — the credit view shows a
-   *  balance skeleton instead of a misleading $0.00 until the real value lands. */
+   *  balance skeleton instead of a misleading 0 until the real value lands. */
   accountLoading?: boolean;
+}
+
+/**
+ * Which view the billing modal opens on:
+ *
+ * - `plans`: Free against Credits, for an account that cannot buy credits yet;
+ * - `topup-first`: out of credits or payment failed, so the top-up is the question;
+ * - `plan-first`: an account that can buy credits and is not blocked. The
+ *   monthly plan leads; the top-up is the secondary section.
+ */
+export function billingModalLayout(opts: {
+  needsTopUp: boolean;
+  hasSubscription: boolean;
+  canPurchaseCredits: boolean;
+}): 'plans' | 'topup-first' | 'plan-first' {
+  if (!opts.canPurchaseCredits || !(opts.needsTopUp || opts.hasSubscription)) return 'plans';
+  return opts.needsTopUp ? 'topup-first' : 'plan-first';
 }
 
 export function UpgradePlansModal({
@@ -76,7 +89,7 @@ export function UpgradePlansModal({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const t = useTranslations('billing.credits.modal');
   const plans = useUpgradePlans();
-  const openDemo = useRequestDemo();
+  const sales = useTalkToSales(useBillingAccountId());
 
   // Which view? Resolved from the ONE billing-state resolver. The caller's
   // `billingState` (from the 402 or the gate that opened this) wins because
@@ -84,11 +97,13 @@ export function UpgradePlansModal({
   const hasSub = hasSubscription ?? accountHasLiveSubscription(accountState);
   const canPurchaseCredits = accountState?.tier?.can_purchase_credits ?? hasSub;
   const resolvedState = billingState ?? resolveBillingState(accountState);
-  const showTopUp =
-    (billingStateNeedsTopUp(resolvedState) || reason === 'insufficient_credits' || hasSub) &&
-    canPurchaseCredits;
+  const layout = billingModalLayout({
+    needsTopUp: billingStateNeedsTopUp(resolvedState) || reason === 'insufficient_credits',
+    hasSubscription: hasSub,
+    canPurchaseCredits,
+  });
 
-  if (showTopUp) {
+  if (layout !== 'plans') {
     return (
       <CreditTopUpModal
         open={open}
@@ -97,6 +112,7 @@ export function UpgradePlansModal({
         balance={balance}
         billingState={resolvedState}
         accountLoading={accountLoading}
+        leadWithTopUp={layout === 'topup-first'}
       />
     );
   }
@@ -132,10 +148,8 @@ export function UpgradePlansModal({
             {tI18nHardcoded.raw('i18nComplete.textff2b8e88c520')}{' '}
             <button
               type="button"
-              onClick={() => {
-                onOpenChange(false);
-                openDemo({ source: 'billing-upgrade-modal' });
-              }}
+              disabled={sales.isPending}
+              onClick={sales.talk}
               className="text-foreground underline-offset-4 hover:underline"
             >
               {tI18nHardcoded.raw('i18nComplete.text604abea32b49')}
@@ -255,13 +269,19 @@ interface CreditTopUpModalProps {
   balance?: number;
   billingState?: BillingState | null;
   accountLoading?: boolean;
+  /** Out of credits or payment failed: the top-up leads, with the balance. */
+  leadWithTopUp: boolean;
 }
 
 /**
- * The out-of-credits view of the blocking modal: a clear "why you're blocked"
- * header + wallet balance, one-time top-up (packages + custom amount), and
- * auto-top-up config underneath so a drained paid account can both refill now
- * and never hit zero again — instead of being wrongly pitched the Free plan.
+ * The plan and top-up view, for an account that can buy credits. Two orders:
+ *
+ * - out of credits (`leadWithTopUp`): why the account is blocked, the balance,
+ *   the one-time top-up, then the monthly plan as the other way out;
+ * - otherwise: the monthly plan first, and the top-up below as a quieter
+ *   "need more this month" section.
+ *
+ * Auto top-up stays folded inside `TopupControls` in both.
  */
 function CreditTopUpModal({
   open,
@@ -270,103 +290,74 @@ function CreditTopUpModal({
   balance,
   billingState,
   accountLoading,
+  leadWithTopUp,
 }: CreditTopUpModalProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tBanner = useTranslations('hardcodedUi.componentsSessionSessionErrorBanner');
+  const t = useTranslations('billing.credits.modal');
   const createPortal = useCreatePortalSession();
-  // Copy is DERIVED, never written here. The title used to be hardcoded
-  // `'Out of credits'` with a single `payment_failed` branch, so this modal
-  // announced an emergency to every account that opened it — including one
-  // topping up voluntarily with a healthy balance — and promised "your plan
-  // is unaffected" to accounts that had none.
-  const copy = billingModalCopy(billingState ?? null, tI18nComplete);
+  // Out-of-credits copy is DERIVED from the billing state, never written here:
+  // a hardcoded "Out of credits" title once announced an emergency to every
+  // account that opened this modal.
+  const copy = leadWithTopUp
+    ? billingModalCopy(billingState ?? null, tI18nComplete)
+    : { title: t('planTitle'), description: t('planDescription') };
 
-  // Trust the LIVE account state as the source of truth (same field the Plan
-  // page reads) — the 402's `balance` is only a pre-load hint. Using `??` on the
-  // live value would let a legitimate 0 fall through; instead branch on whether
-  // it's loaded so a real $0.00 shows as $0.00 and an unloaded value shows a
-  // skeleton — never a misleading $0.00 while the real (e.g. negative) balance
-  // is still in flight.
-  const liveBalance = accountState?.credits?.total;
-  const hasLiveBalance = typeof liveBalance === 'number';
-  const walletUsd = hasLiveBalance ? liveBalance : (balance ?? 0);
-  const showBalanceSkeleton = !hasLiveBalance && accountLoading;
-  const isNegative = walletUsd < 0;
-  const walletLabel = `${isNegative ? '-' : ''}$${Math.abs(walletUsd).toFixed(2)}`;
-  const creditsLabel = formatCredits(Math.round(Math.abs(walletUsd) * 100));
+  const topup = (
+    <TopupControls
+      state={accountState}
+      heading={
+        leadWithTopUp ? (
+          tI18nComplete.raw('textd22feb61298b')
+        ) : (
+          <span className="text-muted-foreground font-normal">{t('topupSecondary')}</span>
+        )
+      }
+      // KRTX-1720: buying credits needs `billing.write`; the API answers a
+      // member 403. A member is told who can act. Nothing renders a purchase
+      // control before the account state says who this is.
+      fallback={
+        accountState ? (
+          canManageBilling(accountState) ? null : (
+            <p className="text-muted-foreground text-sm" data-testid="topup-ask-owner">
+              {tBanner.raw('askOwnerToAddCredits')}
+            </p>
+          )
+        ) : accountLoading ? (
+          <Skeleton className="h-40 w-full rounded-md" />
+        ) : null
+      }
+    />
+  );
+  const plan = accountState ? (
+    <PlanChanger state={accountState} className="bg-popover rounded-md border" />
+  ) : null;
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-lg">
-        <ModalHeader className="gap-3">
-          <div className="flex items-center gap-3">
-            <span className="bg-kortix-orange/15 flex size-9 shrink-0 items-center justify-center rounded-sm">
-              <CreditCardPlusSolid className="text-kortix-orange size-5" />
-            </span>
-            <div className="space-y-0.5">
-              <ModalTitle className="text-lg font-medium tracking-tight">{copy.title}</ModalTitle>
-              <ModalDescription className="text-sm text-balance">
-                {copy.description}
-              </ModalDescription>
-            </div>
-          </div>
+        <ModalHeader className="gap-1">
+          <ModalTitle className="text-lg font-medium tracking-tight">{copy.title}</ModalTitle>
+          <ModalDescription className="text-sm text-balance">{copy.description}</ModalDescription>
         </ModalHeader>
 
         <ModalBody className="space-y-4 pt-4">
-          {/* Available balance — the concrete "why" behind the block. */}
-          <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
-            <span className="text-muted-foreground text-sm">
-              {tI18nComplete.raw('text3ab7dd8428d1')}
-            </span>
-            {showBalanceSkeleton ? (
-              <Skeleton className="h-6 w-24 rounded-md" />
-            ) : (
-              <span className="flex items-baseline gap-1.5">
-                <span
-                  className={cn(
-                    'text-lg font-medium tabular-nums',
-                    isNegative ? 'text-kortix-red' : 'text-foreground',
-                  )}
-                >
-                  {walletLabel}
-                </span>
-                {isNegative && (
-                  <span className="text-muted-foreground text-xs tabular-nums">
-                    {creditsLabel} {tI18nComplete.raw('text4fef65587333')}
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-
-          {/* The same card the Billing tab and the Credits pane render, so
-              the modal and the panes are not two dialects of one control.
-              KRTX-1720: buying credits and auto top-up need `billing.write`
-              (owners by default); the API answers a member 403. A member is
-              told who can act. Nothing renders a purchase control before the
-              account state says who this is. */}
-          <TopupControls
-            state={accountState}
-            heading={tI18nComplete.raw('textd22feb61298b')}
-            fallback={
-              accountState ? (
-                canManageBilling(accountState) ? null : (
-                  <p className="text-muted-foreground text-sm" data-testid="topup-ask-owner">
-                    {tBanner.raw('askOwnerToAddCredits')}
-                  </p>
-                )
-              ) : accountLoading ? (
-                <Skeleton className="h-40 w-full rounded-md" />
-              ) : null
-            }
-          />
-
-          {/* Out of credits on a paid plan: raising the monthly amount is the
-              other way out, so the same picker the Plan tab uses sits under
-              the one-time top-up. Owners only; PlanChanger says who to ask. */}
-          {accountState ? (
-            <PlanChanger state={accountState} className="bg-popover rounded-md border" />
-          ) : null}
+          {leadWithTopUp ? (
+            <>
+              <WalletBalance
+                accountState={accountState}
+                balance={balance}
+                accountLoading={accountLoading}
+              />
+              {topup}
+              {plan}
+            </>
+          ) : (
+            <>
+              {plan}
+              {topup}
+            </>
+          )}
         </ModalBody>
 
         <ModalFooter className="pt-4 pb-5 sm:justify-start">
@@ -384,6 +375,56 @@ function CreditTopUpModal({
         </ModalFooter>
       </ModalContent>
     </Modal>
+  );
+}
+
+/**
+ * The available balance, in credits: the concrete "why" behind an
+ * out-of-credits block.
+ *
+ * The LIVE account state is the source of truth (the field the Plan page
+ * reads); the 402's `balance` is only a pre-load hint. A real 0 shows as 0,
+ * and an unloaded value shows a skeleton, never a misleading 0. A negative
+ * balance keeps its minus and turns red: the account owes those credits.
+ */
+function WalletBalance({
+  accountState,
+  balance,
+  accountLoading,
+}: {
+  accountState?: AccountState;
+  balance?: number;
+  accountLoading?: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCredits = useTranslations('settings.credits');
+  const locale = useLocale();
+  const liveBalance = accountState?.credits?.total;
+  const hasLiveBalance = typeof liveBalance === 'number';
+  const walletUsd = hasLiveBalance ? liveBalance : (balance ?? 0);
+  const isNegative = walletUsd < 0;
+
+  return (
+    <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
+      <span className="text-muted-foreground text-sm">{tI18nComplete.raw('text3ab7dd8428d1')}</span>
+      {!hasLiveBalance && accountLoading ? (
+        <Skeleton className="h-6 w-24 rounded-md" />
+      ) : (
+        <span className="flex items-baseline gap-1.5">
+          <span
+            className={cn(
+              'text-lg font-medium tabular-nums',
+              isNegative ? 'text-kortix-red' : 'text-foreground',
+            )}
+          >
+            {formatUsdAsCredits(walletUsd, { locale })}
+          </span>
+          <span className="text-muted-foreground text-xs">
+            {tCredits('unit', { count: Math.abs(walletUsd) * 100 })}
+          </span>
+        </span>
+      )}
+    </div>
   );
 }
 

@@ -93,7 +93,7 @@ kortix providers login opencode-go   # OpenCode Go
 
 In the web app, use **Connect ChatGPT** and **Connect OpenCode Go**. The OpenCode Zen login runs only from the CLI. Zen and Go each need their own login. An OpenCode login lasts 30 days, and Kortix renews it one day before it expires. When a renewal is refused, requests return `provider_reauth_required`: sign in again.
 
-**A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL, a model id and a model name. The key is optional. Kortix saves the key as `CUSTOM_<ID>_API_KEY` and shows an OpenCode provider snippet. Commit the snippet to `opencode.jsonc` in the project's OpenCode config directory (`harnesses/opencode/` by default). A custom provider calls its endpoint directly, not through the gateway. Budgets, logs and routing do not apply to it, and only the OpenCode harness reads it.
+**A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL, a model id and a model name. The key is optional. Kortix saves the key as `CUSTOM_<ID>_API_KEY` and shows an OpenCode provider snippet. Commit the snippet to `opencode.jsonc` in the project's OpenCode config directory. A custom provider calls its endpoint directly, not through the gateway. Budgets, logs and routing do not apply to it, and only the OpenCode harness reads it. Only a legacy `kortix_version` 1 or 2 project reads `opencode.jsonc`: a `kortix_version: 3` project has no key for a custom provider. See [Legacy manifests](/docs/project/legacy-manifests).
 
 Your provider bills a request that runs on your own key or subscription. Kortix charges nothing for the first $1,000 of key usage a month at list price, then 5% of each request's list price, from credits ([Credits](/docs/credits)). A ChatGPT subscription and OpenCode Go are never charged. The one other charge is a Kortix model that you put in your own fallback chain: see [Routing and fallback](#routing-and-fallback).
 
@@ -107,11 +107,11 @@ A session that names no model uses the first of these that is set:
 4. **Account default.** `kortix models default <model-id> --account`. It applies to every project in the account that has no project default.
 5. **Platform default.** `deepseek-v4.1-flash` on Kortix Cloud.
 
-The `model:` field in the [agent file](/docs/project/agents#the-agent-file) is not in this chain. It applies only to a prompt that names no model:
+The `model` key on the [agent block](/docs/project/manifest#behavior) is not in this chain. It applies only to a prompt that names no model:
 
-- The web composer names a model on every prompt: your pick, else the chain above. There the agent file's `model:` does not apply.
-- On OpenCode, a prompt that names no model runs on the agent file's `model:`. The chain's model applies to an agent whose file sets none.
-- On pi, the session runs on the chain's model. A prompt that switches to another agent and names no model runs on that agent's `model:`.
+- The web composer names a model on every prompt: your pick, else the chain above. There the agent's `model` does not apply.
+- On OpenCode, a prompt that names no model runs on the agent's `model`. The chain's model applies to an agent that sets none.
+- On pi, the session runs on the chain's model. A prompt that switches to another agent and names no model runs on that agent's `model`.
 
 A stale default never fails a session. A less specific default is not tried when a more specific one cannot run:
 
@@ -198,15 +198,16 @@ A budget caps what a project, or one member in it, spends on models in a period.
 
 ```bash
 kortix gateway budget                                   # budgets with their spend this period, and this month's project spend
-kortix gateway budget set --limit <limit> --scope project --period month --action block
+kortix gateway budget set --limit 20 --scope project --period month --action block   # 20 USD = 2,000 credits
 kortix gateway budget set --limit <limit> --scope member --user <user-id> --period week --action warn
 kortix gateway budget rm <budget-id>
 ```
 
+- `--limit` takes US dollars, the unit of the API's `limit_usd` field. One credit is $0.01, so `--limit 20` is a 2,000-credit budget. The CLI shows budgets and spend in credits, and `--json` returns the API's dollar fields.
 - `--period` is `day`, `week` or `month`, in UTC. A week starts on Monday. A month starts on the 1st.
 - **Block** (`block`) refuses new requests at the limit with `402 budget_exceeded`. **Warn only** (`warn`) lets them run.
 - A budget counts all spend: Kortix credits and the cost on your own keys.
-- Each budget shows its spend in its own period, for example `$15.00 of $20.00 per day · blocks at limit · 75% used`, and when the period resets. This is the number the gateway compares with the limit. `GET /v1/projects/<project-id>/gateway/budgets` returns it per budget as `spent_usd`, `period_start` and `resets_at`, and a member budget's member as `subject_email`. `project_spend` and `members` in the same response are month-to-date.
+- Each budget shows its spend in its own period, for example `1,500 of 2,000 credits per day · blocks at limit · 75% used`, and when the period resets. This is the number the gateway compares with the limit. `GET /v1/projects/<project-id>/gateway/budgets` returns it per budget in US dollars as `spent_usd`, `period_start` and `resets_at`, and a member budget's member as `subject_email`. `project_spend` and `members` in the same response are month-to-date.
 - Every member cap has a row in the list, also when its member has spent nothing this month.
 - At 80% and at 100% of the limit, Kortix emails the account owners and admins and the project managers, once per threshold per period.
 - Setting a budget needs `project.gateway.budget.set`. Reading spend needs `project.gateway.spend.read`.
