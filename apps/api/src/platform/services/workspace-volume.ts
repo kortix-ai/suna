@@ -23,6 +23,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { platinumJson, platinumRegionControlPlane } from '../../shared/platinum';
 import type { CreateSandboxOpts } from '../providers/contract';
+import { WORKSPACE_VOLUME_UNREACHABLE_MESSAGE } from './sandbox-provisioning-error';
 
 export const WORKSPACE_VOLUME_MOUNT = '/workspace';
 /** Tells kortixd /workspace is a volume (never cleared, reported on /kortix/health). */
@@ -157,7 +158,7 @@ async function openWorkspaceVolume(volume: WorkspaceVolume): Promise<void> {
   throw new Error(
     quota
       ? '[workspace] This session’s workspace volume could not be created: the workspace reached its storage volume limit. Delete old sessions, or ask Kortix for more.'
-      : '[workspace] This session’s workspace volume is not reachable right now, so the session did not start. Try again in a minute.',
+      : WORKSPACE_VOLUME_UNREACHABLE_MESSAGE,
   );
 }
 

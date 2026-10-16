@@ -202,6 +202,9 @@ describe('workspace_volume', () => {
     const down = await resolveWorkspaceVolume({ sessionId, projectMetadata: FLAG_ON, location: undefined }).catch((e) => e);
     expect(calls).toHaveLength(3);
     expect(String(down.message)).toStartWith('[workspace] ');
+    // Storage that did not answer is retried by the next /start; a refusal (quota) is not.
+    expect(classifySandboxProvisioningFailure(down).transient).toBe(true);
+    expect(classifySandboxProvisioningFailure(quota).transient).toBe(false);
   }, 20_000);
 
   test('the box create mounts the volume in its region and drops the one-time branch restore', () => {
