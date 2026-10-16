@@ -30,6 +30,22 @@
       "unfixableBecause": "The file is merged and immutable, and squawk lints file text -- no follow-up migration can clear a finding in it.",
       "rootCauseFixed": "scripts/generate.ts now prepends the safety header that scripts/create-migration.ts always had, so drizzle-generated migrations no longer start life missing the timeouts. The repo does not write 'Down Migration' sections (see create-migration.ts); this file's was hand-added.",
       "realRisk": "ADD COLUMN with a constant DEFAULT does not rewrite the table on PG11+, but it still takes a brief ACCESS EXCLUSIVE lock. With no lock_timeout that ALTER waits behind any long transaction on credit_accounts and every query queues behind it. This has run on dev; it has NOT run on prod yet."
+    },
+    {
+      "file": "20261015003000003_capture_enrollment.sql",
+      "mergedIn": "#9008",
+      "reason": "Merged with the squawk check red. One finding: the drizzle-generated FK name capture_enrollments_token_id_capture_enrollment_tokens_token_id_fk is 66 bytes, so PostgreSQL truncates it to 63 bytes (identifier-too-long).",
+      "unfixableBecause": "The file is merged and immutable, and squawk lints file text -- no follow-up migration can clear a finding in it.",
+      "rootCauseFixed": "Not fixed. A pull request into dev runs no squawk job, and pnpm test does not run squawk-lint, so a red migration reaches dev unseen and surfaces first on the staging promotion. Run `pnpm migrate:lint:squawk` before merging a migration.",
+      "realRisk": "Cosmetic. The constraint exists as capture_enrollments_token_id_capture_enrollment_tokens_token_id; the drizzle snapshots keep the 66-byte name. No code references the name. A future DROP CONSTRAINT must use the truncated name. The table is new in this release and has not run on staging or prod."
+    },
+    {
+      "file": "20261015003000004_capture_device_first.sql",
+      "mergedIn": "#9008",
+      "reason": "Merged with the squawk check red. Five findings: ALTER COLUMN user_id DROP NOT NULL on kortix.capture_devices, timeline_actions, timeline_audio, timeline_chunks and timeline_frames (ban-drop-not-null x5).",
+      "unfixableBecause": "The file is merged and immutable, and squawk lints file text -- no follow-up migration can clear a finding in it.",
+      "rootCauseFixed": "Not fixed. A pull request into dev runs no squawk job, and pnpm test does not run squawk-lint, so a red migration reaches dev unseen and surfaces first on the staging promotion. Run `pnpm migrate:lint:squawk` before merging a migration.",
+      "realRisk": "None for old clients. The five tables ship with Capture in the same release (no migration for them exists on staging or prod), so no deployed reader assumes user_id is NOT NULL; the file's mixed-version-safe line records this. DROP NOT NULL is a catalog-only change with no rewrite or scan."
     }
   ]
 }
