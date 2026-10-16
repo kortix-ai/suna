@@ -55,13 +55,12 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect(invalidated).toEqual([[...projectTriggersKey('proj-1')], [...projectTriggersKey('proj-1')]]);
   });
 
-  test('a dry run invalidates nothing: it writes no run', () => {
+  test('dryRun is its own mutation and invalidates nothing: it writes no run', () => {
     const result = useProjectTriggers('proj-1') as any;
-    result.fire.onSuccess({ dry_run: true }, { slug: 'nightly', dryRun: true });
-    expect(invalidated).toEqual([]);
+    expect(result.dryRun.onSuccess).toBeUndefined();
   });
 
-  test('fire accepts a bare slug or { slug, payload, dryRun }; replay posts the run', async () => {
+  test('fire takes a slug or { slug, payload }; dryRun sends dry_run; replay posts the run', async () => {
     const sent: { url: string; body: unknown }[] = [];
     globalThis.fetch = mock(async (url: unknown, opts: { body?: string } = {}) => {
       sent.push({ url: String(url), body: opts.body ? JSON.parse(opts.body) : undefined });
@@ -71,13 +70,19 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
 
     const result = useProjectTriggers('proj-1') as any;
     await result.fire.mutationFn('nightly');
-    await result.fire.mutationFn({ slug: 'tickets', payload: { body: { a: 1 } }, dryRun: true });
+    await result.fire.mutationFn({ slug: 'tickets', payload: { body: { a: 1 } } });
+    await result.dryRun.mutationFn({ slug: 'tickets', payload: { body: { a: 1 } } });
+    await result.dryRun.mutationFn('tickets');
     await result.replay.mutationFn({ slug: 'nightly', runId: 'run-1', confirmUnverified: true });
+    await result.replay.mutationFn({ slug: 'nightly', runId: 'run-1' });
 
     expect(sent).toEqual([
       { url: 'http://test.local/projects/proj-1/triggers/nightly/fire', body: {} },
+      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } } } },
       { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } }, dry_run: true } },
+      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { dry_run: true } },
       { url: 'http://test.local/projects/proj-1/triggers/nightly/runs/run-1/replay', body: { confirm_unverified: true } },
+      { url: 'http://test.local/projects/proj-1/triggers/nightly/runs/run-1/replay', body: {} },
     ]);
   });
 
@@ -160,5 +165,28 @@ describe('useTriggerRuns / useProjectTriggerRuns (cursor-paged run history)', ()
   test('a per-trigger run key never collides with the project run key', async () => {
     const { triggerRunsKey, projectTriggerRunsKey } = await import('./use-project-triggers');
     expect(triggerRunsKey('proj-1', 'failed')).not.toEqual(projectTriggerRunsKey('proj-1', 'failed'));
+  });
+});
+
+describe('run hooks take { enabled, refetchInterval } (useReviewItems pattern)', () => {
+  test('defaults: enabled with ids, no polling', async () => {
+    const { useTriggerRuns, useProjectTriggerRuns } = await import('./use-project-triggers');
+    expect((useTriggerRuns('proj-1', 'nightly') as any).refetchInterval).toBe(false);
+    expect((useProjectTriggerRuns('proj-1') as any).refetchInterval).toBe(false);
+  });
+
+  test('enabled: false idles the query; refetchInterval polls', async () => {
+    const { useTriggerRuns, useProjectTriggerRuns } = await import('./use-project-triggers');
+    const off = useTriggerRuns('proj-1', 'nightly', { enabled: false }) as any;
+    const poll = useTriggerRuns('proj-1', 'nightly', { refetchInterval: 3_000 }) as any;
+    expect(off.enabled).toBe(false);
+    expect(poll.enabled).toBe(true);
+    expect(poll.refetchInterval).toBe(3_000);
+    const pOff = useProjectTriggerRuns('proj-1', { status: 'failed' }, { enabled: false }) as any;
+    const pPoll = useProjectTriggerRuns('proj-1', undefined, { refetchInterval: 3_000 }) as any;
+    expect(pOff.enabled).toBe(false);
+    expect(pPoll.refetchInterval).toBe(3_000);
+    // enabled: true never overrides a missing id.
+    expect((useTriggerRuns('proj-1', null, { enabled: true }) as any).enabled).toBe(false);
   });
 });

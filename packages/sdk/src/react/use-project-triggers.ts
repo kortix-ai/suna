@@ -12,11 +12,8 @@ import {
   listTriggerRuns,
   replayTriggerRun,
   updateProjectTrigger,
-  type FireProjectTriggerOptions,
-  type ProjectTriggerDryRunResult,
   type ProjectTriggerRunList,
   type ProjectTriggerRunStatus,
-  type FireProjectTriggerResponse,
   type ProjectTriggerEventApps,
   type ProjectTriggerEventTypes,
   type ProjectTriggerListing,
@@ -68,29 +65,31 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   });
 
   // A real fire or a replay writes a run and moves `last_*`; the run lists sit
-  // under the same key, so one invalidation refreshes both. A dry run writes nothing.
+  // under the same key, so one invalidation refreshes both (and, as a side
+  // effect, the event-types/apps entries nested there too).
   const fire = useMutation({
-    mutationFn: (args: string | ({ slug: string } & FireProjectTriggerOptions)) => {
-      if (typeof args === 'string') return fireProjectTrigger(projectId as string, args, undefined);
-      const { slug, ...options } = args;
-      return fireProjectTrigger(projectId as string, slug, options) as Promise<
-        FireProjectTriggerResponse | ProjectTriggerDryRunResult
-      >;
-    },
-    onSuccess: (data: FireProjectTriggerResponse | ProjectTriggerDryRunResult) => {
-      if (!('dry_run' in data && data.dry_run)) void invalidate();
-    },
+    mutationFn: (args: string | { slug: string; payload?: Record<string, unknown> }) =>
+      typeof args === 'string'
+        ? fireProjectTrigger(projectId as string, args, undefined)
+        : fireProjectTrigger(projectId as string, args.slug, { payload: args.payload }),
+    onSuccess: invalidate,
+  });
+
+  // A dry run writes nothing, so it invalidates nothing.
+  const dryRun = useMutation({
+    mutationFn: (args: string | { slug: string; payload?: Record<string, unknown> }) =>
+      typeof args === 'string'
+        ? fireProjectTrigger(projectId as string, args, { dryRun: true })
+        : fireProjectTrigger(projectId as string, args.slug, { payload: args.payload, dryRun: true }),
   });
 
   const replay = useMutation({
     mutationFn: (args: { slug: string; runId: string; confirmUnverified?: boolean }) =>
-      replayTriggerRun(projectId as string, args.slug, args.runId, {
-        ...(args.confirmUnverified ? { confirmUnverified: true } : {}),
-      }),
+      replayTriggerRun(projectId as string, args.slug, args.runId, { confirmUnverified: args.confirmUnverified }),
     onSuccess: invalidate,
   });
 
-  return { ...query, create, update, remove, fire, replay };
+  return { ...query, create, update, remove, fire, dryRun, replay };
 }
 
 /** A connector slug, or an app with no connector. Slugs hold no `:`, so the two never share a key. */
@@ -139,6 +138,12 @@ export const projectTriggerRunsKey = (
   status?: ProjectTriggerRunStatus | null,
 ) => qk.project.projectTriggerRuns(projectId ?? '', status);
 
+/** Query options of the run hooks. Pass `refetchInterval` to poll while a run is queued or running. */
+export interface TriggerRunsQueryOptions {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}
+
 const nextRunsCursor = (page: ProjectTriggerRunList) => page.next_cursor ?? undefined;
 
 /**
@@ -146,29 +151,36 @@ const nextRunsCursor = (page: ProjectTriggerRunList) => page.next_cursor ?? unde
  * (`fetchNextPage` / `hasNextPage`). A page can be short while more exist.
  * Idle until both ids are set. `useProjectTriggers().fire` / `.replay` refresh it.
  */
-export function useTriggerRuns(projectId: string | null | undefined, slug: string | null | undefined) {
+export function useTriggerRuns(
+  projectId: string | null | undefined,
+  slug: string | null | undefined,
+  options?: TriggerRunsQueryOptions,
+) {
   return useInfiniteQuery({
     queryKey: triggerRunsKey(projectId, slug),
     queryFn: ({ pageParam }) => listTriggerRuns(projectId as string, slug as string, { cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextRunsCursor,
-    enabled: !!projectId && !!slug,
+    enabled: !!projectId && !!slug && options?.enabled !== false,
     ...contract('volatile'),
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 
 /** Every trigger run of the project, newest first, optionally one `status`. Same paging as {@link useTriggerRuns}. */
 export function useProjectTriggerRuns(
   projectId: string | null | undefined,
-  options?: { status?: ProjectTriggerRunStatus | null },
+  filter?: { status?: ProjectTriggerRunStatus | null },
+  options?: TriggerRunsQueryOptions,
 ) {
-  const status = options?.status ?? undefined;
+  const status = filter?.status ?? undefined;
   return useInfiniteQuery({
     queryKey: projectTriggerRunsKey(projectId, status),
     queryFn: ({ pageParam }) => listProjectTriggerRuns(projectId as string, { status, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextRunsCursor,
-    enabled: !!projectId,
+    enabled: !!projectId && options?.enabled !== false,
     ...contract('volatile'),
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }

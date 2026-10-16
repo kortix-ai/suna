@@ -34,7 +34,14 @@ export function bindProjectOperationsAdmin(projectId: string) {
       fire: ((slug: string, options?: P.FireProjectTriggerOptions) =>
         P.fireProjectTrigger(projectId, slug, options)) as {
         (slug: string, options: P.FireProjectTriggerOptions & { dryRun: true }): Promise<P.ProjectTriggerDryRunResult>;
-        (slug: string, options?: P.FireProjectTriggerOptions): Promise<P.FireProjectTriggerResponse>;
+        (
+          slug: string,
+          options?: P.FireProjectTriggerOptions & { dryRun?: false },
+        ): Promise<P.FireProjectTriggerResponse>;
+        (
+          slug: string,
+          options?: P.FireProjectTriggerOptions,
+        ): Promise<P.FireProjectTriggerResponse | P.ProjectTriggerDryRunResult>;
       },
       /** One trigger's runs, newest first — see `listTriggerRuns`. */
       runs: (...a: DropFirst<Parameters<typeof P.listTriggerRuns>>) => P.listTriggerRuns(projectId, ...a),

@@ -2908,6 +2908,7 @@
     "ToolListItem",
     "ToolUsage",
     "TranslationResponse",
+    "TriggerRunsQueryOptions",
     "TunnelAuditLog",
     "TunnelConnection",
     "TunnelConnectionCreateResponse",

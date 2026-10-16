@@ -453,8 +453,13 @@ export async function fireProjectTrigger(
 export async function fireProjectTrigger(
   projectId: string,
   slug: string,
-  options?: FireProjectTriggerOptions,
+  options?: FireProjectTriggerOptions & { dryRun?: false },
 ): Promise<FireProjectTriggerResponse>;
+export async function fireProjectTrigger(
+  projectId: string,
+  slug: string,
+  options?: FireProjectTriggerOptions,
+): Promise<FireProjectTriggerResponse | ProjectTriggerDryRunResult>;
 export async function fireProjectTrigger(projectId: string, slug: string, options?: FireProjectTriggerOptions) {
   const body: { payload?: Record<string, unknown>; dry_run?: boolean } = {};
   if (options?.payload !== undefined) body.payload = options.payload;
