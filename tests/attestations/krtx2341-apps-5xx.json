@@ -1,0 +1,18 @@
+{
+  "source_hash": "dfb75ef8b718788e956a15ef2116b299965d19b5c104038b449244105060c7b3",
+  "diff_files": [
+    "apps/api/src/apps/access-grants-memo.test.ts",
+    "apps/api/src/apps/access.ts",
+    "apps/api/src/connectors/share-subject-memo.test.ts",
+    "apps/api/src/connectors/share.ts"
+  ],
+  "diff_hash": "7a49d26fce7f694b2fce1fc9fc5d032d49a35d47045b20dc16f99d53bd88c2e8",
+  "head": "487bffaf3d1a707b874a0cac3590497fb7049800",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T05:17:38.222Z"
+}
