@@ -12,9 +12,7 @@ const fullyConfigured: NodeJS.ProcessEnv = {
   E2E_REQUIRE_ALL_BROWSER: '1',
   KE2E_DATABASE_URL: 'postgres://staging',
   E2E_ENABLE_BILLING_JOURNEY: '1',
-  E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
   E2E_ENABLE_SDK_ONLY_SESSION: '1',
-  E2E_OAUTH_PROVIDER_INITIATION: '1',
 };
 
 describe('strict browser lane detection', () => {
@@ -60,22 +58,7 @@ describe('up-front browser capability assertion', () => {
 
   it('lists every missing capability in one message instead of failing on the first', async () => {
     await expect(assertBrowserLaneCapabilities({ E2E_REQUIRE_ALL_BROWSER: '1' }, emailDown))
-      .rejects.toThrow(/6 capability/);
-  });
-
-  it('excuses OAuth only where the strict reporter also excuses it', async () => {
-    const { E2E_OAUTH_PROVIDER_INITIATION: _drop, ...withoutOauth } = fullyConfigured;
-    // Preview: local-runner sets the toggle to 0 and authorises the exclusion.
-    await expect(
-      assertBrowserLaneCapabilities(
-        { ...withoutOauth, E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' },
-        emailUp,
-      ),
-    ).resolves.toBeUndefined();
-    // Staging: no such authorisation, so spec 17 must really run.
-    await expect(
-      assertBrowserLaneCapabilities(withoutOauth, emailUp),
-    ).rejects.toThrow('E2E_OAUTH_PROVIDER_INITIATION=1');
+      .rejects.toThrow(/4 capability/);
   });
 
   it('covers every runtime-skipped capability the strict reporter would fail on', () => {
@@ -84,9 +67,7 @@ describe('up-front browser capability assertion', () => {
       'KE2E_DATABASE_URL',
       'email provider',
       'E2E_ENABLE_BILLING_JOURNEY=1',
-      'E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1',
       'E2E_ENABLE_SDK_ONLY_SESSION=1',
-      'E2E_OAUTH_PROVIDER_INITIATION=1',
     ]);
   });
 });

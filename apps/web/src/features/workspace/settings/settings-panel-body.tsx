@@ -145,8 +145,7 @@ export interface SettingsTabAllowedParams {
  * `allowed: false, isLoading: true`, and `SettingsPanel` bounces an open
  * dialog to `DEFAULT_SETTINGS_TAB` the moment its active tab is not in the
  * rail — so a deep link to `/settings/sandbox` read as `allowed === true`
- * landed on Profile every time, before the answer could arrive
- * (`12-sandbox-templates.spec.ts`, `19-feature-flags-ui.spec.ts` in CI).
+ * landed on Profile every time, before the answer could arrive.
  * Pinned by `settings-panel.test.tsx`.
  */
 export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | undefined): boolean {

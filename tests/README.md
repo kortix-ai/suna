@@ -572,11 +572,26 @@ that asks creates it again.
 Playwright exists only for behavior that requires a browser. Browser tests live
 in `tests/e2e/specs`. API-only behavior belongs in a REST flow.
 
-The browser suite does not repeat every REST contract. It covers selected
-browser-visible journeys. REST flows remain authoritative for complete API and
-CLI contracts. The browser suite does not claim complete customer-journey
-coverage. A browser journey is incomplete when it skips for a missing provider,
-OAuth, or mutation capability; report that skip explicitly.
+The browser suite covers the money path only: the journeys a paying user
+cannot work around when they break. Since 2026-10-16 it has 9 spec files:
+
+| Spec | Money-path step |
+| --- | --- |
+| `01-account-auth` | Sign up from the delivered email, sign out, sign in again. |
+| `37-new-user-lands-on-projects` | A new user lands on the project selector. |
+| `free-tier-pricing-onboarding` | The pricing page (`@target-smoke`). |
+| `10-billing-journey` | Checkout, credits, billing portal (deployed only: needs Stripe). |
+| `34-instant-session-loads` | A session opens instantly from its saved copy. |
+| `27-desktop-parity` | Send, steer and queue a prompt; the web and desktop gate. |
+| `13-sdk-only-session` | A real sandbox streams a real prompt (deployed, `@quarantine`). |
+| `49-connector-connect-landing` | Connect a connector and land on its page. |
+| `45-invite-lands-in-invited-project` | Accept a project invite and land in the project. |
+
+Every other browser-visible behavior belongs in a component test in its app or
+in a REST flow. Add a spec only for a new money-path step, and delete one when
+its step leaves the money path. REST flows remain authoritative for complete
+API and CLI contracts. A browser journey is incomplete when it skips for a
+missing provider, OAuth, or mutation capability; report that skip explicitly.
 
 Local browser runs use two Playwright workers. Four workers make cold Next.js
 route compilation slower and can exceed the five-minute journey timeout.
@@ -591,11 +606,6 @@ pnpm test -- --browser-only
 The lane writes its Playwright HTML report to
 `tests/test-results/html/index.html`. CI includes that directory in the browser
 artifact.
-
-The regular browser lane excludes provider-mutating journeys. Set
-`E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1` only for the dedicated sandbox-template
-journey. That journey creates and deletes its own product snapshot. The
-Platinum CI worker remains a separate infrastructure sandbox.
 
 ### Tag filters
 
@@ -763,7 +773,7 @@ contracts moved into the canonical lanes before deletion.
 
 | Retired path | Canonical disposition |
 | --- | --- |
-| `tests/accessibility` | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`. |
+| `tests/accessibility` | Removed. The axe journey was cut with the 2026-10-16 money-path reset. |
 | `tests/pentest` | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`. |
 | `tests/migration` shell runner | The disposable-Postgres contracts run in the `db-suites` lane of `pnpm test`. |
 | `tests/e2e/specs/10-production-*` | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |

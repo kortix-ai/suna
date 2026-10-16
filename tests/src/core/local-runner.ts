@@ -284,13 +284,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     env: {
       E2E_BROWSER_WORKERS: process.env.E2E_BROWSER_WORKERS ?? '2',
       E2E_ENABLE_SDK_ONLY_SESSION: '1',
-      E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-      E2E_OAUTH_PROVIDER_INITIATION: process.env.KE2E_TARGET === 'preview' ? '0' : '1',
       E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
-      ...(process.env.KE2E_TARGET === 'preview'
-        ? { E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' }
-        : {}),
     },
   };
 
