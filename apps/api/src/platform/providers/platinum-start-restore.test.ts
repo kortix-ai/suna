@@ -7,7 +7,7 @@
 // with start_timeout. Worse, the client's 20 s default timeout abandoned the
 // /start before even that 202 arrived. Each case below scripts a fake Platinum
 // and asserts the exact conversation start() holds with it.
-import { afterEach, beforeEach, expect, mock, setSystemTime, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from 'bun:test';
 import { RUNTIME_RESTART_LEASE_MS } from '../../projects/session-lifecycle/runtime-restart-fence';
 import {
   RUNTIME_WAKE_HARD_MS,
@@ -36,8 +36,12 @@ let gets: Reply[] = [];
 let events: string[] = [];
 /** Fake time each GET costs, for the budget case. */
 let getAdvancesMs = 0;
+let sleep: ReturnType<typeof spyOn>;
 
 beforeEach(() => {
+  // The poll and backoff sleeps (250 ms to 2 s) cost no wall time here: only the
+  // scripted GETs move the clock (getAdvancesMs), so every deadline still holds.
+  sleep = spyOn(Bun, 'sleep').mockImplementation(async () => {});
   events = [];
   getAdvancesMs = 0;
   let startCalls = 0;
@@ -63,7 +67,10 @@ beforeEach(() => {
     });
   }) as unknown as typeof fetch;
 });
-afterEach(() => setSystemTime());
+afterEach(() => {
+  sleep.mockRestore();
+  setSystemTime();
+});
 
 const provider = async () => new (await import('./platinum')).PlatinumProvider();
 const ok = (state: string) => ({ status: 200, state });
