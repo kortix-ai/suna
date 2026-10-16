@@ -15,6 +15,7 @@ import { BillingError } from '../../errors';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { resolveBillingWriteAccountId } from '../http-require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
 
@@ -76,7 +77,7 @@ paymentsRouter.openapi(
       accountId,
       amountDollars: String(amount),
       status: 'pending',
-      description: `$${amount} credit purchase`,
+      description: `Credit purchase: ${formatUsdAsCredits(amount)} credits ($${amount})`,
       provider: 'stripe',
     });
 

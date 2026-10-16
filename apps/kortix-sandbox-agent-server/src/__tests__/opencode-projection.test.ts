@@ -90,6 +90,32 @@ describe('projectCommands', () => {
       template_bytes: template.length,
     })
     expect(JSON.stringify(projected)).not.toContain('# Init')
+    // v1/v2: no `agents`, so every agent shows every command.
+    expect(projected[0]).not.toHaveProperty('agents')
+  })
+
+  test('kortix.yaml v3: only the compiled commands, each with the agents that enable it', () => {
+    const projected = projectCommands(
+      [
+        { name: 'weekly', description: 'Weekly summary', source: 'command', hints: ['$ARGUMENTS'], template: 'Summarize $ARGUMENTS' },
+        { name: 'init', description: 'guided AGENTS.md setup', source: 'command', template: 'x' },
+        { name: 'research', description: 'a skill', source: 'skill', template: 'y' },
+      ],
+      { weekly: { template: 'Summarize $ARGUMENTS', agents: ['lead', 'helper'] } },
+    )
+    expect(projected).toEqual([
+      {
+        name: 'weekly',
+        description: 'Weekly summary',
+        agent: null,
+        model: null,
+        source: 'command',
+        subtask: null,
+        hints: ['$ARGUMENTS'],
+        template_bytes: 'Summarize $ARGUMENTS'.length,
+        agents: ['lead', 'helper'],
+      },
+    ])
   })
 })
 

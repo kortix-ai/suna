@@ -100,7 +100,13 @@ export function registerGatewayKeysRoutes(): void {
         name,
         createdBy: c.get('userId'),
       });
-      return c.json(created);
+      return c.json({
+        ...created,
+        // Same env-correct host as the GET: a freshly minted key is shown with
+        // the URL to use it against, so `keys new` can state the endpoint
+        // without a second round-trip (KRTX-1750).
+        gateway_url: publicGatewayBaseUrl(config.LLM_GATEWAY_BASE_URL),
+      });
     },
   );
 

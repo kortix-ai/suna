@@ -71,7 +71,7 @@ export function createGenuiParser(version: number = GENUI_SCHEMA_VERSION): Genui
     if (unsupported > 0) {
       issues.push({ code: 'unsupported-statement', message: `${unsupported} Query/Mutation/state statement(s) ignored` });
     }
-    if (!streaming && !shared.root) issues.push({ code: 'no-root', message: 'The block has no valid root Stack' });
+    if (!streaming && !shared.root) issues.push({ code: 'no-root', message: 'The block has no valid root block' });
     // The cap never drops the cut-off issue: the settled cut-off note depends on it.
     const capped = issues.slice(0, MAX_ISSUES);
     const cutOff = issues.find((issue) => issue.code === 'cut-off');

@@ -146,7 +146,7 @@ const CustomizeSectionWrapper = ({
             max-w-2xl"). This wrapper carried `max-w-3xl` until 2026-08-12, so
             Secrets / Channels / Schedules / Webhooks / Voice / Upgrades sat
             96px wider than General and the column jumped on every tab switch —
-            even though `capability-page-shell.tsx` and `slack-connect-cover.tsx`
+            even though `capability-page-shell.tsx`
             already documented this wrapper as being `max-w-2xl`. A surface that
             genuinely needs more room overrides via `className` (twMerge keeps
             the caller's `max-w-*`), the way `apps-view.tsx` takes `max-w-5xl`

@@ -1171,8 +1171,8 @@
     "contactSales": "Contact sales",
     "upgradeTo": "Upgrade to {{plan}}",
     "switchTo": "Switch to {{plan}}",
-    "trialLabel_one": "{{plan}} trial · {{count}} day left",
-    "trialLabel_other": "{{plan}} trial · {{count}} days left"
+    "enterpriseDemoLabel": "{{plan}} · Enterprise demo",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1206,6 +1206,7 @@
   },
   "genui": {
     "chartTapHint": "Tap to read a value",
+    "checklistReady": "{{done}}/{{total}} ready",
     "map": "Map",
     "mapUnavailable": "Map unavailable",
     "openImage": "Open image",

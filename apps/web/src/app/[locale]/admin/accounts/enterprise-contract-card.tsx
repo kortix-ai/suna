@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useSetEnterpriseDemo } from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useAdminCreateEnterpriseContract,
   useAdminEndEnterpriseContract,
@@ -61,12 +63,6 @@ function day(value: string | null | undefined): string {
   });
 }
 
-function daysLeft(endsAt: string | null | undefined): number | null {
-  if (!endsAt) return null;
-  const ms = new Date(endsAt).getTime() - Date.now();
-  return Number.isFinite(ms) ? Math.max(0, Math.ceil(ms / 86_400_000)) : null;
-}
-
 function errorMessage(error: unknown, t: UiTranslator): string {
   return error instanceof Error ? error.message : t.raw('textada37a724fca');
 }
@@ -84,37 +80,30 @@ function statusVariant(status: string): React.ComponentProps<typeof Badge>['vari
   }
 }
 
+/** The account's Enterprise state. The list row sends it; an older API omits it. */
+type EnterpriseState = NonNullable<AdminAccount['enterprise']>;
+
+function enterpriseStateOf(account: AdminAccount): EnterpriseState {
+  return account.enterprise ?? 'off';
+}
+
 /**
- * One line of plan state for the list and the sheet header: Trial (with days
- * left), or Enterprise with or without a contract. Renders nothing otherwise.
- * `graceEndsAt` adds the SSO grace date.
+ * One line of Enterprise state for the list and the sheet header: Demo or
+ * Licensed, and the SSO grace date after a license ended. Renders nothing for
+ * an account with neither.
  */
 export function AccountPlanState({ account }: { account: AdminAccount }) {
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
-  const trialActive = account.trial?.status === 'active';
-  const left = trialActive ? daysLeft(account.trial.endsAt) : null;
-  const isEnterprise = account.plan?.family === 'enterprise';
-  const parts: { text: string; warn?: boolean }[] = [];
-  if (trialActive) {
-    parts.push({
-      text: left === null ? t.raw('textff4cb98d0f5b') : t('textb548e5b86366', { count: left }),
-    });
-  } else if (isEnterprise) {
-    parts.push(
-      account.contract
-        ? { text: t.raw('text7b8fe4e0671f') }
-        : { text: t.raw('textc541530e56d2'), warn: true },
-    );
-  }
-  if (account.graceEndsAt)
-    parts.push({ text: t('text06bdc1c507f1', { date: day(account.graceEndsAt) }) });
+  const enterprise = enterpriseStateOf(account);
+  const parts: string[] = [];
+  if (enterprise === 'demo') parts.push(t.raw('textd6ea513221b7'));
+  if (enterprise === 'licensed') parts.push(t.raw('text5a22403ec082'));
+  if (account.graceEndsAt) parts.push(t('text06bdc1c507f1', { date: day(account.graceEndsAt) }));
   if (parts.length === 0) return null;
   return (
-    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
-      {parts.map((p) => (
-        <span key={p.text} className={p.warn ? 'text-kortix-red' : 'text-muted-foreground'}>
-          {p.text}
-        </span>
+    <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
+      {parts.map((text) => (
+        <span key={text}>{text}</span>
       ))}
     </div>
   );
@@ -132,9 +121,8 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
 function ContractFacts({ contract }: { contract: AdminEnterpriseContract }) {
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <div className="border-border divide-border grid grid-cols-2 divide-x divide-y rounded-md border sm:grid-cols-4 sm:divide-y-0">
+    <div className="border-border divide-border grid grid-cols-1 divide-y rounded-md border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
       <Fact label={t.raw('text73035f159d4d')} value={usd.format(contract.licenseUsd)} />
-      <Fact label={t.raw('text18fb4df54831')} value={usd.format(contract.creditsUsd)} />
       <Fact label={t.raw('text7b790708ff1b')} value={collectionLabel(t, contract.collection)} />
       <Fact
         label={t.raw('textc6f3bfd45614')}
@@ -154,8 +142,9 @@ function ContractFacts({ contract }: { contract: AdminEnterpriseContract }) {
 }
 
 /**
- * The only way onto Enterprise: an active contract, an open offer, and a form
- * to create the next one. All writes go through the SDK contract hooks.
+ * Enterprise for one account: its state (off, demo or licensed), the demo
+ * switch, the active license, an open offer, and a form to create the next
+ * license. A license carries no credits. All writes go through SDK hooks.
  */
 export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -166,34 +155,24 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
   const withdraw = useAdminWithdrawEnterpriseOffer();
   const offerLink = useAdminEnterpriseOfferLink();
 
+  const queryClient = useQueryClient();
+  const setDemo = useSetEnterpriseDemo();
+  const enterprise = enterpriseStateOf(account);
+
   const [license, setLicense] = useState('');
-  const [credits, setCredits] = useState('');
   const [termMonths, setTermMonths] = useState('12');
-  const [collection, setCollection] = useState<AdminContractCollection>('checkout');
+  const [collection, setCollection] = useState<AdminContractCollection>('invoice');
   const [note, setNote] = useState('');
   const [confirmEnd, setConfirmEnd] = useState(false);
 
   const contracts = contractsQuery.data?.contracts ?? [];
   const active = contracts.find((c) => c.status === 'active') ?? null;
   const offer = contracts.find((c) => c.status === 'offered') ?? null;
-  const noContract =
-    account.plan?.family === 'enterprise' &&
-    !account.contract &&
-    !active &&
-    !contractsQuery.isLoading;
 
   const licenseUsd = Number(license);
-  const creditsUsd = Number(credits);
   const term = Number(termMonths);
   const maxTerm = collection === 'manual' ? MAX_TERM_MONTHS_MANUAL : MAX_TERM_MONTHS_STRIPE;
-  const amountsValid =
-    license.trim() !== '' &&
-    credits.trim() !== '' &&
-    Number.isFinite(licenseUsd) &&
-    Number.isFinite(creditsUsd) &&
-    licenseUsd >= 0 &&
-    creditsUsd >= 0 &&
-    licenseUsd + creditsUsd > 0;
+  const amountsValid = license.trim() !== '' && Number.isFinite(licenseUsd) && licenseUsd > 0;
   const termValid = Number.isInteger(term) && term >= 1 && term <= maxTerm;
   const blockedReason = offer
     ? t.raw('text02b242fd11cd')
@@ -208,7 +187,7 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
       await create.mutateAsync({
         accountId,
         licenseUsd,
-        creditsUsd,
+        // The API ignores it: a license carries no credits.
         termMonths: term,
         collection,
         note: note.trim() === '' ? undefined : note.trim(),
@@ -217,16 +196,28 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
         collection === 'checkout' ? t.raw('textaf5ea967932c') : t.raw('text4dd5a8e422e2');
       successToast(title, {
         description: t('textef57f290a967', {
-          amount: usd.format(licenseUsd + creditsUsd),
+          amount: usd.format(licenseUsd),
           collection: collectionLabel(t, collection),
         }),
       });
       setLicense('');
-      setCredits('');
       setNote('');
     } catch (error) {
       errorToast(t.raw('text8efbc35160bd'), { description: errorMessage(error, t) });
     }
+  }
+
+  function handleDemo(enabled: boolean) {
+    setDemo.mutate(
+      { accountId, enabled },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['admin', 'accounts'] });
+          successToast(enabled ? t.raw('text431a97929d7e') : t.raw('text139479653231'));
+        },
+        onError: (error) => errorToast(t.raw('text111b159de1cc'), { description: errorMessage(error, t) }),
+      },
+    );
   }
 
   async function handleCopyLink() {
@@ -263,19 +254,42 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
     <div className="border-border bg-popover space-y-4 rounded-md border p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-foreground text-sm font-medium">{t.raw('textf0a0fbab394c')}</div>
+          <div className="text-foreground text-sm font-medium">{t.raw('text3fbe5ed156f1')}</div>
           <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">
-            {t.raw('text11a9e1a996bf')}
+            {t.raw('textc3371113b9c5')}
           </p>
         </div>
-        {noContract && (
-          <Badge variant="warning" size="sm">
-            {t.raw('textca07a25001d5')}
-          </Badge>
-        )}
+        <Badge
+          variant={enterprise === 'licensed' ? 'success' : enterprise === 'demo' ? 'info' : 'muted'}
+          size="sm"
+        >
+          {enterprise === 'licensed'
+            ? t.raw('text87feb882165d')
+            : enterprise === 'demo'
+              ? t.raw('text8a2cc0673b1c')
+              : t.raw('textca7981b46ecf')}
+        </Badge>
       </div>
 
-      {noContract && <p className="text-muted-foreground text-xs">{t.raw('text92d5400d0696')}</p>}
+      {/* The self-serve demo: an operator withdraws or grants it. A license
+          already turns every feature on, so there is no switch then. */}
+      {enterprise !== 'licensed' && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-muted-foreground text-xs">
+            {enterprise === 'demo' ? t.raw('text125c03898a7c') : t.raw('textefcb797dc60f')}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => handleDemo(enterprise !== 'demo')}
+            disabled={setDemo.isPending}
+          >
+            {setDemo.isPending && <Loading className="h-3.5 w-3.5" />}
+            {enterprise === 'demo' ? t.raw('text17b21758b477') : t.raw('texta7d2d086e1ae')}
+          </Button>
+        </div>
+      )}
 
       {contractsQuery.error && (
         <p className="text-kortix-red text-xs">{contractsQuery.error.message}</p>
@@ -348,7 +362,7 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
 
       <div className="border-border space-y-3 border-t pt-4">
         <div className="text-foreground text-sm font-medium">{t.raw('text68a61092dbb3')}</div>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           <div className="space-y-1">
             <label className="text-muted-foreground text-xs">{t.raw('textd4264846a915')}</label>
             <Input
@@ -358,17 +372,6 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
               value={license}
               onChange={(e) => setLicense(e.target.value)}
               placeholder="40000"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-muted-foreground text-xs">{t.raw('text0bdfcd344cbd')}</label>
-            <Input
-              type="number"
-              min={0}
-              step={1}
-              value={credits}
-              onChange={(e) => setCredits(e.target.value)}
-              placeholder="10000"
             />
           </div>
           <div className="space-y-1">
@@ -423,7 +426,7 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
                 ? 'textd4a1b2d64d7f'
                 : 'text8f55a25f086f',
             {
-              amount: usd.format((amountsValid ? licenseUsd : 0) + (amountsValid ? creditsUsd : 0)),
+              amount: usd.format(amountsValid ? licenseUsd : 0),
               total: (chunks) => (
                 <span className="text-foreground font-medium tabular-nums">{chunks}</span>
               ),
@@ -450,12 +453,7 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
                   <Badge variant={statusVariant(c.status)} size="xs">
                     {c.status}
                   </Badge>
-                  <span className="tabular-nums">
-                    {t('text1941d06dca25', {
-                      license: usd.format(c.licenseUsd),
-                      credits: usd.format(c.creditsUsd),
-                    })}
-                  </span>
+                  <span className="tabular-nums">{usd.format(c.licenseUsd)}</span>
                   <span className="text-muted-foreground">{collectionLabel(t, c.collection)}</span>
                 </div>
                 <span className="text-muted-foreground">

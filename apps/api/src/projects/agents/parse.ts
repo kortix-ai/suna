@@ -149,7 +149,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
   const defaultAgent =
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
 
-  return { specs, errors, defaultAgent };
+  return { specs, errors, defaultAgent, schemaVersion: manifest.schemaVersion };
 }
 
 /**

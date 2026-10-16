@@ -4,6 +4,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '@/components/ui/sidebar';
 import messages from '../../../../../translations/en.json';
+import {
+  manifestNeedsUpgrade,
+  type ManifestVersion,
+} from '@/features/workspace/customize/migrate-to-v3';
 import { ProjectManifestUpgradeAlertView } from './project-manifest-upgrade-alert';
 
 // The view renders sidebar primitives (SidebarMenuItem/Button), so every case
@@ -30,23 +34,32 @@ function render(props: {
   );
 }
 
-describe('ProjectManifestUpgradeAlertView — v1/v2 visibility', () => {
-  test('shows the collapsed "Upgrade to v2" trigger when visible', () => {
-    const html = render({ visible: true, pending: false, onMigrate: () => {} });
-    expect(html).toContain('Upgrade to v2');
+describe('ProjectManifestUpgradeAlertView — pre-v3 visibility', () => {
+  test('a v1 and a v2 project need the upgrade; a v3 project and an unresolved read do not', () => {
+    expect([1, 2, 3, null].map((version) => manifestNeedsUpgrade(version as ManifestVersion | null))).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
   });
 
-  test('renders nothing at all once the project is on v2 (or the viewer cannot act)', () => {
+  test('shows the collapsed "Upgrade to v3" trigger when visible', () => {
+    const html = render({ visible: true, pending: false, onMigrate: () => {} });
+    expect(html).toContain('Upgrade to v3');
+  });
+
+  test('renders nothing at all once the project is on v3 (or the viewer cannot act)', () => {
     const html = render({ visible: false, pending: false, onMigrate: () => {} });
-    expect(html).not.toContain('Upgrade to v2');
+    expect(html).not.toContain('Upgrade to v3');
     expect(html).not.toContain('sidebar-menu-item');
   });
 
-  test('expanded body explains the v1→v2 migration and offers the action', () => {
+  test('expanded body explains the upgrade to kortix.yaml version 3 and offers the action', () => {
     const html = render({ visible: true, pending: false, onMigrate: () => {}, defaultOpen: true });
     expect(html).toContain('Start upgrade');
-    expect(html).toContain('kortix.toml');
     expect(html).toContain('kortix.yaml');
+    expect(html).toContain('version 3');
     // The row promises nothing happens without review — the reassurance IS the
     // reason someone clicks a migration they did not ask for.
     expect(html).toContain('Nothing changes until you approve it');

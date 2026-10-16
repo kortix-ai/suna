@@ -46,6 +46,8 @@ export interface PlanRecord {
     /** True iff the tier's `models` list includes 'all' (tierGrantsAllModels). */
     managedModels: boolean;
     canPurchaseCredits: boolean;
+    /** The BYOK platform fee applies (byok-fee.ts). Off on Enterprise. */
+    byokFee: boolean;
   };
   limits: {
     /**
@@ -81,7 +83,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'non_plan',
     shape: 'none',
     rank: 0,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'No Plan',
   },
@@ -94,7 +96,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'current',
     shape: 'none',
     rank: 1,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'Free',
   },
@@ -105,7 +107,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'current',
     shape: 'credits',
     rank: 2,
-    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true },
+    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 12 },
     displayName: 'Credits',
   },
@@ -125,6 +127,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       branding: true,
       managedModels: true,
       canPurchaseCredits: true,
+      byokFee: false,
     },
     limits: { llmRateMultiplier: 12 },
     displayName: 'Enterprise',

@@ -64,3 +64,16 @@ describe('isLaunchableAgentName', () => {
     expect(isLaunchableAgentName('', governed)).toBe(false);
   });
 });
+
+describe('isLaunchableAgentName on kortix_version 3', () => {
+  const v3: LoadedAgents = { ...governed, schemaVersion: 3 };
+
+  test("OpenCode's build/plan/general/explore are not launchable unless declared", () => {
+    for (const name of ['build', 'plan', 'general', 'explore']) expect(isLaunchableAgentName(name, v3)).toBe(false);
+    expect(isLaunchableAgentName('plan', { ...v3, specs: [...v3.specs, spec('plan')] })).toBe(true);
+  });
+
+  test('the runtime-internal agents and the default sentinel stay launchable', () => {
+    for (const name of ['compaction', 'summary', 'title', 'default']) expect(isLaunchableAgentName(name, v3)).toBe(true);
+  });
+});

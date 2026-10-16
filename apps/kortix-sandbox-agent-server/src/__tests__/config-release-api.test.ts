@@ -71,7 +71,7 @@ describe('fetchConfigReleaseDescriptor', () => {
     const last = api.descriptorRequests.at(-1)!
     expect(last.path).toBe('/v1/projects/proj-1/sessions/ses-1/config-release')
     expect(last.authorization).toBe('Bearer tok')
-    expect(last.body).toEqual({ accept: ['config-release-v3'] })
+    expect(last.body).toEqual({ accept: ['config-release-v3'], capabilities: ['agent-config.env-gz.v1'] })
   })
 
   test('accepts an API URL without the /v1 suffix', async () => {

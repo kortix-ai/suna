@@ -41,6 +41,13 @@ function parse(input: string, format: 'toml' | 'yaml'): unknown {
   return format === 'yaml' ? parseYaml(input) : parseToml(input);
 }
 
+import { GOLDEN_V3 } from './fixtures/golden-v3.ts';
+
+function swapV3(from: string, to: string): string {
+  if (!GOLDEN_V3.includes(from)) throw new Error(`golden v3 manifest has no "${from}"`);
+  return GOLDEN_V3.replace(from, to);
+}
+
 interface Fixture {
   name: string;
   format: 'toml' | 'yaml';
@@ -1088,6 +1095,102 @@ connectors:
     format: 'yaml',
     valid: false,
     input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    prompt: [bad]\n',
+  },
+  {
+    name: 'v3: the golden manifest',
+    format: 'yaml',
+    valid: true,
+    input: GOLDEN_V3,
+  },
+  {
+    name: 'v3: harnesses rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('default_agent: assistant\n', 'default_agent: assistant\nharnesses:\n  pi:\n    codemode: on\n'),
+  },
+  {
+    name: 'v3: top-level permission rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('default_agent: assistant\n', 'default_agent: assistant\npermission: allow\n'),
+  },
+  {
+    name: 'v3: an unknown top-level key rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('default_agent: assistant\n', 'default_agent: assistant\nagentz: {}\n'),
+  },
+  {
+    name: 'v3: a kortix- project skill rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('pdf: skills/pdf', 'kortix-pdf: skills/kortix-pdf'),
+  },
+  {
+    name: 'v3: kortix:<name> tool value rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('lookup_order: tools/lookup_order.ts', 'lookup_order: kortix:web_search'),
+  },
+  {
+    name: 'v3: a command with prompt and prompt_file rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    prompt: Summarize', '    prompt_file: x.md\n    prompt: Summarize'),
+  },
+  {
+    name: 'v3: a command agent key rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    prompt: Summarize', '    agent: assistant\n    prompt: Summarize'),
+  },
+  {
+    name: 'v3: an empty extension rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('  web-access:\n    pi: npm:pi-web-access@0.30.0', '  web-access: {}'),
+  },
+  {
+    name: 'v3: an npm OpenCode plugin rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('opencode: extensions/audit.opencode.ts', 'opencode: npm:audit@1.0.0'),
+  },
+  {
+    name: 'v3: a ranged pi pin rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('pi: npm:pi-web-access@0.30.0', 'pi: npm:pi-web-access@^0.30.0'),
+  },
+  {
+    name: 'v3: agent file rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    mode: primary\n', '    mode: primary\n    file: agents/a.md\n'),
+  },
+  {
+    name: 'v3: agent harnesses rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    mode: primary\n', '    mode: primary\n    harnesses: {}\n'),
+  },
+  {
+    name: 'v3: permission.skill rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('      external_directory: deny', '      skill: allow'),
+  },
+  {
+    name: 'v3: tools map form rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    tools: all\n', '    tools:\n      bash: false\n'),
+  },
+  {
+    name: 'v3: bad codemode rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('codemode: on', 'codemode: maybe'),
   },
   {
     name: 'v2: tools mixes kortix:<name> and module paths',

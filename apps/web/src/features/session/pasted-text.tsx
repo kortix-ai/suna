@@ -1,6 +1,7 @@
 'use client';
 
 import { CopyButton } from '@/components/markdown/copy-button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import {
   Modal,
@@ -10,6 +11,8 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { useTranslations } from '@/i18n/use-translations';
+
+import { CloseButton } from './action-panel/easy/detail-view';
 
 /**
  * A paste's full text, in the side panel's detail view or `PastedTextModal`.
@@ -26,7 +29,15 @@ export function PastedTextBody({ text }: { text: string }) {
 
 export function PastedTextCopy({ text }: { text: string }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  return <CopyButton code={text} size="sm" label={t.raw('texte21f935f11d7')} />;
+  // The toolbar `ButtonGroup`'s look: `size-7` on the `secondary` fill, as `CloseButton`.
+  return (
+    <CopyButton
+      code={text}
+      size="md"
+      className="bg-secondary hover:bg-secondary/90 shrink-0"
+      label={t.raw('texte21f935f11d7')}
+    />
+  );
 }
 
 /** Word and character counts for the header. Characters are what the user sees: graphemes, else code points. */
@@ -60,7 +71,14 @@ export function PastedTextModal({ text, onClose }: { text: string | null; onClos
         // Only the body scrolls: the header, Copy and Close (absolute in the
         // content box) stay in view on a long paste.
         className="flex flex-col overflow-hidden lg:h-auto lg:max-h-[85svh] lg:max-w-2xl"
-        closeButtonChildren={text !== null ? <PastedTextCopy text={text} /> : null}
+        // Copy and Close as one `ButtonGroup`, as in the side panel's toolbar.
+        showCloseButton={false}
+        closeButtonChildren={
+          <ButtonGroup>
+            {text !== null && <PastedTextCopy text={text} />}
+            <CloseButton onClose={onClose} />
+          </ButtonGroup>
+        }
         // Opening focus would land on Copy and open its tooltip, so the first
         // Esc only closed the tooltip. Keep focus off the controls: one Esc closes.
         onOpenAutoFocus={(event) => event.preventDefault()}

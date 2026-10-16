@@ -207,13 +207,13 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
       row(
         'auto-topup',
         state.auto_topup.enabled
-          ? `on — buy ${money(state.auto_topup.amount)} under ${money(state.auto_topup.threshold)}`
+          ? `on — buy ${money(state.auto_topup.amount)} under ${credits(state.auto_topup.threshold)}`
           : 'off',
       ),
     );
   }
   if (state.usage_this_period) {
-    process.stdout.write(row('this period', money(state.usage_this_period.total_usd)));
+    process.stdout.write(row('this period', credits(state.usage_this_period.total_usd)));
   }
   if (state.can_manage_billing === false) {
     process.stdout.write(row('you', `${C.yellow}read-only — billing.write required${C.reset}`));

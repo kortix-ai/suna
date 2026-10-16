@@ -37,6 +37,8 @@ export interface EntitlementOverrides {
   auditAccess?: OverrideEntry<boolean>;
   branding?: OverrideEntry<boolean>;
   managedModels?: OverrideEntry<boolean>;
+  /** The BYOK platform fee (byok-fee.ts): off waives it for the account. */
+  byokFee?: OverrideEntry<boolean>;
 }
 
 export type OverrideKey = keyof EntitlementOverrides;
@@ -52,6 +54,7 @@ export const ENTITLEMENT_OVERRIDE_KEYS = [
   'auditAccess',
   'branding',
   'managedModels',
+  'byokFee',
 ] as const;
 
 /** Every key the parser accepts. Anything else is dropped. */
