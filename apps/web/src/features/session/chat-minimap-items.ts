@@ -224,15 +224,16 @@ export function extractMinimapItem(turn: SessionLogTurn): MinimapItem | null {
     return name === undefined ? [] : [{ id: b.id, name }];
   });
 
-  const prompt = stripSystemPtyText(texts.join('\n'));
+  // Pastes first, as `UserMessage` does: a ref inside a paste is paste text,
+  // and `stripSystemPtyText` would collapse the body's blank lines.
+  const { text: typed, pastes } = splitPastedContent(texts.join('\n'));
+  const prompt = stripSystemPtyText(typed);
   // A Slack, Teams or Telegram turn is a scaffold around a person's words: the
   // preview is the sender and the words, as the message card shows them.
   const channel = parseChannelMessage(prompt);
-  const raw = channel
+  const afterPastes = channel
     ? [channel.userName, channel.messageText].filter(Boolean).join(': ')
     : prompt;
-  // Pastes first, as `UserMessage` does: a ref inside a paste is paste text.
-  const { text: afterPastes, pastes } = splitPastedContent(raw);
   const afterReply = stripReplyContexts(afterPastes);
   const { cleanText: afterFiles, files: uploads } = parseFileReferences(afterReply);
   const { cleanText: afterProjects } = parseProjectReferences(afterFiles);

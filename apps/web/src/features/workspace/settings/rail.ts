@@ -6,6 +6,7 @@ import {
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
   KeyIcon as Key,
+  LaptopIcon as Laptop,
   LinkIcon as Link,
   PaletteIcon as Palette,
   ShieldCheckIcon as ShieldCheck,
@@ -14,13 +15,15 @@ import {
   UserIcon as User,
 } from '@phosphor-icons/react';
 
+import { Mcp } from '@/features/icon/icons/mcp';
+
 import type { SettingsTab } from './settings-tabs';
 import type { RailGroup, RailItem } from './type';
 
 export type SettingsRailTranslator = (key: string) => string;
 
 type RailGroupDefinition = RailGroup & {
-  messageKey: 'personal';
+  messageKey: 'personal' | 'connect';
 };
 
 /**
@@ -106,6 +109,35 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
       },
     ],
   },
+  /**
+   * The connect pages (KRTX-1997): MCP, and your own computer. Drawn at the
+   * foot of the rail as one joined block — the same two rows the project
+   * sidebar footer shows as dismissible promos — but each row opens a page
+   * here, and nothing dismisses it. Both are the person's own: the MCP URL is
+   * one per person, and a paired computer follows its owner into every
+   * project.
+   */
+  {
+    messageKey: 'connect',
+    label: 'Connect',
+    footer: true,
+    items: [
+      {
+        tab: 'mcp',
+        label: 'MCP',
+        description:
+          'Use Kortix from Claude, Claude Code, Cursor, Codex, or any MCP client. You sign in once. Nothing to install.',
+        docsHref: '/docs/connect/mcp',
+        icon: Mcp,
+      },
+      {
+        tab: 'computer',
+        label: 'Computer',
+        description: 'Let Kortix agents work with the files, terminal, and apps on your computer.',
+        icon: Laptop,
+      },
+    ],
+  },
   // No Account group either (Marko, 2026-09-03): Credits and Plan describe
   // the ORGANISATION's wallet and subscription, and every account setting
   // lives on the account page, `/accounts/[id]`. Grouping them under a
@@ -171,7 +203,7 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
   {
     tab: 'plan',
     label: 'Plan',
-    description: 'Your subscription, team seats, and billing for this account.',
+    description: 'Your plan, credits, and billing for this account.',
     icon: CreditCard,
   },
 ];
@@ -199,6 +231,7 @@ export function railGroups(...args: [] | [SettingsRailTranslator]): readonly Rai
 
   return STATIC_GROUPS.map((group) => ({
     label: translate(`groups.${group.messageKey}`),
+    footer: group.footer,
     items: group.items.map((item) => ({
       ...item,
       label: translate(`items.${item.tab}.label`),

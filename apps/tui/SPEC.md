@@ -375,8 +375,8 @@ never patch around it in the TUI.
   `apps/web/content/docs/` (follow the timestamp-manifest rule from memory
   `new-docs-page-needs-timestamp-manifest`).
 - Experimental surface: the CLI gets `kortix tui`
-  (`apps/cli/src/commands/tui.ts`). `kortix --help` lists it with the same
-  `Experimental:` blurb prefix `apps` uses; `kortix tui --help` prints the
+  (`apps/cli/src/commands/tui.ts`). `kortix --help` lists it with an
+  `Experimental:` blurb prefix; `kortix tui --help` prints the
   usage, the key summary, the docs URL, the separate install and
   `KORTIX_TUI_BIN`; and one stderr line names it experimental before the
   renderer takes the screen, so it survives in scrollback after the alternate

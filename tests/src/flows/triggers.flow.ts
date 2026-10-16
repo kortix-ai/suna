@@ -12,7 +12,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { createDatabaseSession } from '../fixtures/database-project';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { withDb } from '../fixtures/chat';
 
 type TriggerRow = { slug: string; model: string | null };
@@ -283,7 +283,7 @@ flow(
     let roleId = '';
 
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this account for custom-role writes)',
+      'the Enterprise demo is turned on (entitles this account for custom-role writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },

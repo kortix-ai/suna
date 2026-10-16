@@ -138,6 +138,8 @@ export function serializeSession(
     runtimeStatus?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
     /** Server-managed soft-deletion audit fields. */
     deletedAt?: string | null;
+    /** The viewing person's pin and archive. Absent: the fields are omitted. */
+    userState?: { pinnedAt: Date | null; archivedAt: Date | null };
     deletedBy?: string | null;
     /**
      * Drop the write-only heavy metadata keys (see
@@ -253,6 +255,12 @@ export function serializeSession(
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
     deleted_by: ctx?.deletedBy ?? null,
+    ...(ctx?.userState
+      ? {
+          pinned_at: ctx.userState.pinnedAt?.toISOString() ?? null,
+          archived_at: ctx.userState.archivedAt?.toISOString() ?? null,
+        }
+      : {}),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

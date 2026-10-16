@@ -115,7 +115,7 @@ describe('setup wizard wiring', () => {
   });
 
   test('non-entitled accounts see the enterprise upsell, not the wizard', () => {
-    expect(wizardSource).toContain('<EnterpriseUpsell feature="identity" />');
+    expect(wizardSource).toContain('<EnterpriseUpsell feature="identity" accountId={accountId} />');
   });
 });
 

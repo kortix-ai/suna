@@ -419,14 +419,17 @@ const BILLING_GATE_EXPECTED_EVENTS = [
   // The other two billing-gate 402 reasons — same expected business state,
   // same leak paths, same fix (prevents the next noise pattern).
   'No credit account found. Complete account setup first.',
-  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
+  'Out of credits. Top up or raise your plan to keep your agents running.',
+  'Out of credits. Pick a plan or top up to continue.',
+  "Your last payment didn't go through and your wallet is empty. Update your payment method or top up to keep running.",
 ];
 
-// The seat price lives in apps/api and this filter matches the rendered string,
-// so the two drift silently: the API moved to $40, this list stayed at $20, and
-// an expected billing state paged as an error until someone read the Sentry
-// volume. A stale price must fail the suite, not the on-call rotation.
+// The gate messages live in apps/api and this filter matches the rendered
+// string, so the two drift silently: an old message stayed allow-listed while
+// the API sent a new one, and an expected billing state paged as an error. A
+// stale message must fail the suite, not the on-call rotation.
 const SUPERSEDED_BILLING_GATE_MESSAGES = [
+  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ];
 
@@ -440,14 +443,14 @@ test('classifies every billing-gate 402 message as an expected business state', 
   }
 });
 
-test('a superseded seat price is NOT still carried as an expected message', () => {
+test('a superseded billing-gate message is NOT still carried as an expected message', () => {
   // Keeping the old string "working" is what hides the drift: the filter looks
   // healthy while the message the API actually sends sails past it.
   for (const message of SUPERSEDED_BILLING_GATE_MESSAGES) {
     assert.equal(
       isExpectedBillingGateMessage(message),
       false,
-      `stale seat price still allow-listed: ${message}`,
+      `stale message still allow-listed: ${message}`,
     );
   }
 });
@@ -12591,4 +12594,113 @@ test('keeps reporting other provider-disconnected payloads and any rejection wit
       message: 'The provider is disconnected from all chains.',
     }, [{ filename }])), false, filename);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Safari masked-extension-source noise (`webkit-masked-url://hidden/`)
+// ---------------------------------------------------------------------------
+
+// Better Stack (Kortix Frontend prod, application_id 2346967), pattern
+// `dec0801de492cd7ebf0c42ade81b74596d0b3fdded276c4c82a966ff2bf3e56d`:
+// `Error: No Listener: tabs:outgoing.message.ready`, 2 occurrences / 0 users,
+// both 2026-10-07, routes `/fr` and `/projects/start`, Safari 26.6.2 /
+// macOS 10.15.7, mechanism `auto.browser.global_handlers.onunhandledrejection`.
+// The single stack frame is `webkit-masked-url://hidden/` (function `g`,
+// line 132 col 38491): WebKit masks the script URLs of Safari browser
+// extensions in `Error.stack` (WebKit Bug 246010, a WebKit engineer: "if this
+// is from a Safari Extension, Error.stack will mask the URLs"), so the throw
+// is in an extension's injected script — its internal pub/sub emitted a
+// message channel with no listener — never in first-party code. The same
+// masked call site carried the Eagle helper's
+// `eagle.i18n.words["dragSaver.drag"]` error (1 occurrence in 60 days): one
+// source scheme, many extension messages. `EXTENSION_PROTOCOL_PREFIXES`
+// therefore treats the scheme like `chrome-extension://` & co., which makes
+// the existing `extension-frame` (Sentry) and `extension-rejected-value`
+// (runtime) rules drop the class.
+const MASKED_EXTENSION_FRAME = {
+  function: 'g',
+  filename: 'webkit-masked-url://hidden/',
+  lineno: 132,
+  colno: 38491,
+};
+
+function maskedRejectionSentryEvent(requestUrl: string) {
+  return {
+    request: { url: requestUrl },
+    exception: {
+      values: [
+        {
+          type: 'Error',
+          value: 'No Listener: tabs:outgoing.message.ready',
+          mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+          stacktrace: { frames: [MASKED_EXTENSION_FRAME] },
+        },
+      ],
+    },
+  };
+}
+
+test('suppresses the Safari masked-extension unhandled rejection (exact prod shape)', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise(maskedRejectionSentryEvent('https://kortix.com/projects/start')),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise(maskedRejectionSentryEvent('https://kortix.com/fr')),
+    true,
+  );
+});
+
+test('classifies the WebKit masked-extension scheme as a browser-extension source', () => {
+  assert.equal(isExtensionSource('webkit-masked-url://hidden/'), true);
+  assert.equal(isExtensionSource('https://kortix.com/_next/static/chunks/main.js'), false);
+});
+
+test('suppresses a runtime rejection whose raw stack carries the masked extension URL', () => {
+  const reason = new Error('No Listener: tabs:outgoing.message.ready');
+  reason.stack =
+    'Error: No Listener: tabs:outgoing.message.ready\n    at g@webkit-masked-url://hidden/:132:38491';
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ reason }), true);
+  // The raw `@webkit-masked-url://…` stack form matches too (serialized
+  // rejections carry the `@` prefix).
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: 'Object captured as promise rejection with keys: code, message',
+      extra: {
+        __serialized__: {
+          code: -1,
+          message: 'No Listener: tabs:outgoing.message.ready',
+          stack: 'Error: No Listener: tabs:outgoing.message.ready\n    at g@webkit-masked-url://hidden/:132:38491',
+        },
+      },
+      frames: [],
+    }),
+    true,
+  );
+});
+
+test('keeps reporting first-party errors that carry no masked-extension frame', () => {
+  // The same message from one of our own bundle frames is actionable.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/start' },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'No Listener: tabs:outgoing.message.ready',
+            stacktrace: {
+              frames: [{ filename: 'app:///_next/static/chunks/main-app.js', function: 'g' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+  // A first-party runtime rejection with no extension frame keeps reporting.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: new Error('No Listener: tabs:outgoing.message.ready') }),
+    false,
+  );
 });

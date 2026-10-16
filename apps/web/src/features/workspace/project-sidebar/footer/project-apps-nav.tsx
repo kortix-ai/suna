@@ -3,7 +3,6 @@
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
-import { useFeatureFlag } from '@kortix/sdk/react';
 import { AppWindowIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
@@ -16,17 +15,11 @@ export function ProjectAppsNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const appsGate = useFeatureFlag(projectId, 'apps');
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
 
   if (!projectId) return null;
-  /* Fail-closed like every other flagged surface: the entry exists once the
-     project turns the `apps` feature flag on in Settings → Feature flags.
-     Loading counts as disabled. Apps is a STABLE flag — an ordinary per-project
-     opt-in, so the row carries no stability badge. */
-  if (!appsGate.enabled) return null;
   return (
     <SidebarMenuItem>
       <SidebarMenuButton

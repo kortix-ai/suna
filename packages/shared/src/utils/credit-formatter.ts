@@ -28,6 +28,49 @@ export function formatDollarsAsCredits(
 }
 
 /**
+ * A USD amount the account HOLDS or SPENT (balance, usage, a turn's cost),
+ * shown in credits (1 credit = $0.01). Prices the customer pays stay in USD.
+ *
+ * Whole credits from 10 up; below that up to two decimals, so a sub-cent turn
+ * never reads 0; a non-zero amount under 0.01 credits reads `<0.01`.
+ */
+export function formatUsdAsCredits(
+  usd: number | null | undefined,
+  options?: { locale?: string },
+): string {
+  if (usd === null || usd === undefined || isNaN(usd)) return "0";
+  const credits = usd * CREDITS_PER_DOLLAR;
+  const magnitude = Math.abs(credits);
+  const locale = options?.locale ?? "en-US";
+  if (magnitude === 0) return "0";
+  if (magnitude < 0.01) return `${credits < 0 ? "-" : ""}<${(0.01).toLocaleString(locale)}`;
+  if (magnitude < 10) {
+    return credits.toLocaleString(locale, { maximumFractionDigits: 2 });
+  }
+  return (Math.round(credits) + 0).toLocaleString(locale);
+}
+
+/**
+ * The balance an insufficient-credits (402) message names, in USD. Reads both
+ * shapes: `Balance: 1,250 credits` (current) and `Balance: $12.5000` (servers
+ * before credits), so a client parses either side of a deploy. No balance → null.
+ */
+export function parseBalanceUsd(text: string): number | null {
+  const credits = text.match(/balance:\s*(-?)(<?)(\d[\d,]*(?:\.\d+)?)\s*credits?\b/i);
+  if (credits) {
+    const magnitude = parseFloat(credits[3]!.replace(/,/g, ""));
+    if (Number.isNaN(magnitude)) return null;
+    // `<0.01 credits` keeps reading as under 0.01 credits.
+    const value = (credits[2] ? magnitude / 2 : magnitude) / CREDITS_PER_DOLLAR;
+    return credits[1] ? -value : value;
+  }
+  const usd = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
+  if (!usd) return null;
+  const value = parseFloat(usd[1]!);
+  return Number.isNaN(value) ? null : value;
+}
+
+/**
  * Format credits for display with thousand separators
  * @param credits - The credit amount to format
  * @param options - Formatting options

@@ -23,18 +23,19 @@ can add more (`extensions.md`).
 
 `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are the
 Kortix tools: the Kortix runtime runs one implementation of each on every
-harness, so a skill that names one of them works on both. With no `tools:`
-key in `kortix.yaml`, a session has all five; with one, only the ones it
-lists as `<name>: kortix:<name>`. A Kortix tool the project does not list is
-not offered, and a call to it fails with `Tool <name> not found`.
-`kortix tools ls` lists what a session gets. A project tool is a
+harness, so a skill that names one of them works on both. A
+`kortix_version: 3` project has every Kortix tool without a `tools:` entry.
+A `tools:` entry with a Kortix tool's name replaces that tool with the
+project's module. A project tool is a
 harness-neutral module the runtime runs the same way; prefer it over a pi
 extension when the tool only needs arguments in and text out.
-`agents.<name>.tools` in `kortix.yaml` decides which tools an agent sees.
+`agents.<name>.tools` in `kortix.yaml` decides which tools an agent sees:
+`all` (the default), `none`, a list, or `{ exclude: [names] }`.
 
 A subagent gets every tool except `question` and `task`, limited by its own
-`agents.<name>.tools` and the session agent's. The built-in `explore`
-subagent gets `bash`, `read`, `glob` and `grep`.
+`agents.<name>.tools` and the session agent's. A v3 project has no built-in
+`general` or `explore` subagent: an agent starts only the agents its
+`subagents` grant lists.
 
 ## Tools pi does not have
 
@@ -63,8 +64,8 @@ bills each call to the project. No API key is necessary in the sandbox.
 
 ## Permissions
 
-The agent's `permission` block in its `.md` frontmatter governs the tools, on
-pi as on OpenCode. A rule names a permission key from the table above, not a
+The agent's `permission` key in its `kortix.yaml` block governs the tools,
+on pi as on OpenCode. Omitted, it is `allow`. A rule names a permission key from the table above, not a
 tool: `edit: deny` stops `write`, `edit` and every `memory` command that
 changes a file, and `websearch: deny` stops `web_search` and `image_search`.
 A rule under the tool's own name (`memory: allow`) wins over its permission
@@ -88,7 +89,9 @@ permission:
   is `once`, `always` or `reject`. `always` allows that permission key for
   the rest of the session. A `deny` rule still wins after an `always`.
 - A tool with no rule is allowed.
-- `tools: { bash: false }` in the frontmatter removes a built-in tool from
-  the agent.
+- `tools: { exclude: [bash] }` on the agent block removes a tool from the
+  agent.
+- `skill` and `task` are not `permission` keys in v3. The agent's `skills`
+  and `subagents` grants compile to them.
 - A subagent call must pass the subagent's own rules and the session agent's
   rules. A `deny` from either one wins.

@@ -90,7 +90,7 @@ describe('kortix validate — tools: kortix:<name>', () => {
     expect(JSON.parse(result.stdout).issues).toEqual([
       {
         path: 'tools',
-        message: 'Sessions of this project get no Kortix tool (web_search, image_search, scrape_webpage, memory, show). Add `<name>: kortix:<name>` to keep one.',
+        message: 'Sessions of this project get no Kortix tool (web_search, image_search, scrape_webpage, memory, show, kortix-connectors_call, kortix-connectors_describe). Add `<name>: kortix:<name>` to keep one.',
         severity: 'warning',
       },
       {
@@ -107,7 +107,7 @@ describe('kortix tools ls', () => {
     const cwd = project({ 'kortix.yaml': HEAD });
     const result = kortix(cwd, 'tools', 'ls');
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('NAME            KIND    SOURCE\nweb_search      kortix  kortix:web_search\nimage_search    kortix  kortix:image_search\n');
+    expect(result.stdout).toContain('NAME                        KIND    SOURCE\nweb_search                  kortix  kortix:web_search\nimage_search                kortix  kortix:image_search\n');
     expect(result.stdout).toContain('kortix.yaml has no `tools:` key, so sessions get every Kortix tool.');
     expect(JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout)).toMatchObject({ tools_key: false, removed: [] });
   }, SPAWN_TEST_MS);
@@ -127,7 +127,7 @@ describe('kortix tools ls', () => {
         'show          kortix               kortix:show',
         'lookup_order  project              team/tools/lookup_order.ts',
         '',
-        'Removed Kortix tools: image_search, scrape_webpage',
+        'Removed Kortix tools: image_search, scrape_webpage, kortix-connectors_call, kortix-connectors_describe',
       ].join('\n'),
     );
     const json = kortix(cwd, 'tools', 'ls', '--json');
@@ -141,7 +141,7 @@ describe('kortix tools ls', () => {
         { name: 'show', kind: 'kortix', source: 'kortix:show' },
         { name: 'lookup_order', kind: 'project', source: 'team/tools/lookup_order.ts' },
       ],
-      removed: ['image_search', 'scrape_webpage'],
+      removed: ['image_search', 'scrape_webpage', 'kortix-connectors_call', 'kortix-connectors_describe'],
     });
   }, SPAWN_TEST_MS);
 
@@ -157,7 +157,7 @@ describe('kortix tools eject', () => {
     const cwd = project({ 'kortix.yaml': HEAD + STARTER_TOOLS });
     const result = kortix(cwd, 'tools', 'eject', 'web_search');
     expect(result.code).toBe(0);
-    expect(read(cwd, 'tools/web_search.ts')).toBe((KORTIX_TOOL_SOURCES as Record<string, string>).web_search!);
+    expect(read(cwd, 'tools/web_search.ts')).toBe(KORTIX_TOOL_SOURCES.web_search);
     // Only the ejected line changed; its trailing comment now says where the file came from.
     expect(read(cwd, 'kortix.yaml')).toBe(
       HEAD + STARTER_TOOLS.replace('web_search: kortix:web_search      # maintained by Kortix, updated automatically', 'web_search: tools/web_search.ts  # ejected from kortix:web_search'),
@@ -170,15 +170,35 @@ describe('kortix tools eject', () => {
     expect(JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout).tools[0]).toEqual({ name: 'web_search', kind: 'kortix (overridden)', source: 'tools/web_search.ts' });
   }, SPAWN_TEST_MS);
 
-  test('with no tools key, it lists the other four Kortix tools so the eject removes nothing', () => {
+  test('with no tools key, it lists the other maintained Kortix tools so the eject removes nothing', () => {
     const cwd = project({ 'kortix.yaml': `${HEAD}# the end\n` });
     expect(kortix(cwd, 'tools', 'eject', 'show').code).toBe(0);
     expect(read(cwd, 'kortix.yaml')).toBe(
-      `${HEAD}# the end\n\ntools:\n  web_search: kortix:web_search\n  image_search: kortix:image_search\n  scrape_webpage: kortix:scrape_webpage\n  memory: kortix:memory\n  show: tools/show.ts  # ejected from kortix:show\n`,
+      `${HEAD}# the end\n\ntools:\n  web_search: kortix:web_search\n  image_search: kortix:image_search\n  scrape_webpage: kortix:scrape_webpage\n  memory: kortix:memory\n  show: tools/show.ts  # ejected from kortix:show\n  kortix-connectors_call: kortix:kortix-connectors_call\n  kortix-connectors_describe: kortix:kortix-connectors_describe\n`,
     );
     expect(JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout).removed).toEqual([]);
     expect(issues(cwd)).toEqual([]);
   }, SPAWN_TEST_MS);
+
+  for (const name of ['kortix-connectors_call', 'kortix-connectors_describe']) {
+    test(`ejects ${name} as a validated, executable project module`, async () => {
+      const cwd = project({ 'kortix.yaml': HEAD });
+      const result = kortix(cwd, 'tools', 'eject', name);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain(`Ejected ${name}`);
+      expect(read(cwd, 'kortix.yaml')).toContain(`${name}: tools/${name}.ts  # ejected from kortix:${name}`);
+      expect(issues(cwd)).toEqual([]);
+      const { default: tool } = await import(join(cwd, `tools/${name}.ts`));
+      expect(tool.parameters.type).toBe('object');
+      const args = name === 'kortix-connectors_call'
+        ? { connector: 'synthetic', action: 'items.read' }
+        : { tool: 'synthetic.items.read' };
+      await expect(tool.execute(args, { env: {}, signal: new AbortController().signal }))
+        .rejects.toThrow('KORTIX_API_URL is not set.');
+      await expect(tool.execute(args, { env: { KORTIX_API_URL: 'https://example.invalid' }, signal: new AbortController().signal }))
+        .rejects.toThrow('KORTIX_TOKEN is not set.');
+    }, SPAWN_TEST_MS);
+  }
 
   test('an entry declared in an imported file is edited in that file', () => {
     const cwd = project({ 'kortix.yaml': `${HEAD}imports: [team.yaml]\n`, 'team.yaml': 'tools:\n  memory: kortix:memory  # team memory\n' });
@@ -197,12 +217,37 @@ describe('kortix tools eject', () => {
     expect(read(cwd, 'kortix.yaml')).toBe(HEAD + STARTER_TOOLS);
 
     expect(kortix(cwd, 'tools', 'eject', 'memory', '--force').code).toBe(0);
-    expect(read(cwd, 'tools/memory.ts')).toBe((KORTIX_TOOL_SOURCES as Record<string, string>).memory!);
+    expect(read(cwd, 'tools/memory.ts')).toBe(KORTIX_TOOL_SOURCES.memory);
 
     const unknown = kortix(cwd, 'tools', 'eject', 'lookup_order');
     expect(unknown.code).toBe(2);
     expect(unknown.stderr).toContain('"lookup_order" is not a Kortix tool.');
-    expect(unknown.stderr).toContain('Eject one of: web_search, image_search, scrape_webpage, memory, show.');
+    expect(unknown.stderr).toContain('Eject one of: web_search, image_search, scrape_webpage, memory, show, kortix-connectors_call, kortix-connectors_describe.');
     expect(existsSync(join(cwd, 'tools/lookup_order.ts'))).toBe(false);
   }, SPAWN_TEST_MS);
+});
+
+describe('kortix_version 3', () => {
+  const V3 = 'kortix_version: 3\ndefault_agent: kortix\nagents:\n  kortix:\n    mode: primary\n';
+
+  test('tools ls lists every Kortix tool as registered and removes none', () => {
+    const cwd = project({ 'kortix.yaml': `${V3}tools:\n  lookup_order: tools/lookup_order.ts\n  memory: tools/memory.ts\n`, 'tools/lookup_order.ts': 'export default {}\n', 'tools/memory.ts': 'export default {}\n' });
+    const listed = JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout) as { tools: Array<{ name: string; kind: string }>; removed: string[] };
+
+    expect(listed.removed).toEqual([]);
+    expect(listed.tools.find((tool) => tool.name === 'web_search')?.kind).toBe('kortix');
+    expect(listed.tools.find((tool) => tool.name === 'memory')?.kind).toBe('kortix (overridden)');
+    expect(listed.tools.find((tool) => tool.name === 'lookup_order')?.kind).toBe('project');
+    expect(kortix(cwd, 'tools', 'ls').stdout).not.toContain('Removed');
+  });
+
+  test('eject writes only the module entry, and the result validates', () => {
+    const cwd = project({ 'kortix.yaml': V3 });
+
+    expect(kortix(cwd, 'tools', 'eject', 'web_search', '--json').code).toBe(0);
+    const manifest = read(cwd, 'kortix.yaml');
+    expect(manifest).toContain('web_search: tools/web_search.ts');
+    expect(manifest).not.toMatch(/:[ \t]+kortix:\w/);
+    expect(issues(cwd).filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
 });

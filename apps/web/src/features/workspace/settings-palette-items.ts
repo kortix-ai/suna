@@ -51,6 +51,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'tokens',
   'credits',
   'plan',
+  'mcp',
 ];
 
 /**
@@ -141,7 +142,7 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // `balance` are gone from here — neither is rendered on this pane any more,
   // and a word that names a different row's subject is the defect this file's
   // header rule is about.
-  plan: 'plan subscription billing credits buy purchase upgrade downgrade invoice payment seat seats portal stripe',
+  plan: 'plan subscription billing credits buy purchase upgrade downgrade invoice payment portal stripe',
   // Copy for the two Workspace rows that came back on 2026-09-02 — the words
   // `proj-sandbox` and `proj-feature-flags` carry in `lib/menu-registry.ts`.
   sandbox:

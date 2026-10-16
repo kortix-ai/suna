@@ -45,11 +45,32 @@ const { processYearlyCreditRotation } = await import('../../billing/services/yea
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('processYearlyCreditRotation', () => {
+  // Enterprise is credited by its annual contract pool (enterprise-contracts.ts),
+  // never by the monthly rotation: a monthly reset would wipe that pool.
+  test('an Enterprise account is not credited monthly: its contract pool covers it', async () => {
+    yearlyAccountsDueResult = [
+      createMockCreditAccount({
+        accountId: 'acc_enterprise',
+        tier: 'enterprise',
+        planMonthlyUsd: '5000',
+        stripeSubscriptionId: null,
+        stripeSubscriptionStatus: null,
+        nextCreditGrant: new Date(Date.now() - 1000).toISOString(),
+      }),
+    ];
+
+    const result = await processYearlyCreditRotation();
+
+    expect(result.processed).toBe(1);
+    expect(walletResets).toEqual([]);
+  });
+
   test('finds yearly accounts due for rotation and processes each', async () => {
     yearlyAccountsDueResult = [
       createMockCreditAccount({
         accountId: 'acc_yearly_1',
-        tier: 'tier_6_50',
+        tier: 'credits',
+        planMonthlyUsd: '50',
         planType: 'yearly',
         nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
         stripeSubscriptionStatus: 'active',
@@ -57,7 +78,8 @@ describe('processYearlyCreditRotation', () => {
       }),
       createMockCreditAccount({
         accountId: 'acc_yearly_2',
-        tier: 'tier_25_200',
+        tier: 'tier_25_200', // legacy key, no stored amount yet: falls back to its price
+        planMonthlyUsd: null,
         planType: 'yearly',
         nextCreditGrant: new Date(Date.now() - 3600000).toISOString(),
         stripeSubscriptionStatus: 'active',
@@ -72,7 +94,7 @@ describe('processYearlyCreditRotation', () => {
     expect(walletResets.length).toBe(2);
 
     expect(walletResets[0].accountId).toBe('acc_yearly_1');
-    expect(walletResets[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
+    expect(walletResets[0].amount).toBe(50); // credits plan at $50/mo
 
     expect(walletResets[1].accountId).toBe('acc_yearly_2');
     expect(walletResets[1].amount).toBe(200); // tier_25_200 = $200 monthly credits
@@ -82,7 +104,8 @@ describe('processYearlyCreditRotation', () => {
     yearlyAccountsDueResult = [
       createMockCreditAccount({
         accountId: 'acc_yearly_1',
-        tier: 'tier_6_50',
+        tier: 'credits',
+        planMonthlyUsd: '50',
         planType: 'yearly',
         nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
         stripeSubscriptionStatus: 'active',
@@ -110,7 +133,8 @@ describe('processYearlyCreditRotation', () => {
     yearlyAccountsDueResult = [
       createMockCreditAccount({
         accountId: 'acc_yearly_1',
-        tier: 'tier_6_50',
+        tier: 'credits',
+        planMonthlyUsd: '50',
         planType: 'yearly',
         nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
         stripeSubscriptionStatus: 'active',

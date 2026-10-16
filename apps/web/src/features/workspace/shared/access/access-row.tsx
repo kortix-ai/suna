@@ -14,6 +14,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // `<ul>` lists across groups / agents / audit-webhooks.
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -170,19 +171,15 @@ export function AccessRow({
         selectable.reserveSpace ? (
           // This row is not selectable (it's you) but a sibling is — reserve
           // the same width so every avatar lines up on one column.
-          <span aria-hidden className="size-3.5 shrink-0" />
+          <span aria-hidden className="size-[18px] shrink-0" />
         ) : (
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selectable.checked}
             disabled={selectable.disabled}
-            onChange={selectable.onCheckedChange}
+            onCheckedChange={selectable.onCheckedChange}
             onClick={(event) => event.stopPropagation()}
             aria-label={selectable.label}
-            className={cn(
-              'border-border accent-primary size-3.5 shrink-0 cursor-pointer rounded',
-              linked && 'relative z-20',
-            )}
+            className={cn(linked && 'relative z-20')}
           />
         )
       ) : null}
@@ -337,12 +334,7 @@ export function AccessList({ children, header, selectable, className }: AccessLi
           <div className="flex items-center gap-3">
             {selectable && eligible.length > 0 ? (
               <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={selectable.onToggleAll}
-                  className="border-border accent-primary size-3.5 cursor-pointer rounded"
-                />
+                <Checkbox checked={allSelected} onCheckedChange={selectable.onToggleAll} />
                 {allSelected
                   ? tI18nComplete.raw('text967549497036')
                   : tI18nComplete.raw('textb48c0322c628')}

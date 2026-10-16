@@ -42,6 +42,25 @@ describe('connectStepFromStart', () => {
     });
   });
 
+  test('a lost computer fails as lost, so the screen offers Continue instead of Restart', () => {
+    const step = connectStepFromStart({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { status: 'stopped', external_id: 'ext-1' },
+      failure: null,
+    });
+    expect(step).toEqual({
+      kind: 'fail',
+      failure: {
+        title: "This session's computer was lost",
+        message:
+          'Its cloud sandbox disappeared on the provider side. Continue the session on a new computer: it starts from the session branch and brings this conversation back. Work that was not committed and pushed stays lost.',
+        lost: true,
+      },
+    });
+  });
+
   test('fails when the sandbox row is in error', () => {
     const step = connectStepFromStart({
       stage: 'provisioning',

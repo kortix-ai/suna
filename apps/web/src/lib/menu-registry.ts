@@ -724,7 +724,7 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     // The roster half. 'invite' belongs to `proj-invite`, the verb row.
     keywords:
-      'members member workspace access collaborators people teammates roster who can see permissions grant share seats',
+      'members member workspace access collaborators people teammates roster who can see permissions grant share',
   },
   {
     id: 'proj-files',
@@ -760,7 +760,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
-    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
@@ -885,6 +884,17 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'rightSidebar'],
     kind: 'navigate',
     href: '/scheduled-tasks',
+  },
+  {
+    // Kortix Capture is its own area: devices, install and its organization settings live under /capture.
+    id: 'capture',
+    label: 'Kortix Capture',
+    icon: MonitorIcon,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/capture',
+    keywords: 'capture recording screen devices install enrollment',
   },
   {
     id: 'running-services',
@@ -1122,7 +1132,7 @@ export const menuRegistry: MenuItemDef[] = [
     // 'members' alone stays off this row: it names the project settings
     // Members tab, which is a different roster. These words name the ACCOUNT
     // roster specifically.
-    keywords: 'account members organization roster owners admins seats',
+    keywords: 'account members organization roster owners admins',
   },
   {
     id: 'account-billing',

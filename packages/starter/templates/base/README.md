@@ -1,27 +1,44 @@
 # {{projectName}}
 
-A session of this project runs one agent harness: OpenCode (the default) or pi
-(`runtime: pi` in `kortix.yaml`). Both read the same agents, skills and memory.
+A Kortix project. `kortix.yaml` (kortix_version 3) defines every agent: the
+project registers what exists, and each agent enables what it uses.
+
+A session runs one agent harness: OpenCode (the default) or pi (`runtime: pi`
+in `kortix.yaml`). Both read the same `kortix.yaml`. No harness has a config
+folder of its own.
 
 ## Layout
 
 | Path | What it holds |
 | --- | --- |
-| `kortix.yaml` | Agents and what each may access, triggers, env. |
-| `agents/<name>.md` | One file per agent: frontmatter + prompt. `kortix.yaml` names it as `agents.<name>.file`. |
-| `skills/<name>/SKILL.md` | Skills. Every agent harness loads them. |
+| `kortix.yaml` | The registry (`skills`, `tools`, `commands`, `extensions`), the agents, triggers and secret names. |
+| `agents/<name>.md` | An agent's prompt. `agents.<name>.prompt_file` names it. Behavior (mode, model, permission) is in `kortix.yaml`. |
+| `skills/<name>/SKILL.md` | Skills. `skills.<name>` registers each folder. The Kortix skills (`kortix-*`) are always registered. |
+| `tools/<name>.ts` | Project tools. `tools.<name>` registers each module. The Kortix tools (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe`) are always registered. |
+| `extensions/<name>/` | Harness extensions. `extensions.<name>` names one implementation per harness: `opencode:` (a plugin module) and `pi:` (a pi package). The starter ships `pty` (interactive terminals) for OpenCode. |
 | `memory/` | The project brain. Load the `kortix-memory` skill to work with it. |
-| `tools/<name>.ts` | Project tools. `kortix.yaml` declares each one under `tools:` (name → module path). Every agent harness runs them. |
-| `kortix.yaml` `tools:` | The tools every agent gets. `<name>: kortix:<name>` is a Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. Delete a line to remove that tool. `kortix tools eject <name>` copies one to `tools/<name>.ts` for you to change. `kortix tools ls` lists what a session gets. |
-| `harnesses/opencode/` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`. |
-| `harnesses/pi/` | Files only pi reads: `extensions/`, `prompts/`, `settings.json`. Not created by default. |
 
-## Authentication
+## Agents
 
-OpenCode can use Kortix-managed models or project provider credentials. pi uses
-Kortix-managed models through the LLM gateway.
+| Agent | Mode | What it does |
+| --- | --- | --- |
+| `kortix` | primary | The general knowledge worker. Every grant is `all`. |
+| `harness-reflector` | primary | Refines the harness from recent sessions on a daily cron (the `harness-reflector` trigger, off by default). No connectors, no secrets. |
+| `session-reviewer` | subagent | Reviews one session for the reflector. |
 
-## Verify the project
+Grants are deny-by-default: an agent gets a skill, subagent, command,
+extension, connector or secret only when its block enables it. A permission
+that is not set is `allow`.
+
+## Change the project
+
+1. Edit `kortix.yaml` or an agent's prompt.
+2. Run `kortix validate`. It checks the schema and that every registered
+   file exists.
+3. Run `kortix schema --version 3` for the full schema.
+
+A project on kortix_version 2 converts with `kortix migrate` (preview) and
+`kortix migrate --write`.
 
 ## Test the runtime
 
@@ -30,25 +47,5 @@ Kortix-managed models through the LLM gateway.
 3. Confirm that the response completes.
 
 A provider availability check does not prove prompt execution. Test the model
-that the project will use.
-
-Run `kortix system-skills get kortix-system --full` for the current platform
-instructions. Run `kortix schema --version 2` for the exact manifest schema.
-
-### Per-agent OpenCode plugins
-
-Keep plugin implementations in `harnesses/opencode/plugins/`. A v2 manifest may select filename references per agent:
-
-```yaml
-harnesses:
-  opencode:
-    plugins: [audit.ts] # enabled for every agent
-agents:
-  specialist:
-    harnesses:
-      opencode:
-        exclude: [audit.ts]
-        plugins: [specialist.ts]
-```
-
-The selected agent gets its own config release. Unselected plugin entrypoints do not load, including their import-time hooks and sub-agent registrations. Imported modules under `plugins/` remain available. When no OpenCode plugin selection is declared, existing auto-discovery remains unchanged. Pi uses `harnesses.pi.packages` and agent-level `exclude` instead.
+that the project will use. Run `kortix system-skills get kortix-system --full`
+for the current platform instructions.

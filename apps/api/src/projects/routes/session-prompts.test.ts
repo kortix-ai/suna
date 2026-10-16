@@ -250,7 +250,6 @@ mock.module('../../billing/services/billing-gate', () => ({
           message: 'out of credits',
           reason: 'no_credits',
           balance: 0,
-          billingModel: 'credits',
           hasSubscription: false,
           billingState: 'drained',
         };
@@ -371,10 +370,36 @@ const stopLog: unknown[][] = [];
 const realTurnLedger = await import('../session-turn-ledger');
 mock.module('../session-turn-ledger', () => ({
   ...realTurnLedger,
-  markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
-    stopLog.push(['stamp', sessionId, name, scope]);
+  markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown, by?: unknown) => {
+    stopLog.push(['stamp', sessionId, name, scope, by ?? null]);
   },
 }));
+
+// Who may stop the running turn (`turn-stop-authority.ts`). The rule itself is
+// the real `decideTurnStop`; this suite sets the turn it reads and records what
+// the route asked, so it falsifies the route's wiring. The reads are proven in
+// `turn-stop-authority.test.ts`.
+const OTHER_MEMBER = '22222222-2222-4222-8222-222222222222';
+let turnRunning = false;
+let turnPrompter: string | null = null;
+let stopChecks: Array<{ callerUserId: string | null; canManageLifecycle: boolean }> = [];
+const realStopAuthority = await import('../session-lifecycle/turn-stop-authority');
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  ...realStopAuthority,
+  mayStopRunningTurn: async (input: { callerUserId: string | null; canManageLifecycle: boolean }) => {
+    stopChecks.push({ callerUserId: input.callerUserId, canManageLifecycle: !!input.canManageLifecycle });
+    return realStopAuthority.decideTurnStop({
+      canManageLifecycle: !!input.canManageLifecycle,
+      callerUserId: input.callerUserId,
+      running: turnRunning,
+      prompterUserId: turnPrompter,
+    });
+  },
+}));
+const NOT_TURN_PROMPTER_BODY = {
+  error: realStopAuthority.NOT_TURN_PROMPTER_MESSAGE,
+  code: realStopAuthority.NOT_TURN_PROMPTER,
+};
 mock.module('../sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
 }));
@@ -454,6 +479,9 @@ beforeEach(() => {
   autoWatches = [];
   callerAuthType = 'pat';
   callerSessionId = undefined;
+  turnRunning = false;
+  turnPrompter = null;
+  stopChecks = [];
 });
 
 describe('POST .../prompts', () => {
@@ -1202,7 +1230,7 @@ describe('POST .../prompts/hold', () => {
     ];
     expect((await hold({ held: true })).status).toBe(200);
     expect(stopLog).toEqual([
-      ['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_root' }],
+      ['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_root' }, USER_ID],
       ['settle', SESSION_ID],
     ]);
   });
@@ -1212,6 +1240,122 @@ describe('POST .../prompts/hold', () => {
     await hold({ held: false });
     await hold({ held: 'yes' });
     expect(stopLog.filter((entry) => entry[0] === 'stamp')).toEqual([]);
+  });
+
+  describe("another member's running turn", () => {
+    test('a member who did not prompt it cannot Stop it: 403, and nothing is stamped or held', async () => {
+      turnRunning = true;
+      turnPrompter = OTHER_MEMBER;
+      commandTable = [row()];
+      const response = await hold({ held: true });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
+      expect(stopChecks).toEqual([{ callerUserId: USER_ID, canManageLifecycle: false }]);
+      expect(stopLog).toEqual([]);
+      expect(commandTable[0].result?.held).not.toBe(true);
+    });
+
+    test('its prompter Stops it, and the stamp names them', async () => {
+      turnRunning = true;
+      turnPrompter = USER_ID;
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, USER_ID]);
+      expect(commandTable[0].result?.held).toBe(true);
+    });
+
+    test('the session owner or a project manager Stops it, and the stamp names them', async () => {
+      turnRunning = true;
+      turnPrompter = OTHER_MEMBER;
+      visibleSession = { ...visibleSession, canManageLifecycle: true };
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, USER_ID]);
+    });
+
+    test('with no running turn a hold only pauses the queue, open to anyone who may send', async () => {
+      turnPrompter = OTHER_MEMBER;
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(commandTable[0].result?.held).toBe(true);
+    });
+
+    test('Resume stays open: it asks nothing', async () => {
+      turnRunning = true;
+      turnPrompter = OTHER_MEMBER;
+      commandTable = [row()];
+      expect((await hold({ held: false })).status).toBe(200);
+      expect(stopChecks).toEqual([]);
+    });
+
+    test('an agent credential is never the prompter, and its stop names nobody', async () => {
+      callerSessionId = '77777777-7777-4777-8777-777777777777';
+      turnRunning = true;
+      // The agent's launcher prompted the turn; the agent is still not them.
+      turnPrompter = USER_ID;
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(403);
+      expect(stopChecks).toEqual([{ callerUserId: null, canManageLifecycle: false }]);
+      visibleSession = { ...visibleSession, canManageLifecycle: true };
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, null]);
+    });
+  });
+});
+
+// "Stop and send" ends the running turn after its current tool, so it asks
+// what Stop asks. Refused before any write.
+describe('Stop and send on a turn another member prompted', () => {
+  test('PATCH delivery interrupt → 403 not_turn_prompter; nothing is edited or sent', async () => {
+    turnRunning = true;
+    turnPrompter = OTHER_MEMBER;
+    const response = await app().request(`${base()}/${PROMPT_ID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'rewritten', delivery: 'interrupt' }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
+    expect(edits).toEqual([]);
+    expect(interrupts).toEqual([]);
+    expect(drains).toEqual([]);
+  });
+
+  test('POST delivery interrupt → 403 not_turn_prompter; nothing is queued', async () => {
+    turnRunning = true;
+    turnPrompter = OTHER_MEMBER;
+    const response = await post({ ...validBody, delivery: 'interrupt' });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
+    expect(enqueued).toEqual([]);
+  });
+
+  test('the prompter, the owner or a manager may; a steer or queue send never asks', async () => {
+    turnRunning = true;
+    turnPrompter = USER_ID;
+    expect((await post({ ...validBody, delivery: 'interrupt' })).status).toBe(202);
+    const patched = await app().request(`${base()}/${PROMPT_ID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delivery: 'interrupt' }),
+    });
+    expect(patched.status).toBe(200);
+    expect(interrupts).toEqual([PROMPT_ID]);
+    turnPrompter = OTHER_MEMBER;
+    visibleSession = { ...visibleSession, canManageLifecycle: true };
+    expect((await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt' })).status).toBe(202);
+    stopChecks = [];
+    visibleSession = { ...visibleSession, canManageLifecycle: false };
+    expect((await post({ ...validBody, client_message_id: 'q_3', delivery: 'steer' })).status).toBe(202);
+    expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'queue' })).status).toBe(202);
+    expect(stopChecks).toEqual([]);
+  });
+
+  test("an owner's or manager's send carries mayStopAnyTurn; anyone else's does not", async () => {
+    await post(validBody);
+    visibleSession = { ...visibleSession, canManageLifecycle: true };
+    await post({ ...validBody, client_message_id: 'q_2' });
+    expect(enqueued.map((e) => e.mayStopAnyTurn)).toEqual([undefined, true]);
   });
 });
 
@@ -1256,7 +1400,6 @@ describe('POST .../prompts authorship', () => {
 // to them. Another member who could rewrite or send it would run their own
 // text under the author's identity.
 describe("another member's queued prompt", () => {
-  const OTHER_MEMBER = '22222222-2222-4222-8222-222222222222';
   const call = (method: string, suffix = '', body?: unknown) =>
     app().request(`${base()}/${PROMPT_ID}${suffix}`, {
       method,

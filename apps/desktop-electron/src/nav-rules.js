@@ -27,6 +27,7 @@ const APP_PATH_PREFIXES = [
   '/oauth',
   '/checkout',
   '/tunnel',
+  '/capture',
   '/github',
   '/cli',
   '/marketplace',

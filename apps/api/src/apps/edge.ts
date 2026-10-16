@@ -19,10 +19,9 @@ import { loadPublicAppState } from './public-proxy';
 export type AppExistsCheck = (routeKey: string) => Promise<boolean>;
 
 const defaultAppExists: AppExistsCheck = async (routeKey) => {
-  // loadPublicAppState returns null when no App row matches the route key or
-  // the project has the `apps` flag off — either way, not a host to issue a
-  // certificate for. A deployed-but-cold App still returns a row, so its
-  // certificate is minted for the cold-start page too.
+  // loadPublicAppState returns null when no App row matches the route key —
+  // not a host to issue a certificate for. A deployed-but-cold App still
+  // returns a row, so its certificate is minted for the cold-start page too.
   const state = await loadPublicAppState(routeKey);
   return state !== null;
 };

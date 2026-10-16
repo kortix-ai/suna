@@ -35,7 +35,7 @@ export const MANIFEST_IMPORTS_KEY = 'imports';
 /** List collections; entries are identified by `slug`. */
 export const IMPORTABLE_LIST_KEYS = ['triggers', 'connectors'] as const;
 /** Map collections; entries are identified by their key. */
-export const IMPORTABLE_MAP_KEYS = ['agents', 'apps', 'tools'] as const;
+export const IMPORTABLE_MAP_KEYS = ['agents', 'apps', 'tools', 'skills', 'commands', 'extensions'] as const;
 
 export type ImportableKey =
   | (typeof IMPORTABLE_LIST_KEYS)[number]
@@ -152,7 +152,7 @@ function declaredImports(file: string, raw: Record<string, unknown>): string[] {
 }
 
 function emptyOrigins(): ManifestOrigins {
-  return { triggers: {}, connectors: {}, agents: {}, apps: {}, tools: {} };
+  return Object.fromEntries(ALL_IMPORTABLE_KEYS.map((key) => [key, {}])) as ManifestOrigins;
 }
 
 /** Entries of one collection in one file, as [id, value] pairs. Entries without
@@ -269,6 +269,17 @@ export function resolveManifestImportsSync(
           throw new ManifestImportError(
             `${entry.path}: ${error instanceof Error ? error.message : String(error)}`,
           );
+        }
+        // v3 has no silent drop: an imported file holds only importable keys.
+        if (root.raw.kortix_version === 3) {
+          const stray = Object.keys(raw).filter(
+            (key) => key !== MANIFEST_IMPORTS_KEY && !(ALL_IMPORTABLE_KEYS as readonly string[]).includes(key),
+          );
+          if (stray.length > 0) {
+            throw new ManifestImportError(
+              `${entry.path}: ${stray.map((key) => `"${key}"`).join(', ')} cannot be in an imported file — an imported file declares ${ALL_IMPORTABLE_KEYS.join(', ')} or imports`,
+            );
+          }
         }
         for (const rootOnly of ROOT_ONLY_KEYS) {
           if (raw[rootOnly] !== undefined) {

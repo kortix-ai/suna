@@ -23,10 +23,9 @@ function skillNameOf(path: string): string | null {
   return path.slice(SKILLS_PREFIX.length).split('/')[0] || null;
 }
 
-// `templates/managed/` holds the family itself; `templates/base/` still carries
-// `kortix-cli` (the one managed skill deliberately left in the scaffold). Both
-// roots feed the bake, so the injected set stays complete no matter which root a
-// skill lives in — the failure mode that silently stranded `kortix-computer`
+// `templates/managed/` holds the family itself, `kortix-cli` included. The
+// starter roots feed the bake too, so the injected set stays complete no matter
+// which root a skill lives in — the failure mode that silently stranded `kortix-computer`
 // under `templates/marketplace/` for its entire life.
 const files = [
   ...getManagedSkillFiles(),

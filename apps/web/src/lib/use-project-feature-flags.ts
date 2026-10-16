@@ -32,7 +32,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
-  const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
@@ -55,7 +54,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       agentmail_email: agentmailEmail.enabled,
       llm_gateway: llmGateway.enabled,
       meta_agent: metaAgent.enabled,
-      apps: apps.enabled,
       monitors: monitors.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,

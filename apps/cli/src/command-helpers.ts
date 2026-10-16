@@ -495,22 +495,27 @@ export const SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Expand a short session-id prefix against the project's session list,
- *  returning the matched row (the list already carries it — no re-fetch). */
+ *  returning the matched row (the list already carries it — no re-fetch).
+ *  The list leaves out the caller's archived sessions, so a prefix with no
+ *  match is tried against `archived=only` too: the short id that
+ *  `sessions ls --archived` prints must resolve. */
 export async function expandSessionIdPrefix(
   client: ApiClient,
   projectId: string,
   reference: string,
 ): Promise<ProjectSession | 'ambiguous' | null> {
-  try {
-    const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions`);
-    const matches = sessions.filter((s) => s.session_id.startsWith(reference));
-    if (matches.length === 1) return matches[0];
-    if (matches.length > 1) return 'ambiguous';
-    return null;
-  } catch {
-    // Listing failed — let the direct probe surface the real error.
-    return null;
+  for (const view of ['', '?archived=only']) {
+    try {
+      const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions${view}`);
+      const matches = sessions.filter((s) => s.session_id.startsWith(reference));
+      if (matches.length === 1) return matches[0];
+      if (matches.length > 1) return 'ambiguous';
+    } catch {
+      // Listing failed — let the direct probe surface the real error.
+      return null;
+    }
   }
+  return null;
 }
 
 async function probeSession(
