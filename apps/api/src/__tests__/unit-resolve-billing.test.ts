@@ -5,9 +5,10 @@ import { describe, expect, test } from 'bun:test';
 // behaves as, where that came from, its effective entitlements after the
 // account-level overrides, and its concurrent-session cap.
 //
-// These tests pin its semantics: the trial overlay (with its lazy expiry), the legacy-key
-// aliasing to `credits`, the enterprise/demo/managed-models
-// overrides, and the session-limit override.
+// These tests pin its semantics (.agents/skills/billing/references/plans-and-access.md):
+// the trial overlay (with its lazy expiry), the legacy-key aliasing to
+// `credits`, the 14-day SSO/SCIM grace after an Enterprise trial, and the
+// per-feature overrides — the one exception mechanism.
 //
 // No mocks: the module is pure by construction. If it ever needs one, it has
 // stopped being pure and that is the bug.
@@ -43,7 +44,8 @@ describe('no row', () => {
 });
 
 describe('stored tier', () => {
-  for (const key of ALL_KEYS) {
+  // `enterprise` is no longer a billing plan: see the Enterprise layer below.
+  for (const key of ALL_KEYS.filter((k) => k !== 'enterprise')) {
     test(`tier='${key}' resolves to its own record, source 'stored'`, () => {
       const record = PLAN_CATALOG[key] as NonNullable<(typeof PLAN_CATALOG)[string]>;
       const r = resolveBillingFromRow({ tier: key }, NOW);
@@ -75,99 +77,6 @@ describe('stored tier', () => {
   });
 });
 
-describe('trial overlay', () => {
-  test('active trial behaves as the trial tier, not the stored tier', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'free',
-        trialStatus: 'active',
-        trialTier: 'enterprise',
-        trialEndsAt: iso(24 * HOUR),
-      },
-      NOW,
-    );
-    expect(r.plan.key).toBe('enterprise');
-    expect(r.source).toBe('trial');
-    expect(r.entitlements.sso).toBe(true);
-    expect(r.entitlements.managedModels).toBe(true);
-  });
-
-  test('expired trial falls back to the stored tier', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'free',
-        trialStatus: 'active',
-        trialTier: 'enterprise',
-        trialEndsAt: iso(-1),
-      },
-      NOW,
-    );
-    expect(r.plan.key).toBe('free');
-    expect(r.source).toBe('stored');
-    expect(r.entitlements.sso).toBe(false);
-  });
-
-  test('non-active trial_status never grants, whatever the end date says', () => {
-    for (const status of ['none', 'expired', 'revoked', 'converted']) {
-      const r = resolveBillingFromRow(
-        { tier: 'free', trialStatus: status, trialTier: 'pro', trialEndsAt: iso(24 * HOUR) },
-        NOW,
-      );
-      expect(r.plan.key).toBe('free');
-      expect(r.source).toBe('stored');
-    }
-  });
-
-  test('trial with an unknown or missing tier does not grant', () => {
-    const unknown = resolveBillingFromRow(
-      { tier: 'free', trialStatus: 'active', trialTier: 'nope', trialEndsAt: iso(24 * HOUR) },
-      NOW,
-    );
-    expect(unknown.plan.key).toBe('free');
-    const missing = resolveBillingFromRow(
-      { tier: 'free', trialStatus: 'active', trialTier: 'pro', trialEndsAt: null },
-      NOW,
-    );
-    expect(missing.plan.key).toBe('free');
-  });
-
-  test.each([
-    ['ends exactly now', iso(0)],
-    ['has an unparseable end date', 'garbage'],
-  ])('a trial that %s does not grant', (_name, trialEndsAt) => {
-    const r = resolveBillingFromRow(
-      { tier: 'free', trialStatus: 'active', trialTier: 'enterprise', trialEndsAt },
-      NOW,
-    );
-    expect(r.plan.key).toBe('free');
-    expect(r.source).toBe('stored');
-  });
-
-  test('trial outranks a live subscription row', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'free',
-        ...LIVE_SUB,
-        trialStatus: 'active',
-        trialTier: 'enterprise',
-        trialEndsAt: iso(HOUR),
-      },
-      NOW,
-    );
-    expect(r.plan.key).toBe('enterprise');
-    expect(r.source).toBe('trial');
-  });
-
-  test('a legacy trial tier key resolves to credits', () => {
-    const r = resolveBillingFromRow(
-      { tier: 'free', trialStatus: 'active', trialTier: 'tier_25_200', trialEndsAt: iso(HOUR) },
-      NOW,
-    );
-    expect(r.plan.key).toBe('credits');
-    expect(r.source).toBe('trial');
-  });
-});
-
 describe('no self-heal from the subscription row', () => {
   test('a non-paid stored tier with a live subscription stays as stored', () => {
     for (const tier of ['free', 'none']) {
@@ -178,63 +87,34 @@ describe('no self-heal from the subscription row', () => {
   });
 });
 
-describe('enterprise entitlement overlays', () => {
-  test('enterpriseEntitled on a legacy per_seat row → all entitlements true, plan stays credits', () => {
-    const r = resolveBillingFromRow({ tier: 'per_seat', enterpriseEntitled: true }, NOW);
-    expect(r.plan.key).toBe('credits');
-    expect(r.source).toBe('stored');
-    expect(r.entitlements.sso).toBe(true);
-    expect(r.entitlements.scim).toBe(true);
-    expect(r.entitlements.rbac).toBe(true);
-    expect(r.entitlements.auditAccess).toBe(true);
-    // The overlay grants the enterprise IDENTITY surface only. Plan-shaped
-    // facts stay the plan's.
-    expect(r.entitlements.managedModels).toBe(true);
+describe('removed flags have no effect', () => {
+  test('managed_models_override on the row changes nothing', () => {
+    const stale = {
+      tier: 'free',
+      managedModelsOverride: true,
+    } as unknown as BillingRow;
+    expect(resolveBillingFromRow(stale, NOW)).toEqual(resolveBillingFromRow({ tier: 'free' }, NOW));
   });
 
-  test('demoEnterprise on free → all entitlements true, plan stays free', () => {
-    const r = resolveBillingFromRow({ tier: 'free', demoEnterprise: true }, NOW);
-    expect(r.plan.key).toBe('free');
-    expect(r.entitlements.sso).toBe(true);
-    expect(r.entitlements.auditAccess).toBe(true);
-    // Demo is an identity preview, not a plan upgrade: no managed models.
-    expect(r.entitlements.managedModels).toBe(false);
-  });
-
-  test('both flags false → plan gating stands', () => {
+  test('their JSONB keys are ignored too', () => {
     const r = resolveBillingFromRow(
-      { tier: 'per_seat', enterpriseEntitled: false, demoEnterprise: false },
+      {
+        tier: 'free',
+        entitlementOverrides: {
+          enterpriseEntitled: { value: true },
+          demoEnterprise: { value: true },
+          managedModelsOverride: { value: true },
+          computeRateMultiplier: { value: 0 },
+        },
+      },
       NOW,
     );
-    expect(r.entitlements.sso).toBe(false);
-    expect(r.entitlements.scim).toBe(false);
+    expect(r).toEqual(resolveBillingFromRow({ tier: 'free' }, NOW));
   });
 
-  test('a genuine enterprise plan needs no flag', () => {
-    const r = resolveBillingFromRow({ tier: 'enterprise' }, NOW);
-    expect(r.entitlements.rbac).toBe(true);
-  });
-});
-
-describe('managedModelsOverride is tri-state', () => {
-  test('true grants managed models to a plan that does not include them', () => {
-    const r = resolveBillingFromRow({ tier: 'free', managedModelsOverride: true }, NOW);
-    expect(r.plan.key).toBe('free');
-    expect(r.entitlements.managedModels).toBe(true);
-  });
-
-  test('false withdraws managed models from a plan that does include them', () => {
-    const r = resolveBillingFromRow({ tier: 'credits', managedModelsOverride: false }, NOW);
-    expect(r.plan.key).toBe('credits');
-    expect(r.entitlements.managedModels).toBe(false);
-  });
-
-  test('null / undefined defers to the plan', () => {
-    expect(
-      resolveBillingFromRow({ tier: 'credits', managedModelsOverride: null }, NOW).entitlements
-        .managedModels,
-    ).toBe(true);
-    expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.managedModels).toBe(false);
+  test('the Enterprise plan itself grants every enterprise feature', () => {
+    const e = resolveBillingFromRow({ tier: 'enterprise' }, NOW).entitlements;
+    expect([e.sso, e.scim, e.rbac, e.auditAccess, e.branding, e.managedModels]).toEqual([true, true, true, true, true, true]);
   });
 });
 
@@ -247,214 +127,40 @@ describe('removed maxConcurrentSessions column', () => {
   });
 });
 
-// ─── entitlement_overrides (the JSONB column) ────────────────────────────────
-// Per key: the JSONB entry wins over the legacy column when it applies, the
-// legacy column answers when the key is absent or expired, and the five
-// per-entitlement keys land AFTER the enterprise expansion so one capability
-// can be switched off independently of the all-or-nothing flag.
+// ─── entitlement_overrides: per-feature exceptions ──────────────────────────
 
-describe('entitlement_overrides precedence', () => {
-  test('a JSONB key beats the legacy column of the same name', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'free',
-        enterpriseEntitled: false,
-        entitlementOverrides: { enterpriseEntitled: { value: true } },
-      },
-      NOW,
-    );
-    expect(r.entitlements.sso).toBe(true);
+describe('per-feature overrides', () => {
+  test('one capability can be switched OFF on an Enterprise account', () => {
+    const r = resolveBillingFromRow({ tier: 'enterprise', entitlementOverrides: { sso: { value: false } } }, NOW);
+    expect(r.entitlements.sso).toBe(false);
     expect(r.entitlements.scim).toBe(true);
   });
 
-  test('the JSONB key wins in the OTHER direction too — false beats a true column', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'free',
-        enterpriseEntitled: true,
-        entitlementOverrides: { enterpriseEntitled: { value: false } },
-      },
-      NOW,
-    );
-    expect(r.entitlements.sso).toBe(false);
-  });
-
-  test('an EXPIRED entry is ignored and the legacy column answers', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'free',
-        enterpriseEntitled: true,
-        entitlementOverrides: { enterpriseEntitled: { value: false, expires_at: iso(-1) } },
-      },
-      NOW,
-    );
+  test('one capability can be switched ON for a Credits account', () => {
+    const r = resolveBillingFromRow({ tier: 'credits', entitlementOverrides: { sso: { value: true } } }, NOW);
     expect(r.entitlements.sso).toBe(true);
-  });
-
-  test('an expired entry with no legacy column falls all the way back to the plan', () => {
-    const live = resolveBillingFromRow(
-      { tier: 'free', entitlementOverrides: { managedModels: { value: true, expires_at: iso(HOUR) } } },
-      NOW,
-    );
-    expect(live.entitlements.managedModels).toBe(true);
-    const dead = resolveBillingFromRow(
-      { tier: 'free', entitlementOverrides: { managedModels: { value: true, expires_at: iso(-1) } } },
-      NOW,
-    );
-    expect(dead.entitlements.managedModels).toBe(false);
-  });
-
-  test('a stale maxConcurrentSessions JSONB key is ignored', () => {
-    const r = resolveBillingFromRow(
-      { tier: 'free', entitlementOverrides: { maxConcurrentSessions: { value: 900 } } },
-      NOW,
-    );
-    expect(r).toEqual(resolveBillingFromRow({ tier: 'free' }, NOW));
-  });
-
-  test('managedModelsOverride stays tri-state through the JSONB', () => {
-    expect(
-      resolveBillingFromRow(
-        { tier: 'credits', entitlementOverrides: { managedModelsOverride: { value: false } } },
-        NOW,
-      ).entitlements.managedModels,
-    ).toBe(false);
-    expect(
-      resolveBillingFromRow(
-        { tier: 'free', entitlementOverrides: { managedModelsOverride: { value: true } } },
-        NOW,
-      ).entitlements.managedModels,
-    ).toBe(true);
-  });
-
-  test('a malformed column cannot break resolution — it reads as no overrides', () => {
-    for (const overrides of [null, 'x', 7, [], { sso: 'yes' }, { sso: { value: 3 } }, {}]) {
-      const r = resolveBillingFromRow({ tier: 'credits', entitlementOverrides: overrides }, NOW);
-      expect(r.plan.key).toBe('credits');
-      expect(r.entitlements.sso).toBe(false);
-      expect(r.entitlements.managedModels).toBe(true);
-    }
-  });
-});
-
-describe('per-entitlement overrides', () => {
-  test('one capability can be switched OFF for an enterprise-entitled account', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'per_seat',
-        enterpriseEntitled: true,
-        entitlementOverrides: { sso: { value: false } },
-      },
-      NOW,
-    );
-    expect(r.entitlements.sso).toBe(false);
-    // …and only that one. The other three still come from the expansion.
-    expect(r.entitlements.scim).toBe(true);
-    expect(r.entitlements.rbac).toBe(true);
-    expect(r.entitlements.auditAccess).toBe(true);
-  });
-
-  test('one capability can be switched ON without the enterprise flag', () => {
-    const r = resolveBillingFromRow(
-      { tier: 'free', entitlementOverrides: { auditAccess: { value: true } } },
-      NOW,
-    );
-    expect(r.entitlements.auditAccess).toBe(true);
-    expect(r.entitlements.sso).toBe(false);
-  });
-
-  test('a per-entitlement override beats the plan on a real enterprise plan', () => {
-    const r = resolveBillingFromRow(
-      { tier: 'enterprise', entitlementOverrides: { scim: { value: false } } },
-      NOW,
-    );
-    expect(r.plan.key).toBe('enterprise');
     expect(r.entitlements.scim).toBe(false);
-    expect(r.entitlements.sso).toBe(true);
   });
 
-  test('managedModels as a per-entitlement key outranks managedModelsOverride', () => {
-    const r = resolveBillingFromRow(
-      {
-        tier: 'free',
-        managedModelsOverride: true,
-        entitlementOverrides: { managedModels: { value: false } },
-      },
-      NOW,
-    );
+  test('managedModels can be withdrawn from a plan that includes it', () => {
+    const r = resolveBillingFromRow({ tier: 'credits', entitlementOverrides: { managedModels: { value: false } } }, NOW);
     expect(r.entitlements.managedModels).toBe(false);
   });
 
-  test('an expired per-entitlement override stops applying', () => {
+  test('an expired override stops applying', () => {
     const r = resolveBillingFromRow(
-      {
-        tier: 'per_seat',
-        enterpriseEntitled: true,
-        entitlementOverrides: { sso: { value: false, expires_at: iso(-1) } },
-      },
+      { tier: 'credits', entitlementOverrides: { sso: { value: true, expires_at: iso(-HOUR) } } },
       NOW,
     );
-    expect(r.entitlements.sso).toBe(true);
+    expect(r.entitlements.sso).toBe(false);
   });
-});
 
-describe('compute rate multiplier', () => {
-  test('every plan bills at list price by default', () => {
-    for (const key of ALL_KEYS) {
-      expect(resolveBillingFromRow({ tier: key }, NOW).compute).toEqual({
-        rateMultiplier: 1,
-        source: 'plan',
-      });
+  test('a malformed column cannot break resolution — it reads as no overrides', () => {
+    for (const bad of ['x', 7, [], { sso: 'yes' }]) {
+      expect(resolveBillingFromRow({ tier: 'credits', entitlementOverrides: bad }, NOW).entitlements).toEqual(
+        resolveBillingFromRow({ tier: 'credits' }, NOW).entitlements,
+      );
     }
-    expect(resolveBillingFromRow(null, NOW).compute).toEqual({ rateMultiplier: 1, source: 'plan' });
-  });
-
-  test('an override sets the multiplier, including 0 (free compute)', () => {
-    expect(
-      resolveBillingFromRow(
-        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 0.5 } } },
-        NOW,
-      ).compute,
-    ).toEqual({ rateMultiplier: 0.5, source: 'account_override' });
-    expect(
-      resolveBillingFromRow(
-        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 0 } } },
-        NOW,
-      ).compute,
-    ).toEqual({ rateMultiplier: 0, source: 'account_override' });
-  });
-
-  test('the multiplier is clamped to [0, 10] — a fat finger cannot bill 1000×', () => {
-    expect(
-      resolveBillingFromRow(
-        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 1000 } } },
-        NOW,
-      ).compute.rateMultiplier,
-    ).toBe(10);
-    expect(
-      resolveBillingFromRow(
-        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: -5 } } },
-        NOW,
-      ).compute.rateMultiplier,
-    ).toBe(0);
-  });
-
-  test('an expired or malformed multiplier falls back to list price', () => {
-    expect(
-      resolveBillingFromRow(
-        {
-          tier: 'per_seat',
-          entitlementOverrides: { computeRateMultiplier: { value: 0, expires_at: iso(-1) } },
-        },
-        NOW,
-      ).compute,
-    ).toEqual({ rateMultiplier: 1, source: 'plan' });
-    expect(
-      resolveBillingFromRow(
-        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 'half' } } },
-        NOW,
-      ).compute,
-    ).toEqual({ rateMultiplier: 1, source: 'plan' });
   });
 });
 
@@ -464,8 +170,9 @@ describe('display naming', () => {
       label: 'Free',
       sublabel: null,
     });
+    // A legacy Enterprise tier is licensed on the Credits plan.
     expect(resolveBillingFromRow({ tier: 'enterprise' }, NOW).display).toEqual({
-      label: 'Enterprise',
+      label: 'Credits',
       sublabel: null,
     });
     expect(resolveBillingFromRow({ tier: 'credits' }, NOW).display).toEqual({
@@ -492,5 +199,66 @@ describe('purity', () => {
     r.entitlements.managedModels = true;
     expect(PLAN_CATALOG.free?.entitlements.managedModels).toBe(false);
     expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.managedModels).toBe(false);
+  });
+});
+
+describe('byokFee entitlement', () => {
+  test('on by default for Free and Credits, off on Enterprise', () => {
+    expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.byokFee).toBe(true);
+    expect(resolveBillingFromRow({ tier: 'credits' }, NOW).entitlements.byokFee).toBe(true);
+    expect(resolveBillingFromRow({ tier: 'enterprise' }, NOW).entitlements.byokFee).toBe(false);
+  });
+
+  test('an operator override switches it per account, either way', () => {
+    const waived = resolveBillingFromRow({ tier: 'credits', entitlementOverrides: { byokFee: { value: false } } }, NOW);
+    expect(waived.entitlements.byokFee).toBe(false);
+    const charged = resolveBillingFromRow({ tier: 'enterprise', entitlementOverrides: { byokFee: { value: true } } }, NOW);
+    expect(charged.entitlements.byokFee).toBe(true);
+  });
+});
+
+describe('Enterprise is a feature layer: off, demo, licensed', () => {
+  test('off by default: the plan alone decides', () => {
+    const r = resolveBillingFromRow({ tier: 'credits' }, NOW);
+    expect(r.enterprise).toBe('off');
+    expect(r.entitlements.sso).toBe(false);
+  });
+
+  test('demo turns the Enterprise features on and keeps the plan, its limits and the BYOK fee', () => {
+    const r = resolveBillingFromRow({ tier: 'free', demoEnterprise: true }, NOW);
+    expect(r.enterprise).toBe('demo');
+    expect(r.plan.key).toBe('free');
+    expect(r.features.key).toBe('free');
+    expect([r.entitlements.sso, r.entitlements.scim, r.entitlements.rbac, r.entitlements.auditAccess, r.entitlements.branding]).toEqual([true, true, true, true, true]);
+    expect(r.entitlements.managedModels).toBe(false);
+    expect(r.entitlements.byokFee).toBe(true);
+  });
+
+  test('licensed: Enterprise features and limits, no BYOK fee, billing plan unchanged', () => {
+    const r = resolveBillingFromRow({ tier: 'credits', enterpriseEntitled: true, demoEnterprise: true }, NOW);
+    expect(r.enterprise).toBe('licensed');
+    expect(r.plan.key).toBe('credits');
+    expect(r.features.key).toBe('enterprise');
+    expect(r.entitlements.sso).toBe(true);
+    expect(r.entitlements.byokFee).toBe(false);
+  });
+
+  test('a legacy tier=enterprise row reads as licensed on the Credits plan', () => {
+    const r = resolveBillingFromRow({ tier: 'enterprise' }, NOW);
+    expect(r.enterprise).toBe('licensed');
+    expect(r.plan.key).toBe('credits');
+  });
+
+  test('an override still wins over Demo and Licensed', () => {
+    const r = resolveBillingFromRow({ tier: 'free', demoEnterprise: true, entitlementOverrides: { sso: { value: false } } }, NOW);
+    expect(r.entitlements.sso).toBe(false);
+    expect(r.entitlements.scim).toBe(true);
+  });
+
+  test('trial columns grant nothing any more', () => {
+    const r = resolveBillingFromRow({ tier: 'free', trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: iso(HOUR) } as never, NOW);
+    expect(r.enterprise).toBe('off');
+    expect(r.entitlements.sso).toBe(false);
+    expect(r.source).toBe('stored');
   });
 });

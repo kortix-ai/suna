@@ -35,7 +35,7 @@
 
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';
@@ -1102,7 +1102,7 @@ async function reconcileNotRunningSandbox(
       // Preserve the established identity; never turn this signal into a
       // fresh, empty sandbox for the same session.
       await preserveEstablishedRuntime(row, 'provider_reported_removed', 'provider_removed', now);
-      invalidateProviderCache(row.externalId);
+      invalidateSandbox(row.externalId);
       result.reconciled += 1;
       result.billingClosed += 1;
       break;

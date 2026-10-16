@@ -132,10 +132,6 @@ afterEach(() => {
 const settle = (ms = 0) => act(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 const listItems = () => [...document.querySelectorAll('li')];
 const buttonsIn = (element: Element) => [...element.querySelectorAll('button')].map((b) => b.textContent?.trim() ?? '');
-const click = (element: Element) =>
-  act(() => {
-    element.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
-  });
 
 describe('an account key Kortix cannot decrypt', () => {
   test('shows the badge and Re-enter key; a decryptable key shows neither', () => {

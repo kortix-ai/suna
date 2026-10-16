@@ -145,6 +145,28 @@ describe('narrateStep', () => {
   });
 });
 
+describe('narrateStep - a codemode script is a script, not the tool name', () => {
+  it('codemode resolves to its own script family, never the other fallback', () => {
+    expect(familyForTool('codemode')).toBe('script');
+  });
+
+  it('narrates one script and several scripts', () => {
+    expect(narrateStep('script', [part('codemode', { code: 'return 1' })])).toBe('Ran a script');
+    expect(narrateStep('script', [part('codemode'), part('codemode')])).toBe('Ran 2 scripts');
+  });
+
+  it('a group of unrecognized/MCP tools still names every tool', () => {
+    expect(narrateStep('other', [part('linear/create_issue'), part('slack/send')])).toBe(
+      'Used Create Issue and Send',
+    );
+  });
+
+  it('a failed script says so', () => {
+    const failed = { ...part('codemode'), state: { status: 'error', input: {}, error: 'Script failed' } } as unknown as ToolPart;
+    expect(narrateFailedStep('script', [failed])).toBe('A script failed');
+  });
+});
+
 describe('narrationToolName', () => {
   it('strips the MCP server prefix and title-cases', () => {
     expect(narrationToolName('linear/create_issue')).toBe('Create Issue');

@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { agentConfigQueryKey, applyAgentConfigSaveResponse } from './use-agent-config';
+import { agentConfigNeedsUpgrade, agentConfigQueryKey, applyAgentConfigSaveResponse } from './use-agent-config';
 
 describe('applyAgentConfigSaveResponse', () => {
   test('replaces a stale all-secrets grant with the explicit saved list', () => {
@@ -30,6 +30,48 @@ describe('applyAgentConfigSaveResponse', () => {
       ...stale,
       block: { secrets: ['MAIL_TOKEN'] },
     });
+  });
+});
+
+describe('applyAgentConfigSaveResponse on an empty cache', () => {
+  test('a saved v3 block is editable: the save itself proves the server accepted the edit', () => {
+    const queryClient = new QueryClient();
+    applyAgentConfigSaveResponse(queryClient, 'project-1', 'kortix', {
+      ok: true,
+      agent: 'kortix',
+      schema_version: 3,
+      block: { skills: 'all', commands: ['weekly-report'] },
+    });
+    expect(
+      queryClient.getQueryData<AgentConfigResponse>(agentConfigQueryKey('project-1', 'kortix'))?.editable,
+    ).toBe(true);
+  });
+});
+
+describe('agentConfigNeedsUpgrade', () => {
+  const response = (schema_version: number, editable: boolean): AgentConfigResponse => ({
+    agent: 'kortix',
+    schema_version,
+    editable,
+    default_agent: null,
+    block: null,
+  });
+
+  test('only a v1 manifest asks for the upgrade', () => {
+    expect(agentConfigNeedsUpgrade(response(1, false))).toBe(true);
+  });
+
+  test('an editable v2 or v3 manifest never asks for it', () => {
+    expect(agentConfigNeedsUpgrade(response(2, true))).toBe(false);
+    expect(agentConfigNeedsUpgrade(response(3, true))).toBe(false);
+  });
+
+  test('a v3 manifest the server answers read-only never claims to be v1', () => {
+    expect(agentConfigNeedsUpgrade(response(3, false))).toBe(false);
+  });
+
+  test('an unresolved read asks for nothing', () => {
+    expect(agentConfigNeedsUpgrade(undefined)).toBe(false);
   });
 });
 

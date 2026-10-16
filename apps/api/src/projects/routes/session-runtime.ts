@@ -10,7 +10,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '../lib/app';
@@ -21,9 +21,11 @@ import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
+import { recoverLostSession } from '../session-lifecycle/recover-lost-session';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
+import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
 export function registerSessionRuntimeRoutes(): void {
@@ -248,6 +250,49 @@ export function registerSessionRuntimeRoutes(): void {
     },
   );
 
+  // POST /v1/projects/:projectId/sessions/:sessionId/recover
+  // A lost session (the provider removed its box) continues on a new computer:
+  // the next /start boots a fresh box from the session branch, and the box
+  // restores the saved conversation from the session log (KRTX-2419).
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/recover',
+      tags: ['sessions'],
+      summary: 'Continue a lost session on a new computer',
+      description:
+        'For a session whose computer the provider lost. Retires the lost sandbox row once the provider confirms the box removed; ' +
+        'the next `/start` boots a fresh box from the session branch, which restores the saved conversation. ' +
+        '409 `session_not_lost`, `session_transcript_missing` (nothing changed) or `session_sandbox_removal_pending` (retry).',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+      responses: {
+        200: json(z.object({ ok: z.literal(true) }), 'The next /start boots a new computer'),
+        ...errors(403, 404, 409, 503),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+      if (binding.kind === 'error') return binding.response as never;
+      const { loaded } = binding;
+      // A new computer is compute: a scoped agent token needs project.session.start.
+      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+      const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+      if (!visible.canManageLifecycle) {
+        return c.json({ error: 'Only the session owner or an account owner/admin can continue this session' }, 403);
+      }
+      const result = await recoverLostSession({ projectId, sessionId, accountId: loaded.row.accountId });
+      if ('ok' in result) return c.json({ ok: true as const }, 200);
+      return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
+    },
+  );
+
   // POST /v1/projects/:projectId/sessions/:sessionId/stop
   // Manual pause: stops the running sandbox in place (disk kept, same contract as
   // an idle auto-stop) without provisioning anything new. Resumable via /start.
@@ -303,6 +348,8 @@ export function registerSessionRuntimeRoutes(): void {
         sessionId,
         accountId: loaded.row.accountId,
         userId: loaded.userId,
+        // The person the stopped turn names; an agent credential names nobody.
+        stoppedBy: isProjectSessionPrincipal(c) ? null : loaded.userId,
       });
       return c.json(result.body, result.status as any);
     },
@@ -379,7 +426,17 @@ export function registerSessionRuntimeRoutes(): void {
       // SAME projection instead of a second copy — two projections of one
       // lifecycle authority is how a client ends up holding two disagreeing
       // answers to "is this session working?".
-      return c.json(await readSessionTurnState(sessionId));
+      //
+      // `can_stop`: may THIS caller stop the running turn (its prompter, the
+      // session owner or a project manager; true when nothing runs). Clients
+      // show Stop from it instead of guessing (`turn-stop-authority.ts`).
+      const state = await readSessionTurnState(sessionId);
+      const canStop = await canStopTurns(state, {
+        sessionId,
+        callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+        canManageLifecycle: visible.canManageLifecycle,
+      });
+      return c.json({ ...state, can_stop: canStop });
     },
   );
 }

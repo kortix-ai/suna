@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { GatewayModelStat, GatewaySeriesPoint } from '@/lib/projects-gateway-client';
 
-import { CostSection, MetricTab, ShareBar, fmtMs, weightedP50 } from './_metrics';
+import { CostSection, MetricTab, ShareBar, fmtCredits, fmtMs, weightedP50 } from './_metrics';
 import { MemberRow } from './gateway-budgets';
 import { mostSpend } from './gateway-overview';
 
@@ -45,6 +45,16 @@ describe('Costs — the latency headline', () => {
   });
 });
 
+describe('Costs — spend reads in credits', () => {
+  test('a USD amount reads as credits (1 credit = $0.01)', () => {
+    expect(fmtCredits(18.42)).toBe('1,842');
+    expect(fmtCredits(0.004)).toBe('0.4');
+    expect(fmtCredits(0.00001)).toBe('<0.01');
+    expect(fmtCredits(0)).toBe('0');
+    expect(fmtCredits(1234.5, 'de-DE')).toBe('123.450');
+  });
+});
+
 describe('Costs — Most spend', () => {
   test('top models by spend with shares, the rest folded into one row', () => {
     const out = mostSpend([model('a', 1), model('b', 6), model('c', 2), model('d', 1)], 2);
@@ -60,10 +70,12 @@ describe('Costs — Most spend', () => {
 
 describe('Costs — the metric picker', () => {
   test('a tab carries its label and window total, and says when it is selected', () => {
-    const on = renderToStaticMarkup(<MetricTab label="Spend" value="$18.42" selected onSelect={() => {}} />);
+    const on = renderToStaticMarkup(
+      <MetricTab label="Spend" value="1,842" unit="credits" selected onSelect={() => {}} />,
+    );
     expect(on).toContain('role="tab"');
     expect(on).toContain('aria-selected="true"');
-    expect(on).toContain('$18.42');
+    expect(on.replace(/<[^>]+>/g, ' ')).toMatch(/1,842\s+credits/);
     expect(on).toContain('border-b-foreground');
     const off = renderToStaticMarkup(<MetricTab label="Tokens" value="60.1M" selected={false} onSelect={() => {}} />);
     expect(off).toContain('aria-selected="false"');
@@ -111,7 +123,8 @@ describe('Costs — member caps', () => {
       />,
     );
     expect(out).toContain('role="meter"');
-    expect(out).toContain('72% of $20.00');
+    expect(out).toContain('1,440');
+    expect(out).toContain('72% of 2,000 credits');
     expect(out).toContain('Edit cap');
     expect(out).toContain('Remove');
   });
@@ -128,16 +141,16 @@ describe('Costs — member caps', () => {
         onRemove={() => {}}
       />,
     );
-    expect(out).toContain('$5.00');
-    expect(out).toContain('25% of $20.00');
-    expect(out).not.toContain('$14.40');
+    expect(out).toContain('>500<');
+    expect(out).toContain('25% of 2,000 credits');
+    expect(out).not.toContain('1,440');
   });
 
   test('a cap whose period spend is unknown shows its limit and no meter', () => {
     const out = renderToStaticMarkup(
       <MemberRow member={member} budget={budget} canWrite onSetCap={() => {}} onRemove={() => {}} />,
     );
-    expect(out).toContain('$20.00');
+    expect(out.replace(/<[^>]+>/g, ' ')).toMatch(/2,000\s+credits\s+per month/);
     expect(out).not.toContain('role="meter"');
   });
 

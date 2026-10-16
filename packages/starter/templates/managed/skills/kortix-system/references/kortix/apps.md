@@ -9,11 +9,8 @@ every release. The `kortix-apps` system skill covers releases, machines,
 volumes, services, templates (`convex`), sign-in tokens and bindings
 (`references/apps-model.md` there).
 
-Apps is off by default and enabled per project by Kortix (it is not listed in
-Project Settings → Feature flags; the user contacts Kortix). The API returns `403`, the
-public URL does not resolve, and App operations remain unavailable while the
-feature is disabled. The CLI and web inventory stay visible and label Apps as
-experimental.
+Apps are generally available in every project. Use Apps directly; no feature
+flag or enablement request is required.
 
 ## Select a workload
 
@@ -148,10 +145,10 @@ The new App uses `private` access unless `--access` selects another mode.
 Use `--no-wait` only when another process will poll deployment state. The
 default wait limit is 1,200 seconds. Change it with `--wait-seconds`.
 
-## Repeatable v2 manifest
+## Repeatable manifest
 
-The `apps:` map is available only in `kortix_version: 2` YAML manifests.
-It contains deployment defaults. It does not auto-deploy on merge.
+The `apps:` map lives in `kortix.yaml` (`kortix_version: 3`, and the legacy
+version 2). An imported file may declare it. It contains deployment defaults. It does not auto-deploy on merge.
 
 ```yaml
 apps:

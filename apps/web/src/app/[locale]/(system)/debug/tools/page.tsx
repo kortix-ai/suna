@@ -1608,7 +1608,6 @@ function PanelDetailFixture({
 export default function DebugToolsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [open, setOpen] = useState(true);
   const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
 
   return (
@@ -1624,15 +1623,6 @@ export default function DebugToolsPage() {
             )}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="border-border bg-card hover:bg-muted rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
-        >
-          {open
-            ? tI18nHardcoded.raw('i18nComplete.text25f7b3721119')
-            : tI18nHardcoded.raw('i18nComplete.texta3e586be3eff')}
-        </button>
       </div>
 
       {/* Easy-mode panel preview — the non-technical card home, and the

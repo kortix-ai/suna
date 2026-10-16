@@ -447,7 +447,7 @@ describe('missingAgentGrantNotice', () => {
     expect(notice.body).toContain('kortix.yaml');
     expect(notice.body).toContain('"secrets: all" does not grant this delivery mode');
     expect(notice.manifest).toBe(
-      'kortix_version: 2\nagents:\n  my-agent:\n    secrets: [ENFORCED_TEST]',
+      'kortix_version: 3\nagents:\n  my-agent:\n    secrets: [ENFORCED_TEST]',
     );
   });
 });

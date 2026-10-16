@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { MarkdownImage, MarkdownLink } from '@/components/markdown/unified-markdown';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 import { STATUS_DOT } from '@/components/ui/status';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -19,8 +20,9 @@ export const kids = (value: unknown): GenuiNode[] => (Array.isArray(value) ? (va
 /** Masonry shows at most this many images; a "+N" tile after them shows the rest. */
 const GALLERY_SHOWN = 6;
 /**
- * Two or more images (Paper Image 17, masonry): two columns, each image at its own aspect ratio, so
- * nothing is cropped, and each image placed in the shorter column. The ratios are read from the images as
+ * Two or three images: one row, all the same height, each at its own shape. Four or more (Paper Image 17,
+ * masonry): two columns, each image at its own aspect ratio, so nothing is cropped, and each image placed
+ * in the shorter column. The ratios are read from the images as
  * they load; until then a tile counts as 4:3. The columns end level (see `tile` below). The first image
  * always shows its caption; the others show theirs on hover or focus.
  */
@@ -51,14 +53,14 @@ function GenuiGallery({ images, renderChild }: { images: GenuiNode[]; renderChil
 
   const ratioOf = (i: number) => (i < shown.length ? (ratios[shown[i]!.id] ?? UNKNOWN_RATIO) : UNKNOWN_RATIO);
   const count = shown.length + (overflow ? 1 : 0);
-  // Two images: one row, both the same height, each as wide as its shape asks (width share = 1 / ratio),
-  // so neither is cropped. Three or more: masonry columns; a shorter column shares its extra height among
-  // its tiles in proportion (`flexGrow` = ratio), and each image covers its tile, so every crop stays small
-  // and both columns end level.
-  const pair = count === 2;
+  // Two or three images: one row, all the same height, each as wide as its shape asks (width share =
+  // 1 / ratio), so none is cropped. Four or more: masonry columns; a shorter column shares its extra height
+  // among its tiles in proportion (`flexGrow` = ratio), and each image covers its tile, so every crop stays
+  // small and both columns end level.
+  const row = count === 2 || count === 3;
   const tile = (i: number) => {
     const ratio = ratioOf(i);
-    const style = pair ? { aspectRatio: 1 / ratio, flexGrow: 1 / ratio, flexBasis: 0 } : { aspectRatio: 1 / ratio, flexGrow: ratio };
+    const style = row ? { aspectRatio: 1 / ratio, flexGrow: 1 / ratio, flexBasis: 0 } : { aspectRatio: 1 / ratio, flexGrow: ratio };
     const className = 'relative min-h-0 min-w-0 overflow-hidden rounded-lg';
     if (i < shown.length) {
       const image = shown[i]!;
@@ -81,11 +83,10 @@ function GenuiGallery({ images, renderChild }: { images: GenuiNode[]; renderChil
       </button>
     );
   };
-  if (pair) {
+  if (row) {
     return (
       <div ref={galleryRef} className="flex gap-1.5">
-        {tile(0)}
-        {tile(1)}
+        {Array.from({ length: count }, (_, i) => tile(i))}
       </div>
     );
   }
@@ -151,19 +152,41 @@ function CardRating({ rating, reviews, price }: { rating: unknown; reviews: unkn
 /** Below this list width the cards stack in one column. */
 const CARD_TWO_COLUMNS_MIN = 480;
 
-/** The text of a card in either layout: title link, rating, location line, description, and the badges as "Luxury · Heritage". */
+/**
+ * The text of a card in either layout: the title link with the badges top right (so a pick such as
+ * "My first choice" reads at a glance), rating, location line, and the description.
+ */
 function CardText({ props }: { props: GenuiNode['props'] }) {
-  const tags = kids(props.badges).map((badge) => String(badge.props.label));
+  const badges = kids(props.badges);
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1">
-      {/* The title link reads as the item's name: ink with an underline, not the link blue. */}
-      <span className="text-foreground [&_a]:text-foreground [&_a]:decoration-border hover:[&_a]:decoration-foreground text-base font-medium text-balance [&_a]:underline [&_a]:underline-offset-4">
-        {props.href ? <MarkdownLink href={String(props.href)}>{String(props.title)}</MarkdownLink> : String(props.title)}
-      </span>
+      {/* Baseline: the badge text sits on the title's first line, not above or below it. */}
+      <div className="flex items-baseline justify-between gap-3">
+        {/* The title link reads as the item's name: ink with an underline, not the link blue. */}
+        <span className="text-foreground [&_a]:text-foreground [&_a]:decoration-border hover:[&_a]:decoration-foreground min-w-0 text-base font-medium text-balance [&_a]:underline [&_a]:underline-offset-4">
+          {props.href ? <MarkdownLink href={String(props.href)}>{String(props.title)}</MarkdownLink> : String(props.title)}
+        </span>
+        {badges.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+            {badges.map((badge) => (
+              // A plain secondary pill; a good pick (the recommendation) leads with a gold star at the text size.
+              // Roobert's ascender (1018) is 4x its descender (246), so the cap center is 0.04em below the line
+              // center: the star moves down by that much to sit level with the letters.
+              <Badge
+                key={badge.id}
+                variant="secondary"
+                className="gap-1.5 px-2 py-0.5 font-sans text-xs ring-0 has-[>svg]:gap-1.5 [&>svg]:!size-[1em] [&>svg]:translate-y-[0.04em]"
+              >
+                {badge.props.tone === 'good' ? <StarIcon weight="fill" className="fill-kortix-yellow text-kortix-yellow" aria-hidden /> : null}
+                {String(badge.props.label)}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+      </div>
       <CardRating rating={props.rating} reviews={props.reviews} price={props.price} />
       {props.subtitle ? <span className="text-muted-foreground text-xs">{String(props.subtitle)}</span> : null}
       {props.body ? <p className="text-foreground text-sm text-pretty">{String(props.body)}</p> : null}
-      {tags.length > 0 ? <span className="text-muted-foreground text-xs">{tags.join(' · ')}</span> : null}
     </div>
   );
 }
@@ -172,13 +195,16 @@ function CardText({ props }: { props: GenuiNode['props'] }) {
  * Two or more Cards (a shortlist of hotels, products, places, books), in one of two layouts (`cardListLayout`):
  * - grid: masonry, each card its photo at its own shape (`cardImageShape`) above its text. Each card goes into
  *   the column that is shorter so far, so a ranked list still reads left to right, top to bottom.
- * - list: one row per card, a small square thumbnail (the whole image) beside the text, hairlines between rows.
+ * - list: one row per card, a square thumbnail beside the text, hairlines between rows. A photo fills the
+ *   thumbnail; a logo sits whole inside it. A thumbnail that fails to load drops its box.
  * Without a hint the list shows first, and switches to the grid once most loaded images prove to be photos.
  */
 function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' | 'grid' }) {
   const listRef = useRef<HTMLDivElement>(null);
   const [shapes, setShapes] = useState<Record<string, CardShape>>({});
   const [columns, setColumns] = useState(2);
+  // Keyed by URL: a list thumbnail that failed to load drops its box.
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
   const mode = cardListLayout(layout, Object.values(shapes));
 
   useEffect(() => {
@@ -206,16 +232,26 @@ function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' 
     return (
       <div ref={listRef}>
         <ul className="divide-border flex flex-col divide-y">
-          {cards.map(({ id, props }) => (
-            <li key={id} data-card={id} className="flex gap-4 py-4 first:pt-0 last:pb-0">
-              {props.image ? (
-                <div className="bg-muted size-18 shrink-0 self-start overflow-hidden rounded-lg p-1.5 [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-contain [&_img]:outline-0">
-                  <MarkdownImage src={String(props.image)} alt="" flush compact />
-                </div>
-              ) : null}
-              <CardText props={props} />
-            </li>
-          ))}
+          {cards.map(({ id, props }) => {
+            // Until the image loads its shape is unknown and counts as a photo.
+            const shape = shapes[id] ?? cardImageShape(0, 0);
+            const image = props.image && !failed.has(String(props.image)) ? String(props.image) : null;
+            return (
+              <li key={id} data-card={id} className="flex gap-4 py-4 first:pt-0 last:pb-0">
+                {image ? (
+                  <div
+                    className={cn(
+                      'bg-muted size-26 shrink-0 self-start overflow-hidden rounded-lg [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:outline-0',
+                      shape.inset ? 'p-1.5 [&_img]:object-contain' : '[&_img]:object-cover',
+                    )}
+                  >
+                    <MarkdownImage src={image} alt="" flush compact onError={() => setFailed((known) => new Set(known).add(image))} />
+                  </div>
+                ) : null}
+                <CardText props={props} />
+              </li>
+            );
+          })}
         </ul>
       </div>
     );

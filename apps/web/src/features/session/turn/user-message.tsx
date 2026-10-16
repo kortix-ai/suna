@@ -410,9 +410,11 @@ function parseAttachmentContent(blocks: readonly SessionLogBlock[]): ParsedAttac
     if (!blockText?.trim()) return;
 
     // Pastes come out FIRST: a paste is the user's text, so a `<file>` or
-    // `<reply_context>` inside one is paste content, not a ref.
-    const pasted = splitPastedContent(stripSystemPtyText(blockText));
-    const rawPartText = pasted.text;
+    // `<reply_context>` inside one is paste content, not a ref. They also come
+    // out before `stripSystemPtyText`, which collapses blank-line runs: a
+    // shorter body no longer matches its `chars` and the tile shows as raw XML.
+    const pasted = splitPastedContent(blockText);
+    const rawPartText = stripSystemPtyText(pasted.text);
     pastes.push(...pasted.pastes);
     rawTexts.push(rawPartText);
 

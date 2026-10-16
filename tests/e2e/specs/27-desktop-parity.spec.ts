@@ -185,6 +185,22 @@ async function expectThinkingMatchesStop(page: Page) {
     .toBe(true);
 }
 
+/**
+ * Settings → Appearance picks the mode from the searchable Theme combobox
+ * (#9904). Its rows render in a portal outside the settings dialog, so the
+ * row is found on the page. The trigger then names the chosen row.
+ */
+async function chooseAppearanceTheme(
+  page: Page,
+  settings: Locator,
+  theme: string,
+) {
+  const picker = settings.getByRole("button", { name: "Theme", exact: true });
+  await picker.click();
+  await page.getByRole("option", { name: theme, exact: true }).click();
+  await expect(picker).toContainText(theme);
+}
+
 async function expectSeparateRows(rows: Locator) {
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
   const boxes = await rows.evaluateAll((elements) =>
@@ -448,9 +464,7 @@ for (const runtime of runtimes) {
           .getByRole("tab", { name: "Appearance", exact: true })
           .click();
         for (const theme of ["Light", "Dark", "System"]) {
-          await dialog
-            .getByRole("button", { name: theme, exact: true })
-            .click();
+          await chooseAppearanceTheme(page, dialog, theme);
           const expectedTheme =
             theme === "System"
               ? (await page.evaluate(
@@ -1270,9 +1284,7 @@ for (const runtime of runtimes) {
           await settings
             .getByRole("tab", { name: "Appearance", exact: true })
             .click();
-          await settings
-            .getByRole("button", { name: theme, exact: true })
-            .click();
+          await chooseAppearanceTheme(page, settings, theme);
           await settings.getByRole("button", { name: "Back to app" }).click();
           await expect(page.locator("html")).toHaveClass(
             new RegExp(theme.toLowerCase()),
@@ -2728,6 +2740,34 @@ nativeBrowserTest?.(
           ),
         ).toBe("no-drag");
       }
+
+      // Apps share the web preview shell, including its native control inset.
+      await api(session.access_token, "PATCH", `/projects/${project.id}/features`, {
+        feature: "apps", enabled: true,
+      });
+      await api(session.access_token, "POST", `/projects/${project.id}/apps`, {
+        slug: `desktop-preview-${Date.now()}`, name: "Desktop Preview",
+      }, 201);
+      await main.goto(`${baseURL}/projects/${project.id}/apps`);
+      const previewCard = main.getByRole("button", { name: "Open Desktop Preview" });
+      await previewCard.click();
+      const preview = main.getByRole("dialog", { name: "Desktop Preview App" });
+      await expect(preview).toBeVisible();
+      const geometry = await preview.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const headerElement = element.querySelector("header");
+        if (!headerElement) throw new Error("App preview header is missing");
+        const header = headerElement.getBoundingClientRect();
+        return { x: box.x, y: box.y, width: box.width, height: box.height,
+          viewportWidth: innerWidth, viewportHeight: innerHeight, headerTop: header.top };
+      });
+      expect(geometry.x).toBe(0);
+      expect(geometry.y).toBe(0);
+      expect(Math.abs(geometry.width - geometry.viewportWidth)).toBeLessThan(1);
+      expect(Math.abs(geometry.height - geometry.viewportHeight)).toBeLessThan(1);
+      expect(geometry.headerTop * await currentZoom()).toBeGreaterThanOrEqual(40);
+      await preview.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(previewCard).toBeVisible();
 
       await nativeWindow.evaluate(async (window) => {
         await new Promise<void>((resolve) => {

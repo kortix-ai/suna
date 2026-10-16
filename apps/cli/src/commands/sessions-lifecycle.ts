@@ -1,7 +1,7 @@
 /**
  * Session lifecycle verbs the dashboard has and the CLI did not: pause a
  * session, wake one back up, pre-warm one, change its model mid-flight,
- * compact its conversation, and restore a deleted one.
+ * compact its conversation, restore a deleted one, and continue a lost one.
  *
  * `restart` (re-provision) already lives in sessions.ts and is a different
  * thing: `stop`/`start` are the same pause/resume pair the session header's
@@ -72,6 +72,27 @@ Options:
   -h, --help       Show this help.
 
 Needs project.session.stop, and the session owner or a project manager.
+`;
+
+const RECOVER_HELP = help`Usage: kortix sessions recover <session-id> [options]
+
+Continue a lost session on a new computer. A session is lost when the provider
+removed its sandbox: \`sessions start\` then fails with
+runtime_identity_unavailable. Recover keeps the session and its
+saved conversation. Its next start boots a new sandbox from the session branch
+and restores the conversation, so the agent keeps the context.
+Work that was not committed and pushed stays lost.
+
+A session with no saved conversation cannot continue: recover refuses it and
+changes nothing. Delete it with \`sessions rm\` instead.
+
+Options:
+  --project <id>   Operate on this project id (default: linked).
+  --host <name>    Operate against a non-default Kortix host.
+  --json           Machine-readable output.
+  -h, --help       Show this help.
+
+Needs project.session.start, and the session owner or a project manager.
 `;
 
 const START_HELP = help`Usage: kortix sessions start <session-id> [options]
@@ -237,6 +258,39 @@ export async function runSessionsRestore(argv: string[]): Promise<number> {
   return 0;
 }
 
+export async function runSessionsRecover(argv: string[]): Promise<number> {
+  const parsed = parseCommon(argv, RECOVER_HELP);
+  if (typeof parsed === 'number') return parsed;
+  const { rest, opts, json } = parsed;
+
+  const sessionId = rest.filter((a) => !a.startsWith('-'))[0];
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n\n${RECOVER_HELP}`);
+    return 2;
+  }
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions recover ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
+  const { client, projectId, session } = located.located;
+
+  try {
+    await client.post(`/projects/${projectId}/sessions/${session.session_id}/recover`, {});
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson({ ok: true, session_id: session.session_id });
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`${C.bold}${short(session.session_id)}${C.reset} continues on a new computer${C.dim}. Its next start restores the saved conversation: \`kortix sessions start ${short(session.session_id)} --wait\`${C.reset}`)}\n`,
+  );
+  return 0;
+}
+
 export async function runSessionsStart(argv: string[]): Promise<number> {
   const rest = [...argv];
   if (rest.includes('-h') || rest.includes('--help')) {
@@ -300,6 +354,12 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
     process.stderr.write(
       `${status.err(`Session ${result.stage}${result.reason ? `: ${result.reason}` : ''}.`)}\n`,
     );
+    // The provider removed the box. `recover` continues it on a new one.
+    if (result.reason === 'runtime_identity_unavailable') {
+      process.stderr.write(
+        `${C.dim}  Its computer was lost. Continue it on a new computer with its saved conversation: \`kortix sessions recover ${short(session.session_id)}\`${C.reset}\n`,
+      );
+    }
     return 1;
   }
   if (wait) {

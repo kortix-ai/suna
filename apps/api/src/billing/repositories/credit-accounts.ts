@@ -13,38 +13,6 @@ export async function getCreditAccount(accountId: string) {
   return row ?? null;
 }
 
-/** Whether the account has the self-serve enterprise demo toggled on. */
-export async function isDemoEnterprise(accountId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ demoEnterprise: creditAccounts.demoEnterprise })
-    .from(creditAccounts)
-    .where(eq(creditAccounts.accountId, accountId))
-    .limit(1);
-  return row?.demoEnterprise ?? false;
-}
-
-/** Whether the account is flagged as a contracted cloud Enterprise customer.
- *  When true the account resolves all enterprise entitlements (SSO/SCIM/RBAC/
- *  audit) regardless of its billing tier — decoupling feature entitlements
- *  from the commercial billing model. Set by an operator when a contract is
- *  signed. Distinct from the self-serve demo flag (`isDemoEnterprise`). */
-export async function isEnterpriseEntitled(accountId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ enterpriseEntitled: creditAccounts.enterpriseEntitled })
-    .from(creditAccounts)
-    .where(eq(creditAccounts.accountId, accountId))
-    .limit(1);
-  return row?.enterpriseEntitled ?? false;
-}
-
-// NOTE — there are deliberately no `setEnterpriseEntitled` /
-// `setManagedModelsOverride` / `setDemoEnterprise` writers here any more.
-// Those three columns are ADMIN-OWNED (billing/services/account-write-owner.ts):
-// every write goes through `applyAdminOverride`, which enforces the ownership
-// boundary against provider sync and invalidates the billing cache. A private
-// per-column setter is exactly the bypass that boundary exists to prevent.
-// The readers above stay — reading is not a write.
-
 export async function getCreditBalance(accountId: string) {
   const [row] = await db
     .select({
@@ -69,12 +37,6 @@ export async function getSubscriptionInfo(accountId: string) {
       planType: creditAccounts.planType,
       stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
       stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-      trialStatus: creditAccounts.trialStatus,
-      trialEndsAt: creditAccounts.trialEndsAt,
-      trialStartedAt: creditAccounts.trialStartedAt,
-      trialTier: creditAccounts.trialTier,
-      trialMonthlyUsd: creditAccounts.trialMonthlyUsd,
-      managedModelsOverride: creditAccounts.managedModelsOverride,
       commitmentType: creditAccounts.commitmentType,
       commitmentEndDate: creditAccounts.commitmentEndDate,
       billingCycleAnchor: creditAccounts.billingCycleAnchor,
@@ -147,26 +109,14 @@ export async function getYearlyAccountsDueForRotation(afterAccountId?: string) {
     .where(
       and(
         afterAccountId ? gt(creditAccounts.accountId, afterAccountId) : undefined,
-        or(
-          // A yearly Stripe plan: paid once a year, credited monthly.
-          and(
-            eq(creditAccounts.planType, 'yearly'),
-            ne(creditAccounts.tier, 'free'),
-            eq(creditAccounts.stripeSubscriptionStatus, 'active'),
-            ne(creditAccounts.paymentStatus, 'past_due'),
-          ),
-          // An Enterprise contract: invoiced outside Stripe, credited monthly
-          // with the amount the admin set. A live Stripe subscription renews
-          // through invoice.paid instead, so it is excluded.
-          and(
-            eq(creditAccounts.tier, 'enterprise'),
-            gt(creditAccounts.planMonthlyUsd, '0'),
-            or(
-              isNull(creditAccounts.stripeSubscriptionStatus),
-              ne(creditAccounts.stripeSubscriptionStatus, 'active'),
-            ),
-          ),
-        ),
+        // A yearly Stripe plan: paid once a year, credited monthly. Enterprise
+        // is credited by its contract pool instead, and a monthly reset here
+        // would wipe that pool (enterprise-contracts.ts).
+        eq(creditAccounts.planType, 'yearly'),
+        ne(creditAccounts.tier, 'free'),
+        ne(creditAccounts.tier, 'enterprise'),
+        eq(creditAccounts.stripeSubscriptionStatus, 'active'),
+        ne(creditAccounts.paymentStatus, 'past_due'),
         or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
     )

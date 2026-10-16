@@ -30,19 +30,27 @@ import { createElement } from 'react';
  * the notification center (KRTX-1742).
  */
 
-import { Button } from '@/components/ui/button';
 import {
   cachedNotificationCenter,
   cachedNotificationCenterAnswer,
 } from '@/features/notifications/use-notification-center';
 import { hasWebPushSubscription } from '@/features/notifications/web-push';
 import {
+  customToast,
   dismissToast,
+  ToastCard,
+  toastIcon,
   errorToast,
   infoToast,
   successToast,
   warningToast,
 } from '@/components/ui/toast';
+import { ClockIcon } from '@phosphor-icons/react';
+import {
+  SessionFailedCard,
+  SessionStackCard,
+  type SessionStackItem,
+} from '@/features/notifications/session-toast-cards';
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
@@ -67,7 +75,9 @@ export type WebNotificationType =
   | 'permission'
   | 'shared'
   | 'automation_failed'
-  | 'automation_recovered';
+  | 'automation_recovered'
+  | 'capture_device_down'
+  | 'capture_device_recovered';
 
 export interface WebNotificationPayload {
   /** Which category this notification belongs to */
@@ -93,6 +103,16 @@ export interface WebNotificationPayload {
    * A service-worker notification opens its url and does not run it.
    */
   onClick?: () => void;
+  /** The in-app toast's title when it differs from the OS one ("Failure alert in Growth"). */
+  inAppTitle?: string;
+  /** The subject's display name, for the in-app entity row: a session (no quotes, no timestamp) or an automation. */
+  entityLabel?: string;
+  /** What went wrong, for the failed-turn card. */
+  preview?: string;
+  /** Localized "Open session" for the finished-turn toast. */
+  openSessionLabel?: string;
+  /** Localized "{count} tasks finished" for the stack several turns collapse into. */
+  stackTitle?: (count: number) => string;
   /** A row of the notification inbox. Inbox rows exist only for projects with `notification_center` on. */
   fromInbox?: boolean;
   /**
@@ -114,6 +134,8 @@ const TYPE_TO_KIND: Record<WebNotificationType, InboxNotificationKind> = {
   shared: 'shared',
   automation_failed: 'automation_failed',
   automation_recovered: 'automation_recovered',
+  capture_device_down: 'capture_device_down',
+  capture_device_recovered: 'capture_device_recovered',
 };
 
 /**
@@ -170,6 +192,8 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   shared: 'notification',
   automation_failed: 'error',
   automation_recovered: 'completion',
+  capture_device_down: 'error',
+  capture_device_recovered: 'completion',
 };
 
 // ============================================================================
@@ -302,8 +326,10 @@ export function sendWebNotification(
   // channel that works on a default profile — permission untouched, browser
   // notifications disabled — which is exactly where the completion signal
   // used to die (the old permission gates returned before the toast ran).
+  // A failed turn toasts even to the person watching it: the toast is how an
+  // error is noticed. A finished turn does not: the chat already shows it.
+  if (!watching || payload.type === 'error') showInAppToast(payload);
   if (!watching) {
-    showInAppToast(payload);
     if (payload.type === 'completion' && payload.sessionId) {
       // The toast fades after 8 s; the favicon badge is what a returning
       // user still sees, so a finished turn registers for it here.
@@ -451,14 +477,24 @@ async function showWorkerNotification(payload: WebNotificationPayload) {
 /** How long a notification stays on screen: the toast and the OS notification. */
 const NOTIFICATION_VISIBLE_MS = 8000;
 
-const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
-  completion: successToast,
+const TOAST_BY_VARIANT = {
+  success: successToast,
   error: errorToast,
-  question: warningToast,
-  permission: warningToast,
-  shared: infoToast,
-  automation_failed: errorToast,
-  automation_recovered: successToast,
+  warning: warningToast,
+  info: infoToast,
+} as const;
+
+/** Which toast variant each kind uses. */
+const NOTIFICATION_TOAST_VARIANT: Record<WebNotificationType, 'success' | 'error' | 'warning' | 'info'> = {
+  completion: 'success',
+  error: 'error',
+  question: 'warning',
+  permission: 'warning',
+  shared: 'info',
+  automation_failed: 'error',
+  automation_recovered: 'success',
+  capture_device_down: 'error',
+  capture_device_recovered: 'success',
 };
 
 /** Open what the notification is about: its session, or its `href`. */
@@ -479,32 +515,153 @@ function openPayload(payload: WebNotificationPayload, forceNavigation: boolean) 
  */
 function showInAppToast(payload: WebNotificationPayload) {
   try {
+    if (payload.sessionId && (payload.type === 'completion' || payload.type === 'error')) {
+      showSessionToast(payload, payload.sessionId);
+      return;
+    }
     const id = `web-notification-${payload.tag ?? Date.now()}`;
     const { sessionId, href, actionLabel } = payload;
-    TOAST_BY_TYPE[payload.type](payload.title, {
+    const automation =
+      payload.type === 'automation_failed' || payload.type === 'automation_recovered';
+    TOAST_BY_VARIANT[NOTIFICATION_TOAST_VARIANT[payload.type]](payload.inAppTitle ?? payload.title, {
       id,
-      description: payload.body,
+      // With an entity row the subject is named there; the body is only the detail.
+      description: payload.entityLabel ? payload.preview : payload.body,
+      entity: payload.entityLabel
+        ? {
+            icon: automation ? createElement(ClockIcon, { className: 'size-3.5' }) : undefined,
+            label: payload.entityLabel,
+          }
+        : undefined,
       duration: NOTIFICATION_VISIBLE_MS,
-      button:
+      actions:
         (sessionId || href) && actionLabel
-          ? createElement(
-              Button,
+          ? [
               {
-                size: 'sm',
-                variant: 'outline',
+                label: actionLabel,
                 onClick: () => {
-                  dismissToast(id);
                   openPayload(payload, false);
                   payload.onClick?.();
                 },
               },
-              actionLabel,
-            )
+            ]
           : undefined,
     });
   } catch {
     // Silently ignore — toast not critical
   }
+}
+
+/** The in-app toast alone — no sound, badge or OS notification (an inbox arrival). */
+export const showInAppNotification = (payload: WebNotificationPayload) => showInAppToast(payload);
+
+// ----------------------------------------------------------------------------
+// Session turns: one card per turn, a stack when several land together
+// ----------------------------------------------------------------------------
+
+type ShownSessionToast = SessionStackItem & { payload: WebNotificationPayload };
+
+/** The finished or failed turns on screen right now, oldest first. */
+let shownSessionToasts: ShownSessionToast[] = [];
+/** Bumped on every render, so a replaced toast's close cannot clear its successor's list. */
+let sessionToastGeneration = 0;
+
+const SESSION_STACK_ID = 'web-notification-session-stack';
+const singleSessionToastId = (sessionId: string) => `web-notification-session-${sessionId}`;
+
+/**
+ * Show a finished (entity toast) or failed (agent card) turn. While one is on
+ * screen, the next turn replaces it with a stack listing both.
+ */
+function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
+  const previous = shownSessionToasts.filter((item) => item.sessionId !== sessionId);
+  const item: ShownSessionToast = {
+    sessionId,
+    label: payload.entityLabel ?? payload.title,
+    failed: payload.type === 'error',
+    at: Date.now(),
+    payload,
+  };
+  const generation = ++sessionToastGeneration;
+  const onClose = () => {
+    if (generation === sessionToastGeneration) shownSessionToasts = [];
+  };
+  shownSessionToasts = [...previous, item];
+
+  const open = (target: ShownSessionToast) => {
+    openPayload(target.payload, false);
+    target.payload.onClick?.();
+  };
+  const openLabel = payload.actionLabel ?? 'Open';
+
+  if (previous.length > 0) {
+    for (const shown of previous) dismissToast(singleSessionToastId(shown.sessionId));
+    const items = shownSessionToasts;
+    customToast(
+      (dismiss) => (
+        createElement(SessionStackCard, {
+          title: payload.stackTitle?.(items.length) ?? `${items.length} tasks finished`,
+          items,
+          openLabel,
+          onOpen: (id: string) => {
+            const target = items.find((shown) => shown.sessionId === id);
+            if (target) open(target);
+          },
+          onDismiss: dismiss,
+        })
+      ),
+      { id: SESSION_STACK_ID, duration: NOTIFICATION_VISIBLE_MS, onClose },
+    );
+    return;
+  }
+
+  const id = singleSessionToastId(sessionId);
+  // A toast for the session on screen (it fired while the window had no
+  // focus) names nothing and opens nothing: the person is already there.
+  // Read at render, so it follows where the person is now.
+  const elsewhere = () => !isViewingSession(sessionId);
+  if (item.failed) {
+    customToast(
+      (dismiss) =>
+        createElement(SessionFailedCard, {
+          title: payload.inAppTitle ?? payload.title,
+          label: elsewhere() ? item.label : undefined,
+          detail: payload.preview,
+          openLabel,
+          onOpen: elsewhere() ? () => open(item) : undefined,
+          onDismiss: dismiss,
+        }),
+      { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
+    );
+    return;
+  }
+
+  customToast(
+    (dismiss) =>
+      createElement(ToastCard, {
+        message: payload.inAppTitle ?? payload.title,
+        icon: toastIcon('success'),
+        variant: 'success',
+        options: elsewhere()
+          ? {
+              entity: { label: item.label },
+              actions: [{ label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) }],
+            }
+          : undefined,
+        onDismiss: dismiss,
+      }),
+    { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
+  );
+}
+
+/**
+ * The name a notification shows for a session: its title, or `Session <id>`.
+ * A default title ends in the ISO time it was made ("New session - 2026-…Z");
+ * that suffix is dropped.
+ */
+export function sessionDisplayName(sessionTitle: string | undefined, sessionId: string): string {
+  const title = sessionTitle?.replace(/\s+-\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, '').trim();
+  return title ? title.slice(0, 80) : `Session ${sessionId.slice(0, 8)}`;
 }
 
 // ============================================================================
@@ -548,12 +705,14 @@ export function notifyTaskCompleteFor(
   { sessionId, sessionTitle, projectId, notificationCenter }: Omit<TurnCompleteMsg, 'at'>,
   tI18nComplete: UiTranslator,
 ) {
-  const label = sessionTitle
-    ? `"${sessionTitle.slice(0, 60)}"`
-    : `Session ${sessionId.slice(0, 8)}`;
+  const name = sessionDisplayName(sessionTitle, sessionId);
+  const label = sessionTitle ? `"${name.slice(0, 60)}"` : name;
 
   sendWebNotification({
     type: 'completion',
+    entityLabel: name,
+    openSessionLabel: tI18nComplete.raw('textb205bb47f81a'),
+    stackTitle: (count) => tI18nComplete('textc0589750863c', { count }),
     title: tI18nComplete.raw('text107f1806b5d7'),
     body: tI18nComplete('text27d628c8b427', { label }),
     tag: `completion:${sessionId}`,
@@ -576,12 +735,14 @@ export function notifySessionError(
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
 ) {
-  const label = sessionTitle
-    ? `"${sessionTitle.slice(0, 50)}"`
-    : `Session ${sessionId.slice(0, 8)}`;
+  const name = sessionDisplayName(sessionTitle, sessionId);
+  const label = sessionTitle ? `"${name.slice(0, 50)}"` : name;
 
   sendWebNotification({
     type: 'error',
+    entityLabel: name,
+    preview: errorTitle,
+    stackTitle: (count) => tI18nComplete('textc0589750863c', { count }),
     title: tI18nComplete.raw('textee584829f9e9'),
     body: `${label}: ${errorTitle}`,
     tag: `error:${sessionId}`,

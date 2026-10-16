@@ -3,14 +3,23 @@
 import {
   DEFAULT_DARK_THEME,
   DEFAULT_LIGHT_THEME,
-  USER_PREFERENCES_STORAGE_KEY,
   type DarkThemeId,
   type LightThemeId,
 } from '@/lib/interface-themes';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { create } from 'zustand';
+
+// A literal here for the persisted-store registry (persisted-store-coverage.test.ts reads
+// it from this file); the type pins it to the key the pre-paint theme script reads.
+const USER_PREFERENCES_STORE_NAME = 'kortix-user-preferences' satisfies typeof USER_PREFERENCES_STORAGE_KEY;
 import { persist } from 'zustand/middleware';
+
+// The disk key. `interface-themes.ts` interpolates the same literal into the
+// no-flash boot script, and the persisted-store-coverage walker requires a
+// `persist()` name it can resolve in this file — so it is declared here and
+// the two copies must stay in sync (both say 'kortix-user-preferences').
+const USER_PREFERENCES_STORAGE_KEY = 'kortix-user-preferences';
 
 // ============================================================================
 // Types
@@ -128,7 +137,8 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
 
       patchPreferences: (partial) => set({ preferences: { ...get().preferences, ...partial } }),
 
-      setKeyboardPreferences: (prefs) => get().patchPreferences({ keyboard: { ...get().preferences.keyboard, ...prefs } }),
+      setKeyboardPreferences: (prefs) =>
+        get().patchPreferences({ keyboard: { ...get().preferences.keyboard, ...prefs } }),
 
       setLightTheme: (lightTheme) => get().patchPreferences({ lightTheme }),
 
@@ -157,7 +167,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       },
     }),
     {
-      name: USER_PREFERENCES_STORAGE_KEY,
+      name: USER_PREFERENCES_STORE_NAME,
       storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,

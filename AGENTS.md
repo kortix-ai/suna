@@ -307,7 +307,8 @@ tests that exercise it: the package's own tests, the affected flows
 run blocks the next promotion. If your merge turns `dev` red, you fix forward.
 A green `pnpm test` still writes `tests/attestations/<branch>.json`. The runner
 reads it to reuse lane groups that already passed on the same diff
-(`tests/README.md`, "Diff-scoped default run"). Committing it is optional for a
+(`tests/README.md`, "Diff-scoped default run"). A run whose tree changes while
+its lanes run writes no attestation. Committing it is optional for a
 person or a Claude session. The company factory's merge gate (G11) still
 requires it on factory PRs and checks it with
 `pnpm test:verify --rev <head> --branch <headRefName>`.

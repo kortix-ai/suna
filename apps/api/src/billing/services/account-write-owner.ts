@@ -1,33 +1,24 @@
 /**
  * WRITE OWNERSHIP for `credit_accounts`.
  *
- * One row, two writers, and until now no boundary between them:
+ * One row, two writers:
  *
- *   - the BILLING PROVIDER sync (Stripe + RevenueCat webhooks, the legacy
- *     Stripe backfill) reconciles what the customer is paying for;
- *   - an OPERATOR (admin routes, trial issue/revoke) records intent the
- *     provider knows nothing about — a contracted Enterprise entitlement, a
- *     managed-models override, a custom compute rate, an issued trial.
+ *   - the BILLING PROVIDER sync (Stripe + RevenueCat webhooks) reconciles what
+ *     the customer is paying for;
+ *   - an OPERATOR (admin routes, trials, enterprise contracts) records intent
+ *     the provider knows nothing about — an Enterprise plan, a trial, a
+ *     per-feature override.
  *
- * They collided on `tier`. An operator sets `enterprise_entitled` (or, on the
- * older path, `tier='enterprise'`); the next `customer.subscription.updated`
- * writes `tier = resolvedTier` straight back and the account silently loses
- * SSO/SCIM/RBAC/audit. The guard that used to live inline in
- * `syncSubscriptionState` covered exactly ONE branch of ONE handler (a per-seat
- * item on a paying subscription). Every other tier write — the price-resolved
- * tier, the never-paid reset, `revertToFree`, the scheduled downgrade, the
- * RevenueCat expiry — still clobbered.
- *
- * This module is the chokepoint. Both writers declare which side they are on,
- * and the rules are enforced here instead of being re-derived at 14 call sites:
+ * They collide on `tier`: a subscription sync would write a Credits or Free
+ * tier over an Enterprise contract. This module is the chokepoint:
  *
  *   - `applyStripeSync`  — THROWS if the patch touches an admin-owned field or
  *     tries to write `tier='enterprise'`; SKIPS the `tier` key (and only that
- *     key) when the account is admin-pinned. Everything else it carries is
+ *     key) when the account is on Enterprise. Everything else it carries is
  *     factual provider bookkeeping and is always applied.
  *   - `applyAdminOverride` — THROWS if the patch touches a provider-owned
- *     field. `tier` is the one deliberate exception (support ops reassign
- *     plans), and it still may never be `'enterprise'`.
+ *     field, except the plan (`tier`, `planMonthlyUsd`), which operators and
+ *     enterprise contracts assign.
  *
  * Wallet and credit-bookkeeping columns (balances, lifetime totals, auto-topup,
  * grant timestamps) are on NEITHER list on purpose: both writers legitimately
@@ -47,7 +38,6 @@ import {
   upsertCreditAccount,
 } from '../repositories/credit-accounts';
 import { invalidateAccountBilling } from './billing-cache';
-import { enterpriseEntitledFromRow } from './resolve-billing';
 
 export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 
@@ -62,6 +52,7 @@ export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 export const STRIPE_OWNED_FIELDS = [
   'tier',
   'planMonthlyUsd',
+  'scheduledMonthlyUsd',
   'stripeSubscriptionId',
   'stripeSubscriptionStatus',
   'billingCycleAnchor',
@@ -95,15 +86,14 @@ export const STRIPE_OWNED_FIELDS = [
  * it throws rather than being silently dropped.
  */
 export const ADMIN_OWNED_FIELDS = [
+  'maxConcurrentSessions',
+  // A provider webhook has no business expressing operator intent, and a
+  // whole-column write from one would erase every override at once.
+  'entitlementOverrides',
+  // The Enterprise layer: licensed (written by a license contract) and demo
+  // (written by the account's own toggle). Never by a provider sync.
   'enterpriseEntitled',
   'demoEnterprise',
-  'managedModelsOverride',
-  'maxConcurrentSessions',
-  // The JSONB successor to the four columns above. Same ownership, for the
-  // same reason: a provider webhook has no business expressing operator intent,
-  // and a whole-column write from one would erase every override at once
-  // instead of just clobbering one field.
-  'entitlementOverrides',
   'trialStatus',
   'trialTier',
   'trialMonthlyUsd',
@@ -141,30 +131,17 @@ export class AccountWriteOwnershipError extends Error {
 }
 
 /** The subset of a `credit_accounts` row the pin rule reads. */
-export type PinnableAccount = {
-  tier?: string | null;
-  enterpriseEntitled?: boolean | null;
-  entitlementOverrides?: unknown;
-} | null;
+export type PinnableAccount = { tier?: string | null } | null;
 
 /**
  * Is this account's tier owned by an operator rather than by the provider?
- *
- * Two shapes qualify, and both are in production:
- *   - `enterprise_entitled = true` — the current primitive. A contracted cloud
- *     Enterprise deal whose entitlements are independent of what Stripe bills.
- *   - `tier = 'enterprise'` — the older sales-assignment. The admin tier route
- *     refuses to create new ones (400), but existing rows still carry it and
- *     must not be downgraded by a webhook.
- *
- * A pinned account still reconciles every other provider fact — the monthly
- * amount, subscription status, grants. Only `tier` is off-limits, which is
- * exactly the split a deal that is BOTH Enterprise (entitlements) AND a credits
- * subscription (billing) needs.
+ * Only Enterprise: it is set by a contract (`enterprise-contracts.ts`) or an
+ * operator, never by a subscription sync. A pinned account still reconciles
+ * every other provider fact — status, amounts, grants. Only `tier` is
+ * off-limits.
  */
-export function accountIsAdminPinned(account: PinnableAccount, nowMs: number = Date.now()): boolean {
-  if (!account) return false;
-  return account.tier === 'enterprise' || enterpriseEntitledFromRow(account, nowMs);
+export function accountIsAdminPinned(account: PinnableAccount): boolean {
+  return account?.tier === 'enterprise';
 }
 
 export interface StripeSyncContext {
@@ -196,14 +173,13 @@ function violations(patch: AccountPatch, forbidden: ReadonlySet<string>): string
 }
 
 /**
- * `enterprise` is an entitlement, not a tier. A `tier='enterprise'` write is
- * clobbered by the next subscription sync, so accepting one hands the caller a
- * change that silently reverts. Both writers refuse it.
+ * A subscription sync never grants Enterprise: only a contract or an operator
+ * does, through `applyAdminOverride`.
  */
 function assertTierIsNotEnterprise(patch: AccountPatch, writer: string): void {
   if (patch.tier === 'enterprise') {
     throw new AccountWriteOwnershipError(
-      `${writer}: refusing to write tier='enterprise' — enterprise is an entitlement (enterprise_entitled), not a tier`,
+      `${writer}: refusing to write tier='enterprise' — Enterprise is set by a contract or an operator, never by a subscription sync`,
       ['tier'],
     );
   }
@@ -236,7 +212,7 @@ export async function applyStripeSync(
     const account = 'account' in ctx ? ctx.account : await getCreditAccount(accountId);
     if (accountIsAdminPinned(account ?? null)) {
       console.warn(
-        `[write-owner] applyStripeSync${label}: skipping tier='${String(next.tier)}' for ${accountId} — the account is admin-pinned (enterprise_entitled=${String(account?.enterpriseEntitled ?? false)}, tier='${String(account?.tier ?? null)}'). Every other provider field is still applied.`,
+        `[write-owner] applyStripeSync${label}: skipping tier='${String(next.tier)}' for ${accountId} — the account is on Enterprise. Every other provider field is still applied.`,
       );
       delete next.tier;
     }

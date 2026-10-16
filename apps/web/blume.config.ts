@@ -9,13 +9,14 @@ const sidebar = [
   { label: 'Get started', items: ['index', 'quickstart', 'clients'] },
   {
     label: 'Project',
-    items: ['project', 'project/manifest', 'project/agents', 'project/tools', 'project/models', 'project/secrets'],
+    items: ['project', 'project/manifest', 'project/agents', 'project/tools', 'project/models', 'project/secrets', 'project/legacy-manifests'],
   },
   { label: 'Run work', items: ['work/sessions', 'work/runtime'] },
   {
     label: 'Connect',
     items: ['connect/connectors', 'connect/channels', 'connect/triggers', 'connect/computers', 'connect/mcp'],
   },
+  { label: 'Kortix Capture', items: ['capture', 'capture/rollout'] },
   { label: 'Ship', items: ['apps'] },
   { label: 'Administer', items: ['accounts', 'accounts/identity', 'audit-actions', 'credits'] },
   { label: 'Self-host', items: ['host'] },

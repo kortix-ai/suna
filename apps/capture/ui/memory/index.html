@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<!-- The window loads nothing from the web: its own scripts, styles, images, video and audio only. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' kmem: http://kmem.localhost; style-src 'self' kmem: http://kmem.localhost 'unsafe-inline'; img-src 'self' kmem: http://kmem.localhost data: blob:; media-src 'self' kmem: http://kmem.localhost blob:; connect-src 'self' kmem: http://kmem.localhost; font-src 'self' kmem: http://kmem.localhost; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Kortix Capture</title>
+<!-- Kortix brand kit tokens, copied unmodified from suna/.agents/skills/kortix-brand/references/visual/tokens.css.
+     The window uses the kit's system font stacks (--font-sans-system, --font-mono-system). No web font is loaded. -->
+<link rel="stylesheet" href="/brand/tokens.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="app">
+  <header id="bar">
+    <div class="bar-side">
+      <button id="btn-search" class="pill-btn" title="Search recordings (/)"></button>
+      <button id="btn-settings" class="icon-btn" title="Settings"></button>
+      <button id="status-chip" class="chip-btn status-chip" title="Recording status"></button>
+    </div>
+    <div id="meta" class="meta">
+      <span id="meta-icon" class="app-icon"></span>
+      <div class="meta-text">
+        <div id="meta-title" class="meta-title"></div>
+        <div id="meta-sub" class="meta-sub"></div>
+      </div>
+    </div>
+    <div class="bar-side right">
+      <button id="btn-hl" class="icon-btn" title="Hide text highlights"></button>
+      <button id="btn-copy" class="icon-btn" title="Copy screenshot"></button>
+      <button id="btn-open" class="icon-btn" title="Open page in browser"></button>
+    </div>
+  </header>
+
+  <main id="stage-wrap">
+    <div id="stage">
+      <video id="vid" muted playsinline preload="auto"></video>
+      <img id="img" alt="">
+      <div id="ocr"></div>
+    </div>
+    <button id="nav-prev" class="stage-nav left" title="Previous run"></button>
+    <button id="nav-next" class="stage-nav right" title="Next run"></button>
+    <div id="perm-line" class="perm-line" hidden></div>
+    <div id="notice" class="notice" hidden></div>
+    <div id="toast" class="toast" hidden></div>
+    <audio id="aud" preload="auto"></audio>
+  </main>
+
+  <footer id="dock">
+    <div class="dock-row">
+      <button id="clock" class="chip-btn" title="Jump to date and time"></button>
+      <div class="dock-tools">
+        <button id="btn-play" class="icon-btn" title="Play (Space)" aria-pressed="false"></button>
+        <button id="btn-mute" class="icon-btn" title="Mute audio (M)" aria-pressed="false"></button>
+        <span class="dock-sep" aria-hidden="true"></span>
+        <button id="btn-zoom-out" class="icon-btn" title="Zoom out (-)"></button>
+        <button id="btn-zoom-in" class="icon-btn" title="Zoom in (+)"></button>
+        <button id="btn-now" class="btn" title="Jump to now (N)"></button>
+      </div>
+    </div>
+    <div id="track-wrap">
+      <canvas id="track"></canvas>
+      <div id="tip" class="tip" hidden></div>
+      <div id="gap-hint" class="gap-hint" hidden></div>
+    </div>
+  </footer>
+
+  <section id="search" class="panel" hidden></section>
+  <section id="settings" class="panel" hidden></section>
+  <section id="onboarding" hidden></section>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

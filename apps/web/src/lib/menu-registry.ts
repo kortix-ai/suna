@@ -760,7 +760,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
-    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
@@ -885,6 +884,17 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'rightSidebar'],
     kind: 'navigate',
     href: '/scheduled-tasks',
+  },
+  {
+    // Kortix Capture is its own area: devices, install and its organization settings live under /capture.
+    id: 'capture',
+    label: 'Kortix Capture',
+    icon: MonitorIcon,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/capture',
+    keywords: 'capture recording screen devices install enrollment',
   },
   {
     id: 'running-services',

@@ -62,6 +62,8 @@ const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
+  // How the compiled agent config is carried in env (`@kortix/api-contract/compiled-agent-config-env`).
+  'config-provider': API_CONTRACT,
   'egress-shim': [...pkg('node-forge'), ...API_CONTRACT],
   // MONITOR_INGEST_MAX_EVENTS and the ingest body.
   monitor: API_CONTRACT,
@@ -73,7 +75,8 @@ const SERVICE_EXTERNALS = {
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
   'open-code': ['bun:sqlite'],
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...SDK_WIRE_MESSAGE_ID],
+  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist path: a setter pi does not export (pi/codemode.ts).
+  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
 }
 
 const lib = at('src/lib/**')
@@ -168,6 +171,13 @@ const independentModules = createIndependentModules({
       [at('src/app/**'), at('src/routes/**'), ...harnessCore, ...services, SHARED, at('package.json')],
       [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
       'app/ composes routes, the harness contract, services and the shared layer. Never an adapter.',
+    ),
+    layer(
+      'codemode-worker',
+      at('src/extensions/codemode/worker.ts'),
+      [],
+      pkg('@earendil-works/pi-codemode'),
+      'The codemode worker entrypoint (scripts/build.sh) imports pi-codemode only.',
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).

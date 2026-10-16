@@ -6,7 +6,7 @@ import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { Principal } from '../core/types';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { waitFor } from '../core/poll';
 import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
 

@@ -1,7 +1,7 @@
 /**
- * The gate every App route runs: project membership, the App permission, the
- * `apps` flag, then the App's own visibility and the capability the route
- * needs. Shared by ./routes.ts and ./capability-routes.ts.
+ * The gate every App route runs: project membership, the App permission, then
+ * the App's own visibility and the capability the route needs. Shared by
+ * ./routes.ts and ./capability-routes.ts.
  */
 import { apps } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -9,7 +9,6 @@ import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/surface';
 import type { AppEnv } from '../types';
-import { requireFeatureFlag } from '../feature-flags/gate';
 import { db } from '../shared/db';
 import { appVisibleToUser } from './access';
 import { type AppCapability, type AppHostingType, appCapabilities, capabilityUnsupportedBody } from './capabilities';
@@ -33,21 +32,16 @@ const APP_PERMISSION_ACTION: Record<AppPermission, string> = {
 };
 
 /**
- * Membership + permission + `apps` flag, in that order. Returns the loaded
- * project on success, or the Response the route must return:
+ * Membership + permission, in that order. Returns the loaded project on
+ * success, or the Response the route must return:
  *   • 404 — the project does not exist or the caller is not a member (a
  *     non-member must not be able to distinguish the two).
- *   • 403 `feature_disabled` — the caller IS a member, but the project has the
- *     `apps` flag off. A member already knows the project exists, so the honest
- *     "turn it on in Settings" answer beats a misleading 404.
  * A permission denial still throws (403) from assertProjectCapability.
  */
 export async function authorizedProject(c: Context<AppEnv>, projectId: string, permission: AppPermission = 'read') {
   const loaded = await loadProjectForUser(c, projectId, permission === 'read' ? 'read' : 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, APP_PERMISSION_ACTION[permission]);
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
-  if (gate) return gate;
   return loaded;
 }
 

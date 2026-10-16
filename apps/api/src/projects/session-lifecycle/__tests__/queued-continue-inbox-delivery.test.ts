@@ -694,6 +694,8 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(1);
   });
 
+  // Every Quick Queue row below is an owner's send (`mayStopAnyTurn`): only a
+  // sender who may stop the running turn arms its interrupt (inbox-admission.test.ts).
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
     boxRow = {
       status: 'active',
@@ -702,7 +704,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
           messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
       } },
     };
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
     expect(await executeQueuedContinue(row)).toBe('queued');
     expect(requeues).toHaveLength(1);
     expect(quickQueueControlRequests).toEqual([{
@@ -724,7 +726,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       } },
     };
     quickQueueArmFails = true;
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
     expect(await executeQueuedContinue(row)).toBe('queued');
     expect(quickQueueControlRequests).toHaveLength(1);
     expect(parkedCalls).toEqual([{ commandId: 'cmd-1', reason: "the session's machine could not be reached" }]);
@@ -743,7 +745,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     };
     quickQueueArmFails = true;
     parkBudgetLeft = false;
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
     expect(await executeQueuedContinue(row)).toBe('failed');
     expect(parkedCalls).toHaveLength(1);
     expect(failedCalls.at(-1)).toMatchObject({
