@@ -2091,6 +2091,12 @@ export function SessionChat({
     workingTurnIdRef.current = workingTurn.workingTurnId;
   }, [workingTurn.workingTurnId]);
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
+  // The turn the working projection names. After a compaction inside the running turn the work
+  // renders under its continuation turn, while the projection still names the prompt or the marker.
+  const activeTurnId = useMemo(() => {
+    const c = turns.find((t) => t.live)?.continues;
+    return c && (working.turnId === c.marker || working.turnId === c.prompt) ? workingTurn.workingTurnId : working.turnId;
+  }, [turns, workingTurn.workingTurnId, working.turnId]);
   /**
    * Does the resolved working turn have a COMPLETED answer while queued prompts
    * wait below it? `resolveWorkingTurn` falls back to the newest turn WITH
@@ -2113,11 +2119,11 @@ export function SessionChat({
       hasPendingTurns: true,
       newestAssistantCompleted: newest.completed_at !== null,
       workingTurnId: wt.id,
-      activeTurnId: working.turnId,
+      activeTurnId,
       pendingDelivery: !!working.pendingDelivery,
       deliveringBelow: workingTurn.pendingTurnIds.some((id) => deliveringPromptIds.has(id)),
     });
-  }, [turns, workingTurn, working.turnId, working.pendingDelivery, deliveringPromptIds]);
+  }, [turns, workingTurn, activeTurnId, working.pendingDelivery, deliveringPromptIds]);
   /**
    * Is ANY turn going to draw the waiting row?
    *
@@ -4339,7 +4345,7 @@ export function SessionChat({
                           const confirmedActive = turnIsConfirmedActive({
                             isTurnWorking,
                             turnId: turn.id,
-                            activeTurnId: working.turnId,
+                            activeTurnId,
                             pendingDelivery: !!working.pendingDelivery,
                           });
                           const pendingPrompt =

@@ -1176,6 +1176,7 @@
     "SessionLogBurstStep",
     "SessionLogCallStatus",
     "SessionLogCompaction",
+    "SessionLogContinuation",
     "SessionLogHarnessSwitch",
     "SessionLogMessage",
     "SessionLogPage",

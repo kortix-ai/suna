@@ -53,6 +53,7 @@ export {
   type SessionLogTurnsOptions,
   type SessionLogCallStatus,
   type SessionLogCompaction,
+  type SessionLogContinuation,
   type SessionLogTurn,
   type SessionLogTurnError,
   type SessionLogTurnStatus,
