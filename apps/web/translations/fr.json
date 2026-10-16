@@ -9897,6 +9897,11 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recharger",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gérer le forfait",
     "composerAttachments": {
+      "notAttached": "{count, plural, one {# fichier n'a pas été joint} other {# fichiers n'ont pas été joints}}",
+      "refusedEmpty": "{name} est vide.",
+      "refusedTooLarge": "{name} dépasse 50 Mio.",
+      "refusedTooMany": "{name} : un message contient au plus 20 fichiers.",
+      "refusedTotalTooLarge": "{name} : un message contient au plus 100 Mio de fichiers.",
       "couldNotAttach": "Impossible de joindre les fichiers",
       "couldNotRetry": "Impossible de réessayer la pièce jointe",
       "couldNotSend": "Échec de l’envoi",

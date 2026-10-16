@@ -9908,6 +9908,11 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Top up",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Manage plan",
     "composerAttachments": {
+      "notAttached": "{count, plural, one {# file was not attached} other {# files were not attached}}",
+      "refusedEmpty": "{name} is empty.",
+      "refusedTooLarge": "{name} is larger than 50 MiB.",
+      "refusedTooMany": "{name}: a message holds up to 20 files.",
+      "refusedTotalTooLarge": "{name}: a message holds up to 100 MiB of files.",
       "couldNotAttach": "Could not attach files",
       "couldNotRetry": "Could not retry attachment",
       "couldNotSend": "Couldn't send",

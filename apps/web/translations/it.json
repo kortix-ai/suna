@@ -9897,6 +9897,11 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Ricaricare",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gestisci il piano",
     "composerAttachments": {
+      "notAttached": "{count, plural, one {# file non è stato allegato} other {# file non sono stati allegati}}",
+      "refusedEmpty": "{name} è vuoto.",
+      "refusedTooLarge": "{name} supera i 50 MiB.",
+      "refusedTooMany": "{name}: un messaggio contiene al massimo 20 file.",
+      "refusedTotalTooLarge": "{name}: un messaggio contiene al massimo 100 MiB di file.",
       "couldNotAttach": "Impossibile allegare i file",
       "couldNotRetry": "Impossibile riprovare l’allegato",
       "couldNotSend": "Invio non riuscito",

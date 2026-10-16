@@ -26,8 +26,10 @@ on:
       - 'apps/web/translations/**'
       - 'apps/web/scripts/i18n-catalogs.mjs'
       - '.github/workflows/i18n-catalogs.yml'
+  # Not into `prod`: the release tree is the staging tree plus VERSION, already
+  # checked on the staging pull request (testing reset, 2026-10-16).
   pull_request:
-    branches: [staging, prod]
+    branches: [staging]
     types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'apps/web/translations/**'
