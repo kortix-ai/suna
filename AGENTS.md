@@ -280,61 +280,67 @@ trivial single-file typo/comment fixes on the current branch.
 dispatch, but **merging to `dev` still lands your change in everyone's next
 deploy and next `dev` checkout.** It is not a save point.
 
-### Testing philosophy: one tree, one run, gates only at environment changes
+### Testing philosophy: one gate at Promote to Production, everything else fast
 
-Testing reset, 2026-10-16. Tests cost compute, wall clock, and attention. In
-AI-driven development code is cheap and rewritten often, so a test that
-mirrors the implementation is a tax, not protection. The rules:
+Testing reset, 2026-10-16. Latency is the core concern. Development must be
+fast enough to push and break things on `dev`. The full suite runs once per
+release, at Promote to Production, and nowhere else. The rules:
 
-1. **Test at the boundaries users touch:** the HTTP API, the CLI, the
+1. **Never run a full suite during development.** No multi-minute run on your
+   box, on a PR into `dev`, or on a push to `dev`. Verify only what you
+   changed: T0 for the packages you touched, the specific test that covers the
+   change (seconds), and the change itself through its real surface.
+2. **One gate: the release pull request into `prod`.** Promote to Production
+   runs the whole suite there, once, and every check must be green. It is the
+   only check that blocks anything.
+3. **Test at the boundaries users touch:** the HTTP API, the CLI, the
    `@kortix/sdk` public surface, DB migrations, and a few browser journeys on
    the money path. Never test internal calls or source text.
-2. **Run each suite once per tree.** A tree that passed is not run again. A
-   later stage tests only what is new there: the deployed environment.
-3. **Gate only where code changes environment:** `dev` → `staging`, then
-   `staging` → `prod`. Before that, the developer verifies the change by using it.
-4. **A red suite is worse than none.** A test that fails twice without a bug is
+4. **Run each suite once per tree.** A tree that ran is not run again.
+5. **A red suite is worse than none.** A test that fails twice without a bug is
    fixed or deleted the same day. Do not park it in quarantine.
-5. **Delete on red.** A unit test that goes red on a refactor with no bug is
+6. **Delete on red.** A unit test that goes red on a refactor with no bug is
    deleted, not updated. Keep unit tests only for logic that is hard to get
    right: money and credits, parsers, the streaming protocol, permission
    decisions, crypto and secrets.
+7. **Small, isolated tests.** Every test file runs standalone in seconds. When
+   the test that covers your change takes more than ~10 s, or drags in setup
+   that has nothing to do with it, split it into a smaller isolated test as
+   part of the same change. Fake the clock; never sleep on real time.
 
 | Tier | Contents | Runs |
 |---|---|---|
-| T0 static | `tsc`, lint, architecture checks, migration lint | anytime, on the laptop, seconds per package |
-| T1 contract | REST and CLI flows, DB and migration suites, package tests (`Tests` lanes) | once on the pull request into `staging` (the gate), nightly on `dev`, and on the `test` label |
-| T2 deployed | `Tests - release`: flows and money-path journeys against deployed staging | once per release, on the pull request into `prod` (required) |
+| T0 static | `tsc`, lint, architecture checks, migration lint | anytime, seconds per package |
+| Targeted | the one test file or flow that covers your change | on your box, seconds |
+| Release suite | contract lanes (flows, DB, packages) on the release tree, the deployed smoke and the browser journeys against staging, CI, CodeQL, scanners | once per release, on the pull request into `prod` |
 
 | Where | What runs | Blocks? |
 |---|---|---|
-| Your box | T0 for the packages you touched, the one test you wrote or changed, and the real surface: the route with curl, the CLI process, the page with agent-browser | your judgment |
-| Pull request into `dev` | nothing, unless a person adds `test` (~20 min, once) or `preview` (~7 min deploy, once) | no |
-| Push to `dev` | only the cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev` | no |
-| Schedule on `dev` | `Tests` nightly (a red night comments on the commit), `CI` and `CodeQL` weekly, `drata` daily. `Deploy Dev` and `Desktop`: dispatch only | no |
-| Pull request into `staging` | T1 (`Tests`), `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes |
-| Pull request into `prod` | T2 (`Tests - release`), plus the path-gated `Security Scan`, `Terraform CI` and `drata` (SOC 2). No tree check runs again: the tree is the staging tree plus `VERSION`. | yes, `full suite + quality gates` is required |
+| Your box | T0 for the packages you touched, the targeted test, and the real surface: the route with curl, the CLI process, the page with agent-browser | your judgment |
+| Pull request into `dev` | nothing, unless a person adds `test` or `preview` | no |
+| Push to `dev` | only the seconds-long guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev` | no |
+| Nightly on `dev` | `Tests` `core` and `packages` lanes, no browser: a red night comments the failures on the commit, so they are ready to fix before a promote | no |
+| Pull request into `staging` | nothing: Promote to Production opens and merges it | no |
+| Pull request into `prod` | the release suite, once (`full suite + quality gates`) | **yes, the only gate** |
 
-**A Mac runs targeted tests only.** On macOS `pnpm test` refuses a suite-wide
-run (plain, `--full`, `--packages-only`, `--browser-only`, `--db-only` with no
-path filter) and exits `2`. 2026-10-16: five agent sessions ran the suite at
-once on one laptop (load average 112, swap full). Run one flow
-(`pnpm test -- --id <ID>`), one DB suite path, the SDK, or one package's test
-file. The whole suite runs in CI: add the `test` label once, or
-`gh workflow run tests.yml --ref <branch>`. `KORTIX_FULL_TEST=1` overrides only
-when a person asks.
+**A Mac never runs a suite.** On macOS `pnpm test` refuses a suite-wide run
+(plain, `--full`, `--packages-only`, `--browser-only`, `--db-only` with no path
+filter) and exits `2`. 2026-10-16: five agent sessions ran the suite at once on
+one laptop (load average 112, swap full). Run one flow
+(`pnpm test -- --id <ID>`), one DB suite path, or one package's test file.
+`KORTIX_FULL_TEST=1` overrides only when a person asks.
 
 No hook or gate requires a test run before a push or a merge into `dev`. Write
 in the PR body what you ran and why. A diff that no test reads (docs, a skill,
-a standalone script) needs no run. When the nightly `Tests` run or the staging
-pull request turns red on your change, you fix forward the same day.
+a standalone script) needs no run. When the nightly run or the release suite
+turns red on your change, you fix forward on `dev` the same day.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run T0 and the tests that
    cover the change (see above). Start the worktree's stack
    (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
    HTTP route, the real CLI process, or the page with agent-browser. Nothing
-   before the staging pull request catches what you skip.
+   before the release suite at Promote to Production catches what you skip.
 3. Open the PR against `dev` and follow the **contributing** skill: it fills
    the PR template and attaches the demo video you recorded against your local
    stack. Do not add `test` or `preview` unless you need that one explicit run.
@@ -373,8 +379,8 @@ pull request turns red on your change, you fix forward the same day.
    nightly `Tests` run on `dev` comments the failing lanes and every commit
    since the last green run, once per new set of failing lanes. The author
    whose commit broke `dev` fixes forward the same day. If `dev` is still red
-   1 hour after the comment, anyone may revert the culprit PR. The pull request
-   into `staging` runs the same lanes and blocks the promote.
+   1 hour after the comment, anyone may revert the culprit PR. The release
+   suite at Promote to Production runs the same lanes and blocks the release.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
