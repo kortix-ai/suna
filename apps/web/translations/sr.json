@@ -1964,6 +1964,7 @@
       "restoreMissing": "Недостаје: {items}.",
       "restoreAgent": "Агент зна шта недостаје.",
       "restoreDismiss": "Затвори обавештење о враћању",
+      "missingMessage": "{count, plural, one {# ранија порука} few {# раније поруке} other {# ранијих порука}}",
       "missingAttachment": "{count, plural, one {# прилог} few {# прилога} other {# прилога}}",
       "missingText": "{count, plural, one {# дугачак текст} few {# дугачка текста} other {# дугачких текстова}}",
       "missingToolInput": "{count, plural, one {# улаз алата} few {# улаза алата} other {# улаза алата}}",

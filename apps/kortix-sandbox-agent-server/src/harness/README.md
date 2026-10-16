@@ -160,7 +160,8 @@ restart (`this.stop()` inside the native lifecycle) leaves it running.
 The boot runs these steps when the native store is behind the log (P6.4, "When the
 boot restores" below):
 
-1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`.
+1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`,
+   or 413 `session_log_too_large` for a log over the API's cap (see "Memory" below).
    The claim raises the generation, and the ingest applies a put whose
    `(generation, rev)` is above the stored pair, so the box needs no rev seed.
 2. `sessionLogFromRestore(answer, apiTextReader(sandboxRelayContext()))`
@@ -265,7 +266,8 @@ root. No turn runs at either point.
   keeps the claimed generation, the ids the write left out, and the D3 notice:
   a crash before it reads as behind at the next boot, and a daemon restart
   journals at the claimed generation. A 404 (no stored log) or 503 (operator
-  switch off) claims nothing and restores nothing. Any other failure (5xx,
+  switch off) claims nothing and restores nothing. A 413 `session_log_too_large`
+  claimed but carries no message: see "Memory" below. Any other failure (5xx,
   408, 429, network, a body that does not parse, a write that throws) is
   retried, 3 attempts, each a new claim; then the boot fails
   (`initialRuntimeSessionError`, the proxy answers
@@ -322,20 +324,34 @@ root. No turn runs at either point.
   no entry. A log without a history (a converted log) starts with the harness
   its `harness.current` names. Limit: a box that never restored (flag off)
   sends its adapter's one-entry history, which replaces the stored one.
-- **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
-  all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
-  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the API
-  holds the same answer in memory once per claim. Dev accepts this risk (the flag
-  is on by default there since 2026-10-15) until the cap lands; elsewhere the
-  flag is operator-only.
-  Before default-on, cap it (413 above a stored size, or paging).
+- **Memory, and the cap.** A restore holds the whole log in memory on both
+  sides. Measured on a real Platinum box (pi, 2 vCPU, 3.9 GB, Bun 1.4.3) with a
+  synthetic 38.5 MB log (1,000 tool results of 40 kB): the daemon peaked at
+  1.57 GB RSS (+1.45 GB, about 38x the log) and settled at 272 MB; the API
+  (`POST …/log/restore`) rose by about 330 MB. So the API caps it:
+  `SESSION_LOG_RESTORE_MAX_BYTES` (default 24 MiB, the sum of the live
+  messages' stored JSON lengths; p99.9 of prod sessions is about 15 MB, p99
+  3.7 MB). Above the cap the claim still happens and the answer is 413
+  `SessionLogRestoreTooLarge`: every thread without messages, every rev,
+  `seq_max`, `messages` (the count left out), `bytes` and `limit`; no record
+  leaves Postgres. The box writes the log's root with the D3 note alone
+  (above `seq_max`, so new messages number above every stored seq), keeps no
+  other thread, persists every stored id (`revs`) as unwritten so later boots
+  do not read the store as behind, and journals at the claimed generation. The
+  note tells the agent the size and the limit; the session patch carries
+  `restore_grade: 'partial'` and `dropped: { message: <count> }`, which P5.6
+  shows as "Missing: N earlier messages". The stored history stays in the
+  transcript. The same 38.5 MB log over the cap: the daemon peaked at 135 MB
+  (+29 MB) and the API rose by about 21 MB. A 413 with another body (a proxy)
+  claimed nothing and restores nothing, as a 404.
+  ponytail: an over-cap restore gives the agent none of the history; restore
+  the newest messages under the cap (paging) when sessions near it are common.
 
-Default-on blocker (do not turn `session_log_restore` on by default in prod
-before it is fixed): the restore memory above has no cap. Dev turns it on for
-every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
-`deploy-dev.yml`, 2026-10-15). Attachment bytes are no longer
-a blocker (P2.13): the journal uploads them, and a fresh box drops only an
-attachment whose record still says `blob:` (see the restore limits below).
+Default-on: no known blocker remains (the cap above, and P2.13 uploads
+attachment bytes, so a fresh box drops only an attachment whose record still
+says `blob:`). Dev turns `session_log_restore` on for every project without a
+stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in `deploy-dev.yml`,
+2026-10-15); prod does not yet.
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)

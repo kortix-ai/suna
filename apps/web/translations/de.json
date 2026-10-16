@@ -1964,6 +1964,7 @@
       "restoreMissing": "Fehlt: {items}.",
       "restoreAgent": "Der Agent weiß, was fehlt.",
       "restoreDismiss": "Hinweis zur Wiederherstellung schließen",
+      "missingMessage": "{count, plural, one {# frühere Nachricht} other {# frühere Nachrichten}}",
       "missingAttachment": "{count, plural, one {# Anhang} other {# Anhänge}}",
       "missingText": "{count, plural, one {# langer Text} other {# lange Texte}}",
       "missingToolInput": "{count, plural, one {# Tool-Eingabe} other {# Tool-Eingaben}}",

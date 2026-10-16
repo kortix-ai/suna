@@ -1964,6 +1964,7 @@
       "restoreMissing": "欠落: {items}。",
       "restoreAgent": "エージェントには欠落している内容が伝えられています。",
       "restoreDismiss": "復元の通知を閉じる",
+      "missingMessage": "{count, plural, other {以前のメッセージ #件}}",
       "missingAttachment": "{count, plural, other {添付ファイル #件}}",
       "missingText": "{count, plural, other {長いテキスト #件}}",
       "missingToolInput": "{count, plural, other {ツール入力 #件}}",

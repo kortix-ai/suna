@@ -1964,6 +1964,7 @@
       "restoreMissing": "缺少：{items}。",
       "restoreAgent": "智能体已获知缺少的内容。",
       "restoreDismiss": "关闭恢复通知",
+      "missingMessage": "{count, plural, other {# 条之前的消息}}",
       "missingAttachment": "{count, plural, other {# 个附件}}",
       "missingText": "{count, plural, other {# 段长文本}}",
       "missingToolInput": "{count, plural, other {# 个工具输入}}",

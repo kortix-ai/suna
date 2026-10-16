@@ -22,6 +22,13 @@
  * through the attachments route with its own credential. The API never holds a
  * session's full texts in memory here.
  *
+ * The cap. Before the read, the sum of the live messages' stored JSON lengths is compared with
+ * `SESSION_LOG_RESTORE_MAX_BYTES`. Above it the claim stands and the answer is
+ * `SessionLogRestoreTooLarge` (413): every thread without messages, every rev, `seq_max`, no blob.
+ * No record leaves Postgres, so the API holds ids and seqs only; the box writes the D3 note alone.
+ * ponytail: the whole history is left out; restore the newest messages under the cap (paging) when
+ * sessions near the cap are common.
+ *
  * A stored log can lack parts of a `SessionLog`: a session record built only from a
  * first batch without a session patch, or messages whose thread was never upserted.
  * The answer fills them from the `session_logs` columns and neutral defaults, so it
@@ -33,9 +40,11 @@ import {
   type SessionLogMessage,
   type SessionLogRestore,
   type SessionLogRestoreBlob,
+  type SessionLogRestoreTooLarge,
 } from '@kortix/api-contract/session-log';
 import { sessionLogBlobs, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { referencedTexts } from './session-log-blobs';
 import { withToolInputOrder } from './session-log-input-order';
@@ -45,8 +54,11 @@ type Thread = SessionLog['threads'][number];
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type LogRow = typeof sessionLogs.$inferSelect;
 
-/** Claim the session and read its log, or null when the session has no stored log (nothing claimed). */
-export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLogRestore | null> {
+/**
+ * Claim the session and read its log, or null when the session has no stored log (nothing claimed).
+ * A log over `SESSION_LOG_RESTORE_MAX_BYTES` is claimed and answered without messages (`error` is set).
+ */
+export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLogRestore | SessionLogRestoreTooLarge | null> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
     const [log] = await tx
@@ -61,11 +73,19 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
       )
       .returning();
     if (!log) return null;
-    return readWholeLog(tx, log);
+    const [size] = await tx
+      .select({ bytes: sql<string>`coalesce(sum(octet_length(${sessionLogMessages.record}::text)), 0)`, messages: sql<number>`count(*)::int` })
+      .from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, scope.sessionId), isNull(sessionLogMessages.deletedAt)));
+    const bytes = Number(size?.bytes ?? 0);
+    const limit = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    if (bytes <= limit) return readWholeLog(tx, log, true);
+    return { ...(await readWholeLog(tx, log, false)), error: 'session_log_too_large', bytes, limit, messages: size!.messages };
   });
 }
 
-async function readWholeLog(tx: Tx, log: LogRow): Promise<SessionLogRestore> {
+/** `full` false: every thread, rev and seq, no message record and no blob (the 413 answer). */
+async function readWholeLog(tx: Tx, log: LogRow, full: boolean): Promise<SessionLogRestore> {
   const sessionId = log.sessionId;
   const threads = await tx
     .select({ threadId: sessionLogThreads.threadId, record: sessionLogThreads.record })
@@ -80,16 +100,18 @@ async function readWholeLog(tx: Tx, log: LogRow): Promise<SessionLogRestore> {
       seq: sessionLogMessages.seq,
       rev: sessionLogMessages.rev,
       deletedAt: sessionLogMessages.deletedAt,
-      record: sessionLogMessages.record,
-      toolInputOrder: sessionLogMessages.toolInputOrder,
+      record: full ? sessionLogMessages.record : sql<null>`null`,
+      toolInputOrder: full ? sessionLogMessages.toolInputOrder : sql<null>`null`,
     })
     .from(sessionLogMessages)
     .where(eq(sessionLogMessages.sessionId, sessionId))
     .orderBy(asc(sessionLogMessages.seq), asc(sessionLogMessages.messageId));
-  const stored = await tx
-    .select({ objectKey: sessionLogBlobs.objectKey, sha256: sessionLogBlobs.sha256, bytes: sessionLogBlobs.bytes })
-    .from(sessionLogBlobs)
-    .where(and(eq(sessionLogBlobs.sessionId, sessionId), isNull(sessionLogBlobs.deletedAt)));
+  const stored = !full
+    ? []
+    : await tx
+        .select({ objectKey: sessionLogBlobs.objectKey, sha256: sessionLogBlobs.sha256, bytes: sessionLogBlobs.bytes })
+        .from(sessionLogBlobs)
+        .where(and(eq(sessionLogBlobs.sessionId, sessionId), isNull(sessionLogBlobs.deletedAt)));
 
   const byThread = new Map<string, Thread>(
     threads.map((t) => [t.threadId, { ...(t.record as unknown as Thread), messages: [] }]),
@@ -102,12 +124,13 @@ async function readWholeLog(tx: Tx, log: LogRow): Promise<SessionLogRestore> {
     revs[m.messageId] = m.rev;
     seqMax[m.threadId] = Math.max(seqMax[m.threadId] ?? 0, m.seq);
     if (m.deletedAt !== null) continue;
-    const record = withToolInputOrder(m.record as unknown as SessionLogMessage, m.toolInputOrder);
+    const record = full ? withToolInputOrder(m.record as unknown as SessionLogMessage, m.toolInputOrder) : null;
     let thread = byThread.get(m.threadId);
     if (!thread) {
-      thread = { schema: SESSION_LOG_SCHEMA, v: log.v, thread_id: m.threadId, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: record.created_at, messages: [], ext: {} };
+      thread = { schema: SESSION_LOG_SCHEMA, v: log.v, thread_id: m.threadId, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: record?.created_at ?? log.createdAt.toISOString(), messages: [], ext: {} };
       byThread.set(m.threadId, thread);
     }
+    if (!record) continue;
     thread.messages.push(record);
     for (const t of referencedTexts(record)) {
       const object = objects.get(t.ref);

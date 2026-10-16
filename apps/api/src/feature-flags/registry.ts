@@ -451,8 +451,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'from the session log at boot when the store is missing or behind the log ' +
       '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
       'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
-      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). Not default-on in prod before the ' +
-      'restore memory is capped (harness/README.md).',
+      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
+      '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
   },
 ];
 

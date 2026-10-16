@@ -1964,6 +1964,7 @@
       "restoreMissing": "Missing: {items}.",
       "restoreAgent": "The agent was told what is missing.",
       "restoreDismiss": "Dismiss restore notice",
+      "missingMessage": "{count, plural, one {# earlier message} other {# earlier messages}}",
       "missingAttachment": "{count, plural, one {# attachment} other {# attachments}}",
       "missingText": "{count, plural, one {# long text} other {# long texts}}",
       "missingToolInput": "{count, plural, one {# tool input} other {# tool inputs}}",
