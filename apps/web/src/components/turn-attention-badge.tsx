@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
+import { setDesktopBadgeCount } from '@/lib/desktop';
 import {
   createTurnCompleteGate,
   onTurnComplete,
@@ -18,7 +19,8 @@ import { useTurnAttentionStore } from '@/stores/turn-attention-store';
  * A turn that completes while the customer is on another browser tab leaves
  * three signals: the in-app toast (8 s), the optional sound, and this badge —
  * the only one that survives past the toast, so the dot is what a returning
- * user still sees in the tab strip. It is a favicon mutation rather than a
+ * user still sees in the tab strip. In the desktop app the same count goes on
+ * the Dock / taskbar icon (`setDesktopBadgeCount`). It is a favicon mutation rather than a
  * title prefix on purpose: the tab title already has two owners (the route
  * metadata writer and the session-rename sync, see features/session/
  * session-tab-title-sync.tsx) and a third writer would fight them.
@@ -158,6 +160,13 @@ export function TurnAttentionBadge() {
       window.removeEventListener('focus', onVisible);
     };
   }, []);
+
+  // The desktop window is frameless and shows no favicon: the shell puts the
+  // count on its Dock / taskbar icon instead. 0 on mount clears a badge the
+  // previous page left.
+  useEffect(() => {
+    void setDesktopBadgeCount(unseen.length);
+  }, [unseen.length]);
 
   // Paint (or restore) the favicon badge on empty↔non-empty transitions.
   useEffect(() => {
