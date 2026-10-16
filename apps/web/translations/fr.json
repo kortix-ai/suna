@@ -20038,7 +20038,9 @@
       "unavailableDescription": "La conversation ne peut pas être lue pour le moment. Réessayez dans un instant.",
       "loadFailedDescription": "La conversation n'a pas pu être chargée.",
       "empty": "Aucun message pour l'instant",
-      "savedCopy": "Copie enregistrée le {date}"
+      "savedCopy": "Copie enregistrée le {date}",
+      "embed": "Intégrer",
+      "embedCopied": "Code d’intégration copié"
     },
     "chatIdentityConnect": {
       "chatAccount": "Compte {service}",

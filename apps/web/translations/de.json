@@ -20038,7 +20038,9 @@
       "unavailableDescription": "Die Unterhaltung kann gerade nicht gelesen werden. Versuche es gleich noch einmal.",
       "loadFailedDescription": "Die Unterhaltung konnte nicht geladen werden.",
       "empty": "Noch keine Nachrichten",
-      "savedCopy": "Gespeicherte Kopie vom {date}"
+      "savedCopy": "Gespeicherte Kopie vom {date}",
+      "embed": "Einbetten",
+      "embedCopied": "Einbettungscode kopiert"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service}-Konto",

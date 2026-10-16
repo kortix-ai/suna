@@ -20038,7 +20038,9 @@
       "unavailableDescription": "No se puede leer la conversación en este momento. Inténtalo de nuevo en unos instantes.",
       "loadFailedDescription": "No se pudo cargar la conversación.",
       "empty": "Aún no hay mensajes",
-      "savedCopy": "Copia guardada del {date}"
+      "savedCopy": "Copia guardada del {date}",
+      "embed": "Insertar",
+      "embedCopied": "Código de inserción copiado"
     },
     "chatIdentityConnect": {
       "chatAccount": "Cuenta de {service}",

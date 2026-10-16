@@ -11,6 +11,7 @@ import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
 import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import {
+  embedContentSecurityPolicy,
   enforcedContentSecurityPolicy,
   reportOnlyContentSecurityPolicy,
 } from './src/lib/security/content-security-policy';
@@ -915,6 +916,23 @@ const nextConfig = (): NextConfig => ({
                 },
               ]
             : []),
+        ],
+      },
+      // The embed widget is framed by host pages for a living. Its own rule
+      // must come after the global `/:path*` rule: for the same header key,
+      // the LAST matching rule wins, so the enforced CSP here replaces the
+      // global one on /embed paths (verified by curl on the local stack).
+      // X-Frame-Options cannot be removed by a later rule, but a browser that
+      // implements CSP frame-ancestors — every evergreen browser — ignores
+      // X-Frame-Options when the policy carries frame-ancestors, so the
+      // global SAMEORIGIN is inert on this path.
+      {
+        source: '/embed/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: embedContentSecurityPolicy(),
+          },
         ],
       },
       // Locale catalogs: the file name carries a content hash, so a response

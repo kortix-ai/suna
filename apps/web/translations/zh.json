@@ -20038,7 +20038,9 @@
       "unavailableDescription": "暂时无法读取此对话。请稍后再试。",
       "loadFailedDescription": "无法加载此对话。",
       "empty": "暂无消息",
-      "savedCopy": "保存于 {date} 的副本"
+      "savedCopy": "保存于 {date} 的副本",
+      "embed": "嵌入",
+      "embedCopied": "嵌入代码已复制"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} 账户",

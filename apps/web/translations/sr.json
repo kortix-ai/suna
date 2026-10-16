@@ -20038,7 +20038,9 @@
       "unavailableDescription": "Разговор тренутно не може да се прочита. Покушај поново за тренутак.",
       "loadFailedDescription": "Разговор није могао да се учита.",
       "empty": "Још нема порука",
-      "savedCopy": "Сачувана копија од {date}"
+      "savedCopy": "Сачувана копија од {date}",
+      "embed": "Ugradi",
+      "embedCopied": "Kod za ugrađivanje je kopiran"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} налог",

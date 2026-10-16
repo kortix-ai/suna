@@ -96,6 +96,7 @@ const PUBLIC_ROUTES = [
   '/legal',
   '/api/auth',
   '/share', // Shared content should be public
+  '/embed', // Chat embed widget for host pages — token-gated (the share token IS the credential), must load with no login
   '/marketplace', // Public read-only marketplace directory; installs still require auth
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)

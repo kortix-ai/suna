@@ -20038,7 +20038,9 @@
       "unavailableDescription": "現在この会話を読み込めません。しばらくしてからもう一度お試しください。",
       "loadFailedDescription": "会話を読み込めませんでした。",
       "empty": "まだメッセージはありません",
-      "savedCopy": "{date} に保存されたコピー"
+      "savedCopy": "{date} に保存されたコピー",
+      "embed": "埋め込む",
+      "embedCopied": "埋め込みコードをコピーしました"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} アカウント",

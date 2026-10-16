@@ -9,13 +9,14 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import {
+  embedChatUrl,
   publicShareUrl,
   useRevokePublicShare,
   useSessionPublicShares,
 } from '@/hooks/use-session-public-shares';
 import { useTranslations } from '@/i18n/use-translations';
 import { findActiveTranscriptShare, type CreateSessionPublicShareInput } from '@kortix/sdk';
-import { CheckIcon, CopyIcon, LinkSimpleIcon } from '@phosphor-icons/react';
+import { CheckIcon, CodeIcon, CopyIcon, LinkSimpleIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
 // Module-level so `usePublicShareLink` sees one stable input object.
@@ -44,6 +45,7 @@ export function SessionPublicLinkSection({
   const { revoke, revokingId } = useRevokePublicShare(projectId, sessionId);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [embedCopied, setEmbedCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -55,6 +57,13 @@ export function SessionPublicLinkSection({
 
   const active = findActiveTranscriptShare(shares);
   const url = active ? publicShareUrl(active.public_path) : null;
+  // The embed snippet a host page pastes. Same token, widget route, card
+  // layout: the token is the capability on both routes, so nothing new is
+  // minted or authorized here.
+  const embedUrl = active ? embedChatUrl(active.public_path) : null;
+  const embedSnippet = embedUrl
+    ? `<iframe src="${embedUrl}" style="height:640px;width:100%;border:0;border-radius:12px" title="Kortix" loading="lazy"></iframe>`
+    : null;
   const isRevoking = !!active && revokingId === active.share_id;
 
   const copy = async () => {
@@ -65,6 +74,19 @@ export function SessionPublicLinkSection({
       successToast(tI18nComplete.raw('textd0f24de8dbc6'));
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
       copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      errorToast(tI18nComplete.raw('text167c96824acb'));
+    }
+  };
+
+  const copyEmbed = async () => {
+    if (!embedSnippet) return;
+    try {
+      await navigator.clipboard.writeText(embedSnippet);
+      setEmbedCopied(true);
+      successToast(t('embedCopied'));
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setEmbedCopied(false), 2000);
     } catch {
       errorToast(tI18nComplete.raw('text167c96824acb'));
     }
@@ -110,6 +132,22 @@ export function SessionPublicLinkSection({
               )}
             </Button>
           </Hint>
+          {embedSnippet ? (
+            <Hint label={embedCopied ? t('embedCopied') : t('embed')} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('embed')}
+                onClick={() => void copyEmbed()}
+              >
+                {embedCopied ? (
+                  <CheckIcon className="text-kortix-green size-4" />
+                ) : (
+                  <CodeIcon className="size-4" />
+                )}
+              </Button>
+            </Hint>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"

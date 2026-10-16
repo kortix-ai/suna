@@ -1,6 +1,7 @@
 import type { SessionPublicShare } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
+  embedChatUrl,
   findLiveShareFor,
   findLiveSharesFor,
   isShareLive,
@@ -149,5 +150,28 @@ describe('findLiveSharesFor — every live link to one target', () => {
     const input = { mode: 'view' as const, file: { label: 'a', path: '/workspace/a.png' } };
     expect(findLiveSharesFor(shares, input, NOW).map((s) => s.share_id)).toEqual(['new', 'mid']);
     expect(findLiveShareFor(shares, input, NOW)?.share_id).toBe('new');
+  });
+});
+
+describe('embedChatUrl', () => {
+  test('turns a share public path into the chat embed URL on the same origin', () => {
+    expect(embedChatUrl('/share/session/kps_abc123', 'https://kortix.com')).toBe(
+      'https://kortix.com/embed/chat/kps_abc123?layout=modal',
+    );
+  });
+
+  test('an explicit layout is carried through', () => {
+    expect(embedChatUrl('/share/session/kps_abc123', 'https://kortix.com', 'panel')).toBe(
+      'https://kortix.com/embed/chat/kps_abc123?layout=panel',
+    );
+  });
+
+  test('a malformed public path builds nothing rather than guessing', () => {
+    expect(embedChatUrl(null, 'https://kortix.com')).toBeNull();
+    expect(embedChatUrl('/share/session/', 'https://kortix.com')).toBeNull();
+  });
+
+  test('no origin (server render) builds nothing, like publicShareUrl', () => {
+    expect(embedChatUrl('/share/session/kps_abc123', null)).toBeNull();
   });
 });

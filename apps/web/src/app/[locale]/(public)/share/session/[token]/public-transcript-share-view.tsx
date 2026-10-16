@@ -1,15 +1,15 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
 import { getPublicSessionShareMessages, type PublicSessionTranscriptMessage } from '@kortix/sdk';
 import { ChatTextIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
+
+import { TranscriptMessage } from './transcript-message';
 
 import {
   describeShareError,
@@ -111,26 +111,6 @@ export function PublicTranscriptShareView({ token }: { token: string }) {
             />
           ))
         )}
-      </div>
-    </div>
-  );
-}
-
-function TranscriptMessage({ message }: { message: PublicSessionTranscriptMessage }) {
-  const isUser = message.role === 'user';
-  return (
-    <div className={cn('flex', isUser && 'justify-end')}>
-      <div
-        className={cn(
-          'min-w-0 wrap-break-word',
-          isUser ? 'bg-sidebar max-w-4/5 rounded-lg px-3.5 py-2.5' : 'w-full',
-        )}
-      >
-        {/* `untrusted`: an anonymous visitor reads this. Remote images wait
-            for a click, so opening the link sends no request to a host the
-            conversation chose, and agent setup links stay plain links. The
-            agent's replies render generative UI, as in the session. */}
-        <UnifiedMarkdown content={message.text} trust="untrusted" genui={!isUser} />
       </div>
     </div>
   );

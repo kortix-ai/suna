@@ -45,6 +45,22 @@ export function enforcedContentSecurityPolicy(): string {
   return ["frame-ancestors 'self'", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
 }
 
+/**
+ * The embed widget (`/embed/chat/:token`) is meant to be framed by any host
+ * page — the share token in its URL is the capability, exactly like the
+ * `/share/session/:token` link it is built from. Its enforced policy therefore
+ * opens `frame-ancestors` while keeping the other two enforced directives.
+ *
+ * The global `/:path*` rule still sends `X-Frame-Options: SAMEORIGIN` on this
+ * path (a header rule can add but not remove). That is fine: a browser that
+ * implements CSP `frame-ancestors` — every evergreen browser, CSP2+ — ignores
+ * `X-Frame-Options` when the policy carries `frame-ancestors`. See the
+ * `headers()` comment in next.config.ts.
+ */
+export function embedContentSecurityPolicy(): string {
+  return ["frame-ancestors *", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
+}
+
 export function reportOnlyContentSecurityPolicy(): string {
   const scriptSrc = [
     "'self'",

@@ -93,8 +93,15 @@ describe('public transcript share', () => {
       'utf8',
     );
     expect(transcriptView).toContain('export function PublicTranscriptShareView');
-    expect(transcriptView).toContain('trust="untrusted"');
+    // The markdown rendering lives in the shared TranscriptMessage (also used
+    // by the /embed/chat widget route): the untrusted policy must hold there.
+    const transcriptMessage = readFileSync(
+      resolve(import.meta.dir, 'transcript-message.tsx'),
+      'utf8',
+    );
+    expect(transcriptMessage).toContain('trust="untrusted"');
     expect(transcriptView).not.toContain('trust="agent"');
+    expect(transcriptMessage).not.toContain('trust="agent"');
   });
 });
 
