@@ -522,23 +522,33 @@ describe('Up and the pencil edit a queued entry in place', () => {
   });
 });
 
-describe('a `/` command is REFUSED mid-turn, not queued', () => {
-  test('the composer refuses the command and dispatches nothing', () => {
-    // REWRITTEN with the browser queue's deletion. A command is a turn, and it
-    // does NOT go through the prompt inbox — it is dispatched by `runCommand`,
-    // so no admission gate ever sees it and putting one on the wire mid-turn
-    // aborts the answer in progress. It used to wait in a tab-local queue for
-    // that reason; a closed tab lost it, a second tab could not see it, and its
-    // release was a guess at a turn boundary. A refusal keeps the draft in the
-    // editor and stores nothing.
+describe('a `/` command is HELD mid-turn, never put on the wire', () => {
+  test('the composer holds a delayed command and dispatches nothing', () => {
+    // A command is a turn, and it does NOT go through the prompt inbox — it is
+    // dispatched by `runCommand`, so no admission gate ever sees it and putting
+    // one on the wire mid-turn aborts the answer in progress. A refusal was a
+    // dead end (KRTX-2464), so a host that can hold it does: `onHoldCommand`
+    // and `held-commands.ts`. A question, a permission or a read-only viewer
+    // still refuse it.
     const branch = between(composer, "if (plan.kind === 'command') {", 'if (lockForQuestion) {');
     expect(branch).toContain('commandBlocker({');
     expect(branch).toContain('isWorking: sessionWorking ?? isBusy');
-    expect(branch).toContain('if (blocker) {');
+    expect(branch).toContain(
+      "const holdable = blocker === 'session_working' || blocker === 'runtime_waking';",
+    );
+    expect(branch).toContain('onHoldCommand(plan.command, plan.args, plan.split)');
     // The split comes from the plan: it carries the reply quotes ahead of
     // the chip, so the sent bubble draws them (`planDraftSubmission`).
     expect(branch).toContain('onCommand?.(plan.command, plan.args, plan.split)');
     expect(branch).not.toContain('onQueueMessage');
+  });
+
+  test('SessionChat releases a held command through server truth only', () => {
+    expect(chat).toContain('onHoldCommand={handleHoldCommand}');
+    const release = between(chat, 'const next = heldCommands[0];', 'const pathname = usePathname();');
+    expect(release).toContain('sessionWorking: effectiveBusy');
+    expect(release).toContain('inboxRows: queueRows.rows');
+    expect(release).not.toContain('sessionWorking: isBusy');
   });
 
   test('the refusal reads server turn authority, not the 300 ms busy fade', () => {

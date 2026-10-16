@@ -218,6 +218,12 @@ export interface SessionChatInputProps {
    * mid-sentence (`explain /webapp to me`) came back reordered to the front.
    */
   onCommand?: (command: Command, args?: string, split?: { before: string; after: string }) => void;
+  /**
+   * Hold a command the session cannot run yet (a turn is running, or the box
+   * is waking) and run it when it can — `held-commands.ts`. A host without it
+   * refuses the command instead and keeps the draft.
+   */
+  onHoldCommand?: (command: Command, args?: string, split?: { before: string; after: string }) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
@@ -496,6 +502,7 @@ function ComposerImpl(props: SessionChatInputProps) {
   commands = EMPTY_COMMANDS,
   slashFiles = EMPTY_SLASH_FILES,
   onCommand,
+  onHoldCommand,
   models = EMPTY_MODELS,
   selectedModel = null,
   onModelChange,
@@ -1513,25 +1520,18 @@ function ComposerImpl(props: SessionChatInputProps) {
           return;
         }
 
-        // A command is REFUSED while the session is working — or while its
-        // sandbox is still waking — not queued.
+        // A command cannot go out while the session is working or its sandbox
+        // is waking. A PROMPT never waits here: it is a server-side inbox row,
+        // and the admission gate orders it. A COMMAND has no row — `runCommand`
+        // dispatches it, never `POST .../prompts` — so one put on the wire
+        // mid-turn aborts the answer in progress, and one sent at a box that is
+        // not up is swallowed by `runCommand`'s `runtimeActionReady` guard.
         //
-        // A PROMPT is never held here: it goes to the server-side inbox, which
-        // admits it only when the session can take it, so ordering is decided by
-        // server truth rather than by this component's read of `isBusy`, and a
-        // sleeping box just means the row is delivered a little later. A COMMAND
-        // has no such row — it is dispatched by `runCommand`, never by
-        // `POST .../prompts` — so no admission gate ever sees it, putting one on
-        // the wire mid-turn aborts the answer in progress, and dispatching one at
-        // a box that is not up is swallowed by `runCommand`'s own
-        // `runtimeActionReady` guard with no request and no error.
-        //
-        // It used to wait in a browser-local queue for that reason. That queue is
-        // gone: it lived in this tab's localStorage, so a closed tab lost it, a
-        // second tab could not see it, and its release timing was a guess at a
-        // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
-        // in the editor and says when the command can run — nothing is stored,
-        // and nothing can be lost.
+        // So the host HOLDS it (`onHoldCommand`, `held-commands.ts`): a visible
+        // row in the queued list, released by server turn authority once the
+        // inbox is empty — not by the debounced `isBusy` the old localStorage
+        // queue guessed from. A host without a hold refuses it and keeps the
+        // draft in the editor.
         const blocker = commandBlocker({
           hasActiveQuestion: lockForQuestion,
           // The composer only knows "something is pending", not how many.
@@ -1540,15 +1540,22 @@ function ComposerImpl(props: SessionChatInputProps) {
           isWorking: sessionWorking ?? isBusy,
           runtimeReady,
         });
-        if (blocker) {
+        // A turn or a waking box only DELAYS a command: a host that can hold
+        // it does, and the queued list shows it with a Remove (KRTX-2464). A
+        // question, a permission or a read-only viewer refuse it outright.
+        const holdable = blocker === 'session_working' || blocker === 'runtime_waking';
+        if (blocker && holdable && onHoldCommand) {
+          onHoldCommand(plan.command, plan.args, plan.split);
+        } else if (blocker) {
           const copy = sendBlockerMessage(blocker, tI18nComplete);
           errorToast(
             copy.message,
             copy.description ? { description: copy.description } : undefined,
           );
           return;
+        } else {
+          onCommand?.(plan.command, plan.args, plan.split);
         }
-        onCommand?.(plan.command, plan.args, plan.split);
         // The command is on its way; the draft that produced it is spent.
         // Deliberately NOT on either refusal path above (`guard.kind ===
         // 'refuse'`, `blocker`) — those keep the text in the editor on
@@ -1690,6 +1697,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       isBusy,
       runtimeReady,
       onCommand,
+      onHoldCommand,
       clearSavedDraft,
       handleDocChange,
       setQuoteList,
