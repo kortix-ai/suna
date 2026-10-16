@@ -1,7 +1,8 @@
 {
-  "source_hash": "e5899a8737392acbf9d647c38315fed273826fdbe6d577f159ac6cde5f150f94",
+  "source_hash": "06606a81a257c2ec9d8b72e9f1e385c740737f01cf6c5d580070281adab8ecfe",
   "diff_files": [
     "apps/web/next.config.ts",
+    "apps/web/scripts/audit-i18n.mjs",
     "apps/web/src/app/[locale]/(public)/embed/chat/[token]/embed-shared.test.ts",
     "apps/web/src/app/[locale]/(public)/embed/chat/[token]/embed-shared.ts",
     "apps/web/src/app/[locale]/(public)/embed/chat/[token]/layout.tsx",
@@ -9,7 +10,16 @@
     "apps/web/src/app/[locale]/(public)/share/session/[token]/public-transcript-share-view.tsx",
     "apps/web/src/app/[locale]/(public)/share/session/[token]/share-header.test.ts",
     "apps/web/src/app/[locale]/(public)/share/session/[token]/transcript-message.tsx",
+    "apps/web/src/features/marketing/hero-solutions.test.tsx",
+    "apps/web/src/features/session/model-consumers.test.tsx",
+    "apps/web/src/features/workspace/command-palette-search.test.ts",
+    "apps/web/src/features/workspace/customize/sections/channels-view.email.test.tsx",
+    "apps/web/src/features/workspace/customize/sections/component/slack-connect-card.tsx",
+    "apps/web/src/features/workspace/customize/sections/component/teams-connect-card.tsx",
+    "apps/web/src/features/workspace/project-sidebar/modal/session-public-link-section.test.ts",
     "apps/web/src/features/workspace/project-sidebar/modal/session-public-link-section.tsx",
+    "apps/web/src/features/workspace/settings/settings-panel.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/sandbox-tab.empty-new.test.tsx",
     "apps/web/src/hooks/use-session-public-shares.test.ts",
     "apps/web/src/hooks/use-session-public-shares.ts",
     "apps/web/src/lib/security/content-security-policy.test.ts",
@@ -26,13 +36,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "a3ece77c6098e7ceee8594c6c191e8b1fc41be6168aa40c4cab8ebc04097f2a7",
-  "head": "d8541e0584e2a436ed2b29412d74be6611877d3b",
-  "passed": false,
+  "diff_hash": "5ef1814550ca627415749a5e025ebfb64e181ef4c18e44a6d3c85df10a19dea9",
+  "head": "ca8f96c989461b917a3dac8f6856d79ff9399e4c",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "skipped-unaffected"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-16T01:05:43.379Z"
+  "at": "2026-10-16T04:53:39.944Z"
 }
