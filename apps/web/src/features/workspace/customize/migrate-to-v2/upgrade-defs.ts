@@ -9,6 +9,9 @@
 
 import type { ManifestVersion } from './manifest-version';
 import { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 
 export interface ProjectUpgradeContext {
   /** `null` while the manifest read hasn't resolved. */
@@ -36,6 +39,16 @@ export const PROJECT_UPGRADES: readonly ProjectUpgrade[] = [
 
 export function applicableUpgrades(ctx: ProjectUpgradeContext): readonly ProjectUpgrade[] {
   return PROJECT_UPGRADES.filter((u) => u.applicable(ctx));
+}
+
+/** The registry's display copy in the session's locale. The registry above
+ *  stays the English source of truth; the view localizes at render time — the
+ *  same split as `schedule-copy.ts` — so the detection rule and the prompt
+ *  never depend on the locale. */
+export function localizedProjectUpgrades(
+  tI18nComplete: UiTranslator,
+): readonly ProjectUpgrade[] {
+  return localizeUiCatalog(PROJECT_UPGRADES, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
 }
 
 /**

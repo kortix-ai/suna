@@ -74,12 +74,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import type { ManifestVersion } from './manifest-version';
 import { useProjectManifestVersion } from './manifest-version';
-import { type ProjectUpgrade, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
+import {
+  type ProjectUpgrade,
+  buildOneOffUpgradePrompt,
+  localizedProjectUpgrades,
+} from './upgrade-defs';
 import { useRunUpgrade } from './use-run-upgrade';
 
 /** The one-off runner's id in `startedId` below — it shares the single
@@ -128,7 +133,7 @@ export function UpgradesViewContent({
   onRun,
   pending,
   canWrite = false,
-  copy = DEFAULT_UPGRADES_COPY,
+  copy: copyProp,
 }: {
   /** `null` = the manifest read hasn't resolved yet. */
   version: ManifestVersion | null;
@@ -140,13 +145,25 @@ export function UpgradesViewContent({
   canWrite?: boolean;
   copy?: UpgradesCopy;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // Whatever copy renders — the caller's (tests) or the defaults — goes through
+  // the hardcoded-UI catalog here, so the pane reads the session's locale.
+  const localizedDefaultCopy = useLocalizedUiCatalog(DEFAULT_UPGRADES_COPY);
+  const copy = useLocalizedUiCatalog(copyProp ?? localizedDefaultCopy);
   const [oneOff, setOneOff] = useState('');
   // Which control the user actually pressed. `pending` is global — only one
   // session can be minted at a time — so without this every Run button on the
   // pane spins at once the moment any one of them is clicked. Latent today
   // (the registry holds one entry) and wrong the day it holds two.
   const [startedId, setStartedId] = useState<string | null>(null);
-  const upgrades = version === null ? null : applicableUpgrades({ manifestVersion: version });
+  // The registry renders localized; the detection rule still runs on the raw
+  // manifest version, so applicability never depends on the locale.
+  const upgrades =
+    version === null
+      ? null
+      : localizedProjectUpgrades(tI18nComplete).filter((u) =>
+          u.applicable({ manifestVersion: version }),
+        );
 
   function run(id: string, prompt: string) {
     setStartedId(id);

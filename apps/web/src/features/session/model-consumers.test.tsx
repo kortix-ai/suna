@@ -1,4 +1,5 @@
 import * as sdkReact from '@kortix/sdk/react';
+import * as cmdk from 'cmdk';
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import React, { act, useState } from 'react';
@@ -143,6 +144,11 @@ mock.module('@/components/ui/command', () => ({
   CommandFooter: Slot,
   CommandShortcut: Slot,
 }));
+// The slot stubs above render no cmdk store, but the palette's theme preview
+// reads the highlighted row through `useCommandState` (#10027). There is no
+// highlighted row without a store, so hand back the empty value — the preview
+// stays off, exactly as on a closed palette.
+mock.module('cmdk', () => ({ ...cmdk, useCommandState: () => '' }));
 mock.module('@/components/ui/select', () =>
   Object.fromEntries(
     ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'].map((key) => [

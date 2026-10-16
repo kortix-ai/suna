@@ -1,16 +1,20 @@
 {
-  "source_hash": "c9ec2a32ad9b8b6f57efce338fa843d3a447e365c42e5c5f1b7595ee93c0240b",
+  "source_hash": "e082514ab23d9bb5ab8911950c0b574249806b730bb49b2bda496b1ee669fe8e",
   "diff_files": [
+    "apps/web/scripts/audit-i18n.mjs",
     "apps/web/src/app/[locale]/(public)/(seo)/seo-shell.test.tsx",
-    "apps/web/src/app/[locale]/(public)/(seo)/seo-shell.tsx"
+    "apps/web/src/app/[locale]/(public)/(seo)/seo-shell.tsx",
+    "apps/web/src/features/session/model-consumers.test.tsx",
+    "apps/web/src/features/workspace/customize/migrate-to-v2/upgrade-defs.ts",
+    "apps/web/src/features/workspace/customize/migrate-to-v2/upgrade-view.tsx"
   ],
-  "diff_hash": "020b286854d70b39cda619044b68a724d335f40ddac1c356598ae752bee7aa10",
-  "head": "b2817b81cb8381c26c8e1fcb96993944cef54dcf",
-  "passed": false,
+  "diff_hash": "0cade89fd3874d19df69c51d07163238f92b4c2d7a9c48f1b9da049063000b7e",
+  "head": "a59e9a83e0df5c695f05c04bded43475e40d2bf3",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-16T15:40:18.618Z"
+  "at": "2026-10-16T17:03:59.415Z"
 }
