@@ -1895,7 +1895,10 @@ export function UserMessage({
         />
       )}
 
-      {systemNotifications.length > 0 && (
+      {/* Never for a command: its text is the expanded template, and a skill
+          body split into `<overview>`, `<when-to-load>`, … sections drew one
+          card per section above the chip. */}
+      {systemNotifications.length > 0 && !effectiveCommandInfo && (
         <div className="mt-1 flex w-full flex-col gap-1.5">
           {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (
             <SystemNotificationCard key={key} notification={item} />

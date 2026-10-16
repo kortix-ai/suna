@@ -164,6 +164,21 @@ describe('UserMessage renders a /command exactly as the composer does', () => {
     expect(markup).not.toContain('THE-WHOLE-TEMPLATE-FILE');
   });
 
+  test("a template's XML sections are never drawn as system notification cards", () => {
+    // A skill body split into `<overview>`, `<when-to-load>`, … sections drew one
+    // info card per section above the chip, because the notification parser
+    // claims every XML block it is handed. A command's text is its template.
+    const template = '<overview>\nWhat it is.\n</overview>\n<when-to-load>\nAlways.\n</when-to-load>';
+    const markup = renderText(template, { commandInfo: { name: 'kortix-memory', args: 'd' } });
+    expect(markup).toContain('aria-label="command: /kortix-memory"');
+    expect(markup).not.toContain('Overview');
+    expect(markup).not.toContain('When to load');
+  });
+
+  test('a plain message still draws its notification card', () => {
+    expect(renderText('<build_failed>\nThe build failed.\n</build_failed>')).toContain('Build failed');
+  });
+
   test('a command with no args renders the chip alone', () => {
     const markup = renderText('THE-WHOLE-TEMPLATE-FILE', {
       commandInfo: { name: 'webapp' },
