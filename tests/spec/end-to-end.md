@@ -1725,6 +1725,22 @@ the project key set. A's own token carries no `via_app_id`. C's own host does
 not answer 200 to the member's A cookie, and A answers 401 to a request
 without a sign-in.
 
+`APP-13` Multi-group restricted access is an OR over the allow-list. An
+enterprise account holds two groups; one member belongs to the first, one to
+the second, one to BOTH, one to neither, and a fifth belongs to the FIRST
+(allowed) group but holds no role on the project. An App is `restricted` with
+both groups as its `group_ids`. Every member of either group lists the App,
+reads it and answers 200 from `POST …/access-session` — the member of both
+included, the exact position a 2026-10-14 report read as AND semantics. The
+member of neither stays out (absent from the list, **404** on get and
+access-session, never 403). The fifth member — inside an allowed group, no
+project role — still gets **403** on the list: the allow-list narrows project
+members, it never widens the project (the contrast with the neither-member,
+who gets a 200 list with the App filtered out, shows the 403 is the project
+gate). Narrowing the policy to one group keeps that group's members in and
+cuts the other group's; widening back restores them — under OR, no policy
+change can lock an admitted member out.
+
 ---
 
 ## Browser-agent pilot (opt-in)
