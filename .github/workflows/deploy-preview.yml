@@ -54,7 +54,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action == 'labeled' && github.event.label.name == 'preview') ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_S || vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -178,7 +178,7 @@ jobs:
   build-api:
     name: Build preview API image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_L || vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -214,7 +214,7 @@ jobs:
   build-gateway:
     name: Build preview gateway image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_L || vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -249,7 +249,7 @@ jobs:
   build-web:
     name: Build preview frontend image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_L || vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -300,7 +300,7 @@ jobs:
   deploy:
     name: Deploy full self-host preview
     needs: [authorize, build-api, build-gateway, build-web]
-    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_L || vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # ~10 min deploy + up to 45 min waiting for pool and GitHub capacity
     # (PREVIEW_SUITE_WAIT_MINUTES) + <= 80 min suite.
     timeout-minutes: 145
@@ -623,7 +623,7 @@ jobs:
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action == 'unlabeled' && github.event.label.name == 'preview'
-    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_M || vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -693,7 +693,7 @@ jobs:
     # One Platinum list plus at most one delete — a small runner is enough, and
     # this fires on EVERY branch deletion in the repository, not just previewed
     # ones.
-    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_S || vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -738,7 +738,7 @@ jobs:
   reconcile:
     name: Reconcile stale preview sandboxes
     if: github.event_name == 'schedule'
-    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_M || vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
