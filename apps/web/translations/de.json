@@ -20593,6 +20593,18 @@
     "setUp": "Authenticator einrichten"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP-Server",
+    "addMcpMenuHint": "Server-URL einfügen und anmelden",
+    "addMcpTitle": "MCP-Server hinzufügen",
+    "addMcpDescription": "Füge die URL des Servers ein und wähle, wer ihn nutzen kann. Kortix meldet dich an und lädt seine Tools.",
+    "addMcpUrlLabel": "Server-URL",
+    "addMcpUrlHint": "Der Remote-Endpunkt des Servers, beginnend mit https://",
+    "addMcpUrlNamed": "Fügt den Connector {name} hinzu.",
+    "addMcpUrlInvalid": "Gib eine URL ein, die mit https:// beginnt",
+    "addMcpConnect": "Verbinden",
+    "addMcpConnected": "{name} ist verbunden. Agenten können seine Tools nutzen.",
+    "addMcpSignInFailed": "Die Anmeldung bei {name} konnte nicht starten: {reason}",
+    "addMcpFailed": "Der MCP-Server konnte nicht hinzugefügt werden",
     "install": "Installieren",
     "installNamed": "{name} installieren",
     "added": "Hinzugefügt",

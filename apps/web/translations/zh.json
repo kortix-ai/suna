@@ -20593,6 +20593,18 @@
     "setUp": "设置身份验证器"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP 服务器",
+    "addMcpMenuHint": "粘贴服务器 URL 并登录",
+    "addMcpTitle": "添加 MCP 服务器",
+    "addMcpDescription": "粘贴服务器的 URL，并选择谁可以使用它。Kortix 会为你登录并加载其工具。",
+    "addMcpUrlLabel": "服务器 URL",
+    "addMcpUrlHint": "服务器的远程端点，以 https:// 开头",
+    "addMcpUrlNamed": "添加连接器 {name}。",
+    "addMcpUrlInvalid": "请输入以 https:// 开头的 URL",
+    "addMcpConnect": "连接",
+    "addMcpConnected": "{name} 已连接。智能体可以使用其工具。",
+    "addMcpSignInFailed": "无法开始 {name} 的登录：{reason}",
+    "addMcpFailed": "无法添加 MCP 服务器",
     "install": "安装",
     "installNamed": "安装 {name}",
     "added": "已添加",

@@ -20593,6 +20593,18 @@
     "setUp": "Set up authenticator"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP server",
+    "addMcpMenuHint": "Paste a server URL and sign in",
+    "addMcpTitle": "Add an MCP server",
+    "addMcpDescription": "Paste the server's URL and choose who can use it. Kortix signs you in and loads its tools.",
+    "addMcpUrlLabel": "Server URL",
+    "addMcpUrlHint": "The server's remote endpoint, starting with https://",
+    "addMcpUrlNamed": "Adds the connector {name}.",
+    "addMcpUrlInvalid": "Enter a URL that starts with https://",
+    "addMcpConnect": "Connect",
+    "addMcpConnected": "{name} is connected. Agents can use its tools.",
+    "addMcpSignInFailed": "Could not start the {name} sign-in: {reason}",
+    "addMcpFailed": "Could not add the MCP server",
     "install": "Install",
     "installNamed": "Install {name}",
     "added": "Added",

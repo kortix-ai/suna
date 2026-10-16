@@ -45,3 +45,18 @@ export async function startDiscoveredSignIn(
   if (autoConnectPlan(discovery).kind !== 'register') return null;
   return startOAuth2SignIn(projectId, connectionId, discovery, returnUrl);
 }
+
+/**
+ * A sign-in start for a flow that falls back to credential entry: the consent
+ * URL, or why there is none. A failed start keeps the server's reason, so the
+ * fallback can say why it asks for a credential.
+ */
+export async function signInOrReason(
+  start: () => Promise<string | null>,
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    return { url: await start(), error: null };
+  } catch (error) {
+    return { url: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}

@@ -20593,6 +20593,18 @@
     "setUp": "Podesi autentifikator"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP server",
+    "addMcpMenuHint": "Nalepi URL servera i prijavi se",
+    "addMcpTitle": "Dodaj MCP server",
+    "addMcpDescription": "Nalepi URL servera i izaberi ko može da ga koristi. Kortix te prijavljuje i učitava njegove alate.",
+    "addMcpUrlLabel": "URL servera",
+    "addMcpUrlHint": "Udaljena krajnja tačka servera, počinje sa https://",
+    "addMcpUrlNamed": "Dodaje konektor {name}.",
+    "addMcpUrlInvalid": "Unesi URL koji počinje sa https://",
+    "addMcpConnect": "Poveži",
+    "addMcpConnected": "{name} je povezan. Agenti mogu da koriste njegove alate.",
+    "addMcpSignInFailed": "Prijava na {name} nije mogla da počne: {reason}",
+    "addMcpFailed": "MCP server nije mogao da se doda",
     "install": "Инсталирај",
     "installNamed": "Инсталирај {name}",
     "added": "Додато",
