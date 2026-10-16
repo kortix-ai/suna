@@ -7,6 +7,7 @@ import type { UiTranslator } from '@/i18n/translator';
 import {
   extractKortixSystemMessages,
   extractSessionReport,
+  type SessionReport,
   kortixSystemElements,
   stripKortixSystemTags,
 } from './kortix-system-tags';
@@ -18,7 +19,7 @@ const legacy = {
     if (!text) return '';
     return text.replace(/<kortix_system[^>]*>[\s\S]*?<\/kortix_system>/gi, '').trim();
   },
-  report(text: string) {
+  report(text: string): SessionReport | null {
     if (!text) return null;
     const match = text.match(
       /<kortix_system[^>]*type="session-report"[^>]*>[\s\S]*?<session-report>([\s\S]*?)<\/session-report>[\s\S]*?<\/kortix_system>/i,

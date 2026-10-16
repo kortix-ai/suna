@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 
 import { useTranslations } from '@/i18n/use-translations';
@@ -9,9 +10,11 @@ import { framePolicy } from '@/features/file-viewer/preview-policy';
 
 import { cn } from '@/lib/utils';
 import { type App } from '@kortix/sdk';
+import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 
 import { useEffect, useLayoutEffect, useState } from 'react';
 
+import { appCan } from './app-shared';
 import { claimFrame, ensureFrame, frameKey, restyleFrame, useFrameStatus, type FramePlacement } from './app-preview-pool';
 
 
@@ -246,7 +249,27 @@ export function AppPreview({
     className,
   );
 
-  if (!app.active_deployment_id) {
+  // An external site that refuses a frame: say so, and offer the tab it opens in.
+  if (app.external_url && !appCan(app, 'preview')) {
+    return (
+      <div
+        className={cn(frame, 'text-muted-foreground flex flex-col items-center justify-center gap-3 px-6 text-center text-xs text-pretty')}
+        data-testid="app-preview-external"
+      >
+        <span>{tI18nComplete.raw('text6241684827b2')}</span>
+        {interactive ? (
+          <Button asChild size="sm" variant="secondary" className="gap-1.5">
+            <a href={app.external_url} target="_blank" rel="noopener noreferrer">
+              <ArrowSquareOutIcon className="size-3.5 shrink-0" />
+              {tI18nComplete.raw('text306ef19c8ac3')}
+            </a>
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (!app.active_deployment_id && !app.external_url) {
     return (
       <div
         className={cn(

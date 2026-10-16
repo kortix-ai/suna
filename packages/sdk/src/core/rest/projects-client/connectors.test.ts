@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   activateConnection,
+  checkMcpServerSignIn,
   addComputerToProject,
   createConnector,
   deleteConnector,
@@ -1546,4 +1547,18 @@ test('connectorConnect forwards the redirect URIs the hosted flow returns to', a
 
   await connectorConnect('P1', 'gmail', { owner: 'project', successRedirectUri: 'kortix://ok' });
   expect(last().body).toEqual({ owner: 'project', success_redirect_uri: 'kortix://ok' });
+});
+
+test('checkMcpServerSignIn POSTs the server URL and returns whether sign-in is one click', async () => {
+  nextResponse = { status: 200, body: { requires_sign_in: true, one_click: true } };
+  const check: import('./connectors').McpServerSignInCheck = await checkMcpServerSignIn(
+    'p1',
+    'https://mcp.example.test/mcp',
+  );
+  expect(check).toEqual({ requires_sign_in: true, one_click: true });
+  expect(last()).toEqual({
+    url: 'http://test.local/connectors/projects/p1/connectors/mcp-sign-in-check',
+    method: 'POST',
+    body: { url: 'https://mcp.example.test/mcp' },
+  });
 });

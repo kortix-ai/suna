@@ -56,7 +56,9 @@ export function connectorNotice(input: {
     input.provider === 'mcp' &&
     !input.credentialSet &&
     isAuthChallenge(input.lastError ?? '') &&
-    input.accountCount > 0
+    // With no account yet, an auth scheme is what makes it a sign-in: the
+    // button opens Add account ("Only you").
+    (input.accountCount > 0 || input.hasAuth)
   )
     return { kind: 'sign_in' };
 

@@ -1,6 +1,6 @@
 import type { Session, User } from '@supabase/supabase-js';
 
-import { consumeWebRegistrationHandoff } from './callback-state.ts';
+import { consumeWebRegistrationHandoff } from './callback-state';
 
 export const NEW_USER_REJECTION_WINDOW_MS = 30_000;
 

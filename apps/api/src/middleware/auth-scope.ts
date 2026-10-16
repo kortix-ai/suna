@@ -48,8 +48,7 @@ export function extractPreviewSandboxId(path: string): string | null {
  *     no in-guest boot timeline was recorded.
  *
  * ADD A SINK HERE when you add a route whose caller is the daemon holding
- * `KORTIX_TOKEN`. `__tests__/unit-boot-timeline-auth-mount.test.ts` pins the
- * membership of this set for the same reason it pins the middleware mount.
+ * `KORTIX_TOKEN`.
  */
 const SESSION_BOUND_PLATFORM_SINKS = new Set([
   '/v1/platform/runtime-projection',

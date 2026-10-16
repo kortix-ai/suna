@@ -24,6 +24,15 @@ describe('normalizeRecentUrl', () => {
     );
   });
 
+  test("drops an App's one-shot access token and keeps the rest of the query", () => {
+    expect(
+      normalizeRecentUrl('https://dev-crm-0123456789abcdef.apps.kortix.com/deals?id=4&__kortix_access=tok'),
+    ).toBe('https://dev-crm-0123456789abcdef.apps.kortix.com/deals?id=4');
+    expect(normalizeRecentUrl('http://0123456789abcdef.apps.localhost:14008/?__kortix_access=tok')).toBe(
+      'http://0123456789abcdef.apps.localhost:14008',
+    );
+  });
+
   test('rejects values without an http(s) scheme and host', () => {
     expect(normalizeRecentUrl('')).toBe('');
     expect(normalizeRecentUrl('localhost:3000')).toBe('');

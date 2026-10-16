@@ -150,6 +150,13 @@ describe('sessionLogRestoreNotice', () => {
     expect(sessionLogRestoreNotice(restored('not an object'))).toBeNull();
   });
 
+  test('a log over the restore cap: the messages left out count as `message`, first, never as `other`', () => {
+    expect(sessionLogRestoreNotice(restored({ generation: 5, dropped: { message: 1007 }, truncated: 0 }, { grade_counts: { tool_input: 0, cut_point: 0, attachment: 0 } }))).toEqual({
+      generation: 5,
+      missing: [{ kind: 'message', count: 1007 }],
+    });
+  });
+
   test('a notice with nothing countable still reads as a restore (the counts are empty)', () => {
     expect(sessionLogRestoreNotice(restored({ generation: 1, dropped: {}, truncated: 0 }, { grade_counts: undefined }))).toEqual({ generation: 1, missing: [] });
   });

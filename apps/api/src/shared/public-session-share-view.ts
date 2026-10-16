@@ -38,6 +38,9 @@ import {
 } from '../projects/lib/session-transcript-mirror';
 import type { PublicShareRow } from './session-public-shares';
 
+/** Bounds the tool input and output `compactMessage` reads; `toPublicMessage`
+ *  drops both. Message text is the full answer, line breaks kept, so the page
+ *  renders the same markdown the session shows. */
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_MESSAGES = 200;
 
@@ -194,7 +197,7 @@ function fromMirror(
   opencodeSessionId: string | null,
 ): PublicSessionTranscript {
   const messages = mirror.messages.map((m) =>
-    toPublicMessage(compactMessage({ info: m.info as never, parts: m.parts as never }, MAX_MESSAGE_CHARS)),
+    toPublicMessage(compactMessage({ info: m.info as never, parts: m.parts as never }, MAX_MESSAGE_CHARS, true)),
   );
   return {
     available: true,
@@ -294,7 +297,7 @@ export async function getPublicSessionMessages(
       captured_at: null,
       opencode_session_id: rootId,
       message_count: rawMessages.length,
-      messages: rawMessages.map((m) => toPublicMessage(compactMessage(m, MAX_MESSAGE_CHARS))),
+      messages: rawMessages.map((m) => toPublicMessage(compactMessage(m, MAX_MESSAGE_CHARS, true))),
     },
   };
 }

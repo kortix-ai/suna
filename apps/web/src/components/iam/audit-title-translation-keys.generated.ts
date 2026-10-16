@@ -69,6 +69,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Checked API readiness': 'text6b887f76c0be',
   'Checked LLM billing eligibility': 'textcb501ee4602d',
   'Checked LLM gateway budget': 'texta47e6aabdc90',
+  'Checked MCP server sign-in': 'text63abe9112af0',
   'Checked TLS certificate eligibility': 'text036cc3b83e33',
   'Checked a drive file from a session': 'textb7eb5a2b50ce',
   'Checked a synced drive for changes': 'text4c17ea4a1bab',

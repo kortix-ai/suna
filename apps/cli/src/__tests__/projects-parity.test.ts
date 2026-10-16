@@ -35,8 +35,6 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
 /** Per-path status overrides so one test can drive an error branch. */
 let failWith: Record<string, { status: number; body: unknown }> = {};
-/** The manifest version GET /projects/:id/detail reports; null answers 404. */
-let manifestVersion: number | null = null;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -169,9 +167,6 @@ function startServer(): string {
       ) {
         return Response.json({ ok: true });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/detail` && req.method === 'GET' && manifestVersion !== null) {
-        return Response.json({ config: { manifest_version: { version: manifestVersion } } });
-      }
       if (url.pathname === `/v1/projects/${PROJECT}/sessions` && req.method === 'POST') {
         return Response.json({ session_id: 'sess_upgrade' }, { status: 201 });
       }
@@ -227,7 +222,6 @@ function callsTo(method: string, path: string): Call[] {
 }
 
 beforeEach(() => {
-  manifestVersion = null;
   tmp = mkdtempSync(join(tmpdir(), 'kortix-projects-parity-'));
   process.env = { ...ORIGINAL_ENV };
   calls = [];
@@ -500,7 +494,7 @@ describe('kortix projects upgrade', () => {
     expect(r.stdout).toContain('never');
   });
 
-  test('creates a session seeded with the v3 migration prompt', async () => {
+  test('creates a session seeded with the v1→v2 migration prompt', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'upgrade', '--project', PROJECT], config);
     expect(r.code).toBe(0);
@@ -510,10 +504,10 @@ describe('kortix projects upgrade', () => {
       name: string;
       metadata: Record<string, unknown>;
     };
-    expect(body.name).toBe('Migrate manifest to v3');
-    expect(body.metadata).toEqual({ kind: 'project-upgrade', upgrade_id: 'manifest-v3' });
+    expect(body.name).toBe('Migrate manifest to v2');
+    expect(body.metadata).toEqual({ kind: 'project-upgrade', upgrade_id: 'manifest-v2' });
     expect(body.initial_prompt).toContain(
-      "Upgrade this project's manifest to kortix_version 3",
+      "Migrate this project's manifest from kortix_version 1",
     );
     // The landing contract is the load-bearing half of the prompt.
     expect(body.initial_prompt).toContain('kortix cr open');
@@ -532,15 +526,14 @@ describe('kortix projects upgrade', () => {
         'features',
         'workspace',
         'customize',
-        'migrate-to-v3',
+        'migrate-to-v2',
         'migration-prompt.ts',
       ),
       'utf8',
     );
-    const marker = 'export const MIGRATE_TO_V3_PROMPT = `';
+    const marker = 'export const MIGRATE_TO_V2_PROMPT = `';
     const start = webPrompt.indexOf(marker) + marker.length;
-    // The first unescaped closing backtick: the prompt itself holds escaped ones.
-    const end = start + webPrompt.slice(start).search(/(?<!\\)`;/);
+    const end = webPrompt.lastIndexOf('`;');
     // Unescape the template literal the same way the runtime does.
     const expected = webPrompt.slice(start, end).replaceAll('\\`', '`').replaceAll('\\$', '$');
 
@@ -560,35 +553,8 @@ describe('kortix projects upgrade', () => {
     expect(JSON.parse(r.stdout)).toEqual({
       session_id: 'sess_upgrade',
       project_id: PROJECT,
-      upgrade_id: 'manifest-v3',
+      upgrade_id: 'manifest-v2',
     });
-  });
-});
-
-describe('kortix projects upgrade on kortix_version 2 and 3', () => {
-  test('a v2 project gets a session seeded with the kortix migrate (v2 → v3) prompt', async () => {
-    manifestVersion = 2;
-    const config = writeConfig(startServer());
-    const r = await runCli(['projects', 'upgrade', '--project', PROJECT, '--json'], config);
-
-    expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ session_id: 'sess_upgrade', project_id: PROJECT, upgrade_id: 'manifest-v3' });
-    const body = callsTo('POST', `/v1/projects/${PROJECT}/sessions`)[0].body as { initial_prompt: string; name: string; metadata: unknown };
-    expect(body.name).toBe('Migrate manifest to v3');
-    expect(body.metadata).toEqual({ kind: 'project-upgrade', upgrade_id: 'manifest-v3' });
-    expect(body.initial_prompt).toContain('kortix migrate --write');
-    expect(body.initial_prompt).toContain('kortix cr open');
-    expect(body.initial_prompt).toContain('Do **not** run `kortix cr merge`');
-  });
-
-  test('a v3 project has nothing to upgrade and starts no session', async () => {
-    manifestVersion = 3;
-    const config = writeConfig(startServer());
-    const r = await runCli(['projects', 'upgrade', '--project', PROJECT], config);
-
-    expect(r.code).toBe(0);
-    expect(r.stdout).toContain('kortix_version 3');
-    expect(callsTo('POST', `/v1/projects/${PROJECT}/sessions`)).toEqual([]);
   });
 });
 

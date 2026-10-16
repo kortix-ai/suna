@@ -269,7 +269,7 @@ export function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                {appCan(viewed, 'preview') && viewed.active_deployment_id ? (
+                {appCan(viewed, 'preview') && (viewed.active_deployment_id || viewed.external_url) ? (
                   <Hint label={tI18nComplete.raw('text5b529abadacc')} side="bottom">
                     <Button
                       size="icon"
@@ -283,7 +283,7 @@ export function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                {appCan(viewed, 'preview') ? (
+                {appCan(viewed, 'preview') || viewed.external_url ? (
                   <Hint
                     label={tI18nComplete('text06ce842278f6', { value0: appHost(viewed.url) })}
                     side="bottom"
@@ -319,12 +319,15 @@ export function AppDetailModal({
                       cannot undo. Every row leads with its glyph so the labels
                       share one left edge. */}
                   <DropdownMenuContent align="end" className="w-60">
-                    <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
-                      <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
-                      {versionsOpen
-                        ? tI18nComplete.raw('text26b1a7703eac')
-                        : tI18nComplete.raw('text401dc1a55cb9')}
-                    </DropdownMenuItem>
+                    {/* An external App has no versions: Kortix never deploys it. */}
+                    {app.external_url ? null : (
+                      <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
+                        <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
+                        {versionsOpen
+                          ? tI18nComplete.raw('text26b1a7703eac')
+                          : tI18nComplete.raw('text401dc1a55cb9')}
+                      </DropdownMenuItem>
+                    )}
                     {/* Capability items: only the Apps that offer them list them. */}
                     {appCan(app, 'member_tokens') ? (
                       <DropdownMenuItem onClick={() => setOverlay('connect')}>
@@ -400,7 +403,7 @@ export function AppDetailModal({
                 interactive
                 className="absolute inset-0 size-full"
               />
-            ) : preview ? (
+            ) : preview || app.external_url ? (
               <AppPreview
                 key={app.active_deployment_id ?? app.app_id}
                 app={app}

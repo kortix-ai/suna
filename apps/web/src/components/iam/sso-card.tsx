@@ -88,7 +88,7 @@ function useSpUrls(): SamlSpUrls | null {
  * paste into their IdP's SAML configuration. Shown both before a provider is
  * configured (admins need these values first) and inside the configure/edit
  * dialog. Deliberately does not mention the delegated identity provider by
- * name — see sso-card.test.ts.
+ * name.
  */
 function SpDetails({
   urls,

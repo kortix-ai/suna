@@ -26,12 +26,11 @@ import { type ManifestFormat, parseManifestText } from '@kortix/manifest-schema'
 export const LATEST_MANIFEST_VERSION = 3;
 
 /**
- * Implemented upgrade paths, `from` → `to`: v1 → v2 (the `kortix.toml` →
- * `kortix.yaml` governance conversion, an agent session) and v2 → v3
- * (`kortix migrate`, which inlines each agent's `.md` frontmatter into its
- * kortix.yaml block). Version 3 is the current schema.
+ * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists today (the
+ * `kortix.toml` → `kortix.yaml` governance conversion). Version 3 is the
+ * current schema. No automatic v2 → v3 migration exists: v2 agents depend on Markdown files.
  */
-const MIGRATIONS: Readonly<Record<number, number>> = { 1: 2, 2: 3 };
+const MIGRATIONS: Readonly<Record<number, number>> = { 1: 2 };
 
 export type ManifestUnknownReason =
   /** No manifest text — absent from the repo, or the repo read failed. */

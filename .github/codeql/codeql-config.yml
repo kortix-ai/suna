@@ -4,7 +4,16 @@ name: "Kortix CodeQL config"
 # generated artifacts — not product code, and not web-facing — so their
 # report-text munging (e.g. the JUnit -> Allure converter's tag stripping)
 # otherwise raises web-XSS false positives. Exclude them from analysis.
+#
+# Test code is excluded too: 839k of the 2.02M JS/TS lines are tests, which
+# never ship and are not web-facing. The release scan took 19-20 min with
+# them (runs 38935179266, 38920103785) — the long pole of the release suite.
 paths-ignore:
-  - tests/scripts
+  - tests
+  - "**/__tests__"
+  - "**/e2e"
+  - "**/fixtures"
+  - "**/*.test.*"
+  - "**/*.spec.*"
   - "**/*.generated.*"
   - "**/embedded.generated.json"

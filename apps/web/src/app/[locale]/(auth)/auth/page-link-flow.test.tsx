@@ -1,5 +1,4 @@
 import { expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import messages from '../../../../../translations/en.json';
@@ -53,12 +52,13 @@ const { default: AuthPage } = await import('./page');
 test('unavailable SSO falls back to email and keeps a refusal visible until the address changes', async () => {
   ssoProbes = 0;
   emailFailure = 'Your organization requires single sign-on. Continue with SSO instead.';
-  let root: ReturnType<typeof create> | undefined;
+  let rendered: ReturnType<typeof create> | undefined;
   try {
     await act(async () => {
-      root = create(createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)));
+      rendered = create(<NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>);
     });
-    if (!root) throw new Error('Auth page did not render');
+    if (!rendered) throw new Error('Auth page did not render');
+    const root = rendered;
     const email = root.root.findByProps({ autoComplete: 'email' });
     await act(async () => email.props.onChange({ target: { value: 'synthetic@example.test' } }));
     await act(async () => root.root.findByType('form').props.onSubmit({ preventDefault() {} }));
@@ -71,17 +71,18 @@ test('unavailable SSO falls back to email and keeps a refusal visible until the 
     expect(JSON.stringify(root.toJSON())).not.toContain(emailFailure);
   } finally {
     emailFailure = null;
-    if (root) await act(async () => root.unmount());
+    if (rendered) await act(async () => rendered?.unmount());
   }
 });
 
 test('unavailable SSO still permits the supported email sign-in link', async () => {
   ssoProbes = 0;
-  let root: ReturnType<typeof create> | undefined;
+  let rendered: ReturnType<typeof create> | undefined;
   await act(async () => {
-    root = create(createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)));
+    rendered = create(<NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>);
   });
-  if (!root) throw new Error('Auth page did not render');
+  if (!rendered) throw new Error('Auth page did not render');
+  const root = rendered;
   const email = root.root.findByProps({ autoComplete: 'email' });
   await act(async () => email.props.onChange({ target: { value: 'synthetic@example.test' } }));
   const form = root.root.findByType('form');

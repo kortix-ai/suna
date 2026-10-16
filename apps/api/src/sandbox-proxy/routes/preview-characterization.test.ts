@@ -27,6 +27,7 @@ import { HTTPException } from 'hono/http-exception';
 import * as realRequestContext from '../../lib/request-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realPublicShares from '../../shared/session-public-shares';
+import * as realRetryBudget from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sbx-uuid-1',
@@ -57,6 +58,9 @@ const counts = {
   resumeStopped: 0,
 };
 
+// The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
+// attempts and their outcome, not the backoff's wall time.
+mock.module('../preview-retry-budget', () => ({ ...realRetryBudget, PROXY_RETRY_DELAYS_MS: [1, 1, 1] }));
 mock.module('../../config', () => ({
   config: { FRONTEND_URL: 'http://localhost:3000' },
 }));
@@ -447,10 +451,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
 // ── the retry / wake machinery ───────────────────────────────────────────────
 
 describe('forwardToSandbox retry and wake', () => {
-  // The retry sleeps (250 ms / 1 s / 3 s) are real, so the four-attempt cases
-  // need ~4.5 s — above Bun's 5 s default per-test timeout on a direct run.
-  // The explicit 8 s keeps them honest and fast instead of loosening the
-  // batch runner's 15 s floor.
+  // The retry sleeps are 1 ms here (the PROXY_RETRY_DELAYS_MS mock above).
   test('a GET 502 invalidates the ingress link and retries to a 200, never waking the box', async () => {
     queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
     const res = await forward({ port: 3000, path: '/' });
@@ -471,7 +472,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(browser.headers.get('x-kortix-upstream-status')).toBe('502');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('retries exhausted: a machine client gets the bare upstream 5xx', async () => {
     const fiftyTwo = () => new Response('bad gateway', { status: 502 });
@@ -481,7 +482,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(await machine.text()).toBe('bad gateway');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('a connection-refused GET wakes the sandbox once, then gives up with a 502 on the daemon hop', async () => {
     queueFetch(refused(), refused(), refused(), refused());
@@ -524,7 +525,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(timeline?.[0]).toContain('total=');
     expect(timeline?.[0]).toContain('ingress=');
     expect(timeline?.[1]).toEqual({ path: '/session', port: 8000, hop: 'daemon' });
-  }, 8_000);
+  });
 
   test('a Daytona stopped-box 400 wakes once and retries; the last attempt passes the 400 through', async () => {
     const down = () => new Response('failed to get runner info: no IP address found', { status: 400 });
@@ -537,7 +538,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(counts.invalidatePreviewLink).toBe(3);
     // The 400 was returned before the give-up path, so the row was never errored.
     expect(counts.markSandboxErrored).toBe(0);
-  }, 8_000);
+  });
 
   test('a dead signal followed by an unreachable network errors the row before the 502', async () => {
     queueFetch(
@@ -551,7 +552,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(1);
     expect(counts.markSandboxErrored).toBe(1);
-  }, 8_000);
+  });
 });
 
 // ── provider-edge and signed-context auth failures ───────────────────────────

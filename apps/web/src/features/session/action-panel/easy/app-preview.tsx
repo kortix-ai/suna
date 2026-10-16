@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { useAppInBrowser, withoutAppAccessToken } from '@/features/apps/app-in-browser';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
@@ -44,9 +45,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   PreviewLoadingOverlay,
-  PreviewRecentsLanding,
   SandboxAddressBar,
 } from '../shared/sandbox-browser-chrome';
+import { BrowserLanding } from '../shared/browser-landing';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PREVIEW_MAX_WAIT_MS,
@@ -83,6 +84,7 @@ const getSandboxHealthSnapshot = (): SandboxHealth => {
 export function AppPreview({
   url,
   name,
+  projectId,
   shareContext,
   onClose,
   onSendToAgent,
@@ -90,6 +92,8 @@ export function AppPreview({
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
   url: string;
   name: string;
+  /** Lists the project's Apps on the no-app landing. */
+  projectId?: string;
   /** Project-session ids the share link is scoped to. Absent on a booting or
    *  transient session, which is why Copy link is omitted rather than disabled
    *  there — same rule as `ShareFileButton`. */
@@ -123,8 +127,23 @@ export function AppPreview({
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
   // Null while the auth token is still being fetched — the landing state holds.
-  const previewUrl = useAuthenticatedPreviewUrl(proxied);
+  const authenticatedUrl = useAuthenticatedPreviewUrl(proxied);
+  // A project App frames signed in, on its own origin (`useAppInBrowser`).
+  const { app, apps, src: previewUrl } = useAppInBrowser(projectId, authenticatedUrl);
   const hasPreview = !!previewUrl;
+  // A Kortix App is named by its App, not by its route-key host.
+  const title = app?.name ?? name;
+  const suggestions = useMemo(() => apps.map((row) => ({ label: row.name, url: row.url })), [apps]);
+  const appCopy = useMemo(
+    () =>
+      app
+        ? {
+            ariaLabel: tI18nComplete.raw('text9adff6870471'),
+            run: () => navigator.clipboard.writeText(withoutAppAccessToken(current)),
+          }
+        : undefined,
+    [app, current, tI18nComplete],
+  );
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -290,14 +309,16 @@ export function AppPreview({
           onBack={goBack}
           onForward={goForward}
           onReload={reload}
+          onHome={() => navigateTo('')}
           onNavigate={navigateTo}
+          suggestions={suggestions}
           placeholder={tI18nComplete.raw('text878abd024f27')}
           inputRef={addressRef}
           trailing={
             // An app has no file to save and no text to put on a clipboard, so
             // `Copy link` is the one copy action — the thing you can hand
             // someone for a running port.
-            <ViewerActions shareContext={shareContext} shareInput={shareInput} />
+            <ViewerActions copy={appCopy} shareContext={shareContext} shareInput={shareInput} />
           }
         />
 
@@ -338,7 +359,7 @@ export function AppPreview({
             icon={WarningIcon}
             size="sm"
             className="bg-background absolute inset-0 z-10"
-            title={tI18nComplete('textba601cdb484b', { value0: name })}
+            title={tI18nComplete('textba601cdb484b', { value0: title })}
             /* The single most common cause, said plainly: the agent started the
                server a moment ago and it isn't listening yet. Only a SETTLED
                `dead` verdict earns the stopped-workspace wording — see
@@ -361,31 +382,24 @@ export function AppPreview({
         )}
 
         {noApp ? (
-          /* Landing — recent ports when we have them (the same list
-             BrowserPanel's landing shows), a quiet search hint otherwise. */
-          localhostRecents.length > 0 ? (
-            <div className="h-full overflow-y-auto">
-              <PreviewRecentsLanding
-                recents={localhostRecents}
-                onOpen={(url) => {
-                  const parsed = parseLocalhostUrl(url);
-                  if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
-                }}
-              />
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
-                <Globe className="size-12 opacity-20" />
-                <p className="text-sm">{tI18nComplete.raw('text2f883b75cd2d')}</p>
-              </div>
-            </div>
-          )
+          /* Landing — the project's Apps and recent ports as one timeline
+             (`BrowserLanding`); a quiet search hint when there is neither. */
+          <div className="flex h-full flex-col overflow-y-auto">
+            <BrowserLanding
+              projectId={projectId}
+              recents={localhostRecents}
+              empty={<SearchHint />}
+              onOpen={(url) => {
+                const parsed = parseLocalhostUrl(url);
+                navigateTo(parsed ? toInternalUrl(parsed.port, parsed.path) : url);
+              }}
+            />
+          </div>
         ) : hasPreview ? (
           <iframe
             key={refreshKey}
             src={previewUrl}
-            title={name}
+            title={title}
             className="h-full w-full border-0"
             sandbox={framePolicy('app', previewUrl).sandbox}
             onLoad={() => {
@@ -412,6 +426,18 @@ export function AppPreview({
             <Loading className="size-4" />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SearchHint() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
+        <Globe className="size-12 opacity-20" />
+        <p className="text-sm">{tI18nComplete.raw('text2f883b75cd2d')}</p>
       </div>
     </div>
   );

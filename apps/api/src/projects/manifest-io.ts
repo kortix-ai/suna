@@ -105,7 +105,7 @@ export async function readManifest(
 }
 
 /**
- * The agent name a synthesized (no-manifest-yet) v3 manifest declares as its
+ * The agent name a synthesized (no-manifest-yet) v2 manifest declares as its
  * default — same name `@kortix/starter`'s `base` template seeds (see
  * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
  * `agents.kortix`). Keeping the two in sync means a blank managed-git project
@@ -124,9 +124,8 @@ export async function readManifest(
 export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
 
 /**
- * Build the synthesized v3 manifest for a project with no kortix.yaml/
- * kortix.toml committed yet: the starter's `kortix` agent, granted everything,
- * with the project checkout. Pure (no I/O) — callers decide when a `null`
+ * Build the synthesized v2 manifest for a project with no kortix.yaml/
+ * kortix.toml committed yet. Pure (no I/O) — callers decide when a `null`
  * `readManifest` result should be treated as this shape.
  *
  * MUST embed `kortix_version` INSIDE `raw` (not just carry it on the
@@ -136,7 +135,7 @@ export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
  * re-injects `kortix_version` from `schemaVersion` on the way out). Without
  * the key present here, `validateRoot` reads the raw object as schema-version-
  * less and rejects it with "kortix_version is required" before ever reaching
- * the body validators — the exact 400 a blank project's first
+ * the v2 body validators — the exact 400 a blank project's first
  * PUT /default-agent hit.
  */
 export function synthesizeBlankManifest(project: {
@@ -147,22 +146,18 @@ export function synthesizeBlankManifest(project: {
     (candidate) => candidate.path,
   );
   return {
-    schemaVersion: 3,
+    schemaVersion: 2,
     raw: {
-      kortix_version: 3,
+      kortix_version: 2,
       project: { name: project.name ?? '', description: '' },
-      default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
       env: { required: [], optional: [] },
+      default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
       agents: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
-          mode: 'primary',
-          skills: 'all',
-          subagents: 'all',
-          commands: 'all',
-          extensions: 'all',
           connectors: 'all',
           secrets: 'all',
           kortix_permissions: 'all',
+          skills: 'all',
           // Nobody declared this agent, so it keeps the project checkout
           // (KRTX-165). Without it a blank project's first session boots with
           // no repo and fails to compile.

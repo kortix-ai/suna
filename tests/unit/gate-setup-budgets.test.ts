@@ -24,10 +24,10 @@ import { describe, expect, it } from 'vitest';
 
 const RUNNER = readFileSync(join(__dirname, '..', 'src', 'core', 'runner.ts'), 'utf8');
 
-/** The `tests-release.yml` API shard cap the two budgets must fit inside. */
-const SHARD_CAP_MS = 60 * 60_000;
-/** Observed API shard flow time, so setup must leave room for it. */
-const OBSERVED_FLOW_TIME_MS = 25 * 60_000;
+/** The `tests-release.yml` API job cap the two budgets must fit inside. */
+const SHARD_CAP_MS = 30 * 60_000;
+/** Expected flow time of the `deployed` set, so setup must leave room for it. */
+const OBSERVED_FLOW_TIME_MS = 5 * 60_000;
 
 function budget(name: string): number {
   const m = new RegExp(`const ${name} = ([0-9_]+);`).exec(RUNNER);

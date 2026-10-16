@@ -170,6 +170,16 @@
     "accent": "#97bedc"
   },
   {
+    "id": "jellybeans-light",
+    "name": "Jellybeans Light",
+    "family": "jellybeans",
+    "familyName": "Jellybeans",
+    "mode": "light",
+    "background": "#f4f4f4",
+    "foreground": "#262626",
+    "accent": "#3475a1"
+  },
+  {
     "id": "kanagawa-dragon",
     "name": "Kanagawa Dragon",
     "family": "kanagawa",
