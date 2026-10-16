@@ -33,6 +33,7 @@ const trigger: ProjectTrigger = {
   enabled: true,
   cron: '0 9 * * *',
   run_at: null,
+  webhook_url: null,
   timezone: 'UTC',
   secret_env: null,
   run: null,
