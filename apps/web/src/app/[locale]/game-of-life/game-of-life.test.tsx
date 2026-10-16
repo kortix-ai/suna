@@ -98,11 +98,50 @@ test('a mounted resize reinitializes the canvas and restarts animation', async (
   expect(frames).toBe(2);
 });
 
-test('a resize followed by an unmount inside the debounce window never requests another frame', async () => {
+test('a resize followed by an unmount inside the debounce window cancels the pending timeout and never requests another frame', async () => {
   await act(async () => root.render(<GameOfLife />));
   expect(frames).toBe(1);
-  win.dispatchEvent(new win.Event('resize'));
-  await act(async () => root.render(null));
-  await new Promise(resolve => setTimeout(resolve, 300));
+  // Capture the timeout the resize schedules and whether it ever fires, so the
+  // test can see the pending debounce work itself, not just its rAF side effect.
+  const realSetTimeout = globalThis.setTimeout;
+  const realClearTimeout = globalThis.clearTimeout;
+  const pending: ReturnType<typeof realSetTimeout>[] = [];
+  const cleared: unknown[] = [];
+  const fired: ReturnType<typeof realSetTimeout>[] = [];
+  Object.defineProperties(globalThis, {
+    setTimeout: {
+      value: (fn: Parameters<typeof realSetTimeout>[0], ms?: number) => {
+        const id = realSetTimeout(() => {
+          fired.push(id);
+          fn();
+        }, ms);
+        pending.push(id);
+        return id;
+      },
+      configurable: true,
+    },
+    clearTimeout: {
+      value: (id?: Parameters<typeof realClearTimeout>[0]) => {
+        if (id !== undefined) cleared.push(id);
+        realClearTimeout(id);
+      },
+      configurable: true,
+    },
+  });
+  try {
+    win.dispatchEvent(new win.Event('resize'));
+    expect(pending).toHaveLength(1);
+    await act(async () => root.render(null));
+  } finally {
+    Object.defineProperties(globalThis, {
+      setTimeout: { value: realSetTimeout, configurable: true },
+      clearTimeout: { value: realClearTimeout, configurable: true },
+    });
+  }
+  await new Promise(resolve => realSetTimeout(resolve, 300));
   expect(frames).toBe(1);
+  // The 250 ms debounce window has passed: the effect cleanup must have
+  // cancelled the pending resize timeout, and it must never have fired.
+  expect(cleared).toContain(pending[0]);
+  expect(fired).not.toContain(pending[0]);
 });
