@@ -343,3 +343,90 @@ describe('createTurnEndWatch: a turn left running by a page that unmounted', () 
     expect(ends).toEqual(['S1', 'S2']);
   });
 });
+
+/** A push source the test drives by hand, like the session's control stream. */
+function pushHarness(options: { replay?: SessionTurnStatus } = {}) {
+  const clock = fakeClock();
+  const calls: string[] = [];
+  const ends: TurnEndOutcome[] = [];
+  let live = true;
+  let push: (read: SessionTurnStatus) => void = () => {};
+  let subscribed = 0;
+  let unsubscribed = 0;
+  const watch = createTurnEndWatch({
+    readTurn: async (projectId, sessionId) => {
+      calls.push(`${projectId}/${sessionId}`);
+      return OPEN;
+    },
+    subscribe: (_projectId, _sessionId, onRead) => {
+      subscribed++;
+      push = onRead;
+      // The control stream hands a joiner the newest frame synchronously.
+      if (options.replay) onRead(options.replay);
+      return () => {
+        unsubscribed++;
+      };
+    },
+    pushLive: () => live,
+    onEnded: (_h, outcome) => ends.push(outcome),
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+  return {
+    clock,
+    calls,
+    ends,
+    watch,
+    push: (read: SessionTurnStatus) => push(read),
+    setLive: (value: boolean) => {
+      live = value;
+    },
+    counts: () => ({ subscribed, unsubscribed }),
+  };
+}
+
+describe('createTurnEndWatch with a push source (the session control stream)', () => {
+  test('a pushed verdict announces the end with no timer tick: a hidden window may not run timers', async () => {
+    // A hidden desktop window throttles timers (Chromium, macOS App Nap); a
+    // stream frame still arrives. The end must not wait for a poll.
+    const h = pushHarness();
+    h.watch.watch(handoff());
+    h.push(OPEN);
+    expect(h.ends).toEqual([]);
+    h.push(COMPLETED_T1);
+    expect(h.ends).toEqual([{ kind: 'completed' }]);
+    expect(h.watch.watching()).toEqual([]);
+    expect(h.counts()).toEqual({ subscribed: 1, unsubscribed: 1 });
+    expect(h.calls).toEqual([]);
+    expect(h.clock.pending()).toBe(0);
+  });
+
+  test('a verdict replayed while subscribing is handled, and that subscription still ends', () => {
+    const h = pushHarness({ replay: COMPLETED_T1 });
+    h.watch.watch(handoff());
+    expect(h.ends).toEqual([{ kind: 'completed' }]);
+    expect(h.watch.watching()).toEqual([]);
+    expect(h.counts()).toEqual({ subscribed: 1, unsubscribed: 1 });
+    expect(h.clock.pending()).toBe(0);
+  });
+
+  test('while the stream is live the poll reads nothing; when it drops the poll reads again', async () => {
+    const h = pushHarness();
+    h.watch.watch(handoff());
+    await h.clock.advance(TURN_END_WATCH_FIRST_READ_MS + TURN_END_WATCH_POLL_MS * 3);
+    expect(h.calls).toEqual([]);
+    h.setLive(false);
+    await h.clock.advance(TURN_END_WATCH_POLL_MS);
+    expect(h.calls).toEqual(['P1/S1']);
+  });
+
+  test('releasing the session ends its stream subscription', () => {
+    const h = pushHarness();
+    h.watch.watch(handoff());
+    h.watch.release('P1', 'S1');
+    expect(h.counts()).toEqual({ subscribed: 1, unsubscribed: 1 });
+    h.push(COMPLETED_T1);
+    expect(h.ends).toEqual([]);
+  });
+});

@@ -14,10 +14,14 @@ import type {
  * The other-tab relay (`apps/web/src/lib/turn-broadcast.ts`) cannot help: it
  * only repeats what some tab's stream announced.
  *
- * THE SOURCE. `GET .../sessions/:id/turn` is the control plane's answer to "which
- * turns are open", and its `last_ended` row says how the newest one ended. The
- * page polled it every 5 s while the turn ran (`useSessionWorking`), so carrying
- * that poll past the unmount costs nothing the page did not already spend.
+ * THE SOURCE. The control plane's answer to "which turns are open", with
+ * `last_ended` saying how the newest one ended. Two ways in, one verdict:
+ * - pushed: the session's control stream (`kortix.control.turn` frames on
+ *   `GET .../events?channels=control`). A hidden desktop window throttles its
+ *   timers (Chromium; macOS App Nap), but a stream frame still arrives, so the
+ *   end is announced when it happens, not when a timer next fires.
+ * - polled: `GET .../sessions/:id/turn`, the backstop while the stream is not
+ *   live (an older API, a reconnect). It stands down while the stream is live.
  *
  * THE CONTRACT. The page hands its running turn over when it unmounts and takes
  * it back when it mounts again (`release`). While the page is mounted, its
@@ -121,6 +125,11 @@ export function readTurnEnd(
 
 export interface TurnEndWatchDeps {
   readTurn(projectId: string, sessionId: string): Promise<SessionTurnStatus>;
+  /** The push source: calls `onRead` with each turn verdict (possibly at once,
+   *  for the newest one) and returns the unsubscribe. */
+  subscribe?(projectId: string, sessionId: string, onRead: (read: SessionTurnStatus) => void): () => void;
+  /** While true the push source is live and the poll makes no read. */
+  pushLive?(projectId: string, sessionId: string): boolean;
   /** Called once per watched turn, for every outcome including `stopped`. */
   onEnded(handoff: TurnEndHandoff, outcome: TurnEndOutcome, watchedSinceMs: number): void;
   now?: () => number;
@@ -144,7 +153,11 @@ interface WatchEntry {
   handoff: TurnEndHandoff;
   sinceMs: number;
   sawOpen: boolean;
+  /** The newest verdict short of an end, from either source. */
+  lastState: 'running' | 'waiting' | null;
   timer: unknown;
+  unsubscribe: (() => void) | null;
+  dropped: boolean;
 }
 
 /** A read retrying cannot fix: 401 (the transport already replayed it with a
@@ -164,7 +177,9 @@ export function createTurnEndWatch(deps: TurnEndWatchDeps): TurnEndWatch {
 
   function drop(key: string, entry: WatchEntry) {
     if (entries.get(key) !== entry) return;
+    entry.dropped = true;
     clearTimer(entry.timer);
+    entry.unsubscribe?.();
     entries.delete(key);
   }
 
@@ -172,32 +187,40 @@ export function createTurnEndWatch(deps: TurnEndWatchDeps): TurnEndWatch {
     entry.timer = setTimer(() => void tick(key, entry), ms);
   }
 
-  async function tick(key: string, entry: WatchEntry) {
+  /** One verdict, pushed or polled. Announces and drops the watch on an end. */
+  function evaluate(key: string, entry: WatchEntry, read: SessionTurnStatus) {
     if (entries.get(key) !== entry) return;
-    const { projectId, sessionId } = entry.handoff;
-    let verdict: TurnEndVerdict | null = null;
-    try {
-      const read = await deps.readTurn(projectId, sessionId);
-      // Released or replaced while the read was in flight: that answer is not ours.
-      if (entries.get(key) !== entry) return;
-      verdict = readTurnEnd(entry.handoff, read, entry.sawOpen);
-    } catch (error) {
-      if (entries.get(key) !== entry) return;
-      if (isFinalReadError(error)) {
-        drop(key, entry);
-        return;
-      }
-      // A transient failure (offline, 5xx, an expired token mid-refresh) says
-      // nothing about the turn: read again on the next tick.
-    }
-    const age = now() - entry.sinceMs;
-    if (verdict?.state === 'ended') {
+    const verdict = readTurnEnd(entry.handoff, read, entry.sawOpen);
+    if (verdict.state === 'ended') {
       drop(key, entry);
       deps.onEnded(entry.handoff, verdict.outcome, entry.sinceMs);
       return;
     }
-    if (verdict?.state === 'running') entry.sawOpen = true;
-    const waitingTooLong = verdict?.state === 'waiting' && !entry.sawOpen && age >= TURN_END_WATCH_START_MS;
+    if (verdict.state === 'running') entry.sawOpen = true;
+    entry.lastState = verdict.state;
+  }
+
+  async function tick(key: string, entry: WatchEntry) {
+    if (entries.get(key) !== entry) return;
+    const { projectId, sessionId } = entry.handoff;
+    if (!deps.pushLive?.(projectId, sessionId)) {
+      try {
+        const read = await deps.readTurn(projectId, sessionId);
+        // Released, replaced or ended while the read was in flight: not ours.
+        evaluate(key, entry, read);
+      } catch (error) {
+        if (entries.get(key) !== entry) return;
+        if (isFinalReadError(error)) {
+          drop(key, entry);
+          return;
+        }
+        // A transient failure (offline, 5xx, an expired token mid-refresh) says
+        // nothing about the turn: read again on the next tick.
+      }
+    }
+    if (entries.get(key) !== entry) return;
+    const age = now() - entry.sinceMs;
+    const waitingTooLong = entry.lastState === 'waiting' && !entry.sawOpen && age >= TURN_END_WATCH_START_MS;
     if (waitingTooLong || age >= TURN_END_WATCH_MAX_MS) {
       drop(key, entry);
       return;
@@ -211,9 +234,21 @@ export function createTurnEndWatch(deps: TurnEndWatchDeps): TurnEndWatch {
       const key = keyOf(handoff.projectId, handoff.sessionId);
       const previous = entries.get(key);
       if (previous) drop(key, previous);
-      const entry: WatchEntry = { handoff, sinceMs: now(), sawOpen: false, timer: null };
+      const entry: WatchEntry = {
+        handoff,
+        sinceMs: now(),
+        sawOpen: false,
+        lastState: null,
+        timer: null,
+        unsubscribe: null,
+        dropped: false,
+      };
       entries.set(key, entry);
       schedule(key, entry, TURN_END_WATCH_FIRST_READ_MS);
+      const unsubscribe = deps.subscribe?.(handoff.projectId, handoff.sessionId, (read) => evaluate(key, entry, read));
+      // The push source may hand over an ended verdict while subscribing.
+      if (entry.dropped) unsubscribe?.();
+      else entry.unsubscribe = unsubscribe ?? null;
     },
     release(projectId, sessionId) {
       const key = keyOf(projectId, sessionId);

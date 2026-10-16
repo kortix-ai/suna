@@ -2,7 +2,8 @@
 
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { getSessionTurn } from '../core/rest/projects-client/sessions';
+import { type SessionTurnStatus, getSessionTurn } from '../core/rest/projects-client/sessions';
+import { openSessionStream, sessionStreamConnected } from '../core/session/control-stream';
 import {
   type TurnEndWatch,
   type TurnEndWatchDeps,
@@ -41,11 +42,37 @@ function announce(...[handoff, outcome, watchedSinceMs]: Parameters<TurnEndWatch
   }
 }
 
+/** The session's control stream as the watch's push source: each
+ *  `kortix.control.turn` frame is the `/turn` answer, pushed. */
+function subscribeTurnFrames(
+  projectId: string,
+  sessionId: string,
+  onRead: (read: SessionTurnStatus) => void,
+): () => void {
+  const handle = openSessionStream({
+    projectId,
+    sessionId,
+    onControl: (frame) => {
+      if (frame.type !== 'kortix.control.turn') return;
+      const payload = frame.payload as (Partial<SessionTurnStatus> & { known?: boolean }) | null;
+      if (!payload?.known || !Array.isArray(payload.turns)) return;
+      onRead({
+        turns: payload.turns,
+        ...(payload.last_ended ? { last_ended: payload.last_ended } : {}),
+        ...(payload.recent_failures ? { recent_failures: payload.recent_failures } : {}),
+      });
+    },
+  });
+  return () => handle.close();
+}
+
 function turnEndWatch(): TurnEndWatch {
   watch ??= createTurnEndWatch({
     // Silent: a failed read on an unrelated page must not raise the host's
     // error toast. The next tick reads again.
     readTurn: (projectId, sessionId) => getSessionTurn(projectId, sessionId, { showErrors: false }),
+    subscribe: subscribeTurnFrames,
+    pushLive: sessionStreamConnected,
     onEnded: announce,
     ...overrides,
   });

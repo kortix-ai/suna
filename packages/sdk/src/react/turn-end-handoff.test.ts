@@ -4,6 +4,8 @@ import { createElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { configureKortix } from '../core/http/config';
+import type { RuntimeEventMessage } from '../core/runtime/runtime-rest-client';
+import { __resetSessionControlStreamsForTests } from '../core/session/control-stream';
 import type { ProjectSession, SessionTurnStatus } from '../core/rest/projects-client/sessions';
 import { TURN_END_WATCH_FIRST_READ_MS, TURN_END_WATCH_POLL_MS } from '../core/session/turn-end-watch';
 import { qk } from './query-keys';
@@ -70,6 +72,9 @@ let queryClient: QueryClient;
 function installWatch() {
   let nextId = 1;
   resetTurnEndHandoffForTests({
+    // The scripted reads stand in for both sources; no stream connects.
+    subscribe: undefined,
+    pushLive: undefined,
     readTurn: async (projectId, sessionId) => {
       readCount++;
       const list = reads.get(`${projectId}/${sessionId}`) ?? [COMPLETED];
@@ -266,6 +271,9 @@ describe('useTurnEndHandoff', () => {
       },
     });
     resetTurnEndHandoffForTests({
+      // The poll alone: this test is about the read's error reporting.
+      subscribe: undefined,
+      pushLive: undefined,
       now: () => clockMs,
       setTimer: (fn, ms) => {
         const id = timers.size + 1000 + turnReads * 10;
@@ -285,6 +293,78 @@ describe('useTurnEndHandoff', () => {
     expect(turnReads).toBe(2);
     expect(errors).toEqual([]);
     expect(notified).toMatchObject([{ kind: 'task-complete', sessionId: 'S1' }]);
+  });
+
+  test('by default the end arrives on the session control stream, with no timer tick', async () => {
+    // The desktop app hidden behind another app: timers may not run, a stream
+    // frame still arrives. The default watch listens to the session's control
+    // stream (`GET …/events?channels=control`) and its poll stands down.
+    const urls: string[] = [];
+    let push: (frame: Record<string, unknown>) => void = () => {};
+    configureKortix({
+      backendUrl: 'http://kortix.invalid/v1',
+      getToken: async () => 'token',
+      onNotify: (event) => notified.push(event),
+      eventStreamTransport: async function* (request: { url: string; signal: AbortSignal }) {
+        urls.push(request.url);
+        const pending: RuntimeEventMessage[] = [];
+        let wake: () => void = () => {};
+        push = (frame) => {
+          pending.push({ data: JSON.stringify(frame) });
+          wake();
+        };
+        let ended = false;
+        request.signal.addEventListener('abort', () => {
+          ended = true;
+          wake();
+        });
+        while (!ended) {
+          if (pending.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+          while (pending.length > 0) yield pending.shift()!;
+        }
+      },
+    });
+    let turnReads = 0;
+    resetTurnEndHandoffForTests({
+      readTurn: async () => {
+        turnReads++;
+        return RUNNING;
+      },
+      now: () => clockMs,
+      setTimer: (fn, ms) => {
+        const id = timers.size + 1;
+        timers.set(id, { at: clockMs + ms, fn });
+        return id;
+      },
+      clearTimer: (id) => {
+        timers.delete(id as number);
+      },
+    });
+    const control = (cseq: number, type: string, payload: unknown) => ({
+      channel: 'control',
+      cepoch: 'capi_t',
+      cseq,
+      type,
+      at: 1,
+      payload,
+    });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+    unmount(mount(page()));
+    await settle();
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('/projects/P1/sessions/S1/events');
+    push(control(1, 'kortix.control.session', { known: true }));
+    push(control(2, 'kortix.control.turn', { known: true, turns: RUNNING.turns }));
+    await settle();
+    expect(notified).toEqual([]);
+    push(control(3, 'kortix.control.turn', { known: true, ...COMPLETED }));
+    await settle();
+
+    expect(notified).toMatchObject([{ kind: 'task-complete', sessionId: 'S1', projectId: 'P1' }]);
+    expect(turnReads).toBe(0);
+    expect(turnEndHandoffWatching()).toEqual([]);
+    __resetSessionControlStreamsForTests();
   });
 
   test('a host with no notification sink watches nothing (no /turn reads for no one)', async () => {
