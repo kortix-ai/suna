@@ -26,7 +26,7 @@ const shellSend = read('./use-instant-session-send.ts');
 const projectHome = read('../../app/[locale]/(app)/projects/[id]/page.tsx');
 const sessionPage = read('../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 const configureThread = read('../workspace/customize/use-configure-thread.ts');
-const runUpgrade = read('../workspace/customize/migrate-to-v3/use-run-upgrade.ts');
+const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts');
 
 describe('every first-prompt producer writes a durable row, not a prompt stash', () => {
   test('instant shell POSTs via startSessionWithPrompt with handle-only attachment parts', () => {

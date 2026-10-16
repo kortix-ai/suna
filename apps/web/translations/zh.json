@@ -1272,9 +1272,9 @@
       "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
       "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
       "runUpgrade": "运行升级",
-      "manifestV3": {
-        "title": "将清单升级到 v3 (kortix.yaml)",
-        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
+      "manifestV2": {
+        "title": "将清单迁移到 v2 (kortix.yaml)",
+        "description": "将 v1 kortix.toml 转换为以治理为中心的 kortix.yaml，更新平台管理的技能，并打开变更请求供审查。"
       },
       "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
@@ -1594,8 +1594,8 @@
       "localComputer": "你的电脑"
     },
     "manifestUpgrade": {
-      "title": "升级到 v3",
-      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
+      "title": "升级到 v2",
+      "description": "此项目仍在使用 <toml>kortix.toml</toml>。代理会将其转换为 <yaml>kortix.yaml</yaml>，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
       "start": "开始升级"
     },
     "filter": {
@@ -16659,7 +16659,6 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -17400,7 +17399,6 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init 负责搭建，kortix ship 负责上线。它们使用同一个仓库完成同一件事，因此本地开发和线上系统不再是两种不同的类别。",
       "textd864380a766f": "沙盒仅携带一个项目范围的 Kortix 令牌，不携带第三方密钥。你的跟踪器和帮助台凭据会在服务器端解密并附加到出站调用中。",
       "textd8707d411d99": "密钥",
@@ -20064,7 +20062,9 @@
       "textb8fd28863a22": "积分数量（例如 2500）",
       "textc6813a9e41ac": "积分：{value0} LLM · {value1} 计算 · {value2} 其他。",
       "textc86ce3b8097b": "例如 5000",
-      "textfaaf56a699c2": "上限（积分）"
+      "textfaaf56a699c2": "上限（积分）",
+      "textc3d1545dd522": "将 v1 kortix.toml 转换为治理优先的 kortix.yaml，将平台管理的技能更新至最新 marketplace 基线，并创建变更请求以供审核。",
+      "textd85a383e851d": "将清单迁移到 v2 (kortix.yaml)"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

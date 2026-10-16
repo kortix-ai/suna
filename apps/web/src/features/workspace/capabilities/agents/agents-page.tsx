@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v3/manifest-version';
+import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import {
   newConfigPrompt,

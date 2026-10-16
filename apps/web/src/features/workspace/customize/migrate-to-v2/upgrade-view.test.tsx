@@ -11,8 +11,8 @@ describe('UpgradesViewContent — per-state rendering', () => {
       run: 'Покрени',
       oneOff: 'Једнократна надоградња',
       upgrades: {
-        'manifest-v3': {
-          title: 'Надогради манифест на v3 (kortix.yaml)',
+        'manifest-v2': {
+          title: 'Пребаци манифест на v2 (kortix.yaml)',
           description: 'Претвара манифест и отвара захтев за измену.',
         },
       },
@@ -21,35 +21,27 @@ describe('UpgradesViewContent — per-state rendering', () => {
       <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite copy={copy} />,
     );
     expect(html).toContain('Доступне надоградње');
-    expect(html).toContain('Надогради манифест');
+    expect(html).toContain('Пребаци манифест');
     expect(html).toContain('Једнократна надоградња');
-    expect(html).not.toContain('Upgrade manifest');
+    expect(html).not.toContain('Migrate manifest');
   });
   test('v1 lists the manifest migration with a Run action, plus the one-off runner', () => {
     const html = renderToStaticMarkup(
       <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite />,
     );
     expect(html).toContain('Upgrades');
-    expect(html).toContain('Upgrade manifest to v3');
+    expect(html).toContain('Migrate manifest to v2');
     expect(html).toContain('Run');
     expect(html).toContain('One-off upgrade');
     expect(html).not.toContain('up to date');
   });
 
-  test('v2 lists the v3 upgrade too', () => {
+  test('v2 shows the up-to-date row but keeps the one-off runner available', () => {
     const html = renderToStaticMarkup(
       <UpgradesViewContent version={2} onRun={() => {}} pending={false} canWrite />,
     );
-    expect(html).toContain('Upgrade manifest to v3');
-    expect(html).not.toContain('up to date');
-  });
-
-  test('v3 shows the up-to-date row but keeps the one-off runner available', () => {
-    const html = renderToStaticMarkup(
-      <UpgradesViewContent version={3} onRun={() => {}} pending={false} canWrite />,
-    );
     expect(html).toContain('up to date');
-    expect(html).not.toContain('Upgrade manifest to v3');
+    expect(html).not.toContain('Migrate manifest to v2');
     expect(html).toContain('One-off upgrade');
   });
 
@@ -57,7 +49,7 @@ describe('UpgradesViewContent — per-state rendering', () => {
     const html = renderToStaticMarkup(
       <UpgradesViewContent version={null} onRun={() => {}} pending={false} canWrite />,
     );
-    expect(html).not.toContain('Upgrade manifest to v3');
+    expect(html).not.toContain('Migrate manifest to v2');
     expect(html).not.toContain('up to date');
   });
 
@@ -74,7 +66,7 @@ describe('UpgradesViewContent — per-state rendering', () => {
     );
     // What is pending is a read, so the row and its explanation stay…
     expect(html).toContain('Upgrades');
-    expect(html).toContain('Upgrade manifest to v3');
+    expect(html).toContain('Migrate manifest to v2');
     // …and the reason the controls are missing is said once, at the top.
     expect(html).toContain('needs write access to this workspace');
     // …but nothing that mutates renders: not the row's Run, and not the

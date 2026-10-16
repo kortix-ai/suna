@@ -4,15 +4,6 @@
 
 Define reusable behavior via SKILL.md definitions
 
-> **In a Kortix project (`kortix_version: 3`):** OpenCode does not search
-> `.opencode/skills/` or any other folder. Register each skill under
-> `skills` in `kortix.yaml` (name → the folder that holds `SKILL.md`; the
-> folder's last segment and the frontmatter `name` equal the skill name;
-> `kortix-` names are reserved for the managed skills). An agent loads only
-> the skills its `skills` grant names (`all` = every registered and managed
-> skill; omitted = none). The grant compiles to `permission.skill`. The
-> `SKILL.md` format below applies unchanged.
-
 Agent skills let OpenCode discover reusable instructions from your repo or home directory. Skills are loaded on-demand via the native `skill` tool—agents see available skills and can load the full content when needed.
 
 ---

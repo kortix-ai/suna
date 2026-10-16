@@ -4,25 +4,6 @@
 
 Write your own plugins to extend OpenCode.
 
-> **In a Kortix project (`kortix_version: 3`):** do not add files to
-> `.opencode/plugins/` or a `plugin` key. Write the plugin module anywhere
-> in the repository, register it as an extension, and enable it per agent:
->
-> ```yaml
-> extensions:
->   audit:
->     opencode: extensions/audit.opencode.ts   # .ts, .js, .mts, .mjs, .cts or .cjs
-> agents:
->   assistant:
->     extensions: [audit]
-> ```
->
-> The session loads the plugins of the agent it starts with
-> (`file://<config root>/<path>`). A switch to another agent keeps them. npm
-> plugins are not supported. An extension can also carry a `pi`
-> implementation (`../pi/extensions.md`). The plugin API below applies
-> unchanged.
-
 Plugins allow you to extend OpenCode by hooking into various events and customizing behavior. You can create plugins to add new features, integrate with external services, or modify OpenCode's default behavior.
 
 ---
