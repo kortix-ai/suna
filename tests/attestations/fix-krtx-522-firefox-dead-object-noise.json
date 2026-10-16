@@ -1,18 +1,18 @@
 {
-  "source_hash": "ec2dded6a661ea6c47afcf9a0c4c58b1129c572ef4ea32d63b93ccea99f64b28",
+  "source_hash": "ba6d6fb13c85d769ec556b1afcd19b7240ed372fe4a97d2b595fbf6ace033c7a",
   "diff_files": [
     "apps/web/src/lib/browser-error-noise.test.mts",
     "apps/web/src/lib/browser-error-noise.ts",
     "apps/web/src/lib/browser-noise/golden-verdicts.json",
     "apps/web/src/lib/browser-noise/rules/old-browsers.ts"
   ],
-  "diff_hash": "30b4eb9666d10eed46a4c893e56de170d256c39f8269412667dffffb61c2b226",
-  "head": "a18ff84837b54f7d833ff81bf87bc7f4017de28c",
+  "diff_hash": "3028e1a0f911b7d56088c13a6e74a92a47bdf23e3d14f5ccc117273c4c42b34c",
+  "head": "efceda8d523f34981eb8e18f5292e87488a0c9cd",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-16T10:06:07.173Z"
+  "at": "2026-10-16T11:00:22.751Z"
 }
