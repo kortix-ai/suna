@@ -57,6 +57,7 @@ To create a project, follow the [Quickstart](/docs/quickstart).
 | `harnesses/opencode/` | `opencode.jsonc`, `plugins/`, `tools/`, `commands/`. | OpenCode only |
 | `harnesses/pi/` | `settings.json`, `extensions/`, `skills/`, `prompts/`. A new project does not have this folder. | pi only |
 
+- A `kortix_version: 3` project reads no harness folder. Its slash commands are declared in `kortix.yaml`; see [commands (v3)](/docs/project/manifest#commands-v3).
 - `agents.<name>.file`, `opencode.config_dir` and `pi.config_dir` in `kortix.yaml` move an agent file or a harness folder to another path.
 - The manifest path is a project setting, `kortix.yaml` by default. See [File and schema](/docs/project/manifest#file-and-schema).
 - A project that keeps agents and skills under `.kortix/opencode/` and memory under `.kortix/memory/` works unchanged. Every reader accepts both layouts.
