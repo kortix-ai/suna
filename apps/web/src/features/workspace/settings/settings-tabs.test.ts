@@ -197,8 +197,8 @@ describe('legacySectionRedirect', () => {
 
   // Every id the retired config page's sub-nav ever answered to, pinned in one
   // place: each is an overlay tab now (live, or via `RENAMED`), except Review,
-  // which is a capability tab of its own.
-  test('every config id lands on the Settings tab, and review on its own tab', () => {
+  // which lives as the review section of the merged Repo page (`reviewHref`).
+  test('every config id lands on the Settings tab, and review on the merged Repo page', () => {
     const sections: Record<string, string> = {
       general: '/projects/p1/customize/settings',
       settings: '/projects/p1/customize/settings',
@@ -222,8 +222,8 @@ describe('legacySectionRedirect', () => {
         opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
-    expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
+    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/files/review');
+    expect(resolveSettingsOverlayHref('/projects/p1/files/review')).toEqual({ opensOverlay: false });
   });
 
   test('secrets, channels, and models graduated a SECOND time — off /config, onto their own top-level tab', () => {

@@ -14,14 +14,15 @@ import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-
  * keeps its place here and simply does not render.
  */
 
-export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'review', 'reminders', 'files'] as const;
+export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'reminders', 'files'] as const;
 export type SidebarNavItemId = (typeof SIDEBAR_NAV_ITEM_IDS)[number];
 
 /**
  * `never` moves the row into the More menu (`project-nav-items.tsx`), so its
  * page stays one click away. `active` shows the row only while it has
- * something to say: a Review count that needs you, or a reminder that can
- * still fire. Only the rows in `SIDEBAR_NAV_ACTIVITY_ITEMS` have such a signal.
+ * something to say: a Review count that needs you (the Repo row carries the
+ * merged inbox's badge now, KRTX-2444), or a reminder that can still fire.
+ * Only the rows in `SIDEBAR_NAV_ACTIVITY_ITEMS` have such a signal.
  */
 export type SidebarNavVisibility = 'always' | 'active' | 'never';
 
@@ -31,16 +32,16 @@ export interface SidebarNavEntry {
 }
 
 export const SIDEBAR_NAV_ACTIVITY_ITEMS: ReadonlySet<SidebarNavItemId> = new Set([
-  'review',
   'reminders',
 ]);
 
 /** The layout before anyone customizes it. Reminders keeps its old rule: it
- *  shows while a reminder can still fire. */
+ *  shows while a reminder can still fire. Review has no row: its inbox is the
+ *  review section of the Repo page (KRTX-2444), and a layout saved while the
+ *  row existed drops the stale id in `normalizeSidebarNav`. */
 export const SIDEBAR_NAV_DEFAULTS: readonly SidebarNavEntry[] = [
   { id: 'customize', visibility: 'always' },
   { id: 'apps', visibility: 'always' },
-  { id: 'review', visibility: 'always' },
   { id: 'reminders', visibility: 'active' },
   { id: 'files', visibility: 'always' },
 ];

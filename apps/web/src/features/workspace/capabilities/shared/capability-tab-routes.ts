@@ -123,11 +123,14 @@ export function capabilityTabHref(projectId: string, key: CapabilityTab['key']):
 }
 
 /**
- * The Review Center: a project page of its own, outside Customize and its tab
- * bar. `/projects/<id>/customize/review` redirects here.
+ * The Review Center: the review section of the merged Repo page (KRTX-2444).
+ * It left Customize for its own page on 2026-10-02 and left the standalone
+ * page again on 2026-10-16 — the inbox lives at `/files/review`, inside the
+ * one git-focused surface the repo browser hosts. `/projects/<id>/review` and
+ * `/projects/<id>/customize/review` redirect here.
  */
 export function reviewHref(projectId: string): string {
-  return `/projects/${projectId}/review`;
+  return `/projects/${projectId}/files/review`;
 }
 
 /**

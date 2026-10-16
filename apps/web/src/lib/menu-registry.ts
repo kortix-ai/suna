@@ -791,15 +791,16 @@ export const menuRegistry: MenuItemDef[] = [
   // not a dead link nobody notices.
   {
     // Not `proj-review` — that id named the old overlay tab and its absence
-    // is pinned (`command-palette.test.tsx`); this row is the capability page.
+    // is pinned (`command-palette.test.tsx`); this row is the review section
+    // of the merged Repo page.
     id: 'proj-review-inbox',
     label: 'Review',
     icon: Tray,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Its own project page since 2026-10-02, outside Customize.
-    href: '/projects/{projectId}/review',
+    // The review section of the merged Repo page since 2026-10-16 (KRTX-2444).
+    href: '/projects/{projectId}/files/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },

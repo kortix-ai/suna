@@ -6,7 +6,9 @@ import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { CountBadge } from '@/components/ui/count-badge';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
@@ -18,11 +20,22 @@ import { repoNavLabel } from './files-nav-label';
 
 /**
  * Top-level repo browser entry: Repo when the project has Volumes on (the
- * shared folders are then Files, a tab under Customize), Files otherwise. Hidden when the caller lacks `project.file.read`: that
- * leaf is editor-tier (IAM v1 moved the sensitive file/secret reads off the
- * floor `member` role), so showing it to a plain member would just land them on
- * a page whose every read 403s. Optimistic while the probe loads — the entry
- * only disappears on an explicit deny.
+ * shared folders are then Files, a tab under Customize), Files otherwise.
+ * It opens the merged Repo page (KRTX-2444): the file browser and, as its
+ * review section, the Review Center inbox.
+ *
+ * The row lists when the caller may read files OR reviews. `project.file.read`
+ * is editor-tier (IAM v1 moved the sensitive file/secret reads off the floor
+ * `member` role), but Review merged into this page and its inbox is open to
+ * plain members (`project.review.read` is floor-tier): hiding the row from
+ * them would strand the inbox. A review-only viewer lands on the merged
+ * page's review section (the repo section falls back for them there).
+ * Optimistic while the files probe loads — the entry only disappears on an
+ * explicit deny of both leaves.
+ *
+ * The badge counts the SAME unified `needs_you` set the per-session row dots
+ * read (`use-review-session-summary.ts`), so the row and the dots agree on
+ * one number — the badge the standalone Review row used to carry.
  *
  * A real `<Link prefetch>`, not `router.push`. The button form could not be
  * prefetched, so every click paid for the route's RSC payload AND its JS chunk
@@ -48,7 +61,12 @@ export function ProjectFilesNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
+  // One batched permission read for both gates (the always-mounted project
+  // contract: singular probes would double the request).
+  const cans = useProjectPageCans(projectId);
+  const canReadFiles = cans[PROJECT_ACTIONS.PROJECT_FILE_READ];
+  const canReview = cans[PROJECT_ACTIONS.PROJECT_REVIEW_READ].allowed === true;
+  const count = useReviewSessionSummary(projectId, { enabled: canReview }).totalNeedsYou;
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
   const queryClient = useQueryClient();
   // Volumes on for the project (its derived `drives` flag).
@@ -71,15 +89,17 @@ export function ProjectFilesNavItem() {
   // mounts. Same key + same `contract('config')` options as that view's own
   // query, so this warms one cache slot rather than issuing a second fetch.
   const prefetchSummary = useCallback(() => {
-    if (!projectId) return;
+    // A review-only viewer's hover should not warm the repo's ref resolution:
+    // their body is the review section.
+    if (!projectId || !(canReadFiles.allowed || canReadFiles.isLoading)) return;
     void queryClient.prefetchQuery({
       queryKey: qk.project.summary(projectId),
       queryFn: () => getProject(projectId),
       ...contract('config'),
     });
-  }, [projectId, queryClient]);
+  }, [projectId, canReadFiles.allowed, canReadFiles.isLoading, queryClient]);
 
-  if (!canReadFiles.allowed && !canReadFiles.isLoading) return null;
+  if (!canReadFiles.allowed && !canReadFiles.isLoading && !canReview) return null;
   // No project id means no valid href. The old onClick already no-op'd in this
   // case, so rendering a dead button was never useful.
   if (!projectId) return null;
@@ -101,7 +121,14 @@ export function ProjectFilesNavItem() {
           onTouchStart={prefetchSummary}
         >
           {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
-          {t(label)}
+          <span className="truncate">{t(label)}</span>
+          {count > 0 ? (
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              {/* Pending, not done. An amber count says "N waiting" without
+                  claiming the green this system uses for "finished". */}
+              <CountBadge count={count} tone="waiting" />
+            </span>
+          ) : null}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

@@ -2,7 +2,6 @@
 
 import {
   capabilityTabHref,
-  reviewHref,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { repoNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
 import {
@@ -19,7 +18,6 @@ import {
   AppWindowIcon,
   FoldersIcon,
   GitBranchIcon,
-  TrayIcon,
 } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
@@ -41,10 +39,15 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const customizeTab = useCapabilityTab(projectId);
   const reminders = useFeatureFlag(projectId, 'reminders');
   const volumes = useFeatureFlag(projectId, 'drives');
+  // KRTX-2444: Review merged into the Repo page, so there is no Review row.
+  // The Repo row opens for a review-only viewer too — `project.file.read` is
+  // editor-tier, but plain members hold `project.review.read` (floor-tier)
+  // and land on the merged page's review section. Optimistic while the files
+  // probe loads, like every row.
   const canReview = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ).allowed === true;
   const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const filesLabel = repoNavLabel(volumes.enabled);
-  const filesListed = canReadFiles.allowed || canReadFiles.isLoading;
+  const filesListed = canReadFiles.allowed || canReadFiles.isLoading || canReview;
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
@@ -66,9 +69,6 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
         icon: <AppWindowIcon />,
         href: `${base}/apps`,
       },
-      ...(canReview
-        ? { review: { label: t('review'), icon: <TrayIcon />, href: reviewHref(projectId) } }
-        : {}),
       ...(reminders.enabled
         ? { reminders: { label: t('reminders'), icon: <AlarmIcon />, href: `${base}/reminders` } }
         : {}),
@@ -88,8 +88,9 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
     projectId,
     customizeTab,
     reminders.enabled,
-    canReview,
     filesListed,
     filesLabel,
+    // `canReview` rides in through `filesListed`; listing it here too would be
+    // an unnecessary dep (eslint react-hooks/exhaustive-deps).
   ]);
 }

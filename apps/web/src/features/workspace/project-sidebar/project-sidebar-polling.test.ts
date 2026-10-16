@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(join(import.meta.dir, path), 'utf8')
 
 const sandboxSource = read('footer/project-sandbox-alert.tsx');
 const sandboxStateSource = read('footer/sandbox-alert-state.ts');
-const reviewPillSource = read('footer/project-change-requests-nav.tsx');
+const reviewPillSource = read('footer/project-files-nav.tsx');
 const reviewSource = read('../../review-center/hooks/use-review-session-summary.ts');
 
 /**
@@ -17,7 +17,7 @@ const reviewSource = read('../../review-center/hooks/use-review-session-summary.
  */
 const ALWAYS_MOUNTED = [
   'project-session-list.tsx',
-  'footer/project-change-requests-nav.tsx',
+  'footer/project-files-nav.tsx',
   '../project-sessions/project-sessions-view.tsx',
   '../project-layout/project-shell.tsx',
   '../capabilities/project-settings/project-settings-page.tsx',
@@ -28,9 +28,11 @@ describe('project sidebar polling', () => {
   test('healthy background queries use low-frequency polling', () => {
     expect(sandboxSource).toContain('sandboxHealthRefetchInterval(query.state.data)');
     expect(sandboxStateSource).toContain('return 120_000;');
-    // The footer Review pill reads the shared inbox summary (polled at 60s) and
-    // runs no change-request poll of its own.
-    expect(reviewPillSource).toContain('useReviewSessionSummary(projectId)');
+    // The sidebar's repo row carries the review badge now (KRTX-2444 merged
+    // Review into the Repo page): it reads the shared inbox summary (polled at
+    // 60s, dark for a viewer denied the review read) and runs no change-request
+    // poll of its own.
+    expect(reviewPillSource).toContain('useReviewSessionSummary(projectId');
     expect(reviewPillSource).not.toContain('useChangeRequests');
     expect(reviewSource).toContain('refetchInterval: 60_000');
   });

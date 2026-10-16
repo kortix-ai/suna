@@ -1,18 +1,26 @@
-import { ReviewPage } from '@/features/workspace/customize/sections/view/review-view';
+import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { redirect } from 'next/navigation';
 
 /**
- * /projects/[id]/review — the Review Center, a project page of its own. It
- * left the Customize tab bar on 2026-10-02: the inbox where a person approves
- * what agents do is a primary surface, not configuration. The sidebar's Review
- * row opens it; `/customize/review` redirects here. No feature flag gates it:
- * the row shows for anyone holding `project.review.read`, and the view gates
- * acting on `project.review.act`.
+ * The Review Center's old address, from when it was a standalone project page
+ * (2026-10-02 to 2026-10-16, KRTX-2444). It redirects to the review section
+ * of the merged Repo page (`reviewHref`) and keeps the query, so a shared
+ * `?id=<review item id>` link still opens the same review.
  */
-export default async function ProjectReviewPage({
+export default async function LegacyReviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
-  return <ReviewPage projectId={id} />;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) {
+      search.append(key, v);
+    }
+  }
+  const suffix = search.toString();
+  redirect(suffix ? `${reviewHref(id)}?${suffix}` : reviewHref(id));
 }

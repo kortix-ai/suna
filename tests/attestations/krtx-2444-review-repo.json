@@ -1,0 +1,35 @@
+{
+  "source_hash": "202157b40bed88c5343f0f0ad070d22d4282671fabc194c80b59616b1555096e",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(app)/projects/[id]/files/page.tsx",
+    "apps/web/src/app/[locale]/(app)/projects/[id]/files/review/page.tsx",
+    "apps/web/src/app/[locale]/(app)/projects/[id]/review/page.tsx",
+    "apps/web/src/features/workspace/capabilities/project-settings/project-settings-sections.ts",
+    "apps/web/src/features/workspace/capabilities/shared/capability-tab-routes.test.ts",
+    "apps/web/src/features/workspace/capabilities/shared/capability-tab-routes.ts",
+    "apps/web/src/features/workspace/customize/sections/view/review-view.tsx",
+    "apps/web/src/features/workspace/project-layout/project-page-header.test.tsx",
+    "apps/web/src/features/workspace/project-layout/project-page-header.tsx",
+    "apps/web/src/features/workspace/project-layout/project-repo-page.test.ts",
+    "apps/web/src/features/workspace/project-layout/project-repo-page.tsx",
+    "apps/web/src/features/workspace/project-sidebar/footer/project-change-requests-nav.tsx",
+    "apps/web/src/features/workspace/project-sidebar/footer/project-files-nav.tsx",
+    "apps/web/src/features/workspace/project-sidebar/nav-row-meta.tsx",
+    "apps/web/src/features/workspace/project-sidebar/project-nav-items.tsx",
+    "apps/web/src/features/workspace/project-sidebar/project-sidebar-polling.test.ts",
+    "apps/web/src/features/workspace/settings/settings-tabs.test.ts",
+    "apps/web/src/lib/menu-registry.flags.test.ts",
+    "apps/web/src/lib/menu-registry.ts",
+    "apps/web/src/stores/sidebar-nav-store.test.ts",
+    "apps/web/src/stores/sidebar-nav-store.ts"
+  ],
+  "diff_hash": "ade3fd9c156b99167eaa8e169a1a4df57e76e0d12ed793fed7404d5c7b1a5ec9",
+  "head": "aa166119abcb54dac73e960e83cee9d0aa8c464d",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-16T16:49:08.374Z"
+}

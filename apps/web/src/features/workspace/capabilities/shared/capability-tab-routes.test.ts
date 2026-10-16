@@ -82,8 +82,11 @@ describe('capabilityTabHref', () => {
 });
 
 describe('reviewHref', () => {
-  test('Review is a project page of its own, outside Customize', () => {
-    expect(reviewHref('p1')).toBe('/projects/p1/review');
+  test('Review is the review section of the merged Repo page, outside Customize', () => {
+    // The Review Center merged into the Repo page (KRTX-2444): one git-focused
+    // surface at /files, the inbox as its own section under it. The old
+    // standalone `/review` address only redirects there now.
+    expect(reviewHref('p1')).toBe('/projects/p1/files/review');
     expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('review');
     // The old tab address no longer lights a tab: it only redirects.
     expect(activeCapabilityTab('/projects/p1/customize/review')).toBeNull();

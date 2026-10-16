@@ -1,22 +1,19 @@
-'use client';
-
-import { useParams } from 'next/navigation';
-
-import { ProjectFilesView } from '@/features/workspace/project-layout/project-files-view';
+import { ProjectRepoPage } from '@/features/workspace/project-layout/project-repo-page';
 
 /**
- * /projects/[id]/files — the standalone Files page (Google-Drive-style browser
- * over the project repo). A regular routed page inside the project shell, NOT
- * a Customize section. Requires `project.file.read` (editor-tier): the sidebar
- * entry hides for floor members and the API 403s their reads (silently — the
- * view shows its own empty/error state, never a global toast).
+ * /projects/[id]/files — the merged Repo page (KRTX-2444): the repo file
+ * browser and the Review Center inbox as the two sections of one git-focused
+ * surface. Requires `project.file.read` for the repo section (editor-tier:
+ * the API 403s the reads and the page falls back to the review section, which
+ * every member holds); the review section needs nothing beyond the page
+ * itself. `/projects/[id]/review` and `/projects/[id]/customize/review`
+ * redirect into the review section.
  */
-export default function ProjectFilesPage() {
-  const { id: projectId } = useParams<{ id: string }>();
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <ProjectFilesView projectId={projectId} />
-    </div>
-  );
+export default async function ProjectFilesPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  return <ProjectRepoPage projectId={id} section="repo" />;
 }
