@@ -291,7 +291,7 @@ function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'k
   const entries = Object.entries(map).flatMap(([name, file]) => {
     const path = safeToolFile(file);
     const reserved = (HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_');
-    return (TOOL_NAME_RE.test(name) || KORTIX_TOOL_NAMES.some((tool) => tool === name)) && !reserved && path ? [[name, path] as const] : [];
+    return TOOL_NAME_RE.test(name) && !reserved && path ? [[name, path] as const] : [];
   });
   return {
     ...(entries.length > 0 ? { project_tools: Object.fromEntries(entries) } : {}),

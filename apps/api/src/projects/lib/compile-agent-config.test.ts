@@ -1017,33 +1017,6 @@ describe('project tools', () => {
   const v2 = (tools?: unknown) => ({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, ...(tools === undefined ? {} : { tools }) });
   const v3 = (tools?: unknown) => ({ kortix_version: 3, default_agent: 'worker', agents: { worker: { prompt: 'Work.' } }, ...(tools === undefined ? {} : { tools }) });
 
-  for (const version of [2, 3]) {
-    for (const selected of [false, true]) {
-      test(`v${version} ${selected ? 'selected' : 'full'} compiler preserves maintained hyphenated module overrides only`, () => {
-        const expected = {
-          'kortix-connectors_call': 'tools/connectors-call.ts',
-          'kortix-connectors_describe': 'integrations/connectors-describe.mjs',
-          lookup_order: 'tools/lookup_order.ts',
-        };
-        const tools = {
-          ...expected,
-          'custom-tool': 'tools/custom.ts',
-          'kortix-connectors_other': 'tools/other.ts',
-          bash: 'tools/bash.ts',
-          pty_spawn: 'tools/pty.ts',
-          pty_custom: 'tools/pty-custom.ts',
-        };
-        const manifest = version === 2 ? v2(tools) : v3(tools);
-        const compiled = selected
-          ? compileSelectedAgentConfig(manifest, 'worker')
-          : compileAgentConfig(manifest);
-        expect(compiled?.project_tools).toEqual(expected);
-        // v3 has no kortix:<name> form: every Kortix tool is always registered.
-        expect(compiled?.kortix_tools).toEqual(version === 2 ? [] : undefined);
-      });
-    }
-  }
-
   test('without a tools key, kortix_tools is absent: the daemon loads every Kortix tool', () => {
     for (const manifest of [v2(), v3()]) {
       expect(compileAgentConfig(manifest)).not.toHaveProperty('kortix_tools');

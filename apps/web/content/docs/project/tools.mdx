@@ -1,6 +1,6 @@
 ---
 title: Tools
-description: The seven Kortix tools, project tools you write in TypeScript or JavaScript, and which agent may call which.
+description: The five Kortix tools, project tools you write in TypeScript or JavaScript, and which agent may call which.
 ---
 
 A tool is a function the model calls during a turn. This page is for project authors who choose the tools a project loads, write their own, and limit them per agent. Tool selection and per-agent access live in [`kortix.yaml`](/docs/project/manifest).
@@ -10,7 +10,7 @@ A tool is a function the model calls during a turn. This page is for project aut
 | Kind | Names | Comes from |
 | --- | --- | --- |
 | Harness tools | `bash`, `read`, `write`, `edit`, `apply_patch`, `glob`, `grep`, `list`, `task`, `question`, `todowrite`, `webfetch`, `websearch`, `skill`, `lsp` | The harness, OpenCode or pi. |
-| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe` | Kortix maintains them. You select them under `tools:`. |
+| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Kortix maintains them. You select them under `tools:`. |
 | Project tools | Any name you declare | One module in your repo, declared under `tools:`. |
 
 Kortix tools and project tools are one module each. The sandbox runs the same module on both [harnesses](/docs/project/agents#harnesses-opencode-and-pi), with the same name, arguments, and output.
@@ -22,12 +22,10 @@ Kortix tools and project tools are one module each. The sandbox runs the same mo
 | `scrape_webpage` | Fetches one or more pages and returns them as Markdown. |
 | `memory` | Views, creates, edits, renames, and deletes files under `memory/`, the project memory. |
 | `show` | Presents a file, image, URL, document, or text to the person in the session. |
-| `kortix-connectors_call` | Calls a session connector action (e.g. `gmail.list_messages`) through the gateway, under the agent's policy. |
-| `kortix-connectors_describe` | Describes one connector action's arguments from the session's connector catalog. |
 
 ## Choose Kortix tools
 
-A new project lists all seven under the top-level `tools:` key:
+A new project lists all five under the top-level `tools:` key:
 
 ```yaml
 tools:
@@ -36,8 +34,6 @@ tools:
   scrape_webpage: kortix:scrape_webpage
   memory: kortix:memory
   show: kortix:show
-  kortix-connectors_call: kortix:kortix-connectors_call
-  kortix-connectors_describe: kortix:kortix-connectors_describe
   # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
 ```
 
@@ -45,7 +41,7 @@ tools:
 
 | `kortix.yaml` | Kortix tools a session gets |
 | --- | --- |
-| No `tools:` key, in the root file or in any [imported](/docs/project/manifest#imports) file | All seven. |
+| No `tools:` key, in the root file or in any [imported](/docs/project/manifest#imports) file | All five. |
 | A `tools:` key in any file, even an empty one | Only the Kortix tools it lists. |
 
 Project tools load in both cases.

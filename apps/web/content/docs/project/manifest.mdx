@@ -111,7 +111,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
-| `tools` | map | all seven Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
+| `tools` | map | all five Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
 | `commands` | map | none | v3 only. Slash command name to its template. See [commands (v3)](#commands-v3). |
 | `sandbox` | map | platform image | `templates`, `default`. See [sandbox](#sandbox). |
 | `triggers` | list | none | Schedules, webhooks, monitors, app events. |
@@ -369,7 +369,7 @@ agents:
 
 ## tools
 
-`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all seven Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
+`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all five Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
 
 ## triggers, connectors, apps
 
