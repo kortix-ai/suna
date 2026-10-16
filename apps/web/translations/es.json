@@ -16671,6 +16671,7 @@
       "textc3bf78fdd3b9": "No se pudo enviar tu solicitud",
       "textc3c25857485f": "Sí hace",
       "textc3c709a999c1": "Leyendo memoria…",
+      "textc3d1545dd522": "Convierte el kortix.toml v1 en el kortix.yaml centrado en la gobernanza, actualiza las habilidades gestionadas por la plataforma a la base más reciente del marketplace y abre una solicitud de cambio para revisión.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Términos y condiciones",
       "textc3e58a73609d": "Destructivo",
@@ -17411,6 +17412,7 @@
       "textd83a0d814c59": "API Status muestra un «Enabled» en verde, el parámetro «SCIM Username» está asignado a Email y el aprovisionamiento está habilitado sin la retención de aprobación del administrador.",
       "textd84b8be91e7b": "Kortix — Presentaciones",
       "textd84ee1e1e08b": "prueba kortix init o / para ver los comandos",
+      "textd85a383e851d": "Migrar el manifiesto a v2 (kortix.yaml)",
       "textd861cc0af73c": "kortix init la estructura y kortix ship la pone en producción. Es el mismo repo haciendo lo mismo, así que el desarrollo local y el sistema activo dejaron de ser categorías diferentes.",
       "textd864380a766f": "El sandbox contiene un token de Kortix con alcance de proyecto y ninguna clave de terceros. Las credenciales del tracker y del helpdesk se descifran en el servidor y se adjuntan a la llamada saliente.",
       "textd8707d411d99": "Secretos",
@@ -20083,9 +20085,7 @@
       "textb8fd28863a22": "Importe en créditos (p. ej., 2500)",
       "textc6813a9e41ac": "En créditos: {value0} LLM · {value1} cómputo · {value2} otros.",
       "textc86ce3b8097b": "p. ej., 5000",
-      "textfaaf56a699c2": "Límite (créditos)",
-      "textc3d1545dd522": "Convierte el kortix.toml v1 en el kortix.yaml centrado en la gobernanza, actualiza las habilidades gestionadas por la plataforma a la base más reciente del marketplace y abre una solicitud de cambio para revisión.",
-      "textd85a383e851d": "Migrar el manifiesto a v2 (kortix.yaml)"
+      "textfaaf56a699c2": "Límite (créditos)"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

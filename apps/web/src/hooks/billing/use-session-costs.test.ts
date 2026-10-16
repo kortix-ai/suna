@@ -41,6 +41,10 @@ describe('session cost query builders', () => {
         projectId: 'project-1',
         limit: 25,
         offset: 0,
+        from: undefined,
+        to: undefined,
+        sort: undefined,
+        ownerId: undefined,
       },
     ]);
     await query.queryFn();

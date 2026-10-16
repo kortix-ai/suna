@@ -537,6 +537,7 @@ flow(
   'SBX-6',
   {
     domain: 'sandboxes',
+    tags: ['deployed'],
     routes: ['POST /v1/webhooks/sandbox/daytona', 'POST /v1/webhooks/sandbox/platinum'],
   },
   async (ctx) => {

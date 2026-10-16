@@ -217,7 +217,7 @@ describe('createSlashSuggestion — getActions threads through to buildSlashSect
 
     expect(selected).toHaveLength(1);
     expect(selected[0].type).toBe('action');
-    expect(SLASH_ACTIONS).toContainEqual(selected[0].action);
+    expect(SLASH_ACTIONS).toContainEqual(selected[0].action!);
   });
 });
 

@@ -314,6 +314,7 @@ harnessFlow(
   'RUN-2',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 660_000,
     routes: [
@@ -378,6 +379,7 @@ harnessFlow(
   'RUN-3',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 900_000,
     routes: [
@@ -544,6 +546,7 @@ harnessFlow(
   'RUN-7',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 780_000,
     routes: [
@@ -617,6 +620,7 @@ flow(
   'RUN-8',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 660_000,
     retry: { attempts: 2 },
@@ -774,6 +778,7 @@ harnessFlow(
   'SESS-12',
   {
     domain: 'sessions',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 900_000,
     routes: [
@@ -893,6 +898,7 @@ flow(
   'FILE-9',
   {
     domain: 'files',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 600_000,
     routes: [
@@ -952,6 +958,7 @@ flow(
   'GOLD-1',
   {
     domain: 'golden',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 600_000,

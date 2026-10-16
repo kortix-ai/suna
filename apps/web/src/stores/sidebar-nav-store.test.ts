@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   SIDEBAR_NAV_DEFAULTS,
+  type SidebarNavEntry,
   moveSidebarNavItem,
   normalizeSidebarNav,
   resolveSidebarNav,
@@ -17,7 +18,7 @@ describe('normalizeSidebarNav', () => {
   });
 
   test('keeps a saved order and visibility', () => {
-    const saved = [
+    const saved: SidebarNavEntry[] = [
       { id: 'files', visibility: 'never' },
       { id: 'review', visibility: 'active' },
       { id: 'customize', visibility: 'always' },

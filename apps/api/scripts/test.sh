@@ -116,7 +116,8 @@ case "$mode" in
     exit "$failed"
     ;;
   *)
-    echo "usage: test.sh [default|integration|live]" >&2
-    exit 2
+    # File or name filters (`pnpm --filter kortix-api test src/x.test.ts`,
+    # `-t <name>`): run only those, with the suite's hermetic flags.
+    exec bun test --isolate --env-file=scripts/test.env --timeout="${KORTIX_TEST_TIMEOUT_MS:-15000}" "$@"
     ;;
 esac

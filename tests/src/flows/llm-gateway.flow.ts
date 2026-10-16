@@ -4,7 +4,7 @@ import { log } from '../core/log';
 import { sleep } from '../core/poll';
 import { subscribe } from '../fixtures/billing';
 
-flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }, async (ctx) => {
+flow('GW-1', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET /health'] }, async (ctx) => {
   const gw = new Client(ctx.env.gatewayUrl);
   await ctx.step('gateway /health is public', async () => {
     const r = await gw.get('/health');
@@ -27,7 +27,7 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }
 });
 
 // GW-1b — the API's public streaming bridge to standalone gateway health.
-flow('GW-1b', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
+flow('GW-1b', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
   await ctx.step('the API gateway health bridge reaches the standalone service', async () => {
     const r = await ctx.client.get('/v1/llm/health');
     r.status(200)
@@ -72,6 +72,7 @@ flow(
   'GW-2',
   {
     domain: 'llm-gateway',
+    tags: ['deployed'],
     requires: ['funded'],
     routes: ['GET /v1/llm/models', 'GET /v1/models', 'GET /v1/openai/models'],
   },
@@ -691,6 +692,7 @@ const RED_SQUARE_PNG =
 // local profile has no provider key and excludes it through `stripe`.
 flow('GW-MANAGED-1', {
   domain: 'llm-gateway',
+  tags: ['deployed'],
   requires: ['stripe'],
   timeoutMs: 300_000,
   routes: [

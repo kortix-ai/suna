@@ -5,7 +5,25 @@ description: Use for every Kortix test task, behavior change, bug fix, refactor,
 
 # Testing
 
-Use one repository-level command: `pnpm test`.
+**During development, never run a full suite or a whole package's tests.**
+Run T0 (`tsc`, lint) for the packages you touched, the test files that cover
+your change named one by one (`pnpm --filter <pkg> test <file>`, or one flow
+with `pnpm test -- --id <ID>`), and the change itself through its real
+surface. Seconds, not minutes. Running a whole package's suite to check one
+file is the anti-pattern, and on a Mac every package `test` script refuses it
+(exit `2`, `scripts/test-guard.mjs`) unless you name files or pass
+`-- -t <name>`. The full
+suite runs once, at Promote to Production, on the release pull request into
+`prod`: it is the only gate (`AGENTS.md`, "Testing philosophy").
+
+**Keep tests small and isolated.** Every test file runs standalone in seconds.
+When the test that covers your change takes more than ~10 s, or needs setup
+unrelated to it, split it into a smaller isolated test in the same change. Fake
+the clock; never wait on real time. A test that breaks on a refactor with no
+bug is deleted, not updated.
+
+The repository-level command is `pnpm test`; on a Mac only its targeted modes
+run (`--id`, `--domain`, `--db-only <filter>`, `--sdk-only`).
 
 Read `tests/README.md` before changing the runner or adding a product flow. Read
 the **sdk** skill before editing the SDK.
@@ -137,12 +155,12 @@ in `references/api-latency-baseline.md`.
 The philosophy is in `AGENTS.md` ("Testing philosophy"). A pull request into
 `dev` runs **no** GitHub Actions job by itself, and a push to `dev` runs no
 `Tests` lane. Before the merge you run T0 and the tests that cover your change,
-and you use the change for real. The `Tests` lanes run on the pull request into
-`staging` (the gate) and nightly on `dev`; a red night comments the failing
-lanes and suspect commits once per new set of failing lanes. `CI` and `CodeQL`
-run weekly on `dev` and on the pull request into `staging`. The pull request
-into `prod` runs only `Tests - release` against deployed staging plus the
-path-gated SOC 2 scanners. In the rare case
+and you use the change for real. The contract lanes run nightly on `dev` (no
+browser); a red night comments the failing lanes and suspect commits once per
+new set of failing lanes. `CI` and `CodeQL` run weekly on `dev`. The pull
+request into `staging` runs nothing. The release PR into `prod` runs the
+release suite once — contract lanes, deployed smoke, browser journeys against
+staging, CI, CodeQL, scanners — and it is the only gate. In the rare case
 you want CI before a `dev` merge, add a label: `test` runs the lanes once
 (~20 min), `preview` deploys once (~7 min) with no tests. A push re-runs
 neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts` fails
@@ -176,31 +194,12 @@ The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
 DEPLOYED staging.
 
-## Quarantine a browser test
+## No quarantine
 
-A `@quarantine` tag removes one test from the blocking release gate. It does
-not remove the test. The nightly lane runs it.
-
-1. **When.** Quarantine a test only when its root cause is outside our code:
-   a real third-party service (Composio toolkit, Google or GitHub OAuth pages),
-   a real model reply, or a real cloud sandbox boot. A race, a stale locator, a
-   shared fixture, or a product bug is never a reason. Fix those.
-2. **Scope.** Tag the one test that depends on the third party. Our own UI
-   contract (dialogs, requests, validation) stays in an untagged test with a
-   stubbed or no-auth backend. `test.describe.serial` shares a fixture across
-   tests, so split the fixture before you tag only part of a file.
-3. **Write the reason.** Put a comment above the tag: what is external, the
-   run id that showed it, and the condition for removing the tag.
-4. **Watcher.** `.github/workflows/tests-browser-nightly.yml` runs
-   `@quarantine` against deployed staging every night at 04:20 UTC. It fails
-   when a quarantined test is red or when no quarantined test ran, and it
-   comments on the commit. It lists each test with its green-night streak.
-5. **Owner.** The author who tagged the test owns it. A red nightly run is a
-   ticket for that owner, not a release blocker.
-6. **Un-quarantine.** When the nightly comment reports a test green for 7
-   nights in a row, remove its tag in the next pull request. The blocking gate
-   then runs it. A quarantined test with a streak under 7 and no open reason
-   is a defect: fix or delete it.
+Do not quarantine a browser test (testing reset, 2026-10-16). A test that fails
+twice without a bug is fixed at its root or deleted the same day. A test that
+depends on a third party (OAuth pages, a real model reply) asserts only what
+Kortix controls, or it goes.
 
 ## Run CI lanes natively on GitHub-hosted runners
 

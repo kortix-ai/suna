@@ -64,7 +64,7 @@ for (const [name, experimental] of [
     queryClient.setQueryData(qk.project.apps(projectId), []);
     const host = win.document.createElement('div');
     win.document.body.append(host);
-    const root = createRoot(host);
+    const root = createRoot(host as unknown as Element);
     mounted = root;
     await act(async () => {
       root.render(React.createElement(QueryClientProvider, { client: queryClient },

@@ -100,7 +100,7 @@ afterEach(() => {
 
 describe('isAppOwnedStorageKey', () => {
   test('APP_STORAGE_PREFIXES is exactly the documented set — catches silent drift either way', () => {
-    expect([...APP_STORAGE_PREFIXES].sort()).toEqual([...EXPECTED_PREFIXES].sort());
+    expect<string[]>([...APP_STORAGE_PREFIXES].sort()).toEqual([...EXPECTED_PREFIXES].sort());
   });
 
   test('matches every documented prefix', () => {

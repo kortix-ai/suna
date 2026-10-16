@@ -39,7 +39,7 @@ const app = (slug: string, over: Partial<EventApp> = {}): EventApp => ({
 
 describe('parseTriggerFilter', () => {
   test('accepts the four kinds', () => {
-    for (const v of ['all', 'cron', 'event', 'webhook']) expect(parseTriggerFilter(v)).toBe(v);
+    for (const v of ['all', 'cron', 'event', 'webhook'] as const) expect(parseTriggerFilter(v)).toBe(v);
   });
   test('falls back to all', () => {
     expect(parseTriggerFilter(null)).toBe('all');

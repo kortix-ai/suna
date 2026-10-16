@@ -182,8 +182,8 @@ describe('owner and access facets', () => {
   });
 
   test('the unset owner filter is the stable empty list', () => {
-    expect(read(selectOwnerFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
-    expect(read(selectAccessFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
+    expect<readonly string[]>(read(selectOwnerFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
+    expect<readonly string[]>(read(selectAccessFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
   });
 });
 

@@ -84,12 +84,14 @@ function newRunId(): string {
  *
  * The partition is computed from the live registry (see `src/core/shard.ts`),
  * so every flow lands in exactly one shard and a newly added flow can never
- * fall out of the release gate. `--shard` selects flows on its own; combining
- * it with another selector would intersect two partitions and could silently
- * run nothing, so that is rejected.
+ * fall out of the release gate. `--tag` narrows the registry BEFORE the
+ * partition (the release gate shards the `deployed` set), so every tagged flow
+ * still lands in exactly one shard. Any other selector would intersect two
+ * partitions and could silently run nothing, so that is rejected.
  */
 async function resolveShardIds(
   value: string,
+  tags: string[],
   conflicting: Array<[string, unknown]>,
 ): Promise<string[]> {
   const used = conflicting.filter(([, v]) => v !== undefined && v !== false).map(([n]) => n);
@@ -98,7 +100,10 @@ async function resolveShardIds(
   }
   const spec = parseShardSpec(value);
   await discoverFlows();
-  const plan = planShard(allFlows(), spec);
+  const flows = allFlows().filter(
+    (f) => tags.length === 0 || (f.meta.tags ?? []).some((t) => tags.includes(t)),
+  );
+  const plan = planShard(flows, spec);
   if (plan.ids.length === 0) {
     throw new Error(`--shard ${value} selected no flows`);
   }
@@ -215,10 +220,9 @@ async function main(): Promise<number> {
 
     const shardIds =
       typeof flags.shard === 'string'
-        ? await resolveShardIds(flags.shard, [
+        ? await resolveShardIds(flags.shard, list(flags.tag) ?? [], [
             ['id', flags.id],
             ['domain', flags.domain],
-            ['tag', flags.tag],
             ['grep', flags.grep],
             ['smoke', flags.smoke],
           ])
