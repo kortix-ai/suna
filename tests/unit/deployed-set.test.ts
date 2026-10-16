@@ -37,7 +37,6 @@ const SEAMS: Record<string, string[]> = {
 interface TaggedFlow {
   id: string;
   todo: boolean;
-  quarantine: boolean;
 }
 
 /** Bun-only registry (see unit/shard.test.ts), read in a `bun` subprocess. */
@@ -49,7 +48,7 @@ function deployedFlows(): TaggedFlow[] {
     await discoverFlows();
     console.log(JSON.stringify(allFlows()
       .filter((f) => (f.meta.tags ?? []).includes(${JSON.stringify(DEPLOYED_FLOW_TAG)}))
-      .map((f) => ({ id: f.id, todo: Boolean(f.meta.todo), quarantine: Boolean(f.meta.quarantine) }))));
+      .map((f) => ({ id: f.id, todo: Boolean(f.meta.todo) }))));
   `;
   const out = execFileSync('bun', ['-e', script], { encoding: 'utf8', cwd: testsDir });
   return JSON.parse(out.trim().split('\n').at(-1) as string) as TaggedFlow[];
@@ -73,7 +72,7 @@ describe('the deployed flow set', () => {
     expect(flows.length).toBeLessThanOrEqual(50);
   });
 
-  it('holds no todo and no quarantined flow, so --require-all means every seam ran', () => {
-    expect(flows.filter((f) => f.todo || f.quarantine).map((f) => f.id)).toEqual([]);
+  it('holds no todo flow, so --require-all means every seam ran', () => {
+    expect(flows.filter((f) => f.todo).map((f) => f.id)).toEqual([]);
   });
 });

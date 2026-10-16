@@ -9,7 +9,6 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
-import { stagingAppsEdgeQuarantine } from '../fixtures/apps-edge';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
   throwIfCliInfraFailure(result, action);
@@ -5037,7 +5036,6 @@ flow(
   {
     domain: 'connectors',
     requires: ['database', 'appHost'],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       'POST /v1/connectors/projects/:projectId/call',

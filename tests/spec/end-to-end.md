@@ -1202,7 +1202,6 @@ Composio catalogue search (no browser journey since 2026-10-16): short queries, 
 
 
 `CONN-25` Gmail managed OAuth regression. A project declares `{provider:"composio",app:"gmail"}` and connect returns `{provider:"composio",app:"gmail",connected:false,isNoAuth:false,connectUrl,sessionId,connectionId,requestId}`. The Connect Link must be HTTPS on `connect.composio.dev`, the session must be a real Tool Router session, and the authorization request ID must be non-empty.
-`CONN-26` Real agent provider-selection regression. A funded managed project boots a fresh Daytona session, sends the connector request through `POST …/prompts` using `kortix/morph-dsv41flash`, and requires the agent to call its actual connector MCP tools. The assistant must return a `connect.composio.dev` authorization link and ask the user to open it. No tool call may set `provider:"pipedream"` or `allow_legacy_pipedream:true`; an explicit provider, when present, must be `composio`. Project REST readback must expose the agent-created Gmail connector with config `{provider:"composio",app:"gmail"}` and no Pipedream-backed Gmail declaration.
 `DEL-3` `DELETE /v1/account/delete-immediately` → ANON → 401 (auth boundary; destructive happy path not run).
 
 ---

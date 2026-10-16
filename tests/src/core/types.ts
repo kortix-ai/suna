@@ -159,15 +159,6 @@ export interface FlowMeta {
    * flow (`harnessFlow`): `RUN-1-pi` implements `RUN-1`. Absent: the flow id.
    */
   specId?: string;
-  /**
-   * Quarantined: registered and reported, never run — the API-flow mirror of
-   * the browser lane's `@quarantine` tag. Only for a flow whose failure is a
-   * NAMED pre-existing defect that cannot be fixed from this tree (edge infra,
-   * a product defect with its own tracked follow-up). The string must say what
-   * the defect is and where it is tracked. `--require-all` accepts it (unlike
-   * `todo`, which is an unimplemented contract and stays a failure).
-   */
-  quarantine?: string;
 }
 
 export interface FlowContext {
