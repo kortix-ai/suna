@@ -548,23 +548,54 @@ harnessFlow(
       await stopSessionAndWait(ctx, project.id, sessionA.id);
     });
 
+    // `name` resolves custom_name ?? the runtime root title in the mirrored tree
+    // ?? the Kortix-generated title (serializers.ts `serializeSession`).
+    // The runtime's own title reaches the mirror asynchronously and outranks
+    // the generated one, so a baseline read can legitimately hold the
+    // generated title while the post-stop read holds the runtime's (release
+    // gate 38737177991: "Exact Single Token Reply" → "Reply with SESS24
+    // session token"). The contract is a mirrored, non-default title and an
+    // unwiped tree that stay put once no runtime is left to change them.
     await ctx.step(
-      "the DB-backed session detail read (the web's persisted-pin cached-paint source) still returns the SAME mirrored title/tree for the now-stopped session — the read path works without a live runtime",
+      "the DB-backed session detail read (the web's persisted-pin cached-paint source) still returns the mirrored title/tree for the now-stopped session, stable across reads — the read path works without a live runtime",
       async () => {
-        const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
-          params: { projectId: project.id, sessionId: sessionA.id },
-        });
-        r.status(200)
-          .body()
-          .has('$.name', detailSnapshotBeforeStop.name)
-          .has('$.session_id', sessionA.id);
-        const body = r.json<any>();
+        const read = async () => {
+          const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+            params: { projectId: project.id, sessionId: sessionA.id },
+          });
+          r.status(200).body().has('$.session_id', sessionA.id);
+          return r.json<any>();
+        };
+        const body = await read();
+        const tree: any[] = Array.isArray(body.opencode_sessions) ? body.opencode_sessions : [];
+        const root =
+          tree.find((entry) => entry?.id === body.runtime_session_id) ?? tree.find((entry) => !entry?.parent_id);
+        const runtimeTitle = typeof root?.title === 'string' ? root.title.trim() : '';
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name || /^new (session|agent)\b/i.test(name)) {
+          throw new Error(`the stopped session's detail read lost its title: ${JSON.stringify(body.name)}`);
+        }
+        if (name !== detailSnapshotBeforeStop.name && name !== runtimeTitle) {
+          throw new Error(
+            `the stopped session's title is neither the pre-stop title nor the mirrored runtime title: ` +
+              `before=${JSON.stringify(detailSnapshotBeforeStop.name)} after=${JSON.stringify(body.name)} runtime=${JSON.stringify(runtimeTitle)}`,
+          );
+        }
+        const ids = new Set(tree.map((entry) => entry?.id));
+        const lost = (detailSnapshotBeforeStop.opencode_sessions ?? [])
+          .map((entry: any) => entry?.id)
+          .filter((id: unknown) => !ids.has(id));
+        if (lost.length > 0) {
+          throw new Error(`the mirrored opencode_sessions tree lost ${lost.join(', ')} across the stop`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        const again = await read();
         if (
-          JSON.stringify(body.opencode_sessions) !==
-          JSON.stringify(detailSnapshotBeforeStop.opencode_sessions)
+          again.name !== body.name ||
+          JSON.stringify(again.opencode_sessions) !== JSON.stringify(body.opencode_sessions)
         ) {
           throw new Error(
-            'the mirrored opencode_sessions tree changed (or was wiped) across the stop — the cached-paint read is not stable without a live runtime',
+            'the stopped session\'s mirrored title/tree changed between two reads with no live runtime — the cached-paint read is not stable',
           );
         }
       },

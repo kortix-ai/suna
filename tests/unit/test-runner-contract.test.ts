@@ -76,8 +76,8 @@ describe('local test runner contract', () => {
     expect(source).toContain(
       "await when('apps/kortix-sandbox-agent-server', () => runWorkspaceTests(['kortixd'], 1))",
     );
-    // A diff-scoped run narrows every step to the affected packages; unset runs all.
-    expect(source).toContain('process.env.KORTIX_TEST_SCOPE');
+    // `when` gates a step by --package-group only: no diff scope.
+    expect(source).not.toContain('KORTIX_TEST_SCOPE');
     expect(source).toContain("'--no-bail'");
     expect(source).not.toContain("['@kortix/cli', 'kortixd']");
     expect(source).toContain("runWorkspaceTests(['@kortix/db'], 1)");

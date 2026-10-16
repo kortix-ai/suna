@@ -1,73 +1,4 @@
-import { type Locator, type Page, type Route, expect } from "@playwright/test";
-
-/**
- * The settings panel — ONE full-screen modal that replaced the Customize
- * overlay, the `/accounts/[id]` page and the user-settings modal.
- *
- * Its accessible name comes from `ModalTitle` in
- * `apps/web/src/features/workspace/settings/settings-panel.tsx:369-371`:
- * `Settings — <project name>` when a project is in scope, plain `Settings`
- * otherwise. Matching the prefix pins the panel without pinning the project
- * name a spec would have to spell out.
- */
-export function settingsPanel(page: Page): Locator {
-  return page.getByRole("dialog", { name: /^Settings\b/ });
-}
-
-/**
- * Opens the settings panel and returns it.
- *
- * The sidebar's own Settings row is gone (Jay, 2026-08-17): it opened the
- * exact same panel a click on the workspace switcher's "User Settings" row
- * already does, one level up — a second row to an identical destination. The
- * panel's own Mod+, keyboard shortcut (`useSettingsKeyboardShortcut`,
- * `project-settings-nav.tsx`) is unchanged, and it is the one thing this
- * helper can trigger without depending on sidebar DOM structure or the
- * switcher's dropdown being open first — exactly what a real user does to
- * open it without the mouse.
- */
-export async function openSettingsPanel(page: Page): Promise<Locator> {
-  await page.keyboard.press("Control+,");
-  const panel = settingsPanel(page);
-  await expect(panel).toBeVisible({ timeout: 30_000 });
-  return panel;
-}
-
-/**
- * Opens the panel and selects one rail row, returning the panel.
- *
- * The rail rows are Radix `TabsTrigger`s (`settings-panel.tsx:526`), so their
- * ARIA role is `tab` — NOT `button`, which is what the pre-unification specs
- * clicked. Their labels are single-sourced in
- * `apps/web/src/features/workspace/settings/rail.ts`.
- *
- * `label` must be unique across the rail. "General" is not: the Workspace
- * group and the Organization group each have one.
- */
-export async function openSettingsTab(page: Page, label: string): Promise<Locator> {
-  const panel = await openSettingsPanel(page);
-  await panel.getByRole("tab", { name: label, exact: true }).click();
-  await expect(panel.getByRole("tabpanel", { name: label })).toBeVisible({
-    timeout: 30_000,
-  });
-  return panel;
-}
-
-/**
- * One feature-flag row of the Experimental tab.
- *
- * `ExperimentalFeatureRow` (`tabs/experimental-tab.tsx`) renders a plain `div`
- * per flag inside the `divide-y` list container, and — unlike the
- * `feature-flags-view.tsx` it replaced — puts NO `aria-label` on the row's
- * `Switch`. So the row is pinned by the flag name it displays and the switch
- * is read out of that row. Restore `aria-label={feature.name}` on that Switch
- * and `row.getByRole("switch")` keeps working unchanged.
- */
-export function featureFlagRow(panel: Locator, page: Page, name: string): Locator {
-  return panel
-    .locator("div.divide-y > div")
-    .filter({ has: page.getByText(name, { exact: true }) });
-}
+import { type Page, expect } from "@playwright/test";
 
 export async function selectAccountForUi(
   page: Page,
@@ -103,23 +34,6 @@ export async function dismissWelcomeCard(page: Page): Promise<void> {
     await dismiss.click({ force: true, timeout: 2_000 }).catch(() => {});
   }
   await welcome.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
-}
-
-/**
- * Opens a queued prompt row's actions menu and returns the menu.
- *
- * Since #9993 a Queue List row draws its actions (Edit, Send now, Stop and
- * send, Remove from queue) as items of one "Message actions" menu
- * (`queuedRowActions`, `queued-prompt-list.tsx`), not as row buttons. A row
- * with no action for the viewer has no trigger at all. Press Escape to close
- * the menu without choosing an item.
- */
-export async function openQueuedRowMenu(page: Page, row: Locator): Promise<Locator> {
-  await row.hover();
-  await row.getByRole("button", { name: "Message actions", exact: true }).click();
-  const menu = page.getByRole("menu");
-  await expect(menu).toBeVisible();
-  return menu;
 }
 
 export async function dismissOnboarding(page: Page): Promise<void> {
@@ -162,23 +76,4 @@ export async function dismissOnboarding(page: Page): Promise<void> {
     await page.waitForTimeout(100);
   }
   await expect(onboarding).toHaveCount(0);
-}
-
-/**
- * Serve a real API response with its JSON body rewritten. `reload()` or
- * `goto()` while this handler awaits `route.fetch()` makes the browser abandon
- * the request, and `route.fulfill()` then throws "Route is already handled!".
- * That is not a product failure: nobody is left to read the response. Any other
- * error still fails the test.
- */
-export async function fulfillRewrittenJson(
-  route: Route,
-  rewrite: (body: any) => unknown,
-): Promise<void> {
-  try {
-    const response = await route.fetch();
-    await route.fulfill({ response, json: rewrite(await response.json()) });
-  } catch (error) {
-    if (!/already handled|has been closed|Target page|aborted/i.test(String(error))) throw error;
-  }
 }

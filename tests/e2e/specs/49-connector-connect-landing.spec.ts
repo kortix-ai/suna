@@ -12,6 +12,10 @@
  *   "Add account" instead of credential entry for the project's account.
  * - "Everyone" signs in the empty shared account made with the connector,
  *   never a second one: two unpinned shared accounts leave no default.
+ * - That empty shared account is a placeholder: it is not listed, so a new
+ *   connector reads "has no account", never "Everyone in <project>".
+ * - The form proposes the slug from the URL's domain.
+ * - Removing a connector lands on the list with no "connector not found".
  */
 import { randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
@@ -148,8 +152,10 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     await expect(form).toBeVisible();
     await form.getByRole("combobox", { name: "Provider" }).click();
     await page.getByRole("option", { name: "MCP", exact: true }).click();
-    await form.getByLabel("Slug").fill(slug);
+    // The server has not named itself yet: the slug comes from the URL's domain.
     await form.getByLabel("URL", { exact: true }).fill(unreachableMcp);
+    await expect(form.getByLabel("Slug")).toHaveValue("example");
+    await form.getByLabel("Slug").fill(slug);
     return form;
   }
 
@@ -267,13 +273,17 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     await createBearerHttp(slug);
     await openConnectorPage(page, slug);
 
-    const notice = page.getByRole("alert").filter({ hasText: "needs a credential" });
+    // The empty shared account is not listed: nothing reads "Everyone".
+    const notice = page.getByRole("alert").filter({ hasText: "has no account" });
     await expect(notice).toBeVisible({ timeout: 60_000 });
-    await notice.getByRole("button", { name: "Set credential", exact: true }).click();
+    await expect(page.getByText(/^Everyone in /)).toHaveCount(0);
+    await notice.getByRole("button", { name: /Add account/ }).click();
 
     const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
     await expect(addDialog).toBeVisible();
     await expect(addDialog.getByRole("radio", { name: /^Only you/ })).toBeChecked();
+    // The slot's name is free: the proposal is the connector's own name.
+    await expect(addDialog.getByLabel("Name")).toHaveValue(slug);
     // The response, not the request: the read-back below must run after the
     // API stored the account (a slower runner read it back first, 3 of 3).
     const mine = page.waitForResponse(
@@ -300,9 +310,9 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     const slotId = await createBearerHttp(slug);
     await openConnectorPage(page, slug);
 
-    const notice = page.getByRole("alert").filter({ hasText: "needs a credential" });
+    const notice = page.getByRole("alert").filter({ hasText: "has no account" });
     await expect(notice).toBeVisible({ timeout: 60_000 });
-    await notice.getByRole("button", { name: "Set credential", exact: true }).click();
+    await notice.getByRole("button", { name: /Add account/ }).click();
     const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
     await expect(addDialog).toBeVisible();
     await addDialog.getByRole("radio", { name: /^Everyone in / }).check();
@@ -326,5 +336,33 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     expect(
       (await accountsOf(slug)).map((row) => [row.connection_id, row.owner_type]),
     ).toEqual([[slotId, "project"]]);
+  });
+
+  test("removing a connector lands on the list with no connector-not-found error", async ({
+    page,
+  }) => {
+    const slug = `e2e-remove-${Date.now().toString(36)}`;
+    await createBearerHttp(slug);
+    await openConnectorPage(page, slug);
+    const notFound: string[] = [];
+    page.on("response", (response) => {
+      if (response.status() === 404 && response.url().includes(`/connectors/${slug}`)) {
+        notFound.push(response.url());
+      }
+    });
+
+    await page.getByRole("tab", { name: "Settings", exact: true }).last().click();
+    await page.getByRole("button", { name: "Remove", exact: true }).click();
+    const removed = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/connectors/${slug}`) && response.request().method() === "DELETE",
+    );
+    await page.getByRole("button", { name: "Remove connector", exact: true }).click();
+    expect((await removed).ok()).toBe(true);
+
+    await expect(page).toHaveURL(/\/customize\/connectors\?scope=connected$/, { timeout: 60_000 });
+    await expect(page.getByText("connector not found")).toHaveCount(0);
+    expect(notFound).toEqual([]);
+    expect(await accountsOf(slug)).toEqual([]);
   });
 });

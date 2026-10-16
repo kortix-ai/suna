@@ -310,7 +310,7 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
  * DI rather than `mock.module`, deliberately: bun's `mock.module` is PROCESS-wide
  * and does not unwind at file boundaries, so a proxy test that stubbed `../backend`
  * silently blanked the real module for every sibling suite that ran after it in
- * the same process (4 unrelated `backend.test.ts` / `wake-deadline-guard.test.ts`
+ * the same process (4 unrelated proxy test
  * cases went red with `Received: 0` — their spies never fired). Passing the
  * collaborators in keeps the seam local to one call.
  *
