@@ -780,8 +780,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/suna-migration/eligibility': { action: 'project.suna_migration.eligibility.read', title: 'Viewed project migration eligibility' },
   'POST /v1/projects/suna-migration/start': { action: 'project.suna_migration.start', title: 'Started project migration' },
   'GET /v1/projects/suna-migration/status': { action: 'project.suna_migration.read', title: 'Viewed project migration status' },
-  'GET /v1/public/session-shares/:shareId': { action: 'session.public_share.metadata.read', title: 'Viewed publicly shared session' },
-  'GET /v1/public/session-shares/:shareId/messages': { action: 'session.public_share.message.list', title: 'Listed publicly shared session messages' },
   'POST /v1/router/chat/completions': { action: 'router.chat_completion.create', title: 'Generated chat completion' },
   'ALL /v1/router/context7': 'ALL /v1/router/context7/*',
   'ALL /v1/router/context7/*': { action: 'router.context7.proxy', title: 'Called Context7 through router' },
