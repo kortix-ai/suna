@@ -11364,6 +11364,7 @@
       "text2b00ca23b112": "<Button variant=\"secondary\" size=\"sm\" onClick={handleClick} > 保存 </Button>",
       "text2b040fd0129f": "サンドボックス境界",
       "text2b065c7c9ce4": "今日",
+      "texte10ae9907401": "それ以前",
       "text2b112b05602c": "GitHubとモデルキーは、意図的にここでは質問しません。スタック起動後にダッシュボードで設定します。GitHubはSettings → Git、モデルキーはモデルピッカーから設定します。",
       "text2b152ca731e4": "データの保管場所はあなたが選べます",
       "text2b2b0a697042": "承認済み — エージェントは続行します",
