@@ -229,7 +229,7 @@ describe('getStarterFiles', () => {
   test('the scaffold ships exactly the agreed skill floor', () => {
     const prefix = 'skills/';
     const names = new Set<string>();
-    for (const f of getStarterFiles({ projectName: 'X' })) {
+    for (const f of getStarterFiles({ projectName: 'X', manifestVersion: 3 })) {
       if (!f.path.startsWith(prefix)) continue;
       const name = f.path.slice(prefix.length).split('/')[0];
       if (name) names.add(name);
@@ -253,7 +253,7 @@ describe('getStarterFiles', () => {
   });
 
   test('minimal starter includes the pty extension but no tool copies or optional marketplace skills', () => {
-    const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    const files = getStarterFiles({ projectName: 'X', template: 'minimal', manifestVersion: 3 });
     const paths = new Set(files.map((f) => f.path));
 
     // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
@@ -349,7 +349,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   test('no managed skill is scaffolded into a new project', () => {
     const prefix = 'skills/';
     const scaffolded = new Set<string>();
-    for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
+    for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker', manifestVersion: 3 })) {
       if (!f.path.startsWith(prefix)) continue;
       const name = f.path.slice(prefix.length).split('/')[0];
       if (name && isKortixManagedSkillName(name)) scaffolded.add(name);

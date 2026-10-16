@@ -75,6 +75,7 @@ import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-he
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useTranslations } from '@/i18n/use-translations';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { useState } from 'react';
 
 import type { ManifestVersion } from './manifest-version';
@@ -125,6 +126,7 @@ export const DEFAULT_UPGRADES_COPY: UpgradesCopy = {
 
 export function UpgradesViewContent({
   version,
+  manifestV3 = false,
   onRun,
   pending,
   canWrite = false,
@@ -132,6 +134,8 @@ export function UpgradesViewContent({
 }: {
   /** `null` = the manifest read hasn't resolved yet. */
   version: ManifestVersion | null;
+  /** The project flag `manifest_v3`. Off (the default): no v3 upgrade row. */
+  manifestV3?: boolean;
   onRun: (prompt: string) => void;
   pending: boolean;
   /** When false, the Run actions and the one-off composer are hidden and the
@@ -146,7 +150,7 @@ export function UpgradesViewContent({
   // pane spins at once the moment any one of them is clicked. Latent today
   // (the registry holds one entry) and wrong the day it holds two.
   const [startedId, setStartedId] = useState<string | null>(null);
-  const upgrades = version === null ? null : applicableUpgrades({ manifestVersion: version });
+  const upgrades = version === null ? null : applicableUpgrades({ manifestVersion: version, manifestV3 });
 
   function run(id: string, prompt: string) {
     setStartedId(id);
@@ -242,11 +246,13 @@ export function UpgradesViewContent({
 export function UpgradesView({ projectId }: { projectId: string }) {
   const t = useTranslations('settings.upgrades');
   const { version } = useProjectManifestVersion(projectId);
+  const manifestV3 = useFeatureFlag(projectId, 'manifest_v3').enabled;
   const run = useRunUpgrade(projectId);
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
   return (
     <UpgradesViewContent
       version={version}
+      manifestV3={manifestV3}
       onRun={run.start}
       pending={run.pending}
       canWrite={canWrite}

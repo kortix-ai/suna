@@ -1080,6 +1080,10 @@
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
+        },
+        "manifest_v3": {
+          "name": "kortix.yaml v3",
+          "description": "Offers the upgrade to kortix.yaml version 3, and new manifests use version 3. Kortix enables it per project."
         }
       }
     },
@@ -1098,7 +1102,7 @@
         "title": "Upgrade manifest to v3 (kortix.yaml)",
         "description": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review."
       },
-      "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
+      "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 2 to edit this agent's instructions, model, tool permissions and access here."
     },
     "plan": {
       "managedByAdmin": "Managed by an account admin",

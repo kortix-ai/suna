@@ -48,7 +48,7 @@ To create a project, follow the [Quickstart](/docs/quickstart).
 | `memory/` | The project memory. See [Memory](#memory). | Agents, through the `memory` tool |
 
 - Every path is a convention. `kortix.yaml` names each file it uses, so any folder works. A feature can keep its agents, prompts, commands, skills and triggers in one folder, split out with `imports`. See [Split the manifest by topic](/docs/project/manifest#split-the-manifest-by-topic).
-- A `kortix_version: 3` session reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Projects on version 1 or 2 still use them: see [Legacy manifests](/docs/project/legacy-manifests).
+- A `kortix_version: 3` session reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Projects on version 1 or 2, the version new projects are created on, use them: see [Manifest versions 1 and 2](/docs/project/legacy-manifests).
 - The manifest path is a project setting, `kortix.yaml` by default. See [Validate](/docs/project/manifest#validate).
 
 ## What a new project contains
@@ -65,7 +65,7 @@ A new project starts from the general starter. It commits these files to the def
 | Tools | The seven Kortix tools, which every project has without an entry: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe`. |
 | `memory/MEMORY.md` | The empty memory index. |
 
-The starter's `kortix.yaml` is a `kortix_version: 3` manifest. Kortix adds 12 managed `kortix-*` skills to every session when it boots. An agent loads one only when its `skills` grant names it or is `all`. See [Agents & permissions](/docs/project/agents#skills). Read one with `kortix system-skills get <name>`.
+The starter's `kortix.yaml` is a `kortix_version: 2` manifest. `kortix init --manifest-version 3` writes the `kortix_version: 3` starter instead. Kortix adds 12 managed `kortix-*` skills to every session when it boots. An agent loads one only when its `skills` grant names it or is `all`. See [Agents & permissions](/docs/project/agents#skills). Read one with `kortix system-skills get <name>`.
 
 To turn on the reflection loop, change `enabled: false` to `enabled: true` on the `harness-reflector` trigger in `kortix.yaml` and merge the change. Keep its `prompt:` unchanged. Each run starts a session in its own sandbox.
 
@@ -84,6 +84,7 @@ kortix init my-agent && cd my-agent
 | `--agents <list>` | Comma-separated extra tools to wire. Codex, pi and Cursor also get a root `AGENTS.md` pointer. |
 | `--force` | Wire local tools into the current directory in place. The directory must be a cloned Kortix project, for example after `kortix projects clone`. |
 | `--overwrite` | Replace existing starter files. Without it, `init` keeps them. |
+| `--manifest-version <2\|3>` | The `kortix_version` of the new `kortix.yaml`. Default `2`. |
 | `--no-git` | Skip `git init`. |
 | `-y`, `--yes` | No prompts. Needs a project name. |
 
@@ -156,7 +157,7 @@ kortix projects set --branch main            # default branch
 kortix projects set --manifest kortix.yaml   # manifest path
 ```
 
-A project on `kortix.toml` migrates with **Upgrades** or `kortix projects upgrade`. See [Legacy manifests](/docs/project/legacy-manifests#kortix_version-1).
+A project on `kortix.toml` moves to `kortix.yaml` by hand. See [Manifest versions 1 and 2](/docs/project/legacy-manifests#kortix_version-1).
 
 `kortix projects set` needs `project.settings.write`. It writes only the fields you pass. `--project <id>` acts on another project. [Which project a command uses](/docs/cli#which-project-a-command-uses) explains the default.
 
@@ -212,6 +213,7 @@ A toggle of three flags also updates running state. The API response does not wa
 | `event_triggers` | App event triggers | Off | Beta | Always | Events in connected apps start agents. Off: the event routes answer `feature_disabled`, and a `type: event` trigger has status `error`. See [App events](/docs/connect/triggers#app-events). |
 | `notification_center` | Notification Center | Off | Beta | Always | A bell inbox, browser push and email for the people a session concerns, plus trigger and reminder alerts. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing. See [Notifications](/docs/work/sessions#notifications). |
 | `volumes` | Volumes | Off | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared Files for the project: the Files page and the `drives` flag. See [Files](/docs/work/runtime#files). |
+| `manifest_v3` | kortix.yaml v3 | Off. Kortix turns it on per project. | Beta | Always | Offers the upgrade to `kortix_version: 3` (**Customize → Settings → Upgrades**, the sidebar, `kortix projects upgrade`), and Kortix writes version 3 when it creates the project's manifest. Off: no upgrade is offered, and new manifests are version 2. A project already on version 3 runs it either way, and `kortix migrate` converts a project on request. |
 | `drives` | Files | Follows the project's `volumes` flag | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared folders under `/drives` in new sessions. See [Files](/docs/work/runtime#files). |
 
 ### When a flag is off
@@ -231,7 +233,7 @@ Branch on `code`, never on `error`. The SDK exports `isFeatureDisabledError(erro
 | Flag kind | `error` |
 | --- | --- |
 | A normal flag | `<Name> is not enabled for this project. Enable it in Settings → Feature flags.` |
-| A flag managed by Kortix (`session_log`, `session_log_restore`) | `<Name> is not enabled for this project. Contact Kortix to enable it.` |
+| A flag managed by Kortix (`session_log`, `session_log_restore`, `manifest_v3`) | `<Name> is not enabled for this project. Contact Kortix to enable it.` |
 | A flag that follows the project's Volumes flag (`drives`) | `<Name> is not enabled for this project. Turn on Volumes in Settings → Feature flags.` |
 
 - **`volumes`** is an ordinary project flag. It is listed only on a deployment with Platinum.

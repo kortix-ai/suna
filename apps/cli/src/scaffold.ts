@@ -12,6 +12,8 @@ export interface ScaffoldInput {
   repoFullName?: string;
   /** Starter variant. Defaults to the minimal Kortix runtime floor. */
   template?: StarterTemplateId;
+  /** `kortix_version` of the scaffold. Default 2. */
+  manifestVersion?: 2 | 3;
   /**
    * If true, skip writing any file whose path already exists at the
    * destination. Used by `kortix init` against a repo that may already
@@ -36,6 +38,7 @@ export function applyScaffold(input: ScaffoldInput): ScaffoldResult {
     projectName: input.projectName,
     repoFullName: input.repoFullName,
     template: input.template,
+    manifestVersion: input.manifestVersion,
   });
 
   const written: string[] = [];

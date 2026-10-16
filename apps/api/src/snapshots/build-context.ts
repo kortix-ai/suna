@@ -41,6 +41,7 @@ import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
+import { newManifestVersion } from '../projects/manifest-version';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
 import { buildLayeredDockerfile } from './dockerfile-layer';
 import { stageOpencodeConfigTree, stageStarterOpencodeConfig } from './opencode-config-stage';
@@ -616,7 +617,7 @@ export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: (
 async function stageScaffoldRepo(contextDir: string): Promise<void> {
   const work = join(contextDir, '.scaffold-work');
   await mkdir(work, { recursive: true });
-  const files = buildStarterFiles({ projectName: 'kortix-project', repoFullName: 'kortix/kortix-project', template: DEFAULT_STARTER_TEMPLATE_ID });
+  const files = buildStarterFiles({ projectName: 'kortix-project', repoFullName: 'kortix/kortix-project', template: DEFAULT_STARTER_TEMPLATE_ID, manifestVersion: newManifestVersion() });
   for (const f of files) {
     const full = join(work, f.path);
     await mkdir(dirname(full), { recursive: true });

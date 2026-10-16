@@ -1,6 +1,6 @@
 ---
 title: "kortix.yaml reference"
-description: "The kortix_version 3 manifest: the project registers skills, tools, commands and extensions, and each agent enables what it uses. A complete example, a split repository layout, and every key with its default and what it compiles to."
+description: "The kortix_version 3 manifest, available as an opt-in: the project registers skills, tools, commands and extensions, and each agent enables what it uses. A complete example, a split repository layout, and every key with its default and what it compiles to."
 ---
 
 `kortix.yaml` is the manifest at the root of a project repository. It does two things:
@@ -8,7 +8,7 @@ description: "The kortix_version 3 manifest: the project registers skills, tools
 1. **It registers what exists.** Skills, tools, commands, extensions, connectors, Apps, secret names and sandbox templates. A registry entry gives a thing a name. It gives no agent access to it.
 2. **It defines every agent.** Each agent is one block: its prompt, its model, its tool policy, and the registered things it enables by name.
 
-Nothing in the manifest applies to every agent. There is no project-wide permission, command or extension. Harness-specific code lives only under `extensions`, with one implementation per harness. This page describes `kortix_version: 3`, the current version. Versions 1 and 2 still run: see [Legacy versions](#legacy-versions).
+Nothing in the manifest applies to every agent. There is no project-wide permission, command or extension. Harness-specific code lives only under `extensions`, with one implementation per harness. This page describes `kortix_version: 3`, available as an opt-in. New projects are created on `kortix_version: 2`, and a project keeps its version until you migrate it: see [Versions 1 and 2](#versions-1-and-2).
 
 ## A complete example
 
@@ -776,11 +776,11 @@ A session compiles the manifest when it starts. A `prompt_file` that does not ex
 
 The project's `manifest_path` (default `kortix.yaml`) sets where Kortix looks. Change it with `kortix projects set --manifest <path>` or in **Customize → Settings**.
 
-## Legacy versions
+## Versions 1 and 2
 
-`kortix_version` 1 (`kortix.toml`) and 2 (`agents/<name>.md` files plus harness folders) still read and run. They are legacy: new features land in v3 only. Their keys and layout are on [Legacy manifests](/docs/project/legacy-manifests).
+`kortix_version` 1 (`kortix.toml`) and 2 (`agents/<name>.md` files plus harness folders) read and run. New projects are created on version 2. Their keys and layout are on [Manifest versions 1 and 2](/docs/project/legacy-manifests).
 
-Move a v2 project to v3 with the CLI, from the project root:
+To move a v2 project to v3, run the CLI from the project root:
 
 ```bash
 kortix migrate            # print the v3 manifest, change nothing

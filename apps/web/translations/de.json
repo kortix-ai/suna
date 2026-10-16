@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
+        },
+        "manifest_v3": {
+          "name": "kortix.yaml v3",
+          "description": "Bietet das Upgrade auf kortix.yaml Version 3 an, und neue Manifeste verwenden Version 3. Kortix aktiviert es pro Projekt."
         }
       }
     },
@@ -1276,7 +1280,7 @@
         "title": "Manifest auf v3 aktualisieren (kortix.yaml)",
         "description": "Überführt kortix.toml oder eine kortix.yaml der Version 2 in Version 3: Das Projekt registriert Skills, Tools, Befehle und Erweiterungen, und jeder Agent aktiviert sie namentlich. Aktualisiert plattformverwaltete Skills und öffnet eine Änderungsanfrage zur Prüfung."
       },
-      "agentEditorHint": "Dieses Projekt verwendet ein Manifest der Version 1. Aktualisiere es auf <code>kortix.yaml</code> Version 3, um Anweisungen, Modell, Tool-Berechtigungen und Zugriff dieses Agenten hier zu bearbeiten."
+      "agentEditorHint": "Dieses Projekt verwendet ein Manifest der Version 1. Aktualisiere es auf <code>kortix.yaml</code> Version 2, um Anweisungen, Modell, Tool-Berechtigungen und Zugriff dieses Agenten hier zu bearbeiten."
     },
     "plan": {
       "managedByAdmin": "Von einem Kontoadministrator verwaltet",

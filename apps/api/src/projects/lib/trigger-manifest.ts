@@ -5,6 +5,7 @@ import { isRemotePushPolicyRejection, isTransientGitMirrorError } from '../git/m
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToTomlEntry } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
+import { newManifestVersion } from '../manifest-version';
 import type { ProjectRow } from './serializers';
 
 /**
@@ -12,8 +13,8 @@ import type { ProjectRow } from './serializers';
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
  *
- * MUST be kortix_version 3 (the canonical version the starter ships), not
- * KNOWN_SCHEMA_VERSION (which deliberately stays pinned at 1 — see its own
+ * MUST be kortix_version 2 or later (the version the starter ships: 2, or 3
+ * with the `manifest_v3` flag), not KNOWN_SCHEMA_VERSION (which deliberately stays pinned at 1 — see its own
  * doc comment in ../triggers.ts). Every project created through POST
  * /projects/provision (seeded or not) is stamped
  * `metadata.require_declared_agents: true` and reads/writes through the
@@ -76,7 +77,7 @@ export async function loadManifestForEdit(project: ManifestProject): Promise<Par
   const gitProject = hasResolvedGitAuth(project) ? project : await withProjectGitAuth(project);
   const existing = await readManifest(gitProject, { forceRefresh: true });
   if (existing) return existing;
-  return synthesizeBlankManifest({ name: project.name, manifestPath: project.manifestPath });
+  return synthesizeBlankManifest({ name: project.name, manifestPath: project.manifestPath, version: newManifestVersion(project.metadata) });
 }
 
 /** Insert or replace a trigger by slug inside the manifest's triggers array. */

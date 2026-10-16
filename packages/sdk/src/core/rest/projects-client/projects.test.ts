@@ -981,6 +981,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'notification_center',
     'session_log',
     'session_log_restore',
+    'manifest_v3',
     'volumes',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());

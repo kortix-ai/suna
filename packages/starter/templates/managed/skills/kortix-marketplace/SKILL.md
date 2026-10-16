@@ -59,8 +59,9 @@ adding an item is the import flow below.
      `kortix.yaml` into this project's (merge connectors/triggers/agents — never
      blindly overwrite the user's manifest). Use judgment; keep what's relevant.
    A `kortix_version: 3` project reads no `harnesses/`, `.kortix/`,
-   `.opencode/` or `.pi/` folder: never import files there. A legacy v1 or
-   v2 project moves to v3 with `kortix migrate` (`--write` applies it).
+   `.opencode/` or `.pi/` folder: never import files there. In a v1 or v2
+   project, import in that version's layout (`kortix-system` →
+   `references/kortix/kortix-yaml-v2.md`) and keep its `kortix_version`.
 4. **Adapt it to this project.** If a skill carries a "TODO: make this yours"
    placeholder or generic copy, tailor it to what this project actually does.
 5. **Wire up its needs.** If the item requires a connector/secret, don't hardcode

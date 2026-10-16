@@ -35,13 +35,25 @@ function render(props: {
 }
 
 describe('ProjectManifestUpgradeAlertView — pre-v3 visibility', () => {
-  test('a v1 and a v2 project need the upgrade; a v3 project and an unresolved read do not', () => {
-    expect([1, 2, 3, null].map((version) => manifestNeedsUpgrade(version as ManifestVersion | null))).toEqual([
+  test('with manifest_v3 on, a v1 and a v2 project need the upgrade; a v3 project and an unresolved read do not', () => {
+    expect([1, 2, 3, null].map((version) => manifestNeedsUpgrade(version as ManifestVersion | null, true))).toEqual([
       true,
       true,
       false,
       false,
     ]);
+  });
+
+  test('with manifest_v3 off (the default), no project is offered the upgrade and the alert renders nothing', () => {
+    expect([1, 2, 3, null].map((version) => manifestNeedsUpgrade(version as ManifestVersion | null, false))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    const html = render({ visible: manifestNeedsUpgrade(2, false), pending: false, onMigrate: () => {} });
+    expect(html).not.toContain('Upgrade to v3');
+    expect(html).not.toContain('<button');
   });
 
   test('shows the collapsed "Upgrade to v3" trigger when visible', () => {

@@ -344,9 +344,25 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: session_log (the v2 session-log rollout) and session_log_restore (the boot restore from the session log)', () => {
+  test('only internal-only surfaces are hidden: session_log (the v2 session-log rollout), session_log_restore (the boot restore from the session log) and manifest_v3 (the kortix.yaml v3 offer, held back)', () => {
     // `apps` graduated (2026-10-14): Apps is generally available.
-    expect(HIDDEN_KEYS).toEqual(['session_log', 'session_log_restore']);
+    expect(HIDDEN_KEYS).toEqual(['session_log', 'session_log_restore', 'manifest_v3']);
+  });
+
+  test('manifest_v3 is a behavioral flag that defaults off and follows MANIFEST_V3_DEFAULT_ENABLED', () => {
+    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'manifest_v3');
+    expect(def?.enforcement).toBe('behavioral');
+    const previous = config.MANIFEST_V3_DEFAULT_ENABLED;
+    try {
+      config.MANIFEST_V3_DEFAULT_ENABLED = false;
+      expect(resolveFeatureFlag({}, 'manifest_v3')).toBe(false);
+      expect(resolveFeatureFlag({ experimental: { manifest_v3: true } }, 'manifest_v3')).toBe(true);
+      config.MANIFEST_V3_DEFAULT_ENABLED = true;
+      expect(resolveFeatureFlag({}, 'manifest_v3')).toBe(true);
+      expect(resolveFeatureFlag({ experimental: { manifest_v3: false } }, 'manifest_v3')).toBe(false);
+    } finally {
+      config.MANIFEST_V3_DEFAULT_ENABLED = previous;
+    }
   });
 
   test('session_log is a behavioral flag that defaults off', () => {

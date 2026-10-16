@@ -250,8 +250,28 @@ describe('the v2 writers accept a v3 manifest', () => {
 });
 
 describe('synthesizeBlankManifest', () => {
-  test('a blank project reads as a valid v3 manifest with the kortix agent', () => {
+  test('a blank project reads as a valid v2 manifest while manifest_v3 is off (the default)', () => {
     const synthesized = synthesizeBlankManifest({ name: 'blank', manifestPath: null });
+
+    expect(synthesized.schemaVersion).toBe(2);
+    expect(synthesized.raw.kortix_version).toBe(2);
+    expect(validateManifest(synthesized.raw, 'yaml').issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+    expect(serializeManifest(synthesized)).toStartWith('kortix_version: 2\n');
+    expect(block(synthesized.raw, 'kortix')).toEqual({
+      skills: 'all',
+      connectors: 'all',
+      secrets: 'all',
+      kortix_permissions: 'all',
+      workspace: { project_repository: true },
+    });
+  });
+
+  test('a blank project of a manifest_v3 project reads as a valid v3 manifest with the kortix agent', () => {
+    const synthesized = synthesizeBlankManifest({
+      name: 'blank',
+      manifestPath: null,
+      version: 3,
+    });
 
     expect(synthesized.schemaVersion).toBe(3);
     expect(synthesized.raw.kortix_version).toBe(3);
@@ -272,7 +292,7 @@ describe('the shipped v3 starter compiles', () => {
   test('every agent compiles with its prompt file; the built-ins are off; pty loads for kortix', async () => {
     const { getStarterFiles } = await import('@kortix/starter');
     const { compileAgentConfig } = await import('../projects/lib/compile-agent-config');
-    const files = Object.fromEntries(getStarterFiles({ projectName: 'Acme' }).map((file) => [file.path, file.content]));
+    const files = Object.fromEntries(getStarterFiles({ projectName: 'Acme', manifestVersion: 3 }).map((file) => [file.path, file.content]));
     const raw = parseManifestString(files['kortix.yaml']!, 'yaml', 'kortix.yaml').raw;
 
     const compiled = compileAgentConfig(raw, 'opencode', files)!;

@@ -204,7 +204,13 @@ export async function loadProjectAgents(
       manifest: null,
     };
   }
-  if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
+  if (!manifest) {
+    const { newManifestVersion } = await import('../manifest-version');
+    manifest = synthesizeBlankManifest({
+      manifestPath: project.manifestPath,
+      version: newManifestVersion((project as { metadata?: unknown }).metadata),
+    });
+  }
   return {
     ...extractAgents(manifest),
     manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },

@@ -46,6 +46,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
+  const manifestV3 = useFeatureFlag(projectId, 'manifest_v3');
 
   return {
     flags: {
@@ -68,8 +69,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       drives: drives.enabled,
       session_log: sessionLog.enabled,
       session_log_restore: sessionLogRestore.enabled,
+      manifest_v3: manifestV3.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: sessionLogRestore.isLoading,
+    isLoading: manifestV3.isLoading,
   };
 }

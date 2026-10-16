@@ -25,7 +25,7 @@ import { selectMultiFromList } from '../tui-select.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'symlink .agents/skills → skills';
+      return 'symlink .opencode → harnesses/opencode, .agents/skills → skills';
     case 'claude':
       return 'link .claude skills, agents, and commands';
     case 'codex':
@@ -67,6 +67,8 @@ Options:
                        Example: --agents claude,cursor
   --force              Configure the current cloned Kortix repository in place.
                        Requires kortix.yaml (or kortix.toml).
+  --manifest-version <2|3>
+                       kortix_version of the new kortix.yaml. Default: 2.
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -80,6 +82,7 @@ interface InitFlags {
   primary?: CodingAgent;
   agents?: CodingAgent[];
   template?: StarterTemplateId;
+  manifestVersion?: 2 | 3;
   force: boolean;
   overwrite: boolean;
   noGit: boolean;
@@ -182,11 +185,16 @@ export async function runInit(argv: string[]): Promise<number> {
       }
       template = templateValue;
     }
+    const versionValue = takeFlagValue(rest, ['--manifest-version']);
+    if (versionValue !== undefined && versionValue !== '2' && versionValue !== '3') {
+      throw new Error('--manifest-version must be 2 or 3');
+    }
     const flags: InitFlags = {
       name: takeFlagValue(rest, ['--name']),
       primary,
       agents,
       template,
+      manifestVersion: versionValue === '3' ? 3 : versionValue === '2' ? 2 : undefined,
       force: takeFlagBool(rest, ['--force']),
       overwrite: takeFlagBool(rest, ['--overwrite']),
       noGit: takeFlagBool(rest, ['--no-git']),
@@ -279,6 +287,7 @@ async function initNewProject(flags: InitFlags): Promise<number> {
     repoRoot: cwd,
     projectName,
     template,
+    manifestVersion: flags.manifestVersion,
     preserveExisting: !overwrite,
   });
   const agentInstall = wireCodingAgents({ repoRoot: cwd, agents: chosenAgents, overwrite });

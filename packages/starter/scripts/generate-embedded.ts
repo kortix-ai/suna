@@ -25,6 +25,7 @@ import { join, relative, sep } from 'node:path';
 const STARTER_ROOT = join(import.meta.dir, '..');
 const TEMPLATE_ROOTS = {
   base: join(STARTER_ROOT, 'templates', 'base'),
+  'base-v2': join(STARTER_ROOT, 'templates', 'base-v2'),
   'general-knowledge-worker': join(STARTER_ROOT, 'templates', 'general-knowledge-worker'),
   managed: join(STARTER_ROOT, 'templates', 'managed'),
   marketplace: join(STARTER_ROOT, 'templates', 'marketplace'),

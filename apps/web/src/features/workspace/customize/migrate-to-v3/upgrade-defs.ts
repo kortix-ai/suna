@@ -13,6 +13,8 @@ import { MIGRATE_TO_V3_PROMPT } from './migration-prompt';
 export interface ProjectUpgradeContext {
   /** `null` while the manifest read hasn't resolved. */
   manifestVersion: ManifestVersion | null;
+  /** The project flag `manifest_v3`. Off: the v3 upgrade is not offered. */
+  manifestV3: boolean;
 }
 
 export interface ProjectUpgrade {
@@ -29,7 +31,7 @@ export const PROJECT_UPGRADES: readonly ProjectUpgrade[] = [
     title: 'Upgrade manifest to v3 (kortix.yaml)',
     description:
       'Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.',
-    applicable: (ctx) => manifestNeedsUpgrade(ctx.manifestVersion),
+    applicable: (ctx) => manifestNeedsUpgrade(ctx.manifestVersion, ctx.manifestV3),
     prompt: MIGRATE_TO_V3_PROMPT,
   },
 ];

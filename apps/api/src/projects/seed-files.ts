@@ -7,6 +7,8 @@ export interface ProjectSeedFilesInput {
   projectName: string;
   repoFullName: string;
   template: StarterTemplateId;
+  /** `kortix_version` of the scaffold (`newManifestVersion`, ./manifest-version.ts). Default 2. */
+  manifestVersion?: 2 | 3;
   /** Accepted for API back-compat; no longer deterministically installed at
    *  provision time.
    *  Adding a marketplace item to a project is now an agent import
@@ -40,8 +42,8 @@ function mergeSeedFiles(
 
 /**
  * Seed a brand-new project's deterministic scaffold: just the starter's own
- * files (a kortix_version 3 kortix.yaml, agent prompts, skills, the pty
- * extension) for `template`.
+ * files (kortix.yaml at `manifestVersion`, agent prompts, skills, the pty
+ * plugin) for `template`.
  * No lock, no dependency engine — marketplace items are never deterministically
  * installed at provision time; adding one to a project is an agent import.
  */
@@ -53,11 +55,13 @@ export async function buildProjectSeedFiles(input: ProjectSeedFilesInput): Promi
     projectName: 'kortix-project',
     repoFullName: 'kortix/kortix-project',
     template: input.template,
+    manifestVersion: input.manifestVersion,
   });
   const files = buildStarterFiles({
     projectName: input.projectName,
     repoFullName: input.repoFullName,
     template: input.template,
+    manifestVersion: input.manifestVersion,
   });
 
   return { files, baseFiles };
@@ -68,6 +72,8 @@ export interface ProjectSeedFilesFromItemInput {
   id: string;
   projectName: string;
   repoFullName: string;
+  /** `kortix_version` of the starter floor under the item's own files. Default 2. */
+  manifestVersion?: 2 | 3;
   /** Accepted for API back-compat; no longer deterministically installed —
    *  see `ProjectSeedFilesInput.marketplaceItems`. */
   extraMarketplaceItems: string[];
@@ -76,8 +82,8 @@ export interface ProjectSeedFilesFromItemInput {
 
 /**
  * Seed a brand-new project by cloning a `registry:project` marketplace item.
- * The internal minimal layer gives the new repo the starter's v3 floor (its
- * kortix.yaml, agent prompts and the pty extension);
+ * The internal minimal layer gives the new repo the starter floor at
+ * `manifestVersion` (its kortix.yaml, agent prompts and the pty plugin);
  * the project item's own files (its kortix.yaml, agent personas, …) are
  * already inline on the catalog entry (`entry.item.files`, see
  * `buildProjectTemplateRegistry` in apps/api/src/marketplace/catalog.ts) — no
@@ -92,11 +98,13 @@ export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromI
     projectName: 'kortix-project',
     repoFullName: 'kortix/kortix-project',
     template: 'minimal',
+    manifestVersion: input.manifestVersion,
   });
   const starterFiles = buildStarterFiles({
     projectName: input.projectName,
     repoFullName: input.repoFullName,
     template: 'minimal',
+    manifestVersion: input.manifestVersion,
   });
 
   const entry = (await getCatalogEntry(input.id)) ?? (await findCatalogEntryByName(input.id));

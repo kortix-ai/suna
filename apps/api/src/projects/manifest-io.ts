@@ -105,7 +105,7 @@ export async function readManifest(
 }
 
 /**
- * The agent name a synthesized (no-manifest-yet) v3 manifest declares as its
+ * The agent name a synthesized (no-manifest-yet) manifest declares as its
  * default — same name `@kortix/starter`'s `base` template seeds (see
  * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
  * `agents.kortix`). Keeping the two in sync means a blank managed-git project
@@ -124,10 +124,12 @@ export async function readManifest(
 export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
 
 /**
- * Build the synthesized v3 manifest for a project with no kortix.yaml/
+ * Build the synthesized manifest for a project with no kortix.yaml/
  * kortix.toml committed yet: the starter's `kortix` agent, granted everything,
- * with the project checkout. Pure (no I/O) — callers decide when a `null`
- * `readManifest` result should be treated as this shape.
+ * with the project checkout. kortix_version 2, or 3 while the project flag
+ * `manifest_v3` is on: callers pass `newManifestVersion` (./manifest-version.ts),
+ * which keeps this module free of the config import. Pure (no I/O) — callers
+ * decide when a `null` `readManifest` result should be treated as this shape.
  *
  * MUST embed `kortix_version` INSIDE `raw` (not just carry it on the
  * `schemaVersion` wrapper) — `applyDefaultAgentV2`/`applyAgentBlockV2`
@@ -142,24 +144,27 @@ export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
 export function synthesizeBlankManifest(project: {
   name?: string;
   manifestPath?: string | null;
+  /** `newManifestVersion(project.metadata)` (./manifest-version.ts). Default 2. */
+  version?: 2 | 3;
 }): ParsedManifest {
   const candidatePaths = manifestCandidatePaths(project.manifestPath ?? undefined).map(
     (candidate) => candidate.path,
   );
+  const version = project.version ?? 2;
+  const v3Grants =
+    version === 3
+      ? { mode: 'primary', skills: 'all', subagents: 'all', commands: 'all', extensions: 'all' }
+      : { skills: 'all' };
   return {
-    schemaVersion: 3,
+    schemaVersion: version,
     raw: {
-      kortix_version: 3,
+      kortix_version: version,
       project: { name: project.name ?? '', description: '' },
       default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
       env: { required: [], optional: [] },
       agents: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
-          mode: 'primary',
-          skills: 'all',
-          subagents: 'all',
-          commands: 'all',
-          extensions: 'all',
+          ...v3Grants,
           connectors: 'all',
           secrets: 'all',
           kortix_permissions: 'all',

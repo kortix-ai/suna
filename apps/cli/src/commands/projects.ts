@@ -762,12 +762,12 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
 
 const UPGRADE_HELP = help`Usage: kortix projects upgrade [<id>] [options]
 
-Start the agent session that moves the project's manifest one version up:
-kortix_version 1 (\`kortix.toml\`) to 2 (\`kortix.yaml\`) — the dashboard's
-Customize → Upgrades → "Migrate manifest to v2" — or kortix_version 2 to 3
-with \`kortix migrate\`. The project's default agent rewrites the manifest,
-runs \`kortix validate\`, and opens a change request. It never merges: a
-human reviews the diff. A project on kortix_version 3 has nothing to upgrade.
+Start the agent session that moves the project's manifest to kortix.yaml v3
+(the dashboard's Customize → Upgrades). The project's default agent rewrites
+the manifest, runs \`kortix validate\`, and opens a change request. It never
+merges: a human reviews the diff. A project on kortix_version 3 has nothing
+to upgrade. The upgrade is offered only while the project flag \`manifest_v3\`
+is on; otherwise the command starts no session.
 
 Options:
   --project <id>       Act on this project (default: linked/default).
@@ -800,10 +800,21 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   if (!ctx) return 1;
 
   // Every upgrade targets kortix_version 3; one prompt covers v1 and v2. The
-  // server's manifest verdict only says when there is nothing to do.
-  const version = await ctx.client
-    .get<{ config?: { manifest_version?: { version?: number | null } } }>(`/projects/${ctx.projectId}/detail`)
-    .then((detail) => detail.config?.manifest_version?.version ?? null, () => null);
+  // server's manifest verdict only says when there is nothing to do. The
+  // upgrade is offered only while the project flag `manifest_v3` is on (off by
+  // default); an unreadable detail reads as off.
+  const detail = await ctx.client
+    .get<{
+      project?: { experimental?: Record<string, unknown> };
+      config?: { manifest_version?: { version?: number | null } };
+    }>(`/projects/${ctx.projectId}/detail`)
+    .catch(() => null);
+  const version = detail?.config?.manifest_version?.version ?? null;
+  if (detail?.project?.experimental?.manifest_v3 !== true) {
+    if (json) emitJson({ project_id: ctx.projectId, upgrade_id: null, version });
+    else process.stdout.write(`${status.ok('No manifest upgrade is offered for this project.')}\n`);
+    return 0;
+  }
   if (version === 3) {
     if (json) emitJson({ project_id: ctx.projectId, upgrade_id: null, version: 3 });
     else process.stdout.write(`${status.ok('kortix.yaml is on kortix_version 3 — nothing to upgrade.')}\n`);

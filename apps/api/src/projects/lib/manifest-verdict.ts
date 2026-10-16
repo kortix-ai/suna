@@ -83,6 +83,14 @@ function declaredVersion(parsed: Record<string, unknown>): number | null {
   return floored >= 1 ? floored : null;
 }
 
+/**
+ * The verdict for a project with the `manifest_v3` flag off (the default): the
+ * v2 → v3 migration is not offered. v1 → v2 stays offered.
+ */
+export function withoutManifestV3Offer(verdict: ProjectManifestVerdict): ProjectManifestVerdict {
+  return verdict.target_version === 3 ? { ...verdict, migration_offered: false, target_version: null } : verdict;
+}
+
 export function resolveManifestVerdict(input: {
   raw: string | null | undefined;
   format: ManifestFormat;

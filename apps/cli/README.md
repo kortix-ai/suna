@@ -65,21 +65,21 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← kortix_version 3: registries + one block per agent
-├── agents/*.md                        ← agent prompts, named by `prompt_file`
-├── skills/<name>/SKILL.md             ← skills, registered under `skills:`
+├── kortix.yaml                        ← kortix_version 2: one governance block per agent
+├── agents/*.md                        ← each agent's frontmatter + prompt
+├── harnesses/opencode/                ← OpenCode config, the pty plugin
+├── skills/<name>/SKILL.md             ← skills
 └── memory/MEMORY.md                   ← project-wide memory for agents
 ```
 
-`kortix.yaml` is `kortix_version: 3`. The project registers skills, tools,
-commands and extensions; each agent block enables them by name. A v3 session
-reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Reference:
-<https://kortix.com/docs/project/manifest>.
+`kortix.yaml` is `kortix_version: 2`. Reference:
+<https://kortix.com/docs/project/legacy-manifests>.
 
-Projects on `kortix_version` 1 or 2 keep their layout (`agents/<name>.md` with
-frontmatter, `harnesses/opencode/`, `harnesses/pi/`, or `.kortix/opencode/`)
-and still run. `kortix migrate` prints the v3 manifest for a v2 project, and
-`kortix migrate --write` writes it.
+`kortix init --manifest-version 3` writes the `kortix_version: 3` starter
+instead: the project registers skills, tools, commands and extensions, each
+agent block enables them by name, and there is no `harnesses/` folder.
+Reference: <https://kortix.com/docs/project/manifest>. `kortix migrate` prints
+the v3 manifest for a v2 project, and `kortix migrate --write` writes it.
 
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
 receive native discovery links to the canonical sources. Claude Code uses

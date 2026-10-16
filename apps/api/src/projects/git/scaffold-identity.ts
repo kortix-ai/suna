@@ -38,10 +38,14 @@ const PINNED_GIT_ENV = {
 async function computeScaffoldIdentity(): Promise<ScaffoldIdentity> {
   const work = await mkdtemp(join(tmpdir(), 'kortix-scaffold-identity-'));
   try {
+    // Dynamic: the version reads the `manifest_v3` platform default, and a static
+    // config import would load the API config into every git-transport importer.
+    const { newManifestVersion } = await import('../manifest-version');
     const files = buildStarterFiles({
       projectName: 'kortix-project',
       repoFullName: 'kortix/kortix-project',
       template: DEFAULT_STARTER_TEMPLATE_ID,
+      manifestVersion: newManifestVersion(),
     });
     for (const f of files) {
       const full = join(work, f.path);

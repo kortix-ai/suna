@@ -58,6 +58,7 @@ import {
   upsertProjectGitConnection,
 } from './lib/git';
 import { metadataMerge } from './lib/metadata-merge';
+import { newManifestVersion } from './manifest-version';
 import {
   buildCachedFastBootGitHint,
   resolveFastBootGitHintWithCache,
@@ -598,7 +599,7 @@ async function insertProvisionedProject(
       repoUrl: provisioned.upstreamUrl,
       defaultBranch: provisioned.defaultBranch,
       // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml (kortix_version 3) — record that as the canonical path so
+      // kortix.yaml (kortix_version 2, or 3 with `manifest_v3`) — record that as the canonical path so
       // a project created here is never labeled with a stale v1 filename. A
       // CLI `kortix ship` that pushes its own files instead of seeding still
       // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
@@ -770,11 +771,13 @@ async function seedProvisionedRepo(
   if (seedStarter) {
     try {
       if (!internalPushToken) throw new Error('no push credential resolved for seeding');
+      const manifestVersion = newManifestVersion(row.metadata);
       const seed = sourceItemId
         ? await buildProjectSeedFilesFromItem({
             id: sourceItemId,
             projectName: name,
             repoFullName: repoSlug,
+            manifestVersion,
             extraMarketplaceItems: marketplaceItems,
             now: now.toISOString(),
           })
@@ -782,6 +785,7 @@ async function seedProvisionedRepo(
             projectName: name,
             repoFullName: repoSlug,
             template: starterTemplate,
+            manifestVersion,
             marketplaceItems,
             now: now.toISOString(),
           });

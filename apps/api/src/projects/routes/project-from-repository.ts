@@ -14,6 +14,7 @@ import { GitHubPersonalAccountCreateUnsupportedError } from '../lib/github-creat
 import { resolveGitHubUserToken } from '../lib/github-user-token';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
+import { newManifestVersion } from '../manifest-version';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -433,6 +434,7 @@ export function registerProjectFromRepositoryRoutes(): void {
           id: sourceItemId,
           projectName,
           repoFullName: repo.full_name,
+          manifestVersion: newManifestVersion(),
           extraMarketplaceItems: [],
           now: new Date().toISOString(),
         })).files
@@ -440,6 +442,7 @@ export function registerProjectFromRepositoryRoutes(): void {
       projectName,
       repoFullName: repo.full_name,
       template: starterTemplate,
+      manifestVersion: newManifestVersion(),
     });
     // One commit for the whole starter (`commitFiles`): ~180 files, one tree,
     // five requests. A per-file Contents-API loop ran past the 25 s request
@@ -474,7 +477,7 @@ export function registerProjectFromRepositoryRoutes(): void {
       // and made project deletion delete the user's repository.
       managed: false,
       // The starter just committed above (buildStarterFiles) ships kortix.yaml
-      // (kortix_version 3) — record that path so it's never stale from birth.
+      // (kortix_version 2, or 3 with `manifest_v3`) — record that path so it's never stale from birth.
       manifestPath: 'kortix.yaml',
       ...(iconGlyph
         ? { projectMetadata: { icon_glyph: iconGlyph } }

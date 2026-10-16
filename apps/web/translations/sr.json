@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
+        },
+        "manifest_v3": {
+          "name": "kortix.yaml v3",
+          "description": "Нуди надоградњу на kortix.yaml верзије 3, а нови манифести користе верзију 3. Kortix је укључује по пројекту."
         }
       }
     },
@@ -1276,7 +1280,7 @@
         "title": "Надогради манифест на v3 (kortix.yaml)",
         "description": "Преводи kortix.toml или kortix.yaml верзије 2 у верзију 3: пројекат региструје вештине, алате, команде и проширења, а сваки агент их укључује по имену. Ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа."
       },
-      "agentEditorHint": "Овај пројекат користи манифест верзије 1. Надоградите га на <code>kortix.yaml</code> верзије 3 да бисте овде уређивали упутства, модел, дозволе алата и приступ овог агента."
+      "agentEditorHint": "Овај пројекат користи манифест верзије 1. Надоградите га на <code>kortix.yaml</code> верзије 2 да бисте овде уређивали упутства, модел, дозволе алата и приступ овог агента."
     },
     "plan": {
       "managedByAdmin": "Управља администратор налога",

@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."
+        },
+        "manifest_v3": {
+          "name": "kortix.yaml v3",
+          "description": "Oferece a atualização para kortix.yaml versão 3, e os manifestos novos usam a versão 3. A Kortix ativa por projeto."
         }
       }
     },
@@ -1276,7 +1280,7 @@
         "title": "Atualizar o manifesto para v3 (kortix.yaml)",
         "description": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
       },
-      "agentEditorHint": "Este projeto usa um manifesto da versão 1. Atualize-o para <code>kortix.yaml</code> versão 3 para editar aqui as instruções, o modelo, as permissões de ferramentas e o acesso deste agente."
+      "agentEditorHint": "Este projeto usa um manifesto da versão 1. Atualize-o para <code>kortix.yaml</code> versão 2 para editar aqui as instruções, o modelo, as permissões de ferramentas e o acesso deste agente."
     },
     "plan": {
       "managedByAdmin": "Gerenciado por um administrador da conta",

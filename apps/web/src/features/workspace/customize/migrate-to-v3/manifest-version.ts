@@ -33,9 +33,13 @@ export function manifestFilename(version: number | null): 'kortix.toml' | 'korti
   return (version ?? 1) >= 2 ? 'kortix.yaml' : 'kortix.toml';
 }
 
-/** A v1 or v2 project is offered the upgrade to v3. `null` (not read yet) is not. */
-export function manifestNeedsUpgrade(version: ManifestVersion | null): boolean {
-  return version === 1 || version === 2;
+/**
+ * A v1 or v2 project is offered the upgrade to v3, and only while its project
+ * flag `manifest_v3` is on (off by default: v3 ships, it is not offered yet).
+ * `null` (not read yet) is not.
+ */
+export function manifestNeedsUpgrade(version: ManifestVersion | null, manifestV3: boolean): boolean {
+  return manifestV3 && (version === 1 || version === 2);
 }
 
 export interface ProjectManifestVersionState {

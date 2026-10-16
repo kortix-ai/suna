@@ -129,7 +129,7 @@ describe('kortix validate on kortix_version 3', () => {
     const { getStarterFiles } = await import('@kortix/starter');
     rmSync(cwd, { recursive: true, force: true });
     mkdirSync(cwd);
-    write(Object.fromEntries(getStarterFiles({ projectName: 'Acme' }).map((file) => [file.path, file.content])));
+    write(Object.fromEntries(getStarterFiles({ projectName: 'Acme', manifestVersion: 3 }).map((file) => [file.path, file.content])));
 
     expect(validate()).toEqual({ exitCode: 0, issues: [] });
   });

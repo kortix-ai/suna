@@ -2,7 +2,10 @@
 
 `kortix.yaml` is the single source of truth for everything the Kortix
 platform reads about a project. It lives at the repo root. This page
-documents `kortix_version: 3`, the current version.
+documents `kortix_version: 3`, available as an opt-in. New projects are
+created on `kortix_version: 2` (`kortix-yaml-v2.md`). Edit a project in the
+version it declares, and never change its `kortix_version` unless the user
+asks for it.
 
 A v3 manifest does two things:
 
@@ -23,8 +26,8 @@ only the compiled manifest, never `harnesses/`, `.kortix/`, `.opencode/`,
 The authoritative structural spec is the public JSON Schema:
 `https://kortix.com/schema/kortix.v3.schema.json`, or
 `https://kortix.com/schema/kortix.schema.json` for all published versions.
-Use `kortix schema --version 3` offline. Versions 1 and 2 are legacy: see
-[Legacy versions](#legacy-versions).
+Use `kortix schema --version 3` offline. For versions 1 and 2 see
+[Older versions](#older-versions).
 
 ## Version 3 example
 
@@ -978,17 +981,19 @@ declared; a `default_agent` that is not declared, is disabled, or has
 or path that breaks the rules above. A warning never blocks. A
 `prompt_file` that does not exist fails the session compile.
 
-## Legacy versions
+## Older versions
 
 `kortix_version` 1 (`kortix.toml`, `[[agents]]` array) and 2 (governance
 `agents:` map, behavior in `agents/<name>.md` frontmatter, harness
 folders `harnesses/opencode/` and `harnesses/pi/` or `.kortix/opencode/`,
 top-level `harnesses`, `opencode.config_dir`, `pi.config_dir`, `tools:`
-values `kortix:<name>`) still read and run. They are legacy: write new
-config in v3.
+values `kortix:<name>`) read and run. New projects are created on v2: its
+reference is `kortix-yaml-v2.md`. Write config in the version the project
+declares.
 
-- v2 → v3: `kortix migrate` prints the v3 manifest; `kortix migrate --write`
-  writes it. Then `kortix validate`, and open a change request.
+- v2 → v3, only when the user asks: `kortix migrate` prints the v3
+  manifest; `kortix migrate --write` writes it. Then `kortix validate`, and
+  open a change request.
 - v1 → v2: `kortix projects upgrade` (or **Customize → Settings →
   Upgrades**) starts a session that rewrites the manifest and opens a
   change request. Then migrate to v3.

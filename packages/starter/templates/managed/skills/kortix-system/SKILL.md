@@ -35,7 +35,13 @@ contract.
 <overview>
 A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one unit of agent work = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
 
-`kortix.yaml` (`kortix_version: 3`) defines the project. It does two things:
+**Check `kortix_version` at the top of `kortix.yaml` first, and edit in
+that version.** New projects are created on `kortix_version: 2`. Version 3
+is available as an opt-in. Never change a project's `kortix_version`
+unless the user asks for it: `kortix migrate` converts a v2 project to v3
+on request. The v2 reference is `references/kortix/kortix-yaml-v2.md`.
+
+`kortix.yaml` defines the project. In `kortix_version: 3` it does two things:
 
 - **It registers what exists.** `skills` (name → folder with `SKILL.md`),
   `tools` (name → module), `commands` (name → prompt), `extensions`
@@ -65,8 +71,8 @@ conventions, because `kortix.yaml` names each file:
 A session runs one harness, **OpenCode** or **pi** (`<harnesses>` below).
 Both run the same agents, compiled from `kortix.yaml`. A `kortix_version: 3`
 session reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder.
-Those folders belong to the legacy versions 1 and 2, which still run
-(`references/kortix/kortix-yaml.md` → Legacy versions).
+Those folders belong to versions 1 and 2, which run as before
+(`references/kortix/kortix-yaml-v2.md`).
 
 Paths under `references/` below are relative to this skill's directory.
 `kortix skills get kortix-system --full` prints every one of them.
@@ -727,9 +733,9 @@ the CR-merge gate):
 
 | URL | Covers |
 | --- | --- |
-| `https://kortix.com/schema/kortix.v3.schema.json` | `kortix_version: 3`, the current version |
+| `https://kortix.com/schema/kortix.v3.schema.json` | `kortix_version: 3` (opt-in) |
 | `https://kortix.com/schema/kortix.schema.json` | All published versions; dispatches on `kortix_version` |
-| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` (legacy) |
+| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2`, the version new projects are created on |
 | `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` (legacy `[[agents]]` array + `[[channels]]`) |
 
 `kortix schema --version 3` prints the same document locally, and
@@ -745,8 +751,10 @@ agent's behavior (`description`, `mode`, `prompt` or `prompt_file`, `model`,
 `permission`, …) and enables registered things by name. An omitted grant is
 none, except `tools` (every tool) and `permission` (`allow`). Unknown keys
 are errors. The full key reference is `references/kortix/kortix-yaml.md`.
-Versions 1 and 2 are legacy. `kortix migrate` prints the v3 manifest for a
-v2 project, and `kortix migrate --write` writes it.
+Version 2 is the version new projects are created on
+(`references/kortix/kortix-yaml-v2.md`); version 1 is legacy. On request,
+`kortix migrate` prints the v3 manifest for a v2 project, and
+`kortix migrate --write` writes it.
 
 </canonical-schema>
 
@@ -805,8 +813,8 @@ edit the block in `kortix.yaml` and open a change request.
   an agent.
 - Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox runtime.
 - Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local provider list, so connected-provider policy and billing stay server-owned.
-- New projects use `kortix_version: 3`. Older `kortix.toml` (v1) and v2
-  projects stay in legacy mode until they migrate.
+- New projects use `kortix_version: 2`. A project keeps its version until
+  someone migrates it on purpose; never change it unprompted.
 
 **`kortix_permissions` — the grantable enum** (`kortix_cli` is the deprecated spelling, still accepted with a validation warning; project-scoped only; account-level admin actions
 like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent. One project
@@ -926,6 +934,14 @@ to see the full enum.
   secrets contract, validation, common gotchas, and the legacy versions 1
   and 2 with `kortix migrate`. Load this when editing or debugging the
   manifest.
+</reference>
+
+<reference path="references/kortix/kortix-yaml-v2.md">
+  The `kortix.yaml` reference for `kortix_version: 2`, the version new
+  projects are created on: the governance-only `agents:` map with each
+  agent's behavior in its `agents/<name>.md`, the harness folders
+  (`harnesses/opencode/`, `harnesses/pi/`), and the `tools:` map. Load this
+  before editing a v2 manifest.
 </reference>
 
 <reference path="references/scheduling.md">

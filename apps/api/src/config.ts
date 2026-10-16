@@ -302,6 +302,10 @@ const envSchema = z.object({
   // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
   // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // Default of the project flag `manifest_v3` for a project with no stored value, and the
+  // kortix_version a new project is created with (on: 3, off: 2). Off by default. A project's
+  // stored value wins.
+  MANIFEST_V3_DEFAULT_ENABLED: optBoolFalse,
   // How long `PUT …/log/blobs/<sha256>` waits for its body (P2.13): a body not read by then is
   // cancelled with 408 and its upload slot freed. Under the route's 95 s request deadline.
   SESSION_LOG_BLOB_READ_MS: optInt(60_000),
@@ -1280,6 +1284,7 @@ export const config = {
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+  MANIFEST_V3_DEFAULT_ENABLED: env.MANIFEST_V3_DEFAULT_ENABLED,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,

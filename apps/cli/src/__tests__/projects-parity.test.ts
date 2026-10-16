@@ -37,6 +37,8 @@ let calls: Call[] = [];
 let failWith: Record<string, { status: number; body: unknown }> = {};
 /** The manifest version GET /projects/:id/detail reports; null answers 404. */
 let manifestVersion: number | null = null;
+/** The project flag `manifest_v3` GET /projects/:id/detail reports. */
+let manifestV3Flag = true;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -169,8 +171,11 @@ function startServer(): string {
       ) {
         return Response.json({ ok: true });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/detail` && req.method === 'GET' && manifestVersion !== null) {
-        return Response.json({ config: { manifest_version: { version: manifestVersion } } });
+      if (url.pathname === `/v1/projects/${PROJECT}/detail` && req.method === 'GET') {
+        return Response.json({
+          project: project({ experimental: { manifest_v3: manifestV3Flag } }),
+          config: manifestVersion === null ? {} : { manifest_version: { version: manifestVersion } },
+        });
       }
       if (url.pathname === `/v1/projects/${PROJECT}/sessions` && req.method === 'POST') {
         return Response.json({ session_id: 'sess_upgrade' }, { status: 201 });
@@ -228,6 +233,7 @@ function callsTo(method: string, path: string): Call[] {
 
 beforeEach(() => {
   manifestVersion = null;
+  manifestV3Flag = true;
   tmp = mkdtempSync(join(tmpdir(), 'kortix-projects-parity-'));
   process.env = { ...ORIGINAL_ENV };
   calls = [];
@@ -588,6 +594,31 @@ describe('kortix projects upgrade on kortix_version 2 and 3', () => {
 
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('kortix_version 3');
+    expect(callsTo('POST', `/v1/projects/${PROJECT}/sessions`)).toEqual([]);
+  });
+});
+
+describe('kortix projects upgrade with the manifest_v3 flag off (the default)', () => {
+  test('a v2 project is offered no upgrade and starts no session', async () => {
+    manifestVersion = 2;
+    manifestV3Flag = false;
+    const config = writeConfig(startServer());
+    const r = await runCli(['projects', 'upgrade', '--project', PROJECT], config);
+
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('No manifest upgrade is offered for this project');
+    expect(r.stdout).not.toContain('kortix_version 3');
+    expect(callsTo('POST', `/v1/projects/${PROJECT}/sessions`)).toEqual([]);
+  });
+
+  test('--json reports no upgrade', async () => {
+    manifestVersion = 1;
+    manifestV3Flag = false;
+    const config = writeConfig(startServer());
+    const r = await runCli(['projects', 'upgrade', '--project', PROJECT, '--json'], config);
+
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ project_id: PROJECT, upgrade_id: null, version: 1 });
     expect(callsTo('POST', `/v1/projects/${PROJECT}/sessions`)).toEqual([]);
   });
 });

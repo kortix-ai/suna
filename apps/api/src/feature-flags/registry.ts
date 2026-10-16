@@ -454,6 +454,29 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). Not default-on in prod before the ' +
       'restore memory is capped (harness/README.md).',
   },
+  {
+    key: 'manifest_v3',
+    name: 'kortix.yaml v3',
+    description:
+      'Offer the upgrade of this project to kortix.yaml version 3, and write version 3 when Kortix creates a manifest for it. Off: no upgrade is offered and new manifests are version 2. A project already on version 3 keeps running it either way, and `kortix migrate` converts a project on request.',
+    stability: 'beta',
+    available: () => true,
+    // Off unless the deployment sets MANIFEST_V3_DEFAULT_ENABLED. It also decides
+    // the version a NEW project is created with: a project has no stored value yet.
+    platformDefault: () => config.MANIFEST_V3_DEFAULT_ENABLED,
+    // Held back from the 2026-10 release (v3 ships, it is not offered yet). Not a
+    // Settings toggle: a Kortix operator sets it per project
+    // (PUT /v1/admin/api/projects/:id/features). Delete this flag in the release
+    // that makes v3 the default for everyone.
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Off: the web upgrade surfaces (sidebar alert, Settings → Upgrades, ' +
+      'the change-request and sandbox-tab upgrade links) and `kortix projects upgrade` are hidden or refuse; ' +
+      'project creation seeds the kortix_version 2 starter (projects/manifest-version.ts); a blank ' +
+      'project synthesizes a version 2 manifest (manifest-io.ts). Every writer keeps a project on ' +
+      'the version it already has. On: the upgrade is offered and new manifests are version 3.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

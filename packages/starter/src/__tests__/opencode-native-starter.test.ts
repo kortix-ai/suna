@@ -26,6 +26,7 @@ function filesFor(template?: string) {
     projectName: 'Harness Lab',
     repoFullName: 'kortix/harness-lab',
     template: template as never,
+    manifestVersion: 3,
   });
 }
 

@@ -440,11 +440,14 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
     const repoFullName = remote.repoName ?? row.name;
     const { buildProjectSeedFiles, buildProjectSeedFilesFromItem, defaultAgentFromSeedFiles } =
       await import('./seed-files');
+    const { newManifestVersion } = await import('./manifest-version');
+    const manifestVersion = newManifestVersion(row.metadata);
     const seed = sourceItemId
       ? await buildProjectSeedFilesFromItem({
           id: sourceItemId,
           projectName: row.name,
           repoFullName,
+          manifestVersion,
           extraMarketplaceItems: [],
           now: new Date().toISOString(),
         })
@@ -452,6 +455,7 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
           projectName: row.name,
           repoFullName,
           template,
+          manifestVersion,
           marketplaceItems: [],
           now: new Date().toISOString(),
         });

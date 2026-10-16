@@ -415,13 +415,13 @@ describe('mergeAgentSecretGrant', () => {
 describe('agentGrantSnippet', () => {
   test('without a chosen agent it keeps the copyable placeholder', () => {
     expect(agentGrantSnippet('BOUNDARY_TEST', null)).toBe(
-      'kortix_version: 3\nagents:\n  my-agent:\n    secrets: [BOUNDARY_TEST]',
+      'kortix_version: 2\nagents:\n  my-agent:\n    secrets: [BOUNDARY_TEST]',
     );
   });
 
   test('with a chosen agent it shows that agent and the merged list', () => {
     expect(agentGrantSnippet('BOUNDARY_TEST', 'support', ['A_KEY'])).toBe(
-      'kortix_version: 3\nagents:\n  support:\n    secrets: [A_KEY, BOUNDARY_TEST]',
+      'kortix_version: 2\nagents:\n  support:\n    secrets: [A_KEY, BOUNDARY_TEST]',
     );
   });
 });
@@ -541,7 +541,7 @@ describe('agentGrantOutcome', () => {
 describe('agentGrantErrorMessage', () => {
   test('a v1 manifest is sent to the file, not to a retry', () => {
     expect(agentGrantErrorMessage({ code: 'manifest_v1_unsupported', message: 'nope' })).toBe(
-      'This project uses a kortix_version 1 manifest. Edit kortix.toml directly, or upgrade the project to kortix_version 3.',
+      'This project uses a kortix_version 1 manifest. Edit kortix.toml directly, or upgrade the project to kortix_version 2.',
     );
   });
 

@@ -4,6 +4,7 @@ import {
   LATEST_MANIFEST_VERSION,
   resolveManifestVerdict,
   restrictedManifestVerdict,
+  withoutManifestV3Offer,
 } from './manifest-verdict';
 
 const V2_YAML = `kortix_version: 2
@@ -157,5 +158,21 @@ describe('restrictedManifestVerdict', () => {
     expect(verdict.target_version).toBeNull();
     expect(verdict.path).toBeNull();
     expect(verdict.latest_version).toBe(LATEST_MANIFEST_VERSION);
+  });
+});
+
+describe('withoutManifestV3Offer — the project flag manifest_v3 is off', () => {
+  test('a v2 project is offered no migration', () => {
+    const verdict = withoutManifestV3Offer(resolveManifestVerdict({ raw: V2_YAML, format: 'yaml', path: 'kortix.yaml' }));
+    expect(verdict.version).toBe(2);
+    expect(verdict.migration_offered).toBe(false);
+    expect(verdict.target_version).toBeNull();
+  });
+
+  test('a v1 project keeps its v1 → v2 migration', () => {
+    const verdict = withoutManifestV3Offer(resolveManifestVerdict({ raw: V1_TOML, format: 'toml', path: 'kortix.toml' }));
+    expect(verdict.version).toBe(1);
+    expect(verdict.migration_offered).toBe(true);
+    expect(verdict.target_version).toBe(2);
   });
 });

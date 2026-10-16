@@ -17,6 +17,7 @@ import {
 } from '../lib/access';
 import { ProjectSchema, projectsApp } from '../lib/app';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
+import { withoutManifestV3Offer } from '../lib/manifest-verdict';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
@@ -142,9 +143,13 @@ export function registerProjectDetailRoutes(): void {
       // The platform coordinator appears in the agent list (and becomes the
       // default) only for projects that opted into the `meta_agent` experimental
       // feature. Flag off: the config is exactly the repo-declared surface.
-      const config = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
+      const withMeta = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
         ? addPlatformMetaAgent(filteredConfig)
         : filteredConfig;
+      // The v2 → v3 migration is offered only while `manifest_v3` is on.
+      const config = resolveFeatureFlag(loaded.row.metadata, 'manifest_v3')
+        ? withMeta
+        : { ...withMeta, manifest_version: withoutManifestV3Offer(withMeta.manifest_version) };
       // …and hide the raw FILES of those resources from the file list (visibility
       // isolation). Reuses the config already loaded — no extra git round-trip.
       const denier = await denierFromConfig(rawConfig, denierCtx);

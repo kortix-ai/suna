@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
+        },
+        "manifest_v3": {
+          "name": "kortix.yaml v3",
+          "description": "提供升级到 kortix.yaml 版本 3 的选项，新清单使用版本 3。由 Kortix 按项目启用。"
         }
       }
     },
@@ -1276,7 +1280,7 @@
         "title": "将清单升级到 v3 (kortix.yaml)",
         "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
       },
-      "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
+      "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 2，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
     "plan": {
       "managedByAdmin": "由帐户管理员管理",

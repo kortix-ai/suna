@@ -1,9 +1,9 @@
 ---
-title: "Legacy manifests"
-description: "kortix_version 1 and 2: what still runs, how they differ from v3, and how to migrate a project to kortix_version 3."
+title: "Manifest versions 1 and 2"
+description: "kortix_version 2, the version new projects are created on, and version 1: their layout, how they differ from v3, and how to migrate a project to kortix_version 3."
 ---
 
-`kortix_version` 3 is the current manifest. Versions 1 and 2 still read and run, and new features land in v3 only. This page is for people who maintain a v1 or v2 project or migrate one. For v3, see the [`kortix.yaml` reference](/docs/project/manifest).
+New projects are created on `kortix_version` 2. Version 3 is available as an opt-in, and version 1 still reads and runs. A project keeps its version until you migrate it. This page is for people who maintain a v1 or v2 project or migrate one. For v3, see the [`kortix.yaml` reference](/docs/project/manifest).
 
 | Version | File | Agent behavior | Harness settings |
 | --- | --- | --- | --- |
@@ -148,13 +148,7 @@ An imported v2 file declares `triggers`, `connectors`, `agents`, `apps`, `tools`
 
 ## kortix_version 1
 
-Kortix reads and runs a v1 `kortix.toml`. A v1 project with no agents declared runs ungoverned: its sessions act as the person who started them. To move it to v2, open **Customize → Settings → Upgrades** and run **Migrate manifest to v2 (kortix.yaml)**, or run:
-
-```bash
-kortix projects upgrade [<id>]
-```
-
-Both start a session with the project's default agent. The agent rewrites the manifest, runs `kortix validate` and opens a change request. The session never merges it. Then run `kortix migrate` to move the v2 result to v3.
+Kortix reads and runs a v1 `kortix.toml`. A v1 project with no agents declared runs ungoverned: its sessions act as the person who started them.
 
 To migrate v1 to v2 by hand:
 

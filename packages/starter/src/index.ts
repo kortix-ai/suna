@@ -83,6 +83,10 @@ export interface StarterVars {
   /** Starter kit. Defaults to `general-knowledge-worker`.
    *  `minimal` is an internal base-only build. */
   template?: StarterTemplateId;
+  /** `kortix_version` of the scaffold. Defaults to 2; 3 only where the
+   *  project flag `manifest_v3` is on (the API decides, see
+   *  apps/api/src/projects/manifest-version.ts). */
+  manifestVersion?: 2 | 3;
 }
 
 /** Absolute path to the bundled base template directory. */
@@ -95,6 +99,8 @@ const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
 );
 const MARKETPLACE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'marketplace');
 const MANAGED_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'managed');
+/** The kortix_version 2 files that differ from `base` (kortix.yaml, agent `.md`s, the OpenCode config dir). */
+const BASE_V2_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'base-v2');
 
 /** Roots that may legitimately hold nothing — see `rawFilesForRoot`. */
 const OPTIONAL_TEMPLATE_ROOTS = new Set(['marketplace-projects']);
@@ -159,15 +165,17 @@ export function listGeneralKnowledgeWorkerSkills(): string[] {
  * ordering — both the API and CLI rely on that.
  */
 export function getStarterFiles(vars: StarterVars): StarterFile[] {
-  const resolvedVars: Required<StarterVars> = {
+  const resolvedVars: Required<Omit<StarterVars, 'manifestVersion'>> = {
     projectName: vars.projectName,
     repoFullName: vars.repoFullName ?? 'your-org/your-repo',
     template: normalizeStarterTemplateId(vars.template),
   };
+  const v2 = vars.manifestVersion !== 3;
 
   // Later roots win (`byPath.set`), so the general-knowledge-worker layer may
   // override a base file of the same path.
   const roots: { name: string; dir: string }[] = [{ name: 'base', dir: BASE_TEMPLATE_DIR }];
+  if (v2) roots.push({ name: 'base-v2', dir: BASE_V2_TEMPLATE_DIR });
   if (resolvedVars.template !== 'minimal') {
     roots.push({
       name: 'general-knowledge-worker',
@@ -178,7 +186,17 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
   const byPath = new Map<string, StarterFile>();
   for (const root of roots) {
     for (const raw of rawFilesForRoot(root.name, root.dir)) {
-      byPath.set(raw.path, { path: raw.path, content: interpolate(raw.content, resolvedVars) });
+      const path = v2 && root.name === 'base' ? v2PathOf(raw.path) : raw.path;
+      if (path) byPath.set(path, { path, content: interpolate(raw.content, resolvedVars) });
+    }
+  }
+  // kortix_version 2 keeps `kortix-cli` in the repo as the visible front door
+  // to the managed family; the body is the managed one.
+  if (v2) {
+    for (const raw of rawFilesForRoot('managed', MANAGED_TEMPLATE_DIR)) {
+      if (raw.path.startsWith(`${SKILLS_DIR}/kortix-cli/`)) {
+        byPath.set(raw.path, { path: raw.path, content: interpolate(raw.content, resolvedVars) });
+      }
     }
   }
 
@@ -187,6 +205,19 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
 
   const files = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
   return files;
+}
+
+const PTY_EXTENSION_DIR = 'extensions/pty/';
+
+/**
+ * Where a `base` file lives in a kortix_version 2 scaffold: the pty plugin
+ * sits in the OpenCode config dir (`harnesses/opencode/plugins/`), whose
+ * `package.json` and `bun.lock` come from `base-v2`. Null drops the file.
+ */
+function v2PathOf(path: string): string | null {
+  if (!path.startsWith(PTY_EXTENSION_DIR)) return path;
+  const rest = path.slice(PTY_EXTENSION_DIR.length);
+  return rest === 'package.json' || rest === 'bun.lock' ? null : `harnesses/opencode/plugins/${rest}`;
 }
 
 const SKILL_FILE_RE = new RegExp(`^${SKILLS_DIR}/([^/]+)/SKILL\\.md$`);
@@ -320,7 +351,7 @@ export function interpolateVars(input: string, vars: Record<string, string>): st
   });
 }
 
-function interpolate(input: string, vars: Required<StarterVars>): string {
+function interpolate(input: string, vars: Required<Omit<StarterVars, 'manifestVersion'>>): string {
   return interpolateVars(input, vars as unknown as Record<string, string>);
 }
 

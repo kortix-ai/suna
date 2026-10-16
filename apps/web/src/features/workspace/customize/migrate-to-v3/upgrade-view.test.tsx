@@ -18,7 +18,7 @@ describe('UpgradesViewContent — per-state rendering', () => {
       },
     };
     const html = renderToStaticMarkup(
-      <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite copy={copy} />,
+      <UpgradesViewContent version={1} manifestV3 onRun={() => {}} pending={false} canWrite copy={copy} />,
     );
     expect(html).toContain('Доступне надоградње');
     expect(html).toContain('Надогради манифест');
@@ -27,7 +27,7 @@ describe('UpgradesViewContent — per-state rendering', () => {
   });
   test('v1 lists the manifest migration with a Run action, plus the one-off runner', () => {
     const html = renderToStaticMarkup(
-      <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite />,
+      <UpgradesViewContent version={1} manifestV3 onRun={() => {}} pending={false} canWrite />,
     );
     expect(html).toContain('Upgrades');
     expect(html).toContain('Upgrade manifest to v3');
@@ -38,10 +38,19 @@ describe('UpgradesViewContent — per-state rendering', () => {
 
   test('v2 lists the v3 upgrade too', () => {
     const html = renderToStaticMarkup(
-      <UpgradesViewContent version={2} onRun={() => {}} pending={false} canWrite />,
+      <UpgradesViewContent version={2} manifestV3 onRun={() => {}} pending={false} canWrite />,
     );
     expect(html).toContain('Upgrade manifest to v3');
     expect(html).not.toContain('up to date');
+  });
+
+  test('with manifest_v3 off (the default), a v2 project is up to date and offered no v3 upgrade', () => {
+    const html = renderToStaticMarkup(
+      <UpgradesViewContent version={2} onRun={() => {}} pending={false} canWrite />,
+    );
+    expect(html).toContain('up to date');
+    expect(html).not.toContain('Upgrade manifest to v3');
+    expect(html).toContain('One-off upgrade');
   });
 
   test('v3 shows the up-to-date row but keeps the one-off runner available', () => {
@@ -63,14 +72,14 @@ describe('UpgradesViewContent — per-state rendering', () => {
 
   test('run buttons disable while a session is being created', () => {
     const html = renderToStaticMarkup(
-      <UpgradesViewContent version={1} onRun={() => {}} pending canWrite />,
+      <UpgradesViewContent version={1} manifestV3 onRun={() => {}} pending canWrite />,
     );
     expect(html).toContain('disabled');
   });
 
   test('read-only keeps the upgrade list readable but drops every control', () => {
     const html = renderToStaticMarkup(
-      <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite={false} />,
+      <UpgradesViewContent version={1} manifestV3 onRun={() => {}} pending={false} canWrite={false} />,
     );
     // What is pending is a read, so the row and its explanation stay…
     expect(html).toContain('Upgrades');
@@ -92,7 +101,7 @@ describe('UpgradesViewContent — per-state rendering', () => {
  */
 describe('UpgradesViewContent — pane chrome', () => {
   const html = renderToStaticMarkup(
-    <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite />,
+    <UpgradesViewContent version={1} manifestV3 onRun={() => {}} pending={false} canWrite />,
   );
 
   /**

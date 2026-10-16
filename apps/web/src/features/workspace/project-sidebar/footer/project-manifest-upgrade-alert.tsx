@@ -15,12 +15,14 @@
  * thread where it auto-runs — moving the manifest to kortix.yaml version 3 and
  * opening a change request for review.
  *
- * Only renders while the project is on v1 or v2 AND the viewer can actually
- * act on it (`project.write` — the people who can push and open the CR); it
- * disappears for good the moment the manifest lands on v3.
+ * Only renders while the project flag `manifest_v3` is on (off by default),
+ * the project is on v1 or v2, AND the viewer can actually act on it
+ * (`project.write` — the people who can push and open the CR); it disappears
+ * for good the moment the manifest lands on v3.
  */
 
 import { useTranslations } from '@/i18n/use-translations';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -91,11 +93,12 @@ export function ProjectManifestUpgradeAlertView({
 export function ProjectManifestUpgradeAlert({ projectId }: { projectId: string }) {
   const { version } = useProjectManifestVersion(projectId);
   const canWrite = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
+  const manifestV3 = useFeatureFlag(projectId, 'manifest_v3').enabled;
   const migrate = useMigrateToV3(projectId);
 
   return (
     <ProjectManifestUpgradeAlertView
-      visible={manifestNeedsUpgrade(version) && canWrite}
+      visible={manifestNeedsUpgrade(version, manifestV3) && canWrite}
       pending={migrate.pending}
       onMigrate={migrate.start}
     />

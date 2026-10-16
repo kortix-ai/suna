@@ -21,8 +21,9 @@ In a `kortix_version: 3` project, `kortix.yaml` (with the files it
 imports) is the only harness config: no `harnesses/`, `.kortix/`,
 `.opencode/` or `.pi/` folder is read. A new skill, tool, command or
 extension needs a registry entry and a grant on each agent that uses it.
-Legacy v1/v2 projects keep agent `.md` files and harness folders; move them
-with `kortix migrate` (`--write` applies it).
+A v1 or v2 project keeps its agent `.md` files and harness folders: refine
+them in place (`kortix-system` → `references/kortix/kortix-yaml-v2.md`).
+Never change a project's `kortix_version` in a harness CR.
 
 A session runs one harness, OpenCode or pi. `echo "${KORTIX_HARNESS:-opencode}"`
 prints the one this session runs. Prompts, sub-agents, skills, tools and

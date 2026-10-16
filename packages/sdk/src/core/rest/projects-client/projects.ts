@@ -80,6 +80,7 @@ export type FeatureFlagKey =
   | 'ephemeral_sandboxes'
   | 'session_log'
   | 'session_log_restore'
+  | 'manifest_v3'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -124,6 +125,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'drives',
   'session_log',
   'session_log_restore',
+  'manifest_v3',
 ] as const;
 
 /**
