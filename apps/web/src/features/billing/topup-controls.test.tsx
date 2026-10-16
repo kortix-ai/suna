@@ -39,6 +39,16 @@ describe('TopupControls', () => {
     expect(markup).not.toContain('ask-an-owner');
   });
 
+  test('auto top-up on: the purchase amount reads in $, the threshold in credits', () => {
+    const state = {
+      ...account(true),
+      auto_topup: { enabled: true, amount: 20, threshold: 5 },
+    } as unknown as AccountState;
+    expect(render(state)).toContain(
+      'Auto top-up: adds $20 when the balance drops below 500 credits',
+    );
+  });
+
   test('a member gets the fallback and no purchase control', () => {
     const markup = render(account(false));
     expect(markup).toBe('<p>ask-an-owner</p>');

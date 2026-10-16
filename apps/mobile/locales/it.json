@@ -1169,8 +1169,8 @@
     "contactSales": "Contatta le vendite",
     "upgradeTo": "Passa a {{plan}}",
     "switchTo": "Torna a {{plan}}",
-    "trialLabel_one": "Prova {{plan}} · {{count}} giorno rimasto",
-    "trialLabel_other": "Prova {{plan}} · {{count}} giorni rimasti"
+    "enterpriseDemoLabel": "{{plan}} · demo Enterprise",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",

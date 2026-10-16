@@ -124,24 +124,26 @@ test.describe
       if (user?.id) await deleteAuthUser(user.id, authOptions);
     });
 
-    test('the account hub plan pane offers one accessible amount picker for the credits plan', async ({
+    test('the account hub plan pane offers one tier dropdown for the credits plan', async ({
       page,
     }) => {
       await installBrowserSessionDirect(
         page, session, `/new?accountId=${accountId}&accountTab=billing`, authOptions,
       );
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
-      const presets = page.getByRole('radiogroup', { name: 'Monthly plan amount' });
-      await expect(presets).toHaveCount(1);
-      await presets.getByRole('radio', { name: /Scale/ }).click();
-      await expect(page.getByText('50,000 credits / month')).toBeVisible();
+      // One tier dropdown (`CreditTierSelect`) on a fixed ladder; it opens on the $200 tier.
+      const tier = page.getByRole('combobox', { name: 'Monthly credits tier' });
+      await expect(tier).toHaveCount(1);
+      await expect(tier).toContainText('20,000 credits / month');
+      await expect(page.getByRole('button', { name: 'Subscribe for $200 / month' })).toBeVisible();
+      await tier.click();
+      await page.getByRole('option', { name: /^50,000 credits/ }).click();
+      await expect(tier).toContainText('50,000 credits / month');
       await expect(page.getByRole('button', { name: 'Subscribe for $500 / month' })).toBeVisible();
-      await page.getByLabel('Monthly amount in dollars').fill('19');
-      await expect(page.getByText('Choose a whole-dollar amount from $20 to $10,000.')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Update plan' })).toBeDisabled();
-      await page.getByLabel('Monthly amount in dollars').fill('250');
-      await expect(page.getByText('25,000 credits / month')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Subscribe for $250 / month' })).toBeVisible();
+      await tier.click();
+      await page.getByRole('option', { name: /^10,000 credits/ }).click();
+      await expect(tier).toContainText('10,000 credits / month');
+      await expect(page.getByRole('button', { name: 'Subscribe for $100 / month' })).toBeVisible();
     });
 
     test('an owner starts checkout, reads the active plan, buys credits, and opens billing management', async ({
@@ -164,7 +166,9 @@ test.describe
 
       await test.step('The owner starts credits-plan checkout from the Billing page', async () => {
         const checkout = await captureJsonPost<CheckoutResult>(page, '**/v1/billing/plan');
-        await page.getByRole('radio', { name: /Pro/ }).click();
+        const tier = page.getByRole('combobox', { name: 'Monthly credits tier' });
+        await tier.click();
+        await page.getByRole('option', { name: /^10,000 credits/ }).click();
         await page.getByRole('button', { name: 'Subscribe for $100 / month' }).click();
         await expect.poll(() => checkout.status, { timeout: 45_000 }).toBe(200);
         expect(checkout.requestBody).toMatchObject({ account_id: accountId, monthly_usd: 100 });
@@ -180,7 +184,7 @@ test.describe
       await test.step('A real Stripe test subscription activates the account', async () => {
         const env = loadEnv();
         const owner = new Client(apiBase).withBearer(session.access_token, 'BROWSER_OWNER');
-        await subscribe(env, owner, accountId, 20);
+        await subscribe(env, owner, accountId, 100);
       });
 
       await test.step('The Billing page reads and displays the active subscription', async () => {
@@ -195,7 +199,8 @@ test.describe
         };
         expect(state.subscription?.subscription_id).toBeTruthy();
         expect(state.subscription?.status).toBe('active');
-        await expect(page.getByText('Active', { exact: true })).toBeVisible();
+        // An active plan with a real period end reads "Renews <date>" (#10007), not "Active".
+        await expect(page.getByText(/^Renews /).first()).toBeVisible();
       });
 
       await test.step('The owner starts a one-time credit purchase', async () => {
@@ -205,19 +210,19 @@ test.describe
         // role wins, so `getByRole('button', …)` can no longer see it. The
         // cell's whole accessible name is now just the amount (`:175`).
         const topup = page.getByRole('radiogroup', { name: 'Top-up amount' });
-        await topup.getByRole('radio', { name: '$10', exact: true }).click();
+        // Presets are $25, $100, $250 and $1,000 since the credits-only plan (#9814).
+        await topup.getByRole('radio', { name: '$25', exact: true }).click();
         const purchase = await captureJsonPost<CheckoutResult>(
           page,
           '**/v1/billing/purchase-credits',
         );
-        // The CTA is `actionLabel` (`credit-topup-section.tsx:82-84`): "Add $10"
-        // once an amount is chosen, "Add credits" before that. "Buy $10 in
-        // credits" is gone.
-        await page.getByRole('button', { name: 'Add $10', exact: true }).click();
+        // The CTA is `actionLabel` in `credit-topup-section.tsx`: "Add $25" once
+        // an amount is chosen, "Add credits" before that.
+        await page.getByRole('button', { name: 'Add $25', exact: true }).click();
         await expect.poll(() => purchase.status, { timeout: 45_000 }).toBe(200);
         expect(purchase.requestBody).toMatchObject({
           account_id: accountId,
-          amount: 10,
+          amount: 25,
         });
         expectStripeUrl(
           purchase.body?.checkout_url,

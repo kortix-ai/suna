@@ -578,7 +578,7 @@ describe('pi config releases: convergence', () => {
   test('a change to the Kortix tool list restarts the runtime; the same list reconfigures', async () => {
     const withKortix = (prompt: string, kortixTools?: string[]) =>
       JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })
-    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe']
+    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
     write(repo, 'README.md', 'all five\n')
     const one = buildRelease(repo, commitAll(repo, 'all five'), DIR, { projectId: 'proj-1', governance: withKortix('one', all) })
     serveRelease(api, one)

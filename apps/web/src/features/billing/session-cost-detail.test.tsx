@@ -96,7 +96,13 @@ describe('SessionCostDetailContent', () => {
     );
 
     expect(html).toContain('Session cost details');
-    expect(html).toContain('$1.75');
+    // Spend reads in credits (1 credit = $0.01): total $1.75 → 175, LLM $1.25
+    // → 125, compute $0.50 → 50. The cost columns carry the unit in the header.
+    expect(html).toContain('>175<');
+    expect(html).toContain('>125<');
+    expect(html).toContain('>50<');
+    expect(html).toContain('Cost (credits)');
+    expect(html).not.toContain('$');
     expect(html).toContain('claude-sonnet');
     expect(html).toContain('request-1');
     expect(html).toContain('2m');

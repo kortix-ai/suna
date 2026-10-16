@@ -267,6 +267,26 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
     return { id, token };
   };
 
+  /**
+   * Holds every upload in Storage until the returned release is called. A slot is held from the gate to the end
+   * of the upload, so a held upload keeps its slot for as long as the test needs it. A fixed Storage delay did not:
+   * a request whose auth took longer than the delay reached the gate after an earlier one had already freed its slot.
+   */
+  const holdUploads = () => {
+    let release!: () => void;
+    bucket.heldUploads.until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      bucket.heldUploads.until = undefined;
+      release();
+    };
+  };
+  /** Waits until `count` uploads have reached Storage, each holding its slot. */
+  const uploadsReach = async (count: number) => {
+    while (bucket.uploads.length < count) await Bun.sleep(5);
+  };
+
   beforeAll(async () => {
     ({ id: box, token: boxToken } = await newBox());
   });
@@ -334,18 +354,30 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
   });
 
   test('a fifth upload while 4 are in flight on the replica, or a second of one session → 429 with Retry-After; the 4 store', async () => {
-    bucket.slowUploads.ms = 500;
+    const boxes = [{ id: box, token: boxToken }, ...(await Promise.all(Array.from({ length: 4 }, newBox)))];
+    let release = holdUploads();
     try {
-      const boxes = [{ id: box, token: boxToken }, ...(await Promise.all(Array.from({ length: 4 }, newBox)))];
-      const answers = await Promise.all(boxes.map((b, i) => put(Buffer.from(`synthetic concurrent upload ${i}`), undefined, 'application/octet-stream', b.token, b.id)));
-      expect(answers.map((r) => r.status).sort()).toEqual([200, 200, 200, 200, 429]);
-      expect(answers.find((r) => r.status === 429)!.headers.get('retry-after')).toBe('5');
-      const [first, second] = await Promise.all([put(Buffer.from('synthetic one of a session')), put(Buffer.from('synthetic two of a session'))].map(async (p) => (await p).status));
-      expect([first, second].sort()).toEqual([200, 429]);
+      // 4 sessions hold the 4 slots in Storage; a fifth session is answered 429 at once.
+      const start = bucket.uploads.length;
+      const four = boxes.slice(0, 4).map((b, i) => put(Buffer.from(`synthetic concurrent upload ${i}`), undefined, 'application/octet-stream', b.token, b.id));
+      await uploadsReach(start + 4);
+      const fifth = await put(Buffer.from('synthetic concurrent upload 4'), undefined, 'application/octet-stream', boxes[4]!.token, boxes[4]!.id);
+      expect(fifth.status).toBe(429);
+      expect(fifth.headers.get('retry-after')).toBe('5');
+      release();
+      expect((await Promise.all(four)).map((r) => r.status)).toEqual([200, 200, 200, 200]);
+
+      // One slot in use: a second upload of the same session is still 429.
+      release = holdUploads();
+      const one = put(Buffer.from('synthetic one of a session'));
+      await uploadsReach(start + 5);
+      expect((await put(Buffer.from('synthetic two of a session'))).status).toBe(429);
+      release();
+      expect((await one).status).toBe(200);
       // The slots are free again.
       expect((await put(Buffer.from('synthetic after the burst'), undefined, 'application/octet-stream')).status).toBe(200);
     } finally {
-      bucket.slowUploads.ms = 0;
+      release();
     }
   });
 
@@ -369,13 +401,20 @@ describe('attachment bytes the journal uploads (P2.13)', () => {
       expect(Date.now() - started).toBeLessThan(5_000);
       // Released once: the session uploads again, and 4 sessions still fill exactly the 4 slots.
       expect((await put(Buffer.from('synthetic same session after the stall'))).status).toBe(200);
-      bucket.slowUploads.ms = 300;
       const boxes = [{ id: box, token: boxToken }, other, ...(await Promise.all(Array.from({ length: 3 }, newBox)))];
-      const statuses = await Promise.all(boxes.map(async (b, i) => (await put(Buffer.from(`synthetic slot check ${i}`), undefined, 'image/png', b.token, b.id)).status));
-      expect(statuses.sort()).toEqual([200, 200, 200, 200, 429]);
+      const release = holdUploads();
+      try {
+        const start = bucket.uploads.length;
+        const four = boxes.slice(0, 4).map((b, i) => put(Buffer.from(`synthetic slot check ${i}`), undefined, 'image/png', b.token, b.id));
+        await uploadsReach(start + 4);
+        expect((await put(Buffer.from('synthetic slot check 4'), undefined, 'image/png', boxes[4]!.token, boxes[4]!.id)).status).toBe(429);
+        release();
+        expect((await Promise.all(four)).map((r) => r.status)).toEqual([200, 200, 200, 200]);
+      } finally {
+        release();
+      }
     } finally {
       config.SESSION_LOG_BLOB_READ_MS = readMs;
-      bucket.slowUploads.ms = 0;
     }
   });
 

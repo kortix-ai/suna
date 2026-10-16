@@ -62,6 +62,10 @@ describe('denial', () => {
     expect(denial(['apps', 'deploy'])?.use).toContain('run_command in a session sandbox');
   });
 
+  test('migrate points at a session sandbox, where the project checkout lives', () => {
+    expect(denial(['migrate', '--write'])?.use).toContain('`kortix migrate` there');
+  });
+
   test('apps list and create run; token points at a session sandbox', () => {
     expect(denial(['apps', 'list'])).toBeNull();
     expect(denial(['apps', 'create', 'main'])).toBeNull();
@@ -185,13 +189,14 @@ describe('runCli', () => {
   });
 
   test('at most MAX_CONCURRENT children run at once; the next call is told to retry', async () => {
-    const slow = fakeCli('sleep 1');
+    const slow = fakeCli('sleep 0.5');
     const first = Array.from({ length: MAX_CONCURRENT }, () => runCli({ ...base, args: ['whoami'], cli: slow }));
     const extra = await runCli({ ...base, args: ['whoami'], cli: slow });
     expect(extra).toMatchObject({ ok: false });
     expect((extra as { error: string }).error).toContain('Busy');
     for (const r of await Promise.all(first)) expect(r.ok).toBe(true);
-    expect((await runCli({ ...base, args: ['whoami'], cli: slow })).ok).toBe(true);
+    // The finished children gave their slots back: the next call runs.
+    expect((await runCli({ ...base, args: ['whoami'], cli: fakeCli('echo ok') })).ok).toBe(true);
   });
 
   test('a binary that cannot run falls through to the next candidate', async () => {

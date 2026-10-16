@@ -131,7 +131,8 @@ export type SessionSyncReason =
    *  a final answer whose closing frames the stream never delivered. */
   | 'turn-end'
   /** The tab became visible again. A backgrounded tab is throttled, not
-   *  notified, so return is a moment to re-read rather than to assume. */
+   *  notified, so return is a moment to re-read rather than to assume —
+   *  unless the session stream holds and the transcript is fresh. */
   | 'visible'
   /** The transcript was evicted while detached and the live stream refilled it
    *  from the middle — see `transcriptIsFragment`. */
@@ -405,6 +406,15 @@ export class SessionSyncController {
 
   reconcile(reason: SessionSyncReason = 'manual'): Promise<void> {
     if (this.destroyed) return Promise.resolve();
+    // Returning to the tab is the one read the session stream makes
+    // redundant: while it holds, its box-side ring replays a reconnect's
+    // missed frames and a runtime resync re-reads the tail. Re-reading 50
+    // messages (up to ~400 kB) on every return also replaced every recent
+    // message object, so recent turns redrew. A transcript that never loaded
+    // is still read.
+    if (reason === 'visible' && this.streamReliable && this.snapshot.freshness === 'fresh') {
+      return Promise.resolve();
+    }
     if (this.tailRequest) return this.tailRequest;
     // `loading` covers the first read AND a not-ready retry, so a waking box
     // does not flip to `stale` between attempts; a session that already has a

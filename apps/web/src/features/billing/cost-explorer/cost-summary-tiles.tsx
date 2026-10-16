@@ -1,15 +1,17 @@
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { CostSummary } from '@kortix/sdk';
 
 import { Skeleton } from '@/components/ui/skeleton';
 
 import { cn } from '@/lib/utils';
-import { formatSessionCostUsd } from '../session-cost-format';
+import { formatSessionCostCredits } from '../session-cost-format';
 import { CostSparkline } from './cost-sparkline';
 
 export interface CostSummaryTile {
   label: string;
   value: string;
+  /** Muted unit beside the value (`credits`). Absent for a count or a duration. */
+  unit?: string;
   /**
    * One value per day across the selected window, oldest first, for this
    * tile's own metric. Optional because a caller-supplied tile may be a figure
@@ -125,6 +127,8 @@ function TileFillers({ count }: { count: number }) {
 
 export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummaryTilesProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCredits = useTranslations('settings.credits');
+  const locale = useLocale();
   if (isLoading || !summary) {
     const tileCount = 3 + extraTiles.length;
     return (
@@ -141,24 +145,28 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
   }
 
   const delta = formatPeriodDelta(summary.totals.total_cost, summary.previous.total_cost);
+  const unit = (usd: number) => tCredits('unit', { count: usd * 100 });
 
   // Each tile draws its OWN metric's daily line, not a shared one. A Compute
   // tile showing the total's shape would be a chart that lies.
   const tiles: (CostSummaryTile & { delta?: PeriodDelta | null })[] = [
     {
       label: tI18nComplete.raw('textc9b3c38247f7'),
-      value: formatSessionCostUsd(summary.totals.total_cost),
+      value: formatSessionCostCredits(summary.totals.total_cost, locale),
+      unit: unit(summary.totals.total_cost),
       delta,
       series: summary.series.map((point) => point.total_cost),
     },
     {
       label: 'LLM',
-      value: formatSessionCostUsd(summary.totals.llm_cost),
+      value: formatSessionCostCredits(summary.totals.llm_cost, locale),
+      unit: unit(summary.totals.llm_cost),
       series: summary.series.map((point) => point.llm_cost),
     },
     {
       label: tI18nComplete.raw('textcedc516df056'),
-      value: formatSessionCostUsd(summary.totals.compute_cost),
+      value: formatSessionCostCredits(summary.totals.compute_cost, locale),
+      unit: unit(summary.totals.compute_cost),
       series: summary.series.map((point) => point.compute_cost),
     },
     ...extraTiles,
@@ -169,7 +177,12 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
       {tiles.map((tile) => (
         <div key={tile.label} className={cn('relative', TILE_CLASS)}>
           <p className="text-muted-foreground text-xs">{tile.label}</p>
-          <p className="mt-0.5 font-mono text-sm font-medium tabular-nums">{tile.value}</p>
+          <p className="mt-0.5 text-sm font-medium tabular-nums">
+            {tile.value}
+            {tile.unit ? (
+              <span className="text-muted-foreground ml-1 text-xs font-normal">{tile.unit}</span>
+            ) : null}
+          </p>
           {/* Delta and sparkline share one row rather than stacking, so the
               tile is three lines instead of four and the corner space carries
               the line. `items-end` is what anchors the sparkline to the

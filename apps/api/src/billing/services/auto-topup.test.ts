@@ -329,12 +329,12 @@ describe('auto-topup on an asynchronous payment method', () => {
 describe('validateAutoTopupConfig — guards against spam-vector configurations', () => {
   test.each([
     ['a disabled config is always valid', { enabled: false, threshold: 0, amount: 0 }, null],
-    ['a threshold below the minimum', { enabled: true, threshold: 0.5, amount: 20 }, 'Threshold must be at least'],
+    ['a threshold below the minimum', { enabled: true, threshold: 0.5, amount: 20 }, 'Threshold must be at least 100 credits'],
     ['an amount below the minimum', { enabled: true, threshold: 5, amount: 0.5 }, 'Reload amount must be at least $1'],
     // Without the buffer, a $5 topup at a $5 threshold means every subsequent
     // debit triggers another charge — the email-spam scenario.
     ['an amount equal to the threshold', { enabled: true, threshold: 5, amount: 5 }, 'above the threshold'],
-    ['an amount below the threshold', { enabled: true, threshold: 10, amount: 9 }, 'above the threshold'],
+    ['an amount below the threshold', { enabled: true, threshold: 10, amount: 9 }, 'above the threshold (got amount=$9, threshold=1,000 credits = $10)'],
     ['an amount one buffer above the threshold', { enabled: true, threshold: 5, amount: 6 }, null],
     [
       'the product defaults the webhooks write',

@@ -48,10 +48,12 @@ import {
   type AccountMembershipsCopy,
 } from './tabs/account-memberships';
 import { AppearanceTab } from './tabs/appearance-tab';
+import { ComputerTab } from './tabs/computer-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { CreditsTab } from './tabs/credits-tab';
 import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
+import { McpTab } from './tabs/mcp-tab';
 import { PlanTab } from './tabs/plan-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
@@ -98,6 +100,9 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // Tokens pane resolves it (`useSettingsAccountId`), so it renders with or
   // without a project too.
   'plan',
+  // The MCP URL is one per person and reaches every project they can open.
+  // `computer` is NOT here: pairing names the project it starts from.
+  'mcp',
   // `workspace`, `sandbox`, `feature-flags` and `upgrades` are deliberately ABSENT. They
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
@@ -140,8 +145,7 @@ export interface SettingsTabAllowedParams {
  * `allowed: false, isLoading: true`, and `SettingsPanel` bounces an open
  * dialog to `DEFAULT_SETTINGS_TAB` the moment its active tab is not in the
  * rail — so a deep link to `/settings/sandbox` read as `allowed === true`
- * landed on Profile every time, before the answer could arrive
- * (`12-sandbox-templates.spec.ts`, `19-feature-flags-ui.spec.ts` in CI).
+ * landed on Profile every time, before the answer could arrive.
  * Pinned by `settings-panel.test.tsx`.
  */
 export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | undefined): boolean {
@@ -458,7 +462,10 @@ export function SettingsPanelShell({
   // dialog's own title already says Settings. It comes back the moment a
   // second group does — or the Organizations block, which is a second list
   // under the same rail — which is the only case where the label does work.
-  const showGroupLabels = groups.length > 1 || organizations.length > 0;
+  // The footer group (Connect) is a block at the foot of the rail, not a
+  // second list, so it does not count.
+  const showGroupLabels =
+    groups.filter((group) => !group.footer).length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
   // Mobile only: the list screen, or the pane screen. A caller that opened
   // settings on a named tab lands on that pane.
@@ -484,7 +491,7 @@ export function SettingsPanelShell({
        and fires that pane's queries — a cost only keyboard users pay, and one
        neither tsc nor the suite can see. WAI-ARIA's own guidance is manual
        activation whenever selecting a tab has a side effect. Arrow moves
-       focus; Enter/Space selects. Pinned by `settings-panel-a11y.test.ts`. */
+       focus; Enter/Space selects. */
     <SettingsRailCopyProvider groups={groups} chrome={chrome}>
       <Tabs
         value={tab}
@@ -672,6 +679,12 @@ function SettingsTabPane({
   if (item.tab === 'plan') {
     return <PlanTab accountId={accountId} />;
   }
+  if (item.tab === 'mcp') {
+    return <McpTab />;
+  }
+  if (item.tab === 'computer' && projectId) {
+    return <ComputerTab projectId={projectId} />;
+  }
 
   // Unreachable while every `SettingsTab` member has a branch above, and kept
   // for the next one: a tab added to the union with no branch renders its own
@@ -712,7 +725,7 @@ function RailNav({
         className,
       )}
     >
-      {groups.map((group) => (
+      {groups.filter((group) => !group.footer).map((group) => (
         <div key={group.label}>
           {showGroupLabels ? (
             <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
@@ -782,7 +795,49 @@ function RailNav({
           </ul>
         </div>
       ) : null}
+
+      {groups
+        .filter((group) => group.footer)
+        .map((group) => (
+          <RailFooterGroup key={group.label} group={group} onPick={onPick} />
+        ))}
     </nav>
+  );
+}
+
+/**
+ * The Connect group at the foot of the rail (KRTX-1997): the same two rows the
+ * project sidebar footer shows — one block, 1px seam, inner corners
+ * `rounded-sm`, a "New" badge — but each is a tab here, so it opens its page
+ * in this dialog, and none can be dismissed. `aria-label` names the list for
+ * screen readers, which hear no group heading.
+ */
+function RailFooterGroup({ group, onPick }: { group: RailGroup; onPick?: () => void }) {
+  const tSidebar = useI18nTranslations('sidebar');
+  return (
+    <TabsList
+      orientation="vertical"
+      aria-label={group.label}
+      className="mt-auto w-full gap-px [&>button:not(:first-child)]:rounded-t-sm [&>button:not(:last-child)]:rounded-b-sm"
+    >
+      {group.items.map((item) => (
+        <TabsTrigger
+          key={item.tab}
+          value={item.tab}
+          size="md"
+          onClick={onPick}
+          className={cn(
+            'bg-hover text-sidebar-foreground gap-2 px-2.5 py-1 font-medium transition-none has-[>svg]:px-2.5',
+            'hover:bg-active data-[state=active]:bg-active data-[state=active]:text-sidebar-foreground',
+          )}
+        >
+          <RailTriggerBody item={item} />
+          <span className="bg-kortix-blue/15 text-kortix-blue ms-auto flex h-5 shrink-0 items-center rounded-sm px-1.5 text-xs font-medium">
+            {tSidebar('new')}
+          </span>
+        </TabsTrigger>
+      ))}
+    </TabsList>
   );
 }
 

@@ -1,42 +1,45 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  formatSessionCostCredits,
   formatSessionCostDuration,
-  formatSessionCostExactUsd,
-  formatSessionCostUsd,
+  formatSessionCostExactCredits,
 } from './session-cost-format';
 
-describe('formatSessionCostUsd', () => {
-  test('formats standard costs with two decimal places', () => {
-    expect(formatSessionCostUsd(12.5)).toBe('$12.50');
+describe('formatSessionCostCredits', () => {
+  test('converts USD to whole credits from 10 credits up', () => {
+    expect(formatSessionCostCredits(12.5)).toBe('1,250');
+    expect(formatSessionCostCredits(868.15)).toBe('86,815');
   });
 
-  test('collapses non-zero costs below one cent to a threshold label', () => {
-    expect(formatSessionCostUsd(0.004321)).toBe('<$0.01');
-    expect(formatSessionCostUsd(0.0000000042)).toBe('<$0.01');
-    expect(formatSessionCostUsd(0.0099)).toBe('<$0.01');
+  test('keeps up to two decimals below 10 credits, so a cheap turn never reads 0', () => {
+    expect(formatSessionCostCredits(0.004321)).toBe('0.43');
+    expect(formatSessionCostCredits(0.01)).toBe('1');
   });
 
-  test('does not collapse one cent or more', () => {
-    expect(formatSessionCostUsd(0.01)).toBe('$0.01');
+  test('collapses a non-zero amount under 0.01 credits to a threshold label', () => {
+    expect(formatSessionCostCredits(0.0000000042)).toBe('<0.01');
   });
 
-  test('formats negative costs without the threshold label', () => {
-    expect(formatSessionCostUsd(-2.5)).toBe('-$2.50');
+  test('formats negative amounts and zero', () => {
+    expect(formatSessionCostCredits(-2.5)).toBe('-250');
+    expect(formatSessionCostCredits(0)).toBe('0');
+    expect(formatSessionCostCredits(Number.NaN)).toBe('0');
   });
 
-  test('formats zero without insignificant precision', () => {
-    expect(formatSessionCostUsd(0)).toBe('$0.00');
+  test('groups by the locale', () => {
+    expect(formatSessionCostCredits(868.15, 'de-DE')).toBe('86.815');
   });
 });
 
-describe('formatSessionCostExactUsd', () => {
-  test('keeps full precision for sub-cent costs', () => {
-    expect(formatSessionCostExactUsd(0.0030428596)).toBe('$0.0030428596');
+describe('formatSessionCostExactCredits', () => {
+  test('keeps full precision for amounts under 10 credits', () => {
+    expect(formatSessionCostExactCredits(0.0030428596)).toBe('0.30428596');
   });
 
-  test('still shows two decimals for whole-cent costs', () => {
-    expect(formatSessionCostExactUsd(12.5)).toBe('$12.50');
+  test('two decimals at most from 10 credits up', () => {
+    expect(formatSessionCostExactCredits(12.5)).toBe('1,250');
+    expect(formatSessionCostExactCredits(0.123456)).toBe('12.35');
   });
 });
 

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 838,
+  "count": 841,
   "routes": [
     {
       "method": "GET",
@@ -1044,7 +1044,15 @@
     },
     {
       "method": "POST",
+      "path": "/v1/billing/enterprise/contact"
+    },
+    {
+      "method": "POST",
       "path": "/v1/billing/plan"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/plan/preview"
     },
     {
       "method": "GET",
@@ -1281,6 +1289,10 @@
     {
       "method": "POST",
       "path": "/v1/connectors/projects/:projectId/connectors/auth-discovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check"
     },
     {
       "method": "POST",

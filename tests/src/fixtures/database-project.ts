@@ -112,14 +112,13 @@ export async function createDatabaseProject(
 }
 
 /**
- * Give a fixture account the Enterprise plan, or take it away. Since #9930 an
- * account gets Enterprise from an Enterprise trial (`POST
- * /v1/admin/api/accounts/:id/trial`, `grantTrial` in
- * `apps/api/src/billing/services/trial-admin.ts`); `demo_enterprise` grants
- * nothing. This writes the trial columns that route writes: active,
- * `enterprise`, 30 days. Browser journeys hold no platform-admin token, so
- * they write the row as the REST flows' admin call would. The name stays for
- * its callers.
+ * Turn the Enterprise demo on or off for a fixture account. Enterprise is a
+ * feature layer (off | demo | licensed, #9999); trials no longer exist. The
+ * demo grants the five Enterprise features (SSO, SCIM, RBAC, audit, branding)
+ * on any billing plan (`enterpriseStateOf` in
+ * `apps/api/src/billing/services/resolve-billing.ts`). This writes the one
+ * column `PUT /v1/accounts/:id/iam/enterprise-demo` writes, without that
+ * route's sales email.
  */
 export async function setDatabaseEnterpriseDemo(
   env: Env,
@@ -127,20 +126,14 @@ export async function setDatabaseEnterpriseDemo(
   enabled: boolean,
   open: OpenProjectDb = openProjectDb,
 ): Promise<void> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, "update enterprise trial for");
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "update enterprise demo for");
   const client = await open(databaseUrl);
   try {
     await client.query(
-      enabled
-        ? `INSERT INTO kortix.credit_accounts (account_id, trial_status, trial_tier, trial_started_at, trial_ends_at)
-           VALUES ($1::uuid, 'active', 'enterprise', now(), now() + interval '30 days')
-           ON CONFLICT (account_id) DO UPDATE SET
-             trial_status = 'active',
-             trial_tier = 'enterprise',
-             trial_started_at = now(),
-             trial_ends_at = now() + interval '30 days'`
-        : `UPDATE kortix.credit_accounts SET trial_status = 'none', trial_tier = NULL WHERE account_id = $1::uuid`,
-      [accountId],
+      `INSERT INTO kortix.credit_accounts (account_id, demo_enterprise)
+       VALUES ($1::uuid, $2)
+       ON CONFLICT (account_id) DO UPDATE SET demo_enterprise = EXCLUDED.demo_enterprise`,
+      [accountId, enabled],
     );
   } finally {
     await client.end();

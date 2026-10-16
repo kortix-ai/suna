@@ -44,7 +44,7 @@ describe('ChatIdentityConnect', () => {
 
   test('keeps Connect disabled until the chat account is known', () => {
     const html = render(() => new Promise<never>(() => {}));
-    const connect = /<button[^>]*>(?:(?!<\/button>).)*Connect account<\/button>/s.exec(html)?.[0];
+    const connect = /<button[^>]*>(?:(?!<\/button>)[\s\S])*Connect account<\/button>/.exec(html)?.[0];
 
     expect(connect).toBeDefined();
     expect(connect).toMatch(/\sdisabled=""/);

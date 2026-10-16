@@ -139,7 +139,6 @@ export interface AccountContract {
   /** Annual platform fee, USD. */
   license_usd: number;
   /** Annual credit commitment, USD, granted as one pool per term. */
-  credits_usd: number;
   term_months: number;
   collection: 'checkout' | 'invoice' | 'manual';
   starts_at: string | null;
@@ -152,7 +151,6 @@ export interface AccountContract {
 export interface AccountEnterpriseOffer {
   id: string;
   license_usd: number;
-  credits_usd: number;
   term_months: number;
   /** `checkout`: a billing manager accepts and pays by card in the app
    *  (`POST /v1/billing/enterprise-offer/checkout`). */
@@ -265,7 +263,10 @@ export interface AccountStateResponse {
    *  plan (a contract or an Enterprise trial). */
   enterprise_entitled: boolean;
   /** The active trial: a dated grant of a plan. Null when there is none. */
+  /** @deprecated Trials are removed: always null. */
   trial: AccountTrial | null;
+  /** The Enterprise feature layer: off, demo (self-serve) or licensed (a contract). */
+  enterprise: { state: 'off' | 'demo' | 'licensed' };
   /** The active Enterprise contract. Null when there is none. */
   contract: AccountContract | null;
   /** An Enterprise contract offered and not yet accepted. Billing managers see
@@ -301,8 +302,9 @@ export interface AccountStateResponse {
 
 export interface ScheduledChange {
   type: 'downgrade';
-  current_tier: { name: string; display_name: string; monthly_credits?: number };
-  target_tier: { name: string; display_name: string; monthly_credits?: number };
+  /** `monthly_credits` is in credits (1 credit = $0.01); `monthly_usd` is the same amount in USD. */
+  current_tier: { name: string; display_name: string; monthly_credits?: number; monthly_usd?: number };
+  target_tier: { name: string; display_name: string; monthly_credits?: number; monthly_usd?: number };
   effective_date: string;
 }
 

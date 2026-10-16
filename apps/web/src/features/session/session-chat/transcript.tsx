@@ -2266,7 +2266,11 @@ export const TranscriptTurnRow = memo(function TranscriptTurnRow({
   ...turnProps
 }: TranscriptTurnRowProps) {
   return (
-    <TurnViewport turnId={turnId} className={viewportClassName}>
+    <TurnViewport
+      turnId={turnId}
+      className={viewportClassName}
+      continues={turnProps.turn.compaction !== null || turnProps.turn.continues !== null}
+    >
       {continuedWith && (
         <div className="mb-6">
           <HarnessSwitchMarker harness={continuedWith} />

@@ -102,13 +102,12 @@ describe('white-label SDK boundary', () => {
     expect(scanWhiteLabelTestBoundary()).toEqual([]);
   });
 
-  test('the boundary includes local tests and repository Playwright specs', () => {
+  test('the boundary includes the local tests', () => {
+    // The repository's SDK-only Playwright spec was deleted in the testing
+    // reset (2026-10-16); a new white-label or sdk-only spec joins by name.
     const files = listWhiteLabelTestFiles();
 
     expect(files.some((path) => path.endsWith('/tests/e2e/proxy.test.ts'))).toBe(true);
-    expect(files.some((path) => path.endsWith('/tests/e2e/specs/13-sdk-only-session.spec.ts'))).toBe(
-      true,
-    );
   });
 
   test('project settings render the server-provided experimental catalog', () => {

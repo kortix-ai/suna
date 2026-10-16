@@ -10,7 +10,10 @@ routes = [
 
 [vars]
 DEV_API_ORIGIN = "https://dev-api.kortix.com"
-STAGING_API_ORIGIN = "https://staging-api.kortix.com"
+# Not staging-api.kortix.com: that host is a Worker route over a dead
+# cfargotunnel record, and a same-zone subrequest skips the route and answers
+# Cloudflare 530. Use the origin the api-router Worker uses (BACKEND_EU_WEST_2).
+STAGING_API_ORIGIN = "https://staging-api-euw2.kortix.com"
 PROD_API_ORIGIN = "https://api.kortix.com"
 PREVIEW_API_ORIGIN = "https://dev-api.kortix.com"
 

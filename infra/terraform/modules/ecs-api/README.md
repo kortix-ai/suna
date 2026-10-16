@@ -29,8 +29,9 @@ same thing with bigger numbers and `min_capacity >= 2`".
 - `task_cpu` / `task_memory`, `desired_count`, `min_capacity` / `max_capacity`,
   `cpu_target` / `memory_target`.
 - `certificate_arn` — ACM cert (see `modules/acm-cloudflare`).
-- `use_fargate_spot`, `container_insights`, `alb_idle_timeout`,
-  `alb_ingress_cidrs`.
+- `use_fargate_spot`, `alb_idle_timeout`, `alb_ingress_cidrs`.
+- Container Insights is always on: CloudWatch Container Insights is a
+  monitoring control (Checkov CKV_AWS_65), not a per-environment option.
 
 ## Outputs
 

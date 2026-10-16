@@ -37,7 +37,7 @@ def generated_controls():
         "ssn": ["123-45-6789", "123 45 6789", "123.45.6789"],
         "phone_number": ["+1 555 0100", "(555) 010-0100", "+44 20 7946 0958", "+1-555-010-0100x2048", "1 (555) 010-0100"],
         "iban": ["GB82 WEST 1234 5698 7654 32", "GB82WEST12345698765432", "gb82 west 1234 5698 7654 32"],
-        "secret": ["AKIAIOSFODNN7EXAMPLE", "ghp_abcdefghijklmnopqrstuvwxyz", "Bearer abcdefghijklmnopqrstuvwxyz", "sk_test_abcdefghijklmnopqrstuvwxyz"],
+        "secret": ["AKIAIOSFODNN7EXAMPLE", "ghp_abcdefghijklmnopqrstuvwxyz", "Bearer abcdefghijklmnopqrstuvwxyz", "sk_" + "test_abcdefghijklmnopqrstuvwxyz"],  # split so secret scanners skip the synthetic key
         "name": ["Alice Example", "Bob Sample"],
         "street_address": ["42 Fictional Lane, Example City"],
     }

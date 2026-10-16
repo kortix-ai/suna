@@ -64,14 +64,15 @@ export function sessionLogHarnessSwitches(
 export interface SessionLogRestoreNotice {
   /** The session generation the restore claimed. */
   generation: number;
-  missing: Array<{ kind: 'attachment' | 'text' | 'tool_input' | 'tool_result' | 'cut_point' | 'other'; count: number }>;
+  /** `message`: the log was over the API's restore cap, so the agent got none of these earlier messages. */
+  missing: Array<{ kind: 'message' | 'attachment' | 'text' | 'tool_input' | 'tool_result' | 'cut_point' | 'other'; count: number }>;
 }
 
 type J = Record<string, unknown>;
 const isObj = (v: unknown): v is J => typeof v === 'object' && v !== null && !Array.isArray(v);
 const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
 /** The dropped kinds the grade counts already hold (`layout` counts as `cut_point`), and the two named on their own. */
-const COUNTED = new Set(['attachment', 'tool_input', 'cut_point', 'layout', 'text', 'tool_result']);
+const COUNTED = new Set(['message', 'attachment', 'tool_input', 'cut_point', 'layout', 'text', 'tool_result']);
 
 /**
  * The D3 notice for the person: the session record a partial restore patched
@@ -79,6 +80,7 @@ const COUNTED = new Set(['attachment', 'tool_input', 'cut_point', 'layout', 'tex
  * `{ generation, dropped, truncated }`). Null when the grade is not partial, or no restore wrote
  * the record (a log converted from v1 can be partial without a restore). Counts: the grade
  * counts (missing attachments, tool inputs, compaction cut points, the dropped ones included),
+ * the messages a log over the restore cap left out (`dropped.message`),
  * the texts dropped or cut to their preview, the dropped tool results, and any other dropped kind.
  */
 export function sessionLogRestoreNotice(session: Partial<Pick<SessionLog, 'restore_grade' | 'grade_counts' | 'ext'>> | null | undefined): SessionLogRestoreNotice | null {
@@ -89,6 +91,7 @@ export function sessionLogRestoreNotice(session: Partial<Pick<SessionLog, 'resto
   const dropped = isObj(restore.dropped) ? restore.dropped : {};
   const grade = session.grade_counts;
   const missing: SessionLogRestoreNotice['missing'] = [
+    { kind: 'message', count: count(dropped.message) },
     { kind: 'attachment', count: count(grade?.attachment) },
     { kind: 'text', count: count(dropped.text) + count(restore.truncated) },
     { kind: 'tool_input', count: count(grade?.tool_input) },

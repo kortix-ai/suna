@@ -17,8 +17,8 @@
 # cleanup of incomplete uploads and deleted versions.
 
 #trivy:ignore:AVD-AWS-0089 Device uploads are authorized per device by STS session policies minted by the API; CloudTrail data events cover access when enabled.
-resource "aws_s3_bucket" "this" {
-  #checkov:skip=CKV_AWS_19:Encryption at rest is configured on aws_s3_bucket_server_side_encryption_configuration.this (SSE-S3); the legacy inline-block check cannot see the split resource.
+resource "aws_s3_bucket" "capture" {
+  #checkov:skip=CKV_AWS_19:Encryption at rest is configured on aws_s3_bucket_server_side_encryption_configuration.capture (SSE-S3); the legacy inline-block check cannot see the split resource.
   #checkov:skip=CKV_AWS_145:SSE-S3 so device uploads and presigned media reads need no KMS grant in every per-device session policy.
   #checkov:skip=CKV_AWS_18:Server access logging is not required; every access is a per-device STS session or an API presigned GET, logged by CloudTrail data events when enabled.
   #checkov:skip=CKV_AWS_144:Capture data is regional by design (data residency); cross-region replication is not wanted.
@@ -27,16 +27,16 @@ resource "aws_s3_bucket" "this" {
   tags          = merge(var.tags, { Name = var.name })
 }
 
-resource "aws_s3_bucket_public_access_block" "this" {
-  bucket                  = aws_s3_bucket.this.id
+resource "aws_s3_bucket_public_access_block" "capture" {
+  bucket                  = aws_s3_bucket.capture.id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_ownership_controls" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_ownership_controls" "capture" {
+  bucket = aws_s3_bucket.capture.id
   rule {
     object_ownership = "BucketOwnerEnforced"
   }
@@ -44,17 +44,17 @@ resource "aws_s3_bucket_ownership_controls" "this" {
 
 # Devices rewrite index/status/device.json; versioning keeps an overwrite or a
 # delete reversible for noncurrent_version_days and satisfies the scanners.
-resource "aws_s3_bucket_versioning" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_versioning" "capture" {
+  bucket = aws_s3_bucket.capture.id
   versioning_configuration {
     status = "Enabled"
   }
 }
 
 #trivy:ignore:AVD-AWS-0132 SSE-S3 on purpose: a KMS key would need a grant in every per-device session policy.
-resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
+resource "aws_s3_bucket_server_side_encryption_configuration" "capture" {
   #checkov:skip=CKV_AWS_145:SSE-S3 on purpose: a KMS key would need a grant in every per-device session policy.
-  bucket = aws_s3_bucket.this.id
+  bucket = aws_s3_bucket.capture.id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -62,8 +62,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   }
 }
 
-resource "aws_s3_bucket_lifecycle_configuration" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_lifecycle_configuration" "capture" {
+  bucket = aws_s3_bucket.capture.id
 
   rule {
     id     = "capture-backstop"
@@ -89,7 +89,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     }
   }
 
-  depends_on = [aws_s3_bucket_versioning.this]
+  depends_on = [aws_s3_bucket_versioning.capture]
 }
 
 data "aws_iam_policy_document" "bucket" {
@@ -97,7 +97,7 @@ data "aws_iam_policy_document" "bucket" {
     sid       = "DenyInsecureTransport"
     effect    = "Deny"
     actions   = ["s3:*"]
-    resources = [aws_s3_bucket.this.arn, "${aws_s3_bucket.this.arn}/*"]
+    resources = [aws_s3_bucket.capture.arn, "${aws_s3_bucket.capture.arn}/*"]
     principals {
       type        = "*"
       identifiers = ["*"]
@@ -110,8 +110,8 @@ data "aws_iam_policy_document" "bucket" {
   }
 }
 
-resource "aws_s3_bucket_policy" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_policy" "capture" {
+  bucket = aws_s3_bucket.capture.id
   policy = data.aws_iam_policy_document.bucket.json
 }
 
@@ -150,7 +150,7 @@ data "aws_iam_policy_document" "queue" {
     condition {
       test     = "ArnEquals"
       variable = "aws:SourceArn"
-      values   = [aws_s3_bucket.this.arn]
+      values   = [aws_s3_bucket.capture.arn]
     }
   }
 }
@@ -161,7 +161,7 @@ resource "aws_sqs_queue_policy" "manifests" {
 }
 
 resource "aws_s3_bucket_notification" "manifests" {
-  bucket = aws_s3_bucket.this.id
+  bucket = aws_s3_bucket.capture.id
   queue {
     queue_arn     = aws_sqs_queue.manifests.arn
     events        = ["s3:ObjectCreated:*"]
@@ -203,15 +203,57 @@ resource "aws_iam_role_policy" "device" {
       Sid      = "DeviceObjects"
       Effect   = "Allow"
       Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
-      Resource = "${aws_s3_bucket.this.arn}/orgs/*"
+      Resource = "${aws_s3_bucket.capture.arn}/orgs/*"
       }, {
       Sid      = "DeviceList"
       Effect   = "Allow"
       Action   = ["s3:ListBucket"]
-      Resource = aws_s3_bucket.this.arn
+      Resource = aws_s3_bucket.capture.arn
       Condition = {
         StringLike = { "s3:prefix" = ["orgs/*"] }
       }
     }]
   })
+}
+
+# Every S3 resource here was named `this` until 2026-10-16. Drata's IaC parser
+# merges resources that share a type and name across roots (parser rule 1 in
+# compliance-monitoring/README.md), so `aws_s3_bucket.this` here and in
+# modules/project-snapshots-bucket read as one bucket and it lost this bucket's
+# public access block and versioning. The moved blocks keep an applied
+# environment's state: the rename plans no change.
+
+moved {
+  from = aws_s3_bucket.this
+  to   = aws_s3_bucket.capture
+}
+
+moved {
+  from = aws_s3_bucket_public_access_block.this
+  to   = aws_s3_bucket_public_access_block.capture
+}
+
+moved {
+  from = aws_s3_bucket_ownership_controls.this
+  to   = aws_s3_bucket_ownership_controls.capture
+}
+
+moved {
+  from = aws_s3_bucket_versioning.this
+  to   = aws_s3_bucket_versioning.capture
+}
+
+moved {
+  from = aws_s3_bucket_server_side_encryption_configuration.this
+  to   = aws_s3_bucket_server_side_encryption_configuration.capture
+}
+
+moved {
+  from = aws_s3_bucket_lifecycle_configuration.this
+  to   = aws_s3_bucket_lifecycle_configuration.capture
+}
+
+moved {
+  from = aws_s3_bucket_policy.this
+  to   = aws_s3_bucket_policy.capture
 }
