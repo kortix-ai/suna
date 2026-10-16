@@ -379,7 +379,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
         .debit({ accountId: id, amount: 5, description: 'Agent run usage', kind: 'usage', key: null })
         .catch((err) => err);
       expect(error).toBeInstanceOf(errors.InsufficientCreditsError);
-      expect(error.message).toBe('Insufficient credits. Balance: $1.0000, required: $5.0000');
+      expect(error.message).toBe('Insufficient credits. Balance: 100 credits, required: 500 credits');
       expect(error.reason).toBe('Insufficient credits');
       expect(ledger(id)).toEqual([]);
       expect(account(id)).toMatchObject({ balance: 1, non_expiring: 1 });

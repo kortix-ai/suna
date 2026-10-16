@@ -1169,8 +1169,8 @@
     "contactSales": "営業に問い合わせる",
     "upgradeTo": "{{plan}}にアップグレード",
     "switchTo": "{{plan}}に切り替え",
-    "trialLabel_one": "{{plan}} トライアル · 残り {{count}} 日",
-    "trialLabel_other": "{{plan}} トライアル · 残り {{count}} 日"
+    "enterpriseDemoLabel": "{{plan}} · Enterprise デモ",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",

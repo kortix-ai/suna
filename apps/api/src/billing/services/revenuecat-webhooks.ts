@@ -9,6 +9,7 @@ import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 /**
  * A deleted account keeps its row (ledger history, audit) but is terminal:
@@ -288,7 +289,7 @@ async function handleRevenueCatTopup(accountId: string, event: any, dedupeKey: s
     accountId,
     amount: price,
     kind: 'purchase',
-    description: `Mobile credit purchase: $${price.toFixed(2)}`,
+    description: `Mobile credit purchase: ${formatUsdAsCredits(price)} credits ($${price.toFixed(2)})`,
     expiring: false,
     key: { event: dedupeKey },
   });
@@ -324,7 +325,7 @@ async function clawBackRevenueCatRefund(accountId: string, event: any, dedupeKey
     accountId,
     amount: -dollars,
     kind: 'admin_debit',
-    description: `Store refund clawback: $${dollars.toFixed(2)}`,
+    description: `Store refund clawback: ${formatUsdAsCredits(dollars)} credits ($${dollars.toFixed(2)})`,
     expiring: false,
     key: { event: `revenuecat-refund:${event.transaction_id ?? event.original_transaction_id ?? dedupeKey}` },
   });

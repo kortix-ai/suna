@@ -12,6 +12,7 @@ import { db } from '../../shared/db';
 import { escapeHtml } from '../../shared/html';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { billingPaneUrl, emailBillingManagers } from './owner-alerts';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 /** One request per member and account in this window. */
 export const TOP_UP_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -47,9 +48,7 @@ export async function requestTopUp(input: {
 }): Promise<{ notified: number } | null> {
   if (!(await claimTopUpRequest(input.accountId, input.requesterUserId))) return null;
   const account = await getCreditAccount(input.accountId);
-  const balance = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-    Number(account?.balance) || 0,
-  );
+  const balance = `${formatUsdAsCredits(Number(account?.balance) || 0)} credits`;
   const requester =
     input.requesterEmail?.trim() ||
     (await lookupEmailsByUserIds([input.requesterUserId])).get(input.requesterUserId) ||

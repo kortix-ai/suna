@@ -133,7 +133,7 @@ describe('free tier monthly credit rotation', () => {
     expect(walletResets).toHaveLength(1);
     expect(walletResets[0].accountId).toBe('acc_300_left');
     expect(walletResets[0].amount).toBe(2);
-    expect(walletResets[0].description).toBe('Free tier monthly credit reset: 2 credits');
+    expect(walletResets[0].description).toBe('Free tier monthly credit reset: 200 credits');
     expect(walletResets[0].key).toEqual({ event: 'free_tier_rotation_acc_300_left_2026-07' });
   });
 

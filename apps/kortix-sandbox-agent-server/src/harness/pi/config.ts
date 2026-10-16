@@ -43,7 +43,8 @@ const EnvironmentSchema = z.object({
   KORTIX_PI_NO_PROGRESS_MS: z.coerce.number().int().positive().optional(),
   // pi compacts a context past this many tokens, whatever the model window (model.ts `compactionSettings`).
   KORTIX_PI_COMPACT_AT_TOKENS: z.coerce.number().int().positive().optional(),
-  // kortix.yaml `harnesses.pi.codemode`: `off`, `on` (the default) or `only` (codemode.ts). Anything else reads as the default.
+  // The session agent's codemode (`off`, `on` or `only`, codemode.ts), sent by the API. Absent or invalid: the
+  // compiled agent's `codemode`, else `on` (runtime.ts `codemode`).
   KORTIX_PI_CODEMODE: z.enum(['off', 'on', 'only']).optional().catch(undefined),
 })
 
@@ -58,7 +59,7 @@ export interface PiEnvironment {
   piTurnRetryBaseMs: number
   piNoProgressMs: number
   piCompactAtTokens: number
-  piCodemode: 'off' | 'on' | 'only'
+  piCodemode?: 'off' | 'on' | 'only'
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -89,7 +90,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
     // Every request re-sends the whole context: a 1M window left to fill costs ~6x a 160k one per turn.
     piCompactAtTokens: parsed.KORTIX_PI_COMPACT_AT_TOKENS ?? 160_000,
-    piCodemode: parsed.KORTIX_PI_CODEMODE ?? 'on',
+    piCodemode: parsed.KORTIX_PI_CODEMODE,
   }
 }
 
@@ -123,6 +124,16 @@ export async function resolvePiProjectConfigDir(cfg: HostConfig): Promise<string
     if (existsSync(join(workspace, path))) return join(workspace, path)
   }
   return null
+}
+
+/**
+ * kortix.yaml v3 (`schema: 3`): the managed `kortix-*` overlay, then exactly the
+ * registered skill folders (`compiled.skills`) under the config root. No
+ * `skills/` scan, no legacy dir, no pi folder. `root` is the active release
+ * root, else the workspace; null (the image default) has no project skill.
+ */
+export function resolvePiV3SkillDirectories(skills: Record<string, string> | undefined, root: string | null): string[] {
+  return [managedSkillsDir(), ...(root ? Object.values(skills ?? {}).map((folder) => join(root, folder)) : [])]
 }
 
 export function resolvePiSkillDirectories(

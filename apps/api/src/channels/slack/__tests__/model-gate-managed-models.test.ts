@@ -112,14 +112,14 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
     );
   });
 
-  test('an active trial of a paid plan grants managed models', async () => {
+  test('trials are removed: a leftover active trial row grants nothing', async () => {
     const row = {
       tier: 'free',
       trialStatus: 'active',
       trialTier: 'tier_25_200',
       trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
     };
-    expect((await gateFor(row)).freeManagedOnly).toBe(false);
+    expect((await gateFor(row)).freeManagedOnly).toBe(true);
   });
 
   test('no credit row at all → fail closed', async () => {

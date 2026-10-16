@@ -9,6 +9,7 @@
  * No React / React Native import.
  */
 import { isAbortError, type GatewayErrorDetails, type SessionLogMessage } from '@kortix/sdk';
+import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 
 import type { GatewayMetaDetails } from './busy-status';
 
@@ -18,7 +19,7 @@ export function messageAborted(message: Pick<SessionLogMessage, 'status' | 'erro
   return !!message.error && isAbortError({ name: message.error.code, data: { message: message.error.message } });
 }
 
-/** Upstream 402 "Payment Required: Insufficient credits. Balance: $-0.06" and friends. */
+/** Upstream 402 "Payment Required: Insufficient credits. Balance: -6 credits" and friends. */
 export function isInsufficientCreditsError(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase();
@@ -49,13 +50,13 @@ export function isUsageLimitError(text: string): boolean {
   );
 }
 
-/** `Balance: $-0.06` → `$-0.06`; no amount → null. */
+/**
+ * The balance a 402 names, in credits: `Balance: -6 credits` and an older
+ * server's `Balance: $-0.06` both → `-6 credits`; no amount → null.
+ */
 export function parseBalance(text: string): string | null {
-  const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]);
-  if (Number.isNaN(value)) return null;
-  return `$${value.toFixed(2)}`;
+  const usd = parseBalanceUsd(text);
+  return usd === null ? null : `${formatUsdAsCredits(usd)} credits`;
 }
 
 /**

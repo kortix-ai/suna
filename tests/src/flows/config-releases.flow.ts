@@ -165,9 +165,8 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
 /**
  * `@kortix/starter`'s `base` template — the scaffold every managed project
  * gets by default on provisioning (`managed-repo-seed.ts`: "seeding is the
- * default, not an opt-in") — ships the harness-agnostic layout PR #7681
- * introduced: `harnesses/opencode/opencode.jsonc`, root `agents/`, root
- * `skills/kortix-cli/`, root `memory/`. This flow deliberately drives the
+ * default, not an opt-in") — ships the kortix_version 3 layout: root
+ * `agents/`, `skills/`, `extensions/`, `memory/`. This flow deliberately drives the
  * LEGACY `.kortix/opencode` layout with a fixed, hand-authored config
  * (`CONFIG_FILES` below), so every managed project it creates clears that
  * scaffold in the SAME commit that lays down `CONFIG_FILES`. Without this,
@@ -179,7 +178,7 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
  * the wrong tree. The `local` target never seeds a starter template
  * (`createLocalGitRepository`), so this is a no-op there.
  */
-const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'memory'];
+const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'extensions', 'memory'];
 
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,

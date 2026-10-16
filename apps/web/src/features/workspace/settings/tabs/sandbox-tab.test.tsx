@@ -333,14 +333,16 @@ describe('SandboxTabView', () => {
     expect(out).toContain('header-action-marker');
   });
 
-  test('reads the manifest hint from kortix.toml by default, kortix.yaml at manifest v2', () => {
+  test('reads the manifest hint from kortix.toml by default, kortix.yaml at manifest v2 and v3', () => {
     const v1 = renderToStaticMarkup(<SandboxTabView manifestVersion={1} />);
     expect(v1).toContain('kortix.toml');
     expect(v1).not.toContain('kortix.yaml');
 
-    const v2 = renderToStaticMarkup(<SandboxTabView manifestVersion={2} />);
-    expect(v2).toContain('kortix.yaml');
-    expect(v2).not.toContain('kortix.toml');
+    for (const version of [2, 3]) {
+      const yaml = renderToStaticMarkup(<SandboxTabView manifestVersion={version} />);
+      expect(yaml).toContain('kortix.yaml');
+      expect(yaml).not.toContain('kortix.toml');
+    }
   });
 
   test('surfaces a partial-read warning without failing the whole tab', () => {
@@ -479,6 +481,7 @@ describe('template card readability', () => {
       label: 'kortix.yaml',
       mono: true,
     });
+    expect(describeSource(template({ source: 'toml' }), 3).label).toBe('kortix.yaml');
     expect(describeSource(template({ source: 'toml' }), 1).label).toBe('kortix.toml');
     expect(describeSource(template({ source: 'toml' }), null).label).toBe('kortix.toml');
   });

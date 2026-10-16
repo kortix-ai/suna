@@ -272,10 +272,10 @@ describe('kortix gateway command', () => {
     const cfg = writeConfig(startServer());
     const r = await runCli(['gateway', 'budget', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('PROJECT SPEND (this month)  $280.00 · 4 req');
-    expect(r.stdout).toContain(
-      '$15.00 of $20.00/day project (block) resets 2026-10-14T00:00:00.000Z budget_1',
-    );
+    expect(r.stdout).toContain('PROJECT SPEND (this month)  28,000 credits · 4 req');
+    expect(r.stdout).toContain('1,500 of 2,000 credits/day project (block) resets 2026-10-14T00:00:00.000Z budget_1');
+    const raw = await runCli(['gateway', 'budget', '--json', '--project', PROJECT], cfg);
+    expect(JSON.parse(raw.stdout).budgets[0].limit_usd).toBe(20);
   }, 15_000);
 
   test('budget set: PUTs limit/scope with the expected shape', async () => {
@@ -286,7 +286,9 @@ describe('kortix gateway command', () => {
     );
     expect(r.code).toBe(0);
     const put = requests.find((q) => q.method === 'PUT');
+    // --limit is USD (the API field); the confirmation names both units.
     expect(put?.body).toMatchObject({ scope: 'project', limit_usd: 25, period: 'month' });
+    expect(r.stdout).toContain('budget set: 2,500 credits ($25.00)/month (project)');
   }, 15_000);
 
   test('keys new: POSTs the name and surfaces the one-time secret', async () => {
@@ -361,6 +363,11 @@ describe('kortix gateway command', () => {
       `/v1/projects/${PROJECT}/gateway/breakdown?days=30`,
       `/v1/projects/${PROJECT}/gateway/overview?days=30`,
     ]);
+    expect(out.overview.total_cost).toBe(0.5);
+    const human = await runCli(['gateway', 'usage', '--project', PROJECT], cfg);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('10 req · 1 err · 50 credits · 100/50 tok');
+    expect(human.stdout).toMatch(/openai\/gpt-5\.5\s+7 req  42 credits/);
   }, 15_000);
 
   test('logs --limit N: the value is a query param, never mistaken for a logId (regression)', async () => {

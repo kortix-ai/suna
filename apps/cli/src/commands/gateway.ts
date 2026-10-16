@@ -9,7 +9,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, creditAmount, credits, help, money, pad, status } from '../style.ts';
 
 // The LLM-gateway control-plane for the linked project: how it ROUTES
 // (default model / fallback / vision), METERS (spend budgets), EXPOSES itself
@@ -46,7 +46,9 @@ Routing:
 Spend:
   budget [ls]                       Budgets with their spend this period,
                                     + this month's spend. --json.
-  budget set --limit <usd> [flags]  Upsert a budget:
+  budget set --limit <usd> [flags]  Upsert a budget. Shown in credits; --limit
+                                    takes USD (1 credit = $0.01): --limit 20
+                                    = 2,000 credits.
     --scope project|member  --user <id>  --period day|week|month
     --action block|warn
   budget rm <budgetId>              Remove a budget.
@@ -117,9 +119,9 @@ export async function runGateway(argv: string[]): Promise<number> {
   }
 }
 
-function money(n: unknown): string {
-  const v = Number(n ?? 0);
-  return `$${v.toFixed(v < 1 ? 4 : 2)}`;
+/** Spend, budget limits and costs: what the project spends, in credits. */
+function spend(n: unknown): string {
+  return credits(Number(n ?? 0));
 }
 
 // Emit JSON and return a success code — keeps the `if (json) return outJson(x)`
@@ -293,17 +295,17 @@ async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Prom
       const data = await ctx.client.get<any>(base);
       if (json) return outJson(data);
       process.stdout.write(
-        `\n  ${C.dim}PROJECT SPEND (this month)${C.reset}  ${money(data.project_spend?.cost)} · ${data.project_spend?.requests ?? 0} req\n`,
+        `\n  ${C.dim}PROJECT SPEND (this month)${C.reset}  ${spend(data.project_spend?.cost)} · ${data.project_spend?.requests ?? 0} req\n`,
       );
       if (data.budgets?.length) {
         process.stdout.write(`\n  ${C.dim}BUDGETS${C.reset}\n`);
         for (const b of data.budgets) {
           const who = b.scope === 'member' ? ` ${C.dim}user=${b.subject_user_id}${C.reset}` : '';
           // The spend in the budget's own period: what the gateway checks (KRTX-1725).
-          const spent = typeof b.spent_usd === 'number' ? `${money(b.spent_usd)} of ` : '';
+          const spent = typeof b.spent_usd === 'number' ? `${creditAmount(b.spent_usd)} of ` : '';
           const reset = b.resets_at ? ` ${C.dim}resets ${b.resets_at}${C.reset}` : '';
           process.stdout.write(
-            `  ${spent}${money(b.limit_usd)}/${b.period} ${b.scope} (${b.action})${who}${reset} ${C.faded}${b.budget_id}${C.reset}\n`,
+            `  ${spent}${spend(b.limit_usd)}/${b.period} ${b.scope} (${b.action})${who}${reset} ${C.faded}${b.budget_id}${C.reset}\n`,
           );
         }
       } else {
@@ -337,7 +339,7 @@ async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Prom
       };
       await ctx.client.put(base, body);
       process.stdout.write(
-        `\n  ${status.ok(`budget set: ${money(limit)}/${body.period ?? 'month'} (${body.scope})`)}\n\n`,
+        `\n  ${status.ok(`budget set: ${spend(limit)} (${money(limit)})/${body.period ?? 'month'} (${body.scope})`)}\n\n`,
       );
       return 0;
     }
@@ -445,14 +447,14 @@ async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promi
     if (json) return outJson({ overview, breakdown });
     process.stdout.write(
       `\n  ${C.dim}LAST ${overview.window_days}d${C.reset}  ` +
-        `${overview.requests} req · ${overview.errors} err · ${money(overview.total_cost)} · ` +
+        `${overview.requests} req · ${overview.errors} err · ${spend(overview.total_cost)} · ` +
         `${overview.input_tokens}/${overview.output_tokens} tok\n`,
     );
     if (breakdown.models?.length) {
       process.stdout.write(`\n  ${C.dim}BY MODEL${C.reset}\n`);
       for (const m of breakdown.models) {
         process.stdout.write(
-          `  ${pad(m.model, 28)} ${String(m.requests).padStart(5)} req  ${money(m.cost)}  ${C.dim}${m.provider}${C.reset}\n`,
+          `  ${pad(m.model, 28)} ${String(m.requests).padStart(5)} req  ${spend(m.cost)}  ${C.dim}${m.provider}${C.reset}\n`,
         );
       }
     }
@@ -479,14 +481,14 @@ async function gatewaySources(rest: string[], opts: CtxOpts, json: boolean): Pro
     const t = data.total ?? {};
     process.stdout.write(
       `\n  ${C.dim}LAST ${data.window_hours}h${C.reset}  ` +
-        `${t.requests ?? 0} req · ${t.sessions ?? 0} sessions · ${money(t.cost)} · ` +
+        `${t.requests ?? 0} req · ${t.sessions ?? 0} sessions · ${spend(t.cost)} · ` +
         `avg ${Number(t.avg_input_tokens ?? 0).toLocaleString('en-US')} input tok/req\n`,
     );
     if (data.sources?.length) {
       process.stdout.write(`\n  ${C.dim}BY SOURCE${C.reset}\n`);
       for (const s of data.sources) {
         process.stdout.write(
-          `  ${pad(s.source, 40)} ${money(s.cost).padStart(10)}  ${String(s.sessions).padStart(4)} sess  ` +
+          `  ${pad(s.source, 40)} ${spend(s.cost).padStart(14)}  ${String(s.sessions).padStart(4)} sess  ` +
             `${String(s.requests).padStart(6)} req  ${C.dim}avg ${Number(s.avg_input_tokens).toLocaleString('en-US')} tok${C.reset}\n`,
         );
       }
