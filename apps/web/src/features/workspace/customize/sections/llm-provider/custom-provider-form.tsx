@@ -1,22 +1,5 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
-/**
- * The add-a-custom-provider form of the Custom tab
- * (`custom-provider-panel.tsx`), shown directly on the tab.
- *
- * Paper board CP01: stacked labels, paired where two fields belong together
- * (name + id, model id + model name), and beside the form a live preview of
- * the `.opencode/opencode.jsonc` entry it will produce — the reader sees what
- * the button makes before pressing it.
- *
- * The submit, the validation, the secret write and the generated snippet are
- * unchanged: the same mutation, the same `buildCustomProviderSnippet`. The API
- * key field stays masked with a reveal button and the password-manager
- * opt-outs, like a provider key field.
- */
-
-import { HighlightedCode } from '@/components/markdown/code';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -30,7 +13,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { Copy } from '@/features/icon/icons/copy';
 import { useCopy } from '@/hooks/use-copy';
-import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import { upsertProjectSecret } from '@kortix/sdk';
 import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
@@ -95,13 +78,6 @@ export function CustomProviderForm({
   });
   const [error, setError] = useState<string | null>(null);
   const [revealKey, setRevealKey] = useState(false);
-  // The same copy contract as the saved snippet below: toast on success and
-  // on failure, and a "Copied" label that resets after 1.5s.
-  const { copied: previewCopied, copy: copyPreview } = useCopy({
-    duration: 1500,
-    successMessage: tI18nComplete.raw('texte957fd04449d'),
-    errorMessage: tI18nComplete.raw('text94f69e8f103e'),
-  });
   const [savedSnippet, setSavedSnippet] = useState<{
     snippet: string;
     secretName: string | null;
@@ -184,28 +160,10 @@ export function CustomProviderForm({
     );
   }
 
-  const previewId = form.providerId.trim() || 'my-llm';
-  const preview = buildCustomProviderSnippet({
-    providerId: previewId,
-    name: form.name.trim() || 'My LLM',
-    baseURL: form.baseURL.trim() || 'https://api.example.com/v1',
-    secretName: form.apiKey.trim() ? customProviderSecretName(previewId) : null,
-    modelId: form.modelId.trim() || 'my-llm/foo-7b',
-    modelName: form.modelName.trim() || 'Foo 7B',
-  });
-
   return (
-    // Paper board CP01: the form on the left (520px), the live snippet on the
-    // right, 40px apart. The split follows this element's own width (56rem:
-    // the page column fits it, the quick dialog does not), so the dialog and a
-    // page with the sheet open stack the snippet under the form instead of
-    // squeezing it to a sliver.
-    <div className="@container/custom-provider">
-      <div className="flex flex-col gap-11 @4xl/custom-provider:flex-row @4xl/custom-provider:items-start">
-        <form
-          onSubmit={handleSubmit}
-          className="flex w-full flex-col gap-5 @4xl/custom-provider:w-141 @4xl/custom-provider:shrink-0"
-        >
+    <div className="max-w-2xl">
+      <div>
+        <form onSubmit={handleSubmit} className="flex w-full flex-col gap-5">
           <div className="flex flex-col gap-1">
             <h2 className="text-foreground text-base font-semibold">
               {tI18nComplete.raw('text3880a3aae4e6')}
@@ -351,44 +309,6 @@ export function CustomProviderForm({
             </Button>
           </div>
         </form>
-
-        {/* What "Save and generate snippet" will produce, as you type.
-            Placeholders stand in for empty fields so the shape shows from the start. */}
-        <figure
-          className="bg-popover border-border min-w-0 flex-1 overflow-hidden rounded-lg border"
-          data-custom-provider-preview=""
-        >
-          <figcaption className="border-border flex items-center justify-between gap-3 border-b px-4 py-2.5">
-            <code className="text-muted-foreground font-mono text-xs">.opencode/opencode.jsonc</code>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              className="text-muted-foreground hover:text-foreground -my-1 -mr-2 gap-1.5"
-              onClick={() => copyPreview(preview)}
-            >
-              {previewCopied ? (
-                <Check className="text-kortix-green size-3.5 shrink-0" />
-              ) : (
-                <Copy className="size-3.5 shrink-0" />
-              )}
-              {previewCopied ? tI18nComplete.raw('text8d525e5f158b') : tI18nComplete.raw('texte21f935f11d7')}
-            </Button>
-          </figcaption>
-          {/* Shiki via `HighlightedCode`, framed the way `manifest-copy-block.tsx`
-              frames it: the resets strip Shiki's own background and padding.
-              `json` is preloaded, so it highlights on first paint as you type. */}
-          <pre
-            className={cn(
-              'overflow-auto p-4',
-              'text-foreground font-mono text-xs leading-relaxed',
-              '[&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs',
-              '[&_.shiki]:!bg-transparent [&_span]:border-none [&_span]:!bg-transparent [&_span]:outline-none',
-            )}
-          >
-            <HighlightedCode code={preview} language="json" />
-          </pre>
-        </figure>
       </div>
     </div>
   );
@@ -438,7 +358,7 @@ function CustomProviderSnippetView({
         <div className="border-border/60 flex items-center justify-between gap-3 border-b px-4 py-2.5">
           <span className="text-muted-foreground text-xs">
             {tI18nComplete.raw('text82b9ffd3cec8')}{' '}
-            <code className="font-mono">.opencode/opencode.jsonc</code>
+            <code className="font-mono">provider configuration</code>
           </span>
           <button
             type="button"
@@ -474,7 +394,7 @@ function CustomProviderSnippetView({
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
         {tI18nComplete.raw('textb81bc1d32189')}{' '}
         <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">
-          .opencode/opencode.jsonc
+          provider configuration
         </code>{' '}
         {tI18nComplete.raw('textd833da5b9497')}
       </p>
