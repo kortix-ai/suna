@@ -4,8 +4,8 @@ import { join } from 'node:path';
 
 import embeddedStarter from '../embedded.generated.json' with { type: 'json' };
 
-const baseManagerPath = 'extensions/pty/opencode-pty/src/plugin/pty/manager.ts';
-const baseToolsPath = 'extensions/pty/pty.ts';
+const baseManagerPath = 'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts';
+const baseToolsPath = 'harnesses/opencode/plugins/pty.ts';
 const templateManagerPath = join(
   import.meta.dir,
   '..',

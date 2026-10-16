@@ -1,7 +1,10 @@
-# Local Kortix runtime state — never commit.
+# Local OpenCode / Kortix runtime state — never commit.
 .kortix/state/
+harnesses/opencode/sessions/
+harnesses/opencode/log/
+harnesses/opencode/cache/
+harnesses/opencode/package-lock.json
 node_modules/
-package-lock.json
 .env
 .env.local
 .DS_Store
