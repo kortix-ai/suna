@@ -525,7 +525,7 @@
         },
         "preferences": {
           "label": "Sprache und Tastenkürzel",
-          "description": "Sprache und Tastaturkürzel."
+          "description": "Sprache und Tastenkürzel."
         },
         "connected": {
           "label": "Verbundene Konten"
@@ -553,11 +553,11 @@
       }
     },
     "preferences": {
-      "title": "Sprache und Verknüpfungen",
-      "description": "Sprach- und Tastaturkürzel.",
+      "title": "Sprache und Tastenkürzel",
+      "description": "Sprache und Tastenkürzel.",
       "languageTitle": "Sprache",
       "languageDescription": "Die Sprache Kortix wird überall in der App angezeigt.",
-      "keyboardTitle": "Tastaturkürzel",
+      "keyboardTitle": "Tastenkürzel",
       "keyboardDescription": "Die Zusatztaste, die zum Wechseln zwischen Tabs und allen Tastenkombinationen in der App verwendet wird.",
       "modifierKey": "Modifikatortaste",
       "quickEntryTitle": "Quick Entry",
