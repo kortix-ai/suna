@@ -18,13 +18,14 @@ const laneJob = workflow.slice(workflow.indexOf('\n  lane:'));
 describe('the kortix-api suite actually runs on pull requests', () => {
   test('the test workflow runs every root lane natively at the exact PR head SHA', () => {
     expect(laneJob).toContain('matrix:');
-    expect(laneJob).toContain('- lane: core');
+    expect(laneJob).toContain('- lane: core-flows');
+    expect(laneJob).toContain('- lane: core-db');
     expect(laneJob).toContain('- lane: browser-1');
     expect(laneJob).toContain('- lane: browser-2');
     expect(laneJob).toContain('- lane: packages');
-    // Eight one-worker browser shards since 2026-10-08 (see tests.yml's matrix comment).
-    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
-      expect(laneJob).toContain(`args: --browser-only --browser-shard=${n}/8`);
+    // Two one-worker browser shards since 2026-10-16 (see tests.yml's matrix comment).
+    for (const n of [1, 2]) {
+      expect(laneJob).toContain(`args: --browser-only --browser-shard=${n}/2`);
     }
     expect(laneJob).toContain('args: --packages-only');
     expect(laneJob).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
