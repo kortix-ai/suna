@@ -1,7 +1,6 @@
 {
-  "source_hash": "5b956f6d3009363e8cb2ae62512e0334c3ae9909ebe0994143ef27d52a6cc271",
+  "source_hash": "71348bcb5d6999886a5277bd98a4085f5df5433d7c5700737165c488c893f8b4",
   "diff_files": [
-    "apps/mobile/components/icons/teams-icon.tsx",
     "apps/web/src/features/apps/app-releases.tsx",
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
     "apps/web/src/features/session/action-panel/easy/step-icon.tsx",
@@ -26,13 +25,13 @@
     "packages/sdk/src/core/turns/tool-kind.ts",
     "packages/sdk/src/core/turns/tool-registry.ts"
   ],
-  "diff_hash": "3f513fec43e6383309ac92f2297107bb8b3a1b96ed9abaef499e79b112153db9",
-  "head": "f92ebbc93b2a75bfaada332069fc132245d2e797",
+  "diff_hash": "4dc59026bfb9dc0589fe0915bdc61268c72d7f937dfd2efe8c366462375aeb93",
+  "head": "5147b7747466c16846762959668ca21aa11153bc",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T23:11:05.926Z"
+  "at": "2026-10-16T00:25:09.119Z"
 }
