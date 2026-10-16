@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema/layout';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   STARTER_TEMPLATE_IDS,
@@ -25,7 +26,7 @@ import { selectMultiFromList } from '../tui-select.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'symlink .agents/skills → skills';
+      return 'symlink .opencode → harnesses/opencode, .agents/skills → skills';
     case 'claude':
       return 'link .claude skills, agents, and commands';
     case 'codex':
@@ -66,7 +67,8 @@ Options:
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
   --force              Configure the current cloned Kortix repository in place.
-                       Requires kortix.yaml (or kortix.toml).
+                       Requires kortix.yaml (or kortix.toml) and an OpenCode
+                       config dir (harnesses/opencode, or .kortix/opencode).
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -301,10 +303,13 @@ function initExistingProject(flags: InitFlags): number {
 
   const hasManifest =
     existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
-  if (!hasManifest) {
+  const hasRuntime = [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].some((dir) =>
+    existsSync(resolve(cwd, dir)),
+  );
+  if (!hasManifest || !hasRuntime) {
     process.stderr.write(
       'kortix init --force: this directory is not a cloned Kortix project.\n' +
-        'Expected kortix.yaml (or kortix.toml).\n',
+        'Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n',
     );
     return 1;
   }

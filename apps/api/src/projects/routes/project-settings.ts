@@ -29,7 +29,7 @@ import {
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import { deleteManagedProjectRepo } from '../lib/project-deletion';
+import { deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
 import {
   requestProviderTransition,
   readPublicProjectTransitionState,
@@ -237,7 +237,7 @@ export function registerProjectSettingsRoutes(): void {
         },
       responses: {
           200: json(z.any(), 'OK'),
-          ...errors(404, 502),
+          ...errors(404, 500, 502),
       },
     }),
     async (c: any) => {
@@ -265,6 +265,19 @@ export function registerProjectSettingsRoutes(): void {
     } catch (error) {
       logger.error('[projects] failed to delete the managed repo', { projectId, error: String(error) });
       return c.json({ error: 'Failed to delete managed project repository' }, 502);
+    }
+
+    // Purge the project's connector rows before the archive: after it the
+    // project answers 404, so a failed purge could never be retried.
+    // The row survives its archive as a tombstone, so the database's
+    // connectors FK cascade never fires and the rows would outlive the
+    // purged project (KRTX-1907). Same visibility rule as the repo delete:
+    // a failure leaves the project active and the deletion retryable.
+    try {
+      await purgeProjectConnectors(projectId);
+    } catch (error) {
+      logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
+      return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
     const [row] = await db

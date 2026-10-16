@@ -769,6 +769,51 @@
   --kortix-purple: #e1c0fa;
 }
 
+/* Jellybeans Light */
+:root:not(.dark)[data-light-theme='jellybeans-light'],
+[data-theme-preview='jellybeans-light'] {
+  color-scheme: light;
+  --background: #f4f4f4;
+  --foreground: #262626;
+  --pane: #f4f4f4;
+  --surface: #fcfcfc;
+  --card: #ececec;
+  --card-foreground: #262626;
+  --popover: #fcfcfc;
+  --popover-foreground: #262626;
+  --primary: #262626;
+  --primary-foreground: #f4f4f4;
+  --secondary: #e3e3e3;
+  --secondary-foreground: #262626;
+  --muted: #e3e3e3;
+  --muted-foreground: #5c5c5c;
+  --accent: #e8e8e8;
+  --accent-foreground: #262626;
+  --destructive: #c04449;
+  --destructive-foreground: #fbfbfb;
+  --border: #d8d8d8;
+  --input: #e3e3e3;
+  --ring: #3475a1;
+  --hover: rgba(38, 38, 38, 0.045);
+  --active: rgba(38, 38, 38, 0.075);
+  --selection: #cad2f9;
+  --selection-foreground: #262626;
+  --sidebar: #f4f4f4;
+  --sidebar-foreground: #262626;
+  --sidebar-primary: #3475a1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e3e3e3;
+  --sidebar-accent-foreground: #262626;
+  --sidebar-border: #d8d8d8;
+  --sidebar-ring: #3475a1;
+  --kortix-blue: #3475a1;
+  --kortix-green: #577f36;
+  --kortix-red: #c04449;
+  --kortix-yellow: #c07003;
+  --kortix-orange: #d16900;
+  --kortix-purple: #8656a6;
+}
+
 /* Kanagawa Dragon */
 :root.dark[data-dark-theme='kanagawa-dragon'],
 [data-theme-preview='kanagawa-dragon'] {

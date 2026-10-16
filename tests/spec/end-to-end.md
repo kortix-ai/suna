@@ -316,7 +316,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403. A later read carries the stamped `last_opened_at`.
 `PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list. The project carries `effective_project_role`; `file_count` equals the listed files.
 `PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403. A `repo_url` in the body is ignored; a project `member` → 403.
-`PROJ-8` `DELETE /projects/:id` → `manage` → 200 status `archived`; M_EDITOR → 403.
+`PROJ-8` `DELETE /projects/:id` → `manage` → 200 status `archived`; M_EDITOR → 403. Purging a project purges its connector rows: an HTTP connector created on the project lists one row before the delete and an empty list after it.
 
 ### Project access (membership)
 
