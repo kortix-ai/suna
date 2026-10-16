@@ -79,9 +79,9 @@ Subcommands:
                            prompt, the filter verdict, and the session key.
                            --json prints the raw response.
   runs <slug> [--status <s>] [--limit N] [--cursor <c>] [--json]
-                           List the trigger's runs, newest first: started,
-                           source, status, run status, duration, cost,
-                           session. --status: queued, running, fired, failed,
+                           List the trigger's runs, newest first: run id,
+                           started, source, status, run status, duration,
+                           cost, session. --status: queued, running, fired, failed,
                            skipped, rejected. --limit 1-100 (default 25).
   replay <slug> <run_id> [--confirm-unverified] [--json]
                            Fire the trigger again with that run's stored
@@ -529,16 +529,17 @@ async function triggersFire(
   } else if (watch?.outcome === 'unwatched') {
     note = ` ${C.dim}— could not watch the run outcome (${watch.reason}); \`kortix triggers ls\` shows it.${C.reset}`;
   }
+  const run = resp.run_id ? ` → run ${resp.run_id}` : '';
   if (fired && resp.session_id) {
     process.stdout.write(
-      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)}${note}\n`,
+      `${status.ok(`Fired ${C.bold}${slug}${C.reset}${run} → session ${C.dim}${resp.session_id}${C.reset}`)}${note}\n`,
     );
   } else if (!fired) {
     process.stdout.write(
-      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}${note}\n`,
+      `${status.info(`Queued ${C.bold}${slug}${C.reset}${run}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}${note}\n`,
     );
   } else {
-    process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}`)}\n`);
+    process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}${run}`)}\n`);
   }
   return 0;
 }

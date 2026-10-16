@@ -352,7 +352,7 @@ the same state.
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers fire <slug> --payload <json\|@file> [--dry-run] [--json]` | Fire with a JSON object merged over the manual payload. `--dry-run` fires nothing: it prints the rendered prompt, the filter verdict and the session key. Test a webhook or event prompt this way. |
-| `kortix triggers runs <slug> [--status queued\|running\|fired\|failed\|skipped\|rejected] [--limit N] [--cursor <c>] [--json]` | The trigger's run history, newest first: started, source, status, run status, duration, cost, session. |
+| `kortix triggers runs <slug> [--status queued\|running\|fired\|failed\|skipped\|rejected] [--limit N] [--cursor <c>] [--json]` | The trigger's run history, newest first: run id, started, source, status, run status, duration, cost, session. |
 | `kortix triggers replay <slug> <run_id> [--confirm-unverified]` | Fire again with that run's stored payload. An unverified webhook run exits 1 until you pass `--confirm-unverified`. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |

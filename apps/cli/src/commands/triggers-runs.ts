@@ -134,11 +134,14 @@ export async function triggersRuns(
     emitJson(resp);
     return 0;
   }
+  // A page can be empty and still have older runs: the server drops runs the caller may not see.
+  const more = resp.next_cursor ? ` — older runs: --cursor ${resp.next_cursor}` : '';
   if (resp.runs.length === 0) {
-    process.stdout.write(`  ${C.dim}No runs of ${slug}${f.status ? ` with status ${f.status}` : ''}.${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}No runs of ${slug}${f.status ? ` with status ${f.status}` : ''} on this page${more}.${C.reset}\n`);
     return 0;
   }
   const rows = resp.runs.map((r: TriggerRun) => [
+    r.run_id,
     new Date(r.started_at).toLocaleString(),
     r.replay_of ? `${r.source} (replay)` : r.source,
     r.status,
@@ -147,13 +150,13 @@ export async function triggersRuns(
     formatCost(r.cost_usd),
     r.session_id ?? '—',
   ]);
-  const head = ['STARTED', 'SOURCE', 'STATUS', 'RUN STATUS', 'DURATION', 'COST', 'SESSION'];
+  const head = ['RUN', 'STARTED', 'SOURCE', 'STATUS', 'RUN STATUS', 'DURATION', 'COST', 'SESSION'];
   const widths = head.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i]!.length)));
   const line = (cells: string[], color = true) =>
     `  ${cells
       .map((c, i) => {
         const cell = i === cells.length - 1 ? c : pad(c, widths[i]!);
-        return color && (i === 2 || i === 3) && c !== '—' ? `${statusColor(c)}${cell}${C.reset}` : cell;
+        return color && (i === 3 || i === 4) && c !== '—' ? `${statusColor(c)}${cell}${C.reset}` : cell;
       })
       .join('   ')}\n`;
   process.stdout.write(`\n  ${C.dim}${line(head, false).trim()}${C.reset}\n`);
@@ -164,9 +167,7 @@ export async function triggersRuns(
     }
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.runs.length} run${resp.runs.length === 1 ? '' : 's'}${
-      resp.next_cursor ? ` — older runs: --cursor ${resp.next_cursor}` : ''
-    }${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.runs.length} run${resp.runs.length === 1 ? '' : 's'}${more}${C.reset}\n\n`,
   );
   return 0;
 }
