@@ -29,9 +29,13 @@ const BADGE_CLASS: Record<BadgeTone, string> = {
   destructive: 'bg-kortix-red/15 text-foreground',
 };
 
+/** The badge's classes, for a host chip that must look exactly like a genui badge. */
+export const genuiBadgeClass = (tone: BadgeTone) =>
+  cn('inline-flex w-fit items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap', BADGE_CLASS[tone]);
+
 export function GenuiBadge({ props }: GenuiComponentProps) {
   return (
-    <span className={cn('inline-flex w-fit items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap', BADGE_CLASS[badgeTone(props.tone)])}>
+    <span className={genuiBadgeClass(badgeTone(props.tone))}>
       {props.label}
     </span>
   );

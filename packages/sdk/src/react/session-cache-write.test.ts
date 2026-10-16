@@ -312,6 +312,28 @@ describe('filtered list caches (KRTX-639)', () => {
     expect(ids(qc, searched)).toEqual([]);
   });
 
+  test('a new session never lands in the pinned or archived view', () => {
+    const qc = new QueryClient();
+    const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
+    const archived = qk.project.sessionsPaged('P1', 'visible', { view: 'archived' });
+    for (const key of [pinned, archived]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(
+      qc,
+      'P1',
+      withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' }, pinned_at: null }),
+    );
+    expect(ids(qc, pinned)).toEqual([]);
+    expect(ids(qc, archived)).toEqual([]);
+  });
+
+  test('a pinned session still lands in the pinned view', () => {
+    const qc = new QueryClient();
+    const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
+    qc.setQueryData(pinned, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('PIN', { pinned_at: '2026-10-16T00:00:00Z' }));
+    expect(ids(qc, pinned)).toEqual(['PIN']);
+  });
+
   test('an unfiltered legacy cache still receives every session', () => {
     const qc = new QueryClient();
     const legacy = qk.project.sessionsPaged('P1');
