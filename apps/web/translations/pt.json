@@ -20081,20 +20081,6 @@
       "expiryNever": "Nunca",
       "expiryDays": "{count, plural, one {# dia} other {# dias}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Link público",
-      "sectionDescription": "Qualquer pessoa com o link pode ler esta conversa sem iniciar sessão.",
-      "create": "Criar link público",
-      "revokeDescription": "A conversa deixa de carregar para todos que têm o link. Depois você pode criar um novo link.",
-      "rowMeta": "Conversa somente leitura",
-      "unavailable": "Esta conversa está temporariamente indisponível.",
-      "unavailableDescription": "Não é possível ler a conversa agora. Tente novamente em instantes.",
-      "loadFailedDescription": "Não foi possível carregar a conversa.",
-      "empty": "Ainda não há mensagens",
-      "savedCopy": "Cópia salva em {date}",
-      "embed": "Incorporar",
-      "embedCopied": "Código de incorporação copiado"
-    },
     "chatIdentityConnect": {
       "chatAccount": "Conta do {service}",
       "chatWorkspace": "Workspace do {service}",
@@ -20134,6 +20120,12 @@
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
       "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
       "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Incorporar",
+      "sectionDescription": "Copia um trecho de iframe desta página de sessão. Quem o abrir entra com uma conta que pode abrir esta sessão.",
+      "copy": "Copiar código de incorporação",
+      "copied": "Código de incorporação copiado"
     }
   },
   "projectOnboarding": {

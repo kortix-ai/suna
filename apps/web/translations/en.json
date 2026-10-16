@@ -20092,20 +20092,6 @@
       "expiryNever": "Never",
       "expiryDays": "{count, plural, one {# day} other {# days}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Public link",
-      "sectionDescription": "Anyone with the link can read this conversation without signing in.",
-      "create": "Create public link",
-      "revokeDescription": "The conversation stops loading for everyone with the link. You can create a new link afterwards.",
-      "rowMeta": "Read-only conversation",
-      "unavailable": "This conversation is temporarily unavailable.",
-      "unavailableDescription": "The conversation could not be read right now. Try again in a moment.",
-      "loadFailedDescription": "The conversation could not be loaded.",
-      "empty": "No messages yet",
-      "savedCopy": "Saved copy from {date}",
-      "embed": "Embed",
-      "embedCopied": "Embed code copied"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service} account",
       "chatWorkspace": "{service} workspace",
@@ -20145,6 +20131,12 @@
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Embed",
+      "sectionDescription": "Copies an iframe snippet of this session page. Whoever opens it signs in with an account that can open this session.",
+      "copy": "Copy embed code",
+      "copied": "Embed code copied"
     }
   },
   "projectOnboarding": {

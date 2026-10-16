@@ -6,7 +6,6 @@ import { Client } from "../core/client";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
 import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
-import { seedSessionTranscript } from "../fixtures/session-transcript";
 
 flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
   await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
@@ -446,8 +445,8 @@ flow(
 /**
  * PROJ-40 — deleting a workspace closes its side doors (KRTX-1714). The delete
  * archives the project, and the revoke routes answer 404 after it, so a door
- * that ignored `projects.status` stayed open for good: a public transcript
- * link kept rendering and a kgw_ key kept authorizing billed LLM calls.
+ * that ignored `projects.status` stayed open for good: a public share link
+ * kept resolving and a kgw_ key kept authorizing billed LLM calls.
  */
 flow(
   "PROJ-40",
@@ -458,7 +457,7 @@ flow(
       "PATCH /v1/projects/:projectId/experimental",
       "POST /v1/projects/:projectId/gateway/keys",
       "POST /v1/projects/:projectId/sessions/:sessionId/public-shares",
-      "GET /v1/public/session-shares/:shareId/messages",
+      "GET /v1/p/public-share/:token",
       "POST /v1/llm/chat/completions",
       "DELETE /v1/projects/:projectId",
     ],
@@ -476,11 +475,10 @@ flow(
       visibility: "project",
     });
     ctx.track("session", sessionId, { projectId: project.id });
-    await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: team.id, sessionId });
 
     let key = "";
     let token = "";
-    await ctx.step("the owner mints a kgw_ key and a public transcript link", async () => {
+    await ctx.step("the owner mints a kgw_ key and a public file link", async () => {
       (await owner.patch("/v1/projects/:projectId/experimental", { feature: "llm_gateway", enabled: true }, { params }))
         .status(200);
       const minted = await owner.post("/v1/projects/:projectId/gateway/keys", { name: "ci" }, { params });
@@ -488,7 +486,7 @@ flow(
       key = minted.json<{ secret_key: string }>().secret_key;
       const share = await owner.post(
         "/v1/projects/:projectId/sessions/:sessionId/public-shares",
-        { transcript: true },
+        { file: { path: "/workspace/notes.md" } },
         { params: { ...params, sessionId } },
       );
       share.status(201);
@@ -498,10 +496,12 @@ flow(
     const gateway = () => new Client(ctx.env.gatewayUrl).withBearer(key, "PROJECT_GATEWAY_KEY");
     const ask = () => gateway().post("/v1/llm/chat/completions", { model: "kimi-k3", max_tokens: 1, messages: [] });
 
-    await ctx.step("while the workspace is live: the gateway accepts the key and the link reads the transcript", async () => {
+    await ctx.step("while the workspace is live: the gateway accepts the key and the link resolves", async () => {
       const r = await ask();
       if (r.statusCode === 401) throw new Error(`the live key was refused: ${r.text().slice(0, 200)}`);
-      (await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId: token } })).status(200);
+      // A local database session has no sandbox, so the token edge answers its
+      // honest 503 ("not ready") — the point is that it is never an auth error.
+      (await anon.get("/v1/p/public-share/:token", { params: { token } })).status([200, 503]);
     });
 
     await ctx.step("the owner deletes the workspace", async () => {
@@ -510,7 +510,7 @@ flow(
 
     await ctx.step("after the delete: the kgw_ key → 401 and the link → 410", async () => {
       (await ask()).status(401);
-      (await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId: token } })).status(410);
+      (await anon.get("/v1/p/public-share/:token", { params: { token } })).status(410);
     });
   },
 );

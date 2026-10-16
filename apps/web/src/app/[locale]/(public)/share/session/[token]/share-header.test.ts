@@ -20,9 +20,7 @@ describe('public share header chrome', () => {
     expect(page).toContain('KortixLogo');
     // The title comes from the file name, never the workspace path.
     expect(page).toContain('fileNameFromPath');
-    expect(page).toContain('const title = isFileShare\n    ? fileName');
-    // A transcript share is titled by the session name, not the generic label.
-    expect(page).toContain('(sessionTitle ?? meta.share.label)');
+    expect(page).toContain('const title = isFileShare ? fileName : meta.share.label');
   });
 
   test('header controls carry no ad-hoc sizing or press effects', () => {
@@ -76,32 +74,12 @@ describe('public share content pane', () => {
   });
 });
 
-describe('public transcript share', () => {
-  test('renders the transcript view and never the offline panel or an iframe', () => {
-    expect(page).toContain('<PublicTranscriptShareView token={token} />');
-    // The branch comes before `offline`, and `offline` is false for it: a
-    // transcript is served from the saved copy while the sandbox is stopped.
-    expect(page.indexOf('isTranscriptShare ? (')).toBeLessThan(page.indexOf(') : offline ? ('));
-    expect(page).toContain("const offline = !isTranscriptShare && meta.share.sandbox_status !== 'active'");
-    // `public_url` of a transcript share is this page itself.
-    expect(page).toContain('!isFileShare && !isTranscriptShare && (');
-  });
-
-  test('renders messages through the untrusted markdown policy', () => {
-    const transcriptView = readFileSync(
-      resolve(import.meta.dir, 'public-transcript-share-view.tsx'),
-      'utf8',
-    );
-    expect(transcriptView).toContain('export function PublicTranscriptShareView');
-    // The markdown rendering lives in the shared TranscriptMessage (also used
-    // by the /embed/chat widget route): the untrusted policy must hold there.
-    const transcriptMessage = readFileSync(
-      resolve(import.meta.dir, 'transcript-message.tsx'),
-      'utf8',
-    );
-    expect(transcriptMessage).toContain('trust="untrusted"');
-    expect(transcriptView).not.toContain('trust="agent"');
-    expect(transcriptMessage).not.toContain('trust="agent"');
+describe('legacy transcript shares render the error state (KRTX-2358: feature removed)', () => {
+  test('a transcript resource_type never reaches the preview iframe branch', () => {
+    expect(page).toContain("resource_type === 'transcript'");
+    expect(page).toContain("'This share is no longer available'");
+    expect(page).not.toContain('PublicTranscriptShareView');
+    expect(page).not.toContain('isTranscriptShare');
   });
 });
 

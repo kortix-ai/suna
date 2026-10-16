@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 import {
   ArrowsInSimpleIcon as ArrowsInSimple,
   ArrowsOutSimpleIcon as ArrowsOutSimple,
-  CheckIcon,
   ArrowSquareOutIcon as ExternalLink,
   PlayIcon as Play,
 } from '@phosphor-icons/react';
@@ -21,13 +20,11 @@ import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { OutcomeTitle } from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
-import { Copy } from '@/features/icon/icons/copy';
 import { Download } from '@/features/icon/icons/download';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { getPublicSessionShare, getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
+import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
-import { PublicTranscriptShareView } from './public-transcript-share-view';
 import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
 
@@ -71,16 +68,11 @@ export default function PublicSessionSharePage() {
   const [loading, setLoading] = useState(true);
   const [hasAuth, setHasAuth] = useState(false);
   const [starting, setStarting] = useState(false);
-  // A transcript share is titled by the session's name. The share row's own
-  // label is the generic "Conversation".
-  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   // Full screen here means "no share chrome" — the header unmounts and the
   // shared content owns the whole viewport. Deliberately not the native
   // Fullscreen API: the content is an iframe, and animating/entering native
   // fullscreen forces it to re-layout twice on a surface we do not control.
   const [fullscreen, setFullscreen] = useState(false);
-  // "Copy link" confirms in place: the glyph and the label swap for a beat.
-  const [copied, setCopied] = useState(false);
 
   const base = apiBase();
   const origin = apiOrigin();
@@ -121,16 +113,15 @@ export default function PublicSessionSharePage() {
           backendUrl: base,
           cache: 'no-store',
         });
-        if (!cancelled) setMeta(body);
-        if (body.share.resource_type === 'transcript') {
-          // Title only, and not awaited: the transcript view mounts with `meta`
-          // and starts its own /messages read in parallel. A failure keeps the
-          // share label, never the error page.
-          void getPublicSessionShare(token)
-            .then((session) => {
-              if (!cancelled) setSessionTitle(session.session.title || null);
-            })
-            .catch(() => {});
+        if (!cancelled) {
+          if (body.share.resource_type === 'transcript') {
+            // Legacy transcript shares (KRTX-2358 removed the feature; the
+            // revoke migration ends every one of them) must not fall through
+            // to the preview iframe branch, which would render an empty frame.
+            setError('This share is no longer available');
+            return;
+          }
+          setMeta(body);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Share link unavailable');
@@ -190,21 +181,6 @@ export default function PublicSessionSharePage() {
     void downloadFileFromUrl(fileSrc, fileName);
   }, [fileName, fileSrc]);
 
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1600);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  const copyLink = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-    } catch {
-      // A blocked clipboard leaves the address bar as the way to copy.
-    }
-  }, []);
-
   if (loading) {
     return (
       <main className="bg-background text-foreground flex min-h-screen items-center justify-center">
@@ -237,17 +213,10 @@ export default function PublicSessionSharePage() {
   }
 
   const isFileShare = meta.share.resource_type === 'file';
-  const isTranscriptShare = meta.share.resource_type === 'transcript';
-  // A transcript needs no running sandbox: the API answers from the saved copy
-  // when the session is stopped.
-  const offline = !isTranscriptShare && meta.share.sandbox_status !== 'active';
+  const offline = meta.share.sandbox_status !== 'active';
   // A file share is titled by its file name only — the workspace path is
   // internal detail the recipient has no context for.
-  const title = isFileShare
-    ? fileName
-    : isTranscriptShare
-      ? (sessionTitle ?? meta.share.label)
-      : meta.share.label;
+  const title = isFileShare ? fileName : meta.share.label;
   const authHref = `/auth?next=${encodeURIComponent(`/share/session/${token}`)}`;
   const sessionHref = `/projects/${meta.share.project_id}/sessions/${meta.share.session_id}`;
   const offlineTitle = isFileShare
@@ -275,7 +244,7 @@ export default function PublicSessionSharePage() {
           {/* One group, one weight: every action is secondary, so the bar reads
               as a toolbar beside the shared content, never louder than it. */}
           <ButtonGroup className="shrink-0">
-            {iframeSrc && !offline && !isFileShare && !isTranscriptShare && (
+            {iframeSrc && !offline && !isFileShare && (
               <Hint label={openAppLabel} side="bottom">
                 <Button
                   variant="secondary"
@@ -288,9 +257,8 @@ export default function PublicSessionSharePage() {
               </Hint>
             )}
             {/* Full screen exists for an iframe that needs the whole viewport.
-                A transcript is a scrolling page; the header costs it nothing.
                 An offline share has nothing to fill the screen with. */}
-            {!isTranscriptShare && !offline && (
+            {!offline && (
               <Hint label={tI18nHardcoded.raw('i18nComplete.text674fe2acd0d5')} side="bottom">
                 <Button
                   variant="secondary"
@@ -306,14 +274,6 @@ export default function PublicSessionSharePage() {
               <Button variant="secondary" size="sm" onClick={handleDownload}>
                 <Download />
                 {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
-              </Button>
-            )}
-            {isTranscriptShare && (
-              <Button variant="secondary" size="sm" onClick={() => void copyLink()}>
-                {copied ? <CheckIcon /> : <Copy />}
-                {copied
-                  ? tI18nHardcoded.raw('i18nComplete.text8d525e5f158b')
-                  : tI18nHardcoded.raw('i18nComplete.text9adff6870471')}
               </Button>
             )}
             {/* One CTA in both auth states. A signed-out visitor still wants
@@ -351,9 +311,7 @@ export default function PublicSessionSharePage() {
           than `hidden` so this never becomes a scrollable box — the scrolling
           belongs to the child. */}
       <section className="bg-background border-border relative h-dvh min-h-0 flex-1 overflow-clip rounded-t-md border-x border-t">
-        {isTranscriptShare ? (
-          <PublicTranscriptShareView token={token} />
-        ) : offline ? (
+        {offline ? (
           hasAuth ? (
             <div className="flex h-full items-center justify-center px-6">
               <div className="flex max-w-sm flex-col items-center gap-6 text-center">

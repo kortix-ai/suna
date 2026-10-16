@@ -1,7 +1,7 @@
 /**
  * Integration test (real local DB): deleting a workspace closes every side
  * door (KRTX-1714). The delete sets `projects.status = 'archived'`, and the
- * readers below never looked at it: a public transcript link kept rendering,
+ * readers below never looked at it: a public share link kept resolving,
  * a kgw_ key kept authorizing billed LLM calls, an App kept serving, and a
  * chat message kept starting or continuing a session.
  */
@@ -47,7 +47,7 @@ beforeAll(async () => {
   });
   await db.insert(apps).values({ accountId: ACCOUNT, projectId: PROJECT, name: 'archived-doors-app', slug: ROUTE_KEY, routeKey: ROUTE_KEY });
   gatewaySecret = (await createGatewayKey({ accountId: ACCOUNT, projectId: PROJECT, name: 'ci', createdBy: OWNER })).secret_key;
-  const share = await createPublicShare({ transcript: true }, { sessionId: SESSION, projectId: PROJECT, accountId: ACCOUNT, userId: OWNER });
+  const share = await createPublicShare({ file: { path: '/workspace/door-probe.md' } }, { sessionId: SESSION, projectId: PROJECT, accountId: ACCOUNT, userId: OWNER });
   if (!share.ok) throw new Error('share not created');
   shareToken = share.share.public_token;
 });
@@ -60,14 +60,14 @@ afterAll(async () => {
 describe('a deleted workspace closes its side doors', () => {
   test('while the workspace is live, every door is open', async () => {
     expect(await validateGatewayKey(gatewaySecret)).not.toBeNull();
-    expect((await resolvePublicShare(shareToken, { requireTranscript: true })).ok).toBe(true);
+    expect((await resolvePublicShare(shareToken)).ok).toBe(true);
     expect(await loadPublicAppState(ROUTE_KEY)).not.toBeNull();
   });
 
   test('after the delete: kgw_ key refused, share link gone (410), App not found', async () => {
     await db.update(projects).set({ status: 'archived' }).where(eq(projects.projectId, PROJECT));
     expect(await validateGatewayKey(gatewaySecret)).toBeNull();
-    const share = await resolvePublicShare(shareToken, { requireTranscript: true });
+    const share = await resolvePublicShare(shareToken);
     expect(share.ok).toBe(false);
     expect(share.ok ? 0 : share.status).toBe(410);
     expect(await loadPublicAppState(ROUTE_KEY)).toBeNull();

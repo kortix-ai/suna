@@ -5,6 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Deprecated (public transcript shares removed)
+The API removed public transcript sharing (KRTX-2358): no `/v1/public/session-shares/**`
+route is served and `createSessionPublicShare` with `{ transcript: true }` answers 400.
+- `getPublicSessionShare`, `getPublicSessionShareMessages`, `findActiveTranscriptShare`,
+  `PublicSessionShareError`, `PublicSessionShareMeta`, `PublicSessionTranscript`,
+  `PublicSessionTranscriptMessage` and `PublicSessionTranscriptToolCall` are `@deprecated`
+  (every call answers 404). Removed in the next major.
+- `CreateSessionPublicShareInput.transcript` is `@deprecated`; the field is still sent until
+  the next major, and a current server answers 400.
+- File and preview shares are unaffected: mint/list/revoke and the `/share/session/:token`
+  viewer keep working.
+
 ### Changed (Enterprise is a feature layer; trials removed)
 - `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.
   Demo is self-serve (owners and admins); Licensed is a license contract.

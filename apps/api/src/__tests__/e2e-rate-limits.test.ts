@@ -11,7 +11,6 @@ mock.module('../config', () => ({
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
     KORTIX_PROXY_REQS_PER_MIN: 1,
     KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN: 1,
-    KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: 1,
   },
 }));
 
@@ -29,7 +28,6 @@ const {
   createCheckEmailRateLimitMiddleware,
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
-  createPublicSessionShareRateLimitMiddleware,
   createProjectWebhookRateLimitMiddleware,
   resetRateLimiters,
 } = await import('../middleware/rate-limit');
@@ -100,43 +98,6 @@ describe('audited rate limits', () => {
       resourceType: 'sandbox_proxy',
       resourceId: 'sandbox-1',
       metadata: { limiter: 'sandbox_proxy' },
-    });
-  });
-
-  test('limits anonymous public session-share reads by shareId, not by IP', async () => {
-    const app = new Hono();
-    app.use('/v1/public/session-shares/:shareId', createPublicSessionShareRateLimitMiddleware());
-    app.use('/v1/public/session-shares/:shareId/messages', createPublicSessionShareRateLimitMiddleware());
-    app.get('/v1/public/session-shares/:shareId', (c) => c.json({ ok: true }));
-    app.get('/v1/public/session-shares/:shareId/messages', (c) => c.json({ ok: true }));
-
-    const shareA = '11111111-1111-4111-a111-111111111111';
-    const shareB = '22222222-2222-4222-a222-222222222222';
-
-    const first = await app.request(`/v1/public/session-shares/${shareA}`, {
-      headers: { 'X-Forwarded-For': '203.0.113.20' },
-    });
-    expect(first.status).toBe(200);
-
-    const second = await app.request(`/v1/public/session-shares/${shareA}`, {
-      headers: { 'X-Forwarded-For': '203.0.113.20' },
-    });
-    expect(second.status).toBe(429);
-
-    // A DIFFERENT share id from the exact same IP is a separate bucket — every
-    // visitor to one shared link is legitimately behind the same limiter, but
-    // one caller shouldn't be able to starve every other share from the same
-    // (possibly shared) IP. Ids must be well-formed uuids: anything else keys
-    // on client IP instead (the anti-OOM fallback).
-    const otherShare = await app.request(`/v1/public/session-shares/${shareB}`, {
-      headers: { 'X-Forwarded-For': '203.0.113.20' },
-    });
-    expect(otherShare.status).toBe(200);
-
-    expect(auditRows.at(-1)).toMatchObject({
-      resourceType: 'public_session_share',
-      resourceId: shareA,
-      metadata: { limiter: 'public_session_share' },
     });
   });
 

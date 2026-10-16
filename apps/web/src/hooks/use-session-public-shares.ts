@@ -17,7 +17,6 @@ import {
   listSessionPublicShares,
   revokeSessionPublicShare,
 } from '@kortix/sdk';
-import type { EmbedLayout } from '@/app/[locale]/(public)/embed/chat/[token]/embed-shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -111,26 +110,6 @@ export function publicShareUrl(
 ): string | null {
   if (!publicPath || !origin) return null;
   return `${origin}${publicPath}`;
-}
-
-/**
- * The URL a host page embeds: the same share token on the `/embed/chat/{token}`
- * widget route, carrying a layout. The token is the capability there exactly as
- * on the share page, so the embed is derived from the public path, never minted
- * separately. `origin` follows `publicShareUrl`.
- */
-export function embedChatUrl(
-  publicPath: string | null | undefined,
-  origin: string | null = typeof window === 'undefined' ? null : window.location.origin,
-  layout: EmbedLayout = 'modal',
-): string | null {
-  if (!publicPath || !origin) return null;
-  // The public path shape the API owns (`/share/session/{token}`), parsed
-  // strictly: a path that does not name a token builds nothing rather than
-  // guessing — a malformed path must never mint a plausible-looking URL.
-  const token = /(?:^|\/)share\/session\/([^/]+)\/?$/.exec(publicPath)?.[1];
-  if (!token) return null;
-  return `${origin}/embed/chat/${encodeURIComponent(token)}?layout=${layout}`;
 }
 
 export function useSessionPublicShares(projectId?: string, sessionId?: string) {
