@@ -170,7 +170,7 @@ jobs:
       # same variable, so the sweep stays exact.
       KE2E_RUN_ID: ${{ github.run_id }}-api${{ github.run_attempt != 1 && format('-a{0}', github.run_attempt) || '' }}
       # Staging concurrency, the fleet total: 4 API + 5 sandbox workers here
-      # plus 2 browser workers = 11. Run 32231251280 collapsed staging at 26;
+      # plus 4 browser workers = 13. Run 32231251280 collapsed staging at 26;
       # 15 held (32240074477); 19 produced origin 5xx on team-create
       # (32323656671). Lower these first if MAINTENANCE_MODE 503s reappear.
       KE2E_API_WORKERS: '4'
@@ -305,10 +305,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     env:
-      # Two shards, one browser each (testing reset, 2026-10-16): the gate runs
-      # the money-path specs; spec 27 fills one shard, the rest the other.
+      # Four shards, one browser each: the `deployed` table in
+      # tests/e2e/shard-durations.json puts each spec 27 file on a shard of its
+      # own and splits the other 8 specs over two: 217/190/176/180 s.
+      # Two shards ran 9.5-12.8 min each; the release suite targets <= 10 min.
       E2E_BROWSER_WORKERS: '1'
       # No spec is quarantined; the exclusion stays as a guard against a stray tag.
       # Playwright applies this at collection, so an excluded spec is absent,
@@ -386,7 +388,7 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Run this shard of the deployed staging browser journeys
-        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/2
+        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/4
       # No --run-id sweep here: the Playwright specs mint their own Supabase
       # users (@example.test / @kortix.test) with no run-scoped prefix, so there
       # is nothing to scope to. sweep-before now covers those domains, which it

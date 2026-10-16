@@ -313,8 +313,9 @@ The gate is three parallel jobs and an aggregator:
   workers. About 1 min of runner setup, then ~3 min of flows. The 30-minute
   cap covers a cold sandbox image (`runner.ts` waits up to 15 min for the
   image and 10 min for its runtime); it is a hang detector, not a budget.
-- `deployed browser shard` 1 and 2: `--target-browser-full
-  --browser-shard=N/2`, `fail-fast: false`.
+- `deployed browser shard` 1 to 4: `--target-browser-full
+  --browser-shard=N/4`, `fail-fast: false`. Four shards keep the heaviest
+  shard to one spec 27 file (~3.6 min of journeys in the `deployed` table).
 - `sweep stale test accounts` runs beside them, not in front. It reclaims
   accounts older than 2 hours, so it cannot touch this run.
 
@@ -323,8 +324,8 @@ flows), 10-17 min each on green run 38495058722, and v0.13.57 needed 5 gate
 rounds for flakes on shared staging. `src/core/shard.ts` still partitions any
 selection for `--api-shard`, and `unit/shard.test.ts` proves that partition.
 
-Staging concurrency is a fleet total: 4 + 5 API workers plus 2 browser workers
-is 11. Run 32231251280 collapsed staging at 26 workers, 15 held on run
+Staging concurrency is a fleet total: 4 + 5 API workers plus 4 browser workers
+is 13. Run 32231251280 collapsed staging at 26 workers, 15 held on run
 32240074477, and 19 produced origin 5xx on team creation. Lower the workers
 first if `MAINTENANCE_MODE` 503s reappear.
 

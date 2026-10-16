@@ -108,39 +108,9 @@ jobs:
               - 'apps/cli/src/self-host/**'
               - 'apps/cli/scripts/self-host-e2e/**'
 
-  api-typecheck:
-    name: API typecheck
-    needs: changes
-    if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Install pnpm
-        # The lockfile is pnpm 8 format (lockfileVersion 6.0), matching the
-        # packageManager pin. corepack provides exactly that version.
-        run: |
-          corepack enable pnpm
-          echo "pnpm: $(pnpm -v)  node: $(node -v)"
-
-      - name: Install dependencies (kortix-api + workspace deps)
-        # engine-strict is relaxed for CI only: an out-of-scope web dep declares
-        # engines pnpm>=10/node>=24, which conflicts with the repo's pnpm 8
-        # lockfile. This relaxes the version check only — supply-chain controls
-        # (minimum-release-age, ignore-scripts) stay enforced.
-        run: pnpm install --frozen-lockfile --filter "kortix-api..."
-        env:
-          npm_config_engine_strict: "false"
-
-      - name: Typecheck
-        run: pnpm --filter kortix-api typecheck
+  # No API typecheck here: the `packages-api` contract lane runs
+  # `pnpm --filter kortix-api typecheck` on the same release tree
+  # (tests/bin/package-quality.ts), so a job here was the same tsc twice.
 
   frontend-build:
     name: Frontend build
@@ -172,10 +142,10 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Enforce frontend SDK boundary
-        run: |
-          pnpm --dir apps/web exec bun test src/sdk-boundary.test.ts
-          pnpm --dir apps/web exec eslint src --quiet
+      # src/sdk-boundary.test.ts runs in the `packages-rest` contract lane
+      # (apps/web `bun test`); only the lint is unique to this job.
+      - name: Enforce frontend lint
+        run: pnpm --dir apps/web exec eslint src --quiet
 
       # Next.js 16.3 turns on Turbopack's FileSystem cache for `next build`
       # (`experimental.turbopackFileSystemCacheForBuild`, default true) and
@@ -245,10 +215,8 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
 
-      - name: Typecheck
-        run: bun run typecheck
-        working-directory: apps/kortix-sandbox-agent-server
-
+      # No typecheck: the `packages-kortixd` contract lane runs
+      # `pnpm --filter kortixd typecheck` on the same release tree.
       - name: Import boundaries
         run: bun run lint && bun run test:architecture
         working-directory: apps/kortix-sandbox-agent-server

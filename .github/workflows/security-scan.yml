@@ -145,6 +145,11 @@ jobs:
 
   gitleaks-history:
     name: Gitleaks (full history)
+    # Not on a pull request. It took 8-9 min of the release suite (run
+    # 38935179301) to print a report nobody gates on (exit-code 0, no SARIF).
+    # The blocking scan of the pull request's own commits is secret-scan.yml;
+    # the full history is rescanned weekly and on dispatch.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:

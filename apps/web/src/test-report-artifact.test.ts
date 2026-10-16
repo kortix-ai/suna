@@ -12,7 +12,7 @@ describe('frontend browser report artifact contract', () => {
     // Testing reset, 2026-10-16: no browser lane in tests.yml; the release
     // suite runs the journeys against deployed staging.
     expect(workflow).not.toContain('--browser-only');
-    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/2');
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/4');
     expect(workflow).toContain('pnpm test -- $TEST_ARGS');
   });
 

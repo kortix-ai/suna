@@ -11,6 +11,8 @@ on:
     branches: [prod]
   schedule:
     - cron: "27 3 * * 1" # weekly, Monday 03:27 UTC
+  # Measure a change to this workflow without opening a release PR.
+  workflow_dispatch:
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +35,10 @@ jobs:
         uses: github/codeql-action/init@v4.38.2
         with:
           languages: javascript-typescript
-          queries: security-and-quality
+          # security-extended: every security query of security-and-quality.
+          # The dropped half is maintainability ("quality") queries: no SOC 2
+          # control rests on them, and they roughly doubled the analysis (2026-10-16).
+          queries: security-extended
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL analysis
