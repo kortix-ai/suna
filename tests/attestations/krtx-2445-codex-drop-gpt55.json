@@ -1,0 +1,17 @@
+{
+  "source_hash": "54f5e48523956d3270ebe689b1d20d709960f4636febbe2d97dd029b13d76d48",
+  "diff_files": [
+    "apps/api/src/llm-gateway/models/codex-models.seed.json",
+    "apps/api/src/llm-gateway/models/codex-models.test.ts",
+    "apps/api/src/llm-gateway/models/codex-models.ts"
+  ],
+  "diff_hash": "6f41f4698c6678f4fc7309869962bf6866d4b1a5619d6f9085f534eb9ce42d79",
+  "head": "90400dc154e58c51f1297a1e72d048bf485e6854",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T06:29:27.456Z"
+}
