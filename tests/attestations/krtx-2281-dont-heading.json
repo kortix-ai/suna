@@ -6,12 +6,12 @@
     "apps/web/translations/en.json"
   ],
   "diff_hash": "82a1a2ce91fb1fba200dab4e88249de751e516e4cea68a925a72d791bb2284b5",
-  "head": "4623a695443421938d567cca080ae70e41eea1ba",
+  "head": "a82d82f2846b77975e04123c40694e42d8fa0ad9",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-14T12:59:32.203Z"
+  "at": "2026-10-16T16:30:27.210Z"
 }
