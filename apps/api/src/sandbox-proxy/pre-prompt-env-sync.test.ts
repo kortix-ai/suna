@@ -141,6 +141,16 @@ describe('runPrePromptEnvSync — a person starting a turn binds the session tok
     expect(log.some((e) => e.startsWith('bindTurnIdentity'))).toBe(false);
   });
 
+  // The env push reads the person the session token acts for, which the bind
+  // writes. A person taking over must not get the previous person's personal
+  // secrets from the push's trusted fast path.
+  test('the bind lands before the env push', async () => {
+    const log: string[] = [];
+    await runPrePromptEnvSync(baseInput({ bindTurnIdentity: true }), recordingDeps(log));
+    expect(log.indexOf('bindTurnIdentity:sess-1:user-1')).toBeGreaterThanOrEqual(0);
+    expect(log.indexOf('bindTurnIdentity:sess-1:user-1')).toBeLessThan(log.indexOf('syncEnv:called'));
+  });
+
   test('a failed bind refuses the turn: it never runs as the previous prompter', async () => {
     const log: string[] = [];
     const result = await runPrePromptEnvSync(
