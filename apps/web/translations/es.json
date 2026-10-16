@@ -2738,7 +2738,7 @@
       },
       "link": {
         "title": "Revisa tu correo electrónico",
-        "description": "Enviamos un enlace de acceso a <address>{email}</address>. Ábrelo para continuar.",
+        "description": "Enviamos un enlace a <address>{email}</address>. Ábrelo para continuar.",
         "notReceived": "¿No recibiste el enlace?",
         "resendIn": "Reenviar en {seconds}",
         "resend": "Reenviar"

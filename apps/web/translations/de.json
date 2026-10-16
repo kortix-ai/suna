@@ -2738,7 +2738,7 @@
       },
       "link": {
         "title": "E-Mail prüfen",
-        "description": "Wir haben einen Anmeldelink an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
+        "description": "Wir haben einen Link an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
         "notReceived": "Keinen Link erhalten?",
         "resendIn": "Erneut senden in {seconds}",
         "resend": "Erneut senden"

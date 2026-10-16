@@ -2738,7 +2738,7 @@
       },
       "link": {
         "title": "Check your email",
-        "description": "We sent a sign-in link to <address>{email}</address>. Open it to continue.",
+        "description": "We sent a link to <address>{email}</address>. Open it to continue.",
         "notReceived": "Didn't receive the link?",
         "resendIn": "Resend in {seconds}",
         "resend": "Resend"

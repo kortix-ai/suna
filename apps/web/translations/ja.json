@@ -2738,7 +2738,7 @@
       },
       "link": {
         "title": "メールを確認してください",
-        "description": "<address>{email}</address> にログインリンクを送信しました。リンクを開いて続行してください。",
+        "description": "<address>{email}</address> にリンクを送信しました。リンクを開いて続行してください。",
         "notReceived": "リンクが届きませんか？",
         "resendIn": "{seconds}秒後に再送信",
         "resend": "再送信"

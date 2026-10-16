@@ -88,7 +88,7 @@ test('unavailable SSO still permits the supported email sign-in link', async () 
   await act(async () => form.props.onSubmit({ preventDefault() {} }));
   const text = JSON.stringify(root.toJSON());
   expect(ssoProbes).toBe(1);
-  expect(text).toContain('sign-in link');
+  expect(text).toContain('We sent a link to');
   expect(text).toContain('Open it to continue');
   expect(root.root.findAllByType('input').filter((input) => input.props.inputMode === 'numeric')).toHaveLength(0);
   expect(text).not.toContain('one-time-code');

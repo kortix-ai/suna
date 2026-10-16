@@ -2738,7 +2738,7 @@
       },
       "link": {
         "title": "查看您的邮箱",
-        "description": "我们已向 <address>{email}</address> 发送登录链接。打开链接即可继续。",
+        "description": "我们已向 <address>{email}</address> 发送链接。打开链接即可继续。",
         "notReceived": "未收到链接？",
         "resendIn": "{seconds} 秒后重新发送",
         "resend": "重新发送"

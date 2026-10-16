@@ -2738,7 +2738,7 @@
       },
       "link": {
         "title": "Controlla la tua email",
-        "description": "Abbiamo inviato un link di accesso a <address>{email}</address>. Aprilo per continuare.",
+        "description": "Abbiamo inviato un link a <address>{email}</address>. Aprilo per continuare.",
         "notReceived": "Non hai ricevuto il link?",
         "resendIn": "Invia di nuovo tra {seconds}",
         "resend": "Invia di nuovo"
