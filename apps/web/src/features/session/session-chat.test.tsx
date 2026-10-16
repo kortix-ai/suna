@@ -36,6 +36,10 @@ let inboxPrompts: SessionPrompt[] = [];
 let busy = false;
 let persistedOutcome: SessionTurnOutcome = {};
 let auditPending = false;
+/** The `useRuntimeCommands` query's `data`: `undefined` while it loads, the list once it has answered. */
+let runtimeCommandsData: { name: string }[] | undefined = [];
+/** The props the last render handed the composer — the host-wire observables. */
+let composerProps: { commandsResolved?: boolean } | undefined;
 mock.module('@kortix/sdk/react', () => ({
   ...realSdk,
   useSessionTurnOutcome: () => persistedOutcome,
@@ -51,7 +55,7 @@ mock.module('@kortix/sdk/react', () => ({
   useRuntimeReady: () => true,
   useRuntimeSession: () => ({ data: { id: 'session-fixture' }, isFetched: true }),
   useRuntimeAgents: () => ({ data: [{ name: 'build' }] }),
-  useRuntimeCommands: () => ({ data: [] }),
+  useRuntimeCommands: () => ({ data: runtimeCommandsData }),
   useRuntimeProviders: () => ({ data: [], isLoading: false }),
   useRuntimeSessions: () => ({ data: [] }),
   useRuntimeConfig: () => ({ data: {} }),
@@ -86,24 +90,24 @@ mock.module('@/features/session/session-permission-prompt', () => ({
 }));
 mock.module('@/features/session/composer/composer', () => ({
   COMPOSER_SHELL_CLASS: '',
-  Composer: ({
-    aboveSlot,
-    inputSlot,
-    lockForApproval,
-  }: {
+  Composer: (props: {
     aboveSlot?: React.ReactNode;
     inputSlot?: React.ReactNode;
     lockForApproval?: boolean;
-  }) => (
-    <div>
-      {aboveSlot}
-      {inputSlot}
-      <textarea aria-label="Message" disabled={lockForApproval} />
-      <button type="button" disabled={lockForApproval}>
-        Send
-      </button>
-    </div>
-  ),
+    commandsResolved?: boolean;
+  }) => {
+    composerProps = props;
+    return (
+      <div>
+        {props.aboveSlot}
+        {props.inputSlot}
+        <textarea aria-label="Message" disabled={props.lockForApproval} />
+        <button type="button" disabled={props.lockForApproval}>
+          Send
+        </button>
+      </div>
+    );
+  },
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
@@ -730,5 +734,41 @@ describe('SessionChat moved turn sections', () => {
         busy = false;
       }
     });
+  });
+});
+
+// The unresolved-chip refusal (KRTX-1903) consumes `commandsResolved` — the bit
+// that says the live command list has answered at least once. The composer
+// cannot derive it from the `commands` array (that is `[]` both while the list
+// loads and when it resolved empty), so this host wire must forward the RAW
+// query state. A normalized `agentCommands || []` reads as resolved forever,
+// and the refusal could never fire on this host.
+describe('SessionChat command-list resolution wire', () => {
+  const renderChat = () =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <SidebarProvider>
+            <SessionChat
+              sessionId="session-fixture"
+              projectId="project-fixture"
+              projectSessionId="project-session-fixture"
+            />
+          </SidebarProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('a never-resolved list reaches the composer as unresolved; a resolved one does not', () => {
+    runtimeCommandsData = undefined; // loading: a fresh mount, or a reset the composer cannot see
+    try {
+      renderChat();
+      expect(composerProps?.commandsResolved).toBe(false);
+      runtimeCommandsData = []; // resolved, and the agent has no commands
+      renderChat();
+      expect(composerProps?.commandsResolved).toBe(true);
+    } finally {
+      runtimeCommandsData = [];
+    }
   });
 });
