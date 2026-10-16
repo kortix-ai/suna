@@ -26,6 +26,10 @@ const API_STATUS: Record<string, TriggerRunApiStatus> = {
   rejected: 'rejected',
 };
 
+export function triggerRunApiStatus(dbStatus: string): TriggerRunApiStatus {
+  return API_STATUS[dbStatus] ?? 'failed';
+}
+
 function dbStatusesFor(status: TriggerRunApiStatus): string[] {
   return Object.keys(API_STATUS).filter((key) => API_STATUS[key] === status);
 }
@@ -61,13 +65,19 @@ function encodeCursor(row: RunRow | { createdAt: string; executionId: string }):
   return Buffer.from(JSON.stringify(key)).toString('base64url');
 }
 
+/** `created_at::text` as Postgres prints it: `2026-10-16 18:03:54.382+00`. */
+const PG_TIMESTAMPTZ_TEXT = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/;
+
 /** Null when the cursor is not one this module issued. */
 export function decodeTriggerRunCursor(cursor: string): { createdAt: string; executionId: string } | null {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
     if (!Array.isArray(parsed) || parsed.length !== 2) return null;
     const [createdAt, executionId] = parsed;
-    if (typeof createdAt !== 'string' || Number.isNaN(Date.parse(createdAt))) return null;
+    if (typeof createdAt !== 'string' || !PG_TIMESTAMPTZ_TEXT.test(createdAt)) return null;
+    // The regex admits month 13 or hour 25; Postgres would throw on those, so parse it too.
+    const iso = createdAt.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
+    if (Number.isNaN(Date.parse(iso))) return null;
     if (typeof executionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(executionId)) return null;
     return { createdAt, executionId };
   } catch {
@@ -85,7 +95,7 @@ export function redactRunPayload(value: unknown): unknown {
 }
 
 export function serializeTriggerRun({ row, costUsd }: Pick<RunRow, 'row' | 'costUsd'>): TriggerRun {
-  const status = API_STATUS[row.status] ?? 'failed';
+  const status = triggerRunApiStatus(row.status);
   const startedAt = row.claimedAt ?? row.createdAt;
   // A run is open while it waits, runs, or its session's turn is still going.
   const open = status === 'queued' || status === 'running' || row.runStatus === 'running';

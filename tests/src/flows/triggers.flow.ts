@@ -2275,6 +2275,7 @@ flow(
     const replay = (runId: string, body: unknown, slug = 'hook') =>
       owner.post('/v1/projects/:projectId/triggers/:slug/runs/:run_id/replay', body, { params: { ...params, slug, run_id: runId } });
     let rejected: RunRow | undefined;
+    let replayedId = '';
 
     await ctx.step('a webhook trigger whose secret is then deleted: a signed delivery → 401', async () => {
       await addSecret();
@@ -2317,6 +2318,28 @@ flow(
         throw new Error(`replayed run is wrong: ${JSON.stringify(replayed)}`);
       }
       if (replayed.payload.body?.action !== 'opened') throw new Error(`replay did not carry the stored payload: ${JSON.stringify(replayed.payload)}`);
+      replayedId = replayed.run_id;
+    });
+
+    await ctx.step('the replay of an unverified payload stays unverified: payload_verified false, and replaying it without confirm → 409', async () => {
+      const replayed = (await runs()).find((run) => run.run_id === replayedId);
+      if (replayed?.payload_verified !== false) throw new Error(`replayed run reads verified: ${JSON.stringify(replayed)}`);
+      (await replay(replayedId, {})).status(409).body().has('$.code', 'payload_unverified');
+    });
+
+    await ctx.step('a run still in progress (a requeued create) → replay 409 run_in_progress', async () => {
+      const inProgressId = await withDb(ctx, async (db) =>
+        (
+          await db.query(
+            `INSERT INTO kortix.project_trigger_executions
+               (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source)
+             VALUES ($1, 'hook', 'webhook:' || gen_random_uuid(), now(), 'requeued', '{}'::jsonb, '{"body":{}}'::jsonb, 'webhook')
+             RETURNING execution_id`,
+            [p.id],
+          )
+        ).rows[0]?.execution_id as string,
+      );
+      (await replay(inProgressId, {})).status(409).body().has('$.code', 'run_in_progress');
     });
 
     await ctx.step('a run whose payload was truncated → replay 422 payload_truncated', async () => {
@@ -2356,68 +2379,95 @@ flow(
     const list = async (as: typeof owner, query: Record<string, string> = {}) =>
       (await as.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query })).status(200).json<RunList>();
 
-    await ctx.step('seed: three runs with no session, one run of a private trigger session, and the session\'s LLM spend', async () => {
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
-      await withDb(ctx, async (db) => {
-        for (const minutes of [3, 2, 1]) {
+    // Teardown keeps the team account (an earlier run left its rows), so the seeded
+    // gateway logs are deleted here, pass or fail.
+    try {
+      await ctx.step('seed: three manual runs and one cron slot with no session, one run of a private trigger session, and the session\'s LLM spend', async () => {
+        (await owner.post('/v1/projects/:projectId/triggers', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+        await withDb(ctx, async (db) => {
+          for (const minutes of [3, 2, 1]) {
+            await db.query(
+              `INSERT INTO kortix.project_trigger_executions
+                 (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, created_at, completed_at)
+               VALUES ($1, 'nightly', 'manual:' || gen_random_uuid(), now() - make_interval(mins => $2), 'failed', '{}'::jsonb,
+                       '{"source":"manual"}'::jsonb, 'manual', now() - make_interval(mins => $2), now() - make_interval(mins => $2))`,
+              [project.id, minutes],
+            );
+          }
           await db.query(
             `INSERT INTO kortix.project_trigger_executions
-               (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, created_at, completed_at)
-             VALUES ($1, 'nightly', 'manual:' || gen_random_uuid(), now() - make_interval(mins => $2), 'failed', '{}'::jsonb,
-                     '{"source":"manual"}'::jsonb, 'manual', now() - make_interval(mins => $2), now() - make_interval(mins => $2))`,
-            [project.id, minutes],
+               (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, session_id,
+                run_status, run_ended_at, created_at, completed_at)
+             VALUES ($1, 'nightly', 'manual:' || gen_random_uuid(), now() - interval '10 min', 'succeeded', '{}'::jsonb,
+                     '{"body":{"ticket":"T-9","api_key":"synthetic-not-a-key"}}'::jsonb, 'manual', $2,
+                     'succeeded', now() - interval '5 min', now() - interval '10 min', now() - interval '10 min')`,
+            [project.id, sessionId],
           );
-        }
-        await db.query(
-          `INSERT INTO kortix.project_trigger_executions
-             (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, session_id,
-              run_status, run_ended_at, created_at, completed_at)
-           VALUES ($1, 'nightly', 'manual:' || gen_random_uuid(), now() - interval '10 min', 'succeeded', '{}'::jsonb,
-                   '{"body":{"ticket":"T-9","api_key":"synthetic-not-a-key"}}'::jsonb, 'manual', $2,
-                   'succeeded', now() - interval '5 min', now() - interval '10 min', now() - interval '10 min')`,
-          [project.id, sessionId],
-        );
-        for (const [minutes, cost] of [[8, '0.25'], [1, '1.0']] as const) {
+          // A cron slot row, as the scheduler's claim writes it: the default `source` (cron).
           await db.query(
-            `INSERT INTO kortix.gateway_request_logs
-               (request_id, account_id, project_id, session_id, requested_model, resolved_model, provider, status, ok,
-                final_cost_precise, billing_mode, created_at)
-             VALUES (gen_random_uuid()::text, $1, $2, $3, 'ke2e/model', 'ke2e/model', 'ke2e', 200, true, $4::numeric, 'credits',
-                     now() - make_interval(mins => $5))`,
-            [team.id, project.id, sessionId, cost, minutes],
+            `INSERT INTO kortix.project_trigger_executions
+               (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, claimed_at, created_at, completed_at)
+             VALUES ($1, 'nightly', 'ke2e-slot-revision', now() - interval '4 min', 'succeeded', '{}'::jsonb,
+                     '{"cron":{"schedule":"0 0 3 * * *"}}'::jsonb, now() - interval '4 min', now() - interval '4 min', now() - interval '4 min')`,
+            [project.id],
           );
+          for (const [minutes, cost] of [[8, '0.25'], [1, '1.0']] as const) {
+            await db.query(
+              `INSERT INTO kortix.gateway_request_logs
+                 (request_id, account_id, project_id, session_id, requested_model, resolved_model, provider, status, ok,
+                  final_cost_precise, billing_mode, created_at)
+               VALUES (gen_random_uuid()::text, $1, $2, $3, 'ke2e/model', 'ke2e/model', 'ke2e', 200, true, $4::numeric, 'credits',
+                       now() - make_interval(mins => $5))`,
+              [team.id, project.id, sessionId, cost, minutes],
+            );
+          }
+        });
+      });
+
+      await ctx.step('the owner sees all five, newest first; the cron slot lists with source cron; the session run shows its window cost, duration and a redacted payload', async () => {
+        const runs = (await list(owner)).runs;
+        if (runs.length !== 5 || runs[4]?.session_id !== sessionId) throw new Error(`owner list is wrong: ${JSON.stringify(runs)}`);
+        const cron = runs[3]!;
+        if (cron.source !== 'cron' || cron.status !== 'fired' || cron.session_id !== null || cron.payload.cron?.schedule !== '0 0 3 * * *') {
+          throw new Error(`cron run is wrong: ${JSON.stringify(cron)}`);
+        }
+        const run = runs[4]!;
+        // Only the 0.25 inside [started_at, ended_at] counts; the 1.0 after ended_at does not.
+        if (run.status !== 'fired' || run.run_status !== 'succeeded' || run.cost_usd !== 0.25 || run.duration_ms !== 300_000) {
+          throw new Error(`session run is wrong: ${JSON.stringify(run)}`);
+        }
+        if (run.payload.body?.api_key !== '[redacted]' || run.payload.body?.ticket !== 'T-9') throw new Error(`payload not redacted: ${JSON.stringify(run.payload)}`);
+      });
+
+      await ctx.step('limit=2 pages the owner\'s five runs: two, two, then one with next_cursor null', async () => {
+        const first = await list(owner, { limit: '2' });
+        if (first.runs.length !== 2 || !first.next_cursor) throw new Error(`first page is wrong: ${JSON.stringify(first)}`);
+        const second = await list(owner, { limit: '2', cursor: first.next_cursor });
+        if (second.runs.length !== 2 || !second.next_cursor) throw new Error(`second page is wrong: ${JSON.stringify(second)}`);
+        const third = await list(owner, { limit: '2', cursor: second.next_cursor });
+        if (third.runs.length !== 1 || third.next_cursor !== null) throw new Error(`third page is wrong: ${JSON.stringify(third)}`);
+        const ids = new Set([...first.runs, ...second.runs, ...third.runs].map((r) => r.run_id));
+        if (ids.size !== 5) throw new Error('pages overlap');
+      });
+
+      await ctx.step('a tampered cursor (well-formed base64 JSON, impossible timestamp) → 400, not 500', async () => {
+        const forge = (createdAt: string) => Buffer.from(JSON.stringify([createdAt, crypto.randomUUID()])).toString('base64url');
+        for (const createdAt of ['2026-13-45 99:99:99+00', '2026-10-16T18:03:54Z', "now()'; --"]) {
+          (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query: { cursor: forge(createdAt) } })).status(400);
         }
       });
-    });
 
-    await ctx.step('the owner sees all four, newest first; the session run shows its window cost, duration and a redacted payload', async () => {
-      const runs = (await list(owner)).runs;
-      if (runs.length !== 4 || runs[3]?.session_id !== sessionId) throw new Error(`owner list is wrong: ${JSON.stringify(runs)}`);
-      const run = runs[3]!;
-      // Only the 0.25 inside [started_at, ended_at] counts; the 1.0 after ended_at does not.
-      if (run.status !== 'fired' || run.run_status !== 'succeeded' || run.cost_usd !== 0.25 || run.duration_ms !== 300_000) {
-        throw new Error(`session run is wrong: ${JSON.stringify(run)}`);
-      }
-      if (run.payload.body?.api_key !== '[redacted]' || run.payload.body?.ticket !== 'T-9') throw new Error(`payload not redacted: ${JSON.stringify(run.payload)}`);
-    });
-
-    await ctx.step('limit=2 pages the owner\'s four runs: two with a cursor, then two with next_cursor null', async () => {
-      const first = await list(owner, { limit: '2' });
-      if (first.runs.length !== 2 || !first.next_cursor) throw new Error(`first page is wrong: ${JSON.stringify(first)}`);
-      const second = await list(owner, { limit: '2', cursor: first.next_cursor });
-      if (second.runs.length !== 2 || second.next_cursor !== null) throw new Error(`second page is wrong: ${JSON.stringify(second)}`);
-      const ids = new Set([...first.runs, ...second.runs].map((r) => r.run_id));
-      if (ids.size !== 4) throw new Error('pages overlap');
-    });
-
-    await ctx.step('a member who may not open the private session sees only the three runs without a session, in both lists', async () => {
-      const asMember = ctx.client.as(member);
-      const runs = (await list(asMember)).runs;
-      if (runs.length !== 3 || runs.some((r) => r.session_id !== null)) throw new Error(`member trigger list is wrong: ${JSON.stringify(runs)}`);
-      const project_runs = (await asMember.get('/v1/projects/:projectId/trigger-runs', { params })).status(200).json<RunList>().runs;
-      if (project_runs.length !== 3 || project_runs.some((r) => r.session_id === sessionId)) {
-        throw new Error(`member project list is wrong: ${JSON.stringify(project_runs)}`);
-      }
-    });
+      await ctx.step('a member who may not open the private session sees only the four runs without a session, in both lists', async () => {
+        const asMember = ctx.client.as(member);
+        const runs = (await list(asMember)).runs;
+        if (runs.length !== 4 || runs.some((r) => r.session_id !== null)) throw new Error(`member trigger list is wrong: ${JSON.stringify(runs)}`);
+        const project_runs = (await asMember.get('/v1/projects/:projectId/trigger-runs', { params })).status(200).json<RunList>().runs;
+        if (project_runs.length !== 4 || project_runs.some((r) => r.session_id === sessionId)) {
+          throw new Error(`member project list is wrong: ${JSON.stringify(project_runs)}`);
+        }
+      });
+    } finally {
+      await withDb(ctx, (db) => db.query('DELETE FROM kortix.gateway_request_logs WHERE session_id = $1', [sessionId]));
+    }
   },
 );

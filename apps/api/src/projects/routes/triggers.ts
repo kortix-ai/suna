@@ -53,10 +53,12 @@ import {
   type TriggerRunApiStatus,
   decodeTriggerRunCursor,
   listVisibleTriggerRuns,
+  triggerRunApiStatus,
   loadTriggerRunForReplay,
 } from '../trigger-runs';
 import { MONITOR_PROMPT_PREAMBLE } from '../lib/monitor-events';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { annotateAuditEvent } from '../../shared/audit-scope';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 import { notificationsEnabled } from '../../notifications/enabled';
@@ -831,6 +833,8 @@ export function registerTriggersRoutes(): void {
         : base;
       const renderedPrompt = renderPromptTemplate(target.spec.promptTemplate, payload);
       if (body.dry_run === true) {
+        // The request's audit row keeps `trigger.fire`; this marks it as nothing fired.
+        annotateAuditEvent({ metadata: { dry_run: true } });
         return c.json(
           {
             dry_run: true as const,
@@ -858,7 +862,11 @@ export function registerTriggersRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), slug: z.string() }),
-        query: z.object({ limit: z.string().optional(), cursor: z.string().optional() }),
+        query: z.object({
+          status: z.enum(TRIGGER_RUN_STATUSES).optional(),
+          limit: z.string().optional(),
+          cursor: z.string().optional(),
+        }),
       },
       responses: {
         200: json(TriggerRunListSchema, 'Runs, newest first'),
@@ -922,6 +930,10 @@ export function registerTriggersRoutes(): void {
       if (!('spec' in target)) return target;
       const run = await loadTriggerRunForReplay(target.projectId, target.spec.slug, c.req.param('run_id'));
       if (!run) return c.json({ error: 'Not found' }, 404);
+      const runStatus = triggerRunApiStatus(run.status);
+      if (runStatus === 'queued' || runStatus === 'running') {
+        return c.json({ error: `This run is still ${runStatus}. Replay it once it ends`, code: 'run_in_progress' }, 409);
+      }
       if (run.payload.truncated === true) {
         return c.json({ error: 'This run\'s payload was over 64 KiB and was not kept, so it cannot be replayed', code: 'payload_truncated' }, 422);
       }
@@ -940,6 +952,8 @@ export function registerTriggersRoutes(): void {
         source,
         idempotencyKey: `trigger:replay:${run.executionId}:${crypto.randomUUID()}`,
         replayOf: run.executionId,
+        // A replay of an unverified payload is still unverified.
+        verified: run.payloadVerified,
         now: new Date(),
       });
     },
@@ -1033,12 +1047,13 @@ async function fireAndAnswer(
     source: TriggerFireSource;
     idempotencyKey?: string;
     replayOf?: string;
+    verified?: boolean;
     now: Date;
   },
 ) {
   const { payload, source, now } = input;
   const slug = spec.slug;
-  const run = { projectId, slug, source, spec, payload, replayOf: input.replayOf ?? null, now };
+  const run = { projectId, slug, source, spec, payload, verified: input.verified ?? true, replayOf: input.replayOf ?? null, now };
   // Every fire is a run in the trigger's history (KRTX-1743), a fire that
   // throws included; the throw still answers as before.
   const result = await fireGitTrigger({
