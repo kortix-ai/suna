@@ -1,0 +1,15 @@
+{
+  "source_hash": "671ca8c181fb06c897f1c00efbd78922d4a8a214f3adaf054d93b4c1cc688b9d",
+  "diff_files": [
+    "apps/web/src/components/ui/checkbox.tsx"
+  ],
+  "diff_hash": "055daa7156b257dcbea0dd723a210c7f0fa24bc5ff3e99a829950e6b1357f584",
+  "head": "f1a4740346cd0f7b3da318d092ce839cbf2e2053",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-15T23:41:35.581Z"
+}
