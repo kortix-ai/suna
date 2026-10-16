@@ -1142,6 +1142,13 @@
       "when": 1792106777017,
       "tag": "20261015232617_scheduled_monthly_usd",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792171509374,
+      "tag": "20261016172509_trigger_run_history",
+      "breakpoints": true
     }
   ]
 }
