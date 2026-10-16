@@ -1712,6 +1712,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       lockForApproval,
       disabled,
       commands,
+      commandsResolved,
       lockForQuestion,
       submitDisabled,
       clearOnSend,
