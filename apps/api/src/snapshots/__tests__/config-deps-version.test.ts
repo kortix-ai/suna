@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../../..');
 const STARTER_CONFIG_PKG = resolve(
   REPO_ROOT,
-  'packages/starter/templates/base/extensions/pty/package.json',
+  'packages/starter/templates/base/harnesses/opencode/package.json',
 );
 
 describe('opencode config dependencies', () => {
@@ -19,11 +19,11 @@ describe('opencode config dependencies', () => {
     expect(pkg.dependencies?.['@opencode-ai/plugin']).toBeUndefined();
   });
 
-  test('keeps exact runtime dependencies: the native pty and zod', () => {
+  test('keeps one exact runtime dependency', () => {
     const pkg = JSON.parse(readFileSync(STARTER_CONFIG_PKG, 'utf8')) as {
       dependencies?: Record<string, string>;
     };
 
-    expect(pkg.dependencies).toEqual({ 'bun-pty': '0.4.11', zod: '4.1.8' });
+    expect(pkg.dependencies).toEqual({ zod: '4.1.8' });
   });
 });

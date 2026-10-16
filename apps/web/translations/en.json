@@ -16675,6 +16675,7 @@
       "textc3bf78fdd3b9": "Could not send your application",
       "textc3c25857485f": "Does",
       "textc3c709a999c1": "Reading memory…",
+      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -17415,6 +17416,7 @@
       "textd83a0d814c59": "API Status shows a green \"Enabled\", the \"SCIM Username\" parameter maps to Email, and provisioning is enabled without the admin-approval hold.",
       "textd84b8be91e7b": "Kortix — Presentations",
       "textd84ee1e1e08b": "try kortix init, or / for commands",
+      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)",
       "textd861cc0af73c": "kortix init scaffolds it, kortix ship brings it live. It is the same repo doing the same thing, so local development and the live system stopped being different categories.",
       "textd864380a766f": "The sandbox carries one project-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.",
       "textd8707d411d99": "Secrets",
@@ -20080,9 +20082,7 @@
       "textb8fd28863a22": "Amount in credits (e.g. 2500)",
       "textc6813a9e41ac": "In credits: {value0} LLM · {value1} compute · {value2} other.",
       "textc86ce3b8097b": "e.g. 5000",
-      "textfaaf56a699c2": "Limit (credits)",
-      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
-      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)"
+      "textfaaf56a699c2": "Limit (credits)"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

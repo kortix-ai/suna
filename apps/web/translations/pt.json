@@ -16664,6 +16664,7 @@
       "textc3bf78fdd3b9": "Não foi possível enviar sua inscrição",
       "textc3c25857485f": "Faz",
       "textc3c709a999c1": "Lendo a memória…",
+      "textc3d1545dd522": "Converte o kortix.toml v1 em kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma para a versão mais recente do marketplace e abre uma solicitação de alteração para revisão.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Termos e condições",
       "textc3e58a73609d": "Destrutivo",
@@ -17404,6 +17405,7 @@
       "textd83a0d814c59": "API Status mostra um \"Enabled\" verde, o parâmetro \"SCIM Username\" está mapeado para Email e o provisionamento está ativado sem a retenção de aprovação do administrador.",
       "textd84b8be91e7b": "Kortix — Apresentações",
       "textd84ee1e1e08b": "tente kortix init ou / para ver os comandos",
+      "textd85a383e851d": "Migrar o manifesto para v2 (kortix.yaml)",
       "textd861cc0af73c": "kortix init cria a estrutura, e kortix ship coloca tudo no ar. É o mesmo repo fazendo a mesma coisa, então o desenvolvimento local e o sistema em produção deixaram de ser categorias diferentes.",
       "textd864380a766f": "O sandbox usa um token Kortix com escopo de projeto e nenhuma chave de terceiros. As credenciais do tracker e do helpdesk são descriptografadas no servidor e anexadas à chamada de saída.",
       "textd8707d411d99": "Segredos",
@@ -20069,9 +20071,7 @@
       "textb8fd28863a22": "Valor em créditos (ex.: 2500)",
       "textc6813a9e41ac": "Em créditos: {value0} LLM · {value1} computação · {value2} outros.",
       "textc86ce3b8097b": "ex.: 5000",
-      "textfaaf56a699c2": "Limite (créditos)",
-      "textc3d1545dd522": "Converte o kortix.toml v1 em kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma para a versão mais recente do marketplace e abre uma solicitação de alteração para revisão.",
-      "textd85a383e851d": "Migrar o manifesto para v2 (kortix.yaml)"
+      "textfaaf56a699c2": "Limite (créditos)"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
