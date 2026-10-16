@@ -943,6 +943,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     configModel: config?.model,
   });
 
+  // The composer lists only the commands the selected agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentRuntimeCommands = EMPTY_COMMANDS } = useRuntimeCommands({ agent: resolved.agent?.name });
+  const composerCommands = canRunCommands ? agentRuntimeCommands : EMPTY_COMMANDS;
+
   // useResolvedConfig returns new arrays, objects, and setters on every
   // render. Stabilize what the composer receives: arrays by content, setters
   // through a ref that always calls the latest resolved config.
@@ -2348,7 +2353,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             disabled={subThreadReadOnly}
             placeholder={subThreadReadOnly ? 'This sub-agent takes no messages' : undefined}
             onEnqueue={handleEnqueue}
-            commands={commands}
+            commands={composerCommands}
             onCommand={handleCommand}
             inputSlot={inputSlot}
           />

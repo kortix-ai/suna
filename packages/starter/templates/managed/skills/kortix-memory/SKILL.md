@@ -11,9 +11,8 @@ folder of curated markdown files describing what this project is,
 which connections it uses, the conventions the team works by, and
 the decisions worth not re-litigating.
 
-Projects created before 2026-09 keep the brain at `.kortix/memory/`
-and agents at `.kortix/opencode/agents/`. Both layouts work. Use the
-folder your project has: if `memory/` exists, use it; if only
+Legacy projects created before 2026-09 keep the brain at
+`.kortix/memory/`. Use the folder your project has: if `memory/` exists, use it; if only
 `.kortix/memory/` exists, use that. The project's `memory` tool accepts
 paths under its own folder only, and its error message names that
 folder. This skill shows `memory/`; in a legacy project, read it as
@@ -32,7 +31,7 @@ Memory is **continuously CRUD'd**:
 
 - Regular sessions add or update memory whenever they discover
   something durable worth keeping.
-- The `harness-reflector` agent (`agents/harness-reflector.md`)
+- The `harness-reflector` agent (its block under `agents` in `kortix.yaml`)
   runs on a cron, surveys recent activity, and curates the folder as the
   memory pass of the `kortix-harness-refinement` protocol.
 - Both consult this skill for the rubric.
@@ -182,7 +181,7 @@ The user reviews and merges. Don't merge your own CR.
 <reflector>
 
 Scheduled memory curation is the fourth pass of the `harness-reflector`
-agent (`agents/harness-reflector.md`) — the
+agent (its block under `agents` in `kortix.yaml`) — the
 continual-harness loop. On that pass it:
 
 1. Loads this skill.

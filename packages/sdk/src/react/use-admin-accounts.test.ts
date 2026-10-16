@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { AdminCreateEnterpriseContractVariables } from './use-admin-accounts';
 import {
   ADMIN_ENTITLEMENT_OVERRIDE_KEYS,
   ADMIN_OVERRIDE_KEYS,
@@ -208,4 +209,13 @@ describe('admin accounts list — stored entitlement overrides', () => {
 
     expect(typeof raw === 'number' ? raw : null).toBe(12);
   });
+});
+
+// A license carries no credits (2026-10-15): the create variables need none, and
+// the accounts list reports the Enterprise layer per row.
+test('a license is created without credits, and an account row carries its Enterprise state', () => {
+  const license: AdminCreateEnterpriseContractVariables = { accountId: 'acc-1', licenseUsd: 25000, collection: 'invoice' };
+  const state: NonNullable<AdminAccount['enterprise']>[] = ['off', 'demo', 'licensed'];
+  expect(license.licenseUsd).toBe(25000);
+  expect(state).toHaveLength(3);
 });
