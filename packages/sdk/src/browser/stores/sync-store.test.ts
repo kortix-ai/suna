@@ -4421,3 +4421,36 @@ describe("a part frame that beats its message frame never invents a role", () =>
 		expect(rolesById()).toEqual([`user:${WIRE}`, "assistant:msg_assistant0002"]);
 	});
 });
+
+// A re-read of the transcript (tab return, turn end, a stream gap) used to
+// replace every recent message and part object even when nothing changed. Rows,
+// blocks and the transcript reuse by identity, so every recent turn redrew and
+// long sessions stuttered.
+describe("hydrate keeps what did not change", () => {
+	const sid = "ses_keep";
+	const page = (answer: string) => [
+		{ info: userMessage("msg_k_u1", sid), parts: [textPart("prt_k_u1", "msg_k_u1", "hi", sid)] },
+		{ info: assistantMessage("msg_k_a1", sid), parts: [textPart("prt_k_a1", "msg_k_a1", answer, sid)] },
+	];
+
+	test("a re-read of the same content keeps every message and part object", () => {
+		useSyncStore.getState().hydrate(sid, page("hello"));
+		const before = useSyncStore.getState();
+		useSyncStore.getState().hydrate(sid, page("hello"));
+		const after = useSyncStore.getState();
+		expect(after.messages[sid]).toBe(before.messages[sid]);
+		expect(after.parts.msg_k_u1).toBe(before.parts.msg_k_u1);
+		expect(after.parts.msg_k_a1).toBe(before.parts.msg_k_a1);
+	});
+
+	test("a changed message gets new objects; the unchanged one keeps its own", () => {
+		useSyncStore.getState().hydrate(sid, page("hello"));
+		const before = useSyncStore.getState();
+		useSyncStore.getState().hydrate(sid, page("hello world"));
+		const after = useSyncStore.getState();
+		expect(after.messages[sid]?.[0]).toBe(before.messages[sid]?.[0]);
+		expect(after.parts.msg_k_u1).toBe(before.parts.msg_k_u1);
+		expect(after.parts.msg_k_a1).not.toBe(before.parts.msg_k_a1);
+		expect((after.parts.msg_k_a1?.[0] as TextPart).text).toBe("hello world");
+	});
+});
