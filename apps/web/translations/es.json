@@ -20019,14 +20019,6 @@
       "text02b242fd11cd": "Hay una oferta abierta. Retírala primero.",
       "text451c4b7d695d": "Hay un contrato activo. Finalízalo primero o crea una oferta con tarjeta.",
       "text06bdc1c507f1": "Gracia de SSO hasta el {date}",
-      "textac8710553475": "Prueba ampliada",
-      "text0bad4daa3f0d": "Días restantes / finaliza",
-      "text5f2d23caa972": "Ampliar prueba",
-      "texta88fdf3e2772": "Conceder el plan que ya está en prueba mueve su fecha de finalización (Ampliar).",
-      "textfdd57ee91bdc": "Una concesión de créditos al inicio, que caduca con la prueba. Deja el importe vacío para usar el valor predeterminado: ${amount} para Enterprise, $0 para Créditos.",
-      "text05700b032dac": "Una concesión con fecha de un plan. Cuando termina, la cuenta vuelve a <tier>{plan}</tier>.",
-      "textdffd02b805cb": "Los comandos siguen cargando",
-      "textd943cb31f962": "No se envió nada. Tu mensaje y tus archivos se quedan en el compositor — envíalo de nuevo en un momento.",
       "textd6ea513221b7": "Enterprise · demo",
       "text5a22403ec082": "Enterprise · con licencia",
       "text87feb882165d": "Con licencia",
@@ -20039,7 +20031,9 @@
       "text111b159de1cc": "No se pudo cambiar la demo de Enterprise",
       "textc3371113b9c5": "Una licencia activa todas las funciones Enterprise durante su vigencia. No incluye créditos.",
       "text81e6bf495c98": "Planes, créditos, Enterprise, derechos, miembros y estado de facturación por cuenta.",
-      "textfe3436af86b4": "Extensiones"
+      "textfe3436af86b4": "Extensiones",
+      "textdffd02b805cb": "Los comandos siguen cargando",
+      "textd943cb31f962": "No se envió nada. Tu mensaje y tus archivos se quedan en el compositor — envíalo de nuevo en un momento."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

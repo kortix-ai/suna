@@ -20030,14 +20030,6 @@
       "text02b242fd11cd": "An offer is open. Withdraw it first.",
       "text451c4b7d695d": "A contract is active. End it first, or create a Card offer.",
       "text06bdc1c507f1": "SSO grace until {date}",
-      "textac8710553475": "Trial extended",
-      "text0bad4daa3f0d": "Days left / ends",
-      "text5f2d23caa972": "Extend trial",
-      "texta88fdf3e2772": "Granting the plan already on trial moves its end date (Extend).",
-      "textfdd57ee91bdc": "One credit grant at the start, expiring with the trial. Leave the amount empty for the default: ${amount} for Enterprise, $0 for Credits.",
-      "text05700b032dac": "A dated grant of a plan. When it ends the account returns to <tier>{plan}</tier>.",
-      "textdffd02b805cb": "Commands are still loading",
-      "textd943cb31f962": "Nothing was sent. Your message and files stay in the composer — submit again in a moment.",
       "textd6ea513221b7": "Enterprise · demo",
       "text5a22403ec082": "Enterprise · licensed",
       "text87feb882165d": "Licensed",
@@ -20050,7 +20042,9 @@
       "text111b159de1cc": "Could not change the Enterprise demo",
       "textc3371113b9c5": "A license turns on every Enterprise feature for its term. It carries no credits.",
       "text81e6bf495c98": "Plans, credits, Enterprise, entitlements, members and billing state, per account.",
-      "textfe3436af86b4": "Extensions"
+      "textfe3436af86b4": "Extensions",
+      "textdffd02b805cb": "Commands are still loading",
+      "textd943cb31f962": "Nothing was sent. Your message and files stay in the composer — submit again in a moment."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

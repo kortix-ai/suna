@@ -20019,14 +20019,6 @@
       "text02b242fd11cd": "Es ist ein Angebot offen. Ziehe es zuerst zurück.",
       "text451c4b7d695d": "Ein Vertrag ist aktiv. Beende ihn zuerst oder erstelle ein Kartenangebot.",
       "text06bdc1c507f1": "SSO-Nachfrist bis {date}",
-      "textac8710553475": "Testphase verlängert",
-      "text0bad4daa3f0d": "Verbleibende Tage / Ende",
-      "text5f2d23caa972": "Testphase verlängern",
-      "texta88fdf3e2772": "Wird der Plan gewährt, der bereits als Testphase läuft, verschiebt sich sein Enddatum (Verlängern).",
-      "textfdd57ee91bdc": "Eine Credit-Gutschrift zu Beginn, die mit der Testphase abläuft. Lass den Betrag leer für den Standardwert: ${amount} für Enterprise, $0 für Credits.",
-      "text05700b032dac": "Eine befristete Gewährung eines Plans. Nach Ablauf kehrt das Konto zu <tier>{plan}</tier> zurück.",
-      "textdffd02b805cb": "Befehle werden noch geladen",
-      "textd943cb31f962": "Nichts wurde gesendet. Deine Nachricht und deine Dateien bleiben im Eingabefeld — sende gleich noch einmal.",
       "textd6ea513221b7": "Enterprise · Demo",
       "text5a22403ec082": "Enterprise · lizenziert",
       "text87feb882165d": "Lizenziert",
@@ -20039,7 +20031,9 @@
       "text111b159de1cc": "Enterprise-Demo konnte nicht geändert werden",
       "textc3371113b9c5": "Eine Lizenz aktiviert alle Enterprise-Funktionen für ihre Laufzeit. Sie enthält keine Credits.",
       "text81e6bf495c98": "Tarife, Credits, Enterprise, Berechtigungen, Mitglieder und Abrechnungsstatus pro Konto.",
-      "textfe3436af86b4": "Erweiterungen"
+      "textfe3436af86b4": "Erweiterungen",
+      "textdffd02b805cb": "Befehle werden noch geladen",
+      "textd943cb31f962": "Nichts wurde gesendet. Deine Nachricht und deine Dateien bleiben im Eingabefeld — sende gleich noch einmal."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

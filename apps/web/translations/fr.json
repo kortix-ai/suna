@@ -20019,14 +20019,6 @@
       "text02b242fd11cd": "Une offre est ouverte. Retirez-la d’abord.",
       "text451c4b7d695d": "Un contrat est actif. Terminez-le d’abord ou créez une offre par carte.",
       "text06bdc1c507f1": "Délai de grâce SSO jusqu’au {date}",
-      "textac8710553475": "Essai prolongé",
-      "text0bad4daa3f0d": "Jours restants / fin",
-      "text5f2d23caa972": "Prolonger l’essai",
-      "texta88fdf3e2772": "Attribuer le plan déjà en essai repousse sa date de fin (Prolonger).",
-      "textfdd57ee91bdc": "Une attribution de crédits au départ, qui expire avec l’essai. Laissez le montant vide pour la valeur par défaut : {amount} $ pour Enterprise, 0 $ pour Crédits.",
-      "text05700b032dac": "Une attribution datée d’un plan. À son terme, le compte revient à <tier>{plan}</tier>.",
-      "textdffd02b805cb": "Les commandes sont encore en cours de chargement",
-      "textd943cb31f962": "Rien n'a été envoyé. Votre message et vos fichiers restent dans la zone de message — réessayez dans un instant.",
       "textd6ea513221b7": "Enterprise · démo",
       "text5a22403ec082": "Enterprise · sous licence",
       "text87feb882165d": "Sous licence",
@@ -20039,7 +20031,9 @@
       "text111b159de1cc": "Impossible de modifier la démo Enterprise",
       "textc3371113b9c5": "Une licence active toutes les fonctionnalités Enterprise pendant sa durée. Elle n'inclut aucun crédit.",
       "text81e6bf495c98": "Forfaits, crédits, Enterprise, droits, membres et état de facturation, par compte.",
-      "textfe3436af86b4": "Extensions"
+      "textfe3436af86b4": "Extensions",
+      "textdffd02b805cb": "Les commandes sont encore en cours de chargement",
+      "textd943cb31f962": "Rien n'a été envoyé. Votre message et vos fichiers restent dans la zone de message — réessayez dans un instant."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
