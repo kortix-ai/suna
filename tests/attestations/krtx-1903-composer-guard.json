@@ -1,9 +1,10 @@
 {
-  "source_hash": "1f5cd417ad2f154a3ae110526b68b718e7794e7cfeb3b3e07eb7f4d642253105",
+  "source_hash": "7a8ce6c970ac2710a87e629a024e7a2f13f2c86f9502987c6bf410cba0e6f847",
   "diff_files": [
     "apps/web/src/features/session/composer-chat-input.tsx",
     "apps/web/src/features/session/composer/command-attachments.test.ts",
     "apps/web/src/features/session/composer/command-attachments.ts",
+    "apps/web/src/features/session/composer/composer-submit-latch.test.ts",
     "apps/web/src/features/session/composer/composer.tsx",
     "apps/web/src/features/session/session-chat.test.tsx",
     "apps/web/src/features/session/session-chat.tsx",
@@ -17,13 +18,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "db846ac345e2ee90d86ee9b2d052f895808f4aec7bcfb9b793caff420b12f5c3",
-  "head": "f3af0c25146328bb322ba96026264708fff45ea3",
+  "diff_hash": "821afb9c77b3d8f013526a3e439d04c0aa4a0be0210662cc5213af4e9b321c72",
+  "head": "6020581200353182c491face3d1bdae69d5424a7",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-16T08:01:43.807Z"
+  "at": "2026-10-16T10:03:40.598Z"
 }
