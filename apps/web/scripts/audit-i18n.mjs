@@ -221,14 +221,6 @@ const allowedLiteralValues = new Set([
   'Django',
   'Ruby on Rails',
   'Laravel',
-  // The connect-card mocks (slack-connect-card, teams-connect-card): a person
-  // name, the agent mention, and the timestamp `10:4x AM` of a mock message.
-  // All three are artwork of a third-party app's channel, not copy a
-  // translator reflows; the mock's own sentences stay in the catalog.
-  'Maya',
-  '@Kortix',
-  '10:42 AM',
-  '10:43 AM',
   'Discover and read Kortix public API and documentation resources.',
 ]);
 
