@@ -1,4 +1,5 @@
 import * as sdkReact from '@kortix/sdk/react';
+import * as cmdk from 'cmdk';
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import React, { act, useState } from 'react';
@@ -117,7 +118,15 @@ mock.module('@/features/providers/chatgpt-accounts-dialog', () => ({
 }));
 // cmdk/Radix need a browser layout engine. Render their slots as host nodes;
 // keep all selector rows, names, filters, event handlers and state real.
+// The theme-highlight preview (`command-palette.tsx`) reads the highlighted
+// row straight from cmdk's store hook, which only exists under a real
+// `<Command>` — nothing is highlighted here, so the hook sees an empty value.
 const Slot = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
+mock.module('cmdk', () => ({
+  ...cmdk,
+  useCommandState: (select: (state: { value: string }) => unknown) =>
+    select({ value: '' }),
+}));
 mock.module('@/components/ui/command', () => ({
   CommandPopover: Slot,
   CommandPopoverContent: Slot,
