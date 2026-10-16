@@ -2712,6 +2712,77 @@ describe('pi compaction', () => {
     expect(sentText(gateway.sent.at(-1)!)).toContain('ALPHA question')
   })
 
+  /** The turn relays a boot would send: begins by message id, ends whole. */
+  const compactionRelays = () => {
+    const seen = { begins: [] as string[], ends: [] as Array<Parameters<NonNullable<PiRuntimeHooks['onTurnEnd']>>[0]> }
+    const hooks: PiRuntimeHooks = { onTurnBegin: ({ messageId }) => void seen.begins.push(messageId), onTurnEnd: (end) => void seen.ends.push(end) }
+    return { seen, hooks }
+  }
+
+  test('a /summarize is a turn named by its compaction marker: begin and end relay its id, and the log stores the compaction under it', async () => {
+    const { seen, hooks } = compactionRelays()
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, hooks })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    const prompts = [...seen.begins]
+    expect((await summarize(r, rt.rootId)).status).toBe(200)
+    await waitFor(() => seen.ends.length === prompts.length + 1)
+
+    const page = (await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as WirePage
+    const marker = page.messages.find((m) => m.parts.some((p) => p.type === 'compaction'))!.info.id as string
+    expect(seen.begins).toEqual([...prompts, marker])
+    expect(seen.ends.at(-1)).toEqual({ rootId: rt.rootId, messageId: marker, status: 'idle' })
+    const stored = piSessionLog(rt.sessionLogSnapshot()!).log.threads[0]!.messages.filter((m) => m.kind === 'compaction')
+    expect(stored.map((m) => m.message_id)).toEqual([marker])
+  })
+
+  test('a /summarize pi refuses (a short context) ends its turn with the reason: the wire, the turn end and the log line name it', async () => {
+    const { seen, hooks } = compactionRelays()
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({ script: [{ text: 'first answer' }], hooks })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'ALPHA question')
+    expect((await summarize(r, rt.rootId)).status).toBe(200)
+    await waitFor(() => seen.ends.length === 2)
+
+    const page = (await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    const marker = turn!.part.messageID as string
+    expect(turn!.summary.info.error).toMatchObject({ name: 'UnknownError', data: { message: expect.stringContaining('Nothing to compact') } })
+    expect(seen.begins.at(-1)).toBe(marker)
+    expect(seen.ends.at(-1)).toEqual({ rootId: rt.rootId, messageId: marker, status: 'error', error: { name: 'UnknownError', message: expect.stringContaining('Nothing to compact') } })
+    expect(piSessionLog(rt.sessionLogSnapshot()!).log.threads[0]!.messages.filter((m) => m.kind === 'compaction')).toEqual([])
+    await waitFor(() => warn.mock.calls.some(([line, data]) => line === '[pi] compaction failed' && JSON.stringify(data).includes('Nothing to compact')))
+    warn.mockRestore()
+  })
+
+  test('a stopped /summarize ends its turn idle, like a stopped prompt', async () => {
+    const { seen, hooks } = compactionRelays()
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { stall: true }, { stall: true }], prepare: compactEverything, hooks })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    const calls = gateway.requests.length
+    expect((await summarize(r, rt.rootId)).status).toBe(200)
+    await waitFor(() => gateway.requests.length > calls)
+    expect((await r.user(`/session/${rt.rootId}/abort`, { method: 'POST' })).status).toBe(200)
+    await waitFor(() => seen.ends.length === 3)
+    expect(seen.ends.at(-1)).toEqual({ rootId: rt.rootId, messageId: seen.begins.at(-1)!, status: 'idle' })
+  })
+
+  test('an auto compaction inside a prompt turn relays no turn of its own', async () => {
+    const { seen, hooks } = compactionRelays()
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, ...SUMMARY], prepare: compactEverything, hooks })
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(page)).toHaveLength(1)
+    expect(seen.begins).toHaveLength(2)
+    expect(seen.ends.map((e) => e.messageId)).toEqual(seen.begins)
+  })
+
   test('a context past the model threshold compacts by itself after the turn', async () => {
     // The catalog window is 64,000 and pi reserves 16,384: a reply that reports 60,000 is over.
     const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, ...SUMMARY], prepare: compactEverything })

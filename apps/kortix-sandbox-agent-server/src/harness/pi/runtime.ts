@@ -1153,6 +1153,10 @@ export class PiRuntime {
         },
       })
       this.publish({ type: 'message.updated', properties: { sessionID, info: this.compaction } })
+      // A `/summarize` (`compact()`, between turns) is a turn of its own, named by its marker: apps/api
+      // binds the id to the turn and marks it durable when the log acknowledges the compaction.
+      // An auto compaction runs inside a prompt turn, which owns it.
+      if (event.reason === 'manual') this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: markerId })
       return
     }
     if (event.type !== 'compaction_end' || !this.compaction) return
@@ -1188,9 +1192,15 @@ export class PiRuntime {
     this.publishSessionUpdated()
     this.publish({ type: 'session.compacted', properties: { sessionID } })
     this.persist()
-    // P2.12: a compaction between turns (`compact()`) has no turn end to flush the
-    // session log, so the stored summary goes now. One inside a turn waits for its end.
+    // P2.12: a compaction between turns goes to the session log now (the `/summarize` turn end
+    // below flushes it too). One inside a turn waits for that turn's end.
     if (event.result && !this.active) void flushSessionLogJournal()
+    // The `/summarize` turn ends here. A refusal (a short context: "Nothing to compact") or a
+    // failure ends it with its reason, as a failed prompt does; a stop ends it idle.
+    if (event.reason === 'manual' && info.parentID) {
+      const failed = error?.name === 'UnknownError' ? { name: error.name, message: error.data.message } : undefined
+      this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: info.parentID, status: failed ? 'error' : 'idle', ...(failed ? { error: failed } : {}) })
+    }
   }
 
   /** The session row changed (`time.compacting`). */
