@@ -1,0 +1,38 @@
+{
+  "source_hash": "e5899a8737392acbf9d647c38315fed273826fdbe6d577f159ac6cde5f150f94",
+  "diff_files": [
+    "apps/web/next.config.ts",
+    "apps/web/src/app/[locale]/(public)/embed/chat/[token]/embed-shared.test.ts",
+    "apps/web/src/app/[locale]/(public)/embed/chat/[token]/embed-shared.ts",
+    "apps/web/src/app/[locale]/(public)/embed/chat/[token]/layout.tsx",
+    "apps/web/src/app/[locale]/(public)/embed/chat/[token]/page.tsx",
+    "apps/web/src/app/[locale]/(public)/share/session/[token]/public-transcript-share-view.tsx",
+    "apps/web/src/app/[locale]/(public)/share/session/[token]/share-header.test.ts",
+    "apps/web/src/app/[locale]/(public)/share/session/[token]/transcript-message.tsx",
+    "apps/web/src/features/workspace/project-sidebar/modal/session-public-link-section.tsx",
+    "apps/web/src/hooks/use-session-public-shares.test.ts",
+    "apps/web/src/hooks/use-session-public-shares.ts",
+    "apps/web/src/lib/security/content-security-policy.test.ts",
+    "apps/web/src/lib/security/content-security-policy.ts",
+    "apps/web/src/middleware-public-routes.test.ts",
+    "apps/web/src/middleware.ts",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "a3ece77c6098e7ceee8594c6c191e8b1fc41be6168aa40c4cab8ebc04097f2a7",
+  "head": "d8541e0584e2a436ed2b29412d74be6611877d3b",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-16T01:05:43.379Z"
+}
