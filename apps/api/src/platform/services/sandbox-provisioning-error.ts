@@ -101,11 +101,14 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
   const rawMessage = error instanceof Error ? error.message : String(error);
 
   // Kortix Drive: the session's drives did not mount, so it did not start.
-  // The message already says which drives and why (drives/service.ts).
-  if (rawMessage.startsWith('[drives] ')) {
+  // The message already says which drives and why (drives/service.ts). A
+  // /workspace volume that did not open is the same class: storage the box
+  // mounts (platform/services/workspace-volume.ts).
+  const storagePrefix = ['[drives] ', '[workspace] '].find((p) => rawMessage.startsWith(p));
+  if (storagePrefix) {
     return {
       category: 'drives-unavailable',
-      userMessage: rawMessage.slice('[drives] '.length),
+      userMessage: rawMessage.slice(storagePrefix.length),
       isCapacity: false,
       isGitAuth: false,
       transient: false,
