@@ -2235,6 +2235,29 @@ flow(
       (await fire({ dry_run: 'yes' })).status(400);
     });
 
+    await ctx.step('CLI: `kortix triggers fire tickets --payload … --dry-run --json` prints the dry run; `kortix triggers runs tickets --json` lists no run', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg31') });
+      const sb = new CliSandbox('trg31');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const dry = await sb.run(['triggers', 'fire', 'tickets', '--payload', '{"body":{"ticket":"T-3","kind":"bug"}}', '--dry-run', '--json', '--project', p.id]);
+        throwIfCliInfraFailure(dry, 'triggers fire --dry-run');
+        if (dry.exitCode !== 0) throw new Error(`triggers fire --dry-run exited ${dry.exitCode}: ${dry.all}`);
+        const out = JSON.parse(dry.stdout) as { dry_run: boolean; rendered_prompt: string; filter_matches: boolean; session_key: string | null };
+        if (out.dry_run !== true || out.rendered_prompt !== 'Ticket T-3 from manual' || out.filter_matches !== true || out.session_key !== 'T-3') {
+          throw new Error(`CLI dry run is wrong: ${dry.stdout}`);
+        }
+        const listed = await sb.run(['triggers', 'runs', 'tickets', '--json', '--project', p.id]);
+        throwIfCliInfraFailure(listed, 'triggers runs');
+        if (listed.exitCode !== 0) throw new Error(`triggers runs exited ${listed.exitCode}: ${listed.all}`);
+        const list = JSON.parse(listed.stdout) as RunList;
+        if (list.runs.length !== 0 || list.next_cursor !== null) throw new Error(`CLI runs list is wrong: ${listed.stdout}`);
+      } finally {
+        sb.dispose();
+      }
+    });
+
     await ctx.step('read-back: no run row, no session, no command; the runs list is empty and last_fired_at is unset', async () => {
       const after = await writes();
       if (JSON.stringify(after) !== JSON.stringify(before)) throw new Error(`dry run wrote rows: ${JSON.stringify({ before, after })}`);
@@ -2306,6 +2329,22 @@ flow(
       (await replay(rejected!.run_id, {})).status(409).body().has('$.code', 'payload_unverified');
       (await replay(rejected!.run_id, { confirm_unverified: true }, 'other')).status(404);
       (await replay(crypto.randomUUID(), { confirm_unverified: true })).status(404);
+    });
+
+    await ctx.step('CLI: `kortix triggers replay hook <run_id>` on the unverified run exits 1 and names --confirm-unverified', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg32') });
+      const sb = new CliSandbox('trg32');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const r = await sb.run(['triggers', 'replay', 'hook', rejected!.run_id, '--project', p.id]);
+        throwIfCliInfraFailure(r, 'triggers replay');
+        if (r.exitCode !== 1 || !r.stderr.includes('--confirm-unverified')) {
+          throw new Error(`CLI replay of an unverified run: exit ${r.exitCode}: ${r.all}`);
+        }
+      } finally {
+        sb.dispose();
+      }
     });
 
     await ctx.step('the secret is restored; replay with confirm_unverified → the fire path answers (402) with a new run', async () => {

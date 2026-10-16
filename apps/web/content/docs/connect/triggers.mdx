@@ -52,6 +52,9 @@ From code, the SDK exports `listProjectTriggers`, `createProjectTrigger`, `updat
 | `kortix triggers set <slug>` | Changes a live trigger. Writes only the flags you pass. |
 | `kortix triggers rm\|enable\|disable <slug> [--apply]` | Removes, enables or disables a trigger. |
 | `kortix triggers fire <slug> [--wait <dur>]` | Fires now. `--wait 0` returns when the fire is accepted. |
+| `kortix triggers fire <slug> --payload <json\|@file> [--dry-run] [--json]` | Fires with a JSON object merged over the manual payload. `--dry-run` fires nothing and prints the rendered prompt, the filter verdict and the session key. |
+| `kortix triggers runs <slug> [--status <s>] [--limit N] [--cursor <c>] [--json]` | Lists the trigger's runs, newest first: started, source, status, run status, duration, cost, session. |
+| `kortix triggers replay <slug> <run_id> [--confirm-unverified]` | Fires again with that run's stored payload. A run whose webhook signature did not verify needs `--confirm-unverified`. |
 | `kortix triggers pause\|resume` | Stops or restarts every automatic fire in the project. See [Pause and limits](#pause-and-limits). |
 | `kortix triggers events …` | Lists apps and events for app event triggers. See [App events](#app-events). |
 
