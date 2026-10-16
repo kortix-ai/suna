@@ -150,7 +150,7 @@ in `references/api-latency-baseline.md`.
 
 A pull request into `dev` runs **no** GitHub Actions job by itself. Every test
 for a change runs in the developer's own box before the merge. After the merge,
-every push to `dev` runs all ten `Tests` lanes (queued: one run, at most one
+every push to `dev` runs all thirteen `Tests` lanes (queued: one run, at most one
 waiting). That run is the check before staging: a promotion takes only a `dev`
 SHA with a green run, and a red run comments the failing lanes and suspect
 commits once per new set of failing lanes. `CI` and `CodeQL` run weekly on
@@ -216,10 +216,12 @@ not remove the test. The nightly lane runs it.
 
 ## Run CI lanes natively on GitHub-hosted runners
 
-Keep the test commands unchanged. `.github/workflows/tests.yml` runs ten lanes
-in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs thirteen
+lanes in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
 `ubuntu-24.04`: 4 vCPU / 16 GB on this public repo).
-Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight
+The core lane runs `pnpm test -- --no-packages`. Four package lanes run
+`pnpm test -- --packages-only --package-group=<api|cli|kortixd|rest>`, one slice
+of package quality each; `rest` holds the repo-wide checks. Eight
 browser lanes run shards `1/8` through `8/8`, one Playwright worker each, via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
 requested SHA.
@@ -229,11 +231,12 @@ requested SHA.
 - Run `pnpm install --frozen-lockfile`.
 - Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
   (cached under `PLAYWRIGHT_BROWSERS_PATH`) and
-  `pnpm exec supabase start --ignore-health-check` before the root command, and
+  `pnpm exec supabase start --ignore-health-check -x studio,imgproxy` before the
+  root command (no test uses the dashboard or image transforms), and
   `supabase stop --no-backup` in an `always()` step after it.
 - Use one Playwright worker for each local-stack browser shard in CI. Keep two
   workers for deployed staging runs, which set `E2E_BROWSER_WORKERS` explicitly.
-- Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the packages lane; the SDK tests
+- Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the `packages-*` lanes; the SDK tests
   run in the core lane.
 - Keep the guard step and the artifact upload `if: always()`.
 - Do not reintroduce a cloud-sandbox worker for these lanes. The

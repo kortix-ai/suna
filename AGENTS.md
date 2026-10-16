@@ -569,13 +569,17 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   larger runner): Blacksmith billed ~$2.7k in September 2026 for minutes
   GitHub gives this repo for free. `tests/unit/image-build-speed-workflow.test.ts`
   enforces the free default.
-- GitHub Actions runs ten lanes — `core`, `browser-1` … `browser-8`, `packages`
-  — natively, one GitHub-hosted runner each (`CI_RUNNER_L`), through
+- GitHub Actions runs thirteen lanes — `core`, `browser-1` … `browser-8`,
+  `packages-api`, `packages-cli`, `packages-kortixd`, `packages-rest` —
+  natively, one GitHub-hosted runner each (`CI_RUNNER_L`), through
   `.github/workflows/tests.yml`. The eight browser lanes are eighths of one
   sharded run (`--browser-shard=N/8`, Playwright's native `--shard`), one
   Playwright worker each: a 16 GB runner did not hold two. A lane takes about
   3x its old Blacksmith time; `tests.yml` records the measured times. The
   concurrency settings in `tests/bin/package-quality.ts` must not be raised.
+  The four `packages-*` lanes are slices of package quality
+  (`pnpm test -- --packages-only --package-group=<api|cli|kortixd|rest>`): on
+  one runner the API, CLI and kortixd suites shared 4 vCPU for 18.5 min.
   Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
