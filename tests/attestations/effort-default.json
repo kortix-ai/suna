@@ -1,5 +1,5 @@
 {
-  "source_hash": "ad5b9cd0415b80d2d73237a2b41eee1db1613ecef975b010c88930576504b251",
+  "source_hash": "18f9cf460b0ce89b00605657182231167613cb66cf982c70a5a803c49c368dea",
   "diff_files": [
     "apps/api/src/projects/lib/effort-default.test.ts",
     "apps/api/src/projects/lib/effort-default.ts",
@@ -17,7 +17,6 @@
     "apps/web/src/features/workspace/settings/tabs/general-tab.autosave-loop.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/general-tab.effort.test.ts",
     "apps/web/src/features/workspace/settings/tabs/general-tab.tsx",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -40,13 +39,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/projects-misc.flow.ts"
   ],
-  "diff_hash": "bc0a4063c7ca194658aa844d2f6bd22f4d16b245903ad007adfb9522c3211e24",
-  "head": "df2d6139a6364abb1c71f46970c1dbd1173a705f",
+  "diff_hash": "4cdb4aca268828484db05658389d49ac24015a015d10892ae31151d26f9f8dfa",
+  "head": "a2228003debd669ece5e857407ed8e5306f1feed",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-16T01:03:17.918Z"
+  "at": "2026-10-16T01:30:19.822Z"
 }
