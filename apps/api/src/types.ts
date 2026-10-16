@@ -302,8 +302,9 @@ export interface AccountStateResponse {
 
 export interface ScheduledChange {
   type: 'downgrade';
-  current_tier: { name: string; display_name: string; monthly_credits?: number };
-  target_tier: { name: string; display_name: string; monthly_credits?: number };
+  /** `monthly_credits` is in credits (1 credit = $0.01); `monthly_usd` is the same amount in USD. */
+  current_tier: { name: string; display_name: string; monthly_credits?: number; monthly_usd?: number };
+  target_tier: { name: string; display_name: string; monthly_credits?: number; monthly_usd?: number };
   effective_date: string;
 }
 

@@ -61,10 +61,11 @@ test("26 — ChatGPT session usage excludes historical subscription costs and re
     await selectAccountForUi(page, accountId);
 
     for (const scenario of [
-      { name: "historical", step: true, paid: false, expected: "$0.00" },
-      { name: "tokens-only", step: false, paid: false, expected: "$0.00" },
-      // The paid $2 API call shows with the 5.5% platform fee (COST_MARKUP 1.055): $2.11.
-      { name: "mixed", step: true, paid: true, expected: "$2.11" },
+      { name: "historical", step: true, paid: false, expected: "0 credits" },
+      { name: "tokens-only", step: false, paid: false, expected: "0 credits" },
+      // The paid $2 API call shows with the 5.5% platform fee (COST_MARKUP 1.055):
+      // $2.11, which the modal shows in credits (1 credit = $0.01).
+      { name: "mixed", step: true, paid: true, expected: "211 credits" },
     ]) {
       const sessionId = await createDatabaseSession(env, {
         projectId,

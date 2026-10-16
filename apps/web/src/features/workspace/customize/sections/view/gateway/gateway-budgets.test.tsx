@@ -8,6 +8,8 @@ import type { GatewayBudgetRow, GatewayBudgetsResponse } from '@/lib/projects-ga
  * own `spent_usd` (KRTX-1725). It used to divide month-to-date spend by the
  * limit, so a $20/day budget with $15 today and $280 this month read
  * "1400% used" under "Budget exceeded" while the gateway admitted requests.
+ *
+ * Spend and limits read in credits (1 credit = $0.01); the API keeps USD.
  */
 
 let data: GatewayBudgetsResponse;
@@ -17,7 +19,7 @@ mock.module('@/hooks/projects/use-project-gateway', () => ({
   useDeleteGatewayBudget: () => ({ mutate: () => {}, isPending: false }),
 }));
 
-const { GatewayBudgetSection } = await import('./gateway-budgets');
+const { GatewayBudgetSection, budgetLimitInput, budgetLimitUsd } = await import('./gateway-budgets');
 
 const RESET = '2026-10-14T00:00:00.000Z';
 const budget = (row: Partial<GatewayBudgetRow>): GatewayBudgetRow => ({
@@ -61,14 +63,15 @@ describe('GatewayBudgetSection', () => {
       members: [],
     };
     const out = text();
-    expect(out).toContain('$15.00 of $20.00 today · Blocks requests at the limit');
+    expect(out).toContain('1,500 of 2,000 credits today · Blocks requests at the limit');
     expect(renderToStaticMarkup(<GatewayBudgetSection projectId="p1" canWrite />)).toContain(
       'aria-valuenow="75"',
     );
     expect(out).toMatch(resets('Oct 14'));
     expect(out).not.toContain('Budget exceeded');
     expect(out).not.toContain('Approaching budget');
-    expect(out).not.toContain('$280');
+    expect(out).not.toContain('28,000');
+    expect(out).not.toContain('$');
   });
 
   test("a member cap reads the spend of its own period, not the member's month", () => {
@@ -78,7 +81,7 @@ describe('GatewayBudgetSection', () => {
       members: [{ user_id: 'u1', email: 'alice@example.test', requests: 300, cost: 50, tokens: 1 }],
     };
     const out = text();
-    expect(out).toContain('alice@example.test $1.00 20% of $5.00');
+    expect(out).toContain('alice@example.test 100 20% of 500 credits');
     expect(out).not.toContain('Budget exceeded');
     expect(out).not.toContain('Approaching budget');
   });
@@ -105,8 +108,8 @@ describe('GatewayBudgetSection', () => {
       new RegExp(`alice@example\\.test — over limit · ${resets('Oct 14').source}`),
     );
     expect(out).toMatch(new RegExp(`Project — 85% used · ${resets('Oct 19').source}`));
-    expect(out).toContain('$85.00 of $100 this week · Warns at the limit, never blocks');
-    expect(out).toContain('alice@example.test $6.00 120% of $5.00');
+    expect(out).toContain('8,500 of 10,000 credits this week · Warns at the limit, never blocks');
+    expect(out).toContain('alice@example.test 600 120% of 500 credits');
   });
 
   test("a member cap with no spend this month alerts with its member's email and keeps a row to edit it", () => {
@@ -129,7 +132,7 @@ describe('GatewayBudgetSection', () => {
     expect(out).toContain('quiet@example.test — 90% used');
     expect(out).not.toContain('A member');
     // The row carries the cap and its Remove control.
-    expect(out).toContain('quiet@example.test $9.00 90% of $10.00 Edit cap Remove');
+    expect(out).toContain('quiet@example.test 900 90% of 1,000 credits Edit cap Remove');
   });
 
   describe('a server older than KRTX-1725 sends no spent_usd', () => {
@@ -140,7 +143,7 @@ describe('GatewayBudgetSection', () => {
         members: [],
       };
       const out = text();
-      expect(out).toContain('$60.00 of $50.00 this month · Blocks requests at the limit');
+      expect(out).toContain('6,000 of 5,000 credits this month · Blocks requests at the limit');
       expect(out).toContain('Budget exceeded');
       expect(out).toContain('Project — over limit');
     });
@@ -162,7 +165,7 @@ describe('GatewayBudgetSection', () => {
         ],
       };
       const out = text();
-      expect(out).toContain('alice@example.test $4.50 90% of $5.00');
+      expect(out).toContain('alice@example.test 450 90% of 500 credits');
       expect(out).toContain('alice@example.test — 90% used');
     });
 
@@ -174,12 +177,31 @@ describe('GatewayBudgetSection', () => {
       };
       const markup = renderToStaticMarkup(<GatewayBudgetSection projectId="p1" canWrite />);
       const out = text();
-      expect(out).toContain('$20.00 per day · Blocks requests at the limit');
+      expect(out).toContain('2,000 credits per day · Blocks requests at the limit');
       expect(out).not.toContain('% used');
-      expect(out).not.toContain('$0.0000');
+      expect(out).not.toContain('$');
       expect(out).not.toContain('Budget exceeded');
       expect(out).not.toContain('Approaching budget');
       expect(markup).not.toContain('role="meter"');
     });
+  });
+});
+
+describe('the budget dialog takes credits and sends USD', () => {
+  test('a limit typed in credits is sent as limit_usd = credits / 100', () => {
+    expect(budgetLimitUsd('5000')).toBe(50);
+    expect(budgetLimitUsd('150')).toBe(1.5);
+    expect(budgetLimitUsd('1')).toBe(0.01);
+  });
+
+  test('an empty or zero limit is not a limit', () => {
+    expect(budgetLimitUsd('')).toBeNull();
+    expect(budgetLimitUsd('0')).toBeNull();
+  });
+
+  test('an existing budget prefills its USD limit as whole credits', () => {
+    expect(budgetLimitInput({ limit_usd: 20 })).toBe('2000');
+    expect(budgetLimitInput({ limit_usd: 12.345 })).toBe('1235');
+    expect(budgetLimitInput(null)).toBe('');
   });
 });
