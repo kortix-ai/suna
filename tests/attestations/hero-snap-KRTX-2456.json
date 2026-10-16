@@ -4,12 +4,12 @@
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap"
   ],
   "diff_hash": "211e28ba536aae05a0dad5126cb918ccfc2d69dadda2c92619e48165c57cf2fe",
-  "head": "130fcea7d2c6e3792272db70e1cc7300c35e252a",
+  "head": "57d445122a7e1c0a15ec57db2cb30f9ffe1e40b6",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-16T00:23:55.970Z"
+  "at": "2026-10-16T01:03:59.447Z"
 }
