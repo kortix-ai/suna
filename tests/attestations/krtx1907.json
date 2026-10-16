@@ -1,20 +1,21 @@
 {
-  "source_hash": "1b0bb5285a61a682a5fc13bb955ef67132eaaee0a31672dfa4d921ba0f220704",
+  "source_hash": "4438fbb2c0f1f8eb10af49b36493cf91513d7bf35b3399941cae2b21ca1ac566",
   "diff_files": [
     "apps/api/src/__tests__/integration-project-connector-purge.test.ts",
     "apps/api/src/__tests__/unit-project-delete-order.test.ts",
     "apps/api/src/projects/lib/project-deletion.ts",
     "apps/api/src/projects/routes/project-settings.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "tests/spec/end-to-end.md",
     "tests/src/flows/projects.flow.ts"
   ],
-  "diff_hash": "ff609225d500dea96f359d0a25b610db4790d48d76b63b7b6f1aa983d54644b7",
-  "head": "38db9817c7f328eb2cc4f01ad4b737eb02241ddb",
+  "diff_hash": "b8a70bf0db2e49d22c5b014d35e8525d5f8c6efde0c24818f0a9168fb1aebdd5",
+  "head": "46f2b80b5b008712314f68f5315f974a600c9ff5",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-16T10:13:46.970Z"
+  "at": "2026-10-16T12:34:25.726Z"
 }
