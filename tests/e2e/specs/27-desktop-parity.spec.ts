@@ -1560,6 +1560,45 @@ for (const runtime of runtimes) {
       },
     );
     nativeTest?.(
+      "the Dock badge counts finished turns the user has not seen (KRTX-2520)",
+      async ({ page, desktopApp }) => {
+        if (!desktopApp)
+          throw new Error("native Electron application is required");
+        test.skip(
+          process.platform !== "darwin",
+          "app.getBadgeCount reads the Dock count on macOS; Windows uses an overlay icon",
+        );
+        const badge = () => desktopApp.evaluate(({ app }) => app.getBadgeCount());
+        // A completion relayed from another tab, the same message the session
+        // page publishes. Re-posting is idempotent (the store keeps one entry
+        // per session), so the poll also waits out hydration.
+        const finishTurn = (sessionId: string) =>
+          page.evaluate((id) => {
+            const channel = new BroadcastChannel("kortix-turn-complete");
+            channel.postMessage({ sessionId: id, at: Date.now() });
+            channel.close();
+          }, sessionId);
+        const first = `badge-${randomUUID()}`;
+        const second = `badge-${randomUUID()}`;
+        await expect.poll(badge).toBe(0);
+        await expect
+          .poll(async () => (await finishTurn(first), badge()), { timeout: 30_000 })
+          .toBe(1);
+        await expect
+          .poll(async () => (await finishTurn(second), badge()))
+          .toBe(2);
+        // Opening a session marks it seen: the count drops by one.
+        await page.evaluate(
+          (id) => history.pushState(null, "", `/projects/badge/sessions/${id}`),
+          first,
+        );
+        await expect.poll(badge).toBe(1);
+        // A new document starts with nothing unseen.
+        await page.reload();
+        await expect.poll(badge).toBe(0);
+      },
+    );
+    nativeTest?.(
       "Quick Entry starts a session in the open project from the prompt bar",
       async ({ page, desktopApp, baseURL }) => {
         if (!desktopApp)
