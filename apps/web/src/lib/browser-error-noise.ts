@@ -57,6 +57,7 @@ export {
   isPaperShaderImageUniformNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isSpoofedWebGLGetParameterNoise,
 } from './browser-noise/rules/graphics';
 export {
   isOneTrustJsonParseNoise,

@@ -52,6 +52,7 @@ import {
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
+  isSpoofedWebGLGetParameterNoise,
   isSupabaseTokenExpiredNoise,
   isThirdPartyReactUpdateDepthNoise,
   isTronLinkProxyNoise,
@@ -12651,4 +12652,178 @@ test('keeps reporting first-party errors that carry no masked-extension frame', 
     shouldIgnoreBrowserRuntimeNoise({ reason: new Error('No Listener: tabs:outgoing.message.ready') }),
     false,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Spoofed WebGL getParameter (`WebGL2RenderingContext.spoof [as getParameter]`)
+// noise (BS 1c3e5d8c…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event (V8/Chrome wording).
+// The visitor's anti-fingerprinting browser extension wraps
+// `WebGL2RenderingContext.prototype.getParameter` with a function NAMED
+// `spoof` that loses the native receiver, so every real call throws
+// `TypeError: Illegal invocation`.
+const SPOOF_GET_PARAMETER_MESSAGE = 'Illegal invocation';
+
+// The canonical capture-path forms: raw, `TypeError:` prefix, and stacked
+// `Unhandled promise rejection: TypeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const SPOOF_GET_PARAMETER_CAPTURE_FORMS = [
+  SPOOF_GET_PARAMETER_MESSAGE,
+  `TypeError: ${SPOOF_GET_PARAMETER_MESSAGE}`,
+  `Unhandled promise rejection: TypeError: ${SPOOF_GET_PARAMETER_MESSAGE}`,
+];
+
+// The production event's chunk: the three.js WebGPU/WebGL2 bundle the shaders
+// library loads (minified — no resolved first-party `apps/web/src/…` source).
+const SPOOF_PROD_CHUNK_FRAME = 'app:///_next/static/immutable/chunks/40hy2smvy-pfn.js';
+
+// The exact four production stack frames (oldest first, BS pattern 1c3e5d8c…,
+// release ed03160b…, request URL https://kortix.com/, Chrome 146 / Windows 10,
+// mechanism auto.browser.global_handlers.onunhandledrejection, handled:false):
+//   1. `?`            — the anonymous async executor inside three.js
+//                       `Renderer.init()` (the WebGPU→WebGL2 fallback path)
+//   2. `bB.init`      — `WebGLBackend.init`
+//   3. `new bb`       — `new WebGLState` (its constructor calls
+//                       `this.gl.getParameter(this.gl.MAX_TEXTURE_IMAGE_UNITS)`)
+//   4. `WebGL2RenderingContext.spoof [as getParameter]` — the THROW SITE: the
+//      extension's spoof wrapper. Its own script URL is hidden by the
+//      extension, so the frame filename is the literal `<anonymous>`.
+const SPOOF_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: SPOOF_PROD_CHUNK_FRAME, function: '?' },
+  { filename: SPOOF_PROD_CHUNK_FRAME, function: 'bB.init' },
+  { filename: SPOOF_PROD_CHUNK_FRAME, function: 'new bb' },
+  { filename: '<anonymous>', function: 'WebGL2RenderingContext.spoof [as getParameter]' },
+];
+
+test('classifies every spoofed WebGL getParameter capture form as noise', () => {
+  for (const message of SPOOF_GET_PARAMETER_CAPTURE_FORMS) {
+    // Matcher-level: the exact production frame stack.
+    assert.equal(
+      isSpoofedWebGLGetParameterNoise({ message, frames: SPOOF_PROD_FRAMES }),
+      true,
+      `expected "${message}" with the production spoof frame stack to be classified as spoofed WebGL getParameter noise`,
+    );
+  }
+});
+
+test('suppresses the production spoofed WebGL getParameter Sentry event via the beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern 1c3e5d8c… (Kortix Frontend
+  // prod, application_id 2346967), 2 occurrences / 0 identified users,
+  // 2026-10-15 19:17 UTC, request URL https://kortix.com/ (marketing
+  // homepage), release ed03160b…, mechanism
+  // auto.browser.global_handlers.onunhandledrejection (UNCAUGHT, handled:false).
+  for (const value of SPOOF_GET_PARAMETER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              type: 'TypeError',
+              value,
+              mechanism: {
+                type: 'auto.browser.global_handlers.onunhandledrejection',
+                handled: false,
+              },
+              stacktrace: { frames: SPOOF_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    );
+  }
+});
+
+test('does NOT suppress an Illegal invocation whose stack resolves to a first-party app frame', () => {
+  // A de-minified `apps/web/src/…` frame means our own code threw the error →
+  // a real first-party regression (e.g. a broken native call of our own); it
+  // must keep reporting even when a spoof frame is also present in the stack.
+  assert.equal(
+    isSpoofedWebGLGetParameterNoise({
+      message: SPOOF_GET_PARAMETER_MESSAGE,
+      frames: [
+        { filename: SPOOF_PROD_CHUNK_FRAME, function: '?' },
+        { filename: '<anonymous>', function: 'WebGL2RenderingContext.spoof [as getParameter]' },
+        { filename: 'apps/web/src/lib/shaders-react.ts', function: 'initializeWallpaper' },
+      ],
+    }),
+    false,
+    'expected a first-party-resolved stack to keep reporting',
+  );
+});
+
+test('does NOT suppress an Illegal invocation without the spoof frame', () => {
+  // A bare `Illegal invocation` is a generic V8 wording for ANY native called
+  // with a wrong receiver — without the extension's spoof frame the anchor
+  // cannot prove third-party origin, so the event keeps reporting.
+  assert.equal(
+    isSpoofedWebGLGetParameterNoise({ message: SPOOF_GET_PARAMETER_MESSAGE }),
+    false,
+    'expected a frameless Illegal invocation to keep reporting',
+  );
+  assert.equal(
+    isSpoofedWebGLGetParameterNoise({
+      message: SPOOF_GET_PARAMETER_MESSAGE,
+      frames: [
+        { filename: SPOOF_PROD_CHUNK_FRAME, function: '?' },
+        { filename: SPOOF_PROD_CHUNK_FRAME, function: 'bB.init' },
+      ],
+    }),
+    false,
+    'expected an Illegal invocation without the spoof frame to keep reporting',
+  );
+  // The gate-level shape too: an event whose throw site is an ordinary
+  // first-party/third-party frame must not be dropped.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: 'Illegal invocation',
+            mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/chunks/main-app.js', function: 'g' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected an Illegal invocation from an ordinary chunk frame to keep reporting',
+  );
+});
+
+test('does NOT suppress a spoof-frame event with a message other than Illegal invocation', () => {
+  // The spoof wrapper is the anchor for the observed Illegal-invocation class
+  // only; a spoof frame carrying a different failure keeps reporting.
+  assert.equal(
+    isSpoofedWebGLGetParameterNoise({
+      message: 'Cannot read properties of undefined (reading MAX_TEXTURE_IMAGE_UNITS)',
+      frames: SPOOF_PROD_FRAMES,
+    }),
+    false,
+    'expected a different message at the spoof frame to keep reporting',
+  );
+});
+
+test('keeps the runtime gate reporting for an Illegal invocation (runtime captures carry no frames)', () => {
+  // The runtime gate (`window.onerror` / `unhandledrejection` captures) has no
+  // stack frames, so it cannot prove the third-party spoof origin; a bare
+  // `Illegal invocation` there must keep reporting. The Sentry `beforeSend`
+  // gate — which does carry frames — is the gate that drops this class.
+  for (const message of SPOOF_GET_PARAMETER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      false,
+      `expected the runtime gate to keep reporting "${message}"`,
+    );
+  }
 });
