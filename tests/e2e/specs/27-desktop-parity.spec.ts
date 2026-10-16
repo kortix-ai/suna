@@ -1635,7 +1635,7 @@ for (const runtime of runtimes) {
             box.innerHTML = [
               '<textarea id="ctx-field" spellcheck="true" style="width:320px;height:40px;font-size:16px">recieve</textarea>',
               '<a id="ctx-link" href="https://example.com/docs" style="display:block;padding:4px">docs</a>',
-              '<div id="ctx-plain" style="width:200px;height:24px">plain</div>',
+              '<div id="ctx-plain" style="width:200px;height:24px"></div>',
               '<div id="ctx-own" style="width:200px;height:24px">own menu</div>',
             ].join("");
             document.body.appendChild(box);
@@ -1666,12 +1666,13 @@ for (const runtime of runtimes) {
                 "selectAll",
               ]),
             );
+          // macOS also selects the word under a right-click, so Copy for the
+          // link's text can follow, as in a browser.
           await page.locator("#ctx-link").click({ button: "right" });
-          await expect.poll(async () => (await menus()).at(-1)).toEqual([
-            "Open Link in Browser",
-            "Copy Link",
-          ]);
-          // A plain area offers nothing, and an element with its own menu
+          await expect
+            .poll(async () => ((await menus()).at(-1) ?? []).slice(0, 2))
+            .toEqual(["Open Link in Browser", "Copy Link"]);
+          // An empty area offers nothing, and an element with its own menu
           // (the page calls preventDefault) gets no shell menu on top.
           const shown = (await menus()).length;
           await page.locator("#ctx-plain").click({ button: "right" });
