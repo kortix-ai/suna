@@ -77,22 +77,6 @@ describe('native test-lane workflow', () => {
     expect(once.sort()).toEqual(full.filter((name) => !sliced.has(name)).sort());
   });
 
-  test('caches node_modules per lockfile and saves it from one lane right after the install', () => {
-    const restore = laneStep('Restore node_modules');
-    expect(restore).toContain('uses: actions/cache/restore@v4');
-    expect(restore).toContain("hashFiles('pnpm-lock.yaml'");
-    for (const path of ['node_modules', 'apps/*/node_modules', 'packages/*/node_modules', 'tests/node_modules']) {
-      expect(restore).toContain(`            ${path}\n`);
-    }
-    const save = laneStep('Save node_modules');
-    expect(save).toContain('uses: actions/cache/save@v4');
-    expect(save).toContain("steps.node-modules.outputs.cache-hit != 'true' && matrix.lane == 'packages-kortixd'");
-    expect(save).toContain('key: ${{ steps.node-modules.outputs.cache-primary-key }}');
-    const order = ['Restore node_modules', 'Install workspace dependencies', 'Save node_modules', 'Run the root test lane'];
-    const at = order.map((name) => testWorkflow.indexOf(`      - name: ${name}\n`));
-    expect(at).toEqual([...at].sort((x, y) => x - y));
-  });
-
   test('gives the browser lanes Chromium and a prestarted Supabase', () => {
     expect(testWorkflow).toContain('pnpm --dir tests exec playwright install --with-deps chromium');
     expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check -x studio,imgproxy');

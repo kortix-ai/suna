@@ -139,10 +139,10 @@ each shard its spec files by path, balanced by measured duration (see
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
 Supabase so the root runner reuses it. `actions/cache` keeps the Chromium
-download per lockfile, and keeps every `node_modules` directory per lockfile
-and workspace `package.json` set: on a hit `pnpm install` only confirms the
-tree. Only `packages-kortixd` saves that cache, right after its install. Every
-runner is a fresh VM, so the Supabase image pulls run cold on each lane.
+download per lockfile. Every runner is a fresh VM, so `pnpm install` (~45 s)
+and the Supabase image pulls (~55 s) run cold on each lane. A `node_modules`
+cache does not pay on these runners: restoring its 1.33 GB archive took
+24-44 s against a 41-49 s cold install (2026-10-16).
 
 Until 2026-08-26 each lane ran inside a Platinum or Daytona cloud sandbox with
 a content-addressed warm image; the runner was a thin orchestrator. That path

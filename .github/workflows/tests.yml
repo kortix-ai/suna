@@ -119,22 +119,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
-      # node_modules (root + every workspace package) per lockfile. A hit
-      # makes `pnpm install` a no-op check instead of a ~45 s fetch and link.
-      # One lane saves it, right after the install and before any test can
-      # write into node_modules: packages-kortixd, the shortest lane, so the
-      # upload never lengthens the run. The nightly `dev` run seeds the cache
-      # every branch can read.
-      - name: Restore node_modules
-        id: node-modules
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            node_modules
-            apps/*/node_modules
-            packages/*/node_modules
-            tests/node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'patches/**', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'tests/package.json') }}
+      # No node_modules cache: measured 2026-10-16 (runs
+      # 38936414571 cold, 38937437360 warm), restoring the 1.33 GB node_modules
+      # archive took 24-44 s plus a 4 s install, against a 41-49 s cold install.
       - name: Install workspace dependencies
         run: |
           corepack enable pnpm
@@ -142,16 +129,6 @@ jobs:
           pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
-      - name: Save node_modules
-        if: steps.node-modules.outputs.cache-hit != 'true' && matrix.lane == 'packages-kortixd'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            node_modules
-            apps/*/node_modules
-            packages/*/node_modules
-            tests/node_modules
-          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Install ripgrep
         # The sandbox agent's glob/grep tools (kortix-sandbox-agent-server)
         # shell out to rg. The sandbox image ships it; GitHub's runner image
