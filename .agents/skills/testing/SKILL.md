@@ -48,7 +48,7 @@ resource isolation.
 ## Run tests
 
 ```bash
-pnpm test                       # Diff-scoped suite; refused on a Mac (CI and Linux only)
+pnpm test                       # Whole core suite; refused on a Mac (CI and Linux only)
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
@@ -62,14 +62,10 @@ pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 pnpm test -- --target-full     # Every deployed staging flow and browser journey
 ```
 
-Plain `pnpm test` is diff-scoped (`tests/src/core/test-scope.ts`, rules in
-`tests/README.md` "Diff-scoped default run"). It runs the changed packages,
-their dependents and relative importers, the flows and DB suites only when the
-scope reaches the API, CLI, gateway or DB package, and the SDK lane only when
-it reaches `packages/sdk`. A root config, `scripts/` or runner change runs
-everything. It reuses lane groups that already passed on the same diff, so a
-rerun after a flake runs only the red groups. `CI=1 pnpm test` runs everything
-and reuses nothing.
+Plain `pnpm test` runs the whole core suite: flows, DB suites, runner units,
+route coverage, worktree units, the SDK, and package quality. It runs in CI
+and on Linux. On a Mac it exits `2` (below). A box without Docker drops the
+two DB lanes and logs them as skipped, never as a pass.
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.
@@ -82,42 +78,9 @@ Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
 Browser runs use two Playwright workers, locally and in each CI shard.
 
-A green `pnpm test` writes `tests/attestations/<branch>.json` (`/` and every char
-outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
-`detached-<short-sha>.json`) and deletes every other file in `tests/attestations/`
-plus the legacy `tests/test-attestation.json`. Committing it is optional; a
-factory PR commits it because the company merge gate (G11) reads it.
-One file per branch keeps PRs from conflicting on it; deleting a merged PR's
-file is conflict-free because no branch edits it again. Format:
-`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
-`diff_files` is the files the PR itself changed (`git diff origin/dev...HEAD`,
-working tree included when written, minus every attestation file) and `diff_hash` their sha256; both are recomputed from
-the verified rev, so committing the attestation does not change them. Verify
-stays green after a merge of `origin/dev` that touches other files, and goes
-stale only when a file the PR changed is edited after the run. `source_hash`
-(the sha256 of every file the commit would contain except attestation files) is
-the full-tree fallback used on a direct main push, where there is no diverging
-merge-base. Lanes: `core` (sdk, runner units, route coverage, worktree units), `packages`
-(package quality), `db-suites` (API/CLI flows + DB suites; both need Docker:
-local Supabase, GoTrue, per-suite Postgres containers), and `browser` when
-run. Plain `pnpm test` runs all but `browser`. A lane is written only when all
-its runner lanes ran in that run or one failed. A filtered or sharded run
-(`--id`, `--domain`, a path filter, `--browser-shard`) writes nothing, and a
-lane-only mode updates only the lanes it fully covers, on unchanged source.
-`pnpm test:verify [--rev <sha>] [--branch <name>]` (`tests/verify-attestation.mjs`)
-reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
-several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
-rev (`--branch`, else the checked-out branch), else the legacy file. It
-recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`. Two skips exist, neither a pass, both
-for `db-suites`: `skipped-no-db` (no Docker) and `skipped-unaffected` (the
-diff-scoped run found nothing the flows or DB suites read). The `packages` lane has no skip — it runs on a
-laptop, a CI runner and a Kortix factory sandbox alike. `--strict` exits `3` for
-either skip. No in-sandbox
-Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
-records the skip and the factory merge gate holds DB PRs.
-No hook or `dev` merge gate requires an attestation. You choose the tests a
-change needs.
+No hook or `dev` merge gate requires a test run, and nothing records one: the
+attestation system was removed on 2026-10-16. Write in the PR body what you
+ran and why.
 
 Run the narrowest relevant command. A diff that no test reads (docs, a skill,
 a standalone script) needs no run.
@@ -146,15 +109,17 @@ An API performance change reports a measured before/after from
 `apps/api/scripts/prompt-latency-bench.ts`. The runbook and the baseline are
 in `references/api-latency-baseline.md`.
 
-## Your machine is the pre-merge gate
+## Where tests run: one tree, one run
 
-A pull request into `dev` runs **no** GitHub Actions job by itself. Every test
-for a change runs in the developer's own box before the merge. After the merge,
-every push to `dev` runs all ten `Tests` lanes (queued: one run, at most one
-waiting). That run is the check before staging: a promotion takes only a `dev`
-SHA with a green run, and a red run comments the failing lanes and suspect
-commits once per new set of failing lanes. `CI` and `CodeQL` run weekly on
-`dev` and on release pull requests into `staging` and `prod`. In the rare case
+The philosophy is in `AGENTS.md` ("Testing philosophy"). A pull request into
+`dev` runs **no** GitHub Actions job by itself, and a push to `dev` runs no
+`Tests` lane. Before the merge you run T0 and the tests that cover your change,
+and you use the change for real. The `Tests` lanes run on the pull request into
+`staging` (the gate) and nightly on `dev`; a red night comments the failing
+lanes and suspect commits once per new set of failing lanes. `CI` and `CodeQL`
+run weekly on `dev` and on the pull request into `staging`. The pull request
+into `prod` runs only `Tests - release` against deployed staging plus the
+path-gated SOC 2 scanners. In the rare case
 you want CI before a `dev` merge, add a label: `test` runs the lanes once
 (~20 min), `preview` deploys once (~7 min) with no tests. A push re-runs
 neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts` fails
@@ -167,7 +132,7 @@ equivalent of every CI job your change touches:
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
 | --- | --- | --- |
-| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes on every `dev` push and on `staging`/`prod` PRs | the package's test file, `pnpm test -- --id <ID>` |
+| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes on the `staging` PR and nightly on `dev` | the package's test file, `pnpm test -- --id <ID>` |
 | browser-visible behavior | `Tests` browser lanes | drive the page with agent-browser; the `test` label for the browser lanes |
 | `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |
