@@ -8,7 +8,10 @@
  *   `compaction` message is a turn: the marker, with its summary in its compaction block.
  * - A reply joins the turn `reply_to` names, else the latest prompt before it. A reply before
  *   every loaded prompt opens a `partial` turn (a stand-in user message with no blocks) when
- *   it names a prompt, else joins the first turn. A reply shell with no block, no error and
+ *   it names a prompt, else joins the first turn. A reply after a compaction that its turn
+ *   precedes (pi compacts inside a turn and keeps naming the prompt) joins the compaction's
+ *   continuation: a `partial` turn `<marker id>:continued` right after the marker, and the
+ *   working turn when the working projection names the prompt or the marker. A reply shell with no block, no error and
  *   zero usage is not drawn. A message out of context stays (a failed attempt keeps its rows)
  *   unless `hideOutOfContext` leaves it out.
  * - `held` prompts (the inbox still holds them) go after the thread, in the order given.
@@ -64,6 +67,12 @@ export interface SessionLogCompaction {
   inFlight: boolean;
 }
 
+/** {@link SessionLogTurn.continues}. */
+export interface SessionLogContinuation {
+  marker: string;
+  prompt: string | null;
+}
+
 export interface SessionLogTurn {
   /** The user message id, the turn's key. */
   id: string;
@@ -72,6 +81,12 @@ export interface SessionLogTurn {
   assistant: SessionLogMessage[];
   /** The prompt is not loaded: `user` is a stand-in with its id and no blocks. */
   partial: boolean;
+  /**
+   * The work after a compaction inside a turn (a `partial` turn `<marker>:continued` right after
+   * the marker): the marker's id and the prompt the replies name (null when they name none). The
+   * working projection still names that prompt or the marker. Null on every other turn.
+   */
+  continues: SessionLogContinuation | null;
   /** Every block of every reply, in order. */
   blocks: SessionLogBlock[];
   status: SessionLogTurnStatus;
@@ -167,7 +182,7 @@ export function sessionLogPromptMessage(prompt: SessionPrompt, threadId: string)
 
 // ─── grouping ────────────────────────────────────────────────────────────────
 
-type Draft = { user: SessionLogMessage; assistant: SessionLogMessage[]; partial: boolean };
+type Draft = { user: SessionLogMessage; assistant: SessionLogMessage[]; partial: boolean; continues?: SessionLogContinuation };
 
 const standIns = new WeakMap<SessionLogMessage, SessionLogMessage>();
 
@@ -180,6 +195,21 @@ function standInFor(reply: SessionLogMessage): SessionLogMessage {
       model: null, usage: null, finish: null, error: null, created_at: reply.created_at, completed_at: null, producer: reply.producer, blocks: [],
     };
     standIns.set(reply, m);
+  }
+  return m;
+}
+
+const continuations = new WeakMap<SessionLogMessage, SessionLogMessage>();
+
+/** The stand-in prompt of the work after a compaction inside a turn, one per marker object. */
+function continuationOf(marker: SessionLogMessage): SessionLogMessage {
+  let m = continuations.get(marker);
+  if (!m) {
+    m = {
+      ...V, message_id: `${marker.message_id}:continued`, thread_id: marker.thread_id, seq: marker.seq, role: 'user', kind: 'turn', status: 'complete', in_context: true,
+      model: null, usage: null, finish: null, error: null, created_at: marker.created_at, completed_at: null, producer: marker.producer, blocks: [],
+    };
+    continuations.set(marker, m);
   }
   return m;
 }
@@ -199,16 +229,32 @@ function drafts(messages: readonly SessionLogMessage[], held: ReadonlySet<string
   }
   const partials: Draft[] = [];
   const leading: SessionLogMessage[] = [];
+  // The order prompts were read in, and each compaction's continuation, made at its first reply.
+  const order = new Map<Draft, number>();
+  const continued = new Map<Draft, Draft>();
   let last: Draft | null = null;
+  let compaction: Draft | null = null;
   for (const m of messages) {
     if (m.role === 'user') {
       const d = byId.get(m.message_id);
-      if (d && !held.has(m.message_id)) last = d;
+      if (d && !held.has(m.message_id)) {
+        last = d;
+        if (!order.has(d)) order.set(d, order.size);
+        if (d.user.kind === 'compaction') compaction = d;
+      }
       continue;
     }
     if (m.role !== 'assistant' || isEmptyShell(m)) continue;
     const named = m.reply_to ? byId.get(m.reply_to) : undefined;
-    const home = named ?? last;
+    let home = named ?? last;
+    if (compaction && home && (home === compaction || (order.get(home) ?? Infinity) < order.get(compaction)!)) {
+      let next = continued.get(compaction);
+      if (!next) {
+        next = { user: continuationOf(compaction.user), assistant: [], partial: true, continues: { marker: compaction.user.message_id, prompt: home === compaction ? null : home.user.message_id } };
+        continued.set(compaction, next);
+      }
+      home = next;
+    }
     if (home) {
       home.assistant.push(m);
       continue;
@@ -226,7 +272,22 @@ function drafts(messages: readonly SessionLogMessage[], held: ReadonlySet<string
     if (first) first.assistant.unshift(...leading);
     else turns.push({ user: leading[0]!, assistant: leading.slice(1), partial: false });
   }
-  return [...partials, ...turns.filter((t) => !held.has(t.user.message_id)), ...[...held].flatMap((id) => byId.get(id) ?? [])];
+  const shown = turns.filter((t) => !held.has(t.user.message_id)).flatMap((t) => {
+    const next = continued.get(t);
+    return next ? [t, next] : [t];
+  });
+  return [...partials, ...shown, ...[...held].flatMap((id) => byId.get(id) ?? [])];
+}
+
+/** The turn the working projection means: a prompt or a marker whose work continued below a compaction names its last continuation. */
+function continuedHint(list: readonly Draft[], hint: string | null | undefined): string | null | undefined {
+  if (!hint) return hint;
+  let out = hint;
+  for (const d of list) {
+    const c = d.continues;
+    if (c && (out === c.marker || out === c.prompt || hint === c.prompt)) out = d.user.message_id;
+  }
+  return out;
 }
 
 // ─── derived fields ──────────────────────────────────────────────────────────
@@ -338,7 +399,7 @@ export function sessionLogTurns(source: SessionLogThread, options: SessionLogTur
       userMessage: { info: { id: d.user.message_id } },
       assistantMessages: d.assistant.map((m) => ({ info: { time: m.status === 'streaming' ? {} : { completed: 1 }, error: m.error ?? undefined } })),
     })),
-    hintMessageId: options.liveMessageId,
+    hintMessageId: continuedHint(list, options.liveMessageId),
     unrunTurnIds: held,
   });
   const anchor = last(list, writesPlan) ?? list[list.length - 1];
@@ -362,6 +423,7 @@ export function sessionLogTurns(source: SessionLogThread, options: SessionLogTur
       user: d.user,
       assistant: d.assistant,
       partial: d.partial,
+      continues: d.continues ?? null,
       blocks,
       status: retries ? 'streaming' : reply ? reply.status : d.user.kind === 'compaction' ? d.user.status : 'pending',
       error: errorOf(d),

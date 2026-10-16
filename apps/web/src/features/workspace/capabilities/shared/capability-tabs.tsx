@@ -13,8 +13,10 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useProjectDrive } from '@/hooks/drives/use-drives';
+import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
@@ -121,12 +123,12 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * `shrink-0` keeps the bar pinned at full height inside the layout's `h-svh`
  * column; the page body below is the flex-1 scroller.
  *
- * **Static on purpose.** Every tab paints on the first frame, from
- * `CAPABILITY_TABS`, with no permission probe. The bar used to filter on the
- * probe, and a pending probe reads `allowed: false`, so it painted empty and
- * the tabs flew in when `/effective` answered. Access is now decided in the
- * content area (`CapabilityAccessGate`): a tab the caller may not read still
- * shows, and opening it shows a no-access state instead of the page.
+ * **Only the tabs the caller may open** (`capabilityAccess()`, the rule the
+ * sidebar row and `CapabilityAccessGate` read). Until that answer arrives the
+ * bar paints every tab with `invisible`: the row holds its height and nothing
+ * flies in, and no tab the caller cannot open is ever clickable. It used to
+ * paint every tab unconditionally, so a limited member saw five tabs that
+ * opened onto "You don't have access" (KRTX-2144).
  */
 /**
  * The hairline between Agents and everything an agent draws on (Skills
@@ -163,7 +165,11 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   const drive = useProjectDrive(projectId, drivesGate.enabled);
   const conflicts = drive.data?.openConflicts ?? 0;
   const tDrives = useTranslations('drives');
-  const tabs = drivesGate.enabled ? allTabs : allTabs.filter((tab) => tab.key !== 'files');
+  const access = useCapabilityAccess(projectId);
+  // `capabilityAccess()` already drops Files while `drives` is off.
+  const tabs = allTabs.filter((tab) =>
+    access.settled ? access.tabs.includes(tab.key) : drivesGate.enabled || tab.key !== 'files',
+  );
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
@@ -201,10 +207,14 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
             type="underline"
             underlineSize="md"
             size="lg"
-            className="kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2"
+            className={cn(
+              'kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2',
+              !access.settled && 'invisible',
+            )}
+            aria-busy={!access.settled || undefined}
           >
             {primary.map(renderTab)}
-            <GroupSeam />
+            {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
             {library.map(renderTab)}
             <MembersLaunchLink projectId={projectId} />
             {trailing.map(renderTab)}
