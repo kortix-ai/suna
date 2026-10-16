@@ -151,7 +151,7 @@ kortix billing costs --by project --since 2026-09-01T00:00:00Z
 kortix billing costs --by session --csv sessions.csv    # CSV needs --by
 ```
 
-`kortix billing costs` takes `--project`, `--session`, `--owner`, `--since`, `--until`, `--sort total_desc|total_asc|recent|name_asc` (`name_asc` with `--by project` only), `--limit` and `--offset`. Add `--account <id>` for an account other than the active one. `kortix billing status` and `kortix billing transactions` show credits. `kortix billing costs` shows money amounts. `--json` keeps the money amounts the API returns.
+`kortix billing costs` takes `--project`, `--session`, `--owner`, `--since`, `--until`, `--sort total_desc|total_asc|recent|name_asc` (`name_asc` with `--by project` only), `--limit` and `--offset`. Add `--account <id>` for an account other than the active one. `kortix billing status`, `kortix billing transactions` and `kortix billing costs` show the balance and spend in credits. Prices stay in dollars: the plan price and the auto top-up amount. `--json` returns the US dollar amounts of the API unchanged.
 
 For scripts, the same reports are on the REST API. An account-wide read needs `billing.read`. A read with `project_id` needs `project.gateway.spend.read` on that project. A project-scoped token needs `project.usage.read` and its own `project_id`.
 

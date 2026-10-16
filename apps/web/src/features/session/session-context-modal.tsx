@@ -14,7 +14,8 @@ import {
 import { Close } from '@/features/icon/icons/close';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-import { formatCost, type Session, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
+import { type Session, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
+import { formatUsdAsCredits } from '@kortix/shared';
 import {
   useSessionLog,
   useSessionLogThread,
@@ -234,6 +235,7 @@ function SessionContextModalBody({
 }: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
+  const tCredits = useTranslations('settings.credits');
   const pricingLookup = useModelPricingLookup(providers);
   // The numbers read the session log's root thread: the `fromV1` view of the
   // v1 rows while v2 is off, the API's record on v2. The raw explorer and Copy
@@ -331,7 +333,13 @@ function SessionContextModalBody({
                 : ctx?.providerLabel
             }
           />
-          <OverviewStat label={t.raw('statCost')} value={formatCost(billedCost ?? metrics.totalCost)} />
+          <OverviewStat
+            label={t.raw('statCost')}
+            value={tCredits('creditCount', {
+              count: (billedCost ?? metrics.totalCost) * 100,
+              formatted: formatUsdAsCredits(billedCost ?? metrics.totalCost),
+            })}
+          />
           <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
         </div>
 

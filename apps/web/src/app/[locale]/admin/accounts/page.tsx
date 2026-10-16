@@ -3,8 +3,9 @@
 import { formatWholeUsd } from '@/features/billing/compute-pricing';
 import type { UiTranslator } from '@/i18n/translator';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
+import { creditsToDollars, dollarsToCredits, formatUsdAsCredits } from '@kortix/shared';
 import {
   ArrowDownRightIcon as ArrowDownRight,
   ArrowUpRightIcon as ArrowUpRight,
@@ -107,7 +108,8 @@ import {
 } from './overrides-form';
 
 const PAGE_SIZE = 50;
-const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
+/** Grant/debit presets in credits (1 credit = $0.01): $5 … $100. */
+const REIMBURSEMENT_PRESETS = [500, 1000, 2500, 5000, 10000];
 
 // Tier FILTER options — and nothing else.
 //
@@ -145,14 +147,27 @@ const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'trialing', label: 'Trialing' },
 ];
 
-function formatCredits(value: string | number | null | undefined) {
+/** A held USD amount (balance, bucket) in credits: `86,815` (1 credit = $0.01). */
+function formatCredits(value: string | number | null | undefined, locale?: string) {
   const n = Number(value ?? 0);
-  const amount = Number.isFinite(n) ? n : 0;
-  const sign = amount < 0 ? '-' : '';
-  return `${sign}$${Math.abs(amount).toFixed(2)}`;
+  return formatUsdAsCredits(Number.isFinite(n) ? n : 0, { locale });
 }
 
-/** Short form: always $X.XX, no sign logic (caller adds + / -). */
+/** `86,815 credits` for a stat tile: the number, the unit muted beside it. */
+function CreditsValue({ usd }: { usd: string | number | null | undefined }) {
+  const locale = useLocale();
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  return (
+    <>
+      {formatCredits(usd, locale)}{' '}
+      <span className="text-muted-foreground text-sm font-normal">
+        {tI18nComplete.raw('textbe379a30f1aa')}
+      </span>
+    </>
+  );
+}
+
+/** A subscription PRICE: always $X.XX, no sign logic (caller adds + / -). */
 function money(value: string | number | null | undefined) {
   const n = Number(value ?? 0);
   return `$${(Number.isFinite(n) ? Math.abs(n) : 0).toFixed(2)}`;
@@ -399,6 +414,11 @@ const EMPTY_FILTERS: AccountFilters = {
   sortDir: 'desc',
 };
 
+/** A USD balance filter as the credits the field shows; `''` when unset. */
+function creditsField(usd: number | null): string {
+  return usd !== null ? String(dollarsToCredits(usd)) : '';
+}
+
 function activeFilterCount(f: AccountFilters): number {
   let n = 0;
   if (f.paidOnly) n += 1;
@@ -412,6 +432,7 @@ function activeFilterCount(f: AccountFilters): number {
 
 export default function AdminAccountsPage() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   // Seed from ?search= so cross-links (e.g. the Projects page's account cell)
   // land on a filtered list instead of the whole fleet.
   const urlSearchParams = useSearchParams();
@@ -498,7 +519,7 @@ export default function AdminAccountsPage() {
         />
         <StatTile
           label={tI18nComplete.raw('text98d2f310af85')}
-          value={formatCredits(summary?.totalCredits ?? 0)}
+          value={<CreditsValue usd={summary?.totalCredits ?? 0} />}
           hint={tI18nComplete.raw('text5bd8a81336da')}
         />
         <StatTile
@@ -571,7 +592,7 @@ export default function AdminAccountsPage() {
                 />
                 <TableHead>{tI18nComplete.raw('textfa8ed0bdabdd')}</TableHead>
                 <SortHeader
-                  label={tI18nComplete.raw('textd05e07b7c14e')}
+                  label={tI18nComplete.raw('text42144adfea3c')}
                   column="balance"
                   sortBy={filters.sortBy}
                   sortDir={filters.sortDir}
@@ -620,11 +641,11 @@ export default function AdminAccountsPage() {
                   <TableCell className="text-right">
                     <span
                       className={cn(
-                        'font-mono text-sm',
+                        'text-sm tabular-nums',
                         Number(account.balance ?? 0) < 0 && 'text-kortix-red',
                       )}
                     >
-                      {formatCredits(account.balance)}
+                      {formatCredits(account.balance, locale)}
                     </span>
                   </TableCell>
                   <TableCell className="text-right text-sm tabular-nums">
@@ -757,16 +778,13 @@ function FiltersPanel({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
   const paymentStatusOptions = useLocalizedUiCatalog(PAYMENT_STATUS_OPTIONS);
-  const [minBalance, setMinBalance] = useState(
-    filters.minBalance !== null ? String(filters.minBalance) : '',
-  );
-  const [maxBalance, setMaxBalance] = useState(
-    filters.maxBalance !== null ? String(filters.maxBalance) : '',
-  );
+  // The fields take CREDITS; the filter (and the API) holds USD.
+  const [minBalance, setMinBalance] = useState(creditsField(filters.minBalance));
+  const [maxBalance, setMaxBalance] = useState(creditsField(filters.maxBalance));
 
   useEffect(() => {
-    setMinBalance(filters.minBalance !== null ? String(filters.minBalance) : '');
-    setMaxBalance(filters.maxBalance !== null ? String(filters.maxBalance) : '');
+    setMinBalance(creditsField(filters.minBalance));
+    setMaxBalance(creditsField(filters.maxBalance));
   }, [filters.minBalance, filters.maxBalance]);
 
   const toggleTier = (v: string) => {
@@ -790,8 +808,8 @@ function FiltersPanel({
     const max = maxBalance === '' ? null : Number(maxBalance);
     onChange({
       ...filters,
-      minBalance: min !== null && Number.isFinite(min) ? min : null,
-      maxBalance: max !== null && Number.isFinite(max) ? max : null,
+      minBalance: min !== null && Number.isFinite(min) ? creditsToDollars(min) : null,
+      maxBalance: max !== null && Number.isFinite(max) ? creditsToDollars(max) : null,
     });
   };
 
@@ -902,7 +920,7 @@ function FiltersPanel({
 
       <div className="space-y-2 px-4 py-3">
         <div className="text-muted-foreground text-xs font-medium">
-          {tI18nComplete.raw('textd05e07b7c14e')}
+          {tI18nComplete.raw('text42144adfea3c')}
         </div>
         <div className="flex items-center gap-2">
           <Input
@@ -942,6 +960,7 @@ function ActiveChips({
   onSearchChange: (v: string) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
   const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
@@ -990,14 +1009,18 @@ function ActiveChips({
   if (filters.minBalance !== null) {
     chips.push({
       key: 'min',
-      label: tI18nComplete('textd9ef50b79c75', { value0: filters.minBalance }),
+      label: tI18nComplete('text8c9a5ac212c7', {
+        value0: formatCredits(filters.minBalance, locale),
+      }),
       onRemove: () => onChange({ ...filters, minBalance: null }),
     });
   }
   if (filters.maxBalance !== null) {
     chips.push({
       key: 'max',
-      label: tI18nComplete('text5d4f8dc198f5', { value0: filters.maxBalance }),
+      label: tI18nComplete('text72c79681cd1e', {
+        value0: formatCredits(filters.maxBalance, locale),
+      }),
       onRemove: () => onChange({ ...filters, maxBalance: null }),
     });
   }
@@ -1307,20 +1330,20 @@ function AccountDetail({ account }: { account: AdminAccount }) {
         <StatGrid className="grid-cols-2 lg:grid-cols-4">
           <StatTile
             label={tI18nComplete.raw('text10ea22c4a146')}
-            value={formatCredits(account.balance)}
+            value={<CreditsValue usd={account.balance} />}
             tone={balanceNegative ? 'danger' : 'default'}
           />
           <StatTile
             label={tI18nComplete.raw('textff44a401445c')}
-            value={formatCredits(account.expiringCredits)}
+            value={<CreditsValue usd={account.expiringCredits} />}
           />
           <StatTile
             label={tI18nComplete.raw('text455a95491f40')}
-            value={formatCredits(account.nonExpiringCredits)}
+            value={<CreditsValue usd={account.nonExpiringCredits} />}
           />
           <StatTile
             label={tI18nComplete.raw('textb36c2611dcdf')}
-            value={formatCredits(account.dailyCreditsBalance)}
+            value={<CreditsValue usd={account.dailyCreditsBalance} />}
           />
         </StatGrid>
 
@@ -1394,6 +1417,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 
 function CreditsTab({ account }: { account: AdminAccount }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
   const [amount, setAmount] = useState('');
@@ -1401,8 +1425,11 @@ function CreditsTab({ account }: { account: AdminAccount }) {
   const [isExpiring, setIsExpiring] = useState(false);
   const [confirmDebit, setConfirmDebit] = useState(false);
 
+  // The field takes CREDITS; the grant and debit routes take USD.
   const parsed = Number(amount);
   const isValid = Number.isFinite(parsed) && parsed > 0;
+  const amountUsd = creditsToDollars(parsed);
+  const amountLabel = `${formatCredits(amountUsd, locale)} ${tI18nComplete.raw('textbe379a30f1aa')}`;
 
   async function handleGrant() {
     if (!isValid) {
@@ -1412,13 +1439,13 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     try {
       await grant.mutateAsync({
         accountId: account.accountId,
-        amount: parsed,
+        amount: amountUsd,
         description: description.trim() || 'Admin credit adjustment',
         isExpiring,
       });
       successToast(tI18nComplete.raw('text0268c03cd74c'), {
         description: tI18nComplete('text24dab51514a1', {
-          value0: money(parsed),
+          value0: amountLabel,
           value1: accountLabelFor(account),
         }),
       });
@@ -1435,12 +1462,12 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     try {
       await debit.mutateAsync({
         accountId: account.accountId,
-        amount: parsed,
+        amount: amountUsd,
         description: description.trim() || 'Admin debit',
       });
       successToast(tI18nComplete.raw('text3efd6742a383'), {
         description: tI18nComplete('text1836d8d61ae9', {
-          value0: money(parsed),
+          value0: amountLabel,
           value1: accountLabelFor(account),
         }),
       });
@@ -1467,7 +1494,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               className="h-7"
               onClick={() => setAmount(String(n))}
             >
-              ${n}
+              {formatCredits(creditsToDollars(n), locale)}
             </Button>
           ))}
         </div>
@@ -1476,8 +1503,8 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder={tI18nComplete.raw('text999d689b4739')}
-            step="0.01"
+            placeholder={tI18nComplete.raw('textb8fd28863a22')}
+            step="1"
           />
           <Input
             value={description}
@@ -1522,7 +1549,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
           <div className="space-y-2 text-sm">
             <p>
               {tI18nComplete.raw('text5498f487a861')}{' '}
-              <span className="text-foreground font-mono">{isValid ? money(parsed) : '—'}</span>{' '}
+              <span className="text-foreground tabular-nums">{isValid ? amountLabel : '—'}</span>{' '}
               {tI18nComplete.raw('text75857a458999')}
               <span className="font-medium">{accountLabelFor(account)}</span>.
             </p>

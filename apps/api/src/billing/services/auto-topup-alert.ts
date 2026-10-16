@@ -26,7 +26,7 @@ export function notifyAutoTopupDisabled(accountId: string, reason: string): Prom
   const url = billingPaneUrl(accountId);
   const title = 'Auto top-up is off';
   const stopped =
-    'Kortix turned auto top-up off so it stops charging. When the balance reaches $0, sessions and triggers stop.';
+    'Kortix turned auto top-up off so it stops charging. When the balance reaches 0 credits, sessions and triggers stop.';
   const note = 'Update the payment method, then turn auto top-up back on.';
   return emailBillingManagers(accountId, (accountName) => ({
     subject: `Auto top-up is off for ${accountName}`,

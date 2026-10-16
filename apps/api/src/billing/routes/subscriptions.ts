@@ -11,6 +11,7 @@ import {
   getCheckoutSessionDetails,
   parseMonthlyUsd,
   setPlan,
+  previewPlan,
 } from '../services/subscriptions';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { resolveBillingWriteAccountId } from '../http-require-billing-write';
@@ -55,6 +56,28 @@ subscriptionsRouter.openapi(
       locale: typeof body.locale === 'string' ? body.locale : undefined,
     });
     return c.json(result);
+  },
+);
+
+// What a plan change would do before the customer confirms it: the charge due
+// now and the credits added now for a raise, the renewal date for a cut.
+subscriptionsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/plan/preview',
+    tags: ['billing'],
+    summary: 'Preview a change of the monthly credits plan amount',
+    ...auth,
+    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
+    responses: {
+      200: json(OpaqueSchema, 'Plan change preview'),
+      ...errors(400),
+    },
+  }),
+  async (c) => {
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
+    const body = await readJsonObject(c);
+    return c.json(await previewPlan({ accountId, monthlyUsd: parseMonthlyUsd(body.monthly_usd) }));
   },
 );
 

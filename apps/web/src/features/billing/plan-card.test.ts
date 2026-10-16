@@ -2,7 +2,7 @@ import type { AccountState } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { describePlanStatus } from './account-overview';
-import { describePlanChange, planPickerView } from './plan-card';
+import { describePlanChange, planPickerView, scheduledDowngrade } from './plan-card';
 
 /**
  * The Plan pane's model, tested without React.
@@ -181,6 +181,47 @@ describe('describePlanStatus without trials', () => {
       stateWith({ plan: free, grace: { reason: 'contract_ended', ends_at: '2026-11-28T00:00:00.000Z' } } as Partial<AccountState>),
     );
     expect(status.detail).toBe(`SSO stays on until ${day('2026-11-28T00:00:00.000Z')}`);
+  });
+});
+
+describe('describePlanChange with a downgrade scheduled', () => {
+  // In effect this period: $500. Scheduled from the renewal: $100.
+  const base = { currentUsd: 500, scheduledUsd: 100, hasSubscription: true };
+
+  test('the amount in effect again keeps the plan (cancels the downgrade)', () => {
+    expect(describePlanChange({ ...base, nextUsd: 500 })).toBe('keep');
+  });
+
+  test('the scheduled amount itself changes nothing', () => {
+    expect(describePlanChange({ ...base, nextUsd: 100 })).toBe('unchanged');
+  });
+
+  test('another lower amount is still a cut; a higher one a raise from the amount in effect', () => {
+    expect(describePlanChange({ ...base, nextUsd: 200 })).toBe('cut');
+    expect(describePlanChange({ ...base, nextUsd: 1000 })).toBe('raise');
+  });
+});
+
+describe('scheduledDowngrade', () => {
+  test('reads the target amount and date from subscription.scheduled_change', () => {
+    const state = stateWith({
+      subscription: {
+        status: 'active',
+        cancel_at_period_end: false,
+        current_period_end: 1794700800,
+        scheduled_change: {
+          type: 'downgrade',
+          current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 50_000, monthly_usd: 500 },
+          target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 10_000, monthly_usd: 100 },
+          effective_date: '2026-11-14T00:00:00.000Z',
+        },
+      },
+    } as unknown as Partial<AccountState>);
+    expect(scheduledDowngrade(state)).toEqual({ monthlyUsd: 100, effectiveAt: '2026-11-14T00:00:00.000Z' });
+  });
+
+  test('null without a scheduled change, or for a non-credits change', () => {
+    expect(scheduledDowngrade(stateWith({}))).toBeNull();
   });
 });
 
