@@ -166,7 +166,7 @@ describe('getPublicSessionMessages', () => {
     }
   });
 
-  test('sanitizes a real message list: joins text parts, strips tool args, keeps only file name+mime', async () => {
+  test('sanitizes a real message list: joins text parts by line, strips tool args, keeps only file name+mime', async () => {
     messagesResult = {
       ok: true,
       messages: [
@@ -200,7 +200,7 @@ describe('getPublicSessionMessages', () => {
     expect(Object.keys(msg).sort()).toEqual(PUBLIC_MESSAGE_KEYS);
     expect(msg.role).toBe('assistant');
     expect(msg.created).toBe('1970-01-01T00:00:01.000Z');
-    expect(msg.text).toBe('first line second line');
+    expect(msg.text).toBe('first line\nsecond line');
     expect(msg.tools).toEqual([{ tool: 'bash', status: 'completed' }]);
     expect(msg.files).toEqual([{ filename: 'report.pdf', mime: 'application/pdf' }]);
     expect(msg.reasoning_omitted).toBe(true);
@@ -210,14 +210,25 @@ describe('getPublicSessionMessages', () => {
     }
   });
 
-  test('truncates an overlong message body', async () => {
-    const longText = 'x'.repeat(5000);
-    messagesResult = { ok: true, messages: [{ info: { role: 'user', time: {} }, parts: [{ type: 'text', text: longText }] }] };
+  test('keeps markdown intact: line breaks and code fences survive, so the page renders them as in the session', async () => {
+    const markdown = 'Here is the JSX:\n\n```tsx\n<svg\n  viewBox="0 0 12 12"\n/>\n```\n\n- one\n- two';
+    messagesResult = { ok: true, messages: [{ info: { role: 'assistant', time: {} }, parts: [{ type: 'text', text: markdown }] }] };
+    const result = await getPublicSessionMessages(activeShare);
+    expect(result.ok && result.transcript.messages[0].text).toBe(markdown);
+  });
+
+  test('keeps a long answer whole and marks a cut past the full-text cap', async () => {
+    const long = 'x'.repeat(5000);
+    const huge = 'y'.repeat(20_000);
+    messagesResult = {
+      ok: true,
+      messages: [long, huge].map((text) => ({ info: { role: 'assistant', time: {} }, parts: [{ type: 'text', text }] })),
+    };
     const result = await getPublicSessionMessages(activeShare);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.transcript.messages[0].text.length).toBeLessThan(5000);
-      expect(result.transcript.messages[0].text.endsWith('…')).toBe(true);
+      expect(result.transcript.messages[0].text).toBe(long);
+      expect(result.transcript.messages[1].text.endsWith('…[truncated: 16000 of 20000 chars]')).toBe(true);
     }
   });
 
@@ -287,7 +298,7 @@ describe('getPublicSessionMessages — saved transcript fallback', () => {
     messages: [
       {
         info: { id: 'msg_1', role: 'user', time: { created: 1000 } },
-        parts: [{ type: 'text', text: 'Summarize the launch plan.' }],
+        parts: [{ type: 'text', text: 'Summarize the launch plan.\n\n```\nstep 1\n```' }],
       },
       {
         info: { id: 'msg_2', role: 'assistant', time: { created: 2000, completed: 3000 } },
@@ -319,7 +330,7 @@ describe('getPublicSessionMessages — saved transcript fallback', () => {
     expect(transcript.opencode_session_id).toBe('oc-root-1');
     expect(transcript.message_count).toBe(2);
     expect(transcript.messages.map((m) => [m.role, m.text])).toEqual([
-      ['user', 'Summarize the launch plan.'],
+      ['user', 'Summarize the launch plan.\n\n```\nstep 1\n```'],
       ['assistant', 'Here is the summary.'],
     ]);
     expect(Object.keys(transcript.messages[1]).sort()).toEqual(PUBLIC_MESSAGE_KEYS);

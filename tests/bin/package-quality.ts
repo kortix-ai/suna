@@ -4,15 +4,27 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
-// The diff-scoped core run (src/core/test-scope.ts) passes the affected package
-// directories. Unset: every package, as CI and `--packages-only` run it.
-const scope: string[] | null = process.env.KORTIX_TEST_SCOPE
-  ? JSON.parse(process.env.KORTIX_TEST_SCOPE)
-  : null;
-const inScope = (dir: string) => scope === null || scope.includes(dir);
-/** Run `task` only when `dir` is in scope. */
+// `--package-group` (KORTIX_PACKAGE_GROUP) runs one slice, so CI runs the
+// slices on parallel runners: on one 4 vCPU runner the API, CLI and kortixd
+// suites plus three `tsc` shared the CPU and the lane took 18.5 min
+// (run 38777589705). Unset: every group, one after another as before.
+const GROUP_DIRS: Record<string, string> = {
+  api: 'apps/api',
+  cli: 'apps/cli',
+  kortixd: 'apps/kortix-sandbox-agent-server',
+};
+const group = process.env.KORTIX_PACKAGE_GROUP || null;
+if (group !== null && group !== 'rest' && !GROUP_DIRS[group]) {
+  throw new Error(`unknown package group ${group}: use api, cli, kortixd or rest`);
+}
+const inGroup = (dir: string) =>
+  group === null ||
+  (group === 'rest' ? !Object.values(GROUP_DIRS).includes(dir) : GROUP_DIRS[group] === dir);
+/** The repo-wide checks that belong to no package run once, in the `rest` group. */
+const repoChecks = group === null || group === 'rest';
+/** Run `task` only when `dir` is in this group. */
 const when = (dir: string, task: () => Promise<unknown>): Promise<unknown> =>
-  inScope(dir) ? task() : Promise.resolve();
+  inGroup(dir) ? task() : Promise.resolve();
 
 /**
  * Runner controls that must survive the hermetic scrub below.
@@ -208,13 +220,15 @@ async function runWorkspaceTests(
   );
 }
 
-await runAll([
-  run(['node', 'scripts/stage-npm-publish.test.mjs']),
-  run(['node', 'scripts/publish-npm-package.test.mjs']),
-  run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
-  run(['node', '--test', 'scripts/dev-local.test.mjs']),
-]);
-await rejectFocusedTests();
+if (repoChecks) {
+  await runAll([
+    run(['node', 'scripts/stage-npm-publish.test.mjs']),
+    run(['node', 'scripts/publish-npm-package.test.mjs']),
+    run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+    run(['node', '--test', 'scripts/dev-local.test.mjs']),
+  ]);
+  await rejectFocusedTests();
+}
 // apps/web's download-layout test launches Playwright Chromium. CI installs
 // the browser in the workflow before this lane; a worker sandbox that runs the
 // lane bare does not, and the test then fails with "Executable doesn't exist".
@@ -251,7 +265,6 @@ await runAll([
   // image build runs its `tsc` (noUncheckedIndexedAccess) over the workspace
   // packages it imports, so an api-contract change that only kortixd's flags
   // reject failed the dev API image build (#9556) with every lane green.
-  // The diff scope reaches kortixd from api-contract through its relative imports.
   when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'typecheck'])),
   when('apps/cli', () => run(['pnpm', '--filter', '@kortix/cli', 'typecheck'])),
   when('apps/kortix-sandbox-agent-server', () => run(['pnpm', '--filter', 'kortixd', 'typecheck'])),
@@ -265,12 +278,8 @@ await runAll([
 // libraries (`lib/markdown/markdown-keys.test.ts`), so apply the patches here.
 // patch-package is idempotent: a checkout that already applied them passes.
 await when('apps/mobile', () => run(['pnpm', '--filter', './apps/mobile', 'exec', 'patch-package']));
-const separate = ['apps/api', 'apps/cli', 'apps/kortix-sandbox-agent-server', 'packages/db'];
-const rest = scope
-  ? scope
-      .filter((dir) => !separate.includes(dir) && !(skipSdkTests && dir === 'packages/sdk'))
-      .map((dir) => `./${dir}`)
-  : [
+const rest = repoChecks
+  ? [
       './packages/**',
       './apps/**',
       '!kortix-api',
@@ -278,7 +287,8 @@ const rest = scope
       '!kortixd',
       '!@kortix/db',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
-    ];
+    ]
+  : [];
 await runAll([
   // `@kortix/db`'s PostgreSQL contracts (`*.integration.test.ts`) and
   // `tests/migration` run in the `db-suites` lane of the core run.

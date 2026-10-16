@@ -280,51 +280,61 @@ trivial single-file typo/comment fixes on the current branch.
 dispatch, but **merging to `dev` still lands your change in everyone's next
 deploy and next `dev` checkout.** It is not a save point.
 
-**The development machine does the work. CI does not.** Every test, preview,
-and demo for a change runs in your own box: the worktree's local stack, the
-local test suite, and agent-browser against the local web app. A pull request
-into `dev` runs **no** GitHub Actions job and is mergeable the moment it opens.
-Nothing runs automatically before the merge. A person can ask for CI on one PR,
-in the rare case they want it, by adding a label: `test` runs the `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum once (~7 min), with no test run. A push never re-runs either: re-add the label.
-Never add a label by default or from automation. CI otherwise runs here:
+### Testing philosophy: one tree, one run, gates only at environment changes
+
+Testing reset, 2026-10-16. Tests cost compute, wall clock, and attention. In
+AI-driven development code is cheap and rewritten often, so a test that
+mirrors the implementation is a tax, not protection. The rules:
+
+1. **Test at the boundaries users touch:** the HTTP API, the CLI, the
+   `@kortix/sdk` public surface, DB migrations, and a few browser journeys on
+   the money path. Never test internal calls or source text.
+2. **Run each suite once per tree.** A tree that passed is not run again. A
+   later stage tests only what is new there: the deployed environment.
+3. **Gate only where code changes environment:** `dev` → `staging`, then
+   `staging` → `prod`. Before that, the developer verifies the change by using it.
+4. **A red suite is worse than none.** A test that fails twice without a bug is
+   fixed or deleted the same day. Do not park it in quarantine.
+5. **Delete on red.** A unit test that goes red on a refactor with no bug is
+   deleted, not updated. Keep unit tests only for logic that is hard to get
+   right: money and credits, parsers, the streaming protocol, permission
+   decisions, crypto and secrets.
+
+| Tier | Contents | Runs |
+|---|---|---|
+| T0 static | `tsc`, lint, architecture checks, migration lint | anytime, on the laptop, seconds per package |
+| T1 contract | REST and CLI flows, DB and migration suites, package tests (`Tests` lanes) | once on the pull request into `staging` (the gate), nightly on `dev`, and on the `test` label |
+| T2 deployed | `Tests - release`: flows and money-path journeys against deployed staging | once per release, on the pull request into `prod` (required) |
 
 | Where | What runs | Blocks? |
 |---|---|---|
-| Pull request into `dev` | nothing, unless a person adds `test` (~20 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `dev` (after the merge) | every `Tests` lane (queued: one run, at most one waiting), plus the cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no merge; a red run blocks the next promotion |
-| Dispatch or schedule on `dev` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily too. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
-| Pull request into `staging` (release candidate) | full CI: `Tests` (reuses the green `dev` run of its head SHA), `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
-| Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
+| Your box | T0 for the packages you touched, the one test you wrote or changed, and the real surface: the route with curl, the CLI process, the page with agent-browser | your judgment |
+| Pull request into `dev` | nothing, unless a person adds `test` (~20 min, once) or `preview` (~7 min deploy, once) | no |
+| Push to `dev` | only the cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev` | no |
+| Schedule on `dev` | `Tests` nightly (a red night comments on the commit), `CI` and `CodeQL` weekly, `drata` daily. `Deploy Dev` and `Desktop`: dispatch only | no |
+| Pull request into `staging` | T1 (`Tests`), `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes |
+| Pull request into `prod` | T2 (`Tests - release`), plus the path-gated `Security Scan`, `Terraform CI` and `drata` (SOC 2). No tree check runs again: the tree is the staging tree plus `VERSION`. | yes, `full suite + quality gates` is required |
 
-**You decide which tests a change needs.** No hook or gate requires a test run
-before a push or a merge into `dev`. Pick the checks that cover what you
-changed, run them, and write in the PR body what you ran and why. A diff that
-no test reads (docs, a README, a skill, a standalone script) needs no run. A
-change to shared code, the API, the SDK, a migration, or the runtime needs the
-tests that exercise it: the package's own test file, or the affected flows
-(`pnpm test -- --id <ID>` / `--domain <d>`).
-**A Mac runs targeted tests only.** On macOS the runner refuses a suite-wide run
-(plain `pnpm test`, `--full`, `--packages-only`, `--browser-only`, `--db-only`
-with no path filter) and exits `2`. 2026-10-16: five agent sessions ran the
-suite at once on one laptop (load average 112, swap full). Run one flow, one
-DB suite path, the SDK, or one package's test file. The whole suite runs in CI:
-add the `test` label once, or set `KORTIX_FULL_TEST=1` when a person asks.
-`dev` is gated after the merge: every push runs every `Tests` lane, and a red
-run blocks the next promotion. If your merge turns `dev` red, you fix forward.
-A green `pnpm test` still writes `tests/attestations/<branch>.json`. The runner
-reads it to reuse lane groups that already passed on the same diff
-(`tests/README.md`, "Diff-scoped default run"). A run whose tree changes while
-its lanes run writes no attestation. Committing it is optional for a
-person or a Claude session. The company factory's merge gate (G11) still
-requires it on factory PRs and checks it with
-`pnpm test:verify --rev <head> --branch <headRefName>`.
+**A Mac runs targeted tests only.** On macOS `pnpm test` refuses a suite-wide
+run (plain, `--full`, `--packages-only`, `--browser-only`, `--db-only` with no
+path filter) and exits `2`. 2026-10-16: five agent sessions ran the suite at
+once on one laptop (load average 112, swap full). Run one flow
+(`pnpm test -- --id <ID>`), one DB suite path, the SDK, or one package's test
+file. The whole suite runs in CI: add the `test` label once, or
+`gh workflow run tests.yml --ref <branch>`. `KORTIX_FULL_TEST=1` overrides only
+when a person asks.
+
+No hook or gate requires a test run before a push or a merge into `dev`. Write
+in the PR body what you ran and why. A diff that no test reads (docs, a skill,
+a standalone script) needs no run. When the nightly `Tests` run or the staging
+pull request turns red on your change, you fix forward the same day.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
-2. Verify in your box, with real inputs and outputs. Run the tests that cover
-   the change (see above), narrowest first. Start the worktree's stack
+2. Verify in your box, with real inputs and outputs. Run T0 and the tests that
+   cover the change (see above). Start the worktree's stack
    (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
-   HTTP route, the real CLI process, or the page with agent-browser. There is
-   no CI lane to catch what you skip.
+   HTTP route, the real CLI process, or the page with agent-browser. Nothing
+   before the staging pull request catches what you skip.
 3. Open the PR against `dev` and follow the **contributing** skill: it fills
    the PR template and attaches the demo video you recorded against your local
    stack. Do not add `test` or `preview` unless you need that one explicit run.
@@ -359,14 +369,12 @@ requires it on factory PRs and checks it with
    `/health` response alone is not deployment proof. The run comments "Live on
    dev" on the merged pull request, and "Not live on dev yet" names the
    surface that failed. The surfaces and their checks are in
-   `.github/workflows/deploy-dev.yml`. The merge push runs every `Tests`
-   lane on `dev` (queued, about one run per 25 min). That run is the check
-   before staging. A red run comments the failing lanes and every commit since
-   the last green run, once per new set of failing lanes. The author whose
-   commit broke `dev` fixes forward. If `dev` is still red 1 hour after the
-   comment, anyone may revert the culprit PR. A red run never blocks a merge or
-   a deploy, but it blocks the next promotion: `staging` takes only a `dev`
-   SHA with a green run.
+   `.github/workflows/deploy-dev.yml`. The merge push runs no suite. The
+   nightly `Tests` run on `dev` comments the failing lanes and every commit
+   since the last green run, once per new set of failing lanes. The author
+   whose commit broke `dev` fixes forward the same day. If `dev` is still red
+   1 hour after the comment, anyone may revert the culprit PR. The pull request
+   into `staging` runs the same lanes and blocks the promote.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -558,9 +566,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- Before merging into `dev`, run the tests that cover your change, narrowest
-  first. A pull request into `dev` runs no CI job unless a person adds `test`
-  or `preview`, and no hook requires a run: the choice is yours.
+- Before merging into `dev`, run T0 and the tests that cover your change (the
+  testing philosophy above). On a Mac, suite-wide modes exit `2`.
 - Every Linux CI job runs on a free GitHub-hosted runner (`ubuntu-24.04`,
   `ubuntu-24.04-arm`, `ubuntu-22.04`; 4 vCPU / 16 GB on this public repo) through
   `runs-on: ${{ vars.CI_RUNNER_<tier> || '<label>' }}`. Setting a
@@ -569,24 +576,29 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   larger runner): Blacksmith billed ~$2.7k in September 2026 for minutes
   GitHub gives this repo for free. `tests/unit/image-build-speed-workflow.test.ts`
   enforces the free default.
-- GitHub Actions runs ten lanes — `core`, `browser-1` … `browser-8`, `packages`
-  — natively, one GitHub-hosted runner each (`CI_RUNNER_L`), through
-  `.github/workflows/tests.yml`. The eight browser lanes are eighths of one
-  sharded run (`--browser-shard=N/8`, Playwright's native `--shard`), one
-  Playwright worker each: a 16 GB runner did not hold two. A lane takes about
+- GitHub Actions runs seven lanes — `core`, `browser-1`, `browser-2`,
+  `packages-api`, `packages-cli`, `packages-kortixd`, `packages-rest` —
+  natively, one GitHub-hosted runner each (`CI_RUNNER_L`), through
+  `.github/workflows/tests.yml`. The two browser lanes are halves of one
+  sharded run (`--browser-shard=N/2`) over the money-path specs, one
+  Playwright worker each: a 16 GB runner did not hold two. A browser spec
+  exists only for a money-path journey (sign-in, onboarding, session load and
+  streaming, desktop parity, billing, connectors, invites); everything else is
+  a REST flow or nothing. A lane takes about
   3x its old Blacksmith time; `tests.yml` records the measured times. The
   concurrency settings in `tests/bin/package-quality.ts` must not be raised.
+  The four `packages-*` lanes are slices of package quality
+  (`pnpm test -- --packages-only --package-group=<api|cli|kortixd|rest>`): on
+  one runner the API, CLI and kortixd suites shared 4 vCPU for 18.5 min.
   Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The lanes run on every push to `dev` (since 2026-10-12; runs queue, so a
-  burst of merges costs one extra run), daily on `dev`, on a pull request into
-  `staging`, once when a person adds the `test` label to a pull request, and on
-  manual dispatch. A pull request into `staging` skips the lanes when its head
-  SHA already has a green run on `dev` (`reuse dev verdict`). A red run on
-  `dev` comments the failing lanes and suspect commits on the commit, once per
-  new set of failing lanes. A pull request into `prod` runs `tests-release.yml`
-  against deployed staging instead; Promote to Production dispatches it. A
+- The lanes run on a pull request into `staging`, nightly on `dev`, once when a
+  person adds the `test` label to a pull request, and on manual dispatch. A
+  push to `dev` runs no lane. A red nightly run comments the failing lanes and
+  suspect commits on the commit, once per new set of failing lanes. A pull
+  request into `prod` runs `tests-release.yml` against deployed staging
+  instead; Promote to Production approves its run. A
   failed release-gate or staging-PR run reruns its failed jobs once by itself
   (`rerun-failed-once.yml`) and names them on the PR: a job that passes on the
   rerun is a flake to fix or quarantine.
@@ -633,8 +645,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   incomplete development can live here while it is being shaken out.
 - **`staging` = release-candidate branch.** Nothing should land on staging unless
   it is intended to be production-ready. Human/code changes enter staging by PR:
-  the default path is promoting the newest `dev` SHA with a green `Tests` run
-  (every push to `dev` runs the suite), or a targeted branch -> `staging` for
+  the default path is promoting the current `dev` HEAD (the staging pull
+  request runs `Tests` and is the gate), or a targeted branch -> `staging` for
   a selective hotfix candidate. Staging
   deploys to `staging.kortix.com` / `staging-api.kortix.com` and must use the
   staging data plane, not dev or prod. The full promote-and-gate flow, the

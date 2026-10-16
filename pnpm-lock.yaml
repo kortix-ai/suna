@@ -415,6 +415,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 1.2.0
         version: 1.2.0
+      '@silvia-odwyer/photon-node':
+        specifier: 0.3.4
+        version: 0.3.4
       hono:
         specifier: ^4.13.7
         version: 4.13.7

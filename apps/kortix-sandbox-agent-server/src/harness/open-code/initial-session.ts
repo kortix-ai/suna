@@ -742,7 +742,11 @@ export function reusedRootAlreadyDelivered(
  * `time.completed`, and it costs nothing on the path that matters — a genuinely
  * orphaned turn is already broken and two seconds later still is.
  */
-const ORPHAN_SETTLE_MS = 2_000
+let orphanSettleMs = 2_000
+/** Tests shorten the settle window: their fake roots change on a read count, not on time. */
+export function setOrphanSettleMsForTests(ms: number): void {
+  orphanSettleMs = ms
+}
 
 /** Does the root already have messages (prompt delivered), and is its last turn
  *  an assistant message left incomplete by a crash (no completion time)? */
@@ -801,7 +805,7 @@ async function confirmTurnOrphaned(
   sessionId: string,
   first: RootInspection,
 ): Promise<boolean> {
-  await new Promise((r) => setTimeout(r, ORPHAN_SETTLE_MS))
+  await new Promise((r) => setTimeout(r, orphanSettleMs))
   const second = await inspectRoot(baseUrl, workspace, sessionId)
   if (!second.known) {
     // The settle re-check itself could not read the root. Do NOT abort on the

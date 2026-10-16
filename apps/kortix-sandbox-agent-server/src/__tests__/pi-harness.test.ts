@@ -688,6 +688,31 @@ describe('pi harness', () => {
     expect(text).toContain('event: question.rejected')
   })
 
+  test('steers reach pi in arrival order, and a retract during image loading cancels the steer', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 1' } }, { text: 'read the steers' }] })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitForRunningTool(r, root)
+    // The first steer's images load slowest: it still reaches pi first.
+    const delays: Record<string, number> = { 'STEER-ONE': 200, 'STEER-GONE': 100 }
+    const original = (runtime as any).images.bind(runtime)
+    spyOn(runtime as any, 'images').mockImplementation(async (input: any) => (await Bun.sleep(delays[input.text] ?? 0), original(input)))
+    const id = (c: string) => runtime.activeTurnMessageId()!.replace(/.$/, c)
+    const steer = (c: string, text: string) => runtime.steer({ messageID: id(c), text, files: [] })
+    const one = steer('x', 'STEER-ONE')
+    const two = steer('y', 'STEER-TWO')
+    const gone = steer('w', 'STEER-GONE')
+    expect(runtime.retract(id('w'))).toBe('retracted')
+    expect(await Promise.all([one, two, gone])).toEqual(['steered', 'steered', 'duplicate'])
+    const before = gateway.sent.length
+    await waitFor(() => gateway.sent.length > before && runtime.idle(), 5_000)
+    const sent = JSON.stringify(gateway.sent.at(-1))
+    expect(sent.indexOf('STEER-ONE')).toBeGreaterThan(-1)
+    expect(sent.indexOf('STEER-ONE')).toBeLessThan(sent.indexOf('STEER-TWO'))
+    expect(sent).not.toContain('STEER-GONE')
+  })
+
   test('a steered message dismisses an open question, so the turn reads it', async () => {
     const r = await boot({
       script: [
@@ -699,7 +724,7 @@ describe('pi harness', () => {
     const root = runtime.rootId
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
     await waitFor(() => runtime.questions.list().length === 1)
-    expect(runtime.steer({ messageID: runtime.activeTurnMessageId()!.replace(/.$/, 'z'), text: 'STEERED while asked', parts: [] } as never)).toBe('steered')
+    expect(await runtime.steer({ messageID: runtime.activeTurnMessageId()!.replace(/.$/, 'z'), text: 'STEERED while asked', parts: [] } as never)).toBe('steered')
     await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
@@ -3543,6 +3568,50 @@ describe('pi session-log export (P2.5)', () => {
     const again = piSessionLog(restarted.service.runtime()!.sessionLogSnapshot()!)
     expect(again.hashes).toEqual(hashes)
   })
+})
+
+describe('pi prompt images', () => {
+  // A real 2x1 PNG, red then blue: apps/api writes it to the inbox and leaves a `<file>` tag (prompt-attachment-materializer.ts).
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGO4IycnZ3MHAAfrAk9bJYxoAAAAAElFTkSuQmCC', 'base64')
+  for (const [name, catalog, image] of [['reads images', { attachment: true }, true], ['does not read images', {}, false]] as const) {
+    test(`a prompt's inbox image tag reaches a model that ${name} ${image ? 'as image content, tag kept' : 'as the tag alone'}`, async () => {
+      const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+      writeFileSync(join(workspace, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', ...catalog, limit: { context: 64_000, output: 4_096 } } } }))
+      mkdirSync(join(workspace, 'uploads/.kortix-inbox/cmd_1'), { recursive: true })
+      writeFileSync(join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png'), PNG)
+      const r = await boot({ workspace, script: [{ text: 'seen' }], env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'catalog.json') } })
+      const rt = r.service.runtime()!
+      const tag = `<file path="${join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png')}" mime="image/png" filename="swatch.png">\nThis file has been uploaded and is available at the path above.\n</file>`
+      const before = gateway.sent.length
+      const messageID = 'msg_0198e2a4b0f1ABCDEFGHIJKLMN'
+      expect((await prompt(r, rt.rootId, { messageID, parts: [{ type: 'text', text: `what colours? ${tag}` }] })).status).toBe(204)
+      await waitFor(() => gateway.sent.length > before && !rt.busy())
+      const user = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'user').at(-1))
+      expect(user).toContain('mime=\\"image/png\\"')
+      expect(user.includes(`data:image/png;base64,${PNG.toString('base64')}`)).toBe(image)
+      // The session log holds what pi saw: an attachment block beside the text (P2.13 uploads its bytes).
+      const message = piSessionLog(rt.sessionLogSnapshot()!).log.threads[0]!.messages.find((m) => m.message_id === messageID)!
+      expect(message.blocks.map((b) => b.type)).toEqual(image ? ['text', 'attachment'] : ['text'])
+      if (!image) return
+      const path = join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png')
+      expect(structuredClone(message.blocks[1])).toMatchObject({ mime: 'image/png', ref: `blob:${createHash('sha256').update(PNG).digest('hex')}`, source_path: path })
+
+      // A fresh box restored from the log: pi has the image again; the transcript shows it through its tag alone, as live.
+      const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+      const fresh = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+      writeFileSync(join(fresh, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', ...catalog, limit: { context: 64_000, output: 4_096 } } } }))
+      await restorePiSessionLog(log, { stateDir: join(fresh, '.state'), sessionId: log.session_id, cwd: fresh, readAttachment: async () => PNG })
+      const restored = await boot({ workspace: fresh, script: [{ text: 'still seen' }], env: { KORTIX_LLM_CATALOG_FILE: join(fresh, 'catalog.json') } })
+      const wire = (await restored.bearer(`/kortix/runtime/messages/${restored.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const shown = wire.messages.find((m) => m.info.id === messageID)!
+      expect(shown.parts.map((p) => p.type)).toEqual(['text'])
+      const after = gateway.sent.length
+      await promptAndSettle(restored, 'what colours were they?')
+      expect(JSON.stringify(gateway.sent[after]!)).toContain(`data:image/png;base64,${PNG.toString('base64')}`)
+      const again = piSessionLog(restored.service.runtime()!.sessionLogSnapshot()!).log.threads[0]!.messages.find((m) => m.message_id === messageID)!
+      expect(again.blocks).toEqual(message.blocks)
+    })
+  }
 })
 
 /**

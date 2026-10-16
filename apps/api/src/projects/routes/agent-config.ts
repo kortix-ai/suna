@@ -263,8 +263,7 @@ export function registerAgentConfigRoutes(): void {
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
       // The manifest read stays forced: a GET right after a PUT may land on
-      // another replica, and the editor must read back what was saved (see
-      // `manifest-for-edit-freshness.test.ts`). It proves the default branch
+      // another replica, and the editor must read back what was saved. It proves the default branch
       // with one `ls-remote` and fetches only when it moved. The `.md` read
       // below then uses that just-proven mirror instead of starting a second
       // fetch, and one git-auth resolve serves both reads.
