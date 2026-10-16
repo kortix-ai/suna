@@ -161,9 +161,12 @@ export function CustomProviderForm({
   }
 
   return (
-    <div className="max-w-2xl">
-      <div>
-        <form onSubmit={handleSubmit} className="flex w-full flex-col gap-5">
+    <div className="@container/custom-provider">
+      <div className="flex flex-col gap-11 @4xl/custom-provider:flex-row @4xl/custom-provider:items-start">
+        <form
+          onSubmit={handleSubmit}
+          className="flex w-full flex-col gap-5 @4xl/custom-provider:w-141 @4xl/custom-provider:shrink-0"
+        >
           <div className="flex flex-col gap-1">
             <h2 className="text-foreground text-base font-semibold">
               {tI18nComplete.raw('text3880a3aae4e6')}

@@ -51,6 +51,9 @@ describe('Custom harness-neutral presentation regression', () => {
   test('keeps all six editable fields without a generated runtime example', () => {
     const html = render(<CustomProviderForm projectId="synthetic-project" onDone={() => {}} />);
     expect((html.match(/<input/g) ?? []).length).toBe(6);
+    expect(html).toContain('@container/custom-provider');
+    expect(html).toContain('@4xl/custom-provider:w-141');
+    expect(html).toContain('@4xl/custom-provider:shrink-0');
     expect(html).not.toContain('<figure');
     expect(html).not.toContain('@ai-sdk/openai-compatible');
     expect(html).not.toContain('.opencode');
