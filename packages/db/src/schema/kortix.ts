@@ -4313,6 +4313,10 @@ export const creditAccounts = kortixSchema.table(
     // and RevenueCat webhooks. Null for free/enterprise and for rows not yet
     // backfilled (`planMonthlyUsd()` in tiers.ts falls back for those).
     planMonthlyUsd: numeric('plan_monthly_usd', { precision: 12, scale: 2 }),
+    // A lowered monthly amount waiting for the next renewal. `plan_monthly_usd`
+    // stays the amount in effect this period; the renewal applies this one and
+    // clears it. Null when no cut is scheduled.
+    scheduledMonthlyUsd: numeric('scheduled_monthly_usd', { precision: 12, scale: 2 }),
     // Retired by credits-only billing; no code reads them. Dropped by the
     // contract migration once every replica runs code that ignores them.
     billingModel: text('billing_model').default('legacy').notNull(),

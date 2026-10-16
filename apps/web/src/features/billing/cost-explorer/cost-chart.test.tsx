@@ -3,30 +3,31 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { CostSeriesPoint } from '@kortix/sdk';
 
-import { CostChart, formatAxisUsd } from './cost-chart';
+import { CostChart, formatAxisCredits } from './cost-chart';
 
 const twoPoints: CostSeriesPoint[] = [
   { day: '2026-07-01', llm_cost: 1.5, compute_cost: 0.5, total_cost: 2 },
   { day: '2026-07-02', llm_cost: 2, compute_cost: 1, total_cost: 3 },
 ];
 
-describe('formatAxisUsd', () => {
-  test('renders zero as a bare $0, not $0.00', () => {
-    expect(formatAxisUsd(0)).toBe('$0');
+describe('formatAxisCredits', () => {
+  test('renders zero as a bare 0', () => {
+    expect(formatAxisCredits(0)).toBe('0');
   });
 
-  test('rounds whole-dollar-and-above ticks with no decimals', () => {
-    expect(formatAxisUsd(12.4)).toBe('$12');
-    expect(formatAxisUsd(100.6)).toBe('$101');
+  test('converts USD to whole credits from 10 credits up', () => {
+    expect(formatAxisCredits(12.4)).toBe('1,240');
+    expect(formatAxisCredits(0.5)).toBe('50');
   });
 
-  test('comma-groups large ticks', () => {
-    expect(formatAxisUsd(1234)).toBe('$1,234');
+  test('goes compact from 10,000 credits so the 48px axis never clips', () => {
+    expect(formatAxisCredits(1234)).toBe('123.4K');
+    expect(formatAxisCredits(100)).toBe('10K');
   });
 
-  test('defers to the shared sub-dollar formatter below $1, including sub-cent', () => {
-    expect(formatAxisUsd(0.5)).toBe('$0.50');
-    expect(formatAxisUsd(0.001)).toBe('<$0.01');
+  test('keeps fractions below 10 credits and a threshold label below 0.01', () => {
+    expect(formatAxisCredits(0.001)).toBe('0.1');
+    expect(formatAxisCredits(0.00000001)).toBe('<0.01');
   });
 });
 
