@@ -16671,6 +16671,7 @@
       "textc3bf78fdd3b9": "Deine Bewerbung konnte nicht gesendet werden",
       "textc3c25857485f": "Kann",
       "textc3c709a999c1": "Speicher wird gelesen …",
+      "textc3d1545dd522": "Konvertiert die v1 kortix.toml in die Governance-orientierte kortix.yaml, aktualisiert plattformverwaltete Skills auf den neuesten Marketplace-Stand und eröffnet eine Änderungsanfrage zur Überprüfung.",
       "textc3d2e79ebdd0": "Konnektoren",
       "textc3e3a6edeaa5": "Allgemeine Geschäftsbedingungen",
       "textc3e58a73609d": "Destruktiv",
@@ -17411,6 +17412,7 @@
       "textd83a0d814c59": "API Status zeigt ein grünes „Enabled“, der Parameter „SCIM Username“ ist Email zugeordnet und die Bereitstellung ist ohne Zurückhaltung zur Admin-Genehmigung aktiviert.",
       "textd84b8be91e7b": "Kortix — Präsentationen",
       "textd84ee1e1e08b": "Versuche kortix init oder / für Befehle",
+      "textd85a383e851d": "Manifest auf v2 migrieren (kortix.yaml)",
       "textd861cc0af73c": "kortix init erstellt das Grundgerüst, kortix ship schaltet es live. Es ist dasselbe Repo, das dasselbe tut – lokale Entwicklung und Live-System gehören damit nicht mehr zu unterschiedlichen Kategorien.",
       "textd864380a766f": "Die Sandbox enthält ein auf das Projekt begrenztes Kortix-Token und keine Drittanbieter-Schlüssel. Deine Zugangsdaten für Tracker und Helpdesk werden serverseitig entschlüsselt und an den ausgehenden Aufruf angehängt.",
       "textd8707d411d99": "Geheimnisse",
@@ -20083,9 +20085,7 @@
       "textb8fd28863a22": "Betrag in Credits (z. B. 2500)",
       "textc6813a9e41ac": "In Credits: {value0} LLM · {value1} Compute · {value2} Sonstiges.",
       "textc86ce3b8097b": "z. B. 5000",
-      "textfaaf56a699c2": "Limit (Credits)",
-      "textc3d1545dd522": "Konvertiert die v1 kortix.toml in die Governance-orientierte kortix.yaml, aktualisiert plattformverwaltete Skills auf den neuesten Marketplace-Stand und eröffnet eine Änderungsanfrage zur Überprüfung.",
-      "textd85a383e851d": "Manifest auf v2 migrieren (kortix.yaml)"
+      "textfaaf56a699c2": "Limit (Credits)"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

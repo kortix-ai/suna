@@ -15,7 +15,7 @@
     "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
     "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
     "bundle:clean": "rm -f bundle/kortix-tui bundle/kortix-tui-darwin-* bundle/kortix-tui-linux-*",
-    "test": "bun test --timeout ${KORTIX_TUI_TEST_TIMEOUT_MS:-20000}"
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TUI_TEST_TIMEOUT_MS:-20000}\""
   },
   "dependencies": {
     "@kortix/cli": "workspace:*",

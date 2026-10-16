@@ -14,7 +14,7 @@
  * (the import below), and a read of that file name goes to the embedded copy.
  */
 import { createRequire } from 'node:module'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { open, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import type { ImageContent } from '@earendil-works/pi-ai'
 // Bun embeds a `.wasm` import in a compiled binary and evaluates it to a readable path (codemode.ts).
@@ -69,9 +69,19 @@ export function imageTagPaths(text: string): Array<{ path: string; mime: string 
 async function readInboxFile(path: string, inbox: string): Promise<Uint8Array | null> {
   const real = await realpath(path).catch(() => null)
   if (!real?.startsWith(inbox)) return null
-  const info = await stat(real).catch(() => null)
-  if (!info?.isFile() || info.size > MAX_BYTES) return null
-  return readFile(real).catch(() => null)
+  // One open: the type and size checks and the read all use this handle, so a swap of the path
+  // after the check cannot change what is read.
+  const handle = await open(real, 'r').catch(() => null)
+  if (!handle) return null
+  try {
+    const info = await handle.stat()
+    if (!info.isFile() || info.size > MAX_BYTES) return null
+    return await handle.readFile()
+  } catch {
+    return null
+  } finally {
+    await handle.close().catch(() => {})
+  }
 }
 
 /**

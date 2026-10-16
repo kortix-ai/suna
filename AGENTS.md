@@ -331,7 +331,11 @@ release, at Promote to Production, and nowhere else. The rules:
 filter) and exits `2`. 2026-10-16: five agent sessions ran the suite at once on
 one laptop (load average 112, swap full). Run one flow
 (`pnpm test -- --id <ID>`), one DB suite path, or one package's test file.
-`KORTIX_FULL_TEST=1` overrides only when a person asks.
+`KORTIX_FULL_TEST=1` overrides only when a person asks. Every package `test`
+script refuses the same way: `pnpm --filter <pkg> test` with no file exits `2`
+(`scripts/test-guard.mjs`). Pass the file(s), `pnpm --filter <pkg> test <file>`,
+or a name filter after `--`: `pnpm --filter <pkg> test -- -t <name>`. CI and
+Linux run the full suite.
 
 No hook or gate requires a test run before a push or a merge into `dev`. Write
 in the PR body what you ran and why. A diff that no test reads (docs, a skill,
