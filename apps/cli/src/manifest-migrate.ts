@@ -42,6 +42,8 @@ export interface MigrationChange {
 
 export interface MigrationPlan {
   manifest: string;
+  /** The v3 manifest as an object, before it is rendered (`renderManifest`). */
+  next: Table;
   changes: MigrationChange[];
   /** Things v3 has no place for, dropped with the reason. */
   dropped: string[];
@@ -143,7 +145,13 @@ function subagentsV3(task: unknown): unknown {
 
 const SCHEMA_LINE = '# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json';
 
-/** The schema line on top, a blank line between top-level sections and between agents. */
+/** A manifest object as v3 YAML. The root file carries the schema line; an imported file does not. */
+export function renderManifest(object: Table, root = true): string {
+  const yaml = spaced(serializeManifestObject(object, 'yaml'));
+  return root ? `${SCHEMA_LINE}\n${yaml}` : yaml;
+}
+
+/** A blank line between top-level sections and between agents. */
 function spaced(yaml: string): string {
   let section = '';
   const lines = yaml.split('\n').flatMap((line, index) => {
@@ -153,7 +161,7 @@ function spaced(yaml: string): string {
     const first = section === 'agents' && agent && /^agents:/.test(yaml.split('\n')[index - 1] ?? '');
     return (top && index > 0) || (agent && !first) ? ['', line] : [line];
   });
-  return `${SCHEMA_LINE}\n${lines.join('\n')}`;
+  return lines.join('\n');
 }
 
 export function planMigration(root: string, manifestPath: string, raw: Table): MigrationPlan {
@@ -163,11 +171,23 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     exists(dir) ? readdirSync(resolve(root, dir), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)) : [];
   const changes: MigrationChange[] = [];
   const dropped: string[] = [];
-  const agents = table(raw.agents) ?? {};
-  const names = Object.keys(agents);
-  const defaultAgent = typeof raw.default_agent === 'string' ? raw.default_agent : names[0];
   const harnesses = table(raw.harnesses) ?? {};
   const opencodeDir = opencodeConfigDirCandidates(raw).find((dir) => exists(`${dir}/opencode.jsonc`) || exists(`${dir}/opencode.json`) || exists(dir)) ?? opencodeConfigDirCandidates(raw)[0]!;
+  // v2 also ran agents that only the OpenCode folder declared (`<dir>/agents/*.md`),
+  // with no skill restriction. v3 runs declared agents only: declare each one,
+  // keep its skills, and move its prompt to agents/<name>.md.
+  const agents: Table = { ...(table(raw.agents) ?? {}) };
+  const folderAgents = new Map<string, string>();
+  for (const sub of ['agents', 'agent']) {
+    for (const entry of files(`${opencodeDir}/${sub}`)) {
+      const name = entry.name.replace(/\.md$/, '');
+      if (!entry.isFile() || !entry.name.endsWith('.md') || agents[name] !== undefined) continue;
+      agents[name] = { skills: 'all' };
+      folderAgents.set(name, `${opencodeDir}/${sub}/${entry.name}`);
+    }
+  }
+  const names = Object.keys(agents);
+  const defaultAgent = typeof raw.default_agent === 'string' ? raw.default_agent : names[0];
 
   // opencode.json[c]: its `permission` moves onto every agent that sets none.
   let projectPermission: unknown;
@@ -201,12 +221,15 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
       const path = `${opencodeDir}/${sub}/${entry.name}`;
       const { frontmatter, body } = splitFrontmatter(read(path));
       const name = registryName(entry.name.replace(/\.md$/, ''), new Set(Object.keys(commands)));
-      commands[name] = ordered({ description: typeof frontmatter.description === 'string' ? frontmatter.description : undefined, prompt_file: path }, ['description', 'prompt_file']);
+      // The prompt moves out of the harness folder, to commands/<name>.md.
+      const target = exists(`commands/${name}.md`) ? path : `commands/${name}.md`;
+      commands[name] = ordered({ description: typeof frontmatter.description === 'string' ? frontmatter.description : undefined, prompt_file: target }, ['description', 'prompt_file']);
       const agent = typeof frontmatter.agent === 'string' && agents[frontmatter.agent] ? frontmatter.agent : defaultAgent;
       if (agent) commandsOf.set(agent, [...(commandsOf.get(agent) ?? []), name]);
       const lost = Object.keys(frontmatter).filter((key) => !['description', 'agent'].includes(key));
       if (lost.length > 0) dropped.push(`${path}: ${lost.join(', ')} (a v3 command is description + prompt)`);
-      changes.push({ path, action: 'rewrite', note: `frontmatter → commands.${name}`, content: body });
+      changes.push({ path: target, action: 'rewrite', note: `frontmatter → commands.${name}`, content: body });
+      if (target !== path) changes.push({ path, action: 'delete', note: `moved to ${target}` });
     }
   }
 
@@ -216,7 +239,23 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
   const taken = new Set<string>();
   const plugins = files(`${opencodeDir}/plugins`).filter((entry) => entry.isFile() && /\.[cm]?[jt]s$/.test(entry.name)).map((entry) => entry.name);
   const pluginName = new Map(plugins.map((file) => [file, registryName(file, taken)]));
-  for (const [file, name] of pluginName) extensions[name] = { opencode: `${opencodeDir}/plugins/${file}` };
+  // The plugins folder moves whole to extensions/opencode/, so a plugin's
+  // relative imports still resolve, and the config dir's package.json and
+  // bun.lock move beside it, so its npm dependencies still install.
+  const pluginRoot = 'extensions/opencode';
+  if (plugins.length > 0) {
+    const walk = (dir: string): string[] =>
+      files(dir).flatMap((entry) => (entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`]));
+    const moves = [
+      ...walk(`${opencodeDir}/plugins`).map((path) => [path, `${pluginRoot}/${path.slice(`${opencodeDir}/plugins/`.length)}`] as const),
+      ...['package.json', 'bun.lock'].filter((name) => exists(`${opencodeDir}/${name}`)).map((name) => [`${opencodeDir}/${name}`, `${pluginRoot}/${name}`] as const),
+    ];
+    for (const [from, to] of moves) {
+      changes.push({ path: to, action: 'rewrite', note: `moved from ${from}`, content: read(from) });
+      changes.push({ path: from, action: 'delete', note: `moved to ${to}` });
+    }
+  }
+  for (const [file, name] of pluginName) extensions[name] = { opencode: `${pluginRoot}/${file}` };
   const globalPlugins = list(table(harnesses.opencode)?.plugins).map(String);
   const selection = table(harnesses.opencode)?.plugins !== undefined || names.some((name) => table(table(table(agents[name])?.harnesses)?.opencode)?.plugins !== undefined || table(table(table(agents[name])?.harnesses)?.opencode)?.exclude !== undefined);
   const piPackages = list(table(harnesses.pi)?.packages);
@@ -260,14 +299,17 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
   for (const name of names) {
     const block = table(agents[name]) ?? {};
     const next: Table = {};
-    const mdPath = agentFileCandidates(raw, name).find(exists);
+    const folderPath = folderAgents.get(name);
+    const mdPath = folderPath ?? agentFileCandidates(raw, name).find(exists);
     let frontmatter: Table = {};
     if (mdPath) {
       const split = splitFrontmatter(read(mdPath));
       frontmatter = split.frontmatter;
-      next.prompt_file = mdPath;
       const moved = Object.keys(frontmatter).filter((key) => key !== 'name');
-      changes.push({ path: mdPath, action: 'rewrite', note: `frontmatter → agents.${name}${moved.length ? ` (${moved.join(', ')})` : ''}`, content: split.body });
+      const target = folderPath && !exists(`agents/${name}.md`) ? `agents/${name}.md` : mdPath;
+      next.prompt_file = target;
+      changes.push({ path: target, action: 'rewrite', note: `${folderPath ? 'declared from the OpenCode folder; ' : ''}frontmatter → agents.${name}${moved.length ? ` (${moved.join(', ')})` : ''}`, content: split.body });
+      if (target !== mdPath) changes.push({ path: mdPath, action: 'delete', note: `moved to ${target}` });
     }
     for (const key of BEHAVIOR_KEYS) if (frontmatter[key] !== undefined) next[key] = frontmatter[key];
     const permission = frontmatter.permission ?? projectPermission;
@@ -310,9 +352,9 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     },
     TOP_LEVEL_ORDER,
   );
-  const manifest = spaced(serializeManifestObject(next, 'yaml'));
+  const manifest = renderManifest(next);
   changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 2 → 3: agents inline, registries, per-agent grants', content: manifest });
   const issues = validateManifest(manifest, 'yaml').issues;
-  return { manifest, changes, dropped, issues, valid: !issues.some((issue) => issue.severity === 'error') };
+  return { manifest, next, changes, dropped, issues, valid: !issues.some((issue) => issue.severity === 'error') };
 }
 

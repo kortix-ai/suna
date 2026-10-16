@@ -113,3 +113,16 @@ describe('v1/v2 commands are unchanged', () => {
     expect(received.map((r) => r.path)).toEqual(['/session/ses_1/command'])
   })
 })
+
+describe('the session agent falls back to default_agent when the compiled set does not declare it', () => {
+  // A session can carry an agent name from the default branch's governance while
+  // its own ref compiles a different set (a session on a branch). pi already falls back.
+  test('an unknown KORTIX_AGENT_NAME resolves to the set\'s default_agent; a declared one stays', async () => {
+    const { sessionAgentName } = await import('@/harness/open-code/manifest-v3')
+    const set = { schema: 3, default_agent: 'lead', agent: { lead: {}, other: {} } } as never
+    expect(sessionAgentName(set, { KORTIX_AGENT_NAME: 'kortix' })).toBe('lead')
+    expect(sessionAgentName(set, { KORTIX_AGENT_NAME: 'other' })).toBe('other')
+    expect(sessionAgentName(set, { KORTIX_AGENT_NAME: 'default' })).toBe('lead')
+    expect(sessionAgentName(set, {})).toBe('lead')
+  })
+})

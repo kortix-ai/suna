@@ -24,6 +24,7 @@
  * Pure + dependency-free so it's unit-tested in isolation (no Slack, no DB).
  */
 import type { TurnErrorCode } from '@kortix/api-contract/transcript';
+import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 
 /** Flattened opencode error detail relayed from the sandbox. */
 export interface TurnErrorInfo {
@@ -89,7 +90,7 @@ function isAbort(name: string, status: number | undefined, lower: string): boole
 }
 
 // Upstream 402 from the LLM gateway: "Payment Required: Insufficient credits.
-// Balance: $-0.06". The gateway is the only thing that can 402 us, so a bare 402
+// Balance: -6 credits" (older servers: "Balance: $-0.06"). The gateway is the only thing that can 402 us, so a bare 402
 // is conclusive even without the text.
 function isInsufficientCredits(status: number | undefined, lower: string): boolean {
   if (status === 402) return true;
@@ -232,13 +233,13 @@ function isTransient(status: number | undefined, isRetryable: boolean | undefine
   );
 }
 
-/** Pull a "$-0.06"-style balance out of the gateway's credits error, if present. */
+/**
+ * The balance in the gateway's credits error, in credits: `Balance: -6 credits`
+ * and the older `Balance: $-0.06` both read `-6 credits`. None → null.
+ */
 export function parseBalance(text: string): string | null {
-  const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]!);
-  if (Number.isNaN(value)) return null;
-  return `$${value.toFixed(2)}`;
+  const usd = parseBalanceUsd(text);
+  return usd === null ? null : `${formatUsdAsCredits(usd)} credits`;
 }
 
 function truncate(s: string, max: number): string {

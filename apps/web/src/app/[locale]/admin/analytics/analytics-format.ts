@@ -7,6 +7,8 @@
  * unit-testable (`analytics-format.test.ts`).
  */
 
+import { CREDITS_PER_DOLLAR, formatUsdAsCredits } from '@kortix/shared';
+
 /** `2026-08-07` -> `Aug 7`. Parsed as UTC so the label matches the API's bucket. */
 export function formatDay(value: string): string {
   const date = new Date(`${value}T00:00:00Z`);
@@ -19,33 +21,32 @@ export function formatCount(value: number): string {
 }
 
 /**
- * USD with enough precision to stay honest at both ends of the range.
+ * Spend (credit burn) in credits, from the USD the API sends (1 credit = $0.01).
  *
- * Burn is often fractions of a cent per day early on; rounding those to `$0.00`
- * would render a real number as nothing. Above $1 two decimals is plenty.
+ * Burn is often fractions of a cent per day early on; `formatUsdAsCredits`
+ * keeps up to two decimals below 10 credits and prints `<0.01` for a real but
+ * tiny amount, so a non-zero burn never renders as `0`.
  */
-export function formatUsd(value: number): string {
-  if (value === 0) return '$0';
-  if (value >= 1) return `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
-  return `$${value.toFixed(4)}`;
+export function formatCredits(usd: number, locale = 'en-US'): string {
+  return formatUsdAsCredits(usd, { locale });
 }
 
 /**
- * Axis ticks: coarser than tooltips, because the axis must not wrap.
+ * Axis ticks in credits: coarser than tooltips, because the axis must not wrap.
  *
- * The cutover is at $10, not $1. Rounding to whole dollars from $1 up turned a
- * real recharts tick set of 0 / 0.45 / 0.90 / 1.35 / 1.80 into
- * `$0 · $0.45 · $0.90 · $1 · $2` — two ticks whose labels were off by up to 26%
- * and read as a broken, non-uniform scale. Below $10 every tick keeps exactly
- * two decimals so the column is aligned and each label states its real value.
+ * Whole credits from 10 up. Below 10 every tick keeps exactly two decimals so
+ * the column is aligned and each label states its real value: rounding a small
+ * tick set such as 0 / 0.45 / 0.90 / 1.35 / 1.80 to whole units turned it into
+ * a non-uniform scale with labels off by up to 26%.
  */
-export function formatAxisUsd(value: number): string {
-  if (value === 0) return '$0';
-  if (value >= 10) return `$${Math.round(value).toLocaleString('en-US')}`;
-  return `$${value.toLocaleString('en-US', {
+export function formatAxisCredits(usd: number, locale = 'en-US'): string {
+  const credits = usd * CREDITS_PER_DOLLAR;
+  if (credits === 0) return '0';
+  if (Math.abs(credits) >= 10) return Math.round(credits).toLocaleString(locale);
+  return credits.toLocaleString(locale, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  });
 }
 
 /**

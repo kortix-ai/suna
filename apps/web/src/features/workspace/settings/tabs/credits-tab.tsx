@@ -63,7 +63,7 @@ import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { type AccountState, canOfferTopup } from '@kortix/sdk';
-import { dollarsToCredits, formatCredits } from '@kortix/shared';
+import { dollarsToCredits, formatCredits, formatUsdAsCredits } from '@kortix/shared';
 import { ReceiptIcon } from '@phosphor-icons/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
@@ -264,7 +264,6 @@ export function CreditsView({
   const meter = planGrantMeter(state);
   const usage = state.usage_this_period;
   const period = usage ? formatPeriod(usage.period_start, usage.period_end, locale) : null;
-  const formattedBalanceCredits = formatCredits(dollarsToCredits(Math.abs(balance)), { locale });
 
   return (
     <div className="space-y-8">
@@ -278,21 +277,22 @@ export function CreditsView({
           <div className="min-w-0">
             <p className="text-muted-foreground text-xs">{t('availableBalance')}</p>
             {/* `tabular-nums`, not `font-mono` — the call `account-overview.tsx`
-                documents: a monospace face gives '.' and ',' a digit's advance
-                and opens visible gaps mid-number. */}
+                documents: a monospace face gives ',' a digit's advance and
+                opens visible gaps mid-number. Credits are the headline; the
+                dollar equivalent is the quiet line under it. */}
             <p
               className={cn(
                 'mt-1.5 truncate text-2xl leading-none font-semibold tracking-tight tabular-nums',
                 isNegative ? 'text-kortix-red' : 'text-foreground',
               )}
             >
-              {formatUsd(balance, locale)}
+              {formatUsdAsCredits(balance, { locale })}
+              <span className="text-muted-foreground ml-1.5 text-sm font-normal tracking-normal">
+                {t('unit', { count: Math.abs(balance) * 100 })}
+              </span>
             </p>
             <p className="text-muted-foreground mt-1.5 text-xs tabular-nums">
-              {t('creditCount', {
-                count: dollarsToCredits(Math.abs(balance)),
-                formatted: formattedBalanceCredits,
-              })}
+              ≈ {formatUsd(Math.abs(balance), locale)}
               {isNegative ? ` ${t('owed')}` : ''}
             </p>
           </div>
@@ -373,8 +373,8 @@ export function CreditsView({
       {usage ? (
         <section className="space-y-4">
           {/* The period is named. The same three figures appear on the Plan
-              tab over an unnamed span, which makes "$11.30" unreadable — since
-              when? `usage_this_period` carries the dates; print them. */}
+              tab over an unnamed span, which makes "1,130 credits" unreadable
+              — since when? `usage_this_period` carries the dates; print them. */}
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <Label>{t('spentThisPeriod')}</Label>
             {period ? (
@@ -422,6 +422,7 @@ function SpendStat({
   strong?: boolean;
   locale?: string;
 }) {
+  const t = useTranslations('settings.credits');
   return (
     <div className="min-w-0 px-4 py-3">
       <p className="text-muted-foreground truncate text-xs">{label}</p>
@@ -431,7 +432,10 @@ function SpendStat({
           strong ? 'text-foreground font-semibold' : 'text-foreground font-medium',
         )}
       >
-        {formatUsd(value, locale)}
+        {formatUsdAsCredits(value, { locale })}
+        <span className="text-muted-foreground ml-1 text-xs font-normal">
+          {t('unit', { count: Math.abs(value) * 100 })}
+        </span>
       </p>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { formatUsdAsCredits } from '@kortix/shared';
 import {
   ArrowRightIcon,
   ChartLineUpIcon,
@@ -61,14 +62,9 @@ const DESTINATIONS: { href: string; label: string; description: string; icon: Ic
   },
 ];
 
-const usd = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 2,
-});
-
 export default function AdminOverviewPage() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const legacySection = searchParams.get('section');
@@ -149,7 +145,14 @@ export default function AdminOverviewPage() {
             />
             <StatTile
               label={tI18nComplete.raw('textcae24ccc3b44')}
-              value={usd.format(data?.usage.cost_usd_24h ?? 0)}
+              value={
+                <>
+                  {formatUsdAsCredits(data?.usage.cost_usd_24h ?? 0, { locale })}{' '}
+                  <span className="text-muted-foreground text-sm font-normal">
+                    {tI18nComplete.raw('textbe379a30f1aa')}
+                  </span>
+                </>
+              }
             />
           </StatGrid>
         )}
