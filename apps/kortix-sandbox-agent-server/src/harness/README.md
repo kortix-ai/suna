@@ -417,6 +417,7 @@ reads them and fails when a pin leaves them:
   `quickjs-wasi` are pinned beside them at the versions pi-coding-agent depends on (codemode's
   worker and wasm, above): move them with the bump, and check that pi still resolves the
   worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
+  `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way.
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
   installs it; `opencode-db.test.ts` also gates its minor line).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
@@ -921,6 +922,26 @@ calls in one message run concurrently; a batch that includes any other tool
 stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
+
+### Images
+
+- **Prompt images.** apps/api writes every prompt attachment to
+  `/workspace/uploads/.kortix-inbox/<command>/` and puts a `<file path="…" mime="…">` tag
+  in the prompt text; nothing rides inline in the body (`prompt-attachment-materializer.ts`).
+  When the selected model reads images (catalog `attachment: true`), the runtime also hands pi
+  each PNG, JPEG, GIF or WebP a tag names inside the inbox, resized by pi
+  (`promptImages`, `pi/images.ts`): on a prompt, a steer and a `noReply` message. The tag stays,
+  so the agent still has the path. A model without image input gets the tag alone.
+  pi then records the image in the session log as an attachment (P2.13).
+- **Resize.** pi resizes every image (`read` and prompt images) with photon
+  (`@silvia-odwyer/photon-node`), which reads `photon_rs_bg.wasm` from its own `__dirname`.
+  A compiled daemon bakes the build machine's path there, so before 2026-10-16 photon never
+  loaded on a box and pi dropped every image ("[Image omitted: could not be resized below the
+  inline image size limit.]"). `pi/images.ts` embeds the wasm in the binary and redirects that
+  one file name to the embedded copy. In a binary pi's resize worker does not load, so pi
+  resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop).
+  `pi-images.test.ts` builds a binary against a copy of photon-node, deletes the copy, and runs
+  pi's `read` and `promptImages` in it.
 
 ### The conversation, compaction and slash commands
 
