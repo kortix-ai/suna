@@ -151,6 +151,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       drives: false,
       session_log: false,
       session_log_restore: false,
+      workspace_volume: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -776,6 +777,7 @@ describe('envelopes', () => {
       'drives',
       'session_log',
       'session_log_restore',
+      'workspace_volume',
     ]);
   });
 

@@ -220,6 +220,18 @@ if [ "${KORTIX_DRIVES:-}" = "1" ]; then
   start_drive_owner || true
 fi
 
+# /workspace is a Platinum volume (KORTIX_WORKSPACE_VOLUME=1): an ext4 root
+# whose empty, root-only `lost+found` the runtime user can neither list nor
+# remove, so a checkout swap into /workspace would fail on it. Root removes it
+# while it is empty. The loop below hands the mountpoint to the runtime user.
+if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ]; then
+  if [ "$(id -u)" -eq 0 ]; then
+    rmdir "${KORTIX_WORKSPACE:-/workspace}/lost+found" 2>/dev/null || true
+  else
+    sudo -n rmdir "${KORTIX_WORKSPACE:-/workspace}/lost+found" 2>/dev/null || true
+  fi
+fi
+
 # Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): no volume mounts here; the
 # daemon copies the session's drives into /drives and keeps them in sync, as
 # the runtime user, so /drives must be that user's.

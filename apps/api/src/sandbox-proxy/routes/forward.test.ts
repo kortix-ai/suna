@@ -21,6 +21,7 @@ import * as realRequestContext from '../../lib/request-context';
 import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../../projects/wire-message-id';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
+import * as realRetryBudget from '../preview-retry-budget';
 import { PROXY_ATTEMPT_TIMEOUT_MS, PROXY_IMPORT_ATTEMPT_TIMEOUT_MS } from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
@@ -34,6 +35,9 @@ const ACTIVE_RECORD = {
   provider: 'daytona',
 };
 
+// The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
+// attempts and their outcome, not the backoff's wall time.
+mock.module('../preview-retry-budget', () => ({ ...realRetryBudget, PROXY_RETRY_DELAYS_MS: [1, 1, 1] }));
 mock.module('../../config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,

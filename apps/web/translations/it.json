@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
+        },
+        "workspace_volume": {
+          "name": "Volume dell'area di lavoro",
+          "description": "Mantiene /workspace di ogni nuova sessione su un volume dedicato invece che sul disco della sandbox. Kortix lo attiva per progetto."
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "Mancano: {items}.",
       "restoreAgent": "L’agente sa cosa manca.",
       "restoreDismiss": "Chiudi l’avviso di ripristino",
+      "missingMessage": "{count, plural, one {# messaggio precedente} other {# messaggi precedenti}}",
       "missingAttachment": "{count, plural, one {# allegato} other {# allegati}}",
       "missingText": "{count, plural, one {# testo lungo} other {# testi lunghi}}",
       "missingToolInput": "{count, plural, one {# input di uno strumento} other {# input di strumenti}}",

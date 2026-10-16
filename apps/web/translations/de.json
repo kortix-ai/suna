@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
+        },
+        "workspace_volume": {
+          "name": "Workspace-Volume",
+          "description": "Speichert /workspace jeder neuen Sitzung auf einem eigenen Volume statt auf der Sandbox-Festplatte. Kortix aktiviert es pro Projekt."
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "Fehlt: {items}.",
       "restoreAgent": "Der Agent weiß, was fehlt.",
       "restoreDismiss": "Hinweis zur Wiederherstellung schließen",
+      "missingMessage": "{count, plural, one {# frühere Nachricht} other {# frühere Nachrichten}}",
       "missingAttachment": "{count, plural, one {# Anhang} other {# Anhänge}}",
       "missingText": "{count, plural, one {# langer Text} other {# lange Texte}}",
       "missingToolInput": "{count, plural, one {# Tool-Eingabe} other {# Tool-Eingaben}}",

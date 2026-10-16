@@ -1,9 +1,9 @@
 name: Tests
 
-# The local suite: ten lanes (core, browser-1..8, packages) on GitHub-hosted
+# The local suite: thirteen lanes (core, browser-1..8, packages-api|cli|kortixd|rest) on GitHub-hosted
 # runners (free on this public repo). Each lane is the unchanged root command
 # `pnpm test -- <args>`. Together they cover `pnpm test --full` once: `core`
-# skips package quality (`--no-packages`) because `packages` runs it.
+# skips package quality (`--no-packages`) because the `packages-*` lanes run it.
 #
 # It runs when ANY of these holds:
 #   1. a push to `dev`                     — every merge is a release candidate
@@ -115,7 +115,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `--no-packages`: the `packages` lane runs package quality; core
+          # `--no-packages`: the `packages-*` lanes run package quality; core
           # repeating it cost ~18 min per run (2026-10-11 release analysis).
           - lane: core
             mode: core
@@ -155,9 +155,23 @@ jobs:
           - lane: browser-8
             mode: browser
             args: --browser-only --browser-shard=8/8
-          - lane: packages
+          # Package quality in four slices on four runners since 2026-10-16.
+          # In one 4 vCPU lane the API, CLI and kortixd suites plus three
+          # `tsc` shared the CPU: 18.5 min, the CLI suite 7.7 min of it
+          # against 1.4 min alone (run 38777589705). `rest` holds the
+          # repo-wide checks and every other package.
+          - lane: packages-api
             mode: packages
-            args: --packages-only
+            args: --packages-only --package-group=api
+          - lane: packages-cli
+            mode: packages
+            args: --packages-only --package-group=cli
+          - lane: packages-kortixd
+            mode: packages
+            args: --packages-only --package-group=kortixd
+          - lane: packages-rest
+            mode: packages
+            args: --packages-only --package-group=rest
     env:
       CI: "1"
       TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -190,14 +204,14 @@ jobs:
         if: matrix.mode != 'browser'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ripgrep
       - name: Restore Chromium
-        # The core and packages lanes also run apps/web's layout test that launches Chromium.
-        if: matrix.mode == 'browser' || matrix.mode == 'packages' || matrix.mode == 'core'
+        # The core and packages-rest lanes also run apps/web's layout test that launches Chromium.
+        if: matrix.mode == 'browser' || matrix.lane == 'packages-rest' || matrix.mode == 'core'
         uses: actions/cache@v4
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
-        if: matrix.mode == 'browser' || matrix.mode == 'packages' || matrix.mode == 'core'
+        if: matrix.mode == 'browser' || matrix.lane == 'packages-rest' || matrix.mode == 'core'
         run: pnpm --dir tests exec playwright install --with-deps chromium
       - name: Free the local Supabase ports
         # Blacksmith runners are reused, and a job that ended without stopping
@@ -266,13 +280,14 @@ jobs:
         # lane keeps Next.js cold-route compilation and the Supabase image
         # extraction from overlapping inside the runner's memory budget.
         if: matrix.mode == 'browser'
-        run: pnpm exec supabase start --ignore-health-check
+        # `-x studio,imgproxy`: no test uses either (tests/src/core/local-stack.ts).
+        run: pnpm exec supabase start --ignore-health-check -x studio,imgproxy
       - name: Run the root test lane
         run: |
           set -euo pipefail
           # SDK tests run in the core lane; skipping them here keeps the
-          # binding `packages` lane as short as it can be.
-          if [[ "$TEST_LANE" == "packages" ]]; then
+          # binding `packages-*` lanes as short as they can be.
+          if [[ "$TEST_LANE" == packages-* ]]; then
             export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
           fi
           # One Playwright worker per browser shard on a 4 vCPU / 16 GB
@@ -372,7 +387,7 @@ jobs:
           {
             echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
             echo
-            echo "Full local suite (\`core\`, \`browser-1..8\`, \`packages\`)."
+            echo "Full local suite (\`core\`, \`browser-1..8\`, \`packages-*\`)."
             if [ -n "$failed" ]; then
               echo
               echo "Failing lanes: \`$failed\`"
@@ -409,7 +424,7 @@ jobs:
             echo
             echo '```'
             echo "pnpm test                                        # core"
-            echo "pnpm test -- --packages-only                     # packages"
+            echo "pnpm test -- --packages-only --package-group=api # packages-api (cli, kortixd, rest)"
             echo "pnpm test -- --browser-only --browser-shard=1/8  # browser-1 (CI only on a Mac)"
             echo '```'
           } > /tmp/trunk-verdict.md

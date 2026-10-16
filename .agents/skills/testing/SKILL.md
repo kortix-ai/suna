@@ -30,6 +30,29 @@ the **sdk** skill before editing the SDK.
 - Add Playwright only when the assertion requires a browser.
 - Do not create another cross-cutting harness or ad hoc smoke script.
 
+## Keep unit tests fast
+
+A unit test file is a millisecond test. On 2026-10-16, 89 % of the API tests
+ran under 10 ms, and 33 files of 1,188 took 262 of 388 s. Every one of the
+33 waited on a real clock or did real process work.
+
+- **Never wait on the real clock.** Inject the delay (a parameter, a field, a
+  `set…ForTests` setter next to the constant) and pass 1–10 ms. Or cap
+  `Bun.sleep` with `spyOn(Bun, 'sleep')` and restore it in `afterEach`/`afterAll`.
+  Or use `jest.useFakeTimers()` + `jest.advanceTimersByTime` (Bun 1.4.3 fakes
+  `setTimeout` and `Bun.sleep`) with `jest.useRealTimers()` in `afterEach`. A
+  deadline test starts near its deadline; it does not wait it out.
+- **Keep each file short.** `bun test --parallel=N` hands out whole files, so
+  the slowest file is the floor of the suite. Split a file over ~10 s by
+  `describe` (the kortixd OpenCode restore file was 130 s on one worker).
+- **Start no process, server, clone or `tsc` in a unit test** unless that
+  process is the contract. A real binary (OpenCode, the CLI) belongs in a few
+  contract tests, not in every case.
+- **List a file of 1 s or more** in `apps/api/scripts/slow-tests.txt`: the API
+  suite runs those first, so no 80-file batch waits on one slow file.
+- **Measure a file** with `bun test --isolate <file>` and read `Ran … [x s]`.
+  Per-file times for a suite: `--reporter=junit --reporter-outfile=<f>`.
+
 ## Write product flows
 
 1. Assign or reuse one stable flow ID.
@@ -150,7 +173,7 @@ in `references/api-latency-baseline.md`.
 
 A pull request into `dev` runs **no** GitHub Actions job by itself. Every test
 for a change runs in the developer's own box before the merge. After the merge,
-every push to `dev` runs all ten `Tests` lanes (queued: one run, at most one
+every push to `dev` runs all thirteen `Tests` lanes (queued: one run, at most one
 waiting). That run is the check before staging: a promotion takes only a `dev`
 SHA with a green run, and a red run comments the failing lanes and suspect
 commits once per new set of failing lanes. `CI` and `CodeQL` run weekly on
@@ -216,10 +239,12 @@ not remove the test. The nightly lane runs it.
 
 ## Run CI lanes natively on GitHub-hosted runners
 
-Keep the test commands unchanged. `.github/workflows/tests.yml` runs ten lanes
-in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs thirteen
+lanes in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
 `ubuntu-24.04`: 4 vCPU / 16 GB on this public repo).
-Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight
+The core lane runs `pnpm test -- --no-packages`. Four package lanes run
+`pnpm test -- --packages-only --package-group=<api|cli|kortixd|rest>`, one slice
+of package quality each; `rest` holds the repo-wide checks. Eight
 browser lanes run shards `1/8` through `8/8`, one Playwright worker each, via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
 requested SHA.
@@ -229,11 +254,12 @@ requested SHA.
 - Run `pnpm install --frozen-lockfile`.
 - Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
   (cached under `PLAYWRIGHT_BROWSERS_PATH`) and
-  `pnpm exec supabase start --ignore-health-check` before the root command, and
+  `pnpm exec supabase start --ignore-health-check -x studio,imgproxy` before the
+  root command (no test uses the dashboard or image transforms), and
   `supabase stop --no-backup` in an `always()` step after it.
 - Use one Playwright worker for each local-stack browser shard in CI. Keep two
   workers for deployed staging runs, which set `E2E_BROWSER_WORKERS` explicitly.
-- Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the packages lane; the SDK tests
+- Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the `packages-*` lanes; the SDK tests
   run in the core lane.
 - Keep the guard step and the artifact upload `if: always()`.
 - Do not reintroduce a cloud-sandbox worker for these lanes. The

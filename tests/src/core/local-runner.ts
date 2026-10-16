@@ -131,6 +131,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const noPackages = args.includes('--no-packages');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
+  // `--package-group=api|cli|kortixd|rest`: one slice of package quality
+  // (tests/bin/package-quality.ts), so CI runs the slices on parallel runners.
+  const packageGroupArgs = args.filter((arg) => arg.startsWith('--package-group='));
   const modes = [
     full,
     flowsOnly,
@@ -158,6 +161,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   }
   if (apiShardArgs.length > 1) {
     throw new Error('choose only one --api-shard value');
+  }
+  if (packageGroupArgs.length > 1) {
+    throw new Error('choose only one --package-group value');
+  }
+  const packageGroup = packageGroupArgs[0]?.slice('--package-group='.length);
+  if (packageGroupArgs.length === 1) {
+    if (!['api', 'cli', 'kortixd', 'rest'].includes(packageGroup ?? '')) {
+      throw new Error('--package-group must be api, cli, kortixd or rest');
+    }
+    if (!packagesOnly) throw new Error('--package-group requires --packages-only');
   }
   const browserShard = browserShardArgs[0]?.slice('--browser-shard='.length);
   if (browserShardArgs.length === 1) {
@@ -187,6 +200,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--target-api-full' &&
       arg !== '--target-browser-full' &&
       arg !== '--no-packages' &&
+      !arg.startsWith('--package-group=') &&
       !arg.startsWith('--browser-shard=') &&
       !arg.startsWith('--api-shard='),
   );
@@ -231,6 +245,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packageQuality: LocalTestLane = {
     name: 'package-quality',
     command: ['bun', 'tests/bin/package-quality.ts'],
+    ...(packageGroup ? { env: { KORTIX_PACKAGE_GROUP: packageGroup } } : {}),
   };
   // Everything except the mode flag itself passes straight through, so
   // `--target <origin>`, `--iterations N`, etc. reach the binary untouched —

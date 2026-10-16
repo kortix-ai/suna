@@ -43,6 +43,8 @@ describe('local test runner contract', () => {
     const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
 
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
+    // No test uses the dashboard or image transforms; they were the largest pulls.
+    expect(source).toMatch(/"-x",\s+"studio,imgproxy"/);
   });
 
   it('snapshots fixture counts into results before teardown starts', () => {

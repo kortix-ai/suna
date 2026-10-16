@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Restauration du journal de session",
           "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."
+        },
+        "workspace_volume": {
+          "name": "Volume de l'espace de travail",
+          "description": "Place /workspace de chaque nouvelle session sur son propre volume au lieu du disque du sandbox. Kortix l'active par projet."
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "Manquant : {items}.",
       "restoreAgent": "L’agent sait ce qui manque.",
       "restoreDismiss": "Fermer l’avis de restauration",
+      "missingMessage": "{count, plural, one {# message précédent} other {# messages précédents}}",
       "missingAttachment": "{count, plural, one {# pièce jointe} other {# pièces jointes}}",
       "missingText": "{count, plural, one {# texte long} other {# textes longs}}",
       "missingToolInput": "{count, plural, one {# entrée d’outil} other {# entrées d’outil}}",

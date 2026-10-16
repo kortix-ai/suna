@@ -9,7 +9,25 @@ const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
 const scope: string[] | null = process.env.KORTIX_TEST_SCOPE
   ? JSON.parse(process.env.KORTIX_TEST_SCOPE)
   : null;
-const inScope = (dir: string) => scope === null || scope.includes(dir);
+// `--package-group` (KORTIX_PACKAGE_GROUP) runs one slice, so CI runs the
+// slices on parallel runners: on one 4 vCPU runner the API, CLI and kortixd
+// suites plus three `tsc` shared the CPU and the lane took 18.5 min
+// (run 38777589705). Unset: every group, one after another as before.
+const GROUP_DIRS: Record<string, string> = {
+  api: 'apps/api',
+  cli: 'apps/cli',
+  kortixd: 'apps/kortix-sandbox-agent-server',
+};
+const group = process.env.KORTIX_PACKAGE_GROUP || null;
+if (group !== null && group !== 'rest' && !GROUP_DIRS[group]) {
+  throw new Error(`unknown package group ${group}: use api, cli, kortixd or rest`);
+}
+const inGroup = (dir: string) =>
+  group === null ||
+  (group === 'rest' ? !Object.values(GROUP_DIRS).includes(dir) : GROUP_DIRS[group] === dir);
+const inScope = (dir: string) => (scope === null || scope.includes(dir)) && inGroup(dir);
+/** The repo-wide checks that belong to no package run once, in the `rest` group. */
+const repoChecks = group === null || group === 'rest';
 /** Run `task` only when `dir` is in scope. */
 const when = (dir: string, task: () => Promise<unknown>): Promise<unknown> =>
   inScope(dir) ? task() : Promise.resolve();
@@ -208,13 +226,15 @@ async function runWorkspaceTests(
   );
 }
 
-await runAll([
-  run(['node', 'scripts/stage-npm-publish.test.mjs']),
-  run(['node', 'scripts/publish-npm-package.test.mjs']),
-  run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
-  run(['node', '--test', 'scripts/dev-local.test.mjs']),
-]);
-await rejectFocusedTests();
+if (repoChecks) {
+  await runAll([
+    run(['node', 'scripts/stage-npm-publish.test.mjs']),
+    run(['node', 'scripts/publish-npm-package.test.mjs']),
+    run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+    run(['node', '--test', 'scripts/dev-local.test.mjs']),
+  ]);
+  await rejectFocusedTests();
+}
 // apps/web's download-layout test launches Playwright Chromium. CI installs
 // the browser in the workflow before this lane; a worker sandbox that runs the
 // lane bare does not, and the test then fails with "Executable doesn't exist".
@@ -268,17 +288,19 @@ await when('apps/mobile', () => run(['pnpm', '--filter', './apps/mobile', 'exec'
 const separate = ['apps/api', 'apps/cli', 'apps/kortix-sandbox-agent-server', 'packages/db'];
 const rest = scope
   ? scope
-      .filter((dir) => !separate.includes(dir) && !(skipSdkTests && dir === 'packages/sdk'))
+      .filter((dir) => inGroup(dir) && !separate.includes(dir) && !(skipSdkTests && dir === 'packages/sdk'))
       .map((dir) => `./${dir}`)
-  : [
-      './packages/**',
-      './apps/**',
-      '!kortix-api',
-      '!@kortix/cli',
-      '!kortixd',
-      '!@kortix/db',
-      ...(skipSdkTests ? ['!@kortix/sdk'] : []),
-    ];
+  : repoChecks
+    ? [
+        './packages/**',
+        './apps/**',
+        '!kortix-api',
+        '!@kortix/cli',
+        '!kortixd',
+        '!@kortix/db',
+        ...(skipSdkTests ? ['!@kortix/sdk'] : []),
+      ]
+    : [];
 await runAll([
   // `@kortix/db`'s PostgreSQL contracts (`*.integration.test.ts`) and
   // `tests/migration` run in the `db-suites` lane of the core run.
