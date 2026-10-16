@@ -18,7 +18,7 @@ import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../he
  * through the same agent-config PUT as every other grant.
  *
  * Three things only a browser can prove, so they live here rather than in a
- * REST flow: the page is gated on the project's `apps` feature flag, a pick
+ * REST flow: the page shows with no `apps` feature flag (#9934), a pick
  * puts the App's SLUG (never its id) on the wire, and `All` sends the `all`
  * literal instead of an expanded list that would freeze the grant at today's
  * App roster.
@@ -31,7 +31,7 @@ const auth = {
 };
 const api = createApiJsonClient(apiBase);
 
-test('31 — the agent editor grants Apps by slug, gated on the Apps feature flag', async ({
+test('31 — the agent editor grants Apps by slug, with no Apps feature flag', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -65,11 +65,8 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
     await installBrowserSessionDirect(page, session, route, auth);
     await selectAccountForUi(page, accountId);
 
-    // 1. Flag off: the rail has no Apps topic and `?section=apps` falls back.
-    // The fixture enables `apps` by default (`database-project.ts`), so turn it
-    // off rather than assuming the project's state. `apps` is internal-only: a
-    // project owner gets 403 on PATCH /features, so write the operator's
-    // override directly.
+    // 1. Apps is generally available (#9934): the rail lists Apps even when
+    // the project stores the retired `experimental.apps: false` override.
     await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', false);
     await page.goto(route, { waitUntil: 'domcontentloaded' });
     await dismissOnboarding(page);
@@ -78,15 +75,9 @@ test('31 — the agent editor grants Apps by slug, gated on the Apps feature fla
     // "Apps" link — scope to the rail or the sidebar answers for it.
     const rail = page.getByRole('navigation', { name: 'Agent sections' });
     await expect(rail.getByRole('tab', { name: 'Kortix permissions' })).toBeVisible();
-    await expect(rail.getByRole('tab', { name: 'Apps', exact: true })).toHaveCount(0);
-    await expect(page.getByTestId('agent-apps-grant')).toHaveCount(0);
-    await expect(rail.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    await expect(rail.getByRole('tab', { name: 'Apps', exact: true })).toHaveCount(1);
 
-    // 2. Flag on, with one restricted App to grant.
-    await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', true);
+    // 2. One restricted App to grant.
     const app = await api<{ app_id: string; slug: string }>(
       token,
       'POST',

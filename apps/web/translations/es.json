@@ -1968,6 +1968,7 @@
       "restoreMissing": "Falta: {items}.",
       "restoreAgent": "El agente sabe qué falta.",
       "restoreDismiss": "Cerrar el aviso de restauración",
+      "missingMessage": "{count, plural, one {# mensaje anterior} other {# mensajes anteriores}}",
       "missingAttachment": "{count, plural, one {# adjunto} other {# adjuntos}}",
       "missingText": "{count, plural, one {# texto largo} other {# textos largos}}",
       "missingToolInput": "{count, plural, one {# entrada de herramienta} other {# entradas de herramienta}}",

@@ -1968,6 +1968,7 @@
       "restoreMissing": "Mancano: {items}.",
       "restoreAgent": "L’agente sa cosa manca.",
       "restoreDismiss": "Chiudi l’avviso di ripristino",
+      "missingMessage": "{count, plural, one {# messaggio precedente} other {# messaggi precedenti}}",
       "missingAttachment": "{count, plural, one {# allegato} other {# allegati}}",
       "missingText": "{count, plural, one {# testo lungo} other {# testi lunghi}}",
       "missingToolInput": "{count, plural, one {# input di uno strumento} other {# input di strumenti}}",

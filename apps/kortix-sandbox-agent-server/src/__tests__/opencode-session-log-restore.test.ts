@@ -759,6 +759,34 @@ describe('the boot reconcile on OpenCode (P6.4)', () => {
     }
   }, 60_000)
 
+  test('over the restore cap (413): the box boots with the note alone at the claimed generation and does not restore again', async () => {
+    const log = storedImage()
+    const rootId = log.threads[0]!.thread_id
+    const b = box(log.session_id)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(b.root, 'state'), objects, maxBytes: 1024 })
+    try {
+      const boot = (await reconcileSessionLog(b.port, { retryMs: 1 }))!
+      expect(api.calls).toEqual(['GET log/manifest', 'POST log/restore'])
+      expect(boot.generation).toBe(1)
+      expect(boot.session).toMatchObject({ restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: ids(log).length } } } } } })
+      startSessionLogJournal(b.port, boot)
+      expect(await flushSessionLogJournal()).toBe(true)
+      expect(api.journal.flatMap((x) => x.puts.map((p) => [p.message.blocks[0]?.id, p.message.seq]))).toEqual([['prt_kortix_restore_g1', 15]])
+      expect(new Set(api.journal.map((x) => x.generation))).toEqual(new Set([1]))
+      const note = api.stored().threads[0]!.messages.at(-1)!
+      const expected = { ...structuredClone(api.stored()), threads: [{ ...api.stored().threads[0]!, messages: [note] }] }
+      const server = await b.serve()
+      const [body] = await prompt(server, rootId, 'Anything else?', [{ text: 'OK' }])
+      expect(JSON.stringify(body)).toContain('is above the 1 KiB restore limit and was not restored.')
+      expect(oracle(expected, rootId, 'Anything else?', body!).diffs).toEqual([])
+      resetSessionLogJournalForTests()
+      expect(await reconcileSessionLog(b.port, { retryMs: 1 })).toMatchObject({ generation: 1, cursors: [] })
+      expect(restores(api)).toBe(1)
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
   test('stale native state (a store from before the last turns) is restored', async () => {
     const log = storedImage()
     const rootId = log.threads[0]!.thread_id

@@ -16,6 +16,7 @@ import type {
   SessionLogManifest,
   SessionLogMessage,
   SessionLogRestore,
+  SessionLogRestoreTooLarge,
 } from '@kortix/api-contract/session-log'
 import type { SessionLogPort } from '@/harness/contract/session-log'
 import { WIRE_MESSAGE_ID } from '@kortix/sdk/wire-message-id'
@@ -180,6 +181,44 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(store.restores[0]!.seqMax).toEqual({ thr_root: 2 })
     expect(boot).toEqual({ generation: 1, cursors: [{ thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } }], harness: carry(3) })
     expect(state()).toEqual({ version: 1, generation: 1, unwritten: [], harness: carry(3) })
+  })
+
+  test('413 session_log_too_large: the claimed generation, the root alone with the D3 note above seq_max, every stored id unwritten; the restart restores nothing', async () => {
+    const child = { ...STORED.threads[0]!, thread_id: 'thr_child', parent_thread_id: 'thr_root', messages: [] }
+    const bare = { ...STORED, threads: [{ ...STORED.threads[0]!, messages: [] }, child] }
+    const tooLarge = Response.json(
+      { generation: 1, log: bare, revs: { m1: 1, m2: 1, m0: 1 }, seq_max: { thr_root: 7, thr_child: 3 }, blobs: [], error: 'session_log_too_large', bytes: 38_588_834, limit: 24 * 1024 * 1024, messages: 2 } satisfies SessionLogRestoreTooLarge,
+      { status: 413 },
+    )
+    const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [tooLarge] })
+    const store = fakeStore(null)
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    const written = store.restores.at(-1)!.log
+    expect(written.threads.map((t) => t.thread_id)).toEqual(['thr_root'])
+    expect(written.threads[0]!.messages).toEqual([expect.objectContaining({ seq: 8, origin: 'notification', blocks: [expect.objectContaining({ id: 'prt_kortix_restore_g1' })] })])
+    expect((written.threads[0]!.messages[0]!.blocks[0] as { text: string }).text).toBe(
+      'Kortix: this session was restored from its saved session log. Its earlier conversation (2 messages, 36.8 MiB) is above the 24 MiB restore limit and was not restored. If you need it, ask the user to send it again.',
+    )
+    expect(boot).toMatchObject({ generation: 1, session: { restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: 2 }, truncated: 0 } } } } } })
+    expect(state()).toMatchObject({ generation: 1, unwritten: ['m1', 'm2', 'm0'] })
+
+    resetSessionLogJournalForTests()
+    const again = fakeApi({ manifest: [manifest(1, LIVE)] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toMatchObject({ generation: 1, cursors: [] })
+    expect(again.count.restore).toBe(0)
+  })
+
+  test('a 413 that is not session_log_too_large (a proxy) claims nothing: no restore, no retry, the mark is cleared', async () => {
+    const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [new Response('Request Entity Too Large', { status: 413 })] })
+    const store = fakeStore(null)
+
+    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(api.count.restore).toBe(1)
+    expect(store.restores).toHaveLength(0)
+    expect(state().claiming).toBeUndefined()
   })
 
   test('current native state (every live id held, same generation): no restore, the persisted generation', async () => {
