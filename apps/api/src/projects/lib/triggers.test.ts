@@ -52,7 +52,18 @@ const fakeProject = (overrides: Record<string, unknown> = {}) =>
   }) as unknown as Parameters<typeof loadManifestForEdit>[0];
 
 describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk yet)', () => {
-  test('synthesizes a valid v3 manifest with a declared, resolvable default agent', async () => {
+  test('with the project flag manifest_v3 on, synthesizes a v3 manifest', async () => {
+    manifestFile = null;
+
+    const manifest = await loadManifestForEdit(
+      fakeProject({ metadata: { require_declared_agents: true, experimental: { manifest_v3: true } } }),
+    );
+
+    expect(manifest.schemaVersion).toBe(3);
+    expect(manifest.raw.kortix_version).toBe(3);
+  });
+
+  test('synthesizes a valid v2 manifest with a declared, resolvable default agent', async () => {
     manifestFile = null; // "brand-new repo" — nothing committed yet
 
     const manifest = await loadManifestForEdit(fakeProject());
@@ -62,7 +73,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     // applyDefaultAgentV2) hard-refuse — every write 400'd before a real
     // manifest could ever land in git, so the project was permanently stuck
     // un-declarable.
-    expect(manifest.schemaVersion).toBe(3);
+    expect(manifest.schemaVersion).toBe(2);
     expect(manifest.format).toBe('yaml');
 
     const defaultAgent = manifest.raw.default_agent;
@@ -83,7 +94,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     // default agent or edit an agent block — the exact bug this regression
     // guard exists for (see unit-agent-config-v2.test.ts's "raw path"
     // describe block for the write-side proof).
-    expect(manifest.raw.kortix_version).toBe(3);
+    expect(manifest.raw.kortix_version).toBe(2);
 
     // Also prove it end-to-end through the serialize → re-parse → validate
     // pipeline `commitManifest` runs once the manifest is actually committed

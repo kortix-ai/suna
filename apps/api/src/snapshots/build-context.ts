@@ -41,7 +41,7 @@ import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
-import { newManifestVersion } from '../projects/manifest-version';
+import { newManifestVersion } from '../projects/surface';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
 import { buildLayeredDockerfile } from './dockerfile-layer';
 import { stageOpencodeConfigTree, stageStarterOpencodeConfig } from './opencode-config-stage';
