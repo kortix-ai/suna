@@ -70,4 +70,28 @@ describe('copy feedback timer', () => {
     expect(section).toContain('if (copiedTimer.current) clearTimeout(copiedTimer.current);');
     expect(section).toContain('useEffect(\n    () => () => {');
   });
+
+  test('each copied flag owns its timer, so one copy never cancels the other reset', () => {
+    const copy = section.slice(
+      section.indexOf('const copy = async () => {'),
+      section.indexOf('const copyEmbed = async () => {'),
+    );
+    const copyEmbed = section.slice(
+      section.indexOf('const copyEmbed = async () => {'),
+      section.indexOf('return ('),
+    );
+    const unmount = section.slice(section.indexOf('useEffect('), section.indexOf('const active ='));
+    // A shared timer lets the second copy cancel the first flag's reset and
+    // stick its check until the next click.
+    expect(copy).toContain('copiedTimer.current = setTimeout(() => setCopied(false)');
+    expect(copy).not.toContain('setEmbedCopied');
+    expect(copy).not.toContain('embedCopiedTimer');
+    expect(copyEmbed).toContain(
+      'embedCopiedTimer.current = setTimeout(() => setEmbedCopied(false)',
+    );
+    expect(copyEmbed).not.toContain('setCopied(');
+    expect(copyEmbed).not.toContain('copiedTimer.current');
+    expect(unmount).toContain('clearTimeout(copiedTimer.current)');
+    expect(unmount).toContain('clearTimeout(embedCopiedTimer.current)');
+  });
 });

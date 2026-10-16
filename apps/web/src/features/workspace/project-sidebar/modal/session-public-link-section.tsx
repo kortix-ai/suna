@@ -46,11 +46,15 @@ export function SessionPublicLinkSection({
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [copied, setCopied] = useState(false);
   const [embedCopied, setEmbedCopied] = useState(false);
+  // One timer per flag: each copied check resets on its own clock, so copying
+  // the other button never cancels its reset.
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const embedCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
     () => () => {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      if (embedCopiedTimer.current) clearTimeout(embedCopiedTimer.current);
     },
     [],
   );
@@ -85,8 +89,8 @@ export function SessionPublicLinkSection({
       await navigator.clipboard.writeText(embedSnippet);
       setEmbedCopied(true);
       successToast(t('embedCopied'));
-      if (copiedTimer.current) clearTimeout(copiedTimer.current);
-      copiedTimer.current = setTimeout(() => setEmbedCopied(false), 2000);
+      if (embedCopiedTimer.current) clearTimeout(embedCopiedTimer.current);
+      embedCopiedTimer.current = setTimeout(() => setEmbedCopied(false), 2000);
     } catch {
       errorToast(tI18nComplete.raw('text167c96824acb'));
     }
