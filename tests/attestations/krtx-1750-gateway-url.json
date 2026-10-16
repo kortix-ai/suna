@@ -1,5 +1,5 @@
 {
-  "source_hash": "9fb8eaf369259f3b86ccc17dd533bd764e0723965d87e971054f8d22ba9446a8",
+  "source_hash": "92a810c00a846d778d6e1485bdd34c5225ded10abc1689ddf5f9f359f8afd61e",
   "diff_files": [
     "apps/api/src/projects/routes/gateway-keys.ts",
     "apps/cli/src/__tests__/gateway.test.ts",
@@ -7,13 +7,13 @@
     "packages/sdk/src/core/rest/projects-client/gateway.ts",
     "tests/src/flows/llm-gateway.flow.ts"
   ],
-  "diff_hash": "28ab1cc7e357347a689185891725d786e9b335f97d358f56c776268fa3ab9f52",
-  "head": "7a338817fd7ab097bbcf218040c78d591bbc9c5a",
+  "diff_hash": "b4768ad863248573909886d1bd4fde4fd713f74ad6324e7fd08dd16fef2c0e7c",
+  "head": "b83018085cda5473d428a08d49b1fa37361cd082",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T20:20:03.051Z"
+  "at": "2026-10-16T02:46:53.043Z"
 }
