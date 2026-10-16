@@ -189,15 +189,13 @@ describe('local test runner', () => {
       env: {
         E2E_BROWSER_WORKERS: '2',
         E2E_ENABLE_SDK_ONLY_SESSION: '1',
-        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-        E2E_OAUTH_PROVIDER_INITIATION: '1',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       },
     });
   });
 
-  it('keeps strict browser coverage but records the authorized preview OAuth exclusion', () => {
+  it('runs the same strict browser lane on a preview target', () => {
     const previous = process.env.KE2E_TARGET;
     process.env.KE2E_TARGET = 'preview';
     try {
@@ -205,11 +203,8 @@ describe('local test runner', () => {
       expect(plan.lanes[1]?.env).toEqual({
         E2E_BROWSER_WORKERS: '2',
         E2E_ENABLE_SDK_ONLY_SESSION: '1',
-        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-        E2E_OAUTH_PROVIDER_INITIATION: '0',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
-        E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1',
       });
     } finally {
       if (previous === undefined) delete process.env.KE2E_TARGET;

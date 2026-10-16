@@ -1201,12 +1201,13 @@ for (const runtime of runtimes) {
         await expect(row).toBeVisible();
         // A Queue List row carries no steer note.
         await expect(row.locator("[data-queued-delivery]")).toHaveCount(0);
-        await expect(
-          row.getByRole("button", { name: "Edit", exact: true }),
-        ).toBeEnabled();
+        // Row actions live in one "Message actions" menu since #9993.
+        const rowActions = row.getByRole("button", { name: "Message actions", exact: true });
+        await expect(rowActions).toBeEnabled();
         await dismissWelcomeCard(page);
         await row.hover();
-        await row.getByRole("button", { name: "Edit", exact: true }).click();
+        await rowActions.click();
+        await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
         await expect(input).toHaveText(composerText);
         await expect(row).toHaveCount(0);
         await input.press("End");
@@ -1310,7 +1311,7 @@ for (const runtime of runtimes) {
           await expect(row).toBeInViewport();
           await row.hover();
           await row
-            .getByRole("button", { name: "Edit", exact: true })
+            .getByRole("button", { name: "Message actions", exact: true })
             .click({ trial: true });
           await window.evaluate((window) => {
             window.webContents.setZoomFactor(1);
