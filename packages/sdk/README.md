@@ -1084,7 +1084,8 @@ interface KortixPlatformConfig {
 `task-complete` (`sessionTitle`), `session-error` (`errorTitle`), `question`
 (`questionText`) and `permission` (`toolName`), each with `sessionId`.
 `useSession` raises them from its event stream. When its view unmounts with a
-turn still running, a watch reads `GET …/turn` until the turn ends and raises
+turn still running, a watch follows the turn on the session's control stream
+(`kortix.control.turn`; `GET …/turn` while the stream is down) and raises
 `task-complete` or `session-error` itself, with `projectId`; `task-complete`
 also carries `watchedSinceMs`, the watch's start in `Date.now()`. Mounting the
 view again ends the watch. Without `onNotify`, no watch runs. See

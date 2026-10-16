@@ -225,7 +225,7 @@ Pass the id of the user message that started the turn. `hasError` is `true` when
 
 While the view is mounted, its event stream raises these. When the view unmounts with a turn still running, for example because the person opened another page, `useSession` hands the turn to a watch:
 
-- The watch reads `GET …/turn` every 5 s, every 15 s after 5 minutes, and stops after 12 hours.
+- The watch listens for `kortix.control.turn` frames on the session's control stream (`GET …/events?channels=control`), so a hidden window that throttles its timers still hears the end. While that stream is down, it reads `GET …/turn` every 5 s, every 15 s after 5 minutes. It stops after 12 hours.
 - When no turn is open, it raises `task-complete`, or `session-error` with the cause the API recorded. A stop that someone asked for raises nothing.
 - These two events also carry `projectId`, and `task-complete` carries `watchedSinceMs`: when the watch started, in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that instant.
 - Mounting a view of the session again ends the watch. The view's stream announces from then on, so one end is never announced twice.
