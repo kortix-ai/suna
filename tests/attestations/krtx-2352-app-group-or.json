@@ -1,17 +1,17 @@
 {
-  "source_hash": "4ac57619a8b2a1dbf4e60ab7adae85f7c8a37e2852eca194f1cc3ddfe07b412d",
+  "source_hash": "377e1bb30e8a773e230af4b6e9910d791b0f55eb12d1cef052429c2a4ac359b6",
   "diff_files": [
     "apps/api/src/apps/access.test.ts",
     "tests/spec/end-to-end.md",
     "tests/src/flows/apps.flow.ts"
   ],
-  "diff_hash": "5d9a5321c992e99dd4bc3bbfb94f93ae96e93aa6ad234245ced14c6e7c6094f0",
-  "head": "b0dc57071b3b0d4e91571e50b4efde858d6e1919",
-  "passed": false,
+  "diff_hash": "eea55ac89fc9da0fc38414dc9ba33239dec425410dd567f057bbb9dd777c8c8e",
+  "head": "332708540e3e197711e34a76287717c85badc92d",
+  "passed": true,
   "lanes": {
+    "packages": "pass",
     "core": "pass",
-    "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T17:43:14.191Z"
+  "at": "2026-10-16T07:33:52.304Z"
 }
