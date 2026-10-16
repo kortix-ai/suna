@@ -112,9 +112,11 @@ browser-visible changes) before you merge into `main`. A pull request into
 lanes, once) or the `preview` label (below).
 
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
-It runs on every push to `main`, on a pull request into `staging`, once when a
-person adds the `test` label to a pull request, and on manual dispatch. The push-to-`main` run is a post-merge safety net: it blocks nothing,
-and a red run comments on the offending commit with the failing lane names. A
+It holds the contract lanes (no browser). They run nightly on `dev`, once
+when a person adds the `test` label to a pull request into `dev`, on manual
+dispatch, and inside the release suite (`tests-release.yml` calls it). The
+nightly run blocks nothing; a red night comments on the commit with the
+failing lane names. A
 cancelled run means a newer commit superseded it. Deployed-target runs are
 separate: `deploy-preview.yml` (`--target-full` against a preview origin, on
 dispatch only; the `preview` label deploys without it) and `tests-release.yml` (`--target-*-full` against deployed
@@ -268,7 +270,7 @@ deployed. The largest file is the floor. `27-desktop-parity` was one 520 s file
 
 #### Release gate: the deployed seams
 
-The staging pull request's `Tests` lanes run every flow on the release tree.
+The release suite's contract lanes run every flow on the release tree.
 The release gate runs against deployed staging, so it tests only what a
 deployment can break. Its API job runs the flows tagged `deployed`
 (`DEPLOYED_FLOW_TAG` in `src/core/local-runner.ts`), one or more per seam, the

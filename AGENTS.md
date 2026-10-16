@@ -582,39 +582,37 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   larger runner): Blacksmith billed ~$2.7k in September 2026 for minutes
   GitHub gives this repo for free. `tests/unit/image-build-speed-workflow.test.ts`
   enforces the free default.
-- GitHub Actions runs seven lanes — `core`, `browser-1`, `browser-2`,
-  `packages-api`, `packages-cli`, `packages-kortixd`, `packages-rest` —
-  natively, one GitHub-hosted runner each (`CI_RUNNER_L`), through
-  `.github/workflows/tests.yml`. The two browser lanes are halves of one
-  sharded run (`--browser-shard=N/2`) over the money-path specs, one
-  Playwright worker each: a 16 GB runner did not hold two. A browser spec
-  exists only for a money-path journey (sign-in, onboarding, session load and
-  streaming, desktop parity, billing, connectors, invites); everything else is
-  a REST flow or nothing. A lane takes about
-  3x its old Blacksmith time; `tests.yml` records the measured times. The
-  concurrency settings in `tests/bin/package-quality.ts` must not be raised.
-  The four `packages-*` lanes are slices of package quality
-  (`pnpm test -- --packages-only --package-group=<api|cli|kortixd|rest>`): on
-  one runner the API, CLI and kortixd suites shared 4 vCPU for 18.5 min.
-  Each lane is the unchanged
-  root command at the exact requested SHA; browser lanes install Chromium and
-  prestart Supabase first. Do not add CI-only test logic.
-- The lanes run on a pull request into `staging`, nightly on `dev`, once when a
-  person adds the `test` label to a pull request, and on manual dispatch. A
-  push to `dev` runs no lane. A red nightly run comments the failing lanes and
-  suspect commits on the commit, once per new set of failing lanes. A pull
-  request into `prod` runs `tests-release.yml` against deployed staging
-  instead; Promote to Production approves its run. A
-  failed release-gate or staging-PR run reruns its failed jobs once by itself
-  (`rerun-failed-once.yml`) and names them on the PR: a job that passes on the
-  rerun is a flake to fix or quarantine.
+- `.github/workflows/tests.yml` holds the six contract lanes — `core-flows`,
+  `core-db`, `packages-api`, `packages-cli`, `packages-kortixd`,
+  `packages-rest` — one GitHub-hosted runner each (`CI_RUNNER_L`). `core-*`
+  split the core run (`--core-group=flows|db`); `packages-*` are slices of
+  package quality (`--packages-only --package-group=<g>`). The concurrency
+  settings in `tests/bin/package-quality.ts` must not be raised. Each lane is
+  the unchanged root command at the exact requested SHA. Do not add CI-only
+  test logic.
+- The contract lanes run nightly on `dev`, once when a person adds the `test`
+  label to a pull request into `dev`, on dispatch, and inside the release
+  suite (`tests-release.yml` calls `tests.yml`). A push to `dev` and the pull
+  request into `staging` run nothing. A red nightly run comments the failing
+  lanes and suspect commits on the commit, once per new set of failing lanes.
+- The release suite (`tests-release.yml`, on the release PR into `prod`) runs
+  the contract lanes, the deployed API smoke (the flows tagged `deployed`, one
+  or two per deployment seam) and the browser journeys against deployed
+  staging, in parallel. `full suite + quality gates` requires all of them and
+  every other check on the release commit. A browser spec exists only for a
+  money-path journey (sign-in, onboarding, session load and streaming, desktop
+  parity, billing, connectors, invites); everything else is a REST flow or
+  nothing. CI records a video of every browser journey in the run's
+  `tests-release-browser-shard-N` artifact. A failed release-suite run reruns
+  its failed jobs once by itself (`rerun-failed-once.yml`): a job that passes
+  on the rerun is a flake to fix or delete.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
   into `dev`, and pins both label gates to the label-added event.
-- Release tests run `pnpm test -- --target-full` against deployed staging. They block
-  production when API or gateway health reports a SHA other than
-  `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
-  Playwright journey fails.
+- The deployed half of the release suite (`--target-api-full`,
+  `--target-browser-full`) waits up to 15 min for staging to serve
+  `RELEASE_SOURCE_SHA`, then fails when any `deployed` flow is excluded or any
+  configured Playwright journey fails.
 - The `preview` label is not part of the development flow. Adding it deploys a
   Platinum self-host environment for the PR (~7 min), once, and runs no tests.
   A push does not redeploy. Only `gh workflow run deploy-preview.yml -f
@@ -650,10 +648,10 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
   incomplete development can live here while it is being shaken out.
 - **`staging` = release-candidate branch.** Nothing should land on staging unless
-  it is intended to be production-ready. Human/code changes enter staging by PR:
-  the default path is promoting the current `dev` HEAD (the staging pull
-  request runs `Tests` and is the gate), or a targeted branch -> `staging` for
-  a selective hotfix candidate. Staging
+  it is intended to be production-ready. Promote to Production merges the
+  `dev` HEAD into staging itself (the PR runs no check), deploys it, and opens
+  the release PR whose release suite is the one gate. Staging is the deploy
+  target that suite runs against, not a test stage. Staging
   deploys to `staging.kortix.com` / `staging-api.kortix.com` and must use the
   staging data plane, not dev or prod. The full promote-and-gate flow, the
   fix-forward loop, and the prod release steps live in the **kortix-release**

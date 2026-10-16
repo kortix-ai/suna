@@ -150,12 +150,12 @@ in `references/api-latency-baseline.md`.
 The philosophy is in `AGENTS.md` ("Testing philosophy"). A pull request into
 `dev` runs **no** GitHub Actions job by itself, and a push to `dev` runs no
 `Tests` lane. Before the merge you run T0 and the tests that cover your change,
-and you use the change for real. The `Tests` lanes run on the pull request into
-`staging` (the gate) and nightly on `dev`; a red night comments the failing
-lanes and suspect commits once per new set of failing lanes. `CI` and `CodeQL`
-run weekly on `dev` and on the pull request into `staging`. The pull request
-into `prod` runs only `Tests - release` against deployed staging plus the
-path-gated SOC 2 scanners. In the rare case
+and you use the change for real. The contract lanes run nightly on `dev` (no
+browser); a red night comments the failing lanes and suspect commits once per
+new set of failing lanes. `CI` and `CodeQL` run weekly on `dev`. The pull
+request into `staging` runs nothing. The release PR into `prod` runs the
+release suite once — contract lanes, deployed smoke, browser journeys against
+staging, CI, CodeQL, scanners — and it is the only gate. In the rare case
 you want CI before a `dev` merge, add a label: `test` runs the lanes once
 (~20 min), `preview` deploys once (~7 min) with no tests. A push re-runs
 neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts` fails
