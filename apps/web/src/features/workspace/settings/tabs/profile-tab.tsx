@@ -270,7 +270,7 @@ export interface ProfileTabViewProps {
 /** Presentational only — no hooks, no data fetching, no store or Supabase
  *  read. Kept separate from `ProfileTab` so this renders under
  *  `renderToStaticMarkup` without a `QueryClientProvider` or a Supabase
- *  session — see `MigrateToV2ButtonView` and `SettingsPanelShell` for the
+ *  session — see `ProjectManifestUpgradeAlertView` and `SettingsPanelShell` for the
  *  same split. Every prop is optional with a safe default so the bare
  *  `<ProfileTabView />` the test file renders shows every section fully
  *  formed. */

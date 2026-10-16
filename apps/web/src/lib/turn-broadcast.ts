@@ -47,10 +47,32 @@ function bus(): BroadcastChannel | null {
   return channel;
 }
 
+/**
+ * When this tab last showed a completion per session, local or relayed.
+ *
+ * Two announcers can see one turn end: another tab's live stream (relayed
+ * here) and this tab's SDK turn-end watch, which takes over a turn whose
+ * session page this tab left mid-turn. The record lets each one skip the end
+ * the other already showed. Clock: `Date.now()` of this machine, which every
+ * tab of the origin shares.
+ */
+const shownAt = new Map<string, number>();
+
+export function noteTurnCompleteShown(sessionId: string, at: number = Date.now()): void {
+  shownAt.set(sessionId, at);
+}
+
+/** Did this tab show a completion of `sessionId` at or after `sinceMs`? */
+export function turnCompleteShownSince(sessionId: string, sinceMs: number): boolean {
+  const at = shownAt.get(sessionId);
+  return at !== undefined && at >= sinceMs;
+}
+
 /** Test seam: drop the cached channel so a test process can simulate several
  *  tabs, each with its own instance. Not part of the app surface. */
 export function resetTurnBroadcastForTests(): void {
   channel = null;
+  shownAt.clear();
 }
 
 export function broadcastTurnComplete(msg: Omit<TurnCompleteMsg, 'at'>): void {
@@ -93,6 +115,8 @@ export function createTurnCompleteGate(
     if (isViewing(msg.sessionId)) return;
     const last = handled.get(msg.sessionId);
     if (last !== undefined && msg.at - last < foldWindowMs) return;
+    // This tab's own turn-end watch announced this end a moment ago.
+    if (turnCompleteShownSince(msg.sessionId, msg.at - foldWindowMs)) return;
     handled.set(msg.sessionId, msg.at);
     notify(msg);
   };

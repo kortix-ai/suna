@@ -1169,8 +1169,8 @@
     "contactSales": "Falar com vendas",
     "upgradeTo": "Fazer upgrade para {{plan}}",
     "switchTo": "Mudar para {{plan}}",
-    "trialLabel_one": "Teste do {{plan}} · falta {{count}} dia",
-    "trialLabel_other": "Teste do {{plan}} · faltam {{count}} dias"
+    "enterpriseDemoLabel": "{{plan}} · demo do Enterprise",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1182,10 +1182,29 @@
     "showMoreSubsessions_one": "Mostrar mais {{count}}",
     "showMoreSubsessions_other": "Mostrar mais {{count}}",
     "showMoreSubsessionsLabel_one": "Mostrar mais {{count}} subsessão de {{title}}",
-    "showMoreSubsessionsLabel_other": "Mostrar mais {{count}} subsessões de {{title}}"
+    "showMoreSubsessionsLabel_other": "Mostrar mais {{count}} subsessões de {{title}}",
+    "pin": "Fixar",
+    "unpin": "Desafixar",
+    "archive": "Arquivar",
+    "unarchive": "Desarquivar",
+    "pinDone": "Sessão fixada",
+    "unpinDone": "Sessão desafixada",
+    "archiveDone": "Sessão arquivada",
+    "unarchiveDone": "Sessão desarquivada",
+    "pinFailed": "Não foi possível fixar a sessão. Tenta de novo.",
+    "unpinFailed": "Não foi possível desafixar a sessão. Tenta de novo.",
+    "archiveFailed": "Não foi possível arquivar a sessão. Tenta de novo.",
+    "unarchiveFailed": "Não foi possível desarquivar a sessão. Tenta de novo.",
+    "undo": "Desfazer",
+    "pinnedSection": "Fixadas",
+    "archivedView": "Arquivadas",
+    "archivedEmpty": "As sessões que você arquivar aparecerão aqui.",
+    "stoppedBy": "Interrompido por {{name}}",
+    "stopNotAllowed": "Somente o membro que iniciou esta execução, o proprietário da sessão ou um gerente do projeto pode interrompê-la."
   },
   "genui": {
     "chartTapHint": "Toque para ver um valor",
+    "checklistReady": "{{done}}/{{total}} prontos",
     "map": "Mapa",
     "mapUnavailable": "Mapa indisponível",
     "openImage": "Abrir imagem",

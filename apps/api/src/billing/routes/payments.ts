@@ -1,3 +1,4 @@
+import { createHostedCheckout } from '../services/hosted-checkout';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import { getStripe } from '../../shared/stripe';
@@ -14,6 +15,7 @@ import { BillingError } from '../../errors';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { resolveBillingWriteAccountId } from '../http-require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
 
@@ -75,7 +77,7 @@ paymentsRouter.openapi(
       accountId,
       amountDollars: String(amount),
       status: 'pending',
-      description: `$${amount} credit purchase`,
+      description: `Credit purchase: ${formatUsdAsCredits(amount)} credits ($${amount})`,
       provider: 'stripe',
     });
 
@@ -91,7 +93,7 @@ paymentsRouter.openapi(
           quantity: 1,
         }];
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await createHostedCheckout(stripe, {
       customer: customerId,
       mode: 'payment',
       line_items: lineItems,

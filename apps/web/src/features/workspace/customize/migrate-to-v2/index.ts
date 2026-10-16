@@ -1,10 +1,11 @@
 export {
   detectManifestVersion,
+  manifestFilename,
+  manifestNeedsUpgrade,
   useProjectManifestVersion,
   type ManifestVersion,
   type ProjectManifestVersionState,
 } from './manifest-version';
-export { MigrateToV2Button, MigrateToV2ButtonView } from './migrate-to-v2-button';
 export { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
 export {
   PROJECT_UPGRADES,

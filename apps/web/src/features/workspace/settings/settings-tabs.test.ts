@@ -53,6 +53,9 @@ describe('SETTINGS_TABS', () => {
       'sessions',
       'preferences',
       'tokens',
+      // The Connect pages (KRTX-1997).
+      'mcp',
+      'computer',
     ]);
   });
 

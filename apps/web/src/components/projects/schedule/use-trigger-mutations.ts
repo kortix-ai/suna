@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast, successToast } from '@/components/ui/toast';
+import { triggerRunActions, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 import { deleteProjectTrigger, fireProjectTrigger, type ProjectTrigger } from '@kortix/sdk';
@@ -18,6 +19,11 @@ import { useMutation } from '@tanstack/react-query';
  * parameter type), the deleted row's localized noun (`deletedNoun`), what a
  * successful delete clears (`onRemoved`), and how `invalidate` reaches the
  * host's own query key / selection state.
+ *
+ * The toast bodies carry the entity row (kind glyph + trigger name) and, when
+ * a fired run produced a session, the "Open session" action
+ * (`triggerRunActions`) — the same toasts dev's inline copies showed before
+ * the hook replaced them.
  */
 export function useTriggerMutations({
   projectId,
@@ -36,19 +42,28 @@ export function useTriggerMutations({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
-    onSuccess: (res) => {
+    onSuccess: (res, trigger) => {
+      const entity = triggerToastEntity(trigger);
       if (res.status === 'fired') {
         successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          description: res.session_id
-            ? `Session ${res.session_id.slice(0, 8)}…`
-            : tI18nComplete.raw('text747e9e0e8e92'),
+          entity,
+          ...(res.session_id
+            ? {
+                actions: triggerRunActions(
+                  projectId,
+                  res.session_id,
+                  tI18nComplete.raw('textb205bb47f81a'),
+                ),
+              }
+            : { description: tI18nComplete.raw('text747e9e0e8e92') }),
         });
       } else if (res.status === 'queued') {
         successToast(tI18nComplete.raw('text661ff40a07e0'), {
+          entity,
           description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
         });
       } else {
-        errorToast(tI18nComplete.raw(runFailureKey), { description: res.error });
+        errorToast(tI18nComplete.raw(runFailureKey), { entity, description: res.error });
       }
       void invalidate();
     },
@@ -61,6 +76,7 @@ export function useTriggerMutations({
       const noun = deletedNoun(trigger);
       successToast(
         tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
+        { entity: triggerToastEntity(trigger) },
       );
       onRemoved();
       void invalidate();

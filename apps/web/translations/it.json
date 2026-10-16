@@ -487,7 +487,8 @@
       "groups": {
         "workspace": "Progetto",
         "personal": "Personale",
-        "account": "Account"
+        "account": "Account",
+        "connect": "Connetti"
       },
       "items": {
         "workspace": {
@@ -540,6 +541,14 @@
         "plan": {
           "label": "Piano",
           "description": "Il tuo piano, i tuoi crediti e la fatturazione per questo account."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Usa Kortix da Claude, Claude Code, Cursor, Codex o qualsiasi client MCP. Accedi una sola volta. Niente da installare."
+        },
+        "computer": {
+          "label": "Computer",
+          "description": "Consenti agli agenti Kortix di lavorare con i file, il terminale e le app del tuo computer."
         }
       }
     },
@@ -1194,10 +1203,6 @@
           "name": "Meta-agente",
           "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
         },
-        "apps": {
-          "name": "App",
-          "description": "Distribuisci siti statici, pacchetti JavaScript, Dockerfile e immagini OCI su URL stabili ed esegui backend: un database, funzioni server, query in tempo reale, archiviazione file, pianificazione e ricerca su una macchina sempre attiva."
-        },
         "monitors": {
           "name": "Monitor",
           "description": "Esegui controlli permanenti su registri, feed o API che avviano sessioni agente in risposta agli eventi."
@@ -1253,6 +1258,10 @@
         "session_log_restore": {
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
+        },
+        "workspace_volume": {
+          "name": "Volume dell'area di lavoro",
+          "description": "Mantiene /workspace di ogni nuova sessione su un volume dedicato invece che sul disco della sandbox. Kortix lo attiva per progetto."
         }
       }
     },
@@ -1270,7 +1279,8 @@
       "manifestV2": {
         "title": "Migra il manifest a v2 (kortix.yaml)",
         "description": "Converte kortix.toml v1 nel file kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare."
-      }
+      },
+      "agentEditorHint": "Questo progetto usa un manifest versione 1. Aggiornalo a <code>kortix.yaml</code> versione 3 per modificare qui le istruzioni, il modello, i permessi degli strumenti e gli accessi di questo agente."
     },
     "plan": {
       "managedByAdmin": "Gestito da un amministratore dell'account",
@@ -1315,7 +1325,8 @@
       "total": "Totale",
       "history": "Cronologia",
       "historyDescription": "Il costo di ogni sessione e tutti i crediti aggiunti o spesi.",
-      "openLedger": "Apri registro"
+      "openLedger": "Apri registro",
+      "unit": "{count, plural, one {credito} other {crediti}}"
     },
     "tokens": {
       "keyRevoked": "Chiave API revocata",
@@ -1385,6 +1396,19 @@
       "adminOnly": "Solo il proprietario o un amministratore può connettere GitHub per questo account.",
       "disconnectedToast": "GitHub disconnesso",
       "disconnectFailed": "Impossibile disconnettere GitHub"
+    },
+    "mcp": {
+      "serverTitle": "Server",
+      "serverDescription": "Un URL per ogni progetto che puoi aprire. Il tuo client accede con Kortix alla prima connessione.",
+      "urlLabel": "URL del server",
+      "clientsTitle": "Client",
+      "clientsDescription": "Aggiungi Kortix al client che usi."
+    },
+    "computer": {
+      "oneClickDescription": "L'app desktop connette questo computer con un clic.",
+      "desktopLabel": "App desktop",
+      "download": "Scarica",
+      "cliLabel": "Riga di comando"
     }
   },
   "triggers": {
@@ -1667,6 +1691,31 @@
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
     },
+    "pinArchive": {
+      "pin": "Fissa sessione",
+      "unpin": "Rimuovi dai fissati",
+      "archive": "Archivia sessione",
+      "unarchive": "Rimuovi dall’archivio",
+      "pinned": "Sessione fissata",
+      "unpinned": "Sessione rimossa dai fissati",
+      "archived": "Sessione archiviata",
+      "unarchived": "Sessione rimossa dall’archivio",
+      "pinFailed": "Impossibile fissare la sessione",
+      "unpinFailed": "Impossibile rimuovere la sessione dai fissati",
+      "archiveFailed": "Impossibile archiviare la sessione",
+      "unarchiveFailed": "Impossibile rimuovere la sessione dall’archivio",
+      "undo": "Annulla",
+      "section": "Fissate",
+      "view": "Archiviate",
+      "empty": "Le sessioni che archivi verranno mostrate qui.",
+      "bulkArchive": "Archivia",
+      "bulkUnarchive": "Rimuovi dall’archivio",
+      "bulkArchived": "{count, plural, one {# sessione archiviata} other {# sessioni archiviate}}",
+      "bulkUnarchived": "{count, plural, one {# sessione rimossa dall’archivio} other {# sessioni rimosse dall’archivio}}",
+      "bulkFailed": "{count, plural, one {Impossibile modificare # sessione} other {Impossibile modificare # sessioni}}",
+      "showArchived": "Sessioni archiviate",
+      "pinnedMark": "Fissata"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Personalizza barra laterale",
@@ -1680,10 +1729,7 @@
     "underMore": "Altro",
     "sidebarEmpty": "Trascina qui un elemento per mostrarlo nella barra laterale.",
     "moreEmpty": "Trascina qui un elemento per spostarlo in Altro.",
-    "moreCaption": "Gli elementi in Altro si aprono dal menu Altro, sotto la navigazione.",
-    "trialBadge": "Prova {plan} · {days, plural, =0 {termina oggi} one {# giorno rimasto} other {# giorni rimasti}}",
-    "trialPlanEnterprise": "Enterprise",
-    "trialPlanCredits": "Crediti"
+    "moreCaption": "Gli elementi in Altro si aprono dal menu Altro, sotto la navigazione."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1815,7 +1861,9 @@
     },
     "lost": {
       "title": "Il computer di questa sessione è andato perso",
-      "message": "Il suo sandbox cloud è scomparso dal lato del provider, quindi questa sessione non può essere riavviata né recuperata. È un problema nostro, non dipende da te: è stato segnalato automaticamente. Tutto ciò che è stato sottoposto a commit e inviato da questa sessione è al sicuro nel repository del tuo progetto."
+      "message": "Il suo sandbox cloud è scomparso dal lato del provider, quindi questa sessione non può essere riavviata né recuperata. È un problema nostro, non dipende da te: è stato segnalato automaticamente. Tutto ciò che è stato sottoposto a commit e inviato da questa sessione è al sicuro nel repository del tuo progetto.",
+      "continueMessage": "Il suo sandbox cloud è scomparso dal lato del provider. È un problema nostro ed è stato segnalato. Continua la sessione su un nuovo computer: parte dal branch della sessione e riporta questa conversazione. Il lavoro non sottoposto a commit e push resta perso.",
+      "continue": "Continua sessione"
     },
     "restart": {
       "label": "Riavvia sessione",
@@ -1947,7 +1995,27 @@
     "model": "Modello",
     "systemPrompt": "Prompt di sistema",
     "systemPromptPlaceholder": "Definisci come dovrebbe comportarsi il tuo worker...",
-    "customizeIcon": "Clicca per personalizzare l'icona del worker"
+    "customizeIcon": "Clicca per personalizzare l'icona del worker",
+    "grants": {
+      "subagents": {
+        "title": "Subagenti",
+        "description": "Agenti che questo agente può avviare per un sottocompito.",
+        "all": "Ogni subagente di questo progetto, compresi quelli aggiunti in seguito.",
+        "empty": "Nessun subagente dichiarato in questo progetto."
+      },
+      "commands": {
+        "title": "Comandi",
+        "description": "Comandi slash che questo agente può eseguire.",
+        "all": "Ogni comando di questo progetto, compresi quelli aggiunti in seguito.",
+        "empty": "Nessun comando registrato in questo progetto."
+      },
+      "extensions": {
+        "title": "Estensioni",
+        "description": "Plugin e pacchetti che una sessione di questo agente carica.",
+        "all": "Ogni estensione di questo progetto, comprese quelle aggiunte in seguito.",
+        "empty": "Nessuna estensione registrata in questo progetto."
+      }
+    }
   },
   "home": {
     "heroPlaceholder": "Descrivi il compito che vuoi che il tuo Worker completi..."
@@ -2063,12 +2131,15 @@
     "expandQuotes": "Espandi citazioni",
     "collapseQuotes": "Comprimi citazioni",
     "stopUnconfirmed": "Impossibile confermare l’arresto. L’agente potrebbe essere ancora in esecuzione. Riprova.",
+    "stoppedBy": "Interrotto da {name}",
     "queued": "In coda",
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
+    "queuedActions": "Azioni del messaggio",
     "steerNextStep": "Letto al passo successivo",
     "queuedByAnotherMember": "Inviato da un altro membro. Solo quella persona può modificarlo o inviarlo.",
+    "commandRunsWhenDone": "Si avvia quando l'agente termina",
     "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",
     "steerFallbackNotPrompter": "Attende questo turno. Lo ha avviato un altro membro.",
     "steerFallbackTurnEnded": "Viene eseguito come turno a sé. Il turno è terminato prima.",
@@ -2110,11 +2181,8 @@
       "cancelSubscriptionDescription": "Il tuo piano resta attivo fino alla fine del periodo di fatturazione corrente, poi termina. Puoi riattivarlo fino ad allora.",
       "reactivateSubscription": "Riattiva abbonamento",
       "commitmentCancelHint": "Il tuo impegno dura fino al {date}. Potrai annullare dopo.",
-      "trialDaysLeft": "Prova · {days, plural, one {# giorno rimasto} other {# giorni rimasti}}",
-      "trialEndsToday": "Prova · termina oggi",
-      "ends": "Termina il {date}",
-      "annualContract": "Contratto annuale",
-      "graceUntil": "SSO resta attivo fino al {date}"
+      "graceUntil": "SSO resta attivo fino al {date}",
+      "scheduledFrom": "→ {amount}/mese dal {date}"
     },
     "topup": {
       "minimum": "La ricarica minima è {amount}.",
@@ -2131,11 +2199,11 @@
       "custom": "Personalizzato",
       "creditHintBonus": "{credits} crediti + {bonus} di bonus · aggiunti non appena paghi.",
       "autoTopupOff": "Ricarica automatica: disattivata",
-      "autoTopupOn": "Ricarica automatica: aggiunge {amount} quando il saldo scende sotto {threshold}",
+      "autoTopupOn": "Ricarica automatica: aggiunge {amount} quando il saldo scende sotto {threshold} crediti",
       "ledgerBonus": "Bonus di ricarica"
     },
     "autoTopup": {
-      "bufferError": "L'importo della ricarica deve superare la soglia di almeno {buffer} — inserisci {minimum} o più.",
+      "bufferError": "Inserisci {minimum} o più: una ricarica deve aggiungere almeno {buffer} crediti in più della soglia.",
       "addPaymentFirst": "Aggiungi un metodo di pagamento prima di attivare la ricarica automatica.",
       "saved": "Ricarica automatica salvata",
       "updateFailed": "Impossibile aggiornare la ricarica automatica",
@@ -2147,7 +2215,7 @@
       "add": "Aggiungi",
       "amountLabel": "Importo della ricarica in dollari",
       "whenBelow": "quando il saldo scende sotto",
-      "thresholdLabel": "Soglia della ricarica in dollari",
+      "thresholdLabel": "Soglia della ricarica in crediti",
       "save": "Salva",
       "paymentNeeded": "Aggiungi un metodo di pagamento per eseguire la ricarica automatica.",
       "turnedOffAfterFailure": "La ricarica automatica è stata disattivata il {date}: l'ultimo addebito non è riuscito ({reason}). Aggiorna il metodo di pagamento, poi riattiva la ricarica automatica.",
@@ -2164,26 +2232,42 @@
         "unchanged": "È già il tuo piano.",
         "paymentPending": "Il pagamento richiede conferma",
         "paymentPendingDescription": "Apertura del portale di fatturazione per confermarlo.",
-        "failed": "Impossibile modificare il piano"
+        "failed": "Impossibile modificare il piano",
+        "scheduled": "Downgrade programmato",
+        "scheduledDescription": "Dal {date}: {amount} / mese. Fino ad allora non cambia nulla.",
+        "kept": "Piano mantenuto",
+        "keptDescription": "Resti a {amount} / mese. Il downgrade è annullato.",
+        "raised": "Upgrade a {amount} / mese",
+        "raisedDescription": "Addebitati {due}. Aggiunti {credits} crediti."
       },
       "planCard": {
         "title": "Crediti mensili",
         "description": "Tutti i membri condividono un unico pool di crediti. I crediti non usati si trasferiscono al mese successivo.",
         "rate": "1 credito = 0,01 $ di calcolo sandbox e utilizzo dei modelli gestiti.",
-        "raiseHint": "Un aumento viene addebitato subito, in proporzione, e aggiunge subito i crediti proporzionali.",
         "cutHint": "Una riduzione parte dal prossimo rinnovo.",
         "subscribeAction": "Abbonati per {amount} / mese",
         "updateAction": "Passa a {amount} / mese",
         "chooseAction": "Aggiorna piano",
         "ownerOnly": "Solo i proprietari e gli amministratori dell'account possono modificare il piano.",
-        "enterpriseNote": "I piani Enterprise sono gestiti con il tuo team di riferimento."
+        "scheduledNotice": "Passa a {amount} / mese il {date}. Fino ad allora piano e crediti restano invariati.",
+        "keepAction": "Mantieni il piano attuale",
+        "keepSummary": "Annulla il passaggio a {amount} / mese. Il piano resta com’è.",
+        "raiseSummary": "Paghi {due} oggi, in proporzione al resto del periodo. {credits} crediti vengono aggiunti subito, poi {amount} / mese.",
+        "raiseSummaryLoading": "Calcolo dell’addebito di oggi…",
+        "raiseAction": "Paga {due} ed effettua l’upgrade",
+        "cutSummary": "Nessun addebito e nessun rimborso. Piano e crediti restano fino al {date}; da allora paghi {amount} / mese.",
+        "cutAction": "Downgrade il {date}",
+        "subscribeSummary": "Paghi {amount} oggi. {credits} crediti vengono aggiunti subito, poi ogni mese."
       },
       "modal": {
         "title": "Scegli il tuo livello di crediti",
         "description": "Un solo piano a livelli. Membri illimitati condividono un unico pool di crediti e i crediti non usati si trasferiscono al mese successivo.",
         "askOwnerHint": "Solo i proprietari e gli amministratori dell'account possono modificare il piano.",
         "askOwnerTitle": "Chiedi a un proprietario dell'account",
-        "askOwnerBody": "Solo i proprietari e gli amministratori dell'account possono gestire la fatturazione. Chiedi a uno di loro di scegliere un livello di crediti per l'account."
+        "askOwnerBody": "Solo i proprietari e gli amministratori dell'account possono gestire la fatturazione. Chiedi a uno di loro di scegliere un livello di crediti per l'account.",
+        "planTitle": "Piano e crediti",
+        "planDescription": "Cambia il piano mensile o aggiungi crediti per questo mese.",
+        "topupSecondary": "Ti serve di più questo mese? Aggiungi crediti"
       },
       "admin": {
         "plan": "Piano",
@@ -2196,7 +2280,6 @@
         "creditsPerMonth": "{credits} crediti / mese",
         "credits": "{credits} crediti",
         "price": "{amount} / mese",
-        "popular": "Il più popolare",
         "current": "Attuale",
         "choose": "Scegli un livello",
         "chooseHint": "I livelli partono da {min} al mese.",
@@ -2409,11 +2492,11 @@
         },
         "credit": {
           "question": "Cosa si può comprare con un credito?",
-          "answer": "1 credito vale 0,01 $. I crediti pagano il computer dell'agente, fatturato al secondo per risorsa: {vcpuRate} per vCPU all'ora, {memoryRate} per GB di RAM all'ora, {diskRate} per GB di archiviazione al mese. La macchina predefinita da {spec} usa circa {creditsPerHour} crediti all'ora, quindi 1 credito vale circa {minutes} minuti. Un computer fermo non costa nulla. I crediti pagano anche i modelli Kortix, al prezzo base del provider più una commissione di piattaforma del {fee}%. La tua chiave API o il tuo abbonamento ChatGPT non consumano crediti."
+          "answer": "1 credito vale 0,01 $. I crediti pagano il computer dell'agente, fatturato al secondo per risorsa: {vcpuRate} per vCPU all'ora, {memoryRate} per GB di RAM all'ora, {diskRate} per GB di archiviazione al mese. La macchina predefinita da {spec} usa circa {creditsPerHour} crediti all'ora, quindi 1 credito vale circa {minutes} minuti. Un computer fermo non costa nulla. I crediti pagano anche i modelli Kortix, al prezzo base del provider più una commissione di piattaforma del {fee}%. La tua chiave API è gratuita per i primi 1.000 $ di uso dei modelli al mese, poi il 5% del prezzo del provider viene pagato con i crediti. Un abbonamento ChatGPT non consuma crediti."
         },
         "amounts": {
           "question": "Quanto pago ogni mese?",
-          "answer": "Scegli un livello da 50 $ al mese (5.000 crediti) a 10.000 $ al mese (1.000.000 di crediti). 200 $ al mese (20.000 crediti) è il più popolare. Ogni livello offre crediti alla stessa tariffa: 100 crediti per dollaro. Per più di 10.000 $ al mese contatta il reparto vendite."
+          "answer": "Scegli un livello da 50 $ al mese (5.000 crediti) a 10.000 $ al mese (1.000.000 di crediti). Ogni livello offre crediti alla stessa tariffa: 100 crediti per dollaro. Per più di 10.000 $ al mese contatta il reparto vendite."
         },
         "members": {
           "question": "Pago per i membri?",
@@ -2425,7 +2508,7 @@
         },
         "models": {
           "question": "I modelli consumano crediti?",
-          "answer": "Solo i modelli Kortix. Costano il prezzo base del provider più una commissione di piattaforma del {fee}%, pagata con i crediti, e l'app mostra i prezzi base. Con la tua chiave API o un abbonamento ChatGPT collegato, l'uso del modello va al tuo provider e non consuma crediti. In quel caso i crediti pagano solo il computer dell'agente."
+          "answer": "I modelli Kortix, e le tue chiavi API oltre 1.000 $ di uso dei modelli al mese. I modelli Kortix costano il prezzo base del provider più una commissione di piattaforma del {fee}%, pagata con i crediti, e l'app mostra i prezzi base. Con la tua chiave API, l'uso del modello va al tuo provider: i primi 1.000 $ al mese sono gratuiti, poi il 5% del prezzo del provider viene pagato con i crediti. Un abbonamento ChatGPT collegato non consuma crediti."
         },
         "topup": {
           "question": "Posso aggiungere crediti a metà mese?",
@@ -2490,9 +2573,9 @@
         "title": "I modelli sono fatturati separatamente dal computer dell'agente",
         "description": "I crediti pagano il computer dell'agente. Il costo di una chiamata a un modello dipende da dove arriva il modello.",
         "keys": {
-          "tag": "Nessun credito",
+          "tag": "Gratis fino a 1.000 $/mese",
           "title": "Le tue chiavi API",
-          "body": "Aggiungi una chiave di Anthropic, OpenAI o di qualsiasi altro provider. L'uso del modello va direttamente al tuo provider e non consuma crediti."
+          "body": "Aggiungi una chiave di Anthropic, OpenAI o di qualsiasi altro provider. L'uso del modello va direttamente al tuo provider. I primi 1.000 $ al mese sono gratuiti, poi Kortix aggiunge il 5%, pagato con i crediti."
         },
         "chatgpt": {
           "tag": "Nessun credito",
@@ -2504,35 +2587,40 @@
           "title": "Modelli Kortix",
           "body": "Nessuna chiave da gestire. Ogni chiamata costa il prezzo base del provider più una commissione di piattaforma del {fee}%, pagata con i crediti. L'app mostra i prezzi base."
         },
-        "summary": "Con le tue chiavi, i crediti pagano solo il computer dell'agente."
+        "summary": "Con le tue chiavi, i crediti pagano il computer dell'agente e il 5% dell'uso dei modelli oltre 1.000 $ al mese."
       }
     },
     "access": {
-      "enterprise": "Enterprise",
-      "credits": "Crediti",
-      "trialTitle": "Prova {plan} · {days, plural, =0 {termina oggi} one {# giorno rimasto} other {# giorni rimasti}}",
-      "trialBody": "Questo account è in prova {plan} fino al {date}. Poi torna al piano che paga. Passa a un piano superiore in qualsiasi momento per mantenerlo.",
-      "trialBodyEnterprise": "Questo account è in prova Enterprise fino al {date}: SSO, SCIM, ruoli avanzati e log di audit sono attivi. Poi torna al piano che paga, e SSO e SCIM restano attivi per altri 14 giorni. Passa a un piano superiore in qualsiasi momento.",
-      "upgrade": "Passa a un piano superiore",
       "talkToSales": "Parla con le vendite",
-      "askManager": "Chiedi a un proprietario o a un amministratore dell'account di passare a un piano superiore.",
       "offerTitle": "Offerta Enterprise",
-      "offerBody": "Licenza da {license} e {credits} in crediti all'anno, per {months, plural, one {# mese} other {# mesi}}.",
       "offerAccept": "Accetta e paga",
       "offerInvoiced": "Questa offerta è fatturata: il tuo referente Kortix invia la fattura.",
       "offerFailed": "Impossibile aprire il checkout",
       "graceTitle": "Accesso Enterprise terminato",
-      "graceBodyTrial": "La prova Enterprise è terminata. SSO e SCIM restano attivi fino al {date}, così nessuno resta bloccato fuori. Passa a un piano superiore per mantenere Enterprise.",
       "graceBodyContract": "Il contratto Enterprise è terminato. SSO e SCIM restano attivi fino al {date}, così nessuno resta bloccato fuori. Parla con le vendite per rinnovare.",
       "managerRequired": "Un proprietario o un amministratore sottoscrive",
-      "featuresSection": "Single sign-on, sincronizzazione directory, ruoli avanzati e log di audit sono inclusi nel piano Enterprise.",
-      "featuresLabel": "SSO, SCIM, ruoli avanzati e log di audit",
-      "featuresTrial": "Attivo durante la prova Enterprise, fino al {date}.",
-      "featuresContract": "Attivo con il tuo contratto Enterprise.",
+      "featuresLabel": "Funzionalità Enterprise",
       "featuresGrace": "SSO e SCIM restano attivi fino al {date}. Parla con le vendite per mantenere Enterprise.",
-      "featuresNotOnPlan": "Incluso nel piano Enterprise.",
       "featuresOn": "Attivo",
-      "featuresOff": "Disattivato"
+      "featuresOff": "Disattivato",
+      "featuresOffDescription": "SSO, SCIM, ruoli avanzati, log di audit e branding.",
+      "featuresDemo": "Attivo come demo. Parla con le vendite per una licenza.",
+      "featuresLicensed": "Con licenza",
+      "featuresLicensedRenews": "Con licenza · si rinnova il {date}",
+      "featuresLicensedUntil": "Con licenza fino al {date}",
+      "featuresDemoBadge": "Demo",
+      "demoTurnOn": "Attiva la demo",
+      "demoTurnOff": "Disattiva la demo",
+      "demoTurnOnEnterprise": "Attiva la demo Enterprise",
+      "demoOnToast": "Demo Enterprise attiva. Le vendite ti contatteranno.",
+      "demoOffToast": "Demo Enterprise disattivata.",
+      "demoFailed": "Impossibile modificare la demo Enterprise",
+      "salesSent": "Le vendite ti scriveranno entro un giorno.",
+      "salesFailed": "Impossibile contattare le vendite",
+      "offerLicense": "Licenza da {license} per {months, plural, one {# mese} other {# mesi}}.",
+      "offerAskManager": "Un proprietario o un amministratore dell'account accetta l'offerta.",
+      "upsellDemoHint": "La demo lo attiva subito. Poi le vendite ti contattano per una licenza.",
+      "upsellAskManager": "Chiedi a un proprietario o a un amministratore di attivare la demo Enterprise."
     }
   },
   "ssoRequired": {
@@ -2655,7 +2743,7 @@
       },
       "link": {
         "title": "Controlla la tua email",
-        "description": "Abbiamo inviato un link di accesso a <address>{email}</address>. Aprilo per continuare.",
+        "description": "Abbiamo inviato un link a <address>{email}</address>. Aprilo per continuare.",
         "notReceived": "Non hai ricevuto il link?",
         "resendIn": "Invia di nuovo tra {seconds}",
         "resend": "Invia di nuovo"
@@ -2829,7 +2917,14 @@
     "failedToCopyFileContent": "Impossibile copiare il contenuto del file",
     "noContentAvailable": "Nessun contenuto disponibile",
     "noContentDescription": "Questa esecuzione dello strumento non ha prodotto alcun contenuto di input o output da visualizzare.",
-    "tool": "Strumento"
+    "tool": "Strumento",
+    "codemode": {
+      "ranScript": "Script eseguito",
+      "runningScript": "Script in esecuzione",
+      "scriptFailed": "Script non riuscito",
+      "calls": "{count, plural, one {# chiamata a strumento} other {# chiamate a strumenti}}",
+      "noOutput": "Nessun output"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Capito",
@@ -3316,7 +3411,7 @@
       "contactGeneral": "Generale",
       "contactSecurity": "Sicurezza",
       "faqWhatCreditsQuestion": "Cosa sono i crediti e quanto costano?",
-      "faqWhatCreditsAnswerBefore": "I crediti pagano il computer dell'agente e i modelli Kortix. 1 credito costa 0,01 $ e il computer dell'agente predefinito usa circa 11 crediti all'ora. I modelli Kortix costano il prezzo base del provider più una commissione di piattaforma del 5,5%. La tua chiave API o il tuo abbonamento ChatGPT non usano crediti. Piani, ricariche e come far durare il saldo sono in",
+      "faqWhatCreditsAnswerBefore": "I crediti pagano il computer dell'agente e i modelli Kortix. 1 credito costa 0,01 $ e il computer dell'agente predefinito usa circa 11 crediti all'ora. I modelli Kortix costano il prezzo base del provider più una commissione di piattaforma del 5,5%. La tua chiave API è gratuita per i primi 1.000 $ di uso dei modelli al mese, poi costa il 5%. Un abbonamento ChatGPT non usa crediti. Piani, ricariche e come far durare il saldo sono in",
       "faqWhatCreditsLink": "Crediti e utilizzo",
       "faqWhatCreditsAnswerAfter": "."
     }
@@ -7510,6 +7605,7 @@
       "treeMessages": "messaggi",
       "subAgentsLoaded": "{loaded} di {total} sub-agenti caricati",
       "loadAll": "Carica tutti",
+      "subAgentLoadFailed": "Impossibile caricare",
       "detailInput": "Token di input",
       "detailOutput": "Token di output",
       "detailReasoning": "Token di ragionamento",
@@ -9816,6 +9912,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",
       "authRequestRateLimit": "Troppe richieste. Riprova tra qualche minuto.",
+      "text03217276a5f1": "Saldo {value0} crediti",
       "text0b6a47661327": "Proprietario sconosciuto",
       "text1a9030082a20": "Crea competenza",
       "text25ab55af92b1": "Caricamento allegato avviato",
@@ -9990,7 +10087,6 @@
       "text0541d9e84b58": "Il record contiene il connettore e l’azione esatta, l’agente, la persona o il trigger alla base della sessione, l’esito e chi ha rilasciato una chiamata sospesa. Non esiste un percorso verso uno strumento connesso che eviti il componente che scrive il record.",
       "text0547f5c8932c": "Ti affido qualcosa a grandi linee, esco, torno e lo trovo fatto bene. Idealmente meglio di come l’avrei fatto io.",
       "text05487af3f074": "Rinominato",
-      "text05643520119a": "I diritti, i limiti di progetti e sessioni e il controllo dei modelli gestiti verranno ripristinati alla richiesta successiva. I crediti già concessi non verranno recuperati.",
       "text0575f29df888": "Modello",
       "text057a35b34fcb": "Nella dashboard Auth0: Applications → Applications → apri (o crea) l'applicazione per Kortix. Se ne crei una nuova, scegli \"Regular Web Application\" — il componente SAML2 funziona indipendentemente dal tipo, ma così eviti dubbi sulla selezione.",
       "text057b5de48d7b": "Minimo",
@@ -10036,7 +10132,7 @@
       "text0679d5053dda": "{value0} non ha segnalato alcuno strumento. Una volta sincronizzato, ognuno ottiene il proprio controllo predefinito · Blocca · Chiedi · Consenti qui.",
       "text067ed033e4a6": "Sei pattern che interrompono il sistema, ciascuno con la relativa soluzione accanto.",
       "text0686a22fbf7d": "Un'altra sessione: stesso progetto, stesso team o un altro cliente",
-      "text0690079160b0": "\"{value0}\" eliminato",
+      "text0690079160b0": "{value0} eliminato",
       "text0690d70b6301": "Easy connect copre oltre 3.000 app tramite le rispettive schermate OAuth ed è il percorso giusto per le sorgenti SaaS ai margini dello stack dati. Per il warehouse, i connettori diretti sono di solito la risposta più corretta: la maggior parte dei warehouse si raggiunge tramite driver o API, non tramite un catalogo OAuth.",
       "text06993786f49e": "GitHub disconnesso",
       "text06a6228ef85f": "quando colleghi un repository — e ognuno è protetto allo stesso modo; nessuno può essere scelto o modificato qui.",
@@ -10231,7 +10327,6 @@
       "text0c79a9c22284": "Applicata",
       "text0c814b60fca5": "Continua al provider",
       "text0c8a43b9f730": "Cifrato con AES-256-GCM tramite una chiave derivata per progetto.",
-      "text0c94dd964eb3": "Livelli, crediti, prove, diritti, membri e stato di fatturazione, per account.",
       "text0c953ab32c60": "Qualcosa è andato storto.",
       "text0c9fca0b952c": "Sessione aperta (letture raggruppate)",
       "text0ca058a2bd7f": "Dashboard interne per il team operativo",
@@ -10350,7 +10445,6 @@
       "text107f1806b5d7": "Attività completata",
       "text10879d125f53": "Il sandbox si sta preparando.",
       "text108b466ef169": "Non è stato aperto nulla automaticamente perché l'hai appena archiviato. Creane uno nuovo per continuare.",
-      "text108bff86a0eb": "Periodo terminato",
       "text108d15248c17": "Solo eventi con azione che inizia con \"{value0}\"",
       "text108fd36702c5": "L'ambiente di questo progetto è pronto",
       "text109311589787": "Runtime",
@@ -10717,7 +10811,6 @@
       "text1ae97542051d": "Comando di installazione",
       "text1aeb8993945b": "La maggior parte degli strumenti AI dà all'agente tutto ciò a cui può accedere la persona che lo ha avviato. Kortix no. L'identità di un agente ha le proprie policy, valutate autonomamente, quindi non può ereditare l'accesso a qualcosa che non gli hai mai concesso.",
       "text1af17ebb39e4": "La chiamata passa direttamente. Per le letture e le scritture ordinarie di cui hai già deciso di fidarti.",
-      "text1af2ef8f1409": "Richiedi una demo",
       "text1af6ff873b59": "rfp-response/SKILL.md",
       "text1afdeb0c03d3": "Elementi di revisione aggiornati in blocco",
       "text1b00fe7ae5e3": "La tua rete",
@@ -10853,7 +10946,6 @@
       "text1f05c7f5b64d": "Consenti tutto",
       "text1f0a5246c481": "Nessun modello configurato",
       "text1f1146934bab": "Installa la CLI e controlla Kortix dalla shell.",
-      "text1f1196332022": "Credito concesso ($)",
       "text1f1228d5e972": "Manifest Slack copiato",
       "text1f23d8400f20": "Un filtro è un percorso puntato confrontato con lo stesso payload visualizzato dal prompt. Serve a interrompere i loop: una sorgente che segnala entrambi i lati di una conversazione altrimenti avvierebbe l'agente sulla propria risposta.",
       "text1f2550ed44dc": "Quale agente, modello e criterio di partecipazione utilizza ogni canale connesso. Un canale senza override segue l’impostazione predefinita del progetto.",
@@ -10888,7 +10980,6 @@
       "text1fc6f3927039": "URI del pubblico (ID entità SP)",
       "text1fc9a387654d": "Seleziona tutto",
       "text1fcc4b37141c": "scartata",
-      "text1fd045f22dfd": "Non è mai stata emessa alcuna prova.",
       "text1fd9ae1607aa": "Invita",
       "text1fe08365831b": "Sandbox della sessione riscaldata",
       "text1fece1858ee9": "Aggiungi a Teams",
@@ -11133,7 +11224,6 @@
       "text2730183d6b77": "Organizzazioni",
       "text2732406e3be5": "Nessuna sessione corrispondente",
       "text27342581678a": "Prestazioni di ogni provider: latenza di provisioning, percentuale di successo e distribuzione dei tempi.",
-      "text27343e44b3f1": "Costo Kortix",
       "text2743ed9c1ab8": "oltre il limite",
       "text2749b54ef956": "Prova un'altra ricerca o cancella il filtro corrente.",
       "text274a70ce834d": "richiede una modifica",
@@ -11156,6 +11246,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Errore sconosciuto",
       "text27d628c8b427": "{label} ha terminato.",
+      "textc0589750863c": "{count} attività completate",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Torna all'applicazione (Applications → la tua app) e assicurati che sia selezionata la scheda \"Sign On\".",
@@ -12816,7 +12907,6 @@
       "text574e85a71662": "Migrazione in corso",
       "text57530d39031c": "Trova gruppi per nome",
       "text57575ab4b970": "È stato eseguito prima che tu lo leggessi",
-      "text57579cf783f3": "Sostituisci prova",
       "text5766126e8727": "inset(0 0 0 0)",
       "text5775c8f9216d": "Pannello Entra Users and groups con Add user/group aperto e un utente selezionato per l'assegnazione",
       "text5776b0d8f73f": "La piattaforma",
@@ -13080,7 +13170,6 @@
       "text5f303c017ed7": "Un laptop, un VPS o la tua VPC — esattamente lo stesso stack del cloud Kortix.",
       "text5f31515299e5": "Principal",
       "text5f3719d952f7": "219,400",
-      "text5f448b8c41a4": "es. 50",
       "text5f513e5b2937": "Casi d’uso Kortix",
       "text5f61b63c2c4a": "Associazioni dei canali",
       "text5f69c8b42ef2": "Modelli linguistici di grandi dimensioni",
@@ -13580,7 +13669,6 @@
       "text6d97796afbde": "northwind — principale",
       "text6d9a6f97a5fd": "Completata",
       "text6da390b94eb6": "Seleziona \"Use this for Recipient URL and Destination URL\". Imposta \"Name ID format\" su EmailAddress e \"Application username\" su Email: Kortix associa gli account tramite email.",
-      "text6db974c8b732": "{value0} si comporta come {value1} per {value2} giorni.",
       "text6dc4500d8999": "I principali prodotti di helpdesk sono nel catalogo Easy connect, dietro le rispettive schermate OAuth. Leggi la coda, prepara la risposta e aggiorna il ticket dove lo hai consentito.",
       "text6dcee355767d": "Validatore URL ACS (Consumer)",
       "text6dd06b2529d4": "Crea un ruolo personalizzato",
@@ -13701,7 +13789,6 @@
       "text713166971d73": "Comando",
       "text7140f4f19dec": "Verifica",
       "text7144535c8be1": "dashboard Kortix",
-      "text7147a36979c2": "Nota (perché, chi l'ha richiesto, contesto dell'accordo)",
       "text7149fd6e7d6a": "# da qui in poi è solo un repo",
       "text714db3dbb0b7": "Top-p",
       "text714de9c47e62": "Un agente che riscrive le proprie istruzioni arriva nello stesso modo di una migrazione del database: un branch, un commit, un diff, un revisore. L’azienda ha un unico processo di revisione, non due.",
@@ -14165,7 +14252,6 @@
       "text7ea05ee375a0": "Nessun prompt salvato disponibile.",
       "text7ea27c63aff1": "Gestisci fatturazione",
       "text7ea4733fb624": "Disponibile su Enterprise e su un'istanza self-hosted con una licenza Enterprise. I ruoli integrati sopra sono gratuiti per ogni piano.",
-      "text7ead9bf84af8": "Migra alla v2",
       "text7ebef26162b5": "| * s_9a04",
       "text7ec0261b8e8a": "Esegui l'upgrade",
       "text7eca5e05f915": "Scaricato {value0}",
@@ -14373,7 +14459,6 @@
       "text8521333bac45": "Un agente non può fare merge verso main. L'autorizzazione esiste: un admin può concedere project.cr.merge, ma il permesso vive in kortix.yaml, quindi ampliarlo è una modifica sottoposta a revisione. Nulla di tutto ciò è un'impostazione predefinita nascosta.",
       "text85231c543c71": "Configurazione, attività e contesto del progetto",
       "text8527a891e224": "14",
-      "text8529ff665870": "Concedi prova",
       "text8535f458db4b": "Legge i log e distribuisce la correzione.",
       "text853b0ebee12c": "Disattiva l'audio",
       "text854362dd1a76": "Spostato \"{value0}\"",
@@ -14996,7 +15081,7 @@
       "text967549497036": "Deseleziona tutto",
       "text9676bdc9332f": "Collega il mio account",
       "text96879611650f": "attivo",
-      "text968cf44e4d9c": "Un comando avvia il proprio turno, quindi interromperebbe questo turno.",
+      "text1d28e1a19048": "Invialo di nuovo al termine di questo turno. Inviarlo ora interromperebbe il turno.",
       "text968d0a9d24a6": "Copia snippet",
       "text9696f2b4e020": "my-api",
       "text969a25894852": "Migra a un altro provider…",
@@ -15073,12 +15158,10 @@
       "text9888c8324cb5": "leggi il codice.",
       "text988c3f87ad11": "Qualsiasi identity provider compatibile con SCIM 2.0",
       "text988d146cc0be": "Cambiare provider?",
-      "text98a66e9745c9": "Prova",
       "text98aa52b34c8f": "Aggiungi un segreto",
       "text98aae8972102": "Chiavi API",
       "text98abff28a940": "Corrisponde",
       "text98b2093683f0": "URL dei metadati del provider di identità",
-      "text98b6c1f78029": "Prova concessa",
       "text98ca0d518997": "ancora nessuno",
       "text98d254a311d0": "Rinomina gruppo",
       "text98d27bdc2fa7": "Questa connessione del canale non ha ancora un workspace Slack.",
@@ -15271,7 +15354,6 @@
       "text9df141eadb06": "Apri in Kortix",
       "text9df6b026a8c6": "servizio",
       "text9df96b5f7d02": "in modo che i messaggi in uscita dell'agente's non possano riattivarlo.",
-      "text9e0449fd24b6": "{value0} è tornato al livello fatturato.",
       "text9e079c7df9f1": "Cerca progetti",
       "text9e0bb75942fd": "Spesa e gateway",
       "text9e1b76d01c46": "App → Autenticazione → Metodi di accesso",
@@ -16206,7 +16288,6 @@
       "textb91015bed915": "Impossibile caricare lo stato SSO",
       "textb931b468ad1a": "Impossibile raggiungere questa istanza. Potrebbe essere in avvio o temporaneamente offline. Nuovo tentativo automatico…",
       "textb93900bded31": "In elaborazione...",
-      "textb94207703902": "immediatamente.",
       "textb948f8d45e30": "Se l'accesso non riesce: \"access denied\" da Cloudflare → amplia o aggiungi un criterio Access (passaggio dei criteri). Se vieni reindirizzato dall'IdP → controlla il metodo di accesso upstream (primo passaggio). Se hai effettuato l'accesso ma non ci sono gruppi → conferma che l'attributo \"groups\" sia presente (passaggio dei gruppi) e che il suo NAME corrisponda a quello del passaggio di connessione.",
       "textb949c922b6ef": "Git",
       "textb94b96f978cd": "Modello sandbox",
@@ -16341,7 +16422,6 @@
       "textbcc3be342ea1": "Poetic compila le tue procedure in un linguaggio creato appositamente che esegue per te. Kortix mantiene il workflow come codice ordinario in un repo che possiedi e controlla il confine quando tocca il mondo. Un confronto tecnico tra due risposte allo stesso problema.",
       "textbcc54a5fd95e": "Cambia elenco",
       "textbcd03103c8c1": "Su una scheda, nel thread",
-      "textbcd80dd21f3c": "Durata personalizzata della prova in giorni",
       "textbcd8cc53f40e": "Nessuna descrizione",
       "textbcdbec03e086": "MFA richiesto per l'account",
       "textbce22443b335": "Nessuna condizione — ogni consegna avvia un'esecuzione.",
@@ -16561,7 +16641,6 @@
       "textc2dfb2c0eb28": "Un agente è entrambe le cose. È una risorsa che assegni alle persone — limita l’accesso a un sottoinsieme in Edit access, sotto Agents — ed è un’entità a sé: ogni agente ha un’identità di account di servizio che può avere ruoli, proprio come una persona.",
       "textc2e1dd25902a": "## Abbinamento di un pagamento a una fattura",
       "textc2ec18f03397": "Controllo dei file",
-      "textc2ef82e31689": "Funzionalità Enterprise",
       "textc2fd713fbf8f": "Colora il badge di questo agente negli elenchi delle sessioni.",
       "textc31723ab3302": "Ricerca…",
       "textc31c97ca7758": "    connectors: all",
@@ -16585,7 +16664,6 @@
       "textc3bf78fdd3b9": "Impossibile inviare la tua candidatura",
       "textc3c25857485f": "Fa",
       "textc3c709a999c1": "Lettura memoria…",
-      "textc3d1545dd522": "Converte il kortix.toml v1 nel kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma all'ultima baseline del marketplace e apre una richiesta di modifica per la revisione.",
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
@@ -16702,7 +16780,6 @@
       "textc6de6f45c827": "Aggiunta…",
       "textc6e03d8ea11f": "Membri o gruppi specifici",
       "textc6e9471a6ab2": "messaggio dell'utente · 15 allegati → riquadri quadrati disposti 4 per riga, massimo 8 con +7",
-      "textc6f380561a26": "Limite (USD)",
       "textc6f417d32fe6": "Anteprima interattiva di SSO, SCIM, RBAC avanzato e log di audit. Solo a scopo di valutazione: nessuna modifica alla fatturazione.",
       "textc6f813ed1902": "240 lead recuperati · 24 arricchiti · 3 sequenze scritte",
       "textc6fbb4b00507": "Le richieste vengono verificate rispetto al segreto salvato .",
@@ -16732,7 +16809,6 @@
       "textc7a1b38bba89": "Impossibile aggiungere la mappatura",
       "textc7a9aa43558f": "Nessun modello disponibile",
       "textc7affccb91f2": "così una credenziale non può finire nel record.",
-      "textc7bad0051b8a": "Parlaci del piano Enterprise: SSO, SCIM, RBAC, audit, SLA e DPA.",
       "textc7bcb471c03d": "Mostra nei selettori",
       "textc7ce396fcd33": "Prompt in coda",
       "textc7d4ebcd952a": "# chi può usare la chiave Stripe?",
@@ -17290,7 +17366,7 @@
       "textd728c56ec935": "Agisce in Kortix per suo conto",
       "textd72e311c4dda": "Riduci",
       "textd75025a6a12f": "Porta",
-      "textd780563bef66": "Attendi che l'agente termini prima di eseguire un comando.",
+      "text634e8a443a91": "Comando non inviato. L'agente sta ancora lavorando.",
       "textd787477fa89b": "Rimosso dal gruppo",
       "textd78d6709320c": "Scritta a partire dalle prove e dal codice esistente — legge il repository, quindi la bozza sa quale delle tre proposte è già quasi realizzata. È una bozza su cui discutere, non un piano da accettare.",
       "textd78ffa71af82": "L’agente prepara la risposta e arriva a send_email.",
@@ -17328,8 +17404,6 @@
       "textd83a0d814c59": "API Status mostra \"Enabled\" in verde, il parametro \"SCIM Username\" è associato a Email e il provisioning è abilitato senza il blocco per l'approvazione dell'amministratore.",
       "textd84b8be91e7b": "Kortix — Presentazioni",
       "textd84ee1e1e08b": "prova kortix init oppure / per i comandi",
-      "textd85a383e851d": "Migra il manifest alla v2 (kortix.yaml)",
-      "textd85abf75ffac": "Revoca prova",
       "textd861cc0af73c": "kortix init crea la struttura, kortix ship la rende operativa. È lo stesso repo che fa la stessa cosa, quindi lo sviluppo locale e il sistema live non appartengono più a categorie diverse.",
       "textd864380a766f": "La sandbox contiene un token Kortix con ambito di progetto e nessuna chiave di terze parti. Le credenziali del tracker e dell’helpdesk vengono decrittate lato server e allegate alla chiamata in uscita.",
       "textd8707d411d99": "Segreti",
@@ -18385,7 +18459,6 @@
       "textf7243551e2b7": "Controlla i dati inseriti",
       "textf730dd4bb7fb": "go-to-market.md",
       "textf748e0b183a3": "Segnala ciò che non può dimostrare",
-      "textf74efe18842d": "Questo progetto usa un manifest v1. Migra a",
       "textf75481058771": "Questo utente non è membro di questo account.",
       "textf7552f3489ab": "prop o usa il controllo di caricamento.",
       "textf7571d57f984": "È stato spostato o eliminato.",
@@ -18610,7 +18683,6 @@
       "textfd7c62b85d07": "Snapshot corretto con l'agente",
       "textfd7e911ee733": "Sandbox sottoposte a provisioning per provider e giorno.",
       "textfd8b8dae4421": "Zona pericolosa",
-      "textfd8beb3c3acc": "torna a",
       "textfd94861c802e": "Limiti per membro (",
       "textfdac955a2fcf": "Grazie.",
       "textfdb55672b8c6": "Provisioning → \"To App\" → Edit → abilita Create / Update / Deactivate Users → Save. Le assegnazioni e i gruppi inviati vengono quindi sincronizzati automaticamente quando cambiano.",
@@ -18691,6 +18763,7 @@
       "text5cbdd59d7048": "Tra tutti i provider",
       "text347cf684f3e7": "{value0}% dei nuovi sandbox",
       "textad0f852848bf": "{value0} riusciti · {value1} non riusciti",
+      "textbdb4791584c6": "{count, plural, one {# migrazione} other {# migrazioni}}",
       "text87ee04b2e9ee": "Nessuno arrestato",
       "text58dfb849aa70": "{value0} arrestati",
       "text42bd5f3bc3ca": "Mostrato nel tuo elenco di {value0}.",
@@ -18814,6 +18887,27 @@
       "text843ed3b90b42": "Comprimi questo file con un color.png 192×192 e un outline.png trasparente 32×32.",
       "text5c71673648a2": "In Teams vai su Apps → Manage your apps → Upload an app e carica lo zip.",
       "text91b9932411cc": "Aggiungi l'app a una chat o a un canale, poi menzionala per avviare una sessione.",
+      "textfd326bb01b61": "Incolla i tre valori del bot che hai appena creato.",
+      "text39864856b1bc": "Nel portale di Azure",
+      "text14bb4b708203": "In Microsoft Teams",
+      "textbda0f959cde0": "Tieni a portata di mano il valore del segreto. Lo incollerai nel passaggio successivo.",
+      "text9bd6f94da702": "Manifesto dell’app Teams per questo bot",
+      "text7fd0fd8f2405": "Usa il tuo bot Azure, poi menzionalo in qualsiasi chat o canale di Teams.",
+      "text776fd1de4147": "Chiedi a un amministratore dello spazio di lavoro di collegare Microsoft Teams.",
+      "text89e9e20668f3": "Porta il tuo agente su Slack",
+      "textc1bd5ca19f5f": "Porta il tuo agente su Teams",
+      "texta15b754f2e91": "Menzionalo in qualsiasi chat o canale e lavora lì, senza dashboard né cambi di contesto.",
+      "text675d4a4174ba": "riassumi questo thread",
+      "textbd52d3eb5ed1": "Tre decisioni finora, una domanda aperta per Leo.",
+      "textd3d6fcf27034": "# launch",
+      "textc6c8dad55129": "Maya",
+      "text9a059d44c8e5": "10:42 AM",
+      "text9bfa706b0569": "@Kortix",
+      "texta4b2d28ad49b": "Launch",
+      "text2c2e44899866": "Posts",
+      "text92dca4f34a6f": "10:43 AM",
+      "text5df6373cf99f": "cosa manca prima di venerdì?",
+      "textf4d1a9671f2f": "Ci penso io. Sto leggendo la checklist del lancio e i tre ticket aperti.",
       "textd208e2f1260f": "Apri l'interfaccia di amministrazione di Teams",
       "text98722a5463cb": "Impossibile collegare Teams",
       "text53e5f96332d9": "Concedi il consenso amministratore perché il bot Kortix possa funzionare nel tuo tenant.",
@@ -19186,6 +19280,7 @@
       "text724364ae40e3": "Flag sensibile del connettore impostato",
       "text8683950d26a1": "Account predefinito del connettore impostato",
       "textaada5aeaaa50": "Segreto personale impostato",
+      "textc250b6a5f8c8": "Segreto condiviso impostato",
       "textbc023fc623a3": "Accesso alla chiave del provider in pool impostato",
       "textac7fd4684634": "Credenziale Git del progetto impostata",
       "text520f1939d072": "Sospensione della coda dei prompt della sessione impostata",
@@ -19487,12 +19582,6 @@
       "servedModelInPlaceOf": "Al posto di",
       "servedModelBadge": "In esecuzione su {model}",
       "servedModelBarDescription": "{requested} non ha risposto all’ultima richiesta",
-      "computerAwakeStays": "La sandbox resta accesa finché sei qui · fino a {duration}",
-      "computerAwakeStops": "La sandbox si ferma tra {duration}. Invia un messaggio per tenerla accesa.",
-      "computerAwakeStopsSoon": "La sandbox si ferma a breve. Invia un messaggio per tenerla accesa.",
-      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
-      "computerAwakeHours": "{hours} h",
-      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Prompt della sessione in coda modificato",
       "text52867b778586": "Un solo kortix.yaml.",
       "textd0dfd435b2f4": "La tua forza lavoro IA, come codice.",
@@ -19683,6 +19772,32 @@
       "text7aaebc8b5794": "{value0} di {value1} snapshot",
       "text6d82b9d57b0c": "Ambiente del tuo server (valori pubblici, non segreti)",
       "text0d04bfeb7d64": "App",
+      "text5e1c0a7b2f4d": "Copia come prompt",
+      "textb1a7e40c2d01": "Online ora",
+      "textb1a7e40c2d02": "Serve traffico",
+      "textb1a7e40c2d03": "Distribuito {value0}",
+      "textb1a7e40c2d04": "Rilascio",
+      "textb1a7e40c2d05": "Immagine",
+      "textb1a7e40c2d06": "{value0} in esecuzione",
+      "textb1a7e40c2d07": "Compilato e integro",
+      "textb1a7e40c2d08": "{value0} build non riuscite",
+      "textb1a7e40c2d09": "Vedi log",
+      "textb1a7e40c2d0a": "Nascondi log",
+      "textb1a7e40c2d0b": "Distribuisci",
+      "textb1a7e40c2d0c": "Sostituito da v{value0} · {value1}",
+      "text13b411b641ec": "v{value0} – v{value1}",
+      "textb1a7e40c2d0d": "Mostra output della build",
+      "textb1a7e40c2d0e": "Nascondi output della build",
+      "textb1a7e40c2d0f": "Blue-green",
+      "textb1a7e40c2d10": "Graduale",
+      "textb1a7e40c2d11": "Immediato",
+      "textb1a7e40c2d12": "Canary",
+      "textb1a7e40c2d17": "Avvio…",
+      "textb1a7e40c2d18": "Arresto…",
+      "textb1a7e40c2d19": "Gruppo di processi",
+      "textb1a7e40c2d1b": "attivo da {value0}",
+      "textb1a7e40c2d1c": "CPU",
+      "textb1a7e40c2d1d": "Disco",
       "text840993da3129": "Evento dell'app creato",
       "textbd3baa5c3d2c": "Scegli l'app in cui avviene l'evento. Collegala qui o dopo aver creato il trigger.",
       "text89acd37e88bf": "Scegli cosa deve avviare l'agente.",
@@ -19891,7 +20006,6 @@
       "textce90ae653d94": "Fattura (Stripe, netto 30)",
       "text47f091076cdf": "Pagato al di fuori di Stripe",
       "text73035f159d4d": "Licenza / anno",
-      "text18fb4df54831": "Crediti / anno",
       "text7b790708ff1b": "Incasso",
       "textc6f3bfd45614": "Durata",
       "text764fcd0f142e": "a tempo indeterminato",
@@ -19909,10 +20023,6 @@
       "textb25add33108b": "Contratto terminato",
       "text3e844e06677f": "L’account torna al piano base. SSO e SCIM restano attivi durante il periodo di grazia.",
       "text8c1ca123b5ca": "Impossibile terminare il contratto",
-      "textf0a0fbab394c": "Contratto Enterprise",
-      "text11a9e1a996bf": "Annuale, prezzo personalizzato. Un contratto è l’unico modo per passare a Enterprise.",
-      "textca07a25001d5": "Nessun contratto registrato",
-      "text92d5400d0696": "Questo account è su Enterprise senza un contratto. Registrane uno qui sotto per tracciare durata, crediti e rinnovo.",
       "text07b0835cfecc": "Contratto attivo",
       "textaec55b18cb80": "Termina contratto",
       "text95926a1a9cfb": "Offerta aperta",
@@ -19921,7 +20031,6 @@
       "text164546a9c548": "Ritira",
       "text68a61092dbb3": "Nuovo contratto",
       "textd4264846a915": "Licenza in USD / anno",
-      "text0bdfcd344cbd": "Crediti in USD / anno",
       "text3569eff22740": "Durata (mesi, max {max})",
       "textd8da2c49df39": "Nota",
       "text3a53c039a116": "Riferimento dell’accordo, firmatario, condizioni",
@@ -19930,15 +20039,10 @@
       "text8f55a25f086f": "Totale all’anno: <total>{amount}</total>. Registrato come pagato; il contratto inizia subito.",
       "text6dbbdcbd4300": "Crea offerta",
       "text7e21e0469d75": "Crea contratto",
-      "text1941d06dca25": "{license} + {credits} di crediti",
       "text99d5771338b8": "creato il {date}",
       "text75ed3342a7ba": "L’account torna ora al piano base. SSO e SCIM restano attivi durante i 14 giorni di grazia.",
       "text02b242fd11cd": "C’è un’offerta aperta. Ritirala prima.",
       "text451c4b7d695d": "Un contratto è attivo. Terminalo prima oppure crea un’offerta con carta.",
-      "textb548e5b86366": "Prova · {count, plural, one {# giorno} other {# giorni}}",
-      "textff4cb98d0f5b": "Prova · ? giorni",
-      "text7b8fe4e0671f": "Enterprise · contratto",
-      "textc541530e56d2": "Enterprise · nessun contratto",
       "text06bdc1c507f1": "Periodo di grazia SSO fino al {date}",
       "textac8710553475": "Prova estesa",
       "text0bad4daa3f0d": "Giorni rimanenti / scadenza",
@@ -19974,7 +20078,35 @@
       "text0c983266f830": "confine di fiducia",
       "text4c6aaca6d645": "Ogni sessione ha la propria macchina e ramo isolati.",
       "textc610d5d19d2b": "La macchina è usa e getta. Una cattiva installazione se ne va. Sopravvive solo ciò su cui è stato eseguito il commit della sessione e sopravvive come richiesta di modifica.",
-      "text8e97f02e6f34": "Ogni chiamata effettuata da un agente tramite un connettore è una riga. Il gateway che risolve la credenziale è la cosa che la scrive."
+      "text8e97f02e6f34": "Ogni chiamata effettuata da un agente tramite un connettore è una riga. Il gateway che risolve la credenziale è la cosa che la scrive.",
+      "textd6ea513221b7": "Enterprise · demo",
+      "text5a22403ec082": "Enterprise · con licenza",
+      "text87feb882165d": "Con licenza",
+      "text125c03898a7c": "La demo Enterprise è attiva: tutte le funzionalità Enterprise, con i limiti del piano.",
+      "textefcb797dc60f": "Enterprise è disattivato. La demo attiva tutte le funzionalità Enterprise per questo account.",
+      "text17b21758b477": "Disattiva la demo",
+      "texta7d2d086e1ae": "Attiva la demo",
+      "text431a97929d7e": "Demo Enterprise attiva",
+      "text139479653231": "Demo Enterprise disattivata",
+      "text111b159de1cc": "Impossibile modificare la demo Enterprise",
+      "textc3371113b9c5": "Una licenza attiva tutte le funzionalità Enterprise per la sua durata. Non include crediti.",
+      "text81e6bf495c98": "Piani, crediti, Enterprise, diritti, membri e stato di fatturazione, per account.",
+      "textfe3436af86b4": "Estensioni",
+      "textdffd02b805cb": "I comandi sono ancora in caricamento",
+      "textd943cb31f962": "Niente è stato inviato. Il messaggio e i file restano nel compositore — invia di nuovo tra un attimo.",
+      "text8142608686a2": "Anteprima di una modifica del piano crediti",
+      "text0f046f7588f9": "Costo (crediti)",
+      "text42144adfea3c": "Saldo (crediti)",
+      "text607d4d4de45d": "Totale (crediti)",
+      "text72c79681cd1e": "Saldo ≤ {value0} crediti",
+      "text88548ef048ed": "Costo Kortix (crediti)",
+      "text8c9a5ac212c7": "Saldo ≥ {value0} crediti",
+      "textb8fd28863a22": "Importo in crediti (es. 2500)",
+      "textc6813a9e41ac": "In crediti: {value0} LLM · {value1} calcolo · {value2} altro.",
+      "textc86ce3b8097b": "es. 5000",
+      "textfaaf56a699c2": "Limite (crediti)",
+      "textc3d1545dd522": "Converte il kortix.toml v1 nel kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma all'ultima baseline del marketplace e apre una richiesta di modifica per la revisione.",
+      "textd85a383e851d": "Migra il manifest alla v2 (kortix.yaml)"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20243,18 +20375,18 @@
     "latencySub": "p50, ponderato per richieste",
     "editBudget": "Modifica budget",
     "memberCaps": "Limiti per membro",
-    "membersWithSpend": "{count, plural, one {# membro} other {# membri}} con spesa questo mese",
+    "membersWithSpend": "{count, plural, one {# membro} other {# membri}} con spesa questo mese, in crediti",
     "memberCapCount": "{count, plural, one {# limite membro} other {# limiti membro}}",
     "noCap": "Nessun limite",
-    "ofLimit": "{pct}% di {limit}",
+    "ofLimit": "{pct}% di {limit} crediti",
     "editCap": "Modifica limite",
-    "budgetToday": "{spent} di {limit} oggi",
-    "budgetThisWeek": "{spent} di {limit} questa settimana",
-    "budgetThisMonth": "{spent} di {limit} questo mese",
+    "budgetToday": "{spent} di {limit} crediti oggi",
+    "budgetThisWeek": "{spent} di {limit} crediti questa settimana",
+    "budgetThisMonth": "{spent} di {limit} crediti questo mese",
     "blocksAtLimit": "Blocca le richieste al limite",
     "warnsAtLimit": "Avvisa al limite, non blocca mai",
     "mostSpendHint": "Spesa per modello in questo periodo",
-    "sessionsHint": "Costo totale: modello + calcolo sandbox",
+    "sessionsHint": "Costo totale in crediti: modello + calcolo sandbox",
     "errorsHint": "Cosa non è andato a buon fine nel periodo",
     "errorsTotal": "{count, plural, one {# errore} other {# errori}}",
     "sessionModel": "Modello {cost}",
@@ -20503,6 +20635,18 @@
     "setUp": "Configura autenticatore"
   },
   "connectorPages": {
+    "addMcpMenu": "Server MCP",
+    "addMcpMenuHint": "Incolla l'URL di un server e accedi",
+    "addMcpTitle": "Aggiungi un server MCP",
+    "addMcpDescription": "Incolla l'URL del server e scegli chi può usarlo. Kortix ti fa accedere e carica i suoi strumenti.",
+    "addMcpUrlLabel": "URL del server",
+    "addMcpUrlHint": "L'endpoint remoto del server, che inizia con https://",
+    "addMcpUrlNamed": "Aggiunge il connettore {name}.",
+    "addMcpUrlInvalid": "Inserisci un URL che inizia con https://",
+    "addMcpConnect": "Connetti",
+    "addMcpConnected": "{name} è connesso. Gli agenti possono usare i suoi strumenti.",
+    "addMcpSignInFailed": "Impossibile avviare l'accesso a {name}: {reason}",
+    "addMcpFailed": "Impossibile aggiungere il server MCP",
     "install": "Installa",
     "installNamed": "Installa {name}",
     "added": "Aggiunto",
@@ -21081,6 +21225,7 @@
     "zoomOut": "Riduci zoom",
     "mapTwoFingers": "Usa due dita per spostare la mappa",
     "pick": "Scelta",
+    "checklistReady": "{done}/{total} pronti",
     "convertFailed": "Impossibile preparare la trascrizione. Riprova."
   },
   "mobileAppPromo": {

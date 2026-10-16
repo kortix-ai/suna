@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import type { CostModelRow } from '@kortix/sdk';
@@ -10,7 +10,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { IconChevronDown } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
 
-import { formatSessionCostUsd } from '../session-cost-format';
+import { formatSessionCostCredits } from '../session-cost-format';
 
 const VISIBLE_COUNT = 5;
 
@@ -90,6 +90,8 @@ export function CostModelList({ models }: CostModelListProps) {
 
 function ModelRow({ row, maxCost }: { row: CostModelRow; maxCost: number }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCredits = useTranslations('settings.credits');
+  const locale = useLocale();
   const pct = maxCost > 0 ? Math.max(0, Math.min(100, (row.cost / maxCost) * 100)) : 0;
 
   return (
@@ -105,8 +107,11 @@ function ModelRow({ row, maxCost }: { row: CostModelRow; maxCost: number }) {
           <p className="text-muted-foreground truncate text-xs">{row.provider}</p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="font-mono text-sm font-medium tabular-nums">
-            {formatSessionCostUsd(row.cost)}
+          <p className="text-sm font-medium tabular-nums">
+            {formatSessionCostCredits(row.cost, locale)}{' '}
+            <span className="text-muted-foreground text-xs font-normal">
+              {tCredits('unit', { count: row.cost * 100 })}
+            </span>
           </p>
           <p className="text-muted-foreground text-xs tabular-nums">
             {row.request_count.toLocaleString('en-US')} {tI18nComplete.raw('textaed7a1237429')}

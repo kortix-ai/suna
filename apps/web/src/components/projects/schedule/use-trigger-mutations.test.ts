@@ -13,8 +13,8 @@ const fire = mock(
   }),
 );
 const deleteTrigger = mock(async (_projectId: string, _slug: string): Promise<void> => {});
-const success = mock((_message: string, _options?: { description?: string }) => {});
-const error = mock((_message: string, _options?: { description?: string }) => {});
+const success = mock((_message: string, _options?: Record<string, unknown>) => {});
+const error = mock((_message: string, _options?: Record<string, unknown>) => {});
 mock.module('@kortix/sdk', () => ({
   fireProjectTrigger: fire,
   deleteProjectTrigger: deleteTrigger,
@@ -92,6 +92,10 @@ beforeEach(() => {
   error.mockClear();
 });
 
+// Every toast the hook raises carries the trigger's entity row (kind glyph +
+// name) — the behavior dev's inline copies had and the hook must keep.
+const ENTITY = expect.objectContaining({ icon: expect.anything(), label: 'Daily check' });
+
 describe('useTriggerMutations behavior', () => {
   test('waits for the run request before invalidating and never clears selection', async () => {
     const response = Promise.withResolvers<FireProjectTriggerResponse>();
@@ -142,24 +146,43 @@ describe('useTriggerMutations behavior', () => {
   });
 
   test.each([
-    [{ status: 'fired', session_id: '12345678-abcdef' }, 'Started', 'Session 12345678…'],
-    [{ status: 'fired' }, 'Started', 'Getting a session ready'],
-    [{ status: 'queued', reason: 'Session is busy' }, 'Queued', 'Session is busy'],
-    [{ status: 'queued' }, 'Queued', 'Busy right now — it will retry'],
-    [{ status: 'queued', reason: '' }, 'Queued', ''],
-  ] satisfies [FireProjectTriggerResponse, string, string][])(
+    { status: 'fired', session_id: '12345678-abcdef' },
+    { status: 'fired' },
+    { status: 'queued', reason: 'Session is busy' },
+    { status: 'queued' },
+    { status: 'queued', reason: '' },
+  ] satisfies FireProjectTriggerResponse[])(
     'runs %j and invalidates after the successful request',
-    async (response, title, description) => {
+    async (response) => {
       fire.mockResolvedValue(response);
       const hook = renderMutations();
       expect(hook.invalidate).not.toHaveBeenCalled();
       expect(await hook.run.mutateAsync(trigger)).toEqual(response);
       expect(fire).toHaveBeenCalledWith('test-project', trigger.slug);
       expect(success).toHaveBeenCalledTimes(1);
-      expect(success).toHaveBeenCalledWith(title, { description });
       expect(error).not.toHaveBeenCalled();
       expect(hook.invalidate).toHaveBeenCalledTimes(1);
       expect(hook.onRemoved).not.toHaveBeenCalled();
+      if (response.status === 'fired' && response.session_id) {
+        // A fired run that produced a session offers the way into it…
+        expect(success).toHaveBeenCalledWith('Started', {
+          entity: ENTITY,
+          actions: [
+            expect.objectContaining({ label: 'Open session', onClick: expect.any(Function) }),
+          ],
+        });
+      } else if (response.status === 'fired') {
+        // …and one still spinning falls back to the waiting copy.
+        expect(success).toHaveBeenCalledWith('Started', {
+          entity: ENTITY,
+          description: 'Getting a session ready',
+        });
+      } else {
+        expect(success).toHaveBeenCalledWith('Queued', {
+          entity: ENTITY,
+          description: response.reason ?? 'Busy right now — it will retry',
+        });
+      }
     },
   );
 
@@ -174,6 +197,7 @@ describe('useTriggerMutations behavior', () => {
       await hook.run.mutateAsync(trigger);
       expect(error).toHaveBeenCalledTimes(1);
       expect(error).toHaveBeenCalledWith(messages[runFailureKey], {
+        entity: ENTITY,
         description: 'Quota exceeded',
       });
       expect(success).not.toHaveBeenCalled();
@@ -210,7 +234,9 @@ describe('useTriggerMutations behavior', () => {
       expect(deletedNoun).toHaveBeenCalledTimes(1);
       expect(deletedNoun).toHaveBeenCalledWith(trigger);
       expect(success).toHaveBeenCalledTimes(1);
-      expect(success).toHaveBeenCalledWith(`${noun[0].toUpperCase()}${noun.slice(1)} deleted`);
+      expect(success).toHaveBeenCalledWith(`${noun[0].toUpperCase()}${noun.slice(1)} deleted`, {
+        entity: ENTITY,
+      });
       expect(error).not.toHaveBeenCalled();
       expect(hook.onRemoved).toHaveBeenCalledTimes(1);
       expect(hook.invalidate).toHaveBeenCalledTimes(1);

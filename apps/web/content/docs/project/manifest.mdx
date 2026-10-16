@@ -111,7 +111,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
-| `tools` | map | all five Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
+| `tools` | map | all seven Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
 | `sandbox` | map | platform image | `templates`, `default`. See [sandbox](#sandbox). |
 | `triggers` | list | none | Schedules, webhooks, monitors, app events. |
 | `connectors` | list | none | Apps, APIs and MCP servers an agent can call. |
@@ -307,11 +307,35 @@ agents:
 - An agent loads the top-level list, minus its `exclude`, plus its own `packages`. `exclude` exists only on an agent.
 - The change request merge builds the packages. A session never runs `npm install`. A session that starts before the build exists boots without the project packages.
 
+**`harnesses.pi.codemode`** sets pi's codemode tool. The model writes one JavaScript script that calls the other tools (`await tools.bash({ command })`), and only the script's output reaches the model, so one call can batch, chain and filter several tool calls.
+
+```yaml
+harnesses:
+  pi:
+    codemode: on        # on (default) | only | off
+agents:
+  reviewer:
+    harnesses:
+      pi:
+        codemode: off   # this agent only
+```
+
+| Value | The model gets |
+| --- | --- |
+| `on` (default) | every tool, plus `codemode` |
+| `only` | `codemode` alone; every other tool runs from a script |
+| `off` | no `codemode` |
+
+- An agent's value replaces the top-level one. Read when the session starts.
+- A script's calls pass the same permission policy as direct calls: a `deny` rule blocks them, and an `ask` rule pauses the script until someone answers.
+- A script cannot start a subagent (`task`) or ask a question (`question`). The model calls those directly.
+- Scripts run in a sandboxed JavaScript VM (QuickJS) with no file system, network or timers. They reach the box only through the tools.
+
 **`harnesses.opencode.plugins`** (v2) lists the files in `<opencode config dir>/plugins/` that load, for example `audit.ts`. Without the key, every plugin file loads. An agent adds its own with `agents.<name>.harnesses.opencode.plugins` and drops top-level ones with `exclude`. A listed file that does not exist fails the config build.
 
 ## tools
 
-`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all five Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
+`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all seven Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
 
 ## triggers, connectors, apps
 
@@ -348,7 +372,7 @@ A monitor trigger rejects `cron`, `run_at`, `timezone` and `secret_env`. An even
 
 `computer` is not a valid provider: connecting a computer creates that connector. The slugs `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors. Connecting a channel writes its `channel` connector for you: see [Slack, Teams & email](/docs/connect/channels).
 
-**`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml). Apps must be on for the project: see [Turn Apps on](/docs/apps#turn-apps-on).
+**`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml).
 
 `apps` maps an App slug to its configuration. The keys are `path`, `type` (`static`, `bundle`, `dockerfile`, `oci_image`), `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy` and `labels`. Any other key is an error.
 

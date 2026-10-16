@@ -5,7 +5,7 @@ import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 /**
  * Lifecycle of an admin-issued trial. `active` is the only status that grants
  * the trial tier; every other value is history the row keeps for audit.
- * Mirrors `TRIAL_STATUS` in `apps/api/src/billing/services/effective-tier.ts`.
+ * @deprecated Trials are removed; the admin list no longer sends them.
  */
 export type AdminTrialStatus = 'none' | 'active' | 'expired' | 'revoked' | 'converted';
 
@@ -84,6 +84,7 @@ export const ADMIN_OVERRIDE_KEYS = [
   'auditAccess',
   'branding',
   'managedModels',
+  'byokFee',
 ] as const;
 
 export type AdminOverrideKey = (typeof ADMIN_OVERRIDE_KEYS)[number];
@@ -102,6 +103,9 @@ export const ADMIN_ENTITLEMENT_OVERRIDE_KEYS = [
   'auditAccess',
   'branding',
   'managedModels',
+  // The BYOK platform fee (5% past the free monthly allowance). On by default
+  // for Free and Credits; set off to waive it for one account.
+  'byokFee',
 ] as const satisfies readonly AdminOverrideKey[];
 
 /**
@@ -121,6 +125,8 @@ export function adminAccountOverridesPath(accountId: string): string {
 export interface AdminAccount {
   accountId: string;
   name: string | null;
+  /** The Enterprise feature layer: off, demo (self-serve) or licensed (a license contract). Absent on an older server. */
+  enterprise?: 'off' | 'demo' | 'licensed';
   /**
    * The name the PRODUCT shows for this account. `name` is the raw stored
    * column, which for old rows is a migration placeholder ('Personal' /
@@ -148,19 +154,20 @@ export interface AdminAccount {
   billingCustomerId: string | null;
   billingCustomerEmail: string | null;
   createdAt: string | null;
-  trial: AdminAccountTrial;
+  /** @deprecated No longer sent: trials are removed. Read {@link AdminAccount.enterprise}. */
+  trial?: AdminAccountTrial;
   /** The active Enterprise contract. Null on every other account; an Enterprise
    *  account with null has no contract on file. Optional: absent on an older API. */
   contract?: AdminAccountContract | null;
-  /** Set while SSO/SCIM stay on after an Enterprise trial ended. Optional:
+  /** Set while SSO/SCIM stay on after an Enterprise license ended. Optional:
    *  absent on an older API. */
   graceEndsAt?: string | null;
   /** @deprecated No longer sent: the managed-models override is the
    *  `managedModels` key of {@link AdminAccount.entitlementOverrides}. */
   managedModelsOverride?: boolean | null;
-  /** @deprecated No longer sent: the Enterprise preview became an Enterprise trial. */
+  /** @deprecated No longer sent: read `enterprise === 'demo'`. */
   demoEnterprise?: boolean;
-  /** @deprecated No longer sent: read `plan.family === 'enterprise'` and {@link AdminAccount.contract}. */
+  /** @deprecated No longer sent: read `enterprise === 'licensed'`. */
   enterpriseEntitled?: boolean;
   /**
    * The STORED override map, exactly as the account row carries it — expiry is
@@ -192,7 +199,7 @@ export interface AdminEnterpriseContract {
   status: 'offered' | 'active' | 'ended' | 'withdrawn' | string;
   /** Annual platform fee, USD. */
   licenseUsd: number;
-  /** Annual credit commitment, USD, granted as one pool per term. */
+  /** @deprecated A license carries no credits: always 0. */
   creditsUsd: number;
   termMonths: number;
   collection: AdminContractCollection | string;
@@ -209,7 +216,8 @@ export interface AdminEnterpriseContract {
 export interface AdminCreateEnterpriseContractVariables {
   accountId: string;
   licenseUsd: number;
-  creditsUsd: number;
+  /** @deprecated A license carries no credits (2026-10-15): ignored by the API, not sent. */
+  creditsUsd?: number;
   /** 1–12 for a Stripe-collected contract, up to 60 for `manual`. Defaults to 12. */
   termMonths?: number;
   collection: AdminContractCollection;
@@ -727,7 +735,8 @@ export function useAdminCreateEnterpriseContract() {
   const queryClient = useQueryClient();
   return useMutation<{ contract: AdminEnterpriseContract }, Error, AdminCreateEnterpriseContractVariables>({
     mutationFn: ({ accountId, licenseUsd, creditsUsd, termMonths, collection, note }) => {
-      const body: Record<string, unknown> = { license_usd: licenseUsd, credits_usd: creditsUsd, collection };
+      void creditsUsd; // a license carries no credits
+      const body: Record<string, unknown> = { license_usd: licenseUsd, collection };
       if (termMonths !== undefined) body.term_months = termMonths;
       if (note !== undefined) body.note = note;
       return adminCall(

@@ -331,8 +331,12 @@ async function handleUpstreamFailureStatus(
     // 502 can mean the sandbox already accepted the body (the gateway just
     // dropped the response), so re-POSTing would enqueue the message twice or
     // write the file twice. Pass the upstream response straight through to the
-    // passthrough below. GET/idempotent requests retry as before.
-    if (!nonReplayableWrite && attempt < MAX_RETRIES) {
+    // passthrough below. GET/idempotent requests retry as before. The one
+    // exception: the Platinum edge marks every answer it gives itself with
+    // `x-pt-edge-verdict` — it did not proxy the request, so the box never
+    // saw the body and a replay cannot deliver it twice (CFG-12).
+    const edgeRefused = upstream.headers.has('x-pt-edge-verdict');
+    if ((!nonReplayableWrite || edgeRefused) && attempt < MAX_RETRIES) {
       // Port not ready yet — sandbox is booting (container running, port down).
       console.warn(
         `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,

@@ -29,6 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
+import { triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -315,6 +316,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         trigger.enabled
           ? tI18nComplete.raw('texte159b06187d3')
           : tI18nComplete.raw('texta97d32ddb6ba'),
+        { entity: triggerToastEntity(trigger) },
       );
       invalidate();
     },

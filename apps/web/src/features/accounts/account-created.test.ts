@@ -4,6 +4,7 @@ import type { KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
+import { Window } from 'happy-dom';
 import { createElement, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { accountCreated } from './account-created';
@@ -154,8 +155,10 @@ describe('account creation handoff', () => {
       }
       mock.module('./create-account-modal', () => ({ CreateAccountModal: CreationBoundary }));
       const originalWindow = globalThis.window;
-      globalThis.window = { addEventListener() {}, removeEventListener() {} } as unknown as Window &
-        typeof globalThis;
+      // The sidebar host registers a window event listener in an effect. A
+      // real happy-dom window replaces the global, the same fixture the
+      // repo's other DOM tests install — never a partial fake behind a cast.
+      (globalThis as Record<string, unknown>).window = new Window();
       let renderer: ReactTestRenderer | undefined;
       try {
         const Host =
@@ -184,7 +187,7 @@ describe('account creation handoff', () => {
         );
       } finally {
         if (renderer) await act(async () => renderer!.unmount());
-        globalThis.window = originalWindow;
+        (globalThis as Record<string, unknown>).window = originalWindow;
         stopSelection();
         stopPanel();
         client.clear();

@@ -15,6 +15,8 @@ import { createPiConfigReleases, type PiConfigReleases } from '@/harness/pi/conf
 import { createPiControlService } from '@/harness/pi/control'
 import { readBootConfigPointer, readQuarantine, releaseDir } from '@/services/config-provider/boot-config'
 import { ConvergeBusyError } from '@/services/config-provider/release'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
+import { MAX_ENV_STRING_BYTES, envStringBytes } from '@kortix/api-contract/compiled-agent-config-env'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { createEnvRouter } from '@/routes/kortix/env'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
@@ -576,7 +578,7 @@ describe('pi config releases: convergence', () => {
   test('a change to the Kortix tool list restarts the runtime; the same list reconfigures', async () => {
     const withKortix = (prompt: string, kortixTools?: string[]) =>
       JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })
-    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
+    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe']
     write(repo, 'README.md', 'all five\n')
     const one = buildRelease(repo, commitAll(repo, 'all five'), DIR, { projectId: 'proj-1', governance: withKortix('one', all) })
     serveRelease(api, one)
@@ -661,6 +663,23 @@ describe('pi config releases: the compiled governance belongs to the release', (
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
     }
+    for (const name of Object.keys(process.env)) if (name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ')) delete process.env[name]
+  })
+
+  test('an oversized governance push is kept gzip-encoded, never raw in the env every child inherits', async () => {
+    const oversized = governance('x'.repeat(140_000))
+    const res = await envApp({ governanceOwned: () => false, inFlight: () => false, converge: async () => { throw new Error('unused') } }).request('/kortix/env', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${GOV_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: 'rev-1', env: {}, names: [], runtimeEnv: { KORTIX_COMPILED_AGENT_CONFIG: oversized }, refreshModels: true }),
+    })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { runtime_env_names: string[] }).runtime_env_names).toEqual(['KORTIX_COMPILED_AGENT_CONFIG'])
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined()
+    const gzNames = Object.keys(process.env).filter((name) => name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ'))
+    expect(gzNames.sort()).toEqual(['KORTIX_COMPILED_AGENT_CONFIG_GZ_0', 'KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS'])
+    for (const name of gzNames) expect(envStringBytes(name, process.env[name]!), name).toBeLessThanOrEqual(MAX_ENV_STRING_BYTES)
+    expect(compiledAgentConfigFromEnv(process.env)).toBe(oversized)
   })
 
   test('a /kortix/env push of the governance is dropped while a release owns it', async () => {

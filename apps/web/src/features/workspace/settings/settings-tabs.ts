@@ -112,7 +112,13 @@ export type SettingsTab =
   // Upgrades MOVED here outright on 2026-09-02 (Jay: "move this upgrade
   // section over the settings panel") — it is no longer a section of
   // `/projects/<id>/config`. `UpgradesView` has one mount now, this one.
-  | 'upgrades';
+  | 'upgrades'
+  // The two connect pages, at the foot of the rail (KRTX-1997). Each was a
+  // dialog reachable only from a dismissible sidebar promo; a dismissed promo
+  // left no way back. `computer` is singular on purpose: `computers` is a
+  // `GRADUATED` redirect to the Connectors page and must stay one.
+  | 'mcp'
+  | 'computer';
 // Organization (General, Billing, Usage, Groups, Roles, Identity, Audit log)
 // and API keys are gone: every one of them configured the ACCOUNT, not the
 // project, and the account already owns a full page for them at
@@ -143,6 +149,8 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'tokens',
+  'mcp',
+  'computer',
   // `connected` is still in the type but NOT here: it listed the ACCOUNT's
   // GitHub App installations — the account page's Git tab — under a
   // person's own settings (Marko, 2026-09-03). It redirects there.

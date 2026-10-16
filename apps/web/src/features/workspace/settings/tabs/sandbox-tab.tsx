@@ -25,7 +25,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import {
+  manifestFilename,
+  useProjectManifestVersion,
+} from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import type { UiTranslator } from '@/i18n/translator';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -143,7 +146,7 @@ export function describeSource(
   if (template.source === 'ui')
     return { label: labels.dashboard ?? 'This dashboard', icon: SquaresFourIcon, mono: false };
   return {
-    label: manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml',
+    label: manifestFilename(manifestVersion),
     icon: FileCodeIcon,
     mono: true,
   };
@@ -700,7 +703,7 @@ export function SandboxTabView({
             <p className="text-muted-foreground text-sm text-pretty">
               {copy.descriptionStart} <code className="font-mono">/workspace</code>.{' '}
               {copy.descriptionEnd}{' '}
-              {manifestVersion === 2 ? (
+              {manifestFilename(manifestVersion) === 'kortix.yaml' ? (
                 <>
                   <code className="font-mono">sandbox.templates</code>{' '}
                   {tI18nComplete.raw('text582967534d0f')}{' '}

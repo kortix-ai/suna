@@ -11,6 +11,7 @@ import {
 } from '../browser/session-sync/session-cache-ownership';
 import {
   getSessionSyncController,
+  loadSessionExportMessages,
   loadSessionRuntimeStatus,
   loadSessionTranscriptMessages,
   resetSessionSyncControllersForSession,
@@ -35,7 +36,7 @@ import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
 import { canQueryRuntimeSession } from './use-opencode-sessions';
 
-export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
+export { loadSessionExportMessages, loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
 /** The two store slices the fragment check reads. Local so this file does not
  *  depend on the store's full published shape. */

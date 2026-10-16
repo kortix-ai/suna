@@ -1,4 +1,11 @@
-import { connectionSharedWithEveryone, type Connection, type ConnectionShare } from '@kortix/sdk';
+import {
+  connectionSharedWithEveryone,
+  type AdminConnector,
+  type Connection,
+  type ConnectionShare,
+} from '@kortix/sdk';
+
+import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 
 export type AccountVisibility =
   { kind: 'you' } | { kind: 'everyone' } | { kind: 'named'; names: string[]; more: number };
@@ -129,4 +136,19 @@ export function connectorConnectionRows<
       connection.owner_type !== 'agent' &&
       connection.status !== 'revoked',
   );
+}
+
+/**
+ * An account still to sign in. The API reports `authorized: false` for every
+ * account without a credential, but a direct connector with no auth scheme
+ * (an MCP server such as DeepWiki) has nothing to sign in: its account works
+ * as made. A managed or computer account keeps the API's word.
+ */
+export function accountNeedsSignIn(
+  connection: { authorized?: boolean },
+  connector: Pick<AdminConnector, 'provider' | 'authSecret'>,
+): boolean {
+  if (connection.authorized !== false) return false;
+  if (isManagedConnectorProvider(connector.provider) || connector.provider === 'computer') return true;
+  return Boolean(connector.authSecret);
 }

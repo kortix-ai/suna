@@ -132,7 +132,6 @@ export function ComposerChatInput({
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
-  const { data: commands } = useRuntimeCommands();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
   const local = useSessionModelSelection({
@@ -188,6 +187,8 @@ export function ComposerChatInput({
   // An empty project roster refuses an unbound composer; the resolver answers
   // `disabled` for exactly that case.
   const noAccessibleAgents = agentResolution.disabled;
+  // The slash menu lists only the commands the selected agent may run.
+  const { data: commands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);
@@ -294,6 +295,7 @@ export function ComposerChatInput({
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
       commands={commands || []}
+      commandsResolved={commands !== undefined}
       draftScope={draftScope}
       draftActive={draftActive}
       submitLabel={submitLabel}

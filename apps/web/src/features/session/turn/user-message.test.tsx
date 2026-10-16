@@ -164,6 +164,21 @@ describe('UserMessage renders a /command exactly as the composer does', () => {
     expect(markup).not.toContain('THE-WHOLE-TEMPLATE-FILE');
   });
 
+  test("a template's XML sections are never drawn as system notification cards", () => {
+    // A skill body split into `<overview>`, `<when-to-load>`, … sections drew one
+    // info card per section above the chip, because the notification parser
+    // claims every XML block it is handed. A command's text is its template.
+    const template = '<overview>\nWhat it is.\n</overview>\n<when-to-load>\nAlways.\n</when-to-load>';
+    const markup = renderText(template, { commandInfo: { name: 'kortix-memory', args: 'd' } });
+    expect(markup).toContain('aria-label="command: /kortix-memory"');
+    expect(markup).not.toContain('Overview');
+    expect(markup).not.toContain('When to load');
+  });
+
+  test('a plain message still draws its notification card', () => {
+    expect(renderText('<build_failed>\nThe build failed.\n</build_failed>')).toContain('Build failed');
+  });
+
   test('a command with no args renders the chip alone', () => {
     const markup = renderText('THE-WHOLE-TEMPLATE-FILE', {
       commandInfo: { name: 'webapp' },
@@ -1176,7 +1191,7 @@ describe('UserMessage renders N inline reply quotes at their positions', () => {
     );
     const quotes = blockquotes(markup);
     expect(quotes).toHaveLength(2);
-    expect(markup).toContain('bg-sidebar');
+    expect(markup).toContain('bg-muted');
   });
 
   test('the quote is not inside the bold body-text run', () => {
@@ -1483,6 +1498,13 @@ describe('UserMessage pasted-text tiles', () => {
     expect(markup).not.toContain('pasted_content');
     // The tile leads the bubble, like the composer row.
     expect(markup.indexOf('line one of the paste')).toBeLessThan(markup.indexOf('summarize this'));
+  });
+
+  test('a paste with blank-line runs (an email copy) still draws the tile', () => {
+    const email = '\nSkip to content\n\n\n\nSubject line\n\n\n\nBody text\n\n\n';
+    const markup = renderText(sent('what does this say?', [{ id: 'abcd1234', text: email }]));
+    expect(markup).toContain('Skip to content');
+    expect(markup).not.toContain('pasted_content');
   });
 
   test('a <file> ref inside a paste stays paste text, never an attachment tile', () => {

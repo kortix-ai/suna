@@ -381,12 +381,13 @@ function DefaultAgentSelector({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
-  const isV2 = detectManifestVersion(config.manifest_raw) === 2;
+  // v2 and v3 declare `default_agent` in kortix.yaml; v1 has no such key.
+  const declaresDefaultAgent = detectManifestVersion(config.manifest_raw) >= 2;
   const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
   const current = config.default_agent ?? config.open_code_default_agent;
   const mutation = useDefaultAgent(projectId);
 
-  if (!isV2 || availableAgents.length === 0 || !current) return null;
+  if (!declaresDefaultAgent || availableAgents.length === 0 || !current) return null;
 
   return (
     <div className="flex shrink-0 items-center gap-2">

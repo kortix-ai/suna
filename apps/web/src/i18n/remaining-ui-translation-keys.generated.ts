@@ -3,6 +3,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Drive: 'text6312b4b9baf1',
   Drives: 'text729fe0e7b138',
   '{label} has finished.': 'text27d628c8b427',
+  '{count} tasks finished': 'textc0589750863c',
   '{label} needs permission for: {toolName}': 'textbe9a4d2a34e1',
   '**This week:** 7 deals advanced, 2 slipped. - **Acme** → Proposal ($120k) - **Globex** → Negotiation ($90k) - At risk: **Initech**, **Umbrella** — no activity in 14 days':
     'texte0f5b5af5e02',
@@ -140,8 +141,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Context: 'texta6e600a10fed',
   continuing: 'text6e9f041725ac',
   'Control plane': 'textf15d0e7f86b0',
-  'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.':
-    'textc3d1545dd522',
   "Conway's Game of Life, seeded from the Kortix logo.": 'text6f3297022a6b',
   Copied: 'text8d525e5f158b',
   Costs: 'textb88fc5fc4765',
@@ -216,6 +215,10 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.':
     'textc8ef36aed650',
   Expired: 'text424a2551d356',
+  'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.':
+    'textc3d1545dd522',
+  Extensions: 'textfe3436af86b4',
+  'Migrate manifest to v2 (kortix.yaml)': 'textd85a383e851d',
   Failed: 'text031a8f0f659d',
   Favicon: 'text4295528943df',
   'Fetching deals updated ≤ 7d': 'text5bae674104b6',
@@ -304,7 +307,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textfde028796e58',
   Memory: 'textc3963aedaac6',
   'Memory Search': 'text9993673dd585',
-  'Migrate manifest to v2 (kortix.yaml)': 'textd85a383e851d',
   Minimal: 'text057b5de48d7b',
   Mobile: 'textcbaad3cf4a65',
   'Mobile app': 'text429bbfa117e2',
@@ -366,6 +368,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Privacy: 'text54a57c3147c4',
   privateBody: 'texte7268350dbfc',
   privateHeading: 'text5994c8a10999',
+  'Plans, credits, Enterprise, entitlements, members and billing state, per account.':
+    'text81e6bf495c98',
   'Product deck': 'text32d61a2331fe',
   Productivity: 'textf42bca637cb3',
   'Profiles the warehouse, writes performant SQL and ships a dashboard from a plain question.':
@@ -805,8 +809,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'This deployment exposes no per-project feature flags.': 'text8d3df7003a8d',
   'Throw some confetti': 'texteff2ec3d9dcd',
   'Tier:': 'text50c519cd51cc',
-  'Tiers, credits, trials, entitlements, members and billing state, per account.':
-    'text0c94dd964eb3',
   'Told to this agent at the start of every session. Markdown. Leave empty to use the default instructions.':
     'text5fe8921b712c',
   'Total balance': 'text10ea22c4a146',

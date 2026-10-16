@@ -28,9 +28,8 @@ another host. Volumes need Platinum (the default on Kortix Cloud).
 
 1. Run `pwd` and inspect the intended source directory before deploying.
 2. Run `kortix projects info --json`. Read `project_id`.
-3. If `experimental.apps` is not `true`, Apps is off. **Do not stop.** Build
-   what the user asked for with the project's own storage and code, and tell
-   the user once that Kortix enables Apps per project on request.
+3. Apps are generally available. Use Apps directly without checking a feature
+   flag or routing to an alternative.
 4. Do not create an empty App identity first: `kortix apps deploy` and
    `kortix apps launch` create it.
 5. Never run `kortix apps deploy` from an uninspected workspace root. It can

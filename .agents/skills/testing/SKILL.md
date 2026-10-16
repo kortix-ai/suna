@@ -48,7 +48,7 @@ resource isolation.
 ## Run tests
 
 ```bash
-pnpm test                       # Diff-scoped: what the branch's diff can affect
+pnpm test                       # Diff-scoped suite; refused on a Mac (CI and Linux only)
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
@@ -119,11 +119,15 @@ records the skip and the factory merge gate holds DB PRs.
 No hook or `dev` merge gate requires an attestation. You choose the tests a
 change needs.
 
-Run the narrowest relevant command first. Run the diff-scoped `pnpm test` when
-the change reaches shared code, the API, the SDK, a migration, or the runtime.
-A diff that no test reads (docs, a skill, a standalone script) needs no run.
-Run `pnpm test -- --full` for testing infrastructure, broad refactors, and
-release work.
+Run the narrowest relevant command. A diff that no test reads (docs, a skill,
+a standalone script) needs no run.
+
+**A Mac runs targeted tests only.** On macOS the runner refuses a suite-wide run
+(plain `pnpm test`, `--full`, `--packages-only`, `--browser-only`, `--db-only`
+with no path filter) and exits `2`. 2026-10-16: five agent sessions ran the
+suite at once on one laptop (load average 112, swap full). Run one flow, one
+DB suite path, the SDK, or one package's test file. The whole suite runs in CI:
+add the `test` label once, or set `KORTIX_FULL_TEST=1` when a person asks.
 
 ## Prove the result
 
@@ -163,8 +167,8 @@ equivalent of every CI job your change touches:
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
 | --- | --- | --- |
-| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes on every `dev` push and on `staging`/`prod` PRs | `pnpm test` (diff-scoped) |
-| browser-visible behavior | `Tests` browser lanes | `pnpm test -- --browser-only` (or `--full` for everything) |
+| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes on every `dev` push and on `staging`/`prod` PRs | the package's test file, `pnpm test -- --id <ID>` |
+| browser-visible behavior | `Tests` browser lanes | drive the page with agent-browser; the `test` label for the browser lanes |
 | `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |
 | `apps/kortix-sandbox-agent-server` | `CI` → Sandbox agent build | `bun run typecheck && bun run lint && bun run test:architecture` in that directory |

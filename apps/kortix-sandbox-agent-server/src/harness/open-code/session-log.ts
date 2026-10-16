@@ -15,10 +15,11 @@
  * - `seq`: minted once per message (the seq rule below); `fromV1` numbers by position.
  * - `producer`: `opencode` with the store's OpenCode version, not `kortix-v1-import`.
  * - attachments: `ref: blob:<sha256>`, `bytes` and `sha256` of the bytes in the store
- *   (an offloaded attachment's sidecar file). The bytes stay in the store; nothing
- *   uploads them yet (P2.3). `fromV1` without a resolver sets neither (F13), and
- *   the mirror row of a prompt file can carry the `kortix-attachment://` `url` of
- *   the copy the API's capture uploaded, which the daemon never sees.
+ *   (an offloaded attachment's sidecar file). The journal uploads the bytes (`blob`)
+ *   and replaces the ref with the stored object's `kortix-attachment://` ref (P2.13).
+ *   `fromV1` without a resolver sets neither (F13), and the mirror row of a prompt
+ *   file can carry the `kortix-attachment://` `url` of the copy the API's capture
+ *   uploaded, which the daemon never sees (so a prompt file is stored twice).
  * - session: `title`, `created_at` and `todos` from the store, `restore_grade: 'native'`
  *   without `grade_counts`, and the harness history. Thread `title` from the store.
  * The mirror also cuts strings over 200,000 characters, drops `data:` strings
@@ -90,7 +91,8 @@ export const OPENCODE_ADAPTER_VERSION = '1.0.0'
 export { OPENCODE_CAPABILITIES }
 
 type J = Record<string, any>
-type Resolved = V1Attachment & { sha256: string }
+/** `read` gives the bytes again, for `SessionLogPort.blob`. */
+type Resolved = V1Attachment & { sha256: string; read: () => Buffer | null }
 const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
 const parse = (data: string): J | null => {
   try {
@@ -152,10 +154,10 @@ function takeBytes(file: J, sidecar: (path: string) => Resolved | null): Resolve
     return null // a malformed url: unresolved, as the mirror holds it
   }
   const digest = sha256(bytes)
-  return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest }
+  return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, read: () => bytes }
 }
 
-/** The whole store as a session log, each message's native hash, and the seqs it issued. */
+/** The whole store as a session log, each message's native hash, the seqs it issued, and each attachment's bytes by sha256. */
 export function openCodeSessionLog(input: {
   sessionId: string
   rootId: string
@@ -163,7 +165,7 @@ export function openCodeSessionLog(input: {
   seqs: SeqState
   ids?: IdMap
   sidecar?: (path: string) => Resolved | null
-}): { log: SessionLog; hashes: Map<string, string>; issued: boolean } {
+}): { log: SessionLog; hashes: Map<string, string>; issued: boolean; blobs: Map<string, () => Buffer | null> } {
   const { store } = input
   const sidecar = input.sidecar ?? (() => null)
   const toLog = (id: string) => input.ids?.[id] ?? id
@@ -249,7 +251,7 @@ export function openCodeSessionLog(input: {
   log.todos = store.todos
     .filter((t) => toLog(t.session_id) === rootId)
     .map((t) => ({ content: t.content, status: t.status as SessionLog['todos'][number]['status'], priority: t.priority as SessionLog['todos'][number]['priority'] }))
-  return { log, hashes, issued }
+  return { log, hashes, issued, blobs: new Map([...attachments.values()].map((r) => [r.sha256, r.read])) }
 }
 
 export function openCodeSessionLogStatePath(): string {
@@ -303,13 +305,14 @@ export function createOpenCodeSessionLogPort(options: {
     try {
       const bytes = readFileSync(path)
       const digest = sha256(bytes)
-      const resolved = { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest }
+      const resolved = { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, read: () => readFileOrNull(path) }
       sidecars.set(path, resolved)
       return resolved
     } catch {
       return null
     }
   }
+  let blobs = new Map<string, () => Buffer | null>()
   const read = (): StoreSnapshot | null => (existsSync(options.dbPath) && options.db.probe().supported ? options.db.storeSnapshot() : null)
   let lastSession: string | null = null
   let unsaved = false
@@ -319,7 +322,8 @@ export function createOpenCodeSessionLogPort(options: {
       const rootId = options.rootId()
       const store = rootId ? read() : null
       if (!rootId || !store) return { messages: [], tombstones: [], threads: [] }
-      const { log, hashes, issued } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, ids, sidecar })
+      const { log, hashes, issued, blobs: bytes } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, ids, sidecar })
+      blobs = bytes
       // The seqs are durable before any record that carries one leaves the box.
       if (issued || unsaved) {
         try {
@@ -371,6 +375,15 @@ export function createOpenCodeSessionLogPort(options: {
       }
       return { seq: state.seqs[messageId]! }
     },
+    blob: (sha256: string) => blobs.get(sha256)?.() ?? null,
+  }
+}
+
+function readFileOrNull(path: string): Buffer | null {
+  try {
+    return readFileSync(path)
+  } catch {
+    return null
   }
 }
 

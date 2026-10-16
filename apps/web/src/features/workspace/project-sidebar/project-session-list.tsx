@@ -103,8 +103,12 @@ import {
   useSessionChildren,
 } from '@kortix/sdk/react';
 import {
+  ArchiveIcon,
   CaretRightIcon,
   DotsThreeIcon,
+  PushPinIcon,
+  PushPinSlashIcon,
+  FolderSimpleIcon as MetaFolder,
   GitForkIcon,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -118,6 +122,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
+import { Separator } from '@/components/ui/separator';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -197,6 +203,8 @@ const SESSION_ROW_HEIGHT_CLASS = 'h-8';
 /** Rows per page of an expanded parent, and per page of the Shared and
  *  Automated sections. */
 const SIDEBAR_PAGE_SIZE = 20;
+/** The Pinned section's id in the collapsed-sections store: open unless closed. */
+const PINNED_SECTION_ID = 'section:pinned';
 
 /** The newest change requests the session briefs read: one server page. */
 const SIDEBAR_CHANGE_REQUEST_LIMIT = 50;
@@ -223,6 +231,7 @@ function ProjectSessionListSkeleton() {
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const { holdPeek } = useSidebar();
   const canShowSessionHoverCard = useMediaQuery(
     '(min-width: 768px) and (hover: hover) and (pointer: fine)',
@@ -301,6 +310,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     limit: SIDEBAR_PAGE_SIZE,
     refetchOnWindowFocus: true,
   });
+  // The viewer's pinned sessions, at the top (KRTX-2418). Any starter, any
+  // depth: a pin is the viewer's choice. A pinned row is not repeated below.
+  const pinnedQuery = useProjectSessions(projectId, {
+    view: 'pinned',
+    labels,
+    limit: SIDEBAR_PAGE_SIZE,
+    refetchOnWindowFocus: true,
+  });
+  const listActions = useSessionListActions(projectId);
 
   // Open state of the tree: parent ids and `section:*` ids, persisted.
   const expandedIds = useSessionExpandedStore(selectExpandedIds(projectId));
@@ -398,11 +416,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const passesFacets = (session: ProjectSession) =>
     matchesStatusFilters(session, statusFilters) &&
     matchesSourceFilters(session, sourceFilters, tI18nComplete);
-  const visibleSessions = sessions.filter(passesFacets);
-  const visibleShared = sharedQuery.sessions.filter(passesFacets);
-  const visibleAutomated = automatedQuery.sessions.filter(passesFacets);
-  const otherCount = sharedQuery.sessions.length + automatedQuery.sessions.length;
-  const visibleOtherCount = visibleShared.length + visibleAutomated.length;
+  const visiblePinned = pinnedQuery.sessions.filter(passesFacets);
+  const unpinned = (session: ProjectSession) => !session.pinned_at && passesFacets(session);
+  const visibleSessions = sessions.filter(unpinned);
+  const visibleShared = sharedQuery.sessions.filter(unpinned);
+  const visibleAutomated = automatedQuery.sessions.filter(unpinned);
+  const otherCount =
+    sharedQuery.sessions.length + automatedQuery.sessions.length + pinnedQuery.sessions.length;
+  const visibleOtherCount = visibleShared.length + visibleAutomated.length + visiblePinned.length;
 
   const viewState = resolveSessionListViewState({
     hasData: data !== undefined,
@@ -410,8 +431,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     totalCount: sessions.length + otherCount,
     visibleCount: visibleSessions.length + visibleOtherCount,
     serverFiltered: labels !== undefined,
-    scanning: isScanning || sharedQuery.isScanning || automatedQuery.isScanning,
-    hasMore: hasNextPage || sharedQuery.hasNextPage || automatedQuery.hasNextPage,
+    scanning:
+      isScanning || sharedQuery.isScanning || automatedQuery.isScanning || pinnedQuery.isScanning,
+    hasMore:
+      hasNextPage || sharedQuery.hasNextPage || automatedQuery.hasNextPage || pinnedQuery.hasNextPage,
   });
 
   // One session row, its opencode sub-sessions, and (top-level rows only) the
@@ -453,6 +476,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
           canShowHoverCard={canShowSessionHoverCard}
           onDelete={(id, label) => setSessionToDelete({ id, label })}
+          onPin={(id, pinned) => void listActions.setPinned(id, pinned)}
+          onArchive={(id, archived) => void listActions.setArchived(id, archived)}
           onShare={(s) => setSessionToShare(s)}
           onRename={(id, name) => setSessionToRename({ id, name })}
           onEditLabels={setSessionToLabel}
@@ -620,6 +645,21 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     return (
       <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
+        <StarterSection
+          title={tPinArchive('section')}
+          query={pinnedQuery}
+          sessions={visiblePinned}
+          open={!collapsedSectionIds.has(PINNED_SECTION_ID)}
+          onToggle={() => toggleSectionCollapsed(projectId, PINNED_SECTION_ID)}
+          renderNode={(session) => renderSessionNode(session, false)}
+        />
+        {/* Without grouping the list below has no header of its own: the line
+            keeps an unpinned row from reading as part of Pinned. */}
+        {visiblePinned.length > 0 && (
+          <div className="px-2 py-1">
+            <Separator />
+          </div>
+        )}
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -1125,6 +1165,10 @@ interface ProjectSessionRowProps {
   onNavigate: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   displayTitle: string;
   onDelete: (sessionId: string, label: string) => void;
+  /** Pin (`true`) or unpin the session in the viewer's own list. */
+  onPin: (sessionId: string, pinned: boolean) => void;
+  /** Archive (`true`) or unarchive the session in the viewer's own list. */
+  onArchive: (sessionId: string, archived: boolean) => void;
   onShare: (session: ProjectSession) => void;
   onRename: (sessionId: string, currentName: string) => void;
   onEditLabels: (session: ProjectSession) => void;
@@ -1160,6 +1204,8 @@ function ProjectSessionRow({
   onNavigate,
   displayTitle,
   onDelete,
+  onPin,
+  onArchive,
   onShare,
   onRename,
   onEditLabels,
@@ -1181,6 +1227,7 @@ function ProjectSessionRow({
 }: ProjectSessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const [menuOpen, setMenuOpen] = useState(false);
   const descriptionId = useId();
   // Start the session's open read (snapshot + row) on intent, so the click
@@ -1437,6 +1484,28 @@ function ProjectSessionRow({
                 ? 'Share'
                 : tI18nComplete.raw('textadc01d813da0')}
             </DropdownMenuItem>
+            {/* The viewer's own list, so anyone who can open the session.
+                Absent `pinned_at` = no list state for this caller. */}
+            {session.pinned_at !== undefined && (
+              <>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => deferAfterClose(() => onPin(session.session_id, !session.pinned_at))}
+                >
+                  {session.pinned_at ? <PushPinSlashIcon /> : <PushPinIcon />}
+                  {tPinArchive(session.pinned_at ? 'unpin' : 'pin')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() =>
+                    deferAfterClose(() => onArchive(session.session_id, !session.archived_at))
+                  }
+                >
+                  <ArchiveIcon />
+                  {tPinArchive(session.archived_at ? 'unarchive' : 'archive')}
+                </DropdownMenuItem>
+              </>
+            )}
             {/* Lifecycle, not sharing: a project manager keeps Restart, Stop
                 and Delete on a session they did not create, and a member who
                 did not create it gets none of them (the server answers 403). */}

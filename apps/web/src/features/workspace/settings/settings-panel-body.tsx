@@ -47,10 +47,12 @@ import {
   type AccountMembershipsCopy,
 } from './tabs/account-memberships';
 import { AppearanceTab } from './tabs/appearance-tab';
+import { ComputerTab } from './tabs/computer-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { CreditsTab } from './tabs/credits-tab';
 import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
+import { McpTab } from './tabs/mcp-tab';
 import { PlanTab } from './tabs/plan-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
@@ -82,6 +84,9 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // Tokens pane resolves it (`useSettingsAccountId`), so it renders with or
   // without a project too.
   'plan',
+  // The MCP URL is one per person and reaches every project they can open.
+  // `computer` is NOT here: pairing names the project it starts from.
+  'mcp',
   // `workspace`, `sandbox`, `feature-flags` and `upgrades` are deliberately ABSENT. They
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
@@ -381,7 +386,10 @@ export function SettingsPanelShell({
   // dialog's own title already says Settings. It comes back the moment a
   // second group does — or the Organizations block, which is a second list
   // under the same rail — which is the only case where the label does work.
-  const showGroupLabels = groups.length > 1 || organizations.length > 0;
+  // The footer group (Connect) is a block at the foot of the rail, not a
+  // second list, so it does not count.
+  const showGroupLabels =
+    groups.filter((group) => !group.footer).length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
   // Mobile only: the list screen, or the pane screen. A caller that opened
   // settings on a named tab lands on that pane.
@@ -542,11 +550,14 @@ function SettingsTabPane({
     tokens: () => <TokensTab accountId={accountId} />,
     credits: () => <CreditsTab accountId={accountId} />,
     plan: () => <PlanTab accountId={accountId} />,
+    mcp: () => <McpTab />,
+    computer: () => (projectId ? <ComputerTab projectId={projectId} /> : null),
   };
   const pane = panes[item.tab];
   if (
     pane &&
-    (!['workspace', 'sandbox', 'feature-flags', 'upgrades'].includes(item.tab) || projectId)
+    (!['workspace', 'sandbox', 'feature-flags', 'upgrades', 'computer'].includes(item.tab) ||
+      projectId)
   )
     return pane();
 

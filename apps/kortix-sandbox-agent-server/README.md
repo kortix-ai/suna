@@ -107,6 +107,10 @@ import rules, and where new code goes; `bun run lint` enforces them.
    non-required modes.
 4. Inject managed system skills into the project's skills dir: root `skills/`
    (root layout) or `<config dir>/skills` (legacy `.kortix/opencode`).
+   A `kortix_version: 3` session takes its agents, registered skill folders,
+   commands and extensions only from the compiled set
+   (`KORTIX_COMPILED_AGENT_CONFIG`, `schema: 3`) and reads no `harnesses/`,
+   `.kortix/`, `.opencode/` or `.pi/` folder; config dirs are a v1/v2 concern.
 5. Resolve `OPENCODE_CONFIG_DIR`.
 6. Start the OpenCode REST supervisor in the project directory
    (`opencode serve --port <internal> --hostname 127.0.0.1`).

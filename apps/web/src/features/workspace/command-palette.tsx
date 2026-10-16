@@ -21,6 +21,7 @@ import {
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command';
+import { useCommandState } from 'cmdk';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Kbd } from '@/components/ui/kbd';
@@ -30,7 +31,11 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
 import { useWorkspaceSearch } from '@/features/files';
-import { ThemeSwatch, useInterfaceTheme } from '@/features/layout/interface-theme';
+import {
+  ThemeSwatch,
+  useInterfaceTheme,
+  useInterfaceThemePreview,
+} from '@/features/layout/interface-theme';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { openChangeRequestListQuery } from '@/features/project-files/hooks/use-change-requests';
@@ -228,6 +233,29 @@ function sanitizeCmdkValue(value: string): string {
  * a user could not tell apart either. `command-palette-search.test.ts` asserts
  * it for every row the palette can render at once.
  */
+/**
+ * Previews the theme of the highlighted row (↑/↓ or pointer) on the whole
+ * page; Enter keeps it. Leaving theme rows, changing page or closing the
+ * palette (it unmounts with the dialog) puts the saved theme back.
+ */
+function ThemeHighlightPreview({
+  themeByValue,
+  onPreview,
+}: {
+  themeByValue: ReadonlyMap<string, InterfaceThemeId>;
+  onPreview: (id: InterfaceThemeId | null) => void;
+}) {
+  const highlighted = useCommandState((state) => state.value);
+  const themeId = themeByValue.get(highlighted) ?? null;
+
+  useEffect(() => {
+    onPreview(themeId);
+  }, [themeId, onPreview]);
+  useEffect(() => () => onPreview(null), [onPreview]);
+
+  return null;
+}
+
 export function buildPaletteSearchText(item: { label: string; keywords?: string }): string {
   return sanitizeCmdkValue(`${item.label} ${item.keywords ?? ''}`);
 }
@@ -872,6 +900,8 @@ export function CommandPalette() {
     select: selectInterfaceTheme,
     choice: themeChoice,
   } = useInterfaceTheme();
+  const { preview: previewInterfaceTheme, commit: commitThemePreview } =
+    useInterfaceThemePreview(themeChoice);
   const activeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
@@ -1885,11 +1915,26 @@ export function CommandPalette() {
 
   const handleSetTheme = useCallback(
     (newTheme: InterfaceThemeId) => {
+      // `<html>` already shows `newTheme` (the highlighted row's preview):
+      // keep it, so no restore runs after the store write.
+      commitThemePreview();
       selectInterfaceTheme(newTheme);
       close();
     },
-    [selectInterfaceTheme, close],
+    [commitThemePreview, selectInterfaceTheme, close],
   );
+
+  // cmdk's highlighted value (`buildPaletteSearchText`, trimmed and lowercased
+  // the way cmdk stores it) -> the theme that row picks.
+  const themeByHighlightValue = useMemo(() => {
+    const map = new Map<string, InterfaceThemeId>();
+    for (const item of filteredNavItems) {
+      if (item.kind === 'theme' && item.themeValue) {
+        map.set(buildPaletteSearchText(item).trim().toLowerCase(), item.themeValue);
+      }
+    }
+    return map;
+  }, [filteredNavItems]);
 
   const handleSetWallpaper = useCallback(
     (newWallpaperId: string) => {
@@ -2343,7 +2388,14 @@ export function CommandPalette() {
         />
 
         <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)]">
-          <CommandList className="max-h-none overflow-visible">
+          {/* `scroll-my-10` = the fade's `h-10`: cmdk scrolls the highlighted
+              row with `scrollIntoView({ block: 'nearest' })`, which stops at
+              the edge — under the fade. The margin stops it clear of it. */}
+          <CommandList className="max-h-none overflow-visible [&_[cmdk-item]]:scroll-my-10">
+            <ThemeHighlightPreview
+              themeByValue={themeByHighlightValue}
+              onPreview={previewInterfaceTheme}
+            />
             {page === 'root' && (
               <>
                 {!hasQuery && (

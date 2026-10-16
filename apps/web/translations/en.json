@@ -340,7 +340,8 @@
       "groups": {
         "workspace": "Project",
         "personal": "Personal",
-        "account": "Account"
+        "account": "Account",
+        "connect": "Connect"
       },
       "items": {
         "workspace": {
@@ -393,6 +394,14 @@
         "plan": {
           "label": "Plan",
           "description": "Your plan, credits, and billing for this account."
+        },
+        "mcp": {
+          "label": "MCP",
+          "description": "Use Kortix from Claude, Claude Code, Cursor, Codex, or any MCP client. You sign in once. Nothing to install."
+        },
+        "computer": {
+          "label": "Computer",
+          "description": "Let Kortix agents work with the files, terminal, and applications on your computer."
         }
       }
     },
@@ -1016,10 +1025,6 @@
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
         },
-        "apps": {
-          "name": "Apps",
-          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
-        },
         "monitors": {
           "name": "Monitors",
           "description": "Run persistent watchers that observe logs, feeds, or APIs and start agent sessions from events."
@@ -1075,6 +1080,10 @@
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
+        },
+        "workspace_volume": {
+          "name": "Workspace volume",
+          "description": "Keeps each new session's /workspace on its own volume instead of the sandbox disk. Kortix enables it per project."
         }
       }
     },
@@ -1092,7 +1101,8 @@
       "manifestV2": {
         "title": "Migrate manifest to v2 (kortix.yaml)",
         "description": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review."
-      }
+      },
+      "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
     },
     "plan": {
       "managedByAdmin": "Managed by an account admin",
@@ -1137,7 +1147,8 @@
       "total": "Total",
       "history": "History",
       "historyDescription": "What every session cost, and every credit added or spent.",
-      "openLedger": "Open ledger"
+      "openLedger": "Open ledger",
+      "unit": "{count, plural, one {credit} other {credits}}"
     },
     "tokens": {
       "keyRevoked": "API key revoked",
@@ -1385,6 +1396,19 @@
     "connectors": {
       "opening": "Opening Connectors",
       "redirecting": "Redirecting to Connectors page..."
+    },
+    "mcp": {
+      "serverTitle": "Server",
+      "serverDescription": "One URL for every project you can open. Your client signs in with Kortix the first time it connects.",
+      "urlLabel": "Server URL",
+      "clientsTitle": "Clients",
+      "clientsDescription": "Add Kortix to the client you use."
+    },
+    "computer": {
+      "oneClickDescription": "The desktop app connects this computer in one click.",
+      "desktopLabel": "Desktop app",
+      "download": "Download",
+      "cliLabel": "Command line"
     }
   },
   "triggers": {
@@ -1667,6 +1691,31 @@
       "tooLong": "A label has at most 64 characters.",
       "tooMany": "A session has at most 20 labels."
     },
+    "pinArchive": {
+      "pin": "Pin session",
+      "unpin": "Unpin session",
+      "archive": "Archive session",
+      "unarchive": "Unarchive session",
+      "pinned": "Session pinned",
+      "unpinned": "Session unpinned",
+      "archived": "Session archived",
+      "unarchived": "Session unarchived",
+      "pinFailed": "Could not pin the session",
+      "unpinFailed": "Could not unpin the session",
+      "archiveFailed": "Could not archive the session",
+      "unarchiveFailed": "Could not unarchive the session",
+      "undo": "Undo",
+      "section": "Pinned",
+      "view": "Archived",
+      "empty": "Sessions you archive will show up here.",
+      "bulkArchive": "Archive",
+      "bulkUnarchive": "Unarchive",
+      "bulkArchived": "{count, plural, one {# session archived} other {# sessions archived}}",
+      "bulkUnarchived": "{count, plural, one {# session unarchived} other {# sessions unarchived}}",
+      "bulkFailed": "{count, plural, one {Could not change # session} other {Could not change # sessions}}",
+      "showArchived": "Archived sessions",
+      "pinnedMark": "Pinned"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Customize sidebar",
@@ -1680,10 +1729,7 @@
     "underMore": "More",
     "sidebarEmpty": "Drag a row here to show it in the sidebar.",
     "moreEmpty": "Drag a row here to move it under More.",
-    "moreCaption": "Rows under More open from the More menu, below the nav.",
-    "trialBadge": "{plan} trial · {days, plural, =0 {ends today} one {# day left} other {# days left}}",
-    "trialPlanEnterprise": "Enterprise",
-    "trialPlanCredits": "Credits"
+    "moreCaption": "Rows under More open from the More menu, below the nav."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1815,7 +1861,9 @@
     },
     "lost": {
       "title": "This session's computer was lost",
-      "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
+      "message": "Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository.",
+      "continueMessage": "Its cloud sandbox disappeared on the provider side. This is a fault on our end, and it has been reported. Continue the session on a new computer: it starts from the session branch and brings this conversation back. Work that was not committed and pushed stays lost.",
+      "continue": "Continue session"
     },
     "restart": {
       "label": "Restart session",
@@ -1947,7 +1995,27 @@
     "model": "Model",
     "systemPrompt": "System Prompt",
     "systemPromptPlaceholder": "Define how your Worker should behave...",
-    "customizeIcon": "Click to customize Worker icon"
+    "customizeIcon": "Click to customize Worker icon",
+    "grants": {
+      "subagents": {
+        "title": "Subagents",
+        "description": "Agents this agent can start for a subtask.",
+        "all": "Every subagent in this project, including ones added later.",
+        "empty": "No subagents declared in this project yet."
+      },
+      "commands": {
+        "title": "Commands",
+        "description": "Slash commands this agent can run.",
+        "all": "Every command in this project, including ones added later.",
+        "empty": "No commands registered in this project yet."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Plugins and packages a session of this agent loads.",
+        "all": "Every extension in this project, including ones added later.",
+        "empty": "No extensions registered in this project yet."
+      }
+    }
   },
   "home": {
     "heroPlaceholder": "Describe the task you want your Worker to complete..."
@@ -2040,12 +2108,15 @@
     "expandQuotes": "Expand quotes",
     "collapseQuotes": "Collapse quotes",
     "stopUnconfirmed": "Could not confirm Stop. The agent may still be running. Try Stop again.",
+    "stoppedBy": "Stopped by {name}",
     "queued": "Queued",
     "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "queuedCount": "{count} Queued",
     "editingQueued": "Editing",
+    "queuedActions": "Message actions",
     "steerNextStep": "Read at next step",
     "queuedByAnotherMember": "Sent by another member. Only they can edit or send it.",
+    "commandRunsWhenDone": "Runs when the agent finishes",
     "steerFallbackUnsupported": "Waits for this turn. This session cannot take messages mid-turn.",
     "steerFallbackNotPrompter": "Waits for this turn. Another member started it.",
     "steerFallbackTurnEnded": "Runs as its own turn. The turn ended first.",
@@ -2110,11 +2181,8 @@
       "cancelSubscriptionDescription": "Your plan stays active until the end of the current billing period, then it ends. You can reactivate until then.",
       "reactivateSubscription": "Reactivate subscription",
       "commitmentCancelHint": "Your commitment runs through {date}. You can cancel after it ends.",
-      "trialDaysLeft": "Trial · {days, plural, one {# day} other {# days}} left",
-      "trialEndsToday": "Trial · ends today",
-      "ends": "Ends {date}",
-      "annualContract": "Annual contract",
-      "graceUntil": "SSO stays on until {date}"
+      "graceUntil": "SSO stays on until {date}",
+      "scheduledFrom": "→ {amount}/mo from {date}"
     },
     "topup": {
       "minimum": "Minimum top-up is {amount}.",
@@ -2131,11 +2199,11 @@
       "custom": "Custom",
       "creditHintBonus": "{credits} credits + {bonus} bonus · added as soon as you pay.",
       "autoTopupOff": "Auto top-up: off",
-      "autoTopupOn": "Auto top-up: adds {amount} when the balance drops below {threshold}",
+      "autoTopupOn": "Auto top-up: adds {amount} when the balance drops below {threshold} credits",
       "ledgerBonus": "Top-up bonus"
     },
     "autoTopup": {
-      "bufferError": "Reload amount must be at least {buffer} above the threshold — enter {minimum} or more.",
+      "bufferError": "Enter {minimum} or more: a top-up must add at least {buffer} credits more than the threshold.",
       "addPaymentFirst": "Add a payment method before turning on auto top-up.",
       "saved": "Auto top-up saved",
       "updateFailed": "Failed to update auto top-up",
@@ -2147,7 +2215,7 @@
       "add": "Add",
       "amountLabel": "Top-up amount in dollars",
       "whenBelow": "when the balance drops below",
-      "thresholdLabel": "Top-up threshold in dollars",
+      "thresholdLabel": "Top-up threshold in credits",
       "save": "Save",
       "paymentNeeded": "Add a payment method for auto top-up to run.",
       "turnedOffAfterFailure": "Auto top-up turned off on {date}: the last charge failed ({reason}). Update the payment method, then turn auto top-up back on.",
@@ -2164,26 +2232,42 @@
         "unchanged": "That is already your plan.",
         "paymentPending": "Payment needs confirmation",
         "paymentPendingDescription": "Opening the billing portal to confirm it.",
-        "failed": "Could not change the plan"
+        "failed": "Could not change the plan",
+        "scheduled": "Downgrade scheduled",
+        "scheduledDescription": "From {date}: {amount} / month. Nothing changes until then.",
+        "kept": "Plan kept",
+        "keptDescription": "You stay on {amount} / month. The downgrade is cancelled.",
+        "raised": "Upgraded to {amount} / month",
+        "raisedDescription": "Charged {due}. {credits} credits added."
       },
       "planCard": {
         "title": "Monthly credits",
         "description": "Every member shares one credit pool. Unused credits roll over one month.",
         "rate": "1 credit = $0.01 of sandbox compute and managed-model usage.",
-        "raiseHint": "A raise is charged now, prorated, and adds the prorated credits at once.",
         "cutHint": "A cut starts at your next renewal.",
         "subscribeAction": "Subscribe for {amount} / month",
         "updateAction": "Update to {amount} / month",
         "chooseAction": "Update plan",
         "ownerOnly": "Only account owners and admins can change the plan.",
-        "enterpriseNote": "Enterprise plans are managed with your account team."
+        "scheduledNotice": "Changes to {amount} / month on {date}. Until then your plan and credits stay as they are.",
+        "keepAction": "Keep current plan",
+        "keepSummary": "Cancels the change to {amount} / month. Your plan stays as it is.",
+        "raiseSummary": "Pay {due} today, prorated for the rest of this period. {credits} credits are added now, then {amount} / month.",
+        "raiseSummaryLoading": "Calculating today’s charge…",
+        "raiseAction": "Pay {due} and upgrade",
+        "cutSummary": "No charge and no refund. Your plan and credits stay until {date}; from then you pay {amount} / month.",
+        "cutAction": "Downgrade on {date}",
+        "subscribeSummary": "Pay {amount} today. {credits} credits are added at once, then every month."
       },
       "modal": {
         "title": "Pick your credits tier",
         "description": "One plan in tiers. Unlimited members share one credit pool, and unused credits roll over one month.",
         "askOwnerHint": "Only account owners and admins can change the plan.",
         "askOwnerTitle": "Ask an account owner",
-        "askOwnerBody": "Only account owners and admins can manage billing. Ask one of them to pick a credits tier for the account."
+        "askOwnerBody": "Only account owners and admins can manage billing. Ask one of them to pick a credits tier for the account.",
+        "planTitle": "Plan and credits",
+        "planDescription": "Change your monthly plan, or add credits for this month.",
+        "topupSecondary": "Need more this month? Add credits"
       },
       "admin": {
         "plan": "Plan",
@@ -2196,7 +2280,6 @@
         "creditsPerMonth": "{credits} credits / month",
         "credits": "{credits} credits",
         "price": "{amount} / mo",
-        "popular": "Most popular",
         "current": "Current",
         "choose": "Choose a tier",
         "chooseHint": "Tiers start at {min} a month.",
@@ -2409,11 +2492,11 @@
         },
         "credit": {
           "question": "What does a credit buy?",
-          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: {vcpuRate} per vCPU-hour, {memoryRate} per GB of RAM per hour, {diskRate} per GB of storage per month. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key or ChatGPT subscription uses no credits."
+          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: {vcpuRate} per vCPU-hour, {memoryRate} per GB of RAM per hour, {diskRate} per GB of storage per month. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key is free for the first $1,000 of model usage a month, then 5% of the provider's price is paid from credits. A ChatGPT subscription uses no credits."
         },
         "amounts": {
           "question": "How much do I pay each month?",
-          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). $200 a month (20,000 credits) is the most popular. Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
+          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
         },
         "members": {
           "question": "Do I pay for members?",
@@ -2425,7 +2508,7 @@
         },
         "models": {
           "question": "Do models use credits?",
-          "answer": "Only Kortix models do. They cost the provider's base price plus a {fee}% platform fee, paid from credits, and the app shows the base prices. With your own API key or a connected ChatGPT subscription, model usage goes to your provider and uses no credits. Then credits pay only for the agent computer."
+          "answer": "Kortix models do, and your own API keys past $1,000 of model usage a month. Kortix models cost the provider's base price plus a {fee}% platform fee, paid from credits, and the app shows the base prices. With your own API key, model usage goes to your provider: the first $1,000 a month is free, then 5% of the provider's price is paid from credits. A connected ChatGPT subscription uses no credits."
         },
         "topup": {
           "question": "Can I add credits mid-month?",
@@ -2490,9 +2573,9 @@
         "title": "Models are billed separately from the agent computer",
         "description": "Credits pay for the agent computer. What a model call costs depends on where the model comes from.",
         "keys": {
-          "tag": "No credits",
+          "tag": "Free to $1,000/mo",
           "title": "Your own API keys",
-          "body": "Add a key from Anthropic, OpenAI or any other provider. Model usage goes straight to your provider and uses no credits."
+          "body": "Add a key from Anthropic, OpenAI or any other provider. Model usage goes straight to your provider. The first $1,000 a month is free, then Kortix adds 5%, paid from credits."
         },
         "chatgpt": {
           "tag": "No credits",
@@ -2504,35 +2587,40 @@
           "title": "Kortix models",
           "body": "No key to manage. Each call costs the provider's base price plus a {fee}% platform fee, paid from credits. The app shows base prices."
         },
-        "summary": "With your own keys, credits pay only for the agent computer."
+        "summary": "With your own keys, credits pay for the agent computer and 5% of model usage past $1,000 a month."
       }
     },
     "access": {
-      "enterprise": "Enterprise",
-      "credits": "Credits",
-      "trialTitle": "{plan} trial · {days, plural, =0 {ends today} one {# day left} other {# days left}}",
-      "trialBody": "This account is on a {plan} trial until {date}. After that it returns to the plan it pays for. Upgrade at any time to keep it.",
-      "trialBodyEnterprise": "This account is on an Enterprise trial until {date}: SSO, SCIM, advanced roles and audit logs are on. After that it returns to the plan it pays for, and SSO and SCIM stay on for 14 more days. Upgrade at any time.",
-      "upgrade": "Upgrade",
       "talkToSales": "Talk to sales",
-      "askManager": "Ask an account owner or admin to upgrade.",
       "offerTitle": "Enterprise offer",
-      "offerBody": "{license} license and {credits} in credits per year, for {months, plural, one {# month} other {# months}}.",
       "offerAccept": "Accept and pay",
       "offerInvoiced": "This offer is invoiced: your Kortix contact sends the invoice.",
       "offerFailed": "Could not open the checkout",
       "graceTitle": "Enterprise access ended",
-      "graceBodyTrial": "The Enterprise trial has ended. SSO and SCIM stay on until {date}, so nobody is locked out. Upgrade to keep Enterprise.",
       "graceBodyContract": "The Enterprise contract has ended. SSO and SCIM stay on until {date}, so nobody is locked out. Talk to sales to renew.",
       "managerRequired": "An owner or admin subscribes",
-      "featuresSection": "Single sign-on, directory sync, advanced roles and audit logs come with the Enterprise plan.",
-      "featuresLabel": "SSO, SCIM, advanced roles and audit logs",
-      "featuresTrial": "On during the Enterprise trial, until {date}.",
-      "featuresContract": "On with your Enterprise contract.",
+      "featuresLabel": "Enterprise features",
       "featuresGrace": "SSO and SCIM stay on until {date}. Talk to sales to keep Enterprise.",
-      "featuresNotOnPlan": "Included with the Enterprise plan.",
       "featuresOn": "On",
-      "featuresOff": "Off"
+      "featuresOff": "Off",
+      "featuresOffDescription": "SSO, SCIM, advanced roles, audit logs and branding.",
+      "featuresDemo": "On as a demo. Talk to sales for a license.",
+      "featuresLicensed": "Licensed",
+      "featuresLicensedRenews": "Licensed · renews {date}",
+      "featuresLicensedUntil": "Licensed until {date}",
+      "featuresDemoBadge": "Demo",
+      "demoTurnOn": "Turn on demo",
+      "demoTurnOff": "Turn off demo",
+      "demoTurnOnEnterprise": "Turn on Enterprise demo",
+      "demoOnToast": "Enterprise demo on. Sales will reach out.",
+      "demoOffToast": "Enterprise demo off.",
+      "demoFailed": "Could not change the Enterprise demo",
+      "salesSent": "Sales will email you within a day.",
+      "salesFailed": "Could not reach sales",
+      "offerLicense": "{license} license for {months, plural, one {# month} other {# months}}.",
+      "offerAskManager": "An account owner or admin accepts the offer.",
+      "upsellDemoHint": "The demo turns it on now. Sales then contacts you about a license.",
+      "upsellAskManager": "Ask an owner or admin to turn on the Enterprise demo."
     }
   },
   "ssoRequired": {
@@ -2655,7 +2743,7 @@
       },
       "link": {
         "title": "Check your email",
-        "description": "We sent a sign-in link to <address>{email}</address>. Open it to continue.",
+        "description": "We sent a link to <address>{email}</address>. Open it to continue.",
         "notReceived": "Didn't receive the link?",
         "resendIn": "Resend in {seconds}",
         "resend": "Resend"
@@ -2829,7 +2917,14 @@
     "failedToCopyFileContent": "Failed to copy file content",
     "noContentAvailable": "No Content Available",
     "noContentDescription": "This tool execution did not produce any input or output content to display.",
-    "tool": "Tool"
+    "tool": "Tool",
+    "codemode": {
+      "ranScript": "Ran script",
+      "runningScript": "Running script",
+      "scriptFailed": "Script failed",
+      "calls": "{count, plural, one {# tool call} other {# tool calls}}",
+      "noOutput": "No output"
+    }
   },
   "agentRunLimit": {
     "gotIt": "Got it",
@@ -3327,7 +3422,7 @@
       "contactGeneral": "General",
       "contactSecurity": "Security",
       "faqWhatCreditsQuestion": "What are credits, and what do they cost?",
-      "faqWhatCreditsAnswerBefore": "Credits pay for the agent computer and for Kortix models. 1 credit is $0.01, and the default agent computer uses about 11 credits an hour. Kortix models cost the provider's base price plus a 5.5% platform fee. Your own API key or ChatGPT subscription uses no credits. Plans, top-ups and how to make a balance last are in",
+      "faqWhatCreditsAnswerBefore": "Credits pay for the agent computer and for Kortix models. 1 credit is $0.01, and the default agent computer uses about 11 credits an hour. Kortix models cost the provider's base price plus a 5.5% platform fee. Your own API key is free for the first $1,000 of model usage a month, then 5%. A ChatGPT subscription uses no credits. Plans, top-ups and how to make a balance last are in",
       "faqWhatCreditsLink": "Credits & usage",
       "faqWhatCreditsAnswerAfter": "."
     }
@@ -7521,6 +7616,7 @@
       "treeMessages": "messages",
       "subAgentsLoaded": "{loaded} of {total} sub-agents loaded",
       "loadAll": "Load all",
+      "subAgentLoadFailed": "Could not load",
       "detailInput": "Input tokens",
       "detailOutput": "Output tokens",
       "detailReasoning": "Reasoning tokens",
@@ -9827,6 +9923,7 @@
     "i18nComplete": {
       "authEmailRateLimit": "Could not send the email. Try again in about an hour.",
       "authRequestRateLimit": "Too many requests. Try again in a few minutes.",
+      "text03217276a5f1": "Balance {value0} credits",
       "text0b6a47661327": "Unknown owner",
       "text1a9030082a20": "Create skill",
       "text25ab55af92b1": "Started attachment upload",
@@ -10001,7 +10098,6 @@
       "text0541d9e84b58": "The record carries the connector and exact action, the agent, the person or trigger behind the session, the outcome, and who released a held call. There is no path to a connected tool that skips the thing writing the record.",
       "text0547f5c8932c": "I hand you something at a high level, walk out, come back, and find it done well. Ideally better than I would have done it.",
       "text05487af3f074": "Renamed",
-      "text05643520119a": "Entitlements, project and session limits, and the managed-models gate all revert on the next request. Credits already granted are not clawed back.",
       "text0575f29df888": "Template",
       "text057a35b34fcb": "In the Auth0 dashboard: Applications → Applications → open (or create) the application for Kortix. Creating a new one? Choose \"Regular Web Application\" — the SAML2 addon works regardless of type, but this avoids second-guessing the picker.",
       "text057b5de48d7b": "Minimal",
@@ -10047,7 +10143,7 @@
       "text0679d5053dda": "{value0} hasn’t reported any tools. Once it syncs, each one gets its own Default · Block · Ask · Allow control here.",
       "text067ed033e4a6": "Six patterns that break the system, each with the fix beside it.",
       "text0686a22fbf7d": "Another session — same project, same team, or another customer",
-      "text0690079160b0": "\"{value0}\" deleted",
+      "text0690079160b0": "{value0} deleted",
       "text0690d70b6301": "Easy connect covers 3,000+ apps through their own OAuth screens, and it is the right route for the SaaS sources around the edges of a data stack. For the warehouse itself the direct connector types are usually the honest answer — most warehouses are reached through a driver or an API, not an OAuth catalogue entry.",
       "text06993786f49e": "GitHub disconnected",
       "text06a6228ef85f": "when you connect a repository — and each is gated the same way; none of them can be chosen or changed here.",
@@ -10242,7 +10338,6 @@
       "text0c79a9c22284": "Applied",
       "text0c814b60fca5": "Continue to provider",
       "text0c8a43b9f730": "Encrypted with AES-256-GCM under a key derived per project.",
-      "text0c94dd964eb3": "Tiers, credits, trials, entitlements, members and billing state, per account.",
       "text0c953ab32c60": "Something went wrong.",
       "text0c9fca0b952c": "Opened session (bundled reads)",
       "text0ca058a2bd7f": "Internal dashboards for the ops team",
@@ -10358,10 +10453,9 @@
       "text1044b2d7aa48": "to send",
       "text104a6fe5d2a6": "Principal type",
       "text10798ef769fd": "No connectors available",
-      "text107f1806b5d7": "Task Complete",
+      "text107f1806b5d7": "Task complete",
       "text10879d125f53": "Sandbox is warming up.",
       "text108b466ef169": "Nothing opened automatically because you just archived it. Create a new one to keep going.",
-      "text108bff86a0eb": "Window ended",
       "text108d15248c17": "Only events with action starting \"{value0}\"",
       "text108fd36702c5": "This project’s environment is ready",
       "text109311589787": "Runtime",
@@ -10728,7 +10822,6 @@
       "text1ae97542051d": "Install command",
       "text1aeb8993945b": "Most AI tools give the agent whatever the person who started it can reach. Kortix does not. An agent identity carries its own policies, evaluated on their own, so it cannot inherit its way up to something you never granted it.",
       "text1af17ebb39e4": "The call goes straight through. For reads and for the routine writes you have already decided you trust.",
-      "text1af2ef8f1409": "Request a demo",
       "text1af6ff873b59": "rfp-response/SKILL.md",
       "text1afdeb0c03d3": "Updated review items in bulk",
       "text1b00fe7ae5e3": "Your own network",
@@ -10864,7 +10957,6 @@
       "text1f05c7f5b64d": "Allow everything",
       "text1f0a5246c481": "No model configured",
       "text1f1146934bab": "Install the CLI and drive Kortix from your shell.",
-      "text1f1196332022": "Credit grant ($)",
       "text1f1228d5e972": "Slack manifest copied",
       "text1f23d8400f20": "A filter is a dotted path matched against the same payload the prompt sees. It exists to break loops: a source that reports both sides of a conversation would otherwise fire the agent on its own reply.",
       "text1f2550ed44dc": "Which agent, model, and join policy each connected channel uses. A channel with no override follows the project default.",
@@ -10899,7 +10991,6 @@
       "text1fc6f3927039": "Audience URI (SP Entity ID)",
       "text1fc9a387654d": "Select all",
       "text1fcc4b37141c": "discarded",
-      "text1fd045f22dfd": "No trial has ever been issued.",
       "text1fd9ae1607aa": "Invite",
       "text1fe08365831b": "Warmed session sandbox",
       "text1fece1858ee9": "Add to Teams",
@@ -11144,7 +11235,6 @@
       "text2730183d6b77": "Organizations",
       "text2732406e3be5": "No matching sessions",
       "text27342581678a": "How each provider performs — provisioning latency, success rate, and where the time goes.",
-      "text27343e44b3f1": "Kortix fee",
       "text2743ed9c1ab8": "over limit",
       "text2749b54ef956": "Try another search or clear the current filter.",
       "text274a70ce834d": "change needs",
@@ -11167,6 +11257,7 @@
       "text27bd1ae9d9e2": "lg:cursor-grab lg:touch-none",
       "text27c2ccd962c2": "Unknown error",
       "text27d628c8b427": "{label} has finished.",
+      "textc0589750863c": "{count} tasks finished",
       "text27edd873708d": "    secret_env: WEBHOOK_SECRET",
       "text27ef201b76a2": "/design-system",
       "text27f8489b0380": "Return to the application (Applications → your app) and make sure the \"Sign On\" tab is selected.",
@@ -12827,7 +12918,6 @@
       "text574e85a71662": "Migration running",
       "text57530d39031c": "Find groups by name",
       "text57575ab4b970": "It ran before you read it",
-      "text57579cf783f3": "Replace trial",
       "text5766126e8727": "inset(0 0 0 0)",
       "text5775c8f9216d": "Entra Users and groups panel with Add user/group open and a user selected for assignment",
       "text5776b0d8f73f": "The platform",
@@ -13091,7 +13181,6 @@
       "text5f303c017ed7": "A laptop, a VPS, or your own VPC — the exact same stack as Kortix cloud.",
       "text5f31515299e5": "Principals",
       "text5f3719d952f7": "219,400",
-      "text5f448b8c41a4": "e.g. 50",
       "text5f513e5b2937": "Kortix Use Cases",
       "text5f61b63c2c4a": "Channel bindings",
       "text5f69c8b42ef2": "Large language models",
@@ -13591,7 +13680,6 @@
       "text6d97796afbde": "northwind — main",
       "text6d9a6f97a5fd": "Succeeded",
       "text6da390b94eb6": "Check \"Use this for Recipient URL and Destination URL\". Set \"Name ID format\" to EmailAddress and \"Application username\" to Email — Kortix matches accounts by email.",
-      "text6db974c8b732": "{value0} behaves as {value1} for {value2} days.",
       "text6dc4500d8999": "The mainstream helpdesk products are in the Easy connect catalogue behind their own OAuth screens. Read the queue, draft the reply, and update the ticket where you have allowed it to.",
       "text6dcee355767d": "ACS (Consumer) URL Validator",
       "text6dd06b2529d4": "Create a custom role",
@@ -13712,7 +13800,6 @@
       "text713166971d73": "Command",
       "text7140f4f19dec": "Verification",
       "text7144535c8be1": "Kortix dashboard",
-      "text7147a36979c2": "Note (why, who asked, deal context)",
       "text7149fd6e7d6a": "# from here it is just a repo",
       "text714db3dbb0b7": "Top-p",
       "text714de9c47e62": "An agent rewriting its own instructions arrives the same way a database migration does: a branch, a commit, a diff, a reviewer. The company has one review process, not two.",
@@ -14176,7 +14263,6 @@
       "text7ea05ee375a0": "No saved prompt is available.",
       "text7ea27c63aff1": "Manage billing",
       "text7ea4733fb624": "Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.",
-      "text7ead9bf84af8": "Migrate to v2",
       "text7ebef26162b5": "| * s_9a04",
       "text7ec0261b8e8a": "Upgrade",
       "text7eca5e05f915": "Downloaded {value0}",
@@ -14384,7 +14470,6 @@
       "text8521333bac45": "An agent cannot merge to main. The permission exists — an admin can grant project.cr.merge — but the grant lives in kortix.yaml, so widening it is itself a change someone reviews. Nothing about that is a hidden default.",
       "text85231c543c71": "Project config, tasks, context",
       "text8527a891e224": "14",
-      "text8529ff665870": "Grant trial",
       "text8535f458db4b": "Reads the logs, ships the fix.",
       "text853b0ebee12c": "Turn sound off",
       "text854362dd1a76": "Moved \"{value0}\"",
@@ -15007,7 +15092,7 @@
       "text967549497036": "Deselect all",
       "text9676bdc9332f": "Connect my account",
       "text96879611650f": "active",
-      "text968cf44e4d9c": "A command starts its own turn, so it would interrupt this turn.",
+      "text1d28e1a19048": "Send it again when this turn ends. Sending it now would interrupt the turn.",
       "text968d0a9d24a6": "Copy snippet",
       "text9696f2b4e020": "my-api",
       "text969a25894852": "Migrate to another provider…",
@@ -15084,12 +15169,10 @@
       "text9888c8324cb5": "read the code.",
       "text988c3f87ad11": "Any SCIM 2.0-capable identity provider",
       "text988d146cc0be": "Change provider?",
-      "text98a66e9745c9": "Trial",
       "text98aa52b34c8f": "Add a secret",
       "text98aae8972102": "API keys",
       "text98abff28a940": "Matches",
       "text98b2093683f0": "Identity provider metadata URL",
-      "text98b6c1f78029": "Trial granted",
       "text98ca0d518997": "none yet",
       "text98d254a311d0": "Rename group",
       "text98d27bdc2fa7": "This channel connection has no Slack workspace yet.",
@@ -15282,7 +15365,6 @@
       "text9df141eadb06": "Open in Kortix",
       "text9df6b026a8c6": "service",
       "text9df96b5f7d02": "so the agent's own outgoing messages can't set it off again.",
-      "text9e0449fd24b6": "{value0} is back on its billed tier.",
       "text9e079c7df9f1": "Search projects",
       "text9e0bb75942fd": "Spend & gateway",
       "text9e1b76d01c46": "App → Authentication → Login methods",
@@ -16217,7 +16299,6 @@
       "textb91015bed915": "Couldn't load SSO status",
       "textb931b468ad1a": "Can't reach this instance. It may be starting up or temporarily offline. Retrying automatically…",
       "textb93900bded31": "Working...",
-      "textb94207703902": "immediately.",
       "textb948f8d45e30": "If the sign-in fails: “access denied” by Cloudflare → widen or add an Access policy (the policy step). Bounced at the IdP → check the upstream login method (the first step). Signed in but no groups → confirm the “groups” attribute is present (group step) and its NAME matches the connect step.",
       "textb949c922b6ef": "Git",
       "textb94b96f978cd": "Sandbox template",
@@ -16352,7 +16433,6 @@
       "textbcc3be342ea1": "Poetic compiles your procedures into a purpose-built language it runs for you. Kortix keeps the workflow as ordinary code in a repo you own, and gates the boundary where it touches the world. A technical comparison of two answers to the same problem.",
       "textbcc54a5fd95e": "Switch lists",
       "textbcd03103c8c1": "On a card, in the thread",
-      "textbcd80dd21f3c": "Custom trial duration in days",
       "textbcd8cc53f40e": "No description",
       "textbcdbec03e086": "Required MFA for the account",
       "textbce22443b335": "No conditions — every delivery starts a run.",
@@ -16572,7 +16652,6 @@
       "textc2dfb2c0eb28": "An agent is both. It is a resource you assign to people — narrow someone to a subset in Edit access under Agents — and it is a principal in its own right: every agent has a service-account identity that can hold roles like a person does.",
       "textc2e1dd25902a": "## Matching a payment to an invoice",
       "textc2ec18f03397": "Checking files",
-      "textc2ef82e31689": "Enterprise features",
       "textc2fd713fbf8f": "Tints this agent's badge in session lists.",
       "textc31723ab3302": "Searching…",
       "textc31c97ca7758": "    connectors: all",
@@ -16596,7 +16675,6 @@
       "textc3bf78fdd3b9": "Could not send your application",
       "textc3c25857485f": "Does",
       "textc3c709a999c1": "Reading memory…",
-      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -16713,7 +16791,6 @@
       "textc6de6f45c827": "Adding…",
       "textc6e03d8ea11f": "Specific members or groups",
       "textc6e9471a6ab2": "user message · 15 attachments → square tiles wrap 4-up, capped at 8 with +7",
-      "textc6f380561a26": "Limit (USD)",
       "textc6f417d32fe6": "Interactive preview of SSO, SCIM, advanced RBAC, and audit logs. Evaluation only — no billing change.",
       "textc6f813ed1902": "240 leads pulled · 24 enriched · 3 sequences written",
       "textc6fbb4b00507": "Requests are checked against the saved secret .",
@@ -16743,7 +16820,6 @@
       "textc7a1b38bba89": "Failed to add mapping",
       "textc7a9aa43558f": "No models yet",
       "textc7affccb91f2": "so a credential cannot end up in the record.",
-      "textc7bad0051b8a": "Talk to us about the Enterprise plan: SSO, SCIM, RBAC, audit, SLA, and DPA.",
       "textc7bcb471c03d": "Show in pickers",
       "textc7ce396fcd33": "Queued prompts",
       "textc7d4ebcd952a": "# who is allowed to touch the Stripe key?",
@@ -17301,7 +17377,7 @@
       "textd728c56ec935": "Acts as them in Kortix",
       "textd72e311c4dda": "Minimize",
       "textd75025a6a12f": "Bring",
-      "textd780563bef66": "Wait for the agent to finish before running a command.",
+      "text634e8a443a91": "Command not sent. The agent is still working.",
       "textd787477fa89b": "Removed from group",
       "textd78d6709320c": "Written from the evidence and from the code that already exists — it reads the repo, so the draft knows which of the three proposals is nearly built already. It is a draft to argue with, not a plan to accept.",
       "textd78ffa71af82": "The agent drafts the reply and reaches send_email.",
@@ -17339,8 +17415,6 @@
       "textd83a0d814c59": "API Status shows a green \"Enabled\", the \"SCIM Username\" parameter maps to Email, and provisioning is enabled without the admin-approval hold.",
       "textd84b8be91e7b": "Kortix — Presentations",
       "textd84ee1e1e08b": "try kortix init, or / for commands",
-      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)",
-      "textd85abf75ffac": "Revoke trial",
       "textd861cc0af73c": "kortix init scaffolds it, kortix ship brings it live. It is the same repo doing the same thing, so local development and the live system stopped being different categories.",
       "textd864380a766f": "The sandbox carries one project-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.",
       "textd8707d411d99": "Secrets",
@@ -18108,7 +18182,7 @@
       "textee4ae993730d": "Saved for everyone on this project. Restart a running session sandbox to pick it up.",
       "textee4d988c65de": "may",
       "textee52686fe92b": "Enterprise applications → your app → Provisioning",
-      "textee584829f9e9": "Session Error",
+      "textee584829f9e9": "Session error",
       "textee676c94b629": "Provisioning health",
       "textee678d46f548": "reconcile the july invoices",
       "textee67b8f57ae4": "The value of generating the kit from the scorecard is not speed. It is that the fifteenth candidate gets the same interview as the first, which is a fairness property before it is an efficiency one.",
@@ -18396,7 +18470,6 @@
       "textf7243551e2b7": "Check your input",
       "textf730dd4bb7fb": "go-to-market.md",
       "textf748e0b183a3": "It flags what it cannot substantiate",
-      "textf74efe18842d": "This project uses a v1 manifest. Migrate to",
       "textf75481058771": "This user is not a member of this account.",
       "textf7552f3489ab": "prop or use the upload control.",
       "textf7571d57f984": "This has been moved or deleted.",
@@ -18621,7 +18694,6 @@
       "textfd7c62b85d07": "Fixed snapshot with agent",
       "textfd7e911ee733": "Sandboxes provisioned per provider per day.",
       "textfd8b8dae4421": "Danger zone",
-      "textfd8beb3c3acc": "drops back to",
       "textfd94861c802e": "Per-member caps (",
       "textfdac955a2fcf": "Grazie.",
       "textfdb55672b8c6": "Provisioning → \"To App\" → Edit → enable Create / Update / Deactivate Users → Save. Assignments and pushed groups then sync automatically as they change.",
@@ -18702,6 +18774,7 @@
       "text5cbdd59d7048": "Across every provider",
       "text347cf684f3e7": "{value0}% of new sandboxes",
       "textad0f852848bf": "{value0} ok · {value1} failed",
+      "textbdb4791584c6": "{count, plural, one {# migration} other {# migrations}}",
       "text87ee04b2e9ee": "None stopped",
       "text58dfb849aa70": "{value0} stopped",
       "text42bd5f3bc3ca": "Shown in your list of {value0}s.",
@@ -18825,6 +18898,27 @@
       "text843ed3b90b42": "Zip this file with a 192×192 color.png and a 32×32 transparent outline.png.",
       "text5c71673648a2": "In Teams, go to Apps → Manage your apps → Upload an app, and upload the zip.",
       "text91b9932411cc": "Add the app to a chat or channel, then mention it to start a session.",
+      "textfd326bb01b61": "Paste the three values from the bot you just created.",
+      "text39864856b1bc": "In the Azure portal",
+      "text14bb4b708203": "In Microsoft Teams",
+      "textbda0f959cde0": "Keep the secret value handy. You paste it in the next step.",
+      "text9bd6f94da702": "Teams app manifest for this bot",
+      "text7fd0fd8f2405": "Bring your own Azure bot, then mention it in any Teams chat or channel.",
+      "text776fd1de4147": "Ask a workspace admin to connect Microsoft Teams.",
+      "text89e9e20668f3": "Bring your agent to Slack",
+      "textc1bd5ca19f5f": "Bring your agent to Teams",
+      "texta15b754f2e91": "Mention it in any chat or channel and it does the work there — no dashboard, no context switch.",
+      "text675d4a4174ba": "summarize this thread",
+      "textbd52d3eb5ed1": "Three decisions so far, one open question for Leo.",
+      "textd3d6fcf27034": "# launch",
+      "textc6c8dad55129": "Maya",
+      "text9a059d44c8e5": "10:42 AM",
+      "text9bfa706b0569": "@Kortix",
+      "texta4b2d28ad49b": "Launch",
+      "text2c2e44899866": "Posts",
+      "text92dca4f34a6f": "10:43 AM",
+      "text5df6373cf99f": "what's left before Friday?",
+      "textf4d1a9671f2f": "On it. Reading the launch checklist and the three open tickets now.",
       "textd208e2f1260f": "Open Teams admin center",
       "text98722a5463cb": "Couldn't connect Teams",
       "text53e5f96332d9": "Grant admin consent so the Kortix bot can run in your tenant.",
@@ -19197,6 +19291,7 @@
       "text724364ae40e3": "Set connector sensitive flag",
       "text8683950d26a1": "Set default connector account",
       "textaada5aeaaa50": "Set personal secret",
+      "textc250b6a5f8c8": "Set shared secret",
       "textbc023fc623a3": "Set pooled provider key access",
       "textac7fd4684634": "Set project Git credential",
       "text520f1939d072": "Set session prompt queue hold",
@@ -19498,12 +19593,6 @@
       "servedModelInPlaceOf": "In place of",
       "servedModelBadge": "Running on {model}",
       "servedModelBarDescription": "{requested} did not answer the last request",
-      "computerAwakeStays": "Sandbox stays on while you're here · up to {duration}",
-      "computerAwakeStops": "Sandbox stops in {duration}. Send a message to keep it on.",
-      "computerAwakeStopsSoon": "Sandbox stops soon. Send a message to keep it on.",
-      "computerAwakeHoursMinutes": "{hours} h {minutes} min",
-      "computerAwakeHours": "{hours} h",
-      "computerAwakeMinutes": "{minutes} min",
       "text414cc580557b": "Edited a queued session prompt",
       "text52867b778586": "One kortix.yaml.",
       "textd0dfd435b2f4": "Your AI workforce, as code.",
@@ -19694,6 +19783,32 @@
       "text7aaebc8b5794": "{value0} of {value1} snapshots",
       "text6d82b9d57b0c": "Your server's environment (public values, not secrets)",
       "text0d04bfeb7d64": "App",
+      "text5e1c0a7b2f4d": "Copy as prompt",
+      "textb1a7e40c2d01": "Live now",
+      "textb1a7e40c2d02": "Serving traffic",
+      "textb1a7e40c2d03": "Deployed {value0}",
+      "textb1a7e40c2d04": "Rollout",
+      "textb1a7e40c2d05": "Image",
+      "textb1a7e40c2d06": "{value0} running",
+      "textb1a7e40c2d07": "Built and healthy",
+      "textb1a7e40c2d08": "{value0} failed builds",
+      "textb1a7e40c2d09": "View log",
+      "textb1a7e40c2d0a": "Hide log",
+      "textb1a7e40c2d0b": "Deploy",
+      "textb1a7e40c2d0c": "Replaced by v{value0} · {value1}",
+      "text13b411b641ec": "v{value0} – v{value1}",
+      "textb1a7e40c2d0d": "Show build output",
+      "textb1a7e40c2d0e": "Hide build output",
+      "textb1a7e40c2d0f": "Blue-green",
+      "textb1a7e40c2d10": "Rolling",
+      "textb1a7e40c2d11": "Immediate",
+      "textb1a7e40c2d12": "Canary",
+      "textb1a7e40c2d17": "Starting…",
+      "textb1a7e40c2d18": "Stopping…",
+      "textb1a7e40c2d19": "Process group",
+      "textb1a7e40c2d1b": "up {value0}",
+      "textb1a7e40c2d1c": "CPU",
+      "textb1a7e40c2d1d": "Disk",
       "text840993da3129": "App event created",
       "textbd3baa5c3d2c": "Pick the app the event happens in. Connect it here, or after you create the trigger.",
       "text89acd37e88bf": "Pick what should start the agent.",
@@ -19902,7 +20017,6 @@
       "textce90ae653d94": "Invoice (Stripe, net 30)",
       "text47f091076cdf": "Paid outside Stripe",
       "text73035f159d4d": "License / year",
-      "text18fb4df54831": "Credits / year",
       "text7b790708ff1b": "Collection",
       "textc6f3bfd45614": "Term",
       "text764fcd0f142e": "open-ended",
@@ -19920,10 +20034,6 @@
       "textb25add33108b": "Contract ended",
       "text3e844e06677f": "The account returns to its base plan. SSO and SCIM stay on for the grace period.",
       "text8c1ca123b5ca": "Could not end the contract",
-      "textf0a0fbab394c": "Enterprise contract",
-      "text11a9e1a996bf": "Annual, custom price. A contract is the only way onto Enterprise.",
-      "textca07a25001d5": "No contract on file",
-      "text92d5400d0696": "This account is on Enterprise without a contract. Record one below so the term, credits and renewal are tracked.",
       "text07b0835cfecc": "Active contract",
       "textaec55b18cb80": "End contract",
       "text95926a1a9cfb": "Open offer",
@@ -19932,7 +20042,6 @@
       "text164546a9c548": "Withdraw",
       "text68a61092dbb3": "New contract",
       "textd4264846a915": "License USD / year",
-      "text0bdfcd344cbd": "Credits USD / year",
       "text3569eff22740": "Term (months, max {max})",
       "textd8da2c49df39": "Note",
       "text3a53c039a116": "Deal reference, signer, terms",
@@ -19941,15 +20050,10 @@
       "text8f55a25f086f": "Total per year: <total>{amount}</total>. Recorded as paid; the contract starts now.",
       "text6dbbdcbd4300": "Create offer",
       "text7e21e0469d75": "Create contract",
-      "text1941d06dca25": "{license} + {credits} credits",
       "text99d5771338b8": "created {date}",
       "text75ed3342a7ba": "The account returns to its base plan now. SSO and SCIM stay on for the 14-day grace.",
       "text02b242fd11cd": "An offer is open. Withdraw it first.",
       "text451c4b7d695d": "A contract is active. End it first, or create a Card offer.",
-      "textb548e5b86366": "Trial · {count, plural, one {# day} other {# days}}",
-      "textff4cb98d0f5b": "Trial · ? days",
-      "text7b8fe4e0671f": "Enterprise · contract",
-      "textc541530e56d2": "Enterprise · no contract",
       "text06bdc1c507f1": "SSO grace until {date}",
       "textac8710553475": "Trial extended",
       "text0bad4daa3f0d": "Days left / ends",
@@ -19985,7 +20089,35 @@
       "text0c983266f830": "trust boundary",
       "text4c6aaca6d645": "Each session has its own isolated machine and branch.",
       "textc610d5d19d2b": "The machine is disposable. A bad install goes away with it. Only what the session commits survives, and it survives as a change request.",
-      "text8e97f02e6f34": "Every call an agent makes through a connector is a row. The gateway that resolves the credential is the thing that writes it."
+      "text8e97f02e6f34": "Every call an agent makes through a connector is a row. The gateway that resolves the credential is the thing that writes it.",
+      "textd6ea513221b7": "Enterprise · demo",
+      "text5a22403ec082": "Enterprise · licensed",
+      "text87feb882165d": "Licensed",
+      "text125c03898a7c": "The Enterprise demo is on: every Enterprise feature, with the plan's limits.",
+      "textefcb797dc60f": "Enterprise is off. The demo turns on every Enterprise feature for this account.",
+      "text17b21758b477": "Turn off demo",
+      "texta7d2d086e1ae": "Turn on demo",
+      "text431a97929d7e": "Enterprise demo on",
+      "text139479653231": "Enterprise demo off",
+      "text111b159de1cc": "Could not change the Enterprise demo",
+      "textc3371113b9c5": "A license turns on every Enterprise feature for its term. It carries no credits.",
+      "text81e6bf495c98": "Plans, credits, Enterprise, entitlements, members and billing state, per account.",
+      "textfe3436af86b4": "Extensions",
+      "textdffd02b805cb": "Commands are still loading",
+      "textd943cb31f962": "Nothing was sent. Your message and files stay in the composer — submit again in a moment.",
+      "text8142608686a2": "Previewed a credits plan change",
+      "text0f046f7588f9": "Cost (credits)",
+      "text42144adfea3c": "Balance (credits)",
+      "text607d4d4de45d": "Total (credits)",
+      "text72c79681cd1e": "Balance ≤ {value0} credits",
+      "text88548ef048ed": "Kortix fee (credits)",
+      "text8c9a5ac212c7": "Balance ≥ {value0} credits",
+      "textb8fd28863a22": "Amount in credits (e.g. 2500)",
+      "textc6813a9e41ac": "In credits: {value0} LLM · {value1} compute · {value2} other.",
+      "textc86ce3b8097b": "e.g. 5000",
+      "textfaaf56a699c2": "Limit (credits)",
+      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
+      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20254,18 +20386,18 @@
     "latencySub": "p50, weighted by requests",
     "editBudget": "Edit budget",
     "memberCaps": "Member caps",
-    "membersWithSpend": "{count, plural, one {# member} other {# members}} with spend this month",
+    "membersWithSpend": "{count, plural, one {# member} other {# members}} with spend this month, in credits",
     "memberCapCount": "{count, plural, one {# member cap} other {# member caps}}",
     "noCap": "No cap",
-    "ofLimit": "{pct}% of {limit}",
+    "ofLimit": "{pct}% of {limit} credits",
     "editCap": "Edit cap",
-    "budgetToday": "{spent} of {limit} today",
-    "budgetThisWeek": "{spent} of {limit} this week",
-    "budgetThisMonth": "{spent} of {limit} this month",
+    "budgetToday": "{spent} of {limit} credits today",
+    "budgetThisWeek": "{spent} of {limit} credits this week",
+    "budgetThisMonth": "{spent} of {limit} credits this month",
     "blocksAtLimit": "Blocks requests at the limit",
     "warnsAtLimit": "Warns at the limit, never blocks",
     "mostSpendHint": "Spend by model this window",
-    "sessionsHint": "Total cost: model + sandbox compute",
+    "sessionsHint": "Total cost in credits: model + sandbox compute",
     "errorsHint": "What failed across this window",
     "errorsTotal": "{count, plural, one {# error} other {# errors}}",
     "sessionModel": "Model {cost}",
@@ -20503,6 +20635,18 @@
     "setUp": "Set up authenticator"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP server",
+    "addMcpMenuHint": "Paste a server URL and sign in",
+    "addMcpTitle": "Add an MCP server",
+    "addMcpDescription": "Paste the server's URL and choose who can use it. Kortix signs you in and loads its tools.",
+    "addMcpUrlLabel": "Server URL",
+    "addMcpUrlHint": "The server's remote endpoint, starting with https://",
+    "addMcpUrlNamed": "Adds the connector {name}.",
+    "addMcpUrlInvalid": "Enter a URL that starts with https://",
+    "addMcpConnect": "Connect",
+    "addMcpConnected": "{name} is connected. Agents can use its tools.",
+    "addMcpSignInFailed": "Could not start the {name} sign-in: {reason}",
+    "addMcpFailed": "Could not add the MCP server",
     "install": "Install",
     "installNamed": "Install {name}",
     "added": "Added",
@@ -21081,6 +21225,7 @@
     "zoomOut": "Zoom out",
     "mapTwoFingers": "Use two fingers to move the map",
     "pick": "Pick",
+    "checklistReady": "{done}/{total} ready",
     "convertFailed": "Could not prepare the transcript. Try again."
   },
   "mobileAppPromo": {

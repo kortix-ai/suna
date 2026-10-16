@@ -1,10 +1,10 @@
 // KRTX-1734: a session delete is restorable for 30 days. The modal says so,
 // and its success toast offers Undo, which restores the session through the
 // SDK, refreshes the session lists and, for the session the page had open,
-// goes back to it. These tests render the real modal and click the real Undo
-// button the toast carries.
+// goes back to it. These tests render the real modal and run the real Undo
+// the toast carries.
 import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:test';
-import { act, type ReactElement, type ReactNode } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -21,14 +21,20 @@ for (const key of Object.getOwnPropertyNames(win)) {
 }
 
 type ToastCall = {
-  kind: 'success' | 'error' | 'progress';
+  kind: 'success' | 'error' | 'progress' | 'undo';
   message: string;
-  options?: { id?: string; duration?: number; button?: ReactElement };
+  options?: {
+    id?: string;
+    duration?: number;
+    onUndo?: () => void;
+    actions?: { label: string; onClick: () => void }[];
+  };
 };
 const toasts: ToastCall[] = [];
 const dismissed: unknown[] = [];
 mock.module('@/components/ui/toast', () => ({
   successToast: (message: string, options?: ToastCall['options']) => toasts.push({ kind: 'success', message, options }),
+  undoToast: (message: string, options?: ToastCall['options']) => toasts.push({ kind: 'undo', message, options }),
   errorToast: (message: string, options?: ToastCall['options']) => toasts.push({ kind: 'error', message, options }),
   progressToast: (message: string, options?: ToastCall['options']) => {
     toasts.push({ kind: 'progress', message, options });
@@ -111,12 +117,11 @@ async function deleteThroughModal(): Promise<HTMLElement> {
   return dialog;
 }
 
-/** Click the button a toast carries: Undo on the delete toast, Try again on a refusal. */
+/** Run the action a toast carries: Undo on the delete toast, Try again on a refusal. */
 async function clickToastButton(call: ToastCall | undefined): Promise<void> {
-  const button = call?.options?.button;
-  if (!button) throw new Error(`the toast carries no button: ${JSON.stringify(call)}`);
-  const toast = mount(button);
-  await act(async () => (toast.querySelector('button') as HTMLButtonElement).click());
+  const action = call?.options?.onUndo ?? call?.options?.actions?.[0]?.onClick;
+  if (!action) throw new Error(`the toast carries no action: ${JSON.stringify(call)}`);
+  await act(async () => action());
   await flush();
 }
 
@@ -127,8 +132,7 @@ const results = () => toasts.filter((call) => call.kind !== 'progress');
 async function clickUndoAndWaitOutRetries(): Promise<void> {
   jest.useFakeTimers();
   try {
-    const undo = mount(toasts[0]!.options!.button!);
-    await act(async () => (undo.querySelector('button') as HTMLButtonElement).click());
+    await act(async () => toasts[0]!.options!.onUndo!());
     for (let i = 0; i < 8; i += 1) {
       await act(async () => {
         jest.advanceTimersByTime(20_000);
@@ -185,8 +189,8 @@ describe('SessionDeleteModal', () => {
     expect(sdkCalls).toEqual(['delete P1/S1']);
     expect(toasts).toHaveLength(1);
     expect(toasts[0]).toMatchObject({
-      kind: 'success',
-      message: '"Fix the login bug" deleted',
+      kind: 'undo',
+      message: 'Fix the login bug deleted',
       options: { id: 'session-delete-undo-S1', duration: 8000 },
     });
     expect(events).toEqual(['deleted', 'open:false']);

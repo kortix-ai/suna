@@ -70,4 +70,6 @@ export interface LoadedAgents {
    * behavior — see `grantFromLoadedAgents` (spec §2.1).
    */
   defaultAgent?: string | null;
+  /** The manifest's `kortix_version` (2 or 3) for a map-shaped roster; absent for v1. */
+  schemaVersion?: number;
 }

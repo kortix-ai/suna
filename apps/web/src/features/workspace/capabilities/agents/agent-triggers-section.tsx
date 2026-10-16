@@ -36,7 +36,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { successToast } from '@/components/ui/toast';
 import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
@@ -220,8 +219,7 @@ export function AgentTriggersSection({
           onCreated={(slug) => {
             setCreateOpen(false);
             void invalidate();
-            successToast(tI18nComplete.raw('textffdc6918b359'));
-            // Straight into the new entry, as the Triggers tab does.
+            // The composer toasts the creation; straight into the new entry, as the Triggers tab does.
             setSelectedSlug(slug);
           }}
         />

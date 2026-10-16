@@ -2,7 +2,7 @@
 
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
-import { monthlyCreditsForUsd } from '@/features/billing/compute-pricing';
+import { formatWholeUsd, monthlyCreditsForUsd } from '@/features/billing/compute-pricing';
 import { invalidateAccountState, useCreatePortalSession } from '@/hooks/billing';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useBillingAccountId } from '@/stores/billing-account-context';
@@ -17,8 +17,9 @@ import { useQueryClient } from '@tanstack/react-query';
  *
  * - `checkout_created`: the account has no paid subscription. Go to Stripe
  *   Checkout.
- * - `updated`: the subscription changed in place. A raise is charged now and
- *   grants the prorated credits at once; a cut applies at the next renewal.
+ * - `updated`: the subscription changed in place; `change` says how. A raise
+ *   (`raised`) is charged now and adds the prorated credits at once; a cut
+ *   (`scheduled`) applies at the next renewal; `kept` cancels a scheduled cut.
  * - `unchanged`: the amount equals the current one.
  * - `payment_pending`: the raise needs a payment confirmation this app has no
  *   inline form for, so the billing portal takes it.
@@ -47,15 +48,37 @@ export function useChangeCreditPlan() {
             case 'checkout_created':
               window.location.href = result.checkout_url;
               return;
-            case 'updated':
+            case 'updated': {
               useUpgradeDialogStore.getState().closeUpgradeDialog();
               await invalidateAccountState(queryClient, true, true, accountId ?? undefined);
-              successToast(t('updated'), {
-                description: t('updatedDescription', {
-                  credits: formatCredits(monthlyCreditsForUsd(result.monthly_usd), { locale }),
-                }),
-              });
+              const amount = formatWholeUsd(result.monthly_usd, locale);
+              if (result.change === 'scheduled') {
+                successToast(t('scheduled'), {
+                  description: t('scheduledDescription', {
+                    amount,
+                    date: result.effective_at
+                      ? new Date(result.effective_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
+                      : '',
+                  }),
+                });
+              } else if (result.change === 'kept') {
+                successToast(t('kept'), { description: t('keptDescription', { amount }) });
+              } else if (result.change === 'raised') {
+                successToast(t('raised', { amount }), {
+                  description: t('raisedDescription', {
+                    due: new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(result.charged_usd ?? 0),
+                    credits: formatCredits(result.credits_added ?? 0, { locale }),
+                  }),
+                });
+              } else {
+                successToast(t('updated'), {
+                  description: t('updatedDescription', {
+                    credits: formatCredits(monthlyCreditsForUsd(result.monthly_usd), { locale }),
+                  }),
+                });
+              }
               return;
+            }
             case 'unchanged':
               infoToast(t('unchanged'));
               return;
