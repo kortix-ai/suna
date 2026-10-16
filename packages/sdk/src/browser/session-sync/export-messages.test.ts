@@ -10,7 +10,7 @@ import { loadSessionExportMessages } from './session-sync-registry';
  * the conversation the page shows meanwhile.
  */
 const base = 'http://export.test';
-const previousConfig = { ...platformConfig };
+const previousConfig = platformConfig();
 let calls: string[] = [];
 let runtimeRows: unknown[] = [];
 let windows: Record<string, { messages: unknown[]; next_cursor: string | null }> = {};
