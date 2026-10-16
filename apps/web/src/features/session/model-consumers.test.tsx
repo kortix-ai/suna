@@ -169,14 +169,17 @@ mock.module('@/hooks/channels/use-channels-installations', () => ({
   useEmailInstall: () => ({ data: null }),
   useDisconnectSlack: () => ({}),
   useDisconnectEmail: () => ({}),
+  // The connect card mounts the BYO wizard, whose module imports these even
+  // when the wizard never opens in this suite — the mock replaces the whole
+  // shim, so every statically imported binding has to exist.
+  useConnectSlack: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
+  useSlackManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-teams-installations', () => ({
   useTeamsInstall: () => ({ data: null }),
   useTeamsMode: () => ({ data: null }),
   useDisconnectTeams: () => ({}),
-  // The Teams BYO wizard's connect mutation and manifest read, which the
-  // mocked module replaces along with the SDK re-export shim.
-  useConnectTeams: () => ({ mutateAsync: mock(async () => undefined) }),
+  useConnectTeams: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
   useTeamsManifest: () => ({ data: null }),
 }));
 mock.module('@/hooks/channels/use-channel-bindings', () => ({
