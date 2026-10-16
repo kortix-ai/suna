@@ -257,17 +257,17 @@ await runAll([
 // agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
 await runAll([
   when('apps/api', () => runWorkspaceTests(['kortix-api'], 1)),
-  // Bun runs TypeScript without checking types, so the API and CLI unit tests
-  // pass with type errors. tsc is single-threaded (~105 s API, ~18 s CLI of
-  // CPU), so it rides inside this wave next to the two test chains instead of
-  // adding a wave. apps/web is not here: its `tsc` has a documented baseline of
-  // known `@types/bun` errors and needs a baseline filter first. kortixd's
-  // image build runs its `tsc` (noUncheckedIndexedAccess) over the workspace
+  // Bun runs TypeScript without checking types, so unit tests pass with type
+  // errors. Each `typecheck` script runs tsgo, the native TypeScript 7 compiler
+  // (~7 s API, ~6 s web, ~3 s CLI cold on a laptop), so it rides inside this
+  // wave next to the two test chains instead of adding a wave. kortixd's
+  // image build runs its typecheck (noUncheckedIndexedAccess) over the workspace
   // packages it imports, so an api-contract change that only kortixd's flags
   // reject failed the dev API image build (#9556) with every lane green.
   when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'typecheck'])),
   when('apps/cli', () => run(['pnpm', '--filter', '@kortix/cli', 'typecheck'])),
   when('apps/kortix-sandbox-agent-server', () => run(['pnpm', '--filter', 'kortixd', 'typecheck'])),
+  when('apps/web', () => run(['pnpm', '--filter', 'Kortix-Computer-Frontend', 'typecheck'])),
   (async () => {
     await when('apps/cli', () => runWorkspaceTests(['@kortix/cli'], 1));
     await when('apps/kortix-sandbox-agent-server', () => runWorkspaceTests(['kortixd'], 1));
@@ -277,7 +277,11 @@ await runAll([
 // apps/mobile's `postinstall: patch-package`. Its tests assert the patched
 // libraries (`lib/markdown/markdown-keys.test.ts`), so apply the patches here.
 // patch-package is idempotent: a checkout that already applied them passes.
-await when('apps/mobile', () => run(['pnpm', '--filter', './apps/mobile', 'exec', 'patch-package']));
+await when('apps/mobile', async () => {
+  await run(['pnpm', '--filter', './apps/mobile', 'exec', 'patch-package']);
+  // The patched type declarations (react-native-drawer-layout) are part of the typecheck.
+  await run(['pnpm', '--filter', './apps/mobile', 'typecheck']);
+});
 const rest = repoChecks
   ? [
       './packages/**',

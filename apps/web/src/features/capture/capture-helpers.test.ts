@@ -46,7 +46,7 @@ describe('device status', () => {
       last_credentials_at: null,
       revoked_at: null,
       created_at: '2026-10-01T10:00:00.000Z',
-    }) as CaptureDevice;
+    }) as unknown as CaptureDevice;
 
   test('recording is green with its layers, queue and last frame', () => {
     const view = deviceStatus(

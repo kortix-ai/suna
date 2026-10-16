@@ -12,7 +12,7 @@
     "dev:envfile": "bun --env-file=.env.local run --hot src/index.ts",
     "start": "dotenvx run -- bun run src/index.ts",
     "e2e:cli-agent-token": "dotenvx run --ignore=MISSING_ENV_FILE -f .env -- bun scripts/e2e-cli-agent-token.ts",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "lint": "eslint src",
     "lint:prune": "eslint src --prune-suppressions",
     "test": "bash scripts/test.sh",

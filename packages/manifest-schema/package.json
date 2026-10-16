@@ -10,7 +10,7 @@
     "./layout": "./src/layout.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}",
     "generate:schema": "bun run scripts/generate-schema.ts"
   },
@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "ajv": "^8.17.1",
     "typescript": "^5.0.0"
   }

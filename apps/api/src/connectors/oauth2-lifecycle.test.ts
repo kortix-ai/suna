@@ -100,7 +100,7 @@ describe('generic OAuth2 lifecycle protocol', () => {
         },
       },
     );
-    expect(authorization).toBe(`Basic ${Buffer.from('confidential:secret-123').toString('base64')}`);
+    expect<string | null>(authorization).toBe(`Basic ${Buffer.from('confidential:secret-123').toString('base64')}`);
     expect(body.has('client_id')).toBe(false);
     expect(body.has('client_secret')).toBe(false);
   });

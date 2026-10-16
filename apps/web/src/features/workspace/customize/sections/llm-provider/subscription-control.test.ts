@@ -72,7 +72,7 @@ describe('forgetSubscriptionCredentials', () => {
 
     await forgetSubscriptionCredentials(queryClient, PROJECT_ID);
 
-    expect(queryClient.getQueryData(key)).toEqual([row('STRIPE_API_KEY')]);
+    expect<unknown>(queryClient.getQueryData(key)).toEqual([row('STRIPE_API_KEY')]);
   });
 
   test('a read started before the delete cannot restore the credential', async () => {
@@ -91,7 +91,7 @@ describe('forgetSubscriptionCredentials', () => {
     resolvePreWriteRead({ items: [row('CODEX_AUTH_JSON')] });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(queryClient.getQueryData(key)).toEqual({ items: [] });
+    expect<unknown>(queryClient.getQueryData(key)).toEqual({ items: [] });
     unsubscribe();
   });
 

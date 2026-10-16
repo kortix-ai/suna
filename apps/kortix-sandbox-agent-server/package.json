@@ -15,7 +15,7 @@
     "dev": "bun run --hot src/main.ts",
     "build": "bash scripts/build.sh",
     "start": "./dist/kortixd",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "lint": "eslint src",
     "test:architecture": "node --test scripts/check-architecture.mjs",
     "test": "bash scripts/test.sh"

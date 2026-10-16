@@ -10,7 +10,7 @@
   "scripts": {
     "cli": "bun run src/index.ts",
     "build": "bash scripts/build.sh",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "bundle": "bash bundle/bundle-host.sh",
     "bundle:all": "bash bundle/bundle-all.sh",
     "bundle:darwin-arm64": "bash bundle/bundle-darwin-arm64.sh",
