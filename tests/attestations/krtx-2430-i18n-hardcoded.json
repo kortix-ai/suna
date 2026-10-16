@@ -1,5 +1,5 @@
 {
-  "source_hash": "71348bcb5d6999886a5277bd98a4085f5df5433d7c5700737165c488c893f8b4",
+  "source_hash": "92ea7109ac3702232fcfeedcb36a84f17656a8b2609371709441a05ce4f8494d",
   "diff_files": [
     "apps/web/src/features/apps/app-releases.tsx",
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
@@ -11,6 +11,7 @@
     "apps/web/src/features/workspace/customize/sections/component/slack-connect-card.tsx",
     "apps/web/src/features/workspace/customize/sections/component/teams-connect-card.tsx",
     "apps/web/src/features/workspace/settings/settings-panel.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/sandbox-tab.empty-new.test.tsx",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -25,13 +26,13 @@
     "packages/sdk/src/core/turns/tool-kind.ts",
     "packages/sdk/src/core/turns/tool-registry.ts"
   ],
-  "diff_hash": "4dc59026bfb9dc0589fe0915bdc61268c72d7f937dfd2efe8c366462375aeb93",
-  "head": "5147b7747466c16846762959668ca21aa11153bc",
+  "diff_hash": "a63ba27560c5827fd0c72127dcf59c121193383690c35c0c2f7f1d7930ed8911",
+  "head": "07fa4b4642b8b391e2d49295e2e37662a6fa1a9f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-16T00:25:09.119Z"
+  "at": "2026-10-16T01:32:20.055Z"
 }
