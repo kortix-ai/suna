@@ -1080,10 +1080,6 @@
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
-        },
-        "workspace_volume": {
-          "name": "Workspace volume",
-          "description": "Keeps each new session's /workspace on its own volume instead of the sandbox disk. Kortix enables it per project."
         }
       }
     },
@@ -20697,7 +20693,9 @@
     "providerInfoActionsApp": "{name} runs every action an agent asks for.",
     "providerInfoSecretsManaged": "Agents never see a password, token or key.",
     "providerInfoSecretsDirect": "Kortix adds the key to each call. Agents never see it.",
-    "providerInfoLabel": "Who manages this connection"
+    "providerInfoLabel": "Who manages this connection",
+    "addMcpAppTitle": "Connect {name}",
+    "addMcpAppDescription": "Kortix connects to {name}'s own MCP server. Choose who can use it, then sign in to {name}."
   },
   "connectMcp": {
     "title": "Connect Kortix over MCP",
