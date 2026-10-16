@@ -335,17 +335,176 @@ export async function setProjectTriggersActivation(
 }
 
 export interface FireProjectTriggerResponse {
-  status: 'fired' | 'queued' | 'failed';
+  /** `deduped`: an identical fire is already in flight; nothing new was started. */
+  status: 'fired' | 'queued' | 'deduped' | 'failed';
   session_id?: string | null;
-  reason?: string;
+  /** The lifecycle command a queued fire waits on; null when none was written. */
+  command_id?: string | null;
+  /** True when this fire matched one already in flight. */
+  deduped?: boolean;
+  /** The run this fire wrote to the trigger's history; null when the write failed. */
+  run_id?: string | null;
+  reason?: string | null;
   error?: string;
 }
 
-export async function fireProjectTrigger(projectId: string, slug: string) {
+/** Options of {@link fireProjectTrigger}. Omit them for a plain manual fire. */
+export interface FireProjectTriggerOptions {
+  /** Deep-merged over the manual base payload at the root, e.g. `{ body: {…} }` for a webhook template. */
+  payload?: Record<string, unknown>;
+  /** Render the prompt and evaluate the filter only: no session, no command, no run. */
+  dryRun?: boolean;
+}
+
+/** What a real fire would send. `fireProjectTrigger(…, { dryRun: true })` writes nothing. */
+export interface ProjectTriggerDryRunResult {
+  dry_run: true;
+  rendered_prompt: string;
+  /** False when the trigger's `filter` would skip this payload. */
+  filter_matches: boolean;
+  /** The rendered key of a `keyed` trigger; null otherwise. */
+  session_key: string | null;
+  /** The merged payload, unredacted (it is the caller's own input). */
+  payload: Record<string, unknown>;
+}
+
+/** What fired a run. */
+export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event';
+
+/**
+ * A run's fire outcome. `fired` = a session was started or prompted;
+ * `rejected` = a webhook delivery refused before its signature verified.
+ */
+export type ProjectTriggerRunStatus = 'queued' | 'running' | 'fired' | 'failed' | 'skipped' | 'rejected';
+
+/** One fire of a trigger, from any source, as the run history lists it. */
+export interface ProjectTriggerRun {
+  run_id: string;
+  slug: string;
+  source: ProjectTriggerRunSource;
+  status: ProjectTriggerRunStatus;
+  /** The agent turn's outcome; null when the run started no turn. */
+  run_status: 'running' | 'succeeded' | 'failed' | null;
+  /** Why the fire failed, was skipped or was rejected. */
+  error: string | null;
+  /** Why the agent turn failed (`stopped` for a stopped turn). */
+  run_error: string | null;
+  session_id: string | null;
+  command_id: string | null;
+  /** The run this one replayed, or null. */
+  replay_of: string | null;
+  /** False for a webhook delivery refused before its signature verified. Replay then needs `confirmUnverified`. */
+  payload_verified: boolean;
+  /**
+   * The fire's payload. Values under secret-looking keys read `[redacted]`.
+   * An oversized payload reads `{ truncated: true, bytes }` and cannot be replayed.
+   */
+  payload: Record<string, unknown>;
+  scheduled_for: string;
+  created_at: string;
+  started_at: string;
+  /** Null while the run waits, runs, or its turn is still going. */
+  ended_at: string | null;
+  duration_ms: number | null;
+  /** LLM spend of the run's session between `started_at` and `ended_at` (or now). Null without a session. */
+  cost_usd: number | null;
+}
+
+/** One page of runs, newest first. */
+export interface ProjectTriggerRunList {
+  runs: ProjectTriggerRun[];
+  /**
+   * Pass as `cursor` for the next page; null on the last page. A page can hold
+   * fewer than `limit` runs (or none) while `next_cursor` is set: follow it.
+   */
+  next_cursor: string | null;
+}
+
+/** Paging of {@link listTriggerRuns}. `limit` is 1–100, default 25. */
+export interface ListTriggerRunsOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+/** Paging and filter of {@link listProjectTriggerRuns}. */
+export interface ListProjectTriggerRunsOptions extends ListTriggerRunsOptions {
+  status?: ProjectTriggerRunStatus;
+}
+
+function runsQuery(options: ListProjectTriggerRunsOptions | undefined) {
+  const q = new URLSearchParams();
+  if (options?.status) q.set('status', options.status);
+  if (options?.limit != null) q.set('limit', String(options.limit));
+  if (options?.cursor) q.set('cursor', options.cursor);
+  const qs = q.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/**
+ * Run a trigger now. It works while triggers are paused. With `payload` the
+ * prompt renders against that payload; with `dryRun: true` nothing is
+ * written and the rendered prompt comes back instead.
+ */
+export async function fireProjectTrigger(
+  projectId: string,
+  slug: string,
+  options: FireProjectTriggerOptions & { dryRun: true },
+): Promise<ProjectTriggerDryRunResult>;
+export async function fireProjectTrigger(
+  projectId: string,
+  slug: string,
+  options?: FireProjectTriggerOptions,
+): Promise<FireProjectTriggerResponse>;
+export async function fireProjectTrigger(projectId: string, slug: string, options?: FireProjectTriggerOptions) {
+  const body: { payload?: Record<string, unknown>; dry_run?: boolean } = {};
+  if (options?.payload !== undefined) body.payload = options.payload;
+  if (options?.dryRun !== undefined) body.dry_run = options.dryRun;
+  return unwrap(
+    await backendApi.post<FireProjectTriggerResponse | ProjectTriggerDryRunResult>(
+      `/projects/${projectId}/triggers/${slug}/fire`,
+      body,
+    ),
+  );
+}
+
+/** One trigger's runs, newest first. Follow `next_cursor` to page. */
+export async function listTriggerRuns(projectId: string, slug: string, options?: ListTriggerRunsOptions) {
+  return unwrap(
+    await backendApi.get<ProjectTriggerRunList>(
+      `/projects/${projectId}/triggers/${slug}/runs${runsQuery(options)}`,
+    ),
+  );
+}
+
+/** Every trigger run of the project the caller may see, newest first. `failed` includes dead-lettered runs. */
+export async function listProjectTriggerRuns(projectId: string, options?: ListProjectTriggerRunsOptions) {
+  return unwrap(
+    await backendApi.get<ProjectTriggerRunList>(`/projects/${projectId}/trigger-runs${runsQuery(options)}`),
+  );
+}
+
+/** Options of {@link replayTriggerRun}. */
+export interface ReplayTriggerRunOptions {
+  /** Required to replay a run whose `payload_verified` is false. */
+  confirmUnverified?: boolean;
+}
+
+/**
+ * Fire a trigger again with a past run's stored payload and the current spec.
+ * Throws: 404 unknown run (or a run of another trigger), 409
+ * `run_in_progress` while the run is queued or running, 409
+ * `payload_unverified` without `confirmUnverified`, 422 `payload_truncated`.
+ */
+export async function replayTriggerRun(
+  projectId: string,
+  slug: string,
+  runId: string,
+  options?: ReplayTriggerRunOptions,
+) {
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse>(
-      `/projects/${projectId}/triggers/${slug}/fire`,
-      {},
+      `/projects/${projectId}/triggers/${slug}/runs/${runId}/replay`,
+      options?.confirmUnverified ? { confirm_unverified: true } : {},
     ),
   );
 }

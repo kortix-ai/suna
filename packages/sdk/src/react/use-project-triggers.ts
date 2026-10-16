@@ -1,14 +1,22 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
   listProjectTriggerEventApps,
   listProjectTriggerEventTypes,
+  listProjectTriggerRuns,
   listProjectTriggers,
+  listTriggerRuns,
+  replayTriggerRun,
   updateProjectTrigger,
+  type FireProjectTriggerOptions,
+  type ProjectTriggerDryRunResult,
+  type ProjectTriggerRunList,
+  type ProjectTriggerRunStatus,
+  type FireProjectTriggerResponse,
   type ProjectTriggerEventApps,
   type ProjectTriggerEventTypes,
   type ProjectTriggerListing,
@@ -59,14 +67,30 @@ export function useProjectTriggers(projectId: string | null | undefined) {
     onSuccess: invalidate,
   });
 
-  // Firing doesn't change the listing itself (no invalidate) — it starts a
-  // session and returns its id; `last_fired_at` isn't reflected until the
-  // next natural list refetch.
+  // A real fire or a replay writes a run and moves `last_*`; the run lists sit
+  // under the same key, so one invalidation refreshes both. A dry run writes nothing.
   const fire = useMutation({
-    mutationFn: (slug: string) => fireProjectTrigger(projectId as string, slug),
+    mutationFn: (args: string | ({ slug: string } & FireProjectTriggerOptions)) => {
+      if (typeof args === 'string') return fireProjectTrigger(projectId as string, args, undefined);
+      const { slug, ...options } = args;
+      return fireProjectTrigger(projectId as string, slug, options) as Promise<
+        FireProjectTriggerResponse | ProjectTriggerDryRunResult
+      >;
+    },
+    onSuccess: (data: FireProjectTriggerResponse | ProjectTriggerDryRunResult) => {
+      if (!('dry_run' in data && data.dry_run)) void invalidate();
+    },
   });
 
-  return { ...query, create, update, remove, fire };
+  const replay = useMutation({
+    mutationFn: (args: { slug: string; runId: string; confirmUnverified?: boolean }) =>
+      replayTriggerRun(projectId as string, args.slug, args.runId, {
+        ...(args.confirmUnverified ? { confirmUnverified: true } : {}),
+      }),
+    onSuccess: invalidate,
+  });
+
+  return { ...query, create, update, remove, fire, replay };
 }
 
 /** A connector slug, or an app with no connector. Slugs hold no `:`, so the two never share a key. */
@@ -104,5 +128,47 @@ export function useProjectTriggerEventApps(projectId: string | null | undefined)
     queryFn: () => listProjectTriggerEventApps(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
+  });
+}
+
+export const triggerRunsKey = (projectId: string | null | undefined, slug: string | null | undefined) =>
+  qk.project.triggerRuns(projectId ?? '', slug ?? '');
+
+export const projectTriggerRunsKey = (
+  projectId: string | null | undefined,
+  status?: ProjectTriggerRunStatus | null,
+) => qk.project.projectTriggerRuns(projectId ?? '', status);
+
+const nextRunsCursor = (page: ProjectTriggerRunList) => page.next_cursor ?? undefined;
+
+/**
+ * One trigger's run history, newest first, paged by `next_cursor`
+ * (`fetchNextPage` / `hasNextPage`). A page can be short while more exist.
+ * Idle until both ids are set. `useProjectTriggers().fire` / `.replay` refresh it.
+ */
+export function useTriggerRuns(projectId: string | null | undefined, slug: string | null | undefined) {
+  return useInfiniteQuery({
+    queryKey: triggerRunsKey(projectId, slug),
+    queryFn: ({ pageParam }) => listTriggerRuns(projectId as string, slug as string, { cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextRunsCursor,
+    enabled: !!projectId && !!slug,
+    ...contract('volatile'),
+  });
+}
+
+/** Every trigger run of the project, newest first, optionally one `status`. Same paging as {@link useTriggerRuns}. */
+export function useProjectTriggerRuns(
+  projectId: string | null | undefined,
+  options?: { status?: ProjectTriggerRunStatus | null },
+) {
+  const status = options?.status ?? undefined;
+  return useInfiniteQuery({
+    queryKey: projectTriggerRunsKey(projectId, status),
+    queryFn: ({ pageParam }) => listProjectTriggerRuns(projectId as string, { status, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextRunsCursor,
+    enabled: !!projectId,
+    ...contract('volatile'),
   });
 }
