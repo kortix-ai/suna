@@ -7,6 +7,7 @@ import { configureKortix } from '../core/http/config';
 import type { ProjectSession, SessionTurnStatus } from '../core/rest/projects-client/sessions';
 import { TURN_END_WATCH_FIRST_READ_MS, TURN_END_WATCH_POLL_MS } from '../core/session/turn-end-watch';
 import { qk } from './query-keys';
+import { resetIdentityState } from './reset-identity-state';
 import {
   type TurnEndHandoffInput,
   resetTurnEndHandoffForTests,
@@ -232,6 +233,58 @@ describe('useTurnEndHandoff', () => {
   test('a disabled page hands nothing over', () => {
     unmount(mount(page({ enabled: false })));
     expect(turnEndHandoffWatching()).toEqual([]);
+  });
+
+  test('signing out (resetIdentityState) ends every watch: nobody is left to tell', async () => {
+    reads.set('P1/S1', [RUNNING]);
+    unmount(mount(page()));
+    unmount(mount(page({ sessionId: 'S2' })));
+    expect(turnEndHandoffWatching()).toEqual(['P1/S1', 'P1/S2']);
+    resetIdentityState();
+    expect(turnEndHandoffWatching()).toEqual([]);
+    await advance(TURN_END_WATCH_POLL_MS * 4);
+    expect(readCount).toBe(0);
+  });
+
+  test('the default /turn read is silent: a failed background read never raises the host error toast', async () => {
+    // The watch runs on pages that have nothing to do with the session; a
+    // 503 there must not pop the global "request failed" toast.
+    const errors: unknown[] = [];
+    let turnReads = 0;
+    configureKortix({
+      backendUrl: 'http://kortix.invalid/v1',
+      getToken: async () => 'token',
+      onNotify: (event) => notified.push(event),
+      onError: (error) => errors.push(error),
+      fetch: async (input) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.endsWith('/projects/P1/sessions/S1/turn')) return new Response('{}', { status: 404 });
+        turnReads++;
+        return turnReads === 1
+          ? new Response(JSON.stringify({ error: 'boom' }), { status: 500 })
+          : Response.json(COMPLETED);
+      },
+    });
+    resetTurnEndHandoffForTests({
+      now: () => clockMs,
+      setTimer: (fn, ms) => {
+        const id = timers.size + 1000 + turnReads * 10;
+        timers.set(id, { at: clockMs + ms, fn });
+        return id;
+      },
+      clearTimer: (id) => {
+        timers.delete(id as number);
+      },
+    });
+    unmount(mount(page()));
+    for (let i = 0; i < 4 && notified.length === 0; i++) {
+      await advance(TURN_END_WATCH_POLL_MS);
+      // The real transport resolves on real timers: let it.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(turnReads).toBe(2);
+    expect(errors).toEqual([]);
+    expect(notified).toMatchObject([{ kind: 'task-complete', sessionId: 'S1' }]);
   });
 
   test('a host with no notification sink watches nothing (no /turn reads for no one)', async () => {

@@ -276,8 +276,10 @@ describe('createTurnEndWatch: a turn left running by a page that unmounted', () 
     expect(ends).toEqual([{ handoff: handoff(), outcome: { kind: 'completed' } }]);
   });
 
-  test('a session that is gone or no longer readable (404 / 403) ends the watch silently', async () => {
-    for (const status of [403, 404]) {
+  test('a signed-out reader, or a session gone or no longer readable (401 / 403 / 404), ends the watch silently', async () => {
+    // The transport already replayed a 401 with a fresh token: one that
+    // surfaces here means nobody is signed in to be told.
+    for (const status of [401, 403, 404]) {
       const { clock, calls, ends, watch } = harness([httpError(status)]);
       watch.watch(handoff());
       await clock.advance(TURN_END_WATCH_FIRST_READ_MS + TURN_END_WATCH_POLL_MS * 4);

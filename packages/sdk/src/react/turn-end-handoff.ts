@@ -10,6 +10,7 @@ import {
 } from '../core/session/turn-end-watch';
 import { unwrapError } from '../core/turns/errors';
 import { hasNotifySink, notifySessionError, notifyTaskComplete } from '../platform/ui';
+import { registerIdentityReset } from './identity-reset-registry';
 import { findCachedProjectSession } from './session-cache-write';
 import { realRuntimeTitle } from './use-opencode-events/helpers';
 import { type Session, runtimeKeys } from './use-opencode-sessions';
@@ -42,12 +43,18 @@ function announce(...[handoff, outcome, watchedSinceMs]: Parameters<TurnEndWatch
 
 function turnEndWatch(): TurnEndWatch {
   watch ??= createTurnEndWatch({
-    readTurn: getSessionTurn,
+    // Silent: a failed read on an unrelated page must not raise the host's
+    // error toast. The next tick reads again.
+    readTurn: (projectId, sessionId) => getSessionTurn(projectId, sessionId, { showErrors: false }),
     onEnded: announce,
     ...overrides,
   });
   return watch;
 }
+
+// The watches belong to the signed-in person: a sign-out or a switch of person
+// ends them, so the next person is never told about the previous one's turns.
+registerIdentityReset(() => watch?.releaseAll());
 
 /** Test seam: a fresh watch, with `deps` replacing the network and the clock. */
 export function resetTurnEndHandoffForTests(deps?: Partial<TurnEndWatchDeps>): void {

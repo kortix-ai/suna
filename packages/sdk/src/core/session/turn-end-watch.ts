@@ -134,6 +134,8 @@ export interface TurnEndWatch {
   watch(handoff: TurnEndHandoff): void;
   /** The page is mounted again: its stream announces from here. */
   release(projectId: string, sessionId: string): void;
+  /** End every watch (sign-out: nobody is left to tell). */
+  releaseAll(): void;
   /** `projectId/sessionId` of every session watched right now. */
   watching(): string[];
 }
@@ -145,11 +147,12 @@ interface WatchEntry {
   timer: unknown;
 }
 
-/** A read the server answered 403/404: the session is gone or no longer this
- *  person's to read. Retrying cannot change that. */
+/** A read retrying cannot fix: 401 (the transport already replayed it with a
+ *  fresh token, so nobody is signed in), 403 or 404 (the session is gone or no
+ *  longer this person's to read). */
 function isFinalReadError(error: unknown): boolean {
   const status = (error as { status?: unknown } | null)?.status;
-  return status === 403 || status === 404;
+  return status === 401 || status === 403 || status === 404;
 }
 
 export function createTurnEndWatch(deps: TurnEndWatchDeps): TurnEndWatch {
@@ -216,6 +219,9 @@ export function createTurnEndWatch(deps: TurnEndWatchDeps): TurnEndWatch {
       const key = keyOf(projectId, sessionId);
       const entry = entries.get(key);
       if (entry) drop(key, entry);
+    },
+    releaseAll() {
+      for (const [key, entry] of [...entries]) drop(key, entry);
     },
     watching() {
       return [...entries.keys()];
