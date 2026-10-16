@@ -1,0 +1,22 @@
+{
+  "source_hash": "efeed27608a7e6b3cdcd15b4d222eb86ff5335e9490eb35ace2e07eb8f31a44b",
+  "diff_files": [
+    "apps/web/src/features/workspace/command-palette-search.test.ts",
+    "apps/web/src/features/workspace/settings-palette-items.ts",
+    "apps/web/src/features/workspace/settings/rail.ts",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/pt.json"
+  ],
+  "diff_hash": "8682f4dda6cf17082ac1eafd3e4e458127e8dc8fe894d9a644d8a1dbf9a3fef6",
+  "head": "cf830e82a005946525b4c5df5d73c29795897a4e",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T08:42:58.707Z"
+}

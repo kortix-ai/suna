@@ -13,6 +13,7 @@ import {
   getDesktopZoom,
   isDesktop,
   openExternalRoute,
+  setDesktopBadgeCount,
   setDesktopZoom,
   zoomReset,
 } from '@/lib/desktop';
@@ -297,5 +298,38 @@ describe('desktop computer commands', () => {
       writable: true,
     });
     expect(await desktopComputerStatus()).toBeNull();
+  });
+});
+
+describe('desktop attention badge (KRTX-2520)', () => {
+  function bridge(invoke: (cmd: string, args?: unknown) => Promise<unknown>) {
+    Object.defineProperty(globalThis, 'window', {
+      value: { __TAURI__: { core: { invoke } } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  test('sends the unseen count to the desktop shell', async () => {
+    const calls: Array<[string, unknown]> = [];
+    bridge(async (cmd, args) => {
+      calls.push([cmd, args]);
+      return null;
+    });
+    await setDesktopBadgeCount(3);
+    await setDesktopBadgeCount(0);
+    expect(calls).toEqual([
+      ['set_badge_count', { count: 3 }],
+      ['set_badge_count', { count: 0 }],
+    ]);
+  });
+
+  test('is a no-op in a browser and on a shell that predates the command', async () => {
+    Object.defineProperty(globalThis, 'window', { value: {}, configurable: true, writable: true });
+    await setDesktopBadgeCount(2);
+    bridge(async (cmd) => {
+      throw new Error(`Unknown command: ${cmd}`);
+    });
+    await setDesktopBadgeCount(2);
   });
 });

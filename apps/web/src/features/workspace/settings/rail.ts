@@ -133,7 +133,16 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
       {
         tab: 'computer',
         label: 'Computer',
-        description: 'Let Kortix agents work with the files, terminal, and apps on your computer.',
+        // "applications", not "apps": every word a row shows is searchable —
+        // `settings-palette-items.ts` builds the palette row's haystack from
+        // this description — and "apps" is the subject word of the Apps page
+        // (`command-palette-search.test.ts` pins `hits("apps")` to that row
+        // alone). "applications" keeps the sentence true and the singular
+        // "app" findable without answering the plural. The same sentence is
+        // stated in `translations/en.json` under `settings.rail.items.` — the
+        // palette serves the catalog, these tests search the literal, and the
+        // two copies must move together.
+        description: 'Let Kortix agents work with the files, terminal, and applications on your computer.',
         icon: Laptop,
       },
     ],

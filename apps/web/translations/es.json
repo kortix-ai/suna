@@ -548,7 +548,7 @@
         },
         "computer": {
           "label": "Ordenador",
-          "description": "Deja que los agentes de Kortix trabajen con los archivos, la terminal y las apps de tu ordenador."
+          "description": "Deja que los agentes de Kortix trabajen con los archivos, la terminal y las aplicaciones de tu ordenador."
         }
       }
     },
