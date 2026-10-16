@@ -1,4 +1,5 @@
 import type { NoiseRule } from '../evidence';
+import { isExtensionSource } from './extensions';
 import {
   isFirstPartyResolvedSource,
   isResolvableFrameSource,
@@ -585,7 +586,135 @@ export function isUndefinedVariableThirdPartyNoise(input: {
   return true;
 }
 
+// Firefox `can't access dead object` external-scope noise. SpiderMonkey's
+// exact wording for a property access on a DESTROYED BROWSING-CONTEXT object:
+// an `<iframe>`'s `contentWindow`/`contentDocument` after the frame left the
+// DOM, a closed popup's `window`, a torn-down frame's `event.source`. V8 and
+// WebKit never produce this wording (they return `null` or silently access
+// the dead reference), so the message alone is engine-safe — a Chromium or
+// Safari error can never match, and the matcher is therefore allowed to be
+// case-insensitive + apostrophe-tolerant (Firefox l10n capitalization drifts
+// across engine versions and some locales serialize U+2019).
+//
+// Better Stack pattern
+// f438068312448537d5218c8aefb06499627d8b2ac520367b017e7bace3f5fe56
+// (Kortix Frontend prod, application_id 2346967, KRTX-2393): `TypeError`,
+// 39 occurrences / 0 identified users, ALL on 2026-10-14 17:05:37–17:05:39
+// UTC in ONE session (Firefox 140.0, Linux x86_64, release `1ecba158…`,
+// turbopack), on `/projects/<project_id>/customize/connectors/<app>/<connec
+// tor>?src=apps` (the connector detail page, Tools tab), mechanism
+// `auto.browser.global_handlers.onerror` (UNCAUGHT, `handled:false`). The
+// stack is the deciding evidence: the ONLY frame is the page DOCUMENT itself
+// (`app:///projects/<project_id>/…?src=apps`) at `lineno: 0, colno: 1,
+// function: "?"` — NO script frame at all. Firefox reports the DOCUMENT as
+// the `window.onerror` source with `lineno: 0` when the throwing compartment
+// is destroyed or unreadable by the page; a FIRST-PARTY throw (our own code
+// holding a dead `contentWindow`) always carries at least one
+// `app:///_next/…` chunk frame, which the negative guards below preserve so
+// the call site can be found + fixed. Sentry's `BrowserApiErrors`
+// instrumentation wraps first-party timer / rAF / event-listener callbacks;
+// an error inside an instrumented first-party callback reports with
+// mechanism `auto.browser.browserapierrors.*` — the production capture is
+// `global_handlers.onerror`, so the throwing callback was NOT first-party
+// instrumented code. Population shape: one isolated event, a 1.1 s gap, then
+// a ~0.7 s burst at 60 fps (2–3 events per 16.7 ms frame) that
+// self-terminates — an animation-shaped tail right after the Tools-tab click
+// navigated (breadcrumbs: token-refresh 401 burst → RSC soft-nav fetches →
+// first error ~0.3 s later). An injected overlay / content script
+// re-scanning the page across the soft navigation fits; a deterministic
+// first-party defect (which would recur across sessions, browsers and
+// releases with an attributable frame) does not.
+//
+// This is NOT the KRTX-984 framelessness-alone suppression the independent
+// review rejected: the class is anchored on the engine-specific message AND
+// the absence of ANY script frame, and every attributable instance keeps
+// reporting. Only the document-only / frameless shape — the throw from a
+// scope the page cannot attribute — is dropped.
+//
+// Residual trade-off, accepted and bounded (the same trade
+// `isIosWebViewInjectedStackOverflowNoise` makes): a first-party INLINE
+// document script that touched a destroyed browsing context would share the
+// document source and be dropped. Our inline bootstraps (analytics-init
+// snippets, the Electron bootstrap) do not touch browsing contexts, and a
+// first-party bundle doing it de-minifies to `apps/web/src/…` and is
+// preserved by negative guard #1. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// dead-object bug; the frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const FIREFOX_DEAD_OBJECT_NOISE_PATTERN = /^can['’]t access dead object$/i;
+
+// A LOADED-SCRIPT source: a Next.js bundle (`app:///_next…` — both the
+// `static/chunks/…` bundles and Next's own `_next-live` runtime files), any
+// URL path carrying a script file extension (`.js` / `.mjs` / `.cjs`, query
+// string removed), or a browser-extension content script
+// (`chrome-extension://`, `moz-extension://`, …). A frame like that means
+// the throw is ATTRIBUTABLE — first-party bundle code or a third-party /
+// extension script that shipped a real stack — so the negative guard keeps
+// the event reporting. The page DOCUMENT (`https://kortix.com/projects/…`,
+// `app:///projects/…`) carries no file extension and is NOT a script frame:
+// it is Firefox's fallback source for a throw whose stack is uncapturable,
+// and it is exactly the shape this rule drops.
+function isScriptAssetSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  if (normalized === '' || normalized === 'undefined') return false;
+  if (isExtensionSource(filename)) return true;
+  if (normalized.startsWith('app:///_next') || /^https?:\/\/[^/]+\/_next\//.test(normalized)) {
+    return true;
+  }
+  return /\.(?:js|mjs|cjs)$/i.test(normalized.split('?')[0] ?? '');
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the Firefox dead-object
+ * external-scope noise class: a `TypeError: can't access dead object`
+ * (SpiderMonkey's wording for a property access on a destroyed
+ * browsing-context object; V8/WebKit never produce it) whose capture carries
+ * NO script frame at all — every source is either absent or the page
+ * DOCUMENT (Firefox's `window.onerror` fallback for a throw whose stack is
+ * uncapturable because the throwing compartment was destroyed). Requires the
+ * engine-specific message AND two negative guards: any resolved first-party
+ * `apps/web/src/…` frame → our own code touched the dead object → actionable,
+ * keep reporting; any loaded-script frame (Next chunk, `_next-live` runtime
+ * file, `.js`/`.mjs`/`.cjs` asset, extension content script) → an
+ * attributable stack → keep reporting. Only the document-only / frameless
+ * shape — the production noise pattern — is dropped. See
+ * `FIREFOX_DEAD_OBJECT_NOISE_PATTERN` for the full rationale and Better Stack
+ * pattern `f4380683…`.
+ */
+export function isFirefoxDeadObjectUnattributableNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (!FIREFOX_DEAD_OBJECT_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
+    return false;
+  }
+  const sources = sourcesOf(input);
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means
+  // our own code touched the dead object → actionable; keep reporting so the
+  // call site can be found + fixed. A real first-party dead-object throw
+  // de-minifies to `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any loaded-script frame (Next chunk / `_next-live`
+  // runtime file / `.js`-extension asset / extension content script) means
+  // the throw is attributable → keep reporting. Only the document-only /
+  // frameless capture (the production noise pattern: the throw came from a
+  // scope the page cannot attribute) remains → drop it.
+  if (sources.some(isScriptAssetSource)) {
+    return false;
+  }
+  return true;
+}
+
 export const OLD_BROWSER_RULES: readonly NoiseRule[] = [
+  {
+    id: 'firefox-dead-object-unattributed',
+    appliesTo: 'both',
+    match: isFirefoxDeadObjectUnattributableNoise,
+  },
   {
     id: 'old-webkit-regex',
     appliesTo: 'both',
