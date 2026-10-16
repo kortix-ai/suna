@@ -1,12 +1,11 @@
 {
-  "source_hash": "02188350f16cb86beb9b003b9a7068d38edc4808c4345d6ceb36460cbba697f2",
+  "source_hash": "9eb3a47c7ac5399675fb62bb67f1cd56d29a4cd76b1e98a8f05632bbdca7db15",
   "diff_files": [
     "apps/api/src/projects/lib/project-transfer.integration.test.ts",
     "apps/api/src/projects/lib/project-transfer.ts",
     "apps/api/src/projects/routes/project-settings.ts",
     "apps/api/src/projects/routes/project-transfer.test.ts",
     "apps/mobile/components/icons/teams-icon.test.ts",
-    "apps/mobile/components/session/tool/tools/bash-tool.tsx",
     "apps/web/content/docs/audit-actions.mdx",
     "apps/web/scripts/audit-i18n.mjs",
     "apps/web/src/components/iam/audit-http-routes.generated.ts",
@@ -25,25 +24,22 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
-    "packages/db/migrations/20261015130500000_project_transfer_tenant_fks.sql",
+    "packages/db/migrations/20261016001400000_project_transfer_tenant_fks.sql",
     "packages/sdk/src/core/rest/projects-client/projects.test.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts",
-    "packages/sdk/src/core/turns/tool-kind.test.ts",
-    "packages/sdk/src/core/turns/tool-kind.ts",
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
     "packages/shared/src/audit-route-labels.ts",
-    "packages/shared/src/session-fixture/tools/pi.ts",
     "tests/spec/routes.generated.json",
     "tests/src/coverage/allowlist.ts"
   ],
-  "diff_hash": "41223843f4849240006ab69af70f7f6a650dfd30749e229a513a7ed91ee979fa",
-  "head": "86a0c0d42cc14e457af0e3616ba41806b762205d",
+  "diff_hash": "04e41d92223d3e4f9a3f0588ba4afff14683b330d11235d021db291738fc1a52",
+  "head": "bd0b643d010e520e5a272beb12c6be61fb6a72b3",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-15T22:01:19.663Z"
+  "at": "2026-10-16T01:31:09.552Z"
 }
