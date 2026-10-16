@@ -6,9 +6,10 @@
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { formatIssues, parseManifestText } from '@kortix/manifest-schema';
+import { formatIssues, IMPORTABLE_LIST_KEYS, IMPORTABLE_MAP_KEYS, MANIFEST_IMPORTS_KEY, parseManifestText, splitManifestByOrigin } from '@kortix/manifest-schema';
 import { emitJson, takeFlagBool } from '../command-helpers.ts';
-import { type MigrationPlan, planMigration } from '../manifest-migrate.ts';
+import { resolveLocalManifestImports } from '../manifest-imports.ts';
+import { type MigrationPlan, planMigration, renderManifest } from '../manifest-migrate.ts';
 import { resolveLocalManifest } from '../manifest.ts';
 import { C, help, status } from '../style.ts';
 
@@ -28,6 +29,9 @@ What it does:
     its frontmatter names, else default_agent.
   - OpenCode plugins and harnesses.pi.packages become extensions, enabled on
     every agent that loaded them.
+  - A manifest split with imports: stays split. Each agent, connector,
+    trigger and App stays in the file that declared it; the new registries go
+    to kortix.yaml.
 
 Without --write it prints the plan and the new kortix.yaml and changes nothing.
 The result is checked with the v3 validator; --write refuses an invalid result.
@@ -79,15 +83,7 @@ export function runMigrate(argv: string[]): number {
     );
     return 1;
   }
-  // ponytail: a split manifest (`imports:`) is refused; convert per imported file when a project needs it.
-  if (raw.imports !== undefined) {
-    process.stderr.write(
-      `${status.err('kortix migrate does not convert a manifest split with `imports:` yet.')}\n  ${C.dim}Merge the imported files into kortix.yaml, run kortix migrate, then split it again.${C.reset}\n`,
-    );
-    return 1;
-  }
-
-  const plan = planMigration(root, 'kortix.yaml', raw);
+  const plan = raw.imports === undefined ? planMigration(root, 'kortix.yaml', raw) : planSplitMigration(root, found.path);
   if (found.format === 'toml') plan.changes.push({ path: relative(root, found.path), action: 'delete', note: 'replaced by kortix.yaml' });
 
   if (json) {
@@ -113,6 +109,38 @@ export function runMigrate(argv: string[]): number {
     );
   }
   return 0;
+}
+
+/** Keys an imported v3 file may hold; anything else fails the whole manifest. */
+const IMPORTABLE = new Set<string>([...IMPORTABLE_LIST_KEYS, ...IMPORTABLE_MAP_KEYS, MANIFEST_IMPORTS_KEY]);
+
+/**
+ * A manifest split with `imports:`: migrate the merged document, then write
+ * every entry back to the file that declared it (`splitManifestByOrigin`).
+ * The new registries (skills, commands, extensions) go to the root. A key an
+ * imported v3 file cannot hold (v2 dropped it silently, e.g. `harnesses`) is
+ * removed and reported.
+ */
+function planSplitMigration(root: string, manifestFile: string): MigrationPlan {
+  const resolved = resolveLocalManifestImports(manifestFile, 'yaml');
+  const plan = planMigration(root, 'kortix.yaml', resolved.raw);
+  const files = splitManifestByOrigin(resolved, plan.next);
+  plan.changes = plan.changes.filter((change) => change.path !== 'kortix.yaml');
+  const rewrites = files.flatMap((file, index) => {
+    const isRoot = index === 0;
+    const raw = { ...file.raw };
+    if (!isRoot) {
+      for (const key of Object.keys(raw).filter((key) => !IMPORTABLE.has(key))) {
+        plan.dropped.push(`${file.path}: ${key} (an imported v3 file holds ${[...IMPORTABLE].join(', ')})`);
+        delete raw[key];
+      }
+    }
+    if (!isRoot && !file.changed && Object.keys(raw).length === Object.keys(file.raw).length) return [];
+    return [{ path: file.path, action: 'rewrite' as const, note: isRoot ? 'kortix_version 2 → 3: agents inline, registries, per-agent grants' : 'its entries in kortix_version 3 shape', content: renderManifest(raw, isRoot) }];
+  });
+  plan.changes.unshift(...rewrites);
+  plan.manifest = rewrites[0]?.content ?? plan.manifest;
+  return plan;
 }
 
 function printPlan(plan: MigrationPlan, write: boolean): void {
