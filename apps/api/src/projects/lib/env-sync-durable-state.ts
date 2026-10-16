@@ -33,6 +33,12 @@
  * and pushes. The boot is a third key, not a delete: a push to the OLD process
  * whose write lands after the claim (a slow DB write) is still fenced by its
  * own `appliedAtMs`.
+ *
+ * THE ROLLOUT. A record written before the fence existed has no boot to
+ * compare against: a daemon that restarted after it was written left nothing
+ * behind. So a record confirms only when it carries `envSyncRecordVersion` =
+ * `ENV_SYNC_RECORD_VERSION`. Each live session pushes once after the deploy,
+ * and the daemon no-ops a push of the env it already holds.
  */
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
@@ -42,6 +48,9 @@ import { db } from '../../shared/db';
 const SIGNATURE_KEY = 'envSyncSignature';
 const APPLIED_AT_KEY = 'envSyncAppliedAtMs';
 const DAEMON_BOOT_AT_KEY = 'envSyncDaemonBootAtMs';
+const RECORD_VERSION_KEY = 'envSyncRecordVersion';
+/** 2: written by an API whose daemon boot claim fences the record. */
+export const ENV_SYNC_RECORD_VERSION = 2;
 
 export interface EnvSyncDurableRecord {
   signature: string;
@@ -71,6 +80,7 @@ export async function loadEnvSyncDurableState(
   const appliedAtMs = config[APPLIED_AT_KEY];
   if (typeof signature !== 'string' || !signature) return null;
   if (typeof appliedAtMs !== 'number' || !Number.isFinite(appliedAtMs)) return null;
+  if (config[RECORD_VERSION_KEY] !== ENV_SYNC_RECORD_VERSION) return null;
   const daemonBootAtMs = config[DAEMON_BOOT_AT_KEY];
   // `<=`: a push in the boot's own millisecond may have reached the old process.
   if (typeof daemonBootAtMs === 'number' && appliedAtMs <= daemonBootAtMs) return null;
@@ -94,9 +104,9 @@ export async function persistEnvSyncDurableState(
     .set({
       // Key names are embedded as SQL literals, not bound parameters — same
       // convention as `markSandboxLlmGatewayMode`'s `'llmGatewayEnabled'`. Must
-      // stay literal string constants (SIGNATURE_KEY/APPLIED_AT_KEY above),
+      // stay literal string constants (the `*_KEY` constants above),
       // never caller input — see the guard note on `metadataMergeSubtree`.
-      config: sql`COALESCE(${sessionSandboxes.config}, '{}'::jsonb) || jsonb_build_object('envSyncSignature', ${signature}::text, 'envSyncAppliedAtMs', ${appliedAtMs}::bigint)`,
+      config: sql`COALESCE(${sessionSandboxes.config}, '{}'::jsonb) || jsonb_build_object('envSyncSignature', ${signature}::text, 'envSyncAppliedAtMs', ${appliedAtMs}::bigint, 'envSyncRecordVersion', ${ENV_SYNC_RECORD_VERSION}::int)`,
       updatedAt: new Date(),
     })
     .where(eq(sessionSandboxes.sessionId, sessionId));

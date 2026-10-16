@@ -293,6 +293,7 @@ describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
     // Simulate the confirmation aging past the self-heal threshold, as read by
     // a cold replica (never touches this process's own memo).
     durableConfig = {
+      ...durableConfig,
       envSyncSignature: signature,
       envSyncAppliedAtMs: Date.now() - ENV_SYNC_BACKGROUND_REFRESH_STALE_MS - 5_000,
     };
@@ -378,6 +379,21 @@ describe('syncSandboxEnvForPrompt — a daemon restart drops the trust', () => {
     await prompt();
     expect(posted).toHaveLength(2);
     expect(__pendingEnvChecksForTests()).toHaveLength(1);
+  });
+
+  // The deploy that ships the fence: a daemon that restarted earlier left no
+  // boot record, so a record written by the previous API confirms nothing.
+  test('a record written before the fence existed is pushed over once, then trusted', async () => {
+    await prompt();
+    expect(posted).toHaveLength(1);
+    const { envSyncRecordVersion: _version, ...previousApiRecord } = durableConfig ?? {};
+    durableConfig = previousApiRecord;
+    __resetPromptModelSignatureCacheForTests(); // the new API process
+
+    await prompt();
+    expect(posted).toHaveLength(2);
+    await prompt();
+    expect(posted).toHaveLength(2);
   });
 
   test('a boot recorded before the last push leaves the trust in place', async () => {

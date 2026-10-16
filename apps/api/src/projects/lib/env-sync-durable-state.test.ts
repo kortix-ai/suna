@@ -77,12 +77,19 @@ describe('loadEnvSyncDurableState', () => {
     expect(await loadEnvSyncDurableState('sess-1')).toBeNull();
   });
 
-  test('a row with both keys → the record', async () => {
-    selectedRow = { config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000 } };
+  test('a row with both keys and the record version → the record', async () => {
+    selectedRow = { config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000, envSyncRecordVersion: 2 } };
     expect(await loadEnvSyncDurableState('sess-1')).toEqual({
       signature: 'sig-a',
       appliedAtMs: 1_700_000,
     });
+  });
+
+  // Written before the boot fence existed: a daemon restart after it left no
+  // boot to compare against, so it may describe a process that is gone.
+  test('a record without the record version → null', async () => {
+    selectedRow = { config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000 } };
+    expect(await loadEnvSyncDurableState('sess-1')).toBeNull();
   });
 
   test('a malformed value (wrong type) → null, never a crash', async () => {
@@ -99,28 +106,28 @@ describe('loadEnvSyncDurableState', () => {
   // env: the record describes a process that no longer exists.
   test('a record applied before the recorded daemon boot → null', async () => {
     selectedRow = {
-      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000, envSyncDaemonBootAtMs: 1_700_001 },
+      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000, envSyncRecordVersion: 2, envSyncDaemonBootAtMs: 1_700_001 },
     };
     expect(await loadEnvSyncDurableState('sess-1')).toBeNull();
   });
 
   test('a record applied in the same millisecond as the boot → null (the push may have hit the old process)', async () => {
     selectedRow = {
-      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000, envSyncDaemonBootAtMs: 1_700_000 },
+      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000, envSyncRecordVersion: 2, envSyncDaemonBootAtMs: 1_700_000 },
     };
     expect(await loadEnvSyncDurableState('sess-1')).toBeNull();
   });
 
   test('a record applied after the recorded daemon boot → the record', async () => {
     selectedRow = {
-      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_002, envSyncDaemonBootAtMs: 1_700_001 },
+      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_002, envSyncRecordVersion: 2, envSyncDaemonBootAtMs: 1_700_001 },
     };
     expect(await loadEnvSyncDurableState('sess-1')).toEqual({ signature: 'sig-a', appliedAtMs: 1_700_002 });
   });
 
   test('a malformed boot value is ignored, never a crash', async () => {
     selectedRow = {
-      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000, envSyncDaemonBootAtMs: 'soon' },
+      config: { envSyncSignature: 'sig-a', envSyncAppliedAtMs: 1_700_000, envSyncRecordVersion: 2, envSyncDaemonBootAtMs: 'soon' },
     };
     expect(await loadEnvSyncDurableState('sess-1')).toEqual({ signature: 'sig-a', appliedAtMs: 1_700_000 });
   });
@@ -141,11 +148,13 @@ describe('recordDaemonBootForEnvSync', () => {
 });
 
 describe('persistEnvSyncDurableState', () => {
-  test('merges the signature and timestamp atomically into config', async () => {
+  test('merges the signature, timestamp and record version atomically into config', async () => {
     await persistEnvSyncDurableState('sess-1', 'sig-b', 1_700_500);
     expect(updateCalls).toHaveLength(1);
     const values = boundValues(updateCalls[0]!.config);
     expect(values).toContain('sig-b');
     expect(values).toContain(1_700_500);
+    expect(values).toContain(2);
+    expect(sqlText(updateCalls[0]!.config)).toContain("'envSyncRecordVersion'");
   });
 });

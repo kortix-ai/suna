@@ -54,6 +54,7 @@ export function applyEnvSyncDurableWrite(
       ...config,
       envSyncSignature: signature,
       envSyncAppliedAtMs: valueAfterKey(fragment, 'envSyncAppliedAtMs'),
+      envSyncRecordVersion: valueAfterKey(fragment, 'envSyncRecordVersion'),
     };
   }
   const bootAtMs = valueAfterKey(fragment, 'envSyncDaemonBootAtMs');
