@@ -795,6 +795,7 @@ describe('narrateFailedStep (W7)', () => {
     'skills',
     'ask',
     'retired',
+    'script',
     'other',
   ];
 
