@@ -14,6 +14,8 @@ function List({ addRequest, onOpen, onHandled }: { addRequest: number; onOpen: (
 let bump: () => void = () => undefined;
 function Page({ onOpen }: { onOpen: () => void }) {
   const [addRequest, setAddRequest] = useState(1);
+  // A test handle into the rendered page; it is not app render logic.
+  // eslint-disable-next-line react-hooks/globals
   bump = () => setAddRequest((n) => n + 1);
   return createElement(List, { addRequest, onOpen, onHandled: () => setAddRequest(0) });
 }
