@@ -1,5 +1,5 @@
 {
-  "source_hash": "8ca6bffda1cea3a013d260b5d443c5c9e53813e2265c85ddbc89645697fe0e62",
+  "source_hash": "1f5cd417ad2f154a3ae110526b68b718e7794e7cfeb3b3e07eb7f4d642253105",
   "diff_files": [
     "apps/web/src/features/session/composer-chat-input.tsx",
     "apps/web/src/features/session/composer/command-attachments.test.ts",
@@ -18,12 +18,12 @@
     "apps/web/translations/zh.json"
   ],
   "diff_hash": "db846ac345e2ee90d86ee9b2d052f895808f4aec7bcfb9b793caff420b12f5c3",
-  "head": "62f276d7414b507506881937f49d669541f6fad7",
+  "head": "f3af0c25146328bb322ba96026264708fff45ea3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-unaffected"
+    "db-suites": "pass"
   },
-  "at": "2026-10-16T06:32:57.725Z"
+  "at": "2026-10-16T08:01:43.807Z"
 }
