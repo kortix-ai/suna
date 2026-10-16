@@ -334,8 +334,11 @@ root. No turn runs at either point.
   reads them one by one through the attachments route). So the API caps what
   the box pulls: `SESSION_LOG_RESTORE_MAX_BYTES` (default 24 MiB) bounds the
   live messages' stored JSON lengths plus the bytes of the session's live
-  `session_log_blobs` (full texts over 256 kB and attachments), one sum,
-  blobs at weight 1 (conservative: they cost less than records). p99.9 of
+  `session_log_blobs` (full texts over 256 kB and attachments) at
+  `SESSION_LOG_BLOB_WEIGHT` = 2/5 (15x / 38x ≈ 0.39, rounded up), one sum in
+  daemon-memory terms. Effective maxima: 24 MiB of records alone, or 60 MiB of
+  blobs alone (about 125 screenshots of 500 kB); either peaks the daemon at
+  about 1 GB. 60 screenshots of 500 kB restore; 400 (200 MB) answer 413. p99.9 of
   prod sessions is about 15 MB, p99 3.7 MB. The size query reads the records
   inside Postgres before any record leaves it. Above the cap the claim still
   happens and the answer is 413
@@ -357,7 +360,7 @@ root. No turn runs at either point.
   the newest messages under the cap (paging) when sessions near it are common.
 
 Default-on: the cap above bounds what one restore makes the box hold (live
-records plus live blobs, 24 MiB by default). It does not bound the native
+records plus 2/5 of live blobs, 24 MiB by default). It does not bound the native
 store a box already holds: a box with a large store loads it at boot (`held()`)
 before any restore. A fresh box drops only an attachment whose record still
 says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a

@@ -22,9 +22,10 @@
  * through the attachments route with its own credential. The API never holds a
  * session's full texts in memory here.
  *
- * The cap. Before any record leaves Postgres, `sessionLogRestoreBytes` (what a restore makes the box
- * pull: the live records' stored JSON lengths plus the bytes of the session's live blobs, the full
- * texts and attachments it reads after the answer) is compared with `SESSION_LOG_RESTORE_MAX_BYTES`.
+ * The cap. Before any record leaves Postgres, `sessionLogRestoreBytes` (what a restore costs the box:
+ * the live records' stored JSON lengths plus the bytes of the session's live blobs, the full texts and
+ * attachments it reads after the answer, at `SESSION_LOG_BLOB_WEIGHT`) is compared with
+ * `SESSION_LOG_RESTORE_MAX_BYTES`.
  * The size query reads the records inside Postgres only. Above the cap the claim stands and the
  * answer is `SessionLogRestoreTooLarge` (413): every thread without messages, every rev, `seq_max`,
  * no blob. The API holds ids and seqs only; the box writes the D3 note alone.
@@ -83,8 +84,16 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
 }
 
 /**
- * What a restore of the session makes the box pull: the live records' stored JSON lengths plus the
- * bytes of the session's live blobs (texts over 256 kB, attachments). `messages`: the live messages.
+ * Daemon memory per blob byte, relative to a record byte. Measured on a real pi box: a 38.5 MB log
+ * of records peaked the daemon at +1.45 GB (~38x), 30 MB of image blobs at +455 MB (~15x); 15/38 ≈ 0.39,
+ * rounded up to 2/5. The cap then means the same daemon peak (about 1 GB) for records and for blobs.
+ */
+export const SESSION_LOG_BLOB_WEIGHT = 2 / 5;
+
+/**
+ * What a restore of the session costs the box, in record-equivalent bytes: the live records' stored
+ * JSON lengths plus the bytes of the session's live blobs (texts over 256 kB, attachments) times
+ * `SESSION_LOG_BLOB_WEIGHT`, rounded up. `messages`: the live messages.
  */
 export async function sessionLogRestoreBytes(tx: Pick<Tx, 'execute'>, sessionId: string): Promise<{ bytes: number; messages: number }> {
   const [row] = await tx.execute<{ records: string; blobs: string; messages: number }>(sql`
@@ -92,7 +101,7 @@ export async function sessionLogRestoreBytes(tx: Pick<Tx, 'execute'>, sessionId:
       (SELECT coalesce(sum(octet_length(record::text)), 0) FROM kortix.session_log_messages WHERE session_id = ${sessionId} AND deleted_at IS NULL) AS records,
       (SELECT coalesce(sum(bytes), 0) FROM kortix.session_log_blobs WHERE session_id = ${sessionId} AND deleted_at IS NULL) AS blobs,
       (SELECT count(*)::int FROM kortix.session_log_messages WHERE session_id = ${sessionId} AND deleted_at IS NULL) AS messages`);
-  return { bytes: Number(row?.records ?? 0) + Number(row?.blobs ?? 0), messages: Number(row?.messages ?? 0) };
+  return { bytes: Number(row?.records ?? 0) + Math.ceil(Number(row?.blobs ?? 0) * SESSION_LOG_BLOB_WEIGHT), messages: Number(row?.messages ?? 0) };
 }
 
 /** True when a restore of the session is under `SESSION_LOG_RESTORE_MAX_BYTES` (no 413). */
