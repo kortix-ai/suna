@@ -286,10 +286,13 @@ Testing reset, 2026-10-16. Latency is the core concern. Development must be
 fast enough to push and break things on `dev`. The full suite runs once per
 release, at Promote to Production, and nowhere else. The rules:
 
-1. **Never run a full suite during development.** No multi-minute run on your
-   box, on a PR into `dev`, or on a push to `dev`. Verify only what you
-   changed: T0 for the packages you touched, the specific test that covers the
-   change (seconds), and the change itself through its real surface.
+1. **Never run a full suite during development, and never a whole package's
+   tests.** No multi-minute run on your box, on a PR into `dev`, or on a push
+   to `dev`. Verify only what you changed: T0 for the packages you touched,
+   the test files that cover the change, named one by one
+   (`pnpm --filter <pkg> test <file>`), and the change itself through its real
+   surface. Running all 2,129 `apps/web` tests to check one component is the
+   anti-pattern this rule exists for.
 2. **One gate: the release pull request into `prod`.** Promote to Production
    runs the whole suite there, once, and every check must be green. It is the
    only check that blocks anything.

@@ -5,9 +5,12 @@ description: Use for every Kortix test task, behavior change, bug fix, refactor,
 
 # Testing
 
-**During development, never run a full suite.** Run T0 (`tsc`, lint) for the
-packages you touched, the one test file or flow that covers your change, and
-the change itself through its real surface. Seconds, not minutes. The full
+**During development, never run a full suite or a whole package's tests.**
+Run T0 (`tsc`, lint) for the packages you touched, the test files that cover
+your change named one by one (`pnpm --filter <pkg> test <file>`, or one flow
+with `pnpm test -- --id <ID>`), and the change itself through its real
+surface. Seconds, not minutes. Running a whole package's suite to check one
+file is the anti-pattern. The full
 suite runs once, at Promote to Production, on the release pull request into
 `prod`: it is the only gate (`AGENTS.md`, "Testing philosophy").
 
