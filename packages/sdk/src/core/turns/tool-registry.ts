@@ -73,6 +73,7 @@ const CATEGORY_OF_KIND: Record<ToolKind, ToolCategory> = {
   apply_patch: 'edit',
   bash: 'shell',
   pty: 'shell',
+  script: 'shell',
   web_search: 'web',
   webfetch: 'web',
   media: 'web',
