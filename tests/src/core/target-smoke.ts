@@ -246,6 +246,27 @@ async function frontendHealthJson(
   return response.json() as Promise<FrontendHealth>;
 }
 
+/**
+ * Waits while the target still serves another SHA: a gate dispatched before
+ * the staging deploy finished failed every shard in seconds (run 38746500392).
+ * Every other health failure throws at once.
+ */
+export async function waitForTargetSha(
+  config: TargetSmokeConfig,
+  { timeoutMs = 15 * 60_000, intervalMs = 30_000, fetchImpl = fetch, sleep = Bun.sleep } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await assertTargetSmokeHealth(config, fetchImpl);
+    } catch (error) {
+      if (!String((error as Error).message).includes('SHA mismatch') || Date.now() >= deadline) throw error;
+      console.log(`[target] ${(error as Error).message}; waiting for the deploy`);
+      await sleep(intervalMs);
+    }
+  }
+}
+
 export async function assertTargetSmokeHealth(
   config: TargetSmokeConfig,
   fetchImpl: typeof fetch = fetch,
