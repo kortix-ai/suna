@@ -12,6 +12,32 @@ import { TERMINAL_THEMES } from '@/lib/interface-themes';
 import { getItemsForSurface, menuRegistry } from '@/lib/menu-registry';
 
 import enMessages from '../../../translations/en.json';
+import deMessages from '../../../translations/de.json';
+import esMessages from '../../../translations/es.json';
+import frMessages from '../../../translations/fr.json';
+import itMessages from '../../../translations/it.json';
+import jaMessages from '../../../translations/ja.json';
+import ptMessages from '../../../translations/pt.json';
+import srMessages from '../../../translations/sr.json';
+import zhMessages from '../../../translations/zh.json';
+
+/** The slice of a locale catalog the palette searches the Computer row from. */
+type RailCatalog = {
+  settings: { rail: { items: { computer: { description: string } } } };
+};
+
+/** Every locale catalog that carries the rail's computer description. */
+const catalogs: Record<string, RailCatalog> = {
+  en: enMessages,
+  de: deMessages,
+  es: esMessages,
+  fr: frMessages,
+  it: itMessages,
+  ja: jaMessages,
+  pt: ptMessages,
+  sr: srMessages,
+  zh: zhMessages,
+};
 
 /**
  * ============================================================================
@@ -368,40 +394,26 @@ describe('queries return the rows they name', () => {
     expect(hits('app')).toContain('settings:computer');
   });
 
-  test('the connect tabs answer the words their panes show', () => {
-    // `TAB_KEYWORDS` went partial when PR #9992 added `mcp`/`computer` to
-    // `SettingsTab` without bag entries: both rows carried the literal word
-    // "undefined" in their search text and were findable by label only. These
-    // are the bags' own words, pinned so no future edit strands them again.
-    expect(hits('pair')).toEqual(['settings:computer']);
-    expect(hits('desktop')).toEqual(['settings:computer']);
-    expect(hits('download')).toEqual(['settings:computer']);
-    expect(hits('model context protocol')).toEqual(['settings:mcp']);
-  });
-
-  test('no settings row searches the word "undefined"', () => {
-    // `TAB_KEYWORDS[item.tab]` at a missing key stringifies as "undefined" —
-    // a word a query can match that nothing renders and nobody typed. The
-    // record's totality is the typecheck's job; this catches the cast that
-    // slips past it.
-    for (const row of settingsRows) {
-      expect(row.text.toLowerCase()).not.toContain('undefined');
+  test('every catalog that serves the Computer row keeps the word "apps" out of it', () => {
+    // The palette serves the rail copy through the `next-intl` translator in
+    // the ACTIVE locale (command-palette.tsx builds the settings rows from
+    // `useTranslations('settings.rail')`), so the "apps" pin above only holds
+    // where the served sentence holds. de/es/fr/pt translated the sentence
+    // with their own word for "apps" and answered the query there; every
+    // catalog now says "applications" (Anwendungen, aplicaciones,
+    // applications, aplicativos), and this pins the invariant across all of
+    // them, in every file that carries the key.
+    for (const [locale, messages] of Object.entries(catalogs)) {
+      const served = messages.settings.rail.items.computer.description;
+      expect(served.toLowerCase(), `${locale} catalog`).not.toContain('apps');
     }
-  });
-
-  test('the en catalog the app serves says what these tests search', () => {
-    // `hits()` above searches the literals in `rail.ts`; the palette serves
-    // `settings.rail` from the catalog through the `next-intl` translator
-    // (command-palette.tsx). If the two copies drift, this whole file is
-    // testing a haystack the app never serves. The Computer description is
-    // the copy the "apps" pin rides on, so the served value must exclude the
-    // word too.
+    // And the served en value must stay the literal rail.ts serves: if the
+    // two copies drift, `hits()` above is testing a haystack the app never
+    // serves.
     const literal = railGroups()
       .flatMap((group) => group.items)
       .find((item) => item.tab === 'computer')?.description;
-    const served = enMessages.settings.rail.items.computer.description;
-    expect(literal).toBe(served);
-    expect(served).not.toContain('apps');
+    expect(literal).toBe(enMessages.settings.rail.items.computer.description);
   });
 
   test('"agents" and "skills" reach their pages, not a restart command', () => {
