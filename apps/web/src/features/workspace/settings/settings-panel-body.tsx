@@ -491,7 +491,7 @@ export function SettingsPanelShell({
        and fires that pane's queries — a cost only keyboard users pay, and one
        neither tsc nor the suite can see. WAI-ARIA's own guidance is manual
        activation whenever selecting a tab has a side effect. Arrow moves
-       focus; Enter/Space selects. Pinned by `settings-panel-a11y.test.ts`. */
+       focus; Enter/Space selects. */
     <SettingsRailCopyProvider groups={groups} chrome={chrome}>
       <Tabs
         value={tab}
