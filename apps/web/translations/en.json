@@ -20155,7 +20155,7 @@
     },
     "sessionEmbed": {
       "sectionTitle": "Embed",
-      "sectionDescription": "Copies an iframe snippet of this session page. Whoever opens it signs in with an account that can open this session.",
+      "sectionDescription": "For same-site pages only. Viewers must already be signed in with access to this session; signing in inside a cross-site iframe is not supported.",
       "copy": "Copy embed code",
       "copied": "Embed code copied"
     }

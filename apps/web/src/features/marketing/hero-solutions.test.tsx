@@ -12,11 +12,7 @@ const { default: SolutionRolePage, generateStaticParams } = await import('../../
 
 describe('hero and solutions characterization', () => {
   test('Hero renders its shipped fold without CTA buttons', () => {
-    // React rewrites its internal `useId` scheme between minor versions
-    // (`:r1:` → `«r1»` → `_R_pa_`); the shipped fold does not depend on it.
-    // Strip the scheme off so the snapshot pins the markup, not the React
-    // version that rendered it.
-    const html = renderToStaticMarkup(<Hero />).replace(/_R_[a-z0-9]+_/g, '');
+    const html = renderToStaticMarkup(<Hero />);
     expect(html).toMatchSnapshot();
     expect(html).toContain('id="hero"');
     expect(html).toContain('id="demo"');

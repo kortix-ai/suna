@@ -20144,7 +20144,7 @@
     },
     "sessionEmbed": {
       "sectionTitle": "Ugradi",
-      "sectionDescription": "Kopira iframe isječak ove stranice sesije. Ko ga otvori, prijavljuje se nalogom koji može da otvori ovu sesiju.",
+      "sectionDescription": "Samo za stranice istog sajta. Posjetioci moraju već biti prijavljeni i imati pristup ovoj sesiji; prijavljivanje unutar iframe-a na drugom sajtu nije podržano.",
       "copy": "Kopiraj kod za ugrađivanje",
       "copied": "Kod za ugrađivanje je kopiran"
     }

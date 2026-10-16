@@ -27,7 +27,8 @@ export function sessionEmbedSnippet(projectId: string, sessionId: string, origin
  * "Embed" in the Share dialog: one copy button for the iframe snippet above.
  * Framing the session page is allowed by the CSP `frame-ancestors` rule on
  * that route (next.config.ts); the viewer inside the frame is the app's own
- * auth — they sign in with an account that can open the session.
+ * auth. Same-site embeds require an existing signed-in session; cross-site
+ * embeds cannot sign in inside the frame (SameSite=Lax and /auth's CSP).
  *
  * Mounted inside `ModalContent`, so `window` is read at render time of an open
  * dialog, never during SSR.

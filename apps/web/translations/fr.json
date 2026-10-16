@@ -20144,7 +20144,7 @@
     },
     "sessionEmbed": {
       "sectionTitle": "Intégrer",
-      "sectionDescription": "Copie un extrait iframe de cette page de session. Quiconque l'ouvre se connecte avec un compte autorisé à ouvrir cette session.",
+      "sectionDescription": "Uniquement pour les pages du même site. Les visiteurs doivent déjà être connectés et avoir accès à cette session ; la connexion dans un iframe intersites n’est pas prise en charge.",
       "copy": "Copier le code d'intégration",
       "copied": "Code d'intégration copié"
     }

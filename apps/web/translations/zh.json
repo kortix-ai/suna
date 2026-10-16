@@ -20144,7 +20144,7 @@
     },
     "sessionEmbed": {
       "sectionTitle": "嵌入",
-      "sectionDescription": "复制此会话页面的 iframe 代码片段。打开者需使用有权打开此会话的帐号登录。",
+      "sectionDescription": "仅适用于同站点页面。查看者必须已登录并拥有此会话的访问权限；不支持在跨站点 iframe 内登录。",
       "copy": "复制嵌入代码",
       "copied": "嵌入代码已复制"
     }
