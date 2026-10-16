@@ -15,8 +15,7 @@ import dynamic from 'next/dynamic';
  * Deep-linkable for screenshots and browser checks:
  * `?scenario=setup-link&at=120&working=1` freezes one state. `at` is a
  * character count or `end`; `until=<text>` stops just after that text;
- * `working=0` renders the settled message. `32-streaming-setup-link.spec.ts`
- * drives it.
+ * `working=0` renders the settled message.
  *
  * Nothing here talks to a sandbox. A setup card's modal asks the local API
  * about a made-up token, so it opens on the invalid-link state.

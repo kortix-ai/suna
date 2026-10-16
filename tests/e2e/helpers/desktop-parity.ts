@@ -352,7 +352,9 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
       baseURL,
       desktopApp,
     }) => {
-      test.setTimeout(300_000);
+      // 3.9-5.1 min on the 4 vCPU CI runners (runs 38913477440, 38919869428):
+      // every route it visits compiles cold. 300 s timed out 1 of 4 attempts.
+      test.setTimeout(480_000);
       const resize = async (width: number, height: number) => {
         if (desktopApp) {
           const window = await desktopApp.browserWindow(page);
@@ -1206,12 +1208,13 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         await expect(row).toBeVisible();
         // A Queue List row carries no steer note.
         await expect(row.locator("[data-queued-delivery]")).toHaveCount(0);
-        await expect(
-          row.getByRole("button", { name: "Edit", exact: true }),
-        ).toBeEnabled();
+        // Row actions live in one "Message actions" menu since #9993.
+        const rowActions = row.getByRole("button", { name: "Message actions", exact: true });
+        await expect(rowActions).toBeEnabled();
         await dismissWelcomeCard(page);
         await row.hover();
-        await row.getByRole("button", { name: "Edit", exact: true }).click();
+        await rowActions.click();
+        await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
         await expect(input).toHaveText(composerText);
         await expect(row).toHaveCount(0);
         await input.press("End");
@@ -1315,7 +1318,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           await expect(row).toBeInViewport();
           await row.hover();
           await row
-            .getByRole("button", { name: "Edit", exact: true })
+            .getByRole("button", { name: "Message actions", exact: true })
             .click({ trial: true });
           await window.evaluate((window) => {
             window.webContents.setZoomFactor(1);

@@ -2,7 +2,8 @@
 
 /**
  * Global catch-all that intercepts clicks on any <a> whose href points to
- * `localhost:PORT` (or 127.0.0.1:PORT) or an already-proxied preview URL.
+ * `localhost:PORT` (or 127.0.0.1:PORT), an already-proxied preview URL, or a
+ * Kortix App host.
  *
  * Routing:
  *
@@ -27,6 +28,7 @@
  * views, JSON viewers, etc.).
  */
 
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { createSandboxProxyContext, rewriteSandboxPath } from '@/lib/utils/sandbox-proxy';
 import {
@@ -115,6 +117,16 @@ export function LocalhostLinkInterceptor() {
           window.open(url, '_blank', 'noopener,noreferrer');
         } catch {}
       };
+
+      // ── Case 0: a Kortix App (`*.apps.kortix.com`, `*.apps.localhost`) ──
+      // On a session page the App opens in the session's browser, beside the
+      // chat, on its own origin (no proxy). Off a session page there is no
+      // panel to host it, so the anchor keeps its native new-tab behavior.
+      if (isKortixAppUrl(href)) {
+        const sessionId = getCurrentSessionId();
+        if (sessionId) openInPanel(sessionId, { url: href, port: 0, originalUrl: href, path: '/' });
+        return;
+      }
 
       // ── Case 1: Fresh localhost:PORT URL (not yet proxied) ──
       if (isProxiableLocalhostUrl(href)) {

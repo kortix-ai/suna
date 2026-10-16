@@ -67,7 +67,9 @@ import {
   dispatchLatched,
   type DispatchOutcome,
   planAttachmentReplacement,
+  refusedFilesToast,
   runComposerSend,
+  splitComposerFiles,
   stageComposerFiles,
   takeNewBillingRefusals,
   type AttachmentSubmission,
@@ -811,8 +813,22 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const appendAttachedFiles = useCallback(
     (files: Iterable<File>) => {
+      // One empty or oversized file must not refuse the whole drop: the SDK
+      // checks a batch at once, so the files that fit are split off first and
+      // each refused one is named (KRTX-2557).
+      const held = attachedFilesRef.current.flatMap((attached) =>
+        attached.kind === 'local' ? [attached.file.size] : [],
+      );
+      const { accepted, refused } = splitComposerFiles(Array.from(files), {
+        count: held.length,
+        bytes: held.reduce((sum, size) => sum + size, 0),
+      });
+      if (refused.length > 0) {
+        const toast = refusedFilesToast(refused, tComposerAttachments);
+        errorToast(toast.title, { description: toast.description });
+      }
       try {
-        const newFiles = stageComposerFiles(Array.from(files), {
+        const newFiles = stageComposerFiles(accepted, {
           addMany: addPromptAttachments,
           createObjectURL: (file) => URL.createObjectURL(file),
           isImage: isImageFile,
