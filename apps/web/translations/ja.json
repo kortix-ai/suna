@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "セッションログからの復元",
           "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
+        },
+        "workspace_volume": {
+          "name": "ワークスペースボリューム",
+          "description": "新しいセッションごとに /workspace をサンドボックスのディスクではなく専用のボリュームに保存します。Kortix がプロジェクトごとに有効にします。"
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "欠落: {items}。",
       "restoreAgent": "エージェントには欠落している内容が伝えられています。",
       "restoreDismiss": "復元の通知を閉じる",
+      "missingMessage": "{count, plural, other {以前のメッセージ #件}}",
       "missingAttachment": "{count, plural, other {添付ファイル #件}}",
       "missingText": "{count, plural, other {長いテキスト #件}}",
       "missingToolInput": "{count, plural, other {ツール入力 #件}}",
@@ -20596,6 +20601,18 @@
     "setUp": "認証アプリを設定"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP サーバー",
+    "addMcpMenuHint": "サーバーの URL を貼り付けてサインイン",
+    "addMcpTitle": "MCP サーバーを追加",
+    "addMcpDescription": "サーバーの URL を貼り付け、使用できる人を選びます。Kortix がサインインし、ツールを読み込みます。",
+    "addMcpUrlLabel": "サーバー URL",
+    "addMcpUrlHint": "https:// で始まるサーバーのリモートエンドポイント",
+    "addMcpUrlNamed": "コネクタ {name} を追加します。",
+    "addMcpUrlInvalid": "https:// で始まる URL を入力してください",
+    "addMcpConnect": "接続",
+    "addMcpConnected": "{name} に接続しました。エージェントはそのツールを使用できます。",
+    "addMcpSignInFailed": "{name} のサインインを開始できませんでした: {reason}",
+    "addMcpFailed": "MCP サーバーを追加できませんでした",
     "install": "インストール",
     "installNamed": "{name} をインストール",
     "added": "追加済み",

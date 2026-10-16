@@ -117,6 +117,14 @@ kortix sessions queue <session_id> now <prompt_id> # run this one next
 
 `kortix sessions chat -p` without `--steer` or `--queue` hands the message to the running sandbox directly and prints the reply. Without `-p` it opens a REPL. `kortix sessions queue <id> rm` is refused with `409` after a model step reads the message.
 
+### Mention files, agents and sessions
+
+In the composer, type `@` to mention a file, an agent or another session, and `/` to run a command.
+
+- Kortix sends each mention to the agent as a reference: a file's path, an agent's name, a session's id. The agent can open the file, hand off to the agent, or read the session.
+- References work on a chat's first message, on every later message, and in a command's arguments.
+- On a new chat, the `@` list shows agents only. Files show once the session's sandbox runs.
+
 ### Stop a turn or stop the session
 
 - **The Stop button** ends the running turn and holds the queue. The sandbox keeps running. Send any new message to release the hold. From the CLI: `kortix sessions queue <id> hold` and `kortix sessions queue <id> release`.
@@ -233,7 +241,7 @@ To continue a lost session on a new sandbox:
 - From the CLI, run `kortix sessions recover <session_id>`, then `kortix sessions start <session_id> --wait`.
 - From code, call `s.recover()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/recover`.
 
-The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A continue needs the same permission as a delete: the session owner or a person who manages the project.
+The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A saved conversation over the restore limit (24 MB by default; attachments and long tool outputs count at two fifths of their size) is not loaded: the agent starts with only a note that the earlier conversation was not restored, and the session page shows **Some earlier content could not be restored**. A continue needs the same permission as a delete: the session owner or a person who manages the project.
 
 | Continue answer | Meaning |
 | --- | --- |

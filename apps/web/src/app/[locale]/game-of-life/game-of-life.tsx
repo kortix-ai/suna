@@ -203,16 +203,25 @@ export function GameOfLife() {
       animationRef.current = requestAnimationFrame(animate);
     };
 
-    const handleResize = debounce(() => {
-      if (disposed) return;
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-      initializeGrid();
-      setKortixLogo();
-      frameCount = 0;
-      animationRef.current = requestAnimationFrame(animate);
-    }, 250);
+    // Debounced resize: the effect owns the pending timeout so the cleanup
+    // can cancel it — a resize inside the debounce window before unmount
+    // must not resurrect the animation loop against the detached canvas.
+    // The disposed check below keeps the callback side-effect-free even if a
+    // future path can still invoke it after cleanup (see the logo onload).
+    let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
+    const handleResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (disposed) return;
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
+        }
+        initializeGrid();
+        setKortixLogo();
+        frameCount = 0;
+        animationRef.current = requestAnimationFrame(animate);
+      }, 250);
+    };
 
     initializeGrid();
     setKortixLogo();
@@ -223,6 +232,7 @@ export function GameOfLife() {
     return () => {
       disposed = true;
       window.removeEventListener('resize', handleResize);
+      clearTimeout(resizeTimeout);
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
@@ -230,16 +240,4 @@ export function GameOfLife() {
   }, [isMobile]);
 
   return <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />;
-}
-
-function debounce<T extends (...args: never[]) => void>(func: T, wait: number) {
-  let timeout: ReturnType<typeof setTimeout>;
-  return function executedFunction(...args: Parameters<T>) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
 }

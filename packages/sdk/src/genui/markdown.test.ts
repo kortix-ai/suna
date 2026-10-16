@@ -233,6 +233,15 @@ describe('model strings cannot inject markdown structure', () => {
     expect(genuiToMarkdown('```openui\nroot = Stack([b])\nb = Badge("a\\n*b* `c`")\n```')).toBe('[a \\*b\\* \\`c\\`]');
   });
 
+  test('inline text escapes a pipe, so a model string cannot start a table row', () => {
+    expect(genuiToMarkdown('```openui\nroot = Stack([b])\nb = Badge("a | b")\n```')).toBe('[a \\| b]');
+  });
+
+  test('a pipe or backslash in a table header or cell stays inside its cell', () => {
+    const md = genuiToMarkdown('```openui\nroot = Stack([t])\nt = Table(["a|b"], [["c\\\\|d"], [7]])\n```');
+    expect(md).toBe('| a\\|b |\n| --- |\n| c\\\\\\|d |\n| 7 |');
+  });
+
   test('a table cell cannot form a link', () => {
     const md = genuiToMarkdown('```openui\nroot = Stack([t])\nt = Table(["k"], [["[x](javascript:alert(1))"]])\n```');
     expect(md).not.toContain('](javascript:');

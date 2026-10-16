@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
+        },
+        "workspace_volume": {
+          "name": "工作区卷",
+          "description": "将每个新会话的 /workspace 保存在独立的卷上，而不是沙盒磁盘上。由 Kortix 按项目启用。"
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "缺少：{items}。",
       "restoreAgent": "智能体已获知缺少的内容。",
       "restoreDismiss": "关闭恢复通知",
+      "missingMessage": "{count, plural, other {# 条之前的消息}}",
       "missingAttachment": "{count, plural, other {# 个附件}}",
       "missingText": "{count, plural, other {# 段长文本}}",
       "missingToolInput": "{count, plural, other {# 个工具输入}}",
@@ -20596,6 +20601,18 @@
     "setUp": "设置身份验证器"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP 服务器",
+    "addMcpMenuHint": "粘贴服务器 URL 并登录",
+    "addMcpTitle": "添加 MCP 服务器",
+    "addMcpDescription": "粘贴服务器的 URL，并选择谁可以使用它。Kortix 会为你登录并加载其工具。",
+    "addMcpUrlLabel": "服务器 URL",
+    "addMcpUrlHint": "服务器的远程端点，以 https:// 开头",
+    "addMcpUrlNamed": "添加连接器 {name}。",
+    "addMcpUrlInvalid": "请输入以 https:// 开头的 URL",
+    "addMcpConnect": "连接",
+    "addMcpConnected": "{name} 已连接。智能体可以使用其工具。",
+    "addMcpSignInFailed": "无法开始 {name} 的登录：{reason}",
+    "addMcpFailed": "无法添加 MCP 服务器",
     "install": "安装",
     "installNamed": "安装 {name}",
     "added": "已添加",

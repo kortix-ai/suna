@@ -44,6 +44,7 @@ export const hasOutOfContext = (messages: readonly SessionLogMessage[] | undefin
   !!messages?.some((m) => !m.in_context && m.status !== 'streaming');
 
 const MISSING_KEY = {
+  message: 'missingMessage',
   attachment: 'missingAttachment',
   text: 'missingText',
   tool_input: 'missingToolInput',

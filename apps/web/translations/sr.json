@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
+        },
+        "workspace_volume": {
+          "name": "Volumen radnog prostora",
+          "description": "Čuva /workspace svake nove sesije na zasebnom volumenu umesto na disku sandboksa. Kortix ga uključuje po projektu."
         }
       }
     },
@@ -1964,6 +1968,7 @@
       "restoreMissing": "Недостаје: {items}.",
       "restoreAgent": "Агент зна шта недостаје.",
       "restoreDismiss": "Затвори обавештење о враћању",
+      "missingMessage": "{count, plural, one {# ранија порука} few {# раније поруке} other {# ранијих порука}}",
       "missingAttachment": "{count, plural, one {# прилог} few {# прилога} other {# прилога}}",
       "missingText": "{count, plural, one {# дугачак текст} few {# дугачка текста} other {# дугачких текстова}}",
       "missingToolInput": "{count, plural, one {# улаз алата} few {# улаза алата} other {# улаза алата}}",
@@ -20596,6 +20601,18 @@
     "setUp": "Podesi autentifikator"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP server",
+    "addMcpMenuHint": "Nalepi URL servera i prijavi se",
+    "addMcpTitle": "Dodaj MCP server",
+    "addMcpDescription": "Nalepi URL servera i izaberi ko može da ga koristi. Kortix te prijavljuje i učitava njegove alate.",
+    "addMcpUrlLabel": "URL servera",
+    "addMcpUrlHint": "Udaljena krajnja tačka servera, počinje sa https://",
+    "addMcpUrlNamed": "Dodaje konektor {name}.",
+    "addMcpUrlInvalid": "Unesi URL koji počinje sa https://",
+    "addMcpConnect": "Poveži",
+    "addMcpConnected": "{name} je povezan. Agenti mogu da koriste njegove alate.",
+    "addMcpSignInFailed": "Prijava na {name} nije mogla da počne: {reason}",
+    "addMcpFailed": "MCP server nije mogao da se doda",
     "install": "Инсталирај",
     "installNamed": "Инсталирај {name}",
     "added": "Додато",

@@ -678,6 +678,108 @@ describe('materializeRepo', () => {
   })
 })
 
+// KORTIX_WORKSPACE_VOLUME=1: /workspace is a Platinum volume, the only copy of
+// the session's files. Every boot path that would clear it fails loudly instead.
+describe('materializeRepo on a workspace volume', () => {
+  function sessionRemote(prefix: string): { root: string; remote: string; target: string; baseSha: string } {
+    const root = mkdtempSync(join(tmpdir(), prefix))
+    tempDirs.push(root)
+    const remote = join(root, 'remote.git')
+    const seed = join(root, 'seed')
+    git(['init', '--bare', remote])
+    mkdirSync(seed)
+    git(['init', '-b', 'main'], seed)
+    writeFileSync(join(seed, 'README.md'), 'base\n')
+    git(['add', 'README.md'], seed)
+    git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'base'], seed)
+    git(['remote', 'add', 'origin', remote], seed)
+    git(['push', '-u', 'origin', 'main'], seed)
+    git(['symbolic-ref', 'HEAD', 'refs/heads/main'], remote)
+    return { root, remote, target: join(root, 'workspace'), baseSha: gitOutput(['-C', seed, 'rev-parse', 'HEAD']) }
+  }
+
+  it('fills an empty volume (only lost+found) and adopts it on every later boot without a reset', async () => {
+    const { remote, target, baseSha } = sessionRemote('kortix-volume-fill-')
+    mkdirSync(join(target, 'lost+found'), { recursive: true })
+    const cfg = baseConfig({
+      autoClone: true,
+      projectTarget: target,
+      repoUrl: remote,
+      defaultBranch: 'main',
+      branchName: 'session-volume',
+      sessionFresh: true,
+      baseSha,
+      workspaceVolume: true,
+    })
+    await materializeRepo(cfg)
+    expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('base\n')
+    expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-volume')
+
+    writeFileSync(join(target, 'committed.txt'), 'committed\n')
+    git(['-C', target, 'add', 'committed.txt'])
+    git(['-C', target, '-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'agent work'])
+    const sessionTip = gitOutput(['-C', target, 'rev-parse', 'HEAD'])
+    writeFileSync(join(target, 'dirty.txt'), 'dirty\n')
+
+    await materializeRepo(cfg)
+    expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(sessionTip)
+    expect(readFileSync(join(target, 'dirty.txt'), 'utf8')).toBe('dirty\n')
+  })
+
+  it('refuses to clear a checkout whose adoption marker does not match under KORTIX_SESSION_BRANCH_RESTORE', async () => {
+    const { remote, target } = sessionRemote('kortix-volume-restore-')
+    git(['clone', '--branch', 'main', remote, target])
+    writeFileSync(join(target, 'only-copy.txt'), 'only copy\n')
+    const cfg = baseConfig({
+      autoClone: true,
+      projectTarget: target,
+      repoUrl: remote,
+      defaultBranch: 'main',
+      branchName: 'session-existing',
+      sessionBranchRestore: true,
+      workspaceVolume: true,
+    })
+    await expect(materializeRepo(cfg)).rejects.toThrow('refusing to clear')
+    expect(readFileSync(join(target, 'only-copy.txt'), 'utf8')).toBe('only copy\n')
+    expect(existsSync(join(target, '.git'))).toBe(true)
+  })
+
+  it('refuses to clear a fresh session checkout that does not match KORTIX_BASE_SHA', async () => {
+    const { remote, target } = sessionRemote('kortix-volume-base-mismatch-')
+    git(['clone', '--branch', 'main', remote, target])
+    writeFileSync(join(target, 'only-copy.txt'), 'only copy\n')
+    const cfg = baseConfig({
+      autoClone: true,
+      projectTarget: target,
+      repoUrl: remote,
+      defaultBranch: 'main',
+      branchName: 'session-fresh',
+      sessionFresh: true,
+      baseSha: 'f'.repeat(40),
+      workspaceVolume: true,
+    })
+    await expect(materializeRepo(cfg)).rejects.toThrow('refusing to clear')
+    expect(readFileSync(join(target, 'only-copy.txt'), 'utf8')).toBe('only copy\n')
+  })
+
+  it('refuses to acquire over files that are not a checkout', async () => {
+    const { remote, target } = sessionRemote('kortix-volume-loose-files-')
+    mkdirSync(target)
+    writeFileSync(join(target, 'notes.md'), 'agent notes\n')
+    const cfg = baseConfig({
+      autoClone: true,
+      projectTarget: target,
+      repoUrl: remote,
+      defaultBranch: 'main',
+      branchName: 'session-volume',
+      workspaceVolume: true,
+    })
+    await expect(materializeRepo(cfg)).rejects.toThrow('refusing to clear')
+    expect(readFileSync(join(target, 'notes.md'), 'utf8')).toBe('agent notes\n')
+    expect(existsSync(join(target, '.git'))).toBe(false)
+  })
+})
+
 /** A bare `file://` origin whose `main` carries three commits. */
 function threeCommitOrigin(): string {
   const root = mkdtempSync(join(tmpdir(), 'kortix-origin-'))

@@ -47,6 +47,9 @@ const Schema = z.object({
   KORTIX_BRANCH_NAME: z.string().optional(),
   KORTIX_SESSION_FRESH: z.string().optional(),
   KORTIX_SESSION_BRANCH_RESTORE: z.string().optional(),
+  // `1`: /workspace is a Platinum volume the API mounted, the only copy of the
+  // session's files. The workspace provider never clears it.
+  KORTIX_WORKSPACE_VOLUME: z.string().optional(),
   KORTIX_BASE_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
@@ -134,6 +137,8 @@ export type Config = {
   branchName: string | undefined
   sessionFresh: boolean
   sessionBranchRestore?: boolean
+  /** /workspace is a volume (KORTIX_WORKSPACE_VOLUME=1): never cleared. */
+  workspaceVolume?: boolean
   baseSha: string | undefined
   gitDeltaBundleBase64?: string
   gitDeltaParentSha?: string
@@ -183,6 +188,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
     KORTIX_SESSION_FRESH: env.KORTIX_SESSION_FRESH,
     KORTIX_SESSION_BRANCH_RESTORE: env.KORTIX_SESSION_BRANCH_RESTORE,
+    KORTIX_WORKSPACE_VOLUME: env.KORTIX_WORKSPACE_VOLUME,
     KORTIX_BASE_SHA: env.KORTIX_BASE_SHA,
     KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
@@ -220,6 +226,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     branchName: parsed.KORTIX_BRANCH_NAME,
     sessionFresh: parsed.KORTIX_SESSION_FRESH === '1',
     sessionBranchRestore: parsed.KORTIX_SESSION_BRANCH_RESTORE === '1',
+    workspaceVolume: parsed.KORTIX_WORKSPACE_VOLUME === '1',
     baseSha: parsed.KORTIX_BASE_SHA,
     gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
