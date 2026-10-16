@@ -588,8 +588,8 @@ export async function ensureLocalWeb(
         while (!stopping && restarts < 3) {
           restarts++;
           console.error(`[local-stack] restarting local web (${restarts}/3).`);
-          web = spawnWeb();
           try {
+            web = spawnWeb();
             await waitUntilReady();
             if (stopping) return;
             console.error(`[local-stack] local web recovered at ${webUrl}.`);
