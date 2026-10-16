@@ -11,7 +11,6 @@
 // The tests share one module state on purpose: `reloadedForStaleBundle` is a
 // per-document flag, and this file IS the document. Order matters.
 import { expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import messages from '../../../../../translations/en.json';
@@ -87,7 +86,7 @@ async function createPage(): Promise<ReactTestRenderer> {
   let root: ReactTestRenderer | undefined;
   await act(async () => {
     root = create(
-      createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
+      <NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>,
     );
   });
   if (!root) throw new Error('Auth page did not render');

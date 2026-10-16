@@ -656,11 +656,11 @@ has the module contract and one checklist per task.
 
 | Value | Meaning |
 | --- | --- |
-| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe`), maintained by Kortix. The key must be `<name>`. |
+| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. The key must be `<name>`. |
 | A repo-relative `.ts` / `.js` path | The project's own module. Under a Kortix tool name, it replaces the Kortix tool. |
 
 - No `tools:` key in the root file or any imported file: every session gets
-  all seven Kortix tools.
+  all five Kortix tools.
 - A `tools:` key, even an empty one: sessions get only the Kortix tools it
   lists. Delete a `kortix:<name>` line to remove that tool from every agent.
 - `kortix tools ls` lists what a session gets; `kortix tools eject <name>`

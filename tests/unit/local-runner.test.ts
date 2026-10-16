@@ -48,6 +48,26 @@ describe('local test runner', () => {
     expect(() => buildLocalTestPlan(['--packages-only', '--no-packages'])).toThrow('--no-packages');
   });
 
+  it('--core-group=flows|db splits the --no-packages run into two halves', () => {
+    const flows = buildLocalTestPlan(['--core-group=flows']);
+    const db = buildLocalTestPlan(['--core-group=db']);
+    expect(flows.mode).toBe('core');
+    expect(db.mode).toBe('core');
+    expect(flows.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([['api-cli-flows']]);
+    expect(flows.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'local']);
+    // The SDK keeps a stage of its own: its wall-clock assertions.
+    expect(db.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
+      ['db-suites', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['sdk'],
+    ]);
+    const halves = [...flows.lanes, ...db.lanes].map((lane) => lane.name).sort();
+    expect(halves).toEqual(buildLocalTestPlan(['--no-packages']).lanes.map((lane) => lane.name).sort());
+    expect(buildLocalTestPlan(['--no-packages', '--core-group=db']).lanes).toEqual(db.lanes);
+    expect(() => buildLocalTestPlan(['--core-group=web'])).toThrow('flows or db');
+    expect(() => buildLocalTestPlan(['--core-group=db', '--core-group=flows'])).toThrow('only one --core-group');
+    expect(() => buildLocalTestPlan(['--full', '--core-group=db'])).toThrow('default core run');
+  });
+
   it('runs only the DB suites and passes path filters through', () => {
     const plan = buildLocalTestPlan(['--db-only', 'integration-prompt-inbox', 'tests/migration']);
 
@@ -188,19 +208,27 @@ describe('local test runner', () => {
     ]);
   });
 
-  it('runs every deployed API flow and browser journey through the release command', () => {
+  it('runs the deployed API flows and every browser journey through the release command', () => {
     const plan = buildLocalTestPlan(['--target-full']);
 
     expect(plan.mode).toBe('target-full');
     expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-api-full', 'target-browser-full']);
-    expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'run', '--require-all']);
+    // Only the `deployed` seam flows: the `Tests` lanes ran every flow on this
+    // tree already. `--require-all` applies to that set.
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+      '--tag',
+      'deployed',
+    ]);
     expect(plan.lanes[1]).toEqual({
       name: 'target-browser-full',
       command: ['bun', 'run', 'test:browser'],
       cwd: 'tests',
       env: {
         E2E_BROWSER_WORKERS: '2',
-        E2E_ENABLE_SDK_ONLY_SESSION: '1',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       },
@@ -214,7 +242,6 @@ describe('local test runner', () => {
       const plan = buildLocalTestPlan(['--target-full']);
       expect(plan.lanes[1]?.env).toEqual({
         E2E_BROWSER_WORKERS: '2',
-        E2E_ENABLE_SDK_ONLY_SESSION: '1',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       });
@@ -282,6 +309,8 @@ describe('local test runner', () => {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      'deployed',
       '--shard',
       '2/4',
     ]);
@@ -305,6 +334,8 @@ describe('local test runner', () => {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      'deployed',
     ]);
     expect(buildLocalTestPlan(['--target-browser-full']).lanes[0]?.command).toEqual([
       'bun',
@@ -362,6 +393,8 @@ describe('local test runner', () => {
       expect(refused(args)).toBe(false);
     expect(refused([], 'linux')).toBe(false);
     expect(refused([], 'darwin', { KORTIX_FULL_TEST: '1' })).toBe(false);
+    // --sdk-only passed this gate, so the package guard (scripts/test-guard.mjs) must not refuse it.
+    expect(buildLocalTestPlan(['--sdk-only']).lanes[0]?.env).toEqual({ KORTIX_FULL_TEST: '1' });
   });
 
   it('retries a cold local web route until it is ready', async () => {

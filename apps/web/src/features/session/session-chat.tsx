@@ -4386,7 +4386,10 @@ export function SessionChat({
                               viewportClassName={
                                 turnIndex === 0
                                   ? ''
-                                  : lastTurnWorking &&
+                                  : // A compaction and the work after it continue the turn above.
+                                    turn.compaction || turn.continues
+                                    ? 'mt-6'
+                                    : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&
                                       pendingTurnIds.has(turns[turnIndex - 1].id)
                                     ? 'mt-3'

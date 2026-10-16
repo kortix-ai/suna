@@ -1037,7 +1037,11 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
   }
   for (const [name, file] of Object.entries(value ?? {})) {
     const where = `${path}.${name}`;
-    if (!TOOL_NAME_RE.test(name) && !isKortixTool(name)) {
+    if (RETIRED_KORTIX_TOOLS.includes(name) && file === `kortix:${name}`) {
+      issues.push({ path: where, message: `"${name}" was removed: agents reach connectors with the \`kortix connectors\` CLI. Delete this line.`, severity: 'warning' });
+      continue;
+    }
+    if (!TOOL_NAME_RE.test(name)) {
       issues.push({ path: where, message: 'a tool name is snake_case: a lower-case letter, then letters, digits or `_` (64 characters at most).', severity: 'error' });
     } else if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
       issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });
@@ -1055,6 +1059,9 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
     });
   }
 }
+
+/** Kortix tools a dev starter listed briefly (#9902) and that no longer exist. */
+const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 
 function isKortixTool(name: string): boolean {
   return (KORTIX_TOOL_NAMES as readonly string[]).includes(name);

@@ -45,7 +45,7 @@ const sessions: Row[] = [
   { session_id: '33333333-3333-4333-8333-333333333333', name: 'Deploy the docs' },
   { session_id: OLD_SESSION, name: 'Fix the login bug' },
 ];
-const calls: Array<{ projectId: string; params: Record<string, string> }> = [];
+const calls: Array<{ projectId: string; params: Record<string, string | undefined> }> = [];
 // Fixed pages for one search text: page N answers cursor `C<N>`. The server
 // drops rows the reader cannot open after a bounded scan, so a page can be
 // empty and still carry a cursor (KRTX-1727).

@@ -209,10 +209,13 @@ export function useTurnMeasure(ref: React.RefObject<HTMLDivElement | null>): {
 export function TurnViewport({
   turnId,
   className,
+  continues,
   children,
 }: {
   turnId: string;
   className?: string;
+  /** A compaction or the work after it: it continues the turn above, and the auto-scroll never anchors on it. */
+  continues?: boolean;
   children?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -223,6 +226,7 @@ export function TurnViewport({
     <div
       ref={ref}
       data-turn-id={turnId}
+      data-turn-continues={continues || undefined}
       className={turnViewportClassName(state, className, height)}
       style={containIntrinsicSize ? { containIntrinsicSize } : undefined}
     >

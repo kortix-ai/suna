@@ -12,7 +12,6 @@ const fullyConfigured: NodeJS.ProcessEnv = {
   E2E_REQUIRE_ALL_BROWSER: '1',
   KE2E_DATABASE_URL: 'postgres://staging',
   E2E_ENABLE_BILLING_JOURNEY: '1',
-  E2E_ENABLE_SDK_ONLY_SESSION: '1',
 };
 
 describe('strict browser lane detection', () => {
@@ -58,7 +57,7 @@ describe('up-front browser capability assertion', () => {
 
   it('lists every missing capability in one message instead of failing on the first', async () => {
     await expect(assertBrowserLaneCapabilities({ E2E_REQUIRE_ALL_BROWSER: '1' }, emailDown))
-      .rejects.toThrow(/4 capability/);
+      .rejects.toThrow(/3 capability/);
   });
 
   it('covers every runtime-skipped capability the strict reporter would fail on', () => {
@@ -67,7 +66,6 @@ describe('up-front browser capability assertion', () => {
       'KE2E_DATABASE_URL',
       'email provider',
       'E2E_ENABLE_BILLING_JOURNEY=1',
-      'E2E_ENABLE_SDK_ONLY_SESSION=1',
     ]);
   });
 });
