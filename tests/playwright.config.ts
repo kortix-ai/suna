@@ -37,6 +37,15 @@ export function resolveBrowserWorkers(value: string | undefined): number {
 
 const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS);
 
+/**
+ * CI (every GitHub Actions job sets `CI`) records every journey, passed or
+ * failed, so the HTML report in each `tests-release-browser-shard-N` artifact
+ * replays the whole shard. A local run keeps a video only for a failure.
+ */
+export function resolveVideoMode(env: NodeJS.ProcessEnv): 'on' | 'retain-on-failure' {
+  return env.CI ? 'on' : 'retain-on-failure';
+}
+
 export interface GrepFilters {
   grep?: RegExp;
   grepInvert?: RegExp;
@@ -179,7 +188,7 @@ export default defineConfig({
     storageState: vercelBypass ? DEPLOYMENT_BYPASS_STATE_PATH : undefined,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: resolveVideoMode(process.env),
     actionTimeout: deployedTarget ? 30_000 : 20_000,
     navigationTimeout: 60_000,
   },
