@@ -11,7 +11,8 @@
  * every opened App twice.
  */
 
-import { appStatus, gridApps } from '@/features/apps/app-shared';
+import { AppPreview } from '@/features/apps/app-preview';
+import { appCan, appStatus, gridApps } from '@/features/apps/app-shared';
 import { appForUrl } from '@/features/apps/app-in-browser';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -19,7 +20,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { recentDisplayLabel, type BrowserRecent } from '@/stores/browser-recents-store';
 import type { App } from '@kortix/sdk';
-import { useProjectApps } from '@kortix/sdk/react';
+import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useMemo, type ReactNode } from 'react';
 
 export interface LandingRow {
@@ -80,6 +81,42 @@ function visitLabel(visitedAt: number, now: number, yesterday: string): string {
   return new Date(visitedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/**
+ * A row's thumbnail: the App itself, live, through the same pooled frame the
+ * Apps page cards use (the project shell preloads it, so this costs no extra
+ * load). A port, an undeployed App, or an App the viewer may not open keeps
+ * a plain tile.
+ */
+function LandingThumb({ projectId, row }: { projectId?: string; row: LandingRow }) {
+  const app = row.app;
+  const live =
+    !!app && !!app.active_deployment_id && appCan(app, 'preview') && app.viewer_can_access !== false;
+  const access = useAppAccess(projectId, live ? app!.app_id : null, { policy: false, session: live });
+  const url = access.session.data?.url ?? null;
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'relative h-6.5 w-10 shrink-0 overflow-hidden rounded-sm',
+        row.thumb === 'url' && 'bg-muted',
+        (row.thumb === 'app' || row.thumb === 'app-idle') && 'bg-card border',
+        row.thumb === 'app-idle' && 'opacity-60',
+        row.thumb === 'app-draft' && 'border border-dashed',
+      )}
+    >
+      {app && live && url ? (
+        <AppPreview
+          app={app}
+          url={url}
+          accessError={false}
+          interactive={false}
+          className="pointer-events-none absolute inset-0 aspect-auto"
+        />
+      ) : null}
+    </span>
+  );
+}
+
 export function BrowserLanding({
   projectId,
   recents,
@@ -131,16 +168,7 @@ export function BrowserLanding({
                 onClick={() => onOpen(row.url)}
                 className="hover:bg-foreground/5 focus-visible:bg-foreground/5 flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors focus-visible:outline-none"
               >
-                <span
-                  aria-hidden
-                  className={cn(
-                    'h-6.5 w-10 shrink-0 rounded-sm',
-                    row.thumb === 'url' && 'bg-muted',
-                    (row.thumb === 'app' || row.thumb === 'app-idle') && 'bg-card border',
-                    row.thumb === 'app-idle' && 'opacity-60',
-                    row.thumb === 'app-draft' && 'border border-dashed',
-                  )}
-                />
+                <LandingThumb projectId={projectId} row={row} />
                 <span
                   className={cn(
                     'text-foreground min-w-0 flex-1 truncate',
