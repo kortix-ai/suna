@@ -1,0 +1,20 @@
+{
+  "source_hash": "1b0bb5285a61a682a5fc13bb955ef67132eaaee0a31672dfa4d921ba0f220704",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-project-connector-purge.test.ts",
+    "apps/api/src/__tests__/unit-project-delete-order.test.ts",
+    "apps/api/src/projects/lib/project-deletion.ts",
+    "apps/api/src/projects/routes/project-settings.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/projects.flow.ts"
+  ],
+  "diff_hash": "ff609225d500dea96f359d0a25b610db4790d48d76b63b7b6f1aa983d54644b7",
+  "head": "38db9817c7f328eb2cc4f01ad4b737eb02241ddb",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-16T10:13:46.970Z"
+}
