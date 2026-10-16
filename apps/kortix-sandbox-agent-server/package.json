@@ -15,7 +15,7 @@
     "dev": "bun run --hot src/main.ts",
     "build": "bash scripts/build.sh",
     "start": "./dist/kortixd",
-    "typecheck": "bun tsc --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "lint": "eslint src",
     "test:architecture": "node --test scripts/check-architecture.mjs",
     "test": "node ../../scripts/test-guard.mjs \"bash scripts/test.sh\""
@@ -39,6 +39,7 @@
     "@types/node": "^20",
     "@types/node-forge": "^1.3.11",
     "@types/ws": "8.18.1",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "eslint": "9.39.5",
     "eslint-plugin-project-structure": "3.14.4",
     "typescript": "^5.6.0",

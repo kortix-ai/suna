@@ -180,7 +180,7 @@ export default function SubagentFailurePage() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ToolSurfaceContext.Provider value="transcript">
+      <ToolSurfaceContext.Provider value="inline">
         <TurnLiveContext.Provider value={false}>
           <div className="bg-background min-h-dvh">
             <header className="border-border border-b px-4 py-3">

@@ -31,7 +31,7 @@
   "scripts": {
     "build": "bun build src/agent/cli.ts --target=node --outfile=dist/agent-cli.js --banner='#!/usr/bin/env node' && bun build src/client/cli.ts --target=node --outfile=dist/client-cli.js --banner='#!/usr/bin/env node' && node -e \"const fs=require('node:fs'); fs.chmodSync('dist/agent-cli.js', 0o755); fs.chmodSync('dist/client-cli.js', 0o755);\"",
     "prepack": "bun run build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\""
   },
   "dependencies": {
@@ -41,6 +41,7 @@
   "devDependencies": {
     "@types/bun": "^1.3.9",
     "@types/ws": "^8.5.13",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.4.0"
   },
   "keywords": [

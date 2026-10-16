@@ -15,7 +15,7 @@ describe('pixel Kortix mark', () => {
   // that, and it is invisible in review because the rows are just strings.
   test('mirrors left to right', () => {
     for (const row of PIXEL_KORTIX_ROWS) {
-      expect(row).toBe([...row].reverse().join(''));
+      expect<string>(row).toBe([...row].reverse().join(''));
     }
   });
 

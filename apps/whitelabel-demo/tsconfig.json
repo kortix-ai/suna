@@ -9,6 +9,7 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    "types": ["bun", "node"],
     "incremental": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,

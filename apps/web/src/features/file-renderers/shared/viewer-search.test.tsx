@@ -137,7 +137,9 @@ async function tick(ms = 300) {
       }
   });
 }
-const input = () => view.root.findByType('Input');
+// The mocked collaborators render as host elements named by a string.
+const byHost = (name: string) => view.root.findAll((n) => n.type === name);
+const input = () => required(byHost('Input')[0]);
 async function draft(value: string) {
   await act(() => input().props.onChange({ target: { value } }));
 }
@@ -150,7 +152,7 @@ function required<T>(value: T | undefined): T {
 }
 async function clear() {
   const button = required(
-    view.root.findAllByType('Button').find((n) => n.children.includes('text83b12c2216ef')),
+    byHost('Button').find((n) => n.children.includes('text83b12c2216ef')),
   );
   await act(() => button.props.onClick());
 }
@@ -390,10 +392,10 @@ test('CSV changing scan callback restarts debounce; yielded scans reject and can
   expect(input().props.value).toBe('');
   expect(required(selected.at(-1)).current).toBeUndefined();
   const schedule = window.setTimeout;
-  window.setTimeout = (callback: TimerHandler, ms?: number) => {
+  window.setTimeout = ((callback: TimerHandler, ms?: number) => {
     if (ms === 0) throw new Error('synthetic yield failure');
     return schedule(callback, ms);
-  };
+  }) as typeof window.setTimeout;
   await draft('alpha');
   await tick();
   expect(text()).toContain('No results');

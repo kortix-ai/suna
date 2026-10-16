@@ -10,7 +10,7 @@
   "scripts": {
     "cli": "bun run src/index.ts",
     "build": "bash scripts/build.sh",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "bundle": "bash bundle/bundle-host.sh",
     "bundle:all": "bash bundle/bundle-all.sh",
     "bundle:darwin-arm64": "bash bundle/bundle-darwin-arm64.sh",
@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.4.0"
   }
 }

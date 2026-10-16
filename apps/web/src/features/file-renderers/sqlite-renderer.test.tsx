@@ -18,7 +18,7 @@ mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
 mock.module('ag-grid-react', () => ({ AgGridReact: Grid }));
 mock.module('@/features/files/api/runtime-files', () => ({
-  readFileAsBlob: async () => new Blob([createDatabaseBytes()]),
+  readFileAsBlob: async () => new Blob([new Uint8Array(createDatabaseBytes())]),
 }));
 mock.module('@/features/files/api/runtime-file-read', () => ({
   readRuntimeFileWithRetry: (_path: string, read: () => Promise<Blob>) => read(),
@@ -92,7 +92,7 @@ test('mounted initialization reads quoted tables/views, counts, schema defaults 
   expect(sidebar(view).map((node) => node.findAllByType('span').map((span) => span.children.join(''))))
     .toEqual([['a"table', '2'], ['b"table', '0'], ['v"view', '0']]);
   expect(sidebar(view)[0].props.className).toContain('bg-accent');
-  expect(view.root.findByType('grid').props.columnDefs.map((col: { headerClass: string }) => col.headerClass))
+  expect(view.root.findByType(Grid).props.columnDefs.map((col: { headerClass: string }) => col.headerClass))
     .toEqual(['font-semibold', '']);
   for (const name of ['a""table', 'b""table', 'v""view']) {
     expect(queries).toContain(`SELECT COUNT(*) FROM "${name}"`);
