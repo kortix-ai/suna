@@ -58,6 +58,32 @@ export async function openRemovedBox(
         reason: 'runtime_removed_checking',
       };
     }
+    // An identity already parked as lost has had its in-place recovery attempt —
+    // the park that recorded the loss also ended it, dropping the lease. A
+    // re-claim would overwrite runtimeIdentityState ('unavailable' →
+    // 'recovery_claimed') before the once-per-identity guard inside
+    // `preserveEstablishedRuntime` reads it: every poll re-reported the same
+    // loss (2026-10-16: 163 duplicate `runtime.lost` reports in ~3 min from
+    // one session's 1 Hz /start poll) and re-requested a restore-from-backup
+    // Platinum refuses for tombstoned rows anyway. The loss is settled:
+    // preserve again — idempotent, silent. Continuing goes through /recover.
+    const parkedMetadata = sandboxMetadata(row);
+    if (
+      parkedMetadata.runtimeIdentityState === 'unavailable' &&
+      parkedMetadata.preservedExternalId === row.externalId
+    ) {
+      log.did('reconciled');
+      return preserveEstablishedRuntimeOnOpen(
+        loaded,
+        visible,
+        projectId,
+        sessionId,
+        row,
+        'runtime_removed',
+        'provider_removed',
+        'removed',
+      );
+    }
     const claim = await claimInPlaceRuntimeRecovery(row);
     if (!claim) {
       return {

@@ -2,22 +2,22 @@
 
 /**
  * ProjectManifestUpgradeAlert — the left-sidebar nudge that makes a project's
- * pre-v3 manifest (kortix_version 1 or 2) impossible to miss. Sits just above
- * Files/Customize and wears the shared footer alert shell (`sidebar-alert.tsx`) — the same one
+ * still-on-v1 manifest impossible to miss. Sits just above Files/Customize and
+ * wears the shared footer alert shell (`sidebar-alert.tsx`) — the same one
  * `ProjectSandboxAlert` wears. It used to be a hand-copied duplicate of that
  * file's shell, which is how the two drifted to different paddings and
  * different open-state tints while their own comments claimed they matched.
  *
  * Tone is `info` rather than a failure colour: this is a recommended upgrade,
  * not something that is broken. The action is the one-click, end-to-end
- * `useMigrateToV3`: it mints a session seeded with the migration prompt, boots
+ * `useMigrateToV2`: it mints a session seeded with the migration prompt, boots
  * the project's default agent (git/CR powers), and drops the user into the
- * thread where it auto-runs — moving the manifest to kortix.yaml version 3 and
- * opening a change request for review.
+ * thread where it auto-runs — converting kortix.toml → kortix.yaml and opening
+ * a change request for review.
  *
- * Only renders while the project is on v1 or v2 AND the viewer can actually
- * act on it (`project.write` — the people who can push and open the CR); it
- * disappears for good the moment the manifest lands on v3.
+ * Only renders while the project is on v1 AND the viewer can actually act on it
+ * (`project.write` — the people who can push and open the CR); it disappears
+ * for good the moment the manifest lands on v2.
  */
 
 import { useTranslations } from '@/i18n/use-translations';
@@ -26,10 +26,9 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import {
-  manifestNeedsUpgrade,
-  useMigrateToV3,
+  useMigrateToV2,
   useProjectManifestVersion,
-} from '@/features/workspace/customize/migrate-to-v3';
+} from '@/features/workspace/customize/migrate-to-v2';
 import {
   SidebarAlert,
   SidebarAlertActions,
@@ -70,6 +69,7 @@ export function ProjectManifestUpgradeAlertView({
       <SidebarAlertBody>
         <SidebarAlertText>
           {t.rich('manifestUpgrade.description', {
+            toml: (chunks) => <span className="font-mono">{chunks}</span>,
             yaml: (chunks) => <span className="font-mono">{chunks}</span>,
           })}
         </SidebarAlertText>
@@ -91,11 +91,11 @@ export function ProjectManifestUpgradeAlertView({
 export function ProjectManifestUpgradeAlert({ projectId }: { projectId: string }) {
   const { version } = useProjectManifestVersion(projectId);
   const canWrite = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
-  const migrate = useMigrateToV3(projectId);
+  const migrate = useMigrateToV2(projectId);
 
   return (
     <ProjectManifestUpgradeAlertView
-      visible={manifestNeedsUpgrade(version) && canWrite}
+      visible={version === 1 && canWrite}
       pending={migrate.pending}
       onMigrate={migrate.start}
     />

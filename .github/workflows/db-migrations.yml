@@ -34,8 +34,10 @@ on:
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'
+  # Not into `prod`: the release tree is the staging tree plus VERSION, already
+  # checked on the staging pull request (testing reset, 2026-10-16).
   pull_request:
-    branches: [staging, prod]
+    branches: [staging]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'

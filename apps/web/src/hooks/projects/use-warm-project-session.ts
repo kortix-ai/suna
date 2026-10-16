@@ -51,7 +51,7 @@ import {
  * COST. Gated by the `warm_sessions` project flag; the server enforces it (403
  * `feature_disabled`) and `enabled` is only the client short-circuit.
  *
- * ARCHITECTURE RULE — enforced by `warm-session-boundary.test.ts`: the browser
+ * ARCHITECTURE RULE: the browser
  * must never hand-roll speculative session creation. `ensureWarmProjectSession`
  * may be referenced from THIS FILE ONLY.
  */
@@ -516,8 +516,7 @@ export function useWarmProjectSession(
  * marker is already gone) — the caller falls back to the ordinary create,
  * which carries the same prompt. Never throws.
  *
- * This is the ONE place in `apps/web` that calls the SDK's claim; see
- * `warm-session-boundary.test.ts`.
+ * This is the ONE place in `apps/web` that calls the SDK's claim.
  */
 export async function primeTakenWarmSession(
   projectId: string,

@@ -239,6 +239,27 @@ in-app toast fades after 8 s; the badge stays until you look.
 - **When it clears.** At 0, on every new document in the window (reload,
   server switch), and when the window closes.
 
+## Right-click menu
+
+A right-click in the app window or the Quick Entry bar shows the menu a browser
+shows (`src/context-menu.js`, KRTX-2555). Without a `context-menu` handler,
+Chromium shows nothing.
+
+| Where | Items |
+| --- | --- |
+| A misspelled word | up to 5 suggestions (or **No Guesses Found**), **Add to Dictionary** |
+| A link | **Open Link in Browser** (web and mail links only), **Copy Link** |
+| An image | **Copy Image**, **Copy Image Address** |
+| A text field | Undo, Redo, Cut, Copy, Paste, Paste and Match Style, Select All, each enabled as the field allows |
+| Selected text elsewhere | Copy |
+
+- An empty area of the page shows no menu.
+- A page element with its own right-click menu calls `preventDefault` on
+  `contextmenu`; Chromium then sends the shell no event, so the page's menu
+  wins.
+- On macOS a right-click also selects the word under the pointer, so Copy can
+  follow the link items.
+
 ## This computer (local agent + tray)
 
 The app bundles the computer agent, `@kortix/agent-tunnel`
@@ -402,6 +423,7 @@ runs **unchanged** on either shell:
 | App login | system browser + `kortix://` | system browser + `kortix://` |
 | Zoom (`set_zoom`) | Rust command | `webContents.setZoomFactor` |
 | Unseen-turn badge (`set_badge_count`) | ✗ none | Dock count / taskbar overlay (`attention-badge.js`) |
+| Right-click menu | ✗ none | spelling, edit, link and image items (`context-menu.js`) |
 | Window controls | `getCurrentWindow().*` | IPC → `BrowserWindow.*` |
 | Frontend URL override | app-config-dir file + menu | `userData/frontend_url` + same menu |
 | Deep links (`kortix://`) | deep-link plugin | `setAsDefaultProtocolClient` + `open-url`/`second-instance` |

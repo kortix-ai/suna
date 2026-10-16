@@ -20,7 +20,7 @@ import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { parseManifestString } from '../projects/triggers';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
-  test('seeds a v3 kortix.yaml, not a v1 kortix.toml', async () => {
+  test('seeds a v2 kortix.yaml, not a v1 kortix.toml', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -31,7 +31,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
 
     const manifest = seed.files.find((f) => f.path === 'kortix.yaml');
     expect(manifest).toBeDefined();
-    expect(manifest?.content).toContain('kortix_version: 3');
+    expect(manifest?.content).toContain('kortix_version: 2');
     expect(seed.files.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 

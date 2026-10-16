@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
 import { Close } from '@/features/icon/icons/close';
-import { UpgradesView } from '@/features/workspace/customize/migrate-to-v3/upgrade-view';
+import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
 import {
   SettingsNavProvider,
   type SettingsNav,
@@ -145,8 +145,7 @@ export interface SettingsTabAllowedParams {
  * `allowed: false, isLoading: true`, and `SettingsPanel` bounces an open
  * dialog to `DEFAULT_SETTINGS_TAB` the moment its active tab is not in the
  * rail — so a deep link to `/settings/sandbox` read as `allowed === true`
- * landed on Profile every time, before the answer could arrive
- * (`12-sandbox-templates.spec.ts`, `19-feature-flags-ui.spec.ts` in CI).
+ * landed on Profile every time, before the answer could arrive.
  * Pinned by `settings-panel.test.tsx`.
  */
 export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | undefined): boolean {
@@ -492,7 +491,7 @@ export function SettingsPanelShell({
        and fires that pane's queries — a cost only keyboard users pay, and one
        neither tsc nor the suite can see. WAI-ARIA's own guidance is manual
        activation whenever selecting a tab has a side effect. Arrow moves
-       focus; Enter/Space selects. Pinned by `settings-panel-a11y.test.ts`. */
+       focus; Enter/Space selects. */
     <SettingsRailCopyProvider groups={groups} chrome={chrome}>
       <Tabs
         value={tab}

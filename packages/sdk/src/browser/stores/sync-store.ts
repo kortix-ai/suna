@@ -29,6 +29,7 @@ import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 import { reconcileHydratedParts } from "./sync-store/reconcile-parts";
+import { keepUnchanged } from "./sync-store/keep-unchanged";
 import type {
 	FileDiff,
 	MessageError,
@@ -2400,8 +2401,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				clearBridge: (id) => untrackId(bridgedPartIds, sessionID, id),
 				isDeltaActive: (id) => hasTrackedId(deltaActiveParts, sessionID, id),
 			});
+			// A re-read of unchanged content keeps the store's objects, so the
+			// rows over them are reused and nothing redraws.
+			const kept = keepUnchanged(s.messages[sessionID], merged, s.parts, newParts);
 			return {
-				messages: { ...s.messages, [sessionID]: merged },
+				messages: kept === s.messages[sessionID] ? s.messages : { ...s.messages, [sessionID]: kept },
 				parts: newParts,
 			};
 		});

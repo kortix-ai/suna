@@ -86,8 +86,8 @@ mock.module('../hooks/use-change-request-recovery', () => ({
   useChangeRequestRecovery: () => ({ startRecovery() {}, startingCrId: null }),
 }));
 const manifestVersion =
-  await import('@/features/workspace/customize/migrate-to-v3/manifest-version');
-mock.module('@/features/workspace/customize/migrate-to-v3/manifest-version', () => ({
+  await import('@/features/workspace/customize/migrate-to-v2/manifest-version');
+mock.module('@/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
   ...manifestVersion,
   useProjectManifestVersion: () => ({ version: 2 }),
 }));

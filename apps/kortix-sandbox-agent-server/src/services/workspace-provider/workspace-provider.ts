@@ -69,6 +69,7 @@ function summarize(
   const actual = result.sha ?? null
   return {
     mode: mode,
+    volume: cfg.workspaceVolume === true,
     provider: result.provider ?? null,
     expected_sha: expected,
     actual_sha: actual,

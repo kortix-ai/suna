@@ -52,6 +52,9 @@ export function uploadedFileRefXml(input: UploadedFileRef): string {
 
 /** The ref a sent message draws before the runtime has the file. It is never pending. */
 export function optimisticUploadedFileRef(file: AttachedFile): UploadedFileRef {
+  if (file.kind === 'uploaded') {
+    return { path: '', mime: file.mime, filename: file.filename, attachment: file.uploadId };
+  }
   if (file.kind === 'local') {
     return {
       path: '',

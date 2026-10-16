@@ -167,16 +167,29 @@ downgrade N+1.
   then the notary credentials: `APPLE_API_KEY_P8` + `APPLE_API_KEY` +
   `APPLE_API_ISSUER`, or `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`.
   The app is signed with the Developer ID Application identity in the .p12 and
-  notarized. The `.pkg` is signed (`productsign`) and notarized only if the .p12
-  also holds a Developer ID Installer identity; otherwise it is unsigned and the
-  job log says so. Missing certificate: ad-hoc signed, unsigned pkg, a warning.
+  notarized. The `.pkg` is signed (`productsign`), notarized and stapled with the
+  Developer ID Installer identity in `APPLE_INSTALLER_CERTIFICATE` (base64 .p12) +
+  `APPLE_INSTALLER_CERTIFICATE_PASSWORD`. It is a separate secret, so the desktop
+  app's `APPLE_CERTIFICATE` stays unchanged. The `Gatekeeper accepts the installed app`
+  step asserts `spctl --assess --type install` says `source=Notarized Developer ID`
+  for the pkg, and `stapler validate` passes.
+- An unsigned pkg is refused by macOS on download: "Apple could not verify
+  KortixCapture-universal.pkg is free of malware". So a `stable` build fails when the
+  Apple certificate, the notary credentials or the Installer identity is missing. A
+  `dev` build warns and publishes an unsigned pkg.
+- Create the Installer certificate (Account Holder only, developer.apple.com →
+  Certificates → + → Developer ID Installer, upload a CSR). Bundle the issued `.cer`
+  with its private key: `openssl pkcs12 -export -legacy -inkey installer.key -in
+  installer.pem -out installer.p12`, then store the base64 of the .p12 and its
+  password in `kortix-ci-env`.
 - Windows: unsigned. No Windows code-signing certificate exists in `kortix-ci-env`.
 - Linux: the .deb is unsigned (no apt repository).
 
 ## Human steps
 
-1. Add a Developer ID Installer certificate to the .p12 in `kortix-ci-env`
-   (`APPLE_CERTIFICATE`) to sign the `.pkg` itself.
+1. Create the Developer ID Installer certificate and store it as
+   `APPLE_INSTALLER_CERTIFICATE` + `APPLE_INSTALLER_CERTIFICATE_PASSWORD` (section
+   "Signing"). Until then no stable release can attach Capture installers.
 2. Add a Windows code-signing certificate and a signing step to `windows-msi`
    to remove the SmartScreen warning.
 3. Create the update signing key: `apps/capture/scripts/create_update_key.sh`, then commit

@@ -145,7 +145,7 @@ test('every resolution hands off to the link action — the server gates closed 
     const root = await continueWithEmail(`${mode}@example.test`);
     try {
       expect(emailCodeSends).toBe(1);
-      expect(JSON.stringify(root.toJSON())).toContain('sign-in link');
+      expect(JSON.stringify(root.toJSON())).toContain('We sent a link to');
     } finally {
       await act(async () => root.unmount());
     }

@@ -62,6 +62,14 @@ export interface PromptAttachmentController {
   /** Validate the whole batch against the limits, then start every upload. */
   addMany(files: readonly File[]): string[];
   /**
+   * List uploads that already finished (a stored draft's) as `ready`, without
+   * a request. Returns each one's id, in order, or `undefined` for a handle
+   * that is invalid or past its expiry: that one is not listed. A `file` keeps
+   * the host's picture and lets Retry upload it again after expiry. Counts
+   * toward the limits like `addMany`.
+   */
+  restore(uploads: readonly { attachment: PromptAttachment; file?: File }[]): (string | undefined)[];
+  /**
    * Resume a failed or aborted upload with the same File and `attachment_id`.
    * After `attachment_size_mismatch` or `attachment_failed` the server keeps no
    * usable handle, so Retry uploads the same File as a new attachment.
@@ -347,6 +355,40 @@ export function createPromptAttachmentController(
     return ids;
   }
 
+  function restore(
+    uploads: readonly { attachment: PromptAttachment; file?: File }[],
+  ): (string | undefined)[] {
+    const valid = uploads.map(({ attachment, file }) => {
+      try {
+        return { attachment: completedMetadata(attachment), file };
+      } catch {
+        return undefined;
+      }
+    });
+    validateSizes(valid.flatMap((upload) => (upload ? [upload.attachment.size] : [])));
+    const ids = valid.map((upload) => {
+      if (!upload) return undefined;
+      const id = `attachment-${++lastAttachmentId}`;
+      const { attachment, file } = upload;
+      entries.set(id, {
+        generation: 0,
+        item: {
+          id,
+          ...(file ? { file } : {}),
+          filename: attachment.filename,
+          mime: attachment.mime,
+          size: attachment.size,
+          status: 'ready',
+          receivedBytes: attachment.size,
+          attachment,
+        },
+      });
+      return id;
+    });
+    emit();
+    return ids;
+  }
+
   function abort(id: string) {
     const entry = entries.get(id);
     if (!entry || entry.item.status === 'ready') return;
@@ -414,6 +456,7 @@ export function createPromptAttachmentController(
   return {
     add: (file: File): string => addMany([file])[0]!,
     addMany,
+    restore,
     retry(id: string): void {
       const entry = entries.get(id);
       // A send keeps its handed-off uploads after the composer unmounts, so the

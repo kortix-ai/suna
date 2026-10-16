@@ -1,7 +1,7 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * "This session is running an older version of your agent" — said in the header.
  *
@@ -19,25 +19,26 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
  * to report the case that is true almost always.
  */
 
-import { Badge, type badgeVariants } from '@/components/ui/badge';
+import { CopyButton } from '@/components/markdown/copy-button';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { genuiBadgeClass } from '@/features/genui/components/inline';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
 import { reloadProgressText } from '@/hooks/projects/session-reload-progress';
 import {
-  fallbackCopyKeys,
   type ReloadBusyReason,
   type SessionConfigNotice,
   useSessionConfigFreshness,
 } from '@/hooks/projects/use-session-config-freshness';
+import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import type { SessionReloadPhase } from '@kortix/sdk';
-import { ArrowsClockwiseIcon, WarningIcon } from '@phosphor-icons/react';
-import type { VariantProps } from 'class-variance-authority';
+import { ArrowsClockwiseIcon, WarningCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { SessionReloadProgressView } from './session-reload-progress-view';
 
@@ -106,7 +107,8 @@ export function SessionConfigIndicator({
   // This component may vanish the moment a reload lands, and a dialog that
   // unmounts mid-question is worse than no dialog.
   if (notice.kind === 'hidden' && !isPending) return null;
-  if (!isPending && notice.kind === 'fallback') return <SessionConfigFallbackChip notice={notice} />;
+  if (!isPending && notice.kind === 'fallback')
+    return <SessionConfigFallbackChip notice={notice} />;
 
   const label = isPending
     ? reloadProgressText(phase, tI18nComplete)
@@ -219,17 +221,20 @@ export function SessionConfigIndicator({
 }
 
 /**
- * How loud the fallback chip is. `destructive` is the loud error treatment the
- * spec recommends. Set it to
- * `secondary` for a quiet notice; nothing else changes.
+ * The host a network error names, so a person can read and search it without
+ * parsing the raw message. Null when the reason names none.
  */
-const FALLBACK_CHIP_VARIANT: NonNullable<VariantProps<typeof badgeVariants>['variant']> =
-  'destructive';
+export function fallbackErrorHost(reason: string): string | null {
+  return reason.match(/\b((?:[a-z0-9-]+\.)+[a-z]{2,})\b/i)?.[1] ?? null;
+}
 
 /**
  * `fallback_reason` set: the desired config failed on the box, and an earlier
- * config serves the session. The chip stays until a convergence succeeds. Its
- * popover names the reason, what runs now, and the release that failed.
+ * config serves the session. The chip stays until a convergence succeeds.
+ *
+ * Amber, not red: the session still works. The popover is two rows — the
+ * release that failed and the one serving — and the raw error stays folded
+ * until someone asks for it.
  */
 function SessionConfigFallbackChip({
   notice,
@@ -237,72 +242,119 @@ function SessionConfigFallbackChip({
   notice: Extract<SessionConfigNotice, { kind: 'fallback' }>;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const label = tI18nComplete.raw('textd9ff3a72833d');
+  const label = tI18nComplete.raw('textb346c1b839cb');
   const servingLabel =
     notice.source === 'release'
       ? tI18nComplete.raw('text00ed4c71dc2b')
       : tI18nComplete.raw('textbd7a1a3b4141');
+  const host = fallbackErrorHost(notice.reason);
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Badge
-          asChild
-          variant={FALLBACK_CHIP_VARIANT}
-          size="sm"
+        <button
+          type="button"
+          aria-label={label}
           data-testid="session-config-fallback-chip"
-          className="max-w-56 cursor-pointer normal-case active:scale-[0.96]"
+          className={cn(
+            genuiBadgeClass('warning'),
+            'h-7 max-w-56 gap-1.5 rounded-sm px-2 py-0 transition-transform active:scale-[0.96]',
+          )}
         >
-          <button type="button" aria-label={label}>
-            <WarningIcon />
-            <span className="truncate">{label}</span>
-          </button>
-        </Badge>
+          <WarningCircleIcon weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
+          <span className="truncate">{label}</span>
+        </button>
       </PopoverTrigger>
 
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-[320px] overflow-hidden p-0"
+        className="w-[340px] overflow-hidden p-0"
         data-testid="session-config-fallback-detail"
       >
-        <div className="px-4 pt-4 pb-3">
-          <div className="flex items-center gap-2.5">
-            <span className="bg-kortix-red/15 text-kortix-red flex size-8 shrink-0 items-center justify-center rounded-sm">
-              <WarningIcon className="size-4" />
-            </span>
-            <h3 className="text-foreground min-w-0 text-sm font-semibold tracking-tight">
-              {tI18nComplete.raw('textebfb07812fb4')}
-            </h3>
-          </div>
-          <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
-            {tI18nComplete.raw(fallbackCopyKeys(notice.source).runs)}
+        <div className="px-4 pt-3.5 pb-2.5">
+          <h3 className="text-foreground text-sm font-semibold tracking-tight text-balance">
+            {tI18nComplete.raw('text7cda1d1355a0')}
+          </h3>
+          <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed text-pretty">
+            {tI18nComplete.raw('textdf6f45b0b6d0')}
           </p>
         </div>
 
-        <dl className="border-border space-y-2 border-t px-4 py-3 text-xs">
-          <div className="space-y-0.5">
-            <dt className="text-muted-foreground">{tI18nComplete.raw('textf81ab834de5f')}</dt>
-            <dd className="text-foreground font-mono break-words">{notice.reason}</dd>
-          </div>
-          <div className="space-y-0.5">
-            <dt className="text-muted-foreground">{tI18nComplete.raw('text44cdf35701cd')}</dt>
-            <dd className="text-foreground">
-              {servingLabel}
-              {notice.servingReleaseId ? (
-                <span className="text-muted-foreground ml-1.5 font-mono">
-                  {notice.servingReleaseId}
+        <ol className="px-4 pt-1 pb-3.5">
+          <li className="flex gap-3">
+            <span className="flex w-5 shrink-0 flex-col items-center">
+              <XCircleIcon weight="fill" className="text-kortix-red size-5" />
+              <span className="bg-border my-1 w-px flex-1" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1 pb-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-foreground text-sm font-medium">
+                  {tI18nComplete.raw('textb9b5df3315d1')}
                 </span>
-              ) : null}
-            </dd>
-          </div>
-          {notice.failedReleaseId ? (
-            <div className="space-y-0.5">
-              <dt className="text-muted-foreground">{tI18nComplete.raw('text591f9f0f3259')}</dt>
-              <dd className="text-foreground font-mono">{notice.failedReleaseId}</dd>
+                {notice.failedReleaseId ? (
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {notice.failedReleaseId}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-kortix-red text-xs">{tI18nComplete.raw('text3d2301d732a7')}</p>
             </div>
+          </li>
+          <li className="flex gap-3">
+            <span className="flex w-5 shrink-0 justify-center">
+              <SolidCheckIcon className="text-kortix-green size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-foreground text-sm font-medium">{servingLabel}</span>
+                {notice.servingReleaseId ? (
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {notice.servingReleaseId}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text52a4b8f845a4')}
+              </p>
+            </div>
+          </li>
+        </ol>
+
+        <div
+          className="border-border space-y-2.5 border-t px-4 py-3"
+          data-testid="session-config-fallback-error"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground text-xs font-medium">
+              {tI18nComplete.raw('text54a0e8c17ebb')}
+              {notice.failedReleaseId ? (
+                <span className="ml-1.5 font-mono">{notice.failedReleaseId}</span>
+              ) : null}
+            </span>
+            <CopyButton
+              code={notice.reason}
+              size="sm"
+              hintSide="top"
+              label={tI18nComplete.raw('texte21f935f11d7')}
+            />
+          </div>
+          <pre className="border-border text-foreground max-h-40 overflow-auto rounded-md border px-3 py-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+            {notice.reason}
+          </pre>
+          {host ? (
+            <dl className="flex gap-3 text-xs">
+              <dt className="text-muted-foreground w-10 shrink-0">
+                {tI18nComplete.raw('text4a823118b9ba')}
+              </dt>
+              <dd className="text-foreground min-w-0 font-mono break-all">{host}</dd>
+            </dl>
           ) : null}
-        </dl>
+        </div>
+
+        <p className="border-border text-muted-foreground border-t px-4 py-2.5 text-xs">
+          {tI18nComplete.raw('textfd01ebfc09ff')}
+        </p>
       </PopoverContent>
     </Popover>
   );
