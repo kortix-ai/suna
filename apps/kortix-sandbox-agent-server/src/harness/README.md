@@ -979,8 +979,8 @@ rules; a `deny` from either wins, so delegating never unlocks a denied call.
   inline image size limit.]"). `pi/images.ts` embeds the wasm in the binary and redirects that
   one file name to the embedded copy. In a binary pi's resize worker does not load, so pi
   resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop; at most
-  20 per prompt). Follow-up: build `src/utils/image-resize-worker.ts` as an entrypoint, as
-  codemode's worker (`scripts/build.sh`); that worker must install the wasm redirect itself.
+  20 per prompt). Follow-up: build the worker path pi's `resizeImage` asks for in a binary as a
+  second entrypoint, as codemode's worker (`scripts/build.sh`); it must install the wasm redirect itself.
   `pi-images.test.ts` builds a binary against a copy of photon-node, deletes the copy, and runs
   pi's `read` and `promptImages` in it.
 
