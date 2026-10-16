@@ -1,6 +1,9 @@
 import type { AdminConnector } from '@kortix/sdk';
 
-import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
+import {
+  connectorSetupStatus,
+  type ConnectorSetupStatus,
+} from '@/features/workspace/customize/sections/connector-connection-form';
 
 import { providerLabel } from '../provider-label';
 
@@ -29,6 +32,15 @@ export function connectorStatusTone(
   const status = connectorSetupStatus(connector);
   if (status === 'pending') return 'pending';
   return status === 'error' ? 'error' : status === 'needs_setup' ? 'setup' : 'working';
+}
+
+/**
+ * Agents can use the connector now: it is signed in, it runs on per-person
+ * accounts, or it needs no sign-in and has an account to run as.
+ */
+export function connectorUsable(status: ConnectorSetupStatus, accountCount: number): boolean {
+  if (status === 'connected' || status === 'user_managed') return true;
+  return status === 'no_auth' && accountCount > 0;
 }
 
 /** What the connector runs over: its provider, named the way a person says it. */

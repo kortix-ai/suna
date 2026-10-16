@@ -90,6 +90,18 @@ describe('connectors page Global rules', () => {
     expect(header).toContain("setPanel('custom')");
   });
 
+  // KRTX-2185: adding an MCP server took eight steps through the custom
+  // connector form. New leads with "MCP server": a URL and who can use it.
+  test('New leads with "MCP server", which opens the one-step MCP dialog', () => {
+    const body = code(source);
+    const header = body.slice(body.indexOf('action={'), body.indexOf('filters={'));
+    expect(header).toContain('quick={{');
+    expect(header).toContain("setPanel('mcp')");
+    expect(header.indexOf("setPanel('mcp')")).toBeLessThan(header.indexOf("setPanel('custom')"));
+    expect(body).toContain("open={panel === 'mcp'}");
+    expect(body).toContain('<AddMcpServerDialog');
+  });
+
   test('it opens in a SplitSheet and renders PoliciesPanel, with the copy intact', () => {
     const body = code(source);
     expect(body).toContain('<SplitSheet open={rulesOpen} onOpenChange={setRulesOpen}');
