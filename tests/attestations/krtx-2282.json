@@ -1,16 +1,16 @@
 {
-  "source_hash": "c191088c1a1fc98f09e6debb0fddd8444c696740c50654cd12e7b728c42a673e",
+  "source_hash": "c9ec2a32ad9b8b6f57efce338fa843d3a447e365c42e5c5f1b7595ee93c0240b",
   "diff_files": [
     "apps/web/src/app/[locale]/(public)/(seo)/seo-shell.test.tsx",
     "apps/web/src/app/[locale]/(public)/(seo)/seo-shell.tsx"
   ],
   "diff_hash": "020b286854d70b39cda619044b68a724d335f40ddac1c356598ae752bee7aa10",
-  "head": "4ad0fe0ece86f157082c9cd00f134d6ef8aa3673",
+  "head": "b2817b81cb8381c26c8e1fcb96993944cef54dcf",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-14T19:46:33.008Z"
+  "at": "2026-10-16T15:40:18.618Z"
 }
