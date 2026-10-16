@@ -99,9 +99,9 @@ function LandingThumb({ projectId, row }: { projectId?: string; row: LandingRow 
       className={cn(
         'relative h-6.5 w-10 shrink-0 overflow-hidden rounded-sm',
         row.thumb === 'url' && 'bg-muted',
-        (row.thumb === 'app' || row.thumb === 'app-idle') && 'bg-card border',
+        (row.thumb === 'app' || row.thumb === 'app-idle') && 'bg-card border-muted-foreground border',
         row.thumb === 'app-idle' && 'opacity-60',
-        row.thumb === 'app-draft' && 'border border-dashed',
+        row.thumb === 'app-draft' && 'border-muted-foreground border border-dashed',
       )}
     >
       {app && live && url ? (
