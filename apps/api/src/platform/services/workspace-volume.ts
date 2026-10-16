@@ -162,15 +162,23 @@ async function openWorkspaceVolume(volume: WorkspaceVolume): Promise<void> {
 }
 
 /**
- * Delete the session's workspace volume, when it has one. Its box must be gone
- * first: Platinum refuses a delete with `volume_busy` while any box, running or
- * stopped, mounts it. A sandbox DELETE answers before the box releases its
- * mount, so `volume_busy` is waited out for ~10 s. Throws on any failure so the
- * caller retries.
+ * Delete a DELETED session's workspace volume, when it has one. A session that
+ * is not deleted keeps it: the box-removal lane also serves a lost session's
+ * recovery and a stuck provisioning, and their next box mounts this volume.
+ * The box must be gone first: Platinum refuses a delete with `volume_busy`
+ * while any box, running or stopped, mounts it. A sandbox DELETE answers before
+ * the box releases its mount, so `volume_busy` is waited out for ~10 s. Throws
+ * on any failure so the caller retries.
  */
 export async function deleteWorkspaceVolume(sessionId: string): Promise<'deleted' | 'none'> {
-  const volume = await sessionWorkspaceVolume(sessionId);
-  if (!volume) return 'none';
+  const [row] = await db
+    .select({ metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  const metadata = row?.metadata as Record<string, unknown> | null | undefined;
+  const volume = recordedWorkspaceVolume(sessionId, metadata);
+  if (!volume || typeof metadata?.deletedAt !== 'string') return 'none';
   for (let attempt = 1; ; attempt++) {
     try {
       await platinumJson(

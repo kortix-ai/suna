@@ -8,7 +8,8 @@
  *   the kill switch or the project's region say then.
  * - Every volume call goes to the control plane of the volume's region.
  * - A volume that does not open fails the boot with a storage message.
- * - A deleted session's volume is deleted after its box, by the removal lane.
+ * - A deleted session's volume is deleted after its box, by the removal lane;
+ *   a session that is not deleted keeps it.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 
@@ -108,6 +109,26 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
+/** A session with a us-east volume whose box row is archived and stamped for removal, with no box. */
+async function archivedVolumeSession(extra: Record<string, unknown>) {
+  const sessionId = await newSession();
+  const metadata = { ...extra, workspace_volume: { name: `kws-${sessionId}`, location: 'us-east' } };
+  await db.update(projectSessions).set({ metadata }).where(eq(projectSessions.sessionId, sessionId));
+  await db.insert(sessionSandboxes).values({
+    sandboxId: sessionId,
+    sessionId,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    provider: 'platinum',
+    status: 'archived',
+    externalId: null,
+    metadata: { [PROVIDER_REMOVAL_PENDING_KEY]: new Date().toISOString() },
+  });
+  const row = async () =>
+    ((await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)))[0]!.metadata ?? {}) as Record<string, unknown>;
+  return { sessionId, row };
+}
+
 describe('workspace_volume', () => {
   test('is operator-only: a project admin cannot turn it on', async () => {
     const res = await app.request(`/v1/projects/${PROJECT}/features`, {
@@ -198,24 +219,15 @@ describe('workspace_volume', () => {
     expect(create.envVars).toEqual({ KORTIX_TOKEN: 't', KORTIX_WORKSPACE_VOLUME: '1' });
   });
 
+  test('a session that is not deleted keeps its volume when its box is removed (lost-session recovery)', async () => {
+    const { sessionId, row } = await archivedVolumeSession({});
+    await removeArchivedProviderBoxes();
+    expect(calls.filter((c) => c.url.includes(sessionId))).toEqual([]);
+    expect(await row()).toHaveProperty(PROVIDER_REMOVED_KEY);
+  });
+
   test('the removal lane deletes a deleted session’s volume after its box, at its region; volume_busy retries', async () => {
-    const sessionId = await newSession();
-    await db.execute(sql`
-      update kortix.project_sessions set metadata = jsonb_build_object('workspace_volume',
-        jsonb_build_object('name', ${`kws-${sessionId}`}::text, 'location', 'us-east'))
-       where session_id = ${sessionId}`);
-    await db.insert(sessionSandboxes).values({
-      sandboxId: sessionId,
-      sessionId,
-      accountId: ACCOUNT,
-      projectId: PROJECT,
-      provider: 'platinum',
-      status: 'archived',
-      externalId: null,
-      metadata: { [PROVIDER_REMOVAL_PENDING_KEY]: new Date().toISOString() },
-    });
-    const row = async () =>
-      ((await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)))[0]!.metadata ?? {}) as Record<string, unknown>;
+    const { sessionId, row } = await archivedVolumeSession({ deletedAt: new Date().toISOString() });
 
     answer = () => Response.json({ code: 'volume_busy', mounts: [{ sandbox_id: 'sbx_x' }] }, { status: 409 });
     await removeArchivedProviderBoxes();
