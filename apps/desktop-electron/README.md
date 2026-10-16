@@ -214,6 +214,31 @@ Files: `src/quick-entry.js` (window, shortcut, IPC), `src/quick-entry-rules.js`
 `assets/quick-entry.html`. The native journey in
 `tests/e2e/specs/27-desktop-parity.spec.ts` drives it end to end.
 
+## Unseen finished turns (Dock / taskbar badge)
+
+A turn that finishes while you work elsewhere puts a count on the app icon. The
+count is the number of sessions with a finished turn you have not seen yet. The
+in-app toast fades after 8 s; the badge stays until you look.
+
+- **What counts.** The web app's turn-attention store
+  (`apps/web/src/stores/turn-attention-store.ts`). A turn counts when it
+  finishes while the window is hidden or not focused, including on the session
+  the window shows. It also counts when it finishes while another session is on
+  screen and the app still hears it (another window or browser tab has it
+  open). Looking at the session in a focused window removes it from the count.
+- **How it reaches the icon.** `TurnAttentionBadge` sends the count through the
+  sender-gated `set_badge_count` command (`setDesktopBadgeCount` in
+  `apps/web/src/lib/desktop.ts`), and `src/attention-badge.js` shows it:
+
+  | Platform | Shows |
+  | --- | --- |
+  | macOS | the number on the Dock icon (`app.setBadgeCount`) |
+  | Windows | a green dot over the taskbar icon (`setOverlayIcon`), with the count in its accessible description |
+  | Linux | the number on the launcher icon, where the desktop supports Unity launcher counts |
+
+- **When it clears.** At 0, on every new document in the window (reload,
+  server switch), and when the window closes.
+
 ## This computer (local agent + tray)
 
 The app bundles the computer agent, `@kortix/agent-tunnel`
@@ -308,6 +333,13 @@ Tray icons are in `assets/tray/`: `trayTemplate.png` / `@2x` (black + alpha,
 from `apps/web/public/kortix-symbol.svg`) and `tray.png` / `tray.ico` (from
 `build/icon.png`).
 
+## Kortix Capture
+
+Kortix Capture is not part of this app. It is a standalone app (`apps/capture` in this repository) that a person installs and signs in to with their Kortix
+account, or that IT installs with an enrollment token. Its admin pages
+(`/capture/...`: Devices, timelines, policy, rollout) open in this app like
+any other Kortix page.
+
 ## Package
 
 ```bash
@@ -369,6 +401,7 @@ runs **unchanged** on either shell:
 | OAuth/connect popups (Pipedream) | ✗ blocked (`window.open`→null) | ✓ real child window (works) |
 | App login | system browser + `kortix://` | system browser + `kortix://` |
 | Zoom (`set_zoom`) | Rust command | `webContents.setZoomFactor` |
+| Unseen-turn badge (`set_badge_count`) | ✗ none | Dock count / taskbar overlay (`attention-badge.js`) |
 | Window controls | `getCurrentWindow().*` | IPC → `BrowserWindow.*` |
 | Frontend URL override | app-config-dir file + menu | `userData/frontend_url` + same menu |
 | Deep links (`kortix://`) | deep-link plugin | `setAsDefaultProtocolClient` + `open-url`/`second-instance` |

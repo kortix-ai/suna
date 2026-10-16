@@ -77,17 +77,25 @@ const light = {
   link: '#fc2b73',
 };
 
+/**
+ * The editor surface follows the interface theme's canvas (`--background`),
+ * so Light / Dark (soft) and Pure light / Pure dark each get a matching editor
+ * instead of a pure white / black block. Pierre's `bg` is the no-CSS fallback;
+ * the token palette stays Pierre's.
+ */
+const canvas = (fallback: string) => `var(--background, ${fallback})`;
+
 function buildTheme(theme: 'light' | 'dark', p: typeof dark) {
   return createTheme({
     theme,
     settings: {
-      background: p.bg,
+      background: canvas(p.bg),
       foreground: p.fg,
       caret: p.cursor,
       selection: p.selection,
       selectionMatch: p.selectionMatch,
       lineHighlight: p.lineHl,
-      gutterBackground: p.bg,
+      gutterBackground: canvas(p.bg),
       gutterForeground: p.gutterFg,
       gutterActiveForeground: p.gutterActiveFg,
       gutterBorder: 'transparent',

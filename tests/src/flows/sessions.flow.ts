@@ -1213,6 +1213,11 @@ flow(
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId/message-authors',
+      'GET /v1/projects/:projectId/sessions/:sessionId/model-usage',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/config',
       'POST /v1/projects/:projectId/sessions/:sessionId/attachments',
       'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId',
     ],
@@ -1305,6 +1310,21 @@ flow(
       (await owner.get(download, { params: { ...params, attachmentId } })).status(404);
     });
 
+    await ctx.step('its content reads → 404 for the owner and a member, as the read of it (KRTX-2275); a prompt → 409 Session is deleted', async () => {
+      for (const who of [owner, ctx.client.as(member)]) {
+        (await who.get(`${sessionRoute}/transcript`, { params, query: { shape: 'sync', history: 'true' } })).status(404);
+        (await who.get(`${sessionRoute}/message-authors`, { params })).status(404);
+        (await who.get(`${sessionRoute}/model-usage`, { params })).status(404);
+        (await who.get(`${sessionRoute}/prompts`, { params })).status(404);
+        (await who.get(`${sessionRoute}/config`, { params })).status(404);
+      }
+      (await owner.post(
+        `${sessionRoute}/prompts`,
+        { client_message_id: `sess-51-${crypto.randomUUID()}`, parts: [{ type: 'text', text: 'into a deleted session' }] },
+        { params },
+      )).status(409).body().has('$.error', 'Session is deleted');
+    });
+
     await ctx.step('a project member who did not start the session cannot restore it → 403, it stays deleted', async () => {
       (await ctx.client.as(member).post(restoreRoute, {}, { params }))
         .status(403)
@@ -1313,7 +1333,11 @@ flow(
       if (await listed()) throw new Error('a refused restore listed the session');
     });
 
-    await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
+    // The local provider is unreachable, so the seeded box's removal stays
+    // unconfirmed until the flow records it. A deployed provider answers for
+    // the seeded box during the delete (or the restore), so its first restore is 200.
+    const local = ctx.env.target === 'local';
+    if (local) await ctx.step('while the provider has not confirmed the old box removed → 409 session_sandbox_removal_pending', async () => {
       (await owner.post(restoreRoute, {}, { params }))
         .status(409)
         .body()
@@ -1325,17 +1349,19 @@ flow(
     });
 
     await ctx.step('the provider confirms the removal; restore → 200, the session is listed and readable again', async () => {
-      const db = await openFlowDb(ctx.env);
-      try {
-        await db.query(
-          `UPDATE kortix.session_sandboxes
-              SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
-                             || jsonb_build_object('providerRemovedAt', now()::text)
-            WHERE session_id = $1 AND status = 'archived'`,
-          [sessionId],
-        );
-      } finally {
-        await db.end();
+      if (local) {
+        const db = await openFlowDb(ctx.env);
+        try {
+          await db.query(
+            `UPDATE kortix.session_sandboxes
+                SET metadata = (metadata - 'providerRemovalPendingAt' - 'providerRemovalAttempts' - 'providerRemovalRetryAfterAt' - 'providerRemovalError')
+                               || jsonb_build_object('providerRemovedAt', now()::text)
+              WHERE session_id = $1 AND status = 'archived'`,
+            [sessionId],
+          );
+        } finally {
+          await db.end();
+        }
       }
       (await owner.post(restoreRoute, {}, { params })).status(200).body().has('$.ok', true);
       if (!(await listed())) throw new Error('the restored session is not listed');
@@ -1473,6 +1499,344 @@ flow(
     await ctx.step('a deleted session is gone by id → 404', async () => {
       (await owner.del(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(200);
       (await owner.get(byId, { params: { sessionId: sharedId } })).status(404);
+    });
+  },
+);
+
+/**
+ * SESS-54 — a person pins a session to the top of their list or archives it
+ * out of the list (KRTX-2418). Per person: a pin or an archive changes only the
+ * caller's own list, and neither moves the session's `updated_at`. Local
+ * profile: database sessions.
+ */
+flow(
+  'SESS-54',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'PUT /v1/projects/:projectId/sessions/:sessionId/pin',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/archive',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/accounts/tokens',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const seed = async (visibility: 'private' | 'project' = 'project') => {
+      const id = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        userId: ctx.P.OWNER.userId!,
+        visibility,
+      });
+      ctx.track('session', id, { projectId: project.id });
+      return id;
+    };
+    // Oldest first: the list serves them newest first, [s4, s3, s2, s1, private].
+    const privateId = await seed('private');
+    const s1 = await seed();
+    const s2 = await seed();
+    const s3 = await seed();
+    const s4 = await seed();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = (sessionId: string) => ({ projectId: project.id, sessionId });
+    const pin = (sessionId: string, pinned: boolean, who = owner) =>
+      who.put('/v1/projects/:projectId/sessions/:sessionId/pin', { pinned }, { params: params(sessionId) });
+    const archive = (sessionId: string, archived: boolean, who = owner) =>
+      who.put('/v1/projects/:projectId/sessions/:sessionId/archive', { archived }, { params: params(sessionId) });
+    type Row = { session_id: string; pinned_at?: string | null; archived_at?: string | null };
+    const list = async (query: Record<string, string> = {}, who = owner) => {
+      const r = (await who.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query })).status(200);
+      // The private session belongs to the owner alone and is not part of these checks.
+      return { rows: r.json<Row[]>().filter((row) => row.session_id !== privateId), cursor: r.header('x-next-cursor') ?? null };
+    };
+    /** A 200 state body with these fields. */
+    const state = async (pending: ReturnType<typeof pin>, expected: Partial<Row>) => {
+      const body = (await pending).status(200).json<Row>();
+      for (const [key, value] of Object.entries(expected)) {
+        if (body[key as keyof Row] !== value) throw new Error(`${key}: got ${String(body[key as keyof Row])}, want ${String(value)}`);
+      }
+      return body;
+    };
+    const ids = (rows: Row[]) => rows.map((row) => row.session_id).join(',');
+    const expectIds = (rows: Row[], expected: string[], what: string) => {
+      if (ids(rows) !== expected.join(',')) throw new Error(`${what}: got [${ids(rows)}], want [${expected.join(',')}]`);
+    };
+
+    await ctx.step('the list carries the person`s pinned_at and archived_at, both null at first', async () => {
+      const { rows } = await list();
+      expectIds(rows, [s4, s3, s2, s1], 'the first list');
+      for (const row of rows) {
+        if (row.pinned_at !== null || row.archived_at !== null) throw new Error(`${row.session_id} is not null/null`);
+      }
+    });
+
+    await ctx.step('PUT …/pin {pinned:true} → 200 pinned_at set; a repeat keeps the first pinned_at; the order stays', async () => {
+      const first = await state(pin(s1, true), { archived_at: null });
+      if (!first.pinned_at) throw new Error('no pinned_at');
+      (await pin(s1, true)).status(200).body().has('$.pinned_at', first.pinned_at);
+      expectIds((await list({ pinned: 'only' })).rows, [s1], 'pinned=only');
+      const { rows } = await list();
+      expectIds(rows, [s4, s3, s2, s1], 'a pin does not move the session');
+      if (rows.find((row) => row.session_id === s1)?.pinned_at !== first.pinned_at) throw new Error('the list row has no pinned_at');
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params: params(s1) }))
+        .status(200).body().has('$.pinned_at', first.pinned_at).has('$.archived_at', null);
+      // The session open bundle serves the same row as the read by id.
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', { params: params(s1), query: { transcript: '0' } }))
+        .status(200).body().has('$.session.pinned_at', first.pinned_at).has('$.session.archived_at', null);
+    });
+
+    await ctx.step('PUT …/archive {archived:true} → 200; the default list leaves it out, archived=only lists it', async () => {
+      const r = await state(archive(s2, true), { pinned_at: null });
+      if (!r.archived_at) throw new Error('no archived_at');
+      expectIds((await list()).rows, [s4, s3, s1], 'the default list');
+      expectIds((await list({ archived: 'only' })).rows, [s2], 'archived=only');
+    });
+
+    await ctx.step('another member`s list is unchanged: no pin, nothing archived', async () => {
+      const { rows } = await list({}, ctx.client.as(member));
+      expectIds(rows.filter((row) => row.session_id !== privateId), [s4, s3, s2, s1], 'the member`s list');
+      if (rows.some((row) => row.pinned_at !== null || row.archived_at !== null)) throw new Error('the member sees the owner`s state');
+      expectIds((await list({ pinned: 'only' }, ctx.client.as(member))).rows, [], 'the member`s pinned=only');
+    });
+
+    await ctx.step('archiving a pinned session unpins it; pinning an archived one unarchives it', async () => {
+      (await archive(s1, true)).status(200).body().has('$.pinned_at', null);
+      expectIds((await list({ pinned: 'only' })).rows, [], 'pinned=only after the archive');
+      expectIds((await list({ archived: 'only' })).rows, [s2, s1], 'archived=only');
+      const repinned = await state(pin(s1, true), { archived_at: null });
+      if (!repinned.pinned_at) throw new Error('no pinned_at after the re-pin');
+      expectIds((await list({ archived: 'only' })).rows, [s2], 'archived=only after the re-pin');
+    });
+
+    await ctx.step('a page stays full: with the 2 newest and the oldest archived, ?limit=2 → the 2 between and no cursor', async () => {
+      (await archive(privateId, true)).status(200);
+      (await archive(s4, true)).status(200);
+      (await archive(s3, true)).status(200);
+      (await archive(s2, false)).status(200).body().has('$.archived_at', null);
+      const page = await list({ limit: '2' });
+      expectIds(page.rows, [s2, s1], 'the default page');
+      if (page.cursor) throw new Error('the last page carries a cursor');
+      const first = await list({ archived: 'only', limit: '1' });
+      expectIds(first.rows, [s4], 'archived=only page 1');
+      if (!first.cursor) throw new Error('archived=only page 1 has no cursor');
+      expectIds((await list({ archived: 'only', limit: '1', cursor: first.cursor })).rows, [s3], 'archived=only page 2');
+    });
+
+    await ctx.step('unpin and unarchive → 200 null/null; the list is whole again', async () => {
+      (await pin(s1, false)).status(200).body().has('$.pinned_at', null).has('$.archived_at', null);
+      (await archive(s4, false)).status(200);
+      (await archive(s3, false)).status(200);
+      expectIds((await list()).rows, [s4, s3, s2, s1], 'the restored list');
+    });
+
+    await ctx.step('pinned=only with archived=only → 400; a body without the flag → 400', async () => {
+      (await owner.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query: { pinned: 'only', archived: 'only' } })).status(400);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/pin', {}, { params: params(s1) })).status(400);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/archive', { archived: 'yes' }, { params: params(s1) })).status(400);
+    });
+
+    await ctx.step('a session the caller cannot see → 404; ANON → 401; outside the account → 403', async () => {
+      (await pin(privateId, true, ctx.client.as(member))).status(404);
+      (await pin(crypto.randomUUID(), true)).status(404);
+      (await pin(s1, true, ctx.client.as(ctx.P.ANON))).status(401);
+      (await archive(s1, true, ctx.client.as(ctx.P.NONMEMBER))).status(403);
+    });
+
+    await ctx.step('a deleted session cannot be pinned or archived → 404', async () => {
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: params(s4) })).status(200);
+      (await pin(s4, true)).status(404);
+      (await archive(s4, true)).status(404);
+    });
+
+    const db = await openFlowDb(ctx.env);
+    try {
+      const turn = await seedTurnSession(ctx, db, { projectId: project.id, accountId: team.id, creator: ctx.P.OWNER });
+      try {
+        await ctx.step('a session`s own sandbox token is not a person → 403; its list carries no pinned_at', async () => {
+          (await turn.sandbox.put('/v1/projects/:projectId/sessions/:sessionId/pin', { pinned: true }, { params: params(turn.sessionId) })).status(403);
+          (await turn.sandbox.put('/v1/projects/:projectId/sessions/:sessionId/archive', { archived: true }, { params: params(turn.sessionId) })).status(403);
+          const rows = (await turn.sandbox.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } }))
+            .status(200).json<Row[]>();
+          if (rows.some((row) => 'pinned_at' in row || 'archived_at' in row)) throw new Error('a sandbox token got pin state');
+          const archivedView = (await turn.sandbox.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query: { archived: 'only' } }))
+            .status(200).json<Row[]>();
+          if (archivedView.length !== 0) throw new Error('a sandbox token has an archive');
+        });
+      } finally {
+        await turn.cleanup();
+      }
+    } finally {
+      await db.end();
+    }
+  },
+);
+
+/**
+ * SESS-55 — a lost session continues on a new computer from its saved
+ * conversation (KRTX-2419). The provider removed the box and no in-place
+ * recovery answered, so the sandbox row is `stopped` with
+ * `runtimeIdentityState: 'unavailable'`. `POST …/recover` retires the row (the
+ * next `/start` boots a fresh box from the branch) and marks the session so
+ * that box restores the conversation from the session log. Local profile:
+ * database sessions; the provider confirmation is a row stamp, as in SESS-51.
+ */
+flow(
+  'SESS-55',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/sessions/:sessionId/recover',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/accounts/tokens',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const ownerToken = (await owner.post('/v1/accounts/tokens', { name: 'SESS-55 journal' })).status(201).json<{ secret_key: string }>().secret_key;
+    /** A session whose computer the provider lost. `transcript`: none, the v1 mirror, or the session log. */
+    const lostSession = async (transcript: 'none' | 'mirror' | 'log', confirmed = true) => {
+      const id = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        userId: ctx.P.OWNER.userId!,
+        visibility: 'project',
+      });
+      ctx.track('session', id, { projectId: project.id });
+      const db = await openFlowDb(ctx.env);
+      try {
+        if (transcript === 'none') {
+          await db.query(
+            "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
+            [id, team.id, project.id],
+          );
+        } else {
+          await seedSessionTranscript(ctx.env, {
+            projectId: project.id,
+            accountId: team.id,
+            sessionId: id,
+            ...(transcript === 'log' ? { log: { bearer: ownerToken } } : {}),
+          });
+        }
+        await db.query(
+          `UPDATE kortix.session_sandboxes SET status = 'stopped', metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+             'runtimeIdentityState', 'unavailable', 'runtimeUnavailableReason', 'runtime_removed', 'preservedExternalId', external_id)
+             || CASE WHEN $2 THEN jsonb_build_object('providerRemovedAt', now()::text) ELSE '{}'::jsonb END
+           WHERE session_id = $1`,
+          [id, confirmed],
+        );
+      } finally {
+        await db.end();
+      }
+      return id;
+    };
+    const rows = async (id: string) => {
+      const db = await openFlowDb(ctx.env);
+      try {
+        const sandbox = (await db.query<{ status: string; external_id: string | null; metadata: Record<string, unknown> }>(
+          'SELECT status::text AS status, external_id, metadata FROM kortix.session_sandboxes WHERE session_id = $1',
+          [id],
+        )).rows[0];
+        const session = (await db.query<{ recovered: string | null }>(
+          "SELECT metadata->>'lostRecoveredAt' AS recovered FROM kortix.project_sessions WHERE session_id = $1",
+          [id],
+        )).rows[0];
+        const logMessages = Number((await db.query<{ n: string }>(
+          'SELECT count(*) AS n FROM kortix.session_log_messages WHERE session_id = $1 AND deleted_at IS NULL',
+          [id],
+        )).rows[0]?.n ?? 0);
+        return { sandbox, recovered: session?.recovered ?? null, logMessages };
+      } finally {
+        await db.end();
+      }
+    };
+    const recover = (id: string, who = owner) =>
+      who.post('/v1/projects/:projectId/sessions/:sessionId/recover', {}, { params: { projectId: project.id, sessionId: id } });
+    const transcriptMessages = async (id: string) =>
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+        params: { projectId: project.id, sessionId: id },
+        query: { shape: 'sync', history: 'true' },
+      }))
+        .status(200)
+        .json<{ messages?: unknown[] }>().messages?.length ?? 0;
+
+    const fromLog = await lostSession('log');
+    await ctx.step('a lost session with a session log → 200; the row is retired and the session restores from its log', async () => {
+      const before = await rows(fromLog);
+      if (before.logMessages !== 2) throw new Error(`seeded log holds ${before.logMessages} messages`);
+      (await recover(fromLog)).status(200).body().has('$.ok', true);
+      const after = await rows(fromLog);
+      if (after.sandbox?.status !== 'stopped' || after.sandbox.external_id !== null) {
+        throw new Error(`the row is not retired: ${JSON.stringify(after.sandbox)}`);
+      }
+      if (after.sandbox.metadata.ephemeralRetiredExternalId !== fromLog) throw new Error('the retired row does not name the lost box');
+      if ('runtimeIdentityState' in after.sandbox.metadata) throw new Error('the row still reads lost');
+      if (!after.recovered) throw new Error('the session has no lostRecoveredAt');
+      if (after.logMessages !== 2) throw new Error('the recover changed the log');
+    });
+
+    await ctx.step('a second recover → 409 session_not_lost', async () => {
+      (await recover(fromLog)).status(409).body().has('$.code', 'session_not_lost');
+    });
+
+    await ctx.step('a lost session with only the v1 mirror → 200; the mirror becomes its session log and still reads', async () => {
+      const fromMirror = await lostSession('mirror');
+      if ((await rows(fromMirror)).logMessages !== 0) throw new Error('the mirror session already has a log');
+      (await recover(fromMirror)).status(200);
+      const after = await rows(fromMirror);
+      if (after.logMessages !== 2 || after.sandbox?.external_id !== null || !after.recovered) {
+        throw new Error(`mirror recover: ${JSON.stringify({ logMessages: after.logMessages, sandbox: after.sandbox, recovered: after.recovered })}`);
+      }
+      if ((await transcriptMessages(fromMirror)) !== 2) throw new Error('the transcript lost messages');
+    });
+
+    await ctx.step('a lost session with no saved conversation → 409 session_transcript_missing, nothing changes', async () => {
+      const bare = await lostSession('none');
+      (await recover(bare)).status(409).body().has('$.code', 'session_transcript_missing');
+      const after = await rows(bare);
+      if (after.sandbox?.external_id !== bare || after.sandbox.metadata.runtimeIdentityState !== 'unavailable' || after.recovered) {
+        throw new Error(`the refused recover changed the session: ${JSON.stringify(after)}`);
+      }
+    });
+
+    await ctx.step('a lost box the provider has not confirmed removed → 409 session_sandbox_removal_pending, nothing changes', async () => {
+      const pending = await lostSession('mirror', false);
+      (await recover(pending)).status(409).body().has('$.code', 'session_sandbox_removal_pending');
+      const after = await rows(pending);
+      if (after.sandbox?.external_id !== pending || after.sandbox.metadata.runtimeIdentityState !== 'unavailable' || after.recovered) {
+        throw new Error(`the pending recover changed the session: ${JSON.stringify(after)}`);
+      }
+      if ((await transcriptMessages(pending)) !== 2) throw new Error('the transcript lost messages');
+    });
+
+    await ctx.step('a session that is only stopped → 409 session_not_lost; a member who did not start it → 403', async () => {
+      const stopped = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project' });
+      ctx.track('session', stopped, { projectId: project.id });
+      await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: team.id, sessionId: stopped });
+      (await recover(stopped)).status(409).body().has('$.code', 'session_not_lost');
+      const lost = await lostSession('log');
+      (await recover(lost, ctx.client.as(member))).status(403);
+      if ((await rows(lost)).sandbox?.external_id !== lost) throw new Error('the refused member recover changed the row');
+    });
+
+    await ctx.step('no token → 401; a deleted session → 404', async () => {
+      const lost = await lostSession('log');
+      (await recover(lost, ctx.client.as(ctx.P.ANON))).status(401);
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId: project.id, sessionId: lost } })).status(200);
+      (await recover(lost)).status(404);
     });
   },
 );

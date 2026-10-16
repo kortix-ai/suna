@@ -111,21 +111,36 @@ export async function createDatabaseProject(
   return { id: projectId, name: input.name };
 }
 
+/**
+ * Give a fixture account the Enterprise plan, or take it away. Since #9930 an
+ * account gets Enterprise from an Enterprise trial (`POST
+ * /v1/admin/api/accounts/:id/trial`, `grantTrial` in
+ * `apps/api/src/billing/services/trial-admin.ts`); `demo_enterprise` grants
+ * nothing. This writes the trial columns that route writes: active,
+ * `enterprise`, 30 days. Browser journeys hold no platform-admin token, so
+ * they write the row as the REST flows' admin call would. The name stays for
+ * its callers.
+ */
 export async function setDatabaseEnterpriseDemo(
   env: Env,
   accountId: string,
   enabled: boolean,
   open: OpenProjectDb = openProjectDb,
 ): Promise<void> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, "update enterprise demo for");
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "update enterprise trial for");
   const client = await open(databaseUrl);
   try {
     await client.query(
-      `INSERT INTO kortix.credit_accounts (account_id, demo_enterprise)
-       VALUES ($1::uuid, $2)
-       ON CONFLICT (account_id)
-       DO UPDATE SET demo_enterprise = EXCLUDED.demo_enterprise`,
-      [accountId, enabled],
+      enabled
+        ? `INSERT INTO kortix.credit_accounts (account_id, trial_status, trial_tier, trial_started_at, trial_ends_at)
+           VALUES ($1::uuid, 'active', 'enterprise', now(), now() + interval '30 days')
+           ON CONFLICT (account_id) DO UPDATE SET
+             trial_status = 'active',
+             trial_tier = 'enterprise',
+             trial_started_at = now(),
+             trial_ends_at = now() + interval '30 days'`
+        : `UPDATE kortix.credit_accounts SET trial_status = 'none', trial_tier = NULL WHERE account_id = $1::uuid`,
+      [accountId],
     );
   } finally {
     await client.end();
@@ -196,6 +211,98 @@ export async function seedDatabaseRunningFirstPrompt(
         }),
         JSON.stringify({ delivery_started_at: new Date().toISOString() }),
       ],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * A turn a member's prompt started and the control plane still holds as
+ * running: the prompt row that names the member, the box's `activeTurns`
+ * entry, and the ledger row. No sandbox runs, so the turn never ends by
+ * itself; `endDatabaseTurn` ends it.
+ */
+export async function seedDatabaseRunningTurn(
+  env: Env,
+  input: { projectId: string; sessionId: string; accountId: string; prompterUserId: string; messageId: string },
+  open: OpenProjectDb = openProjectDb,
+): Promise<{ turnToken: string }> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "seed a running turn for");
+  const turnToken = randomUUID();
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `INSERT INTO kortix.session_lifecycle_commands
+         (command_type, source, status, project_id, session_id, account_id,
+          actor_user_id, idempotency_key, payload, result)
+       VALUES ('continue_session', 'ui', 'succeeded', $1, $2, $3, $4, $5, $6::jsonb, '{}'::jsonb)`,
+      [
+        input.projectId,
+        input.sessionId,
+        input.accountId,
+        input.prompterUserId,
+        `prompt:${input.sessionId}:${input.messageId}`,
+        JSON.stringify({
+          text: "run the long task",
+          clientMessageId: randomUUID(),
+          wireMessageId: input.messageId,
+          bindTurnIdentity: true,
+          parts: [{ type: "text", text: "run the long task" }],
+        }),
+      ],
+    );
+    const activeTurns = {
+      [turnToken]: {
+        token: turnToken,
+        state: "active",
+        messageId: input.messageId,
+        runtimeSessionId: "ses_ke2e_root",
+        startedAtMs: Date.now(),
+      },
+    };
+    await client.query(
+      `INSERT INTO kortix.session_sandboxes (
+         sandbox_id, session_id, account_id, project_id, provider, status, config, metadata
+       ) VALUES ($1::uuid, $1::text, $2::uuid, $3::uuid, 'platinum', 'active', '{}'::jsonb, $4::jsonb)
+       ON CONFLICT (sandbox_id) DO UPDATE SET status = 'active', metadata = EXCLUDED.metadata`,
+      [input.sessionId, input.accountId, input.projectId, JSON.stringify({ activeTurns })],
+    );
+    await client.query(
+      `INSERT INTO kortix.session_turns
+         (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state, accepted_at)
+       VALUES ($1, $2::text, $2::uuid, $3::uuid, $4::uuid, 'ses_ke2e_root', $5, 'active', now())`,
+      [turnToken, input.sessionId, input.projectId, input.accountId, input.messageId],
+    );
+  } finally {
+    await client.end();
+  }
+  return { turnToken };
+}
+
+/**
+ * End a seeded turn the way an abort ends it: the ledger row closes as
+ * `failed` and keeps the stop stamp it holds, and the box drops the turn.
+ */
+export async function endDatabaseTurn(
+  env: Env,
+  input: { sessionId: string; turnToken: string },
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "end a turn for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `UPDATE kortix.session_turns
+          SET state = 'ended', end_reason = 'failed', ended_at = now(), updated_at = now()
+        WHERE turn_token = $1`,
+      [input.turnToken],
+    );
+    await client.query(
+      `UPDATE kortix.session_sandboxes
+          SET metadata = metadata #- ARRAY['activeTurns', $2::text]
+        WHERE session_id = $1`,
+      [input.sessionId, input.turnToken],
     );
   } finally {
     await client.end();

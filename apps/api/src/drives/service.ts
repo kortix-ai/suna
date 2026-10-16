@@ -603,9 +603,11 @@ export async function sessionVolumeMounts(input: {
   sessionId: string;
   bootingUserId: string | null;
   agentName: string;
+  /** Mount slots the box's other volumes take (its /workspace volume). */
+  reservedSlots?: number;
 }): Promise<SessionDriveMounts | undefined> {
   if (!(await sessionDrivesEnabled(input.projectId))) return undefined;
-  const slots = await sandboxMountLimit();
+  const slots = Math.max(0, (await sandboxMountLimit()) - (input.reservedSlots ?? 0));
   const plan = await planSessionDrives({ ...input, slots });
   const skipped = plan.skipped.map((path) => ({ driveId: plan.drive.driveId, name: path }));
   if (skipped.length) {

@@ -137,7 +137,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       agentmail_email: false,
       llm_gateway: true,
       meta_agent: false,
-      apps: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
@@ -152,6 +151,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       drives: false,
       session_log: false,
       session_log_restore: false,
+      workspace_volume: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -763,7 +763,6 @@ describe('envelopes', () => {
       'agentmail_email',
       'llm_gateway',
       'meta_agent',
-      'apps',
       'monitors',
       'reminders',
       'warm_sessions',
@@ -778,6 +777,7 @@ describe('envelopes', () => {
       'drives',
       'session_log',
       'session_log_restore',
+      'workspace_volume',
     ]);
   });
 

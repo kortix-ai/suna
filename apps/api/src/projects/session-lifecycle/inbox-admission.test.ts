@@ -189,7 +189,7 @@ describe('the boundary interrupt names the live turn', () => {
       'turn-stale': { token: 'turn-stale', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old', startedAtMs: 1 },
       'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 2 },
     };
-    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
+    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript', mayStopAnyTurn: true } }), {
       readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
@@ -206,7 +206,7 @@ describe('the boundary interrupt names the live turn', () => {
       'turn-legacy': { token: 'turn-legacy', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old' },
       'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 7 },
     };
-    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
+    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript', mayStopAnyTurn: true } }), {
       readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
@@ -214,6 +214,61 @@ describe('the boundary interrupt names the live turn', () => {
     expect(result).toMatchObject({
       interruptAtBoundary: { opencodeSessionId: 'ses_live', messageId: 'msg_live' },
     });
+  });
+});
+
+// A Quick Queue row ends the running turn, so its sender must be allowed to
+// stop that turn (`turn-stop-authority.ts`): its prompter, or the session owner
+// or a manager (`mayStopAnyTurn`, stamped at send). Any other row waits.
+describe('only a sender who may stop the turn arms its interrupt', () => {
+  const ARMED = { opencodeSessionId: 'ses_1', messageId: 'msg_1' };
+  /** A person's Quick Queue send, as `POST .../prompts` stores it. */
+  const quickQueue = (actorUserId: string, payload: Record<string, unknown> = {}) =>
+    row({ actorUserId, payload: { text: 'hi', placement: 'transcript', bindTurnIdentity: true, ...payload } });
+  function admit(target: SessionLifecycleCommandRow, prompter: string | null, asked: string[][]) {
+    return admitInboxPrompt(target, {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+      turnPrompter: async (sessionId, messageId) => {
+        asked.push([sessionId, messageId]);
+        return prompter;
+      },
+    });
+  }
+
+  test("the turn's prompter arms it; the read names the live turn", async () => {
+    const asked: string[][] = [];
+    expect(await admit(quickQueue('user-a'), 'user-a', asked)).toMatchObject({ reason: 'turn_active', interruptAtBoundary: ARMED });
+    expect(asked).toEqual([['sess-1', 'msg_1']]);
+  });
+
+  test('another member waits for the turn to end, unarmed', async () => {
+    const result = await admit(quickQueue('user-b'), 'user-a', []);
+    expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(result).not.toHaveProperty('interruptAtBoundary');
+  });
+
+  test('an owner or manager row arms it without reading the prompter', async () => {
+    const asked: string[][] = [];
+    expect(await admit(quickQueue('user-b', { mayStopAnyTurn: true }), 'user-a', asked)).toMatchObject({
+      interruptAtBoundary: ARMED,
+    });
+    expect(asked).toEqual([]);
+  });
+
+  test("an agent session's row is never the prompter, even under the prompter's user id", async () => {
+    const asked: string[][] = [];
+    const agentRow = quickQueue('user-a', { bindTurnIdentity: false, authorSessionId: 'sess-agent' });
+    expect(await admit(agentRow, 'user-a', asked)).not.toHaveProperty('interruptAtBoundary');
+    expect(asked).toEqual([]);
+  });
+
+  test('a Queue List row never reads the prompter: the read stays off the hot path', async () => {
+    const asked: string[][] = [];
+    const queueList = quickQueue('user-a', { placement: 'composer' });
+    expect(await admit(queueList, 'user-a', asked)).not.toHaveProperty('interruptAtBoundary');
+    expect(asked).toEqual([]);
   });
 });
 

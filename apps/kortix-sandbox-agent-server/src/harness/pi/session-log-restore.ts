@@ -22,7 +22,9 @@
  *
  * Mapping (the inverse of `session-log.ts`, plus what another harness wrote):
  * - A `context` message (a system prompt) is not written: pi builds its own
- *   from config and adds it at the next prompt. modelView omits it too.
+ *   from config and adds it at the next prompt. modelView omits it too. The
+ *   thread's last one names the id pi's rebuilt prompt takes (`contextId`), so
+ *   a restore replaces that record: N restores leave one per thread, not N.
  * - User text is the display `text`; a `model_text` that differs is a
  *   `context_edit` replacement, which is what pi sends. An `automation` user
  *   message is a `custom_message`. An image is pi image content with the bytes
@@ -75,7 +77,7 @@ import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
 import { piDumpPath, type PiChildDump, type PiDump } from './runtime'
 import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
-import { PI_NO_RESULT, piSessionLog, type PiSessionSnapshot } from './session-log'
+import { PI_NO_RESULT, piNestedCalls, piSessionLog, type CodemodeCall, type PiSessionSnapshot } from './session-log'
 
 export interface PiRestoreTarget {
   /** `cfg.piStateDir`: where the runtime reads its dump. */
@@ -200,7 +202,13 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
       const at = b.ended_at ?? m.completed_at ?? m.created_at
       results.push({
         type: 'message', id: rid, timestamp: at,
-        message: { role: 'toolResult', toolCallId: b.call_id, toolName: b.name, content: resultContent(r.content, ctx, !r.model_content), ...(data.details !== undefined ? { details: data.details } : {}), isError: r.is_error, timestamp: ms(at) },
+        message: {
+          role: 'toolResult', toolCallId: b.call_id, toolName: b.name, content: resultContent(r.content, ctx, !r.model_content),
+          ...(data.details !== undefined ? { details: data.details } : {}),
+          // A codemode script's calls (session-log.ts `codemodeDetails`), back in pi's shape.
+          ...(b.kind === 'code' && Array.isArray((r.details as { calls?: unknown } | undefined)?.calls) ? { nestedCalls: piNestedCalls(r.details as { calls: CodemodeCall[]; complete: boolean }) } : {}),
+          isError: r.is_error, timestamp: ms(at),
+        },
       })
       if (r.model_content) edits.push({ type: 'context_edit', id: `${rid}.edit`, timestamp: r.cleared_at ?? at, targetId: rid, replacement: { content: resultContent(r.model_content, ctx, true) } })
     }
@@ -334,6 +342,12 @@ function transcripts(log: SessionLog): Map<string, KortixMessage[]> {
   return out
 }
 
+/** The last context record the restore does not write: pi's rebuilt system prompt takes its id (`PiDump.contextId`). */
+function contextOf(thread: SessionLogThread): { contextId?: string } {
+  const last = thread.messages.filter((m) => m.kind === 'context').sort((a, b) => a.seq - b.seq).at(-1)
+  return last ? { contextId: last.message_id } : {}
+}
+
 /** `seqMax`: the highest seq the API holds per thread, tombstones included (P6.1 `seq_max`). */
 export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTarget, seqMax: Readonly<Record<string, number>> = {}): Promise<SessionLogRestoreResult> {
   const log = structuredClone(input)
@@ -354,6 +368,10 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
     main.seqs['kortix-seq-floor'] = main.floor
   }
   const rootData = piData(root)
+  // The codemode store as one write: a script's `load()` folds every write on the branch.
+  if (rootData.codemode_store && Object.keys(rootData.codemode_store).length) {
+    main.push({ type: 'custom', id: 'kortix-codemode-store', customType: 'codemode-store', timestamp: log.created_at, data: { set: rootData.codemode_store, delete: [] } })
+  }
   const header = { type: 'session', version: rootData.header_version ?? 3, id: (root.ext?.[PI]?.native_id as string | undefined) ?? rootId, timestamp: log.created_at, cwd: rootData.cwd ?? target.cwd }
   const children = log.threads.filter((t) => t !== root).map((t): PiChildDump => {
     const chain = writeThread(t, images, drop, seqMax[t.thread_id] ?? 0)
@@ -373,13 +391,13 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
     const createdAt = ms(t.created_at)
     return {
       id: t.thread_id, title: t.title ?? '', agentName: t.agent ?? 'general', createdAt, updatedAt: Math.max(createdAt, ...t.messages.map((m) => ms(m.completed_at ?? m.created_at))),
-      agentMessages: agentMessages as never, messageIds, seqs, nextSeq: chain.floor + 1, transcript: v1.get(t.thread_id) ?? [],
+      agentMessages: agentMessages as never, messageIds, seqs, nextSeq: chain.floor + 1, transcript: v1.get(t.thread_id) ?? [], ...contextOf(t),
     }
   })
   const dump: PiDump = {
     version: 1, rootId, title: log.title ?? '', createdAt: ms(log.created_at), agentMessages: [],
     entries: main.entries as never, header: header as never, messageIds: main.ids, seqs: main.seqs,
-    transcript: v1.get(rootId) ?? [], turns: [], children,
+    transcript: v1.get(rootId) ?? [], turns: [], children, ...contextOf(root),
   }
   mkdirSync(target.stateDir, { recursive: true, mode: 0o700 })
   const path = piDumpPath(target.stateDir, target.sessionId)

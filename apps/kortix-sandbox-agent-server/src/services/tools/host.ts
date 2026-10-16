@@ -12,6 +12,8 @@ import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { AGENT_ENV_FILE } from '@kortix/api-contract/sandbox-layout'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
+import connectorCall from './kortix/kortix-connectors_call'
+import connectorDescribe from './kortix/kortix-connectors_describe'
 import imageSearch from './kortix/image_search'
 import memory from './kortix/memory'
 import scrapeWebpage from './kortix/scrape_webpage'
@@ -33,6 +35,8 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   scrape_webpage: scrapeWebpage,
   memory,
   show,
+  'kortix-connectors_call': connectorCall,
+  'kortix-connectors_describe': connectorDescribe,
 }
 
 export interface HostedTool extends KortixTool {
@@ -71,7 +75,10 @@ export async function loadTools(
     if (typeof tool === 'string') failed.push({ name, error: tool })
     else tools.set(name, { ...tool, name, source: path })
   }
-  if (failed.length > 0) logger.warn('[tools] project tools that did not load', { failed })
+  // No tree is served yet (the boot placeholder) or at all (a governance-only
+  // release, whose agent may call none of these tools): not a load failure.
+  if (failed.length > 0 && !root) logger.info('[tools] no project tree is served; project tools are not loaded', { tools: failed.map(({ name }) => name) })
+  else if (failed.length > 0) logger.warn('[tools] project tools that did not load', { failed })
   loaded = tools
   return { tools: [...tools.values()], failed }
 }

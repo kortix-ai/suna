@@ -115,6 +115,7 @@ To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId,
 | `status` | `SessionStatus` | The runtime status of the session. |
 | `working` | `WorkingProjection` | `{ state: 'idle' \| 'working', pendingDelivery?, source, turnId, since }`. The one working answer. |
 | `isBusy` | `boolean` | `working.state === 'working'`. |
+| `canStop` | `boolean` | Whether this viewer may stop the running turn. `false` only when the server's `/turn` answer says `can_stop: false`: in a shared session only the member who started the turn, the session owner or a project manager may stop it. Show no Stop then. |
 | `presenceAwake` | `{ until: Date, capAt: Date } \| null` | With `browserPresence`: `until` is when the sandbox stops after the latest presence renewal, and `capAt` is the time presence cannot keep it awake past. Read again every 5 minutes while the person is present, when a turn ends, when the control plane closes a turn, and when the sandbox becomes ready. `null` while the person is absent, for a person who may not start the session, once the session start reports the sandbox not ready, and from the start of a turn until the next renewal answers. |
 | `isSending` | `boolean` | A `send` request is in flight. |
 | `sendError` | `KortixSendError \| null` | The last `send` failure. A new `send` clears it. |
@@ -217,6 +218,18 @@ const notice = turnEndNotice(outcome, userMessageId, { hasError, isAbort });
 Pass the id of the user message that started the turn. `hasError` is `true` when the transcript shows an error on that turn, and `isAbort` is `true` when that error is an abort. A non-abort error returns `null`, because the transcript already explains it.
 
 `useSessionTurnOutcome` makes no request. It reads the cache that `useSessionWorking` keeps fresh. Map each `kind` to your own copy. `null` means show what the transcript shows. `turnEndCause(outcome, messageId)` returns the raw recorded cause, or `null`.
+
+### Turn-end notifications
+
+`useSession` calls the `onNotify` you pass to `createKortix` when a turn ends: `{ kind: 'task-complete', sessionId, sessionTitle }` or `{ kind: 'session-error', sessionId, errorTitle, sessionTitle }`. Show it only when the person is not looking at that session.
+
+While the view is mounted, its event stream raises these. When the view unmounts with a turn still running, for example because the person opened another page, `useSession` hands the turn to a watch:
+
+- The watch listens for `kortix.control.turn` frames on the session's control stream (`GET …/events?channels=control`), so a hidden window that throttles its timers still hears the end. While that stream is down, it reads `GET …/turn` every 5 s, every 15 s after 5 minutes. It stops after 12 hours.
+- When no turn is open, it raises `task-complete`, or `session-error` with the cause the API recorded. A stop that someone asked for raises nothing.
+- These two events also carry `projectId`, and `task-complete` carries `watchedSinceMs`: when the watch started, in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that instant.
+- Mounting a view of the session again ends the watch. The view's stream announces from then on, so one end is never announced twice.
+- A host without `onNotify` gets no watch and no extra `/turn` reads.
 
 ## Build a chat UI
 

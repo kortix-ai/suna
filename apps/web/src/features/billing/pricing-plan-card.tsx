@@ -7,7 +7,8 @@ import { CheckCircleIcon } from '@phosphor-icons/react';
 interface PricingPlanCardProps {
   plan: PricingPlan;
   action: React.ReactNode;
-  priceOverride?: string;
+  /** Replaces the price line. The credits card puts its amount picker here. */
+  priceSlot?: React.ReactNode;
   badgeOverride?: string;
   compact?: boolean;
 }
@@ -15,12 +16,10 @@ interface PricingPlanCardProps {
 export function PricingPlanCard({
   plan,
   action,
-  priceOverride,
+  priceSlot,
   badgeOverride,
   compact = false,
 }: PricingPlanCardProps) {
-  const badge = badgeOverride ?? plan.badge;
-
   return (
     <div
       className={cn(
@@ -34,27 +33,25 @@ export function PricingPlanCard({
           <div className="text-lg font-medium tracking-tight">{plan.name}</div>
           <div className="text-muted-foreground text-md mt-1 text-balance">{plan.note}</div>
         </div>
+        {badgeOverride ? (
+          <span className="text-muted-foreground shrink-0 text-xs">{badgeOverride}</span>
+        ) : null}
       </div>
 
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span className="text-4xl" style={{ fontKerning: 'none' }}>
-          {priceOverride ?? plan.price}
-        </span>
-        {plan.unit && <span className="text-muted-foreground text-sm">{plan.unit}</span>}
-      </div>
+      {priceSlot ?? (
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="text-2xl" style={{ fontKerning: 'none' }}>
+            {plan.price}
+          </span>
+          {plan.unit && <span className="text-muted-foreground text-sm">{plan.unit}</span>}
+        </div>
+      )}
 
       <ul className="flex flex-col space-y-3 text-left text-sm">
         {plan.features.map((feature) => (
           <li key={feature} className="flex items-start justify-start gap-2 first:font-medium">
             <CheckCircleIcon weight="fill" className="text-foreground mt-0.5 size-4 shrink-0" />
-            <span>
-              <span>{feature}</span>
-              {plan.featureDetails?.[feature] ? (
-                <span className="text-muted-foreground mt-0.5 block text-xs leading-relaxed font-normal">
-                  {plan.featureDetails[feature]}
-                </span>
-              ) : null}
-            </span>
+            <span>{feature}</span>
           </li>
         ))}
       </ul>

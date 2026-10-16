@@ -61,6 +61,12 @@ describe('restartFailureMessage', () => {
     );
   });
 
+  test('a recover names its own fallback', () => {
+    expect(restartFailureMessage(undefined, 'Could not continue the session. Try again in a moment.')).toBe(
+      'Could not continue the session. Try again in a moment.',
+    );
+  });
+
   test('falls back to one sentence for an empty or non-Error rejection', () => {
     expect(restartFailureMessage(new Error('   '))).toBe('Restart failed. Try again in a moment.');
     expect(restartFailureMessage('boom')).toBe('Restart failed. Try again in a moment.');
@@ -69,9 +75,11 @@ describe('restartFailureMessage', () => {
 });
 
 describe('the hook wires the full restart behavior — the source the component runs', () => {
-  test('the scan found the single restart mutation', () => {
+  test('the scan found the single mutation, shared by restart and recover (KRTX-2419)', () => {
     expect(mutationCount).toBe(1);
-    expect(code).toContain('mutationFn: () => restartProjectSession(projectId, sessionId),');
+    expect(code).toContain('mutationFn: () => run(projectId, sessionId),');
+    expect(code).toContain('useSessionBootAction(projectId, sessionId, restartProjectSession)');
+    expect(code).toContain('useSessionBootAction(projectId, sessionId, recoverProjectSession,');
   });
 
   test('onMutate seeds the /start cache and snapshots it for rollback', () => {
@@ -94,6 +102,6 @@ describe('the hook wires the full restart behavior — the source the component 
     // nothing was cached, invalidate so the real state refetches.
     expect(code).toContain('queryClient.setQueryData(startKey, context.previous);');
     expect(code).toContain("queryClient.invalidateQueries({ queryKey: startKey });");
-    expect(code).toContain('errorToast(restartFailureMessage(error));');
+    expect(code).toContain('errorToast(restartFailureMessage(error, fallback));');
   });
 });

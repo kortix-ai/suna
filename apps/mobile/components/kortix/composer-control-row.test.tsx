@@ -150,6 +150,23 @@ describe('composer control row', () => {
     expect(queuedSend!.size).toBe('icon-md');
   });
 
+  test('busy row without onStop (the viewer may not stop the turn): no Stop, Send stays and queues', () => {
+    render({ value: '', onChangeText: () => {}, onSubmit: () => {}, busy: true });
+    expect(buttons.find(b => b.accessibilityLabel === 'Stop')).toBeUndefined();
+    const idleSend = buttons.find(b => b.accessibilityLabel === 'Send');
+    expect(idleSend).toBeTruthy();
+    expect(idleSend!.disabled).toBe(true);
+    act(() => tree?.unmount());
+    buttons.length = 0;
+    const submitted: string[] = [];
+    render({ value: 'reply', onChangeText: () => {}, onSubmit: () => submitted.push('send'), busy: true });
+    expect(buttons.find(b => b.accessibilityLabel === 'Stop')).toBeUndefined();
+    const send = buttons.find(b => b.accessibilityLabel === 'Send')!;
+    expect(send.disabled).toBe(false);
+    (send.onPress as () => void)();
+    expect(submitted).toEqual(['send']);
+  });
+
   test('dictation row: cancel and done are icon-md controls with the shared hit slop', () => {
     // Drive the dictation hook active for this test only.
     const dictation = {

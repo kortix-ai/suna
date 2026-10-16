@@ -35,7 +35,7 @@
 
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';
@@ -377,7 +377,9 @@ async function reapRunningSandbox(
   // update itself; give it a supervisor and a current daemon from here.
   // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
   // one health probe per box per 6 h on a converged fleet, never under
-  // a busy OpenCode, bounded attempts per API build.
+  // a busy OpenCode, bounded attempts per API build. A box that installs its
+  // own pending update (`updatesItself`) is probed every pass, never
+  // relaunched, until it converges or ~6 h of ticks pass without it.
   dependencies.scheduleLegacyRuntimeBootstrap({
     sandboxId: row.sandboxId,
     sessionId: row.sessionId ?? null,
@@ -1100,7 +1102,7 @@ async function reconcileNotRunningSandbox(
       // Preserve the established identity; never turn this signal into a
       // fresh, empty sandbox for the same session.
       await preserveEstablishedRuntime(row, 'provider_reported_removed', 'provider_removed', now);
-      invalidateProviderCache(row.externalId);
+      invalidateSandbox(row.externalId);
       result.reconciled += 1;
       result.billingClosed += 1;
       break;

@@ -9,20 +9,13 @@ export {
   useSubscription,
   useCreditBalance,
   useBillingStatus,
-  useCancelScheduledChange,
   useSubscriptionCommitment,
-  useScheduledChanges,
   invalidateCreditsAfterPurchase,
   billingKeys,
   type SubscriptionInfo,
   type CreditBalance,
   type BillingStatus,
 } from './hooks';
-
-// =============================================================================
-// PRICING HOOK
-// =============================================================================
-export { useRevenueCatPricing } from '../../hooks/billing/useRevenueCatPricing';
 
 // =============================================================================
 // CHECKOUT & PAYMENTS
@@ -33,16 +26,6 @@ export {
   openBillingPortal,
   openExternalUrl,
 } from './checkout';
-export {
-  startUnifiedPlanCheckout,
-  startUnifiedCreditPurchase,
-} from './unified-checkout';
-
-// =============================================================================
-// PRICING & TIERS
-// =============================================================================
-export { PRICING_TIERS, getDisplayPrice, getYearlySavings } from './pricing';
-export type { PricingTier, BillingPeriod } from './pricing';
 
 // =============================================================================
 // PROVIDER UTILITIES
@@ -66,24 +49,8 @@ export {
   getOfferingById,
   purchasePackage,
   getCustomerInfo,
-  checkSubscriptionStatus,
   presentPaywall,
   presentCustomerInfo,
   isRevenueCatInitialized,
 } from './revenuecat';
 export type { RevenueCatProduct } from './revenuecat';
-
-// =============================================================================
-// PLAN UTILITIES
-// =============================================================================
-
-export { logAvailableProducts, findPackageForTier } from './revenuecat-utils';
-export { debugRevenueCat, isRevenueCatWorking } from './debug-revenuecat';
-export {
-  getRevenueCatPricing,
-  getRevenueCatDisplayPrice,
-  getRevenueCatPackageForCheckout,
-  getRevenueCatYearlySavings,
-  type RevenueCatPricingData
-} from './revenuecat-pricing';
-

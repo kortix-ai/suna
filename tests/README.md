@@ -66,6 +66,9 @@ reuse. A file that joins the diff or an edit to a changed file drops every
 reused group. Delete `tests/attestations/<branch>.json` to rerun everything on
 the same diff. The attestation hashes the working tree, so commit the tested
 edits as they are: a tested file that the commit leaves out makes it stale.
+A run fingerprints the working tree before its lanes start. When the tree
+differs at the end (an edit or commit made during the run), it writes no
+attestation and exits 1: rerun `pnpm test` on the final tree.
 
 `CI=1 pnpm test` runs the whole suite and reuses nothing. GitHub Actions sets
 `CI`, so the `Tests` run on every push to `dev` and the release lanes always
@@ -74,7 +77,7 @@ run everything: they are the backstop for a dependency the scope cannot see.
 ## Commands
 
 ```bash
-pnpm test                       # Fast local core
+pnpm test                       # Diff-scoped suite; refused on a Mac unless KORTIX_FULL_TEST=1
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
@@ -711,11 +714,15 @@ How the lane runs a file:
    `--db-only`) starts Supabase before the first stage and stops it at the end
    when it started it. `test:integration` and `bun tests/bin/db-suites.ts`
    need a running Supabase.
-2. It builds one template database per content hash of the migrations, the
-   `packages/db` scripts, and the platform `auth` schema. It copies `auth` from
-   the Supabase database with `pg_dump` inside the Supabase container, applies
-   `test-prereqs.sql`, and runs `migrate.ts local-up`. A second run with the
-   same hash reuses the template (0.1 s instead of ~1 s).
+2. It grants `SET ON PARAMETER session_replication_role` to `postgres`, so a
+   fixture on the suites' own connection can write past a trigger on any
+   stack — the stack's init demotes that role from superuser, and Supabase's
+   supautils allowance for the parameter belongs to the image, not the stack
+   (KRTX-2026). It then builds one template database per content hash of the
+   migrations, the `packages/db` scripts, and the platform `auth` schema. It
+   copies `auth` from the Supabase database with `pg_dump` inside the Supabase
+   container, applies `test-prereqs.sql`, and runs `migrate.ts local-up`. A
+   second run with the same hash reuses the template (0.1 s instead of ~1 s).
 3. For every file it clones a fresh database from the template
    (`CREATE DATABASE … TEMPLATE`, ~150 ms), runs `bun test <file>` in its own
    process, and drops the database. No file sees another file's rows

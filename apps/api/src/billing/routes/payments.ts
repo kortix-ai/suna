@@ -1,3 +1,4 @@
+import { createHostedCheckout } from '../services/hosted-checkout';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import { getStripe } from '../../shared/stripe';
@@ -14,6 +15,7 @@ import { BillingError } from '../../errors';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { resolveBillingWriteAccountId } from '../http-require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
 
@@ -58,9 +60,8 @@ paymentsRouter.openapi(
     if (!amount || amount <= 0) throw new BillingError('Invalid amount');
 
     // Resolved plan, not the stored `credit_accounts.tier`: an account on an
-    // active admin trial of a paid plan, and a paying per-seat team whose
-    // stored tier is stale, both behave as paid everywhere else — reading the
-    // raw column here refused them a credit purchase they are entitled to.
+    // active admin trial of a paid plan behaves as paid everywhere else —
+    // reading the raw column here refused it a credit purchase it is entitled to.
     // Fresh read: an admin granting or revoking a trial must take effect on the
     // next request, and this route initiates a charge.
     const { entitlements } = await resolveAccountBilling(accountId, { fresh: true });
@@ -76,7 +77,7 @@ paymentsRouter.openapi(
       accountId,
       amountDollars: String(amount),
       status: 'pending',
-      description: `$${amount} credit purchase`,
+      description: `Credit purchase: ${formatUsdAsCredits(amount)} credits ($${amount})`,
       provider: 'stripe',
     });
 
@@ -92,7 +93,7 @@ paymentsRouter.openapi(
           quantity: 1,
         }];
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await createHostedCheckout(stripe, {
       customer: customerId,
       mode: 'payment',
       line_items: lineItems,

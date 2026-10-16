@@ -8,8 +8,7 @@ kortix init my-project
 
 Makes `./my-project/`, runs `git init -b main`, and writes the Kortix
 project floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
-`skills/`, `memory/MEMORY.md`, `harnesses/opencode/`), stages every file, and
-makes an initial commit.
+`skills/`, `memory/MEMORY.md`), stages every file, and makes an initial commit.
 
 ## Usage
 
@@ -66,34 +65,31 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← v2 manifest; `agents.<name>.file` names each agent's .md
-├── agents/{kortix,harness-reflector,session-reviewer}.md
-├── skills/kortix-cli/SKILL.md         ← (+ the artifact skill floor), every harness loads them
-├── memory/MEMORY.md                   ← project-wide memory for agents
-└── harnesses/opencode/                ← files only OpenCode reads (`opencode.config_dir`)
-    ├── opencode.jsonc                 ← runtime config (providers, plugins, MCP servers, …)
-    ├── plugins/
-    └── tools/
+├── kortix.yaml                        ← kortix_version 3: registries + one block per agent
+├── agents/*.md                        ← agent prompts, named by `prompt_file`
+├── skills/<name>/SKILL.md             ← skills, registered under `skills:`
+└── memory/MEMORY.md                   ← project-wide memory for agents
 ```
 
-Projects created before 2026-09 keep agents and skills under
-`.kortix/opencode/` and memory under `.kortix/memory/`. Every command reads
-both layouts.
+`kortix.yaml` is `kortix_version: 3`. The project registers skills, tools,
+commands and extensions; each agent block enables them by name. A v3 session
+reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Reference:
+<https://kortix.com/docs/project/manifest>.
 
-A pi session reads `agents/`, `skills/` and `memory/` too. Its own files go in
-`harnesses/pi/` (`pi.config_dir`): `settings.json`, `extensions/`, `prompts/`,
-`skills/`. The starter does not create that directory.
+Projects on `kortix_version` 1 or 2 keep their layout (`agents/<name>.md` with
+frontmatter, `harnesses/opencode/`, `harnesses/pi/`, or `.kortix/opencode/`)
+and still run. `kortix migrate` prints the v3 manifest for a v2 project, and
+`kortix migrate --write` writes it.
 
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
-receive native discovery links to the canonical sources: `skills/`,
-`agents/`, and `harnesses/opencode/`. OpenCode uses `.opencode`. Claude Code
-uses `.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
-`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+receive native discovery links to the canonical sources. Claude Code uses
+`.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
+`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root
+`AGENTS.md` pointer. Sessions in the cloud never read these links.
 
-The public starter uses `kortix_version: 2`. A cloud session runs one of two
-harnesses: OpenCode (the default) or pi (`runtime: pi` in `kortix.yaml`, or the
-`pi_harness` project flag; pi needs the LLM gateway). The CLI talks to the same
-Kortix routes on both.
+A cloud session runs one of two harnesses: OpenCode (the default) or pi
+(`runtime: pi` in `kortix.yaml`, or the `pi_harness` project flag; pi needs the
+LLM gateway). The CLI talks to the same Kortix routes on both.
 
 Create a project with:
 

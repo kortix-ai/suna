@@ -67,8 +67,17 @@ mock.module('../channels/teams/catalog', () => ({
 // runs under --isolate, so a hand-listed stub cannot leak into a sibling suite,
 // and NOT loading the real module keeps the Composio client (an optional dep
 // that a fresh worktree may not have installed) out of this test's graph.
+//
+// The reconcile is holdable: the completion step must WAIT for it (the redirect
+// races the dashboard's first connectors fetch), so a test can keep it pending
+// and prove the completion has not resolved under it.
+let holdReconcile: ((release: () => void) => void) | null = null;
+let reconcileCalls = 0;
 mock.module('../connectors/sync', () => ({
-  reconcileChannelConnectors: async () => undefined,
+  reconcileChannelConnectors: async () => {
+    reconcileCalls += 1;
+    if (holdReconcile) await new Promise<void>((resolve) => holdReconcile!(resolve));
+  },
 }));
 
 const realFetch = globalThis.fetch;
@@ -85,6 +94,8 @@ beforeEach(() => {
   orgInstalled.length = 0;
   catalogIds.length = 0;
   appVersions.length = 0;
+  holdReconcile = null;
+  reconcileCalls = 0;
   publishImpl = async () => ({ ok: true, published: true, teamsAppId: 'cat-1' });
   globalThis.fetch = (async (url: any) => {
     // Only the token endpoint may be called from the callback; the catalog
@@ -178,6 +189,30 @@ describe('Teams one-click install callback', () => {
 });
 
 describe('Teams one-click install completion', () => {
+  // KRTX-2353: same race as the Slack OAuth completion — the redirect fires
+  // into the dashboard, which immediately loads the connectors list. The
+  // completion must wait for the channel connector to exist.
+  test('the completion waits for the channel connector reconcile before redirecting', async () => {
+    let release: () => void = () => {};
+    holdReconcile = (r) => {
+      release = r;
+    };
+    let settled = false;
+    const completion = complete().then((result: unknown) => {
+      settled = true;
+      return result;
+    });
+    // Poll until it settles (the bug does within a few ticks) or the poll
+    // window closes: a fixed tick count could false-pass before the buggy
+    // completion even resolved.
+    for (let i = 0; i < 50 && !settled; i++) await new Promise((r) => setTimeout(r, 1));
+    expect(settled).toBe(false);
+    release();
+    const result = (await completion) as { ok: boolean };
+    expect(result).toMatchObject({ ok: true });
+    expect(reconcileCalls).toBe(1);
+  });
+
   test('admin publish completes within the wait → ?teams=connected on the Channels page, outcome persisted', async () => {
     expect(await complete()).toEqual(landed('connected'));
     expect(saved).toEqual([{ projectId: PROJECT_ID, tenantId: TENANT_ID }]);

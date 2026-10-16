@@ -77,10 +77,10 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves an INTERNAL-ONLY surface (`apps`):
- * not offered in Settings, enabled per project by a Kortix operator on
- * request. Its 403 says "contact Kortix" instead of naming a toggle the caller
- * cannot see (gate.ts).
+ * The same state also serves INTERNAL-ONLY surfaces (`session_log`,
+ * `session_log_restore`): not offered in Settings, enabled per project by a
+ * Kortix operator on request. Their 403 says "contact Kortix" instead of
+ * naming a toggle the caller cannot see (gate.ts).
  */
 import { config } from '../config';
 import { platinumUsRegion } from '../shared/platinum-region';
@@ -211,19 +211,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
       'the default for new sessions (projects/lib/platform-meta-agent.ts).',
   },
-  {
-    key: 'apps',
-    name: 'Apps',
-    description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
-    stability: 'stable',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'routes',
-    // Internal-only (2026-10-06): not offered in Settings.
-    // Projects already on keep it; Kortix enables others on request.
-    catalogHidden: true,
-  },
+  // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
+  // every project can create and deploy Apps and there is no flag, no row and
+  // no operator lever. A stored `experimental.apps` override is inert.
   {
     key: 'monitors',
     name: 'Monitors',
@@ -334,7 +324,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'us_region',
     name: 'US Region',
     description:
-      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region.",
+      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region. If that copy fails, the session starts in the provider's home region instead.",
     stability: 'experimental',
     // Two operator gates: Platinum must be the configured provider, and the
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
@@ -446,20 +436,44 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'session_log_restore',
     name: 'Session log restore',
     description:
-      'Rebuild a session from its saved session log when its computer lost the conversation. Off by default and not offered in Settings: Kortix enables it per project.',
+      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: Kortix enables it per project, or for a whole deployment (on by default on dev).',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
-    // Internal-only (2026-10-13): not offered in Settings.
-    // A Kortix operator enables it per project.
+    // Off unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev does, 2026-10-15).
+    platformDefault: () => config.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+    // Internal-only (2026-10-13): not a Settings toggle. A Kortix operator sets it per project
+    // (PUT /v1/admin/api/projects/:id/features). While on, Settings lists it read-only.
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only. Session provisioning sets KORTIX_SESSION_LOG_RESTORE=1 in the box env ' +
       '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
       'from the session log at boot when the store is missing or behind the log ' +
-      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. Not default-on ' +
-      'before the journal uploads pi images and OpenCode attachment bytes.',
+      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
+      'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
+      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). Not default-on in prod before the ' +
+      'restore memory is capped (harness/README.md).',
+  },
+  {
+    key: 'workspace_volume',
+    name: 'Workspace volume',
+    description:
+      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk. The box still stops and resumes in place. Not a Settings toggle: Kortix enables it per project.",
+    stability: 'experimental',
+    // Every workspace volume is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    // Internal-only (2026-10-16), step 1 of stateless sandboxes. A Kortix operator
+    // sets it per project (PUT /v1/admin/api/projects/:id/features).
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Read once per session, at the first provisioning of a Platinum box ' +
+      '(platform/services/workspace-volume.ts): on, the session records `workspace_volume` and ' +
+      'every box it ever gets mounts volume kws-<session_id> at /workspace, in the region the ' +
+      'volume was created in, with KORTIX_WORKSPACE_VOLUME=1. Turning the flag off changes no ' +
+      'session that already has a volume. KORTIX_WORKSPACE_VOLUMES=off stops new volumes everywhere. ' +
+      'A session delete deletes the volume after the box is removed (reaping/archived-box-removal.ts).',
   },
 ];
 

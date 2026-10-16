@@ -22,7 +22,7 @@ import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import { waitFor } from '../core/poll';
 import type { FlowContext, Principal } from '../core/types';
-import { asPlatformAdmin } from '../fixtures/enterprise-demo';
+import { asPlatformAdmin } from '../fixtures/enterprise-access';
 import { PASSWORD } from '../fixtures/principals';
 import { passwordGrant, refreshGrant, ssoFixtureToken } from '../fixtures/supabase';
 

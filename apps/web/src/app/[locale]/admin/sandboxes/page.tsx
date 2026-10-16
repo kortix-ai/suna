@@ -558,7 +558,7 @@ export default function AdminSandboxesPage() {
                 <StatTile
                   label={tI18nComplete.raw('text7982ad72bd36')}
                   value={an.totals.provisions.toLocaleString()}
-                  hint={`${an.totals.migrations} migrations`}
+                  hint={tI18nComplete('textbdb4791584c6', { count: an.totals.migrations })}
                 />
                 <StatTile
                   label={tI18nComplete.raw('text49da60f8a292')}

@@ -124,22 +124,24 @@ test.describe
       if (user?.id) await deleteAuthUser(user.id, authOptions);
     });
 
-    test('the account hub opens one accessible billing dialog and stays open after Escape', async ({ page }) => {
+    test('the account hub plan pane offers one accessible amount picker for the credits plan', async ({
+      page,
+    }) => {
       await installBrowserSessionDirect(
         page, session, `/new?accountId=${accountId}&accountTab=billing`, authOptions,
       );
-      const subscribeButton = page.getByRole('button', { name: 'Subscribe to Team', exact: true });
-      await subscribeButton.click();
-      const dialog = page.getByRole('dialog', { name: /Subscribe to Kortix/ });
-      await expect(dialog).toHaveCount(1);
-      await expect(dialog.getByRole('button', { name: /^Subscribe —/ })).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(dialog).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
-      await subscribeButton.click();
-      await expect(dialog).toHaveCount(1);
-      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-      await expect(dialog).toHaveCount(0);
+      const presets = page.getByRole('radiogroup', { name: 'Monthly plan amount' });
+      await expect(presets).toHaveCount(1);
+      await presets.getByRole('radio', { name: /Scale/ }).click();
+      await expect(page.getByText('50,000 credits / month')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Subscribe for $500 / month' })).toBeVisible();
+      await page.getByLabel('Monthly amount in dollars').fill('19');
+      await expect(page.getByText('Choose a whole-dollar amount from $20 to $10,000.')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Update plan' })).toBeDisabled();
+      await page.getByLabel('Monthly amount in dollars').fill('250');
+      await expect(page.getByText('25,000 credits / month')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Subscribe for $250 / month' })).toBeVisible();
     });
 
     test('an owner starts checkout, reads the active plan, buys credits, and opens billing management', async ({
@@ -160,28 +162,25 @@ test.describe
       // could never resolve and failed at 0 ms on every release run.
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
 
-      await test.step('The owner starts Team checkout from the Billing page', async () => {
-        await page.getByRole('button', { name: 'Subscribe to Team' }).click();
-        await expect(page.getByRole('heading', { name: 'Subscribe to Kortix' })).toBeVisible();
-        const checkout = await captureJsonPost<CheckoutResult>(
-          page,
-          '**/v1/billing/create-per-seat-checkout',
-        );
-        await page.getByRole('button', { name: /^Subscribe —/ }).click();
+      await test.step('The owner starts credits-plan checkout from the Billing page', async () => {
+        const checkout = await captureJsonPost<CheckoutResult>(page, '**/v1/billing/plan');
+        await page.getByRole('radio', { name: /Pro/ }).click();
+        await page.getByRole('button', { name: 'Subscribe for $100 / month' }).click();
         await expect.poll(() => checkout.status, { timeout: 45_000 }).toBe(200);
-        expect(checkout.requestBody).toMatchObject({ account_id: accountId });
+        expect(checkout.requestBody).toMatchObject({ account_id: accountId, monthly_usd: 100 });
+        expect(checkout.body).toMatchObject({ status: 'checkout_created', monthly_usd: 100 });
         expectStripeUrl(
           checkout.body?.checkout_url,
           STRIPE_CHECKOUT_HOSTS,
           /^\/c\/pay\/cs_(test|live)_/,
         );
-        await page.unroute('**/v1/billing/create-per-seat-checkout');
+        await page.unroute('**/v1/billing/plan');
       });
 
       await test.step('A real Stripe test subscription activates the account', async () => {
         const env = loadEnv();
         const owner = new Client(apiBase).withBearer(session.access_token, 'BROWSER_OWNER');
-        await subscribe(env, owner, accountId, 'pro');
+        await subscribe(env, owner, accountId, 20);
       });
 
       await test.step('The Billing page reads and displays the active subscription', async () => {

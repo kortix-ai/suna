@@ -16,8 +16,8 @@
  *
  * The second arm opens a stopped session that has no computer. It used to be a
  * full-screen "This session is stopped" card over a conversation the user
- * could read; now the conversation shows, under a banner that says the same
- * thing and offers the same Restart.
+ * could read. Since #9682 the conversation shows with a live composer, whose
+ * notice says the next message wakes the computer. No Restart is needed.
  *
  * The third arm saves a turn with a tool call and opens it while the computer
  * never answers, then reloads with every read held. Saved history used to drop
@@ -344,7 +344,7 @@ test('34 — a reload with every read held shows the project, its session list a
   }
 });
 
-test('34 — a stopped session with no computer shows its conversation under a banner, not a card', async ({
+test('34 — a stopped session with no computer shows its conversation and a live composer, not a card', async ({
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
@@ -370,14 +370,17 @@ test('34 — a stopped session with no computer shows its conversation under a b
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
 
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
-    const banner = page.locator('[data-session-notice-banner]');
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText('This session is stopped');
-    await expect(banner.getByRole('button', { name: /restart/i })).toBeVisible();
-    // Nothing can be sent until the Restart: no composer promises otherwise.
-    await expect(page.getByText('This session is idle', { exact: false })).toHaveCount(0);
-    await expect(page.getByRole('textbox', { name: 'Message input' })).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('stopped-banner.png') });
+    // The SDK's `SESSION_NOTICE.idle`: a sent message wakes the computer and
+    // is delivered, so the composer stays and no terminal banner replaces it.
+    await expect(
+      page.getByText("This session's computer is asleep. Your next message wakes it up and is delivered.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+    await expect(page.locator('[data-session-notice-banner]')).toHaveCount(0);
+    await expect(page.getByText('This session is stopped', { exact: false })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('stopped-composer.png') });
   } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await project?.dispose?.();

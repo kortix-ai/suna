@@ -480,6 +480,10 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         DATABASE_URL: supabase.DB_URL,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
         SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
+        // The capture store (Supabase Storage S3): journeys write a device's day with it.
+        E2E_CAPTURE_S3_ENDPOINT: `${supabase.API_URL.replace(/\/+$/, '')}/storage/v1/s3`,
+        E2E_CAPTURE_S3_ACCESS_KEY_ID: supabase.S3_PROTOCOL_ACCESS_KEY_ID ?? '',
+        E2E_CAPTURE_S3_SECRET_ACCESS_KEY: supabase.S3_PROTOCOL_ACCESS_KEY_SECRET ?? '',
       };
     } else if (lane.name === 'target-browser-full') {
       const required = [
@@ -551,8 +555,39 @@ function dockerAvailable(): boolean {
   }
 }
 
+/**
+ * A suite-wide run on a developer Mac: the default `pnpm test`, `--full`,
+ * `--packages-only`, `--browser-only`, or `--db-only` with no path filter.
+ * These run in CI and on Linux boxes only. 2026-10-16: five agent sessions ran
+ * the suite at once on one laptop (load average 112, 16.5 of 17.4 GB swap).
+ * `KORTIX_FULL_TEST=1` overrides.
+ */
+export function refusesSuiteRun(plan: LocalTestPlan, platform: string, env: Record<string, string | undefined>): boolean {
+  if (platform !== 'darwin' || env.KORTIX_FULL_TEST === '1') return false;
+  if (plan.mode === 'db') return plan.lanes[0]!.command.length <= 2;
+  return plan.mode === 'core' || plan.mode === 'full' || plan.mode === 'packages' || plan.mode === 'browser';
+}
+
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   let plan = buildLocalTestPlan(args);
+  if (refusesSuiteRun(plan, process.platform, process.env)) {
+    console.error(
+      [
+        `[test] REFUSED: mode=${plan.mode} runs a whole suite. A Mac runs targeted tests only; the suite runs in CI.`,
+        '  One flow:        pnpm test -- --id <ID>   (or --domain <d>)',
+        '  DB suites:       pnpm test -- --db-only <path-filter>',
+        '  SDK:             pnpm test -- --sdk-only',
+        '  One package:     pnpm --filter <pkg> test <file>',
+        '  The whole suite: add the `test` label to the PR (CI), or KORTIX_FULL_TEST=1 pnpm test',
+      ].join('\n'),
+    );
+    return 2;
+  }
+  // The source this run tests. The attestation write refuses when the tree
+  // differs at the end: a commit made while the lanes ran was never tested.
+  const fingerprint = ATTESTED_MODES.has(plan.mode)
+    ? Bun.spawnSync(['node', 'tests/verify-attestation.mjs', 'fingerprint'], { cwd: root }).stdout.toString().trim()
+    : '';
   // Sanctioned environment skips: verify-attestation.mjs records them, never
   // counts a skip as a pass, and `--strict` (a push to main) rejects them.
   const skipped = new Map<string, string>();
@@ -685,10 +720,11 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
         lanes[group] = ran.length > 0 ? 'pass' : (skipValues[0] ?? 'pass');
       }
     }
-    Bun.spawnSync(
+    const written = Bun.spawnSync(
       ['node', 'tests/verify-attestation.mjs', 'write', ...Object.entries(lanes).map(([k, v]) => `${k}=${v}`)],
-      { cwd: root, stdout: 'inherit', stderr: 'inherit' },
+      { cwd: root, stdout: 'inherit', stderr: 'inherit', env: { ...process.env, KORTIX_ATTEST_FINGERPRINT: fingerprint } },
     );
+    if (written.exitCode !== 0) return 1;
   }
   return failed.length === 0 ? 0 : 1;
 }

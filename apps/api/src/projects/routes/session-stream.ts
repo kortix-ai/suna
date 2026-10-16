@@ -95,8 +95,10 @@ import { PRESENCE_RENEW_MS, expireSessionPresence, renewSessionPresence } from '
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,
+  viewerControlEvent,
   type ControlEvent,
 } from '../lib/session-control-events';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import {
   acquireControlReconciler,
   publishRuntimeStateFrame,
@@ -355,10 +357,17 @@ export function registerSessionStreamRoutes(): void {
         writeRaw(`event: ${event}\ndata: ${JSON.stringify({ ...data, channel: 'stream' })}\n\n`);
       };
 
+      // Whether THIS viewer may stop the running turn. The turn frame is one
+      // broadcast per session; the answer is per person, so it is decided here
+      // and the prompter's id never reaches the client.
+      const stopViewer = {
+        canManageLifecycle: visible.canManageLifecycle,
+        callerUserId: isProjectSessionPrincipal(c) ? null : String(loaded.userId),
+      };
       const writeControl = (event: ControlEvent): void => {
         writeRaw(
           `event: ${event.type}\nid: ${encodeStreamId(runtime, CONTROL_EPOCH, event.cseq)}\n` +
-            `data: ${JSON.stringify(event)}\n\n`,
+            `data: ${JSON.stringify(viewerControlEvent(event, stopViewer))}\n\n`,
         );
       };
 
@@ -963,3 +972,4 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     signal.addEventListener('abort', onAbort, { once: true });
   });
 }
+

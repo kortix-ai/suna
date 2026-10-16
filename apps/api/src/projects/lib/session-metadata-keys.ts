@@ -44,6 +44,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // but still not the client's to write.
   'spawned_by_session',
   'on_behalf_of_cleared_at',
+  // Lost-session recovery (KRTX-2419): its boxes restore
+  // from the session log at boot (`recover-lost-session.ts`).
+  'lostRecoveredAt',
   // Legacy migration restore. Selects the archive that session open and
   // restart copy into the sandbox (`legacy-migration-rehydrate.ts`).
   'legacy_migration',
@@ -60,6 +63,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
+  // The session's /workspace volume (platform/services/workspace-volume.ts):
+  // its boxes mount it and a delete deletes it.
+  'workspace_volume',
 ] as const;
 
 /**

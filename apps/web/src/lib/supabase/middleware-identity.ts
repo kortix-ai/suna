@@ -16,7 +16,17 @@
  * locally — an expired token that needs a refresh, symmetric (HS*) signing
  * keys, WebCrypto unavailable — because it is also what produces the precise
  * error codes the caller's stale-session self-heal matches on.
+ *
+ * A valid signature does not prove the session is still live: a signed-out
+ * session's token verifies until its `exp` (KRTX-2387: a re-presented cookie
+ * rendered protected pages for up to 1 h after sign-out). So the first request
+ * of a session asks GoTrue, and only a live answer lets the session take the
+ * local path, for {@link SESSION_LIVENESS_TTL_MS} and never past `exp`. GoTrue
+ * failing (network, 5xx) is no verdict: the verified identity stands, uncached.
  */
+
+/** How long a GoTrue "this session is live" answer is trusted. */
+export const SESSION_LIVENESS_TTL_MS = 30_000;
 
 export interface MiddlewareUser {
   id: string;
@@ -45,6 +55,23 @@ export interface MiddlewareAuth {
   }>;
 }
 
+const MAX_LIVE_SESSIONS = 10_000;
+// replica-local: session id → when its live confirmation expires (ms).
+// ponytail: per replica, so a sign-out is seen within the TTL, not at once; a shared store if that window must close.
+const liveSessions = new Map<string, number>();
+
+function rememberLive(sessionId: string, expSeconds: unknown) {
+  const until = Math.min(Date.now() + SESSION_LIVENESS_TTL_MS, typeof expSeconds === 'number' ? expSeconds * 1000 : Infinity);
+  if (liveSessions.size >= MAX_LIVE_SESSIONS) liveSessions.delete(liveSessions.keys().next().value!);
+  liveSessions.set(sessionId, until);
+}
+
+/** A 4xx is GoTrue's verdict on the token; anything else (network, 5xx) says nothing about it. */
+function isVerdict(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === 'number' && status >= 400 && status < 500;
+}
+
 function asError(value: unknown): Error | null {
   if (value === null || value === undefined) return null;
   return value instanceof Error ? value : (value as Error);
@@ -57,13 +84,28 @@ export async function resolveMiddlewareIdentity(auth: MiddlewareAuth): Promise<M
     if (!error) {
       const sub = data?.claims?.sub;
       if (typeof sub === 'string' && sub.length > 0) {
-        // Signature verified locally. No network was involved.
         const metadata = data?.claims?.user_metadata as MiddlewareUser['user_metadata'];
-        return {
+        const verified: MiddlewareIdentity = {
           user: metadata ? { id: sub, user_metadata: metadata } : { id: sub },
           authError: null,
           source: 'claims',
         };
+        const sessionId = data?.claims?.session_id;
+        // Signature verified locally, and GoTrue confirmed the session within the TTL.
+        if (typeof sessionId === 'string' && (liveSessions.get(sessionId) ?? 0) > Date.now()) return verified;
+        try {
+          const live = await auth.getUser();
+          if (live.data.user && !live.error) {
+            if (typeof sessionId === 'string') rememberLive(sessionId, data?.claims?.exp);
+            return { user: live.data.user, authError: null, source: 'get-user' };
+          }
+          if (!live.error || isVerdict(live.error)) {
+            return { user: null, authError: asError(live.error), source: 'get-user' };
+          }
+        } catch (error) {
+          if (isVerdict(error)) return { user: null, authError: asError(error), source: 'get-user' };
+        }
+        return verified;
       }
 
       // No claims and no error means there is simply no session on this
