@@ -307,6 +307,17 @@ mock.module('../projects/lib/fast-boot-git-hint', () => ({
   resolveFastBootGitHintWithCache: async () => undefined,
 }));
 
+// The desired-release base check (`sharedBaseTip`) asks the upstream through a
+// real mirror clone. Against this fixture's fake repo URL it always fails, after
+// ~2.5 s of git retries per `/start`. Fail it at once: the same path, no git.
+const realBaseTip = await import('../config-releases/base-tip');
+mock.module('../config-releases/base-tip', () => ({
+  ...realBaseTip,
+  sharedBaseTip: async () => {
+    throw new Error('no upstream in this unit test');
+  },
+}));
+
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test

@@ -79,12 +79,14 @@ export function openCodeBox(bin: string, model: { origin: string; id: string }) 
       proc.stderr!.on('data', read)
       proc.once('exit', (code) => (clearTimeout(timer), reject(new Error(`opencode serve exited ${code}:\n${log}`))))
     })
+    // A process a signal ended has exitCode null: without the signalCode check a second stop() waits 3 s for an exit that already happened.
+    const gone = () => proc.exitCode !== null || proc.signalCode !== null
     const stop = async () => {
-      if (proc.exitCode !== null) return
+      if (gone()) return
       const exited = new Promise((r) => proc.once('exit', r))
       proc.kill('SIGTERM')
       await Promise.race([exited, Bun.sleep(3_000)])
-      if (proc.exitCode === null) proc.kill('SIGKILL')
+      if (!gone()) proc.kill('SIGKILL')
     }
     return { url, proc, stop }
   }

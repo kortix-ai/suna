@@ -391,7 +391,7 @@ the first system prompt pi rebuilds takes that id, so the record is replaced, no
 added. Three restores of one session keep one context record per thread (the
 same ids); before, each restore added one per thread pi prompted.
 
-Proved in `opencode-session-log-restore.test.ts` (the pinned OpenCode binary,
+Proved in the `opencode-session-log-restore-*.test.ts` files (the pinned OpenCode binary,
 `opencode serve` in an isolated home against a fake model, dummy key): the 7
 golden fixtures, converted and partial logs, an OpenCode session and a pi
 session recorded in the test, a second restore after a journaled turn, the seq

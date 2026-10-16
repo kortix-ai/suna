@@ -5,7 +5,9 @@
 The API package's direct `scripts/test.sh` command selects one to four Bun
 workers from available memory. It reserves 2 GiB for the agent and OS and
 budgets 4 GiB per worker. It restarts workers every 80 test files because a
-single long-lived Bun worker retained 8.9 GiB during a full suite. Set
+single long-lived Bun worker retained 8.9 GiB during a full suite. A batch
+ends when its slowest file ends, so the files in `apps/api/scripts/slow-tests.txt`
+(1 s or more) run first. Add a file there when it passes 1 s. Set
 `KORTIX_API_TEST_WORKERS` only on a dedicated
 runner with measured headroom. A detached suite continues after an agent turn
 ends; check and stop that process before retrying a memory-guarded turn.
@@ -117,14 +119,18 @@ dispatch only; the `preview` label deploys without it) and `tests-release.yml` (
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is four lanes in parallel, each natively on one free GitHub-hosted
-runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Core and
-package lanes run `pnpm test` and `pnpm test -- --packages-only`. Two browser
+The run is seven lanes in parallel, each natively on one free GitHub-hosted
+runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). The core lane
+runs `pnpm test -- --no-packages`. Four package lanes run one slice of package
+quality each: `pnpm test -- --packages-only --package-group=api` (`cli`,
+`kortixd`, `rest`; `rest` holds the repo-wide checks and every other package).
+On one runner the API, CLI and kortixd suites and three `tsc` shared 4 vCPU and
+the lane took 18.5 min. Two browser
 lanes run shards `1/2` and `2/2` with one Playwright worker each
 (`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The runner hands
 each shard its spec files by path, balanced by measured duration (see
-"Browser shard balancing"). The four lanes are the parallel equivalent of
+"Browser shard balancing"). The seven lanes are the parallel equivalent of
 `pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
@@ -248,7 +254,9 @@ bun tests/bin/refresh-shard-durations.ts deployed <tests-release.yml run id>...
 
 A spec file that no run executed (quarantined, local-only) gets 0. A shard wall
 time is about `fixed overhead + sum of its files` at one worker: 295 s local, 105 s
-deployed. The largest file (`27-desktop-parity`, 520 s local) is the floor.
+deployed. The largest file is the floor. `27-desktop-parity` was one 520 s file
+(655 s on CI run 38777589705); its journeys now live in
+`e2e/helpers/desktop-parity.ts` and run from two spec files, one per runtime.
 
 #### Release gate shards
 
@@ -573,7 +581,7 @@ Playwright exists only for behavior that requires a browser. Browser tests live
 in `tests/e2e/specs`. API-only behavior belongs in a REST flow.
 
 The browser suite covers the money path only: the journeys a paying user
-cannot work around when they break. Since 2026-10-16 it has 9 spec files:
+cannot work around when they break. Since 2026-10-16 it has these spec files:
 
 | Spec | Money-path step |
 | --- | --- |
@@ -582,7 +590,8 @@ cannot work around when they break. Since 2026-10-16 it has 9 spec files:
 | `free-tier-pricing-onboarding` | The pricing page (`@target-smoke`). |
 | `10-billing-journey` | Checkout, credits, billing portal (deployed only: needs Stripe). |
 | `34-instant-session-loads` | A session opens instantly from its saved copy. |
-| `27-desktop-parity` | Send, steer and queue a prompt; the web and desktop gate. |
+| `27-desktop-parity`, `27-desktop-parity-desktop` | Send, steer and queue a prompt; the web and desktop gate (journeys in `e2e/helpers/desktop-parity.ts`). |
+| `55-session-own-model` | A session keeps the model it was started with. |
 | `13-sdk-only-session` | A real sandbox streams a real prompt (deployed, `@quarantine`). |
 | `49-connector-connect-landing` | Connect a connector and land on its page. |
 | `45-invite-lands-in-invited-project` | Accept a project invite and land in the project. |

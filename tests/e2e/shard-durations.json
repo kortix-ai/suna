@@ -1,24 +1,28 @@
 {
   "local": {
-    "e2e/specs/01-account-auth.spec.ts": 18.5,
+    "e2e/specs/01-account-auth.spec.ts": 20.3,
     "e2e/specs/10-billing-journey.spec.ts": 0,
     "e2e/specs/13-sdk-only-session.spec.ts": 0,
-    "e2e/specs/27-desktop-parity.spec.ts": 520.3,
-    "e2e/specs/34-instant-session-loads.spec.ts": 152.3,
-    "e2e/specs/37-new-user-lands-on-projects.spec.ts": 28,
-    "e2e/specs/45-invite-lands-in-invited-project.spec.ts": 23.5,
-    "e2e/specs/49-connector-connect-landing.spec.ts": 65,
-    "e2e/specs/free-tier-pricing-onboarding.spec.ts": 6.9
+    "e2e/specs/27-desktop-parity-desktop.spec.ts": 386.9,
+    "e2e/specs/27-desktop-parity.spec.ts": 442.8,
+    "e2e/specs/34-instant-session-loads.spec.ts": 117.1,
+    "e2e/specs/37-new-user-lands-on-projects.spec.ts": 16.4,
+    "e2e/specs/45-invite-lands-in-invited-project.spec.ts": 22.7,
+    "e2e/specs/49-connector-connect-landing.spec.ts": 73.1,
+    "e2e/specs/55-session-own-model.spec.ts": 60,
+    "e2e/specs/free-tier-pricing-onboarding.spec.ts": 8.4
   },
   "deployed": {
     "e2e/specs/01-account-auth.spec.ts": 17,
     "e2e/specs/10-billing-journey.spec.ts": 22.8,
     "e2e/specs/13-sdk-only-session.spec.ts": 91.2,
-    "e2e/specs/27-desktop-parity.spec.ts": 406.7,
+    "e2e/specs/27-desktop-parity-desktop.spec.ts": 189.6,
+    "e2e/specs/27-desktop-parity.spec.ts": 217.1,
     "e2e/specs/34-instant-session-loads.spec.ts": 165.8,
     "e2e/specs/37-new-user-lands-on-projects.spec.ts": 8.1,
     "e2e/specs/45-invite-lands-in-invited-project.spec.ts": 15.3,
     "e2e/specs/49-connector-connect-landing.spec.ts": 65,
+    "e2e/specs/55-session-own-model.spec.ts": 60,
     "e2e/specs/free-tier-pricing-onboarding.spec.ts": 1.9
   }
 }

@@ -349,7 +349,7 @@ jobs:
         shard: [1, 2]
     env:
       # Two shards, one browser each (testing reset, 2026-10-16): the gate runs
-      # the 9 money-path specs; spec 27 fills one shard, the rest the other.
+      # the money-path specs; spec 27 fills one shard, the rest the other.
       E2E_BROWSER_WORKERS: '1'
       # Specs tagged @quarantine (today: tests in 13-sdk-only-session) run in the non-blocking
       # nightly lane (tests-browser-nightly.yml), never in the release gate.
