@@ -1,5 +1,5 @@
 {
-  "source_hash": "92ea7109ac3702232fcfeedcb36a84f17656a8b2609371709441a05ce4f8494d",
+  "source_hash": "8c2d8859a2b68e7b7890c2d0ba2dabfd11d1080f3baf20878c5873cbfaedf6c3",
   "diff_files": [
     "apps/web/src/features/apps/app-releases.tsx",
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
@@ -26,13 +26,13 @@
     "packages/sdk/src/core/turns/tool-kind.ts",
     "packages/sdk/src/core/turns/tool-registry.ts"
   ],
-  "diff_hash": "a63ba27560c5827fd0c72127dcf59c121193383690c35c0c2f7f1d7930ed8911",
-  "head": "07fa4b4642b8b391e2d49295e2e37662a6fa1a9f",
+  "diff_hash": "433a3bbfbdbb155f26a114c094a3991897f1f279a60725b8c7eb0cf63296b036",
+  "head": "d7850194d246fd11ae1cea3961f3c94960800f8b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-16T01:32:20.055Z"
+  "at": "2026-10-16T01:58:54.036Z"
 }
