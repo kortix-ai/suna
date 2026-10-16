@@ -12,7 +12,11 @@ import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { loadSessionSecretContext } from './session-secret-context';
 import { decideEnvSyncAction, type EnvSyncMemoryState } from './env-sync-skip-decision';
-import { loadEnvSyncDurableState, persistEnvSyncDurableState } from './env-sync-durable-state';
+import {
+  type EnvSyncDurableRecord,
+  loadEnvSyncDurableState,
+  persistEnvSyncDurableState,
+} from './env-sync-durable-state';
 import {
   PROMPT_BOUNDARY_ARM_WAIT_MS,
   armedNetworkBoundaries,
@@ -50,8 +54,16 @@ export const FANOUT_CONCURRENCY = 6;
  * correctness boundary is `env-sync-durable-state.ts`, persisted on
  * `session_sandboxes.config` — readable by every replica. See
  * `env-sync-skip-decision.ts` for the full three-way decision this memo feeds
- * into (push / skip / skip-and-background-refresh) and why memory always
- * wins over the durable record when both are present.
+ * into (push / skip / skip-and-background-refresh).
+ *
+ * INCIDENT (2026-10-16): the memo is trusted only while the durable record
+ * still names its signature (`memoConfirmedBy`). A kortixd restart inside a
+ * live box (an agent swap exits 75) seeds the new process from the BOOT env,
+ * and another replica's push moves the box too. Neither touches this memo, so
+ * a prompt inside the trusted window ran on an env the box no longer held: in
+ * a private session, the creator's personal secret for another person's turn
+ * (KRTX-2517). Both move the durable record (the daemon's boot claim fences
+ * it), so a memo it no longer confirms is dropped.
  *
  * replica-local: by design — the durable half above is the cross-replica
  * correctness boundary, so each replica's copy of this memo may miss what
@@ -63,9 +75,9 @@ const lastPromptModelSignature = new Map<string, EnvSyncMemoryState & { agent: s
 /**
  * How stale a CONFIRMED-current record (memory or durable) may get before a
  * skip also fires a detached background re-push. This is not a correctness
- * TTL — the daemon's own store does not drift on its own — it is a bounded
- * self-heal for drift THIS process did not cause (the daemon's process
- * restarting and losing its applied env, a provider-side reset). Same
+ * TTL — the daemon's own store does not drift on its own, and a daemon process
+ * restart is fenced at its boot claim (`recordDaemonBootForEnvSync`) — it is a
+ * bounded self-heal for drift nothing reports (a provider-side reset). Same
  * reasoning, and the same order of magnitude, as this file's
  * `BOUNDARY_ARM_TTL_MS`. Exported so the benchmark script and tests don't
  * hardcode the number.
@@ -169,6 +181,24 @@ function rememberPromptModelSignature(
     if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
   }
   lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs, agent, person });
+}
+
+/**
+ * This box's memo, kept only while the durable record still names the same
+ * signature. The memo is per replica and the box is one: a daemon restart (the
+ * boot fence in env-sync-durable-state.ts) or another replica's push moves the
+ * durable record and not this memo. A memo the record no longer confirms
+ * describes an env the box may not hold, so it is dropped.
+ */
+function memoConfirmedBy(
+  externalId: string,
+  persisted: EnvSyncDurableRecord | null,
+): (EnvSyncMemoryState & { agent: string; person: string | null }) | null {
+  const memo = lastPromptModelSignature.get(externalId);
+  if (!memo) return null;
+  if (persisted?.signature === memo.signature) return memo;
+  lastPromptModelSignature.delete(externalId);
+  return null;
 }
 
 /**
@@ -298,18 +328,27 @@ interface PromptEnvSyncArgs {
  * Never trusted: a different agent (its grant is resolved and pushed before it
  * runs), a different person (the session token now acts for someone else: the
  * box may hold the previous person's personal secrets), a caller's explicit
- * `opencodeEnv`, and a process that has not confirmed this box itself.
+ * `opencodeEnv`, a process that has not confirmed this box itself, and a memo
+ * the durable record no longer confirms (the box's daemon restarted, or
+ * another replica pushed a different env — `memoConfirmedBy`).
  */
 export async function syncSandboxEnvForPrompt(args: PromptEnvSyncArgs): Promise<void> {
   if (!args.serviceKey) return;
   const known = lastPromptModelSignature.get(args.externalId);
-  const person = await sessionTokenPerson(args.sessionId);
-  if (
+  const candidate =
+    known &&
     !args.opencodeEnv &&
-    known?.agent === (args.requestedAgent ?? '') &&
-    known.person === person &&
+    known.agent === (args.requestedAgent ?? '') &&
     Date.now() - known.pushedAtMs < ENV_SYNC_BACKGROUND_REFRESH_STALE_MS
-  ) {
+      ? known
+      : null;
+  // Two indexed reads in parallel. The durable record is read only when the
+  // memo could be trusted: the sync path below reads it after its resolve.
+  const [person, persisted] = await Promise.all([
+    sessionTokenPerson(args.sessionId),
+    candidate ? loadEnvSyncDurableState(args.sessionId) : null,
+  ]);
+  if (candidate && candidate.person === person && memoConfirmedBy(args.externalId, persisted)) {
     const check = resolveAndSyncEnv(args, 'check', person)
       .catch((err) => {
         lastPromptModelSignature.delete(args.externalId);
@@ -458,20 +497,19 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     llmGatewayBaseUrl,
     opencodeEnv: args.opencodeEnv,
   });
-  const memory = lastPromptModelSignature.get(args.externalId) ?? null;
   if (mode === 'check') {
-    if (memory?.signature !== signature) {
+    if (lastPromptModelSignature.get(args.externalId)?.signature !== signature) {
       lastPromptModelSignature.delete(args.externalId);
       logger.info('[env-sync] background check found a change; the next prompt pushes it', { sandbox: args.externalId });
     }
     return;
   }
-  // Pay for the durable read only when THIS process's own memo cannot already
-  // answer — memory is always at least as fresh (see the note on
-  // `decideEnvSyncAction`), so a matching memo makes the read pure overhead.
-  const persisted =
-    memory?.signature === signature ? null : await loadEnvSyncDurableState(args.sessionId);
+  // Read AFTER the resolve, and even when the memo matches: a daemon boot or
+  // another replica's push recorded while the env resolved must still turn
+  // this prompt into a push (`memoConfirmedBy`).
+  const persisted = await loadEnvSyncDurableState(args.sessionId);
   lap('durable-read');
+  const memory = memoConfirmedBy(args.externalId, persisted);
   const decision = decideEnvSyncAction({
     signature,
     memory,
