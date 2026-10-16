@@ -130,7 +130,8 @@ jobs:
             *) echo "::error::git merge-tree failed (exit $rc)"; exit 1 ;;
           esac
           PR="$(gh pr list --base staging --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
-          echo "plan: dev leg: $SHA -> $BRANCH -> PR into staging (${PR:+reuse open PR #$PR}${PR:-new PR}), merge commit, no checks"
+          PR_PLAN="new PR"; [ -z "$PR" ] || PR_PLAN="reuse open PR #$PR"
+          echo "plan: dev leg: $SHA -> $BRANCH -> PR into staging ($PR_PLAN), merge commit, no checks"
           if [ "$CONFLICT" = true ]; then
             echo "plan: merge-tree reports a conflict with staging -> branch is a merge of staging and $SHA10 whose tree equals $SHA"
           else
@@ -399,7 +400,8 @@ jobs:
           if [ "$DRY_RUN" = true ]; then
             existing="$(gh pr list --base prod --head "$RELBR" --state open --json number --jq '.[0].number // empty' || true)"
             echo "plan: release branch $RELBR = release source + merge -s ours origin/prod; VERSION=$NEW; RELEASE_SOURCE_SHA = the staging merge SHA (dev leg) or ${SRC_SHA} (staging-only)"
-            echo "plan: PR into prod: ${existing:+update open PR #$existing}${existing:-open a new PR}; approve its held runs (Tests - release + tree checks)"
+            PR_PLAN="open a new PR"; [ -z "$existing" ] || PR_PLAN="force-push $RELBR, keep open PR #$existing (title and body unchanged)"
+            echo "plan: PR into prod: $PR_PLAN; approve its held runs (Tests - release + tree checks)"
             echo "dry run: nothing changed."
             exit 0
           fi
