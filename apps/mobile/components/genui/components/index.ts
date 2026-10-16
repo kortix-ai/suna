@@ -2,7 +2,7 @@ import type { GenuiComponentMap } from '@kortix/sdk/genui/react';
 
 import { GenuiAccordion } from './accordion';
 import { GenuiChart } from './charts';
-import { GenuiCompare, GenuiRankedList, GenuiStat, GenuiStatRow, GenuiTable } from './data';
+import { GenuiChecklist, GenuiCompare, GenuiRankedList, GenuiStat, GenuiStatRow, GenuiSteps, GenuiTable } from './data';
 import { GenuiBadge, GenuiCallout, GenuiImage, GenuiLink } from './inline';
 import { GenuiCard, GenuiStack, GenuiTabs } from './layout';
 import { GenuiMap } from './map';
@@ -23,6 +23,8 @@ export const mobileGenuiComponents: GenuiComponentMap = {
   LineChart: GenuiChart,
   PieChart: GenuiChart,
   Map: GenuiMap,
+  Steps: GenuiSteps,
+  Checklist: GenuiChecklist,
   Badge: GenuiBadge,
   Callout: GenuiCallout,
   Image: GenuiImage,

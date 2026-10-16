@@ -30,7 +30,7 @@ test.each([null, 'price_synthetic'])('credit checkout preserves payload for cata
   });
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ checkout_url: 'https://example.test/checkout' });
-  expect(purchases).toEqual([{ accountId: 'acct_synthetic', amountDollars: '25.5', status: 'pending', description: '$25.5 credit purchase', provider: 'stripe' }]);
+  expect(purchases).toEqual([{ accountId: 'acct_synthetic', amountDollars: '25.5', status: 'pending', description: 'Credit purchase: 2,550 credits ($25.5)', provider: 'stripe' }]);
   expect(sessions).toEqual([{
     params: {
       customer: 'cus_synthetic', mode: 'payment',

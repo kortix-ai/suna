@@ -37,7 +37,7 @@ import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-san
 import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
 import { buildConfigRelease, CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
-import { BaseRefUnresolvedError, resolveDesiredRelease } from './desired';
+import { BaseRefUnresolvedError, governanceForDaemon, resolveDesiredRelease } from './desired';
 import { notePublishedTip } from './publish';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
 import { serveConfigArchive } from './serve-archive';
@@ -71,16 +71,17 @@ interface SessionRow {
  * (`base_sha`). The tip only lets the route skip a redundant mirror fetch
  * (`DesiredReleaseInput.bootTip`); it never chooses the release.
  */
-async function readDescriptorRequest(c: Context): Promise<{ format: ConfigReleaseFormat; bootTip: string | null }> {
+async function readDescriptorRequest(c: Context): Promise<{ format: ConfigReleaseFormat; bootTip: string | null; capabilities: string[] }> {
   try {
-    const body = (await c.req.json()) as { accept?: unknown; base_sha?: unknown } | null;
+    const body = (await c.req.json()) as { accept?: unknown; base_sha?: unknown; capabilities?: unknown } | null;
     const format =
       Array.isArray(body?.accept) && body.accept.includes(CONFIG_RELEASE_FORMAT_V3) ? CONFIG_RELEASE_FORMAT_V3 : CONFIG_RELEASE_FORMAT_V2;
     const bootTip = typeof body?.base_sha === 'string' && HEX40.test(body.base_sha) ? body.base_sha : null;
-    return { format, bootTip };
+    const capabilities = Array.isArray(body?.capabilities) ? body.capabilities.filter((item): item is string => typeof item === 'string') : [];
+    return { format, bootTip, capabilities };
   } catch {
     // Not JSON: v2.
-    return { format: CONFIG_RELEASE_FORMAT_V2, bootTip: null };
+    return { format: CONFIG_RELEASE_FORMAT_V2, bootTip: null, capabilities: [] };
   }
 }
 
@@ -230,7 +231,7 @@ export function registerConfigReleaseRoutes(): void {
       // descriptor format, and a booting box's `base_sha` can only spare a
       // redundant mirror fetch; any other body is ignored, so a daemon built
       // against an older shape of this route still converges.
-      const { format, bootTip } = await readDescriptorRequest(c);
+      const { format, bootTip, capabilities } = await readDescriptorRequest(c);
       //
       // EVERY session of this project is served, including one created before
       // the project replaced its repository. A release is the project's CURRENT
@@ -278,7 +279,7 @@ export function registerConfigReleaseRoutes(): void {
             ? await configReleaseSnapshot(project, baseRef, descriptor.source_commit)
             : null;
         }
-        return c.json(descriptor);
+        return c.json(isDaemon ? governanceForDaemon(descriptor, capabilities) : descriptor);
       } catch (error) {
         if (error instanceof BaseRefUnresolvedError) return c.json({ error: error.message }, 409);
         throw error;

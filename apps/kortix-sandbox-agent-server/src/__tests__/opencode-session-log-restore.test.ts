@@ -803,4 +803,57 @@ describe('the boot reconcile on OpenCode (P6.4)', () => {
       api.stop()
     }
   }, 60_000)
+
+  test('P2.13: the journal stores a prompt image, a prompt PDF and a tool-result image; a fresh box restores them with nothing dropped', async () => {
+    const sessionId = 'sess-oc-blobs'
+    const empty: SessionLog = {
+      schema: 'kortix.session/2', v: 1, session_id: sessionId, title: null, created_at: '2026-10-15T00:00:00.000Z', restore_grade: 'native',
+      harness: { current: 'opencode', history: [] }, selection: { agent: null, model: null }, todos: [], pending: { questions: [], permissions: [] }, threads: [],
+    }
+    // Synthetic files: a 1x1 PNG with the prompt, a minimal PDF, and a 2x2 PNG a tool reads from disk (not the 1x1 offload placeholder).
+    const shot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAD0lEQVR4nGNgaPgPQhAKACX2Bf2gcp/LAAAAAElFTkSuQmCC', 'base64')
+    const pdf = Buffer.from('%PDF-1.4\n% synthetic\n%%EOF\n')
+    const a = box(sessionId)
+    writeFileSync(join(a.workspace, 'shot.png'), shot)
+    const api = fakeSessionLogApi(empty, { projectId: PROJECT, stateDir: join(a.root, 'state') })
+    try {
+      const live = await a.serve()
+      const { id: rootId } = (await post(live, '/session', {})) as { id: string }
+      writeOpenCodeSessionPin(rootId)
+      startSessionLogJournal(a.port, { generation: 0 })
+      await prompt(live, rootId, 'what are these', [{ text: 'an image and a pdf' }], [
+        { mime: 'image/png', url: `data:image/png;base64,${FIXTURE_PNG.toString('base64')}`, filename: 'prompt.png' },
+        { mime: 'application/pdf', url: `data:application/pdf;base64,${pdf.toString('base64')}`, filename: 'notes.pdf' },
+      ])
+      await prompt(live, rootId, 'read the screenshot', [{ tool: 'read', args: { filePath: join(a.workspace, 'shot.png') } }, { text: 'a pixel' }])
+      expect(await flushSessionLogJournal()).toBe(true)
+      await live.stop()
+      resetSessionLogJournalForTests()
+
+      const own = `kortix-attachment://${PROJECT}/${sessionId}/`
+      const messages = api.stored().threads.flatMap((t) => t.messages)
+      const files = messages.flatMap((m) => m.blocks.filter((x) => x.type === 'attachment'))
+      expect(files.map((x) => [x.mime, x.ref, x.sha256, x.bytes])).toEqual([
+        ['image/png', `${own}blob-${sha(FIXTURE_PNG)}`, sha(FIXTURE_PNG), FIXTURE_PNG.length],
+        ['application/pdf', `${own}blob-${sha(pdf)}`, sha(pdf), pdf.length],
+      ])
+      const toolFiles = messages.flatMap((m) => m.blocks.flatMap((x) => (x.type === 'tool_call' ? (x.result?.content ?? []).filter((c) => c.type === 'attachment') : [])))
+      expect(toolFiles).toEqual([{ type: 'attachment', ref: `${own}blob-${sha(shot)}`, mime: 'image/png', sha256: sha(shot) }])
+      expect([...api.objects.keys()].sort()).toEqual([sha(FIXTURE_PNG), sha(pdf), sha(shot)].map((x) => `blob-${x}`).sort())
+
+      // A fresh box restores the stored log: every object read back, nothing dropped, the next request carries them.
+      const b = box(sessionId)
+      const boot = (await reconcileSessionLog(b.port, { retryMs: 1 }))!
+      expect(boot.generation).toBe(1)
+      expect(boot.session).toBeUndefined()
+      expect(api.calls.filter((c) => c.startsWith('GET attachments/')).length).toBe(3)
+      const server = await b.serve()
+      const [body] = await prompt(server, b.native(rootId), 'Anything else?', [{ text: 'OK' }])
+      const sent = JSON.stringify(body)
+      for (const bytes of [FIXTURE_PNG, pdf, shot]) expect(sent).toContain(bytes.toString('base64'))
+      expect(oracle(api.stored(), rootId, 'Anything else?', body!).diffs).toEqual([])
+    } finally {
+      api.stop()
+    }
+  }, 90_000)
 })

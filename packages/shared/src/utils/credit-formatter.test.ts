@@ -3,9 +3,11 @@ import {
   CREDITS_PER_DOLLAR,
   dollarsToCredits,
   creditsToDollars,
+  formatUsdAsCredits,
   formatCredits,
   formatCreditsWithSign,
   formatDollarsAsCredits,
+  parseBalanceUsd,
 } from "./credit-formatter";
 
 describe("dollarsToCredits / creditsToDollars", () => {
@@ -88,5 +90,55 @@ describe("formatDollarsAsCredits", () => {
   test("converts dollars to a formatted credit string", () => {
     expect(formatDollarsAsCredits(1)).toBe("100");
     expect(formatDollarsAsCredits(12.34)).toBe("1,234");
+  });
+});
+
+describe('formatUsdAsCredits: a USD amount the account holds or spent, shown in credits', () => {
+  test('whole credits from 10 up, grouped', () => {
+    expect(formatUsdAsCredits(868.15)).toBe('86,815');
+    expect(formatUsdAsCredits(0.1)).toBe('10');
+    expect(formatUsdAsCredits(5000)).toBe('500,000');
+  });
+
+  test('below 10 credits keeps up to two decimals, so a turn never reads 0', () => {
+    expect(formatUsdAsCredits(0.0034)).toBe('0.34');
+    expect(formatUsdAsCredits(0.035)).toBe('3.5');
+    expect(formatUsdAsCredits(0.01)).toBe('1');
+  });
+
+  test('a non-zero amount below 0.01 credits reads <0.01; zero reads 0', () => {
+    expect(formatUsdAsCredits(0.00004)).toBe('<0.01');
+    expect(formatUsdAsCredits(0)).toBe('0');
+    expect(formatUsdAsCredits(null)).toBe('0');
+  });
+
+  test('negative balances keep their sign', () => {
+    expect(formatUsdAsCredits(-12.5)).toBe('-1,250');
+    expect(formatUsdAsCredits(-0.0034)).toBe('-0.34');
+  });
+
+  test('the locale groups and separates', () => {
+    expect(formatUsdAsCredits(868.15, { locale: 'de' })).toBe('86.815');
+    expect(formatUsdAsCredits(0.0034, { locale: 'de' })).toBe('0,34');
+  });
+});
+
+describe("parseBalanceUsd: the balance a 402 message names, in USD", () => {
+  test("reads the credits message the API sends", () => {
+    expect(parseBalanceUsd("Insufficient credits. Balance: 1,250 credits, required: 3 credits")).toBe(12.5);
+    expect(parseBalanceUsd("Payment Required: Insufficient credits. Balance: -6 credits")).toBe(-0.06);
+    expect(parseBalanceUsd("Balance: 0.34 credits")).toBeCloseTo(0.0034, 10);
+    expect(formatUsdAsCredits(parseBalanceUsd("Balance: <0.01 credits"))).toBe("<0.01");
+    expect(formatUsdAsCredits(parseBalanceUsd("Balance: -<0.01 credits"))).toBe("-<0.01");
+  });
+
+  test("reads the dollar message older servers send", () => {
+    expect(parseBalanceUsd("Insufficient credits. Balance: $1.0000, required: $5.0000")).toBe(1);
+    expect(parseBalanceUsd("Payment Required: Insufficient credits. Balance: $-0.06")).toBe(-0.06);
+    expect(parseBalanceUsd("balance: 12.5 remaining")).toBe(12.5);
+  });
+
+  test("a message without a balance reads null", () => {
+    expect(parseBalanceUsd("Payment Required")).toBeNull();
   });
 });
