@@ -88,11 +88,11 @@ describe('sessionTurnMetaRows', () => {
       },
       testUiTranslator,
     );
-    expect(rows.map((r) => r.label)).toEqual(['Finished', 'Duration', 'Cost', 'Tokens']);
+    expect(rows.map((r) => r.label)).toEqual(['Finished', 'Duration', 'Cost (credits)', 'Tokens']);
     expect(rows).toEqual([
       { label: 'Finished', value: '5 seconds ago' },
       { label: 'Duration', value: '3s' },
-      { label: 'Cost', value: '$0.42' },
+      { label: 'Cost (credits)', value: '42' },
       { label: 'Tokens', value: '150' },
     ]);
   });
@@ -111,7 +111,7 @@ describe('sessionTurnMetaRows', () => {
       testUiTranslator,
     );
     const labels = rows.map((r) => r.label);
-    expect(labels).not.toContain('Cost');
+    expect(labels).not.toContain('Cost (credits)');
     expect(labels).not.toContain('Tokens');
   });
 
@@ -185,7 +185,7 @@ describe('sessionTurnMetaRows — the model that answered', () => {
       { label: 'Duration', value: '3s' },
       { label: 'Model', value: 'GLM 5.3 Flash' },
       { label: 'In place of', value: 'GPT-6.1 Sol (ChatGPT)' },
-      { label: 'Cost', value: '$0.75' },
+      { label: 'Cost (credits)', value: '75' },
       { label: 'Tokens', value: '150' },
     ]);
   });
@@ -204,7 +204,7 @@ describe('sessionTurnMetaRows — the model that answered', () => {
       served: { models: ['GLM 5.3 Flash', 'Kimi K3'], fallbackFrom: null, billedCost: 0.4 },
     });
     expect(rows).toContainEqual({ label: 'Model', value: 'GLM 5.3 Flash, Kimi K3' });
-    expect(rows).toContainEqual({ label: 'Cost', value: '$0.42' });
+    expect(rows).toContainEqual({ label: 'Cost (credits)', value: '42' });
     expect(rows.map((row) => row.label)).not.toContain('In place of');
   });
 

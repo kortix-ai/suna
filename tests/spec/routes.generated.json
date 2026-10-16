@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 838,
+  "count": 840,
   "routes": [
     {
       "method": "GET",
@@ -1044,7 +1044,15 @@
     },
     {
       "method": "POST",
+      "path": "/v1/billing/enterprise/contact"
+    },
+    {
+      "method": "POST",
       "path": "/v1/billing/plan"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/plan/preview"
     },
     {
       "method": "GET",

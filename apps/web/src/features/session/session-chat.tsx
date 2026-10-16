@@ -816,6 +816,9 @@ export function SessionChat({
   });
   const composerAgentName = composerAgent.selected;
   const noAccessibleAgents = composerAgent.disabled;
+  // The slash menu lists only the commands the composer's agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentCommands } = useRuntimeCommands({ agent: composerAgentName ?? undefined });
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -3535,7 +3538,7 @@ export function SessionChat({
     questionPromptRef.current?.performAction();
   }, []);
 
-  const chatCommands = useMemo(() => commands || [], [commands]);
+  const chatCommands = useMemo(() => agentCommands || [], [agentCommands]);
 
   /**
    * Where this session's unsent draft is persisted.

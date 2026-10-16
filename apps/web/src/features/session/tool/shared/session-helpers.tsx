@@ -9,6 +9,7 @@ import {
   ChatCircleIcon as MessageCircle,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { formatUsdAsCredits } from '@kortix/shared';
 import type { ParsedSessionMessage, ParsedSessionMeta } from '@kortix/shared/tool-output';
 import { useEffect, useState } from 'react';
 
@@ -153,6 +154,7 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
 
 export function InlineSessionMessagesList({ messages }: { messages: ParsedSessionMessage[] }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tCredits = useTranslations('settings.credits');
   return (
     <div className="flex flex-col gap-1 p-1.5">
       <div className="text-muted-foreground px-1.5 py-1 text-xs font-medium tracking-wider uppercase">
@@ -187,7 +189,12 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
             </span>
             <span className="text-muted-foreground/50 ml-auto text-xs">#{msg.index}</span>
             {msg.cost > 0 && (
-              <span className="text-muted-foreground/50 text-xs">${msg.cost.toFixed(4)}</span>
+              <span className="text-muted-foreground/50 text-xs tabular-nums">
+                {tCredits('creditCount', {
+                  count: msg.cost * 100,
+                  formatted: formatUsdAsCredits(msg.cost),
+                })}
+              </span>
             )}
           </div>
           <div className="px-2.5 py-1.5">

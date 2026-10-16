@@ -9,7 +9,7 @@ const sidebar = [
   { label: 'Get started', items: ['index', 'quickstart', 'clients'] },
   {
     label: 'Project',
-    items: ['project', 'project/manifest', 'project/agents', 'project/tools', 'project/models', 'project/secrets'],
+    items: ['project', 'project/manifest', 'project/agents', 'project/tools', 'project/models', 'project/secrets', 'project/legacy-manifests'],
   },
   { label: 'Run work', items: ['work/sessions', 'work/runtime'] },
   {

@@ -1,3 +1,5 @@
+import { formatUsdAsCredits } from '@kortix/shared';
+
 // ─── Billing Errors ─────────────────────────────────────────────────────────
 
 export class BillingError extends Error {
@@ -17,7 +19,12 @@ export class InsufficientCreditsError extends BillingError {
     /** Why the wallet refused, e.g. `Insufficient credits` or `No credit account found`. */
     public readonly reason: string = 'Insufficient credits',
   ) {
-    super(`Insufficient credits. Balance: $${balance.toFixed(4)}, required: $${required.toFixed(4)}`, 402);
+    // Credits for people (1 credit = $0.01). `balance` / `required` stay USD;
+    // clients parse either shape (`parseBalanceUsd` in @kortix/shared).
+    super(
+      `Insufficient credits. Balance: ${formatUsdAsCredits(balance)} credits, required: ${formatUsdAsCredits(required)} credits`,
+      402,
+    );
     this.name = 'InsufficientCreditsError';
   }
 }
