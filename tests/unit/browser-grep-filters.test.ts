@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveGrepFilters } from '../playwright.config';
+import { resolveGrepFilters, resolveVideoMode } from '../playwright.config';
 
 describe('browser lane grep filters', () => {
   it('excludes quarantine by DEFAULT, so no blocking gate needs its own command line', () => {
@@ -70,5 +70,12 @@ describe('browser lane grep filters', () => {
     const { grep, grepInvert } = resolveGrepFilters({ E2E_EXCLUDE_TAGS: '  ,, ', E2E_GREP: '' });
     expect(grep).toBeUndefined();
     expect(grepInvert?.source).toBe('@quarantine');
+  });
+});
+
+describe('browser journey replays', () => {
+  it('records every journey in CI and only failures locally', () => {
+    expect(resolveVideoMode({ CI: 'true' })).toBe('on');
+    expect(resolveVideoMode({})).toBe('retain-on-failure');
   });
 });

@@ -2404,6 +2404,73 @@ describe('project session runtime guards', () => {
     expect(sessionRow?.runtimeSessionId).toBe('ses_root_existing');
   });
 
+  // 2026-10-16: an open page on a lost session sent /start ~2.8 times a second.
+  // Each pass re-checked Platinum and re-wrote the row, and each write sent the
+  // page a frame that re-read /start. The next /start answers from the row.
+  test('the next start on a lost session answers from the row: no provider call, no write', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      runtimeSessionId: 'ses_root_existing',
+      metadata: {
+        existing: true,
+        initial_prompt: 'DO NOT REPLAY',
+        opencode_model: 'anthropic/claude-sonnet-4-6',
+      },
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-deleted',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'failed',
+      agent_name: 'default',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
+    });
+
+    const contactsAfterFirst = runtimeContactCalls;
+    const rowAfterFirst = structuredClone(sessionSandboxRows[0]);
+
+    const again = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
+    });
+    expect(runtimeContactCalls).toBe(contactsAfterFirst);
+    expect(providerRecoveryCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toEqual(rowAfterFirst);
+  });
+
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
     const app = createApp();
     sessionRow = {

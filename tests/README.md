@@ -655,6 +655,13 @@ The lane writes its Playwright HTML report to
 `tests/test-results/html/index.html`. CI includes that directory in the browser
 artifact.
 
+Every CI browser run records a video of every journey, passed or failed
+(`resolveVideoMode` in `playwright.config.ts`). A local run keeps a video only
+for a failure. To replay a release shard, download its artifact and open the
+report: `gh run download <run-id> --repo kortix-ai/suna -n
+tests-release-browser-shard-1 -D /tmp/shard-1`, then `npx playwright
+show-report /tmp/shard-1/html`.
+
 ### Tag filters
 
 `playwright.config.ts` reads four environment variables and turns them into
