@@ -199,7 +199,8 @@ test.describe
         };
         expect(state.subscription?.subscription_id).toBeTruthy();
         expect(state.subscription?.status).toBe('active');
-        await expect(page.getByText('Active', { exact: true })).toBeVisible();
+        // An active plan with a real period end reads "Renews <date>" (#10007), not "Active".
+        await expect(page.getByText(/^Renews /).first()).toBeVisible();
       });
 
       await test.step('The owner starts a one-time credit purchase', async () => {
@@ -209,19 +210,19 @@ test.describe
         // role wins, so `getByRole('button', …)` can no longer see it. The
         // cell's whole accessible name is now just the amount (`:175`).
         const topup = page.getByRole('radiogroup', { name: 'Top-up amount' });
-        await topup.getByRole('radio', { name: '$10', exact: true }).click();
+        // Presets are $25, $100, $250 and $1,000 since the credits-only plan (#9814).
+        await topup.getByRole('radio', { name: '$25', exact: true }).click();
         const purchase = await captureJsonPost<CheckoutResult>(
           page,
           '**/v1/billing/purchase-credits',
         );
-        // The CTA is `actionLabel` (`credit-topup-section.tsx:82-84`): "Add $10"
-        // once an amount is chosen, "Add credits" before that. "Buy $10 in
-        // credits" is gone.
-        await page.getByRole('button', { name: 'Add $10', exact: true }).click();
+        // The CTA is `actionLabel` in `credit-topup-section.tsx`: "Add $25" once
+        // an amount is chosen, "Add credits" before that.
+        await page.getByRole('button', { name: 'Add $25', exact: true }).click();
         await expect.poll(() => purchase.status, { timeout: 45_000 }).toBe(200);
         expect(purchase.requestBody).toMatchObject({
           account_id: accountId,
-          amount: 10,
+          amount: 25,
         });
         expectStripeUrl(
           purchase.body?.checkout_url,
