@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
@@ -20,6 +20,18 @@ const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_UR
 const password = 'E2eAppsUi123!';
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
+
+/**
+ * Close the App sheet from its header (the Earlier versions panel has its own
+ * Close). The page mirrors the open App into `?app=` after a 200 ms debounce
+ * (`apps-view.tsx`), so wait for the key to leave the URL: a reload before
+ * that reopens the sheet.
+ */
+async function closeAppSheet(page: Page, appModal: Locator): Promise<void> {
+  await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(appModal).toBeHidden();
+  await expect.poll(() => new URL(page.url()).searchParams.has('app')).toBe(false);
+}
 
 interface AccountSummary {
   account_id: string;
@@ -366,7 +378,7 @@ test.describe('18 — Kortix Apps UI', () => {
         await api(session.access_token, 'PATCH', `/projects/${project.id}/apps/${seeded.app_id}/access`, {
           mode: 'restricted', member_ids: [user.id], group_ids: [group.group_id], viewer_token_scope: 'identity',
         });
-        await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
+        await closeAppSheet(page, appModal);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await seededCard.click();
         await appModal.getByRole('button', { name: 'More actions' }).click();
@@ -402,7 +414,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.getByRole('menuitem', { name: 'Hide earlier versions' }).click();
       await expect(appModal.getByText('No deployments yet.')).toBeHidden();
 
-      await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
+      await closeAppSheet(page, appModal);
       await expect(appModal).toBeHidden();
 
       await page.evaluate(() => localStorage.setItem('theme', 'light'));
@@ -510,7 +522,7 @@ test.describe('18 — Kortix Apps UI', () => {
           if (failed) await expect(control).toBeEnabled();
         }
       }
-      await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
+      await closeAppSheet(page, appModal);
 
       // A second App on the same page, linked to the first: no kind badge, a
       // preview tile like any App, a Used-by link, the Connect item for an App
@@ -589,7 +601,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
       await expect(appModal.getByText('v2', { exact: true })).toBeVisible();
       await expect(appModal.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0);
-      await appModal.getByRole('banner').getByRole('button', { name: 'Close', exact: true }).click();
+      await closeAppSheet(page, appModal);
       await page.unroute('**/effective?*');
       await page.unroute('**/effective:batch');
       await page.unroute(appApi);
