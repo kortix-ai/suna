@@ -943,20 +943,26 @@ dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
 
 A `/summarize` is a turn of its own, named by its compaction marker (the user
-message with the `compaction` part), as on OpenCode: the runtime relays
-`turn_begin` with the marker id when the compaction starts, and the turn end
-with the same id when it ends (`onTurnBegin`/`onTurnEnd`; the boot relays the
-end only after the begin settled). apps/api binds the id to the open
-`/summarize` turn and marks that turn durable (`log_durable_at`) when the log
-acknowledges the compaction record, whose `message_id` is the marker id
-(`markDurableTurns`, apps/api `session-log-ingest.ts`). A failure ends the turn
-`error` with pi's reason; a stop ends it `idle`. A refusal is a failure: on a
-context too short to compact (pi keeps the last `keepRecentTokens`), pi stores
-nothing and the turn ends `error` with `Compaction failed: Nothing to compact
-(session too small)`. The summary message on the wire carries the same error,
-and the daemon logs `[pi] compaction failed`. The session log has no record of
-it: pi stores no entry. An auto compaction (threshold, overflow) runs inside
-its prompt turn and relays no turn.
+message with the `compaction` part), as on OpenCode: when the compaction that
+`compact()` started begins, the runtime relays `turn_begin` with the marker id,
+and when it ends, the turn end with the same id (`onTurnBegin`/`onTurnEnd`).
+The boot relays the end after the begin settled, or after 5 s
+(`turnEndAfterBegin`). apps/api binds the id to the open `/summarize` turn and
+marks that turn durable (`log_durable_at`) when the log acknowledges the
+compaction record, whose `message_id` is the marker id (`markDurableTurns`,
+apps/api `session-log-ingest.ts`). A failure (the summary's model call) ends
+the turn `error` with pi's reason; a stop ends it `idle`. pi's two refusals
+end it `idle` too, because nothing changed: `Compaction failed: Nothing to
+compact (session too small)` (pi keeps the last `keepRecentTokens`) and
+`Compaction failed: Already compacted` (nothing after the last compaction).
+pi gives no code for them, so the runtime matches these exact strings
+(`PI_COMPACTION_REFUSALS`; the pi-harness tests fail when a pi bump rewords
+them). The summary message on the wire carries the refusal as its error, and
+the daemon logs `[pi] compaction failed`; the session log has no record (pi
+stores no entry). A Stop drops a `/summarize` still queued behind the running
+turn: no model call, no turn relay. An auto compaction (threshold, overflow)
+runs inside its prompt turn, and an extension's `ctx.compact()` is not a
+`/summarize`: neither relays a turn.
 
 Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
 block that another model wrote as visible assistant text. `pi/reasoning.ts`

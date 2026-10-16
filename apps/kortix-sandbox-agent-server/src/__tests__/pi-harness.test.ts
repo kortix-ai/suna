@@ -2737,7 +2737,7 @@ describe('pi compaction', () => {
     expect(stored.map((m) => m.message_id)).toEqual([marker])
   })
 
-  test('a /summarize pi refuses (a short context) ends its turn with the reason: the wire, the turn end and the log line name it', async () => {
+  test('pi refuses a /summarize on a short context: the turn ends idle, and the wire and the log line keep the reason', async () => {
     const { seen, hooks } = compactionRelays()
     const warn = spyOn(logger, 'warn')
     const r = await boot({ script: [{ text: 'first answer' }], hooks })
@@ -2746,15 +2746,78 @@ describe('pi compaction', () => {
     expect((await summarize(r, rt.rootId)).status).toBe(200)
     await waitFor(() => seen.ends.length === 2)
 
-    const page = (await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as WirePage
-    const [turn] = compactionTurns(page)
-    const marker = turn!.part.messageID as string
-    expect(turn!.summary.info.error).toMatchObject({ name: 'UnknownError', data: { message: expect.stringContaining('Nothing to compact') } })
+    const [refused] = compactionTurns((await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as WirePage)
+    const marker = refused!.part.messageID as string
+    expect(refused!.summary.info.error).toMatchObject({ name: 'UnknownError', data: { message: 'Compaction failed: Nothing to compact (session too small)' } })
     expect(seen.begins.at(-1)).toBe(marker)
-    expect(seen.ends.at(-1)).toEqual({ rootId: rt.rootId, messageId: marker, status: 'error', error: { name: 'UnknownError', message: expect.stringContaining('Nothing to compact') } })
+    expect(seen.ends.at(-1)).toEqual({ rootId: rt.rootId, messageId: marker, status: 'idle' })
     expect(piSessionLog(rt.sessionLogSnapshot()!).log.threads[0]!.messages.filter((m) => m.kind === 'compaction')).toEqual([])
     await waitFor(() => warn.mock.calls.some(([line, data]) => line === '[pi] compaction failed' && JSON.stringify(data).includes('Nothing to compact')))
     warn.mockRestore()
+  })
+
+  test('a second /summarize right after a compaction is refused as already compacted: the turn ends idle', async () => {
+    const { seen, hooks } = compactionRelays()
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, hooks })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    expect((await summarize(r, rt.rootId)).status).toBe(200)
+    await waitFor(() => seen.ends.length === 3)
+    expect((await summarize(r, rt.rootId)).status).toBe(200)
+    await waitFor(() => seen.ends.length === 4)
+    const turns = compactionTurns((await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as WirePage)
+    expect(turns).toHaveLength(2)
+    expect(turns[0]!.summary.info.error).toBeUndefined()
+    expect(turns[1]!.summary.info.error).toMatchObject({ data: { message: 'Compaction failed: Already compacted' } })
+    expect(seen.ends.slice(2)).toEqual([
+      { rootId: rt.rootId, messageId: turns[0]!.part.messageID, status: 'idle' },
+      { rootId: rt.rootId, messageId: turns[1]!.part.messageID, status: 'idle' },
+    ])
+  })
+
+  test('a /summarize whose model call fails ends its turn error with the reason', async () => {
+    const { seen, hooks } = compactionRelays()
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { status: 400, message: 'SUMMARY-REFUSED-BY-MODEL' }, { status: 400, message: 'SUMMARY-REFUSED-BY-MODEL' }], prepare: compactEverything, hooks })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    expect((await summarize(r, rt.rootId)).status).toBe(200)
+    await waitFor(() => seen.ends.length === 3)
+    const end = seen.ends.at(-1)!
+    expect(end).toEqual({ rootId: rt.rootId, messageId: seen.begins.at(-1)!, status: 'error', error: { name: 'UnknownError', message: end.error!.message } })
+    expect(end.error!.message).toStartWith('Compaction failed: Summarization failed: 400')
+    expect(end.error!.message).toContain('SUMMARY-REFUSED-BY-MODEL')
+  })
+
+  test('a compaction kortixd did not start for /summarize (an extension ctx.compact()) relays no turn', async () => {
+    const { seen, hooks } = compactionRelays()
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, hooks })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    // What pi's extension `ctx.compact()` calls: the session's own compact, reason `manual`.
+    await (rt as unknown as { pi: { session: { compact(): Promise<unknown> } } }).pi.session.compact()
+    const page = (await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(page)).toHaveLength(1)
+    expect(seen.begins).toHaveLength(2)
+    expect(seen.ends).toHaveLength(2)
+  })
+
+  test('Stop before a queued /summarize starts drops it: no model call, no turn', async () => {
+    const { seen, hooks } = compactionRelays()
+    const r = await boot({ script: [{ text: 'first answer' }, { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'never' }], prepare: compactEverything, hooks })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'ALPHA question')
+    expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'wait' }] })).status).toBe(204)
+    await waitForRunningTool(r, rt.rootId)
+    expect((await summarize(r, rt.rootId)).status).toBe(200)
+    const calls = gateway.requests.length
+    expect((await r.user(`/session/${rt.rootId}/abort`, { method: 'POST' })).status).toBe(200)
+    await waitFor(() => rt.idle())
+    expect(gateway.requests.length).toBe(calls)
+    expect(compactionTurns((await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as WirePage)).toEqual([])
+    expect(seen.begins).toHaveLength(2)
   })
 
   test('a stopped /summarize ends its turn idle, like a stopped prompt', async () => {

@@ -24,6 +24,7 @@ import {
   relayTurnAccepted,
   relayTurnBegin,
   relayTurnEnd,
+  turnEndAfterBegin,
 } from '../shared/turn-relay'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { scheduleHistoryBackfill } from '@/services/workspace-provider/git'
@@ -100,20 +101,17 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
   const relayedTurnEnds = new Set<string>()
-  // A turn's end is relayed after its begin: a refused `/summarize` ends within milliseconds, and a
-  // begin that lands after the end adopts a new turn that nothing ends.
-  const turnBegins = new Map<string, Promise<void>>()
+  const turnOrder = turnEndAfterBegin()
   const sessionTreeChanged = createSessionTreeWatch()
   const hooks: PiRuntimeHooks = {
     onTurnBegin: ({ rootId, messageId }) => {
-      turnBegins.set(messageId, relayTurnBegin(rootId, messageId))
+      turnOrder.begin(messageId, relayTurnBegin(rootId, messageId))
     },
     onTurnEnd: ({ rootId, messageId, status, error }) => {
       kortixEventBus().publishDaemon('kortix.turn', { runtime_session_id: rootId, verdict: status, error: error ?? null }, rootId)
-      const begun = turnBegins.get(messageId)
-      turnBegins.delete(messageId)
+      const begun = turnOrder.end(messageId)
       if (relayedTurnEnds.has(messageId)) return
-      void Promise.resolve(begun).then(() => relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error })).then((settled) => {
+      void begun.then(() => relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error })).then((settled) => {
         if (settled) relayedTurnEnds.add(messageId)
       })
     },

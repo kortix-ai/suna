@@ -181,6 +181,12 @@ export function parsePromptBody(raw: unknown): PromptInput {
 
 export type TurnOutcome = 'completed' | 'error' | 'aborted'
 
+/**
+ * pi's `compaction_end` text when `AgentSession.compact()` refuses (pi 1.2.0 gives no code, only
+ * these two messages). Exact strings: a pi bump that rewords them fails the pi-harness tests.
+ */
+const PI_COMPACTION_REFUSALS = new Set(['Compaction failed: Nothing to compact (session too small)', 'Compaction failed: Already compacted'])
+
 export interface TurnEnd {
   messageId: string
   status: 'idle' | 'error'
@@ -390,6 +396,12 @@ export class PiRuntime {
   private recoveryTried = false
   /** The compaction in flight: its summary message on the wire. */
   private compaction: KortixAssistantMessageInfo | null = null
+  /** A `/summarize` (`compact()`) is about to run its compaction: that compaction is a turn of its own. */
+  private summarizing = false
+  /** The marker of the `/summarize` compaction in flight: its turn's message id. */
+  private summarizeMarker: string | null = null
+  /** Each Stop counts here; a `/summarize` queued before a Stop does not run. */
+  private stops = 0
   private resetProgressWatchdog: (() => void) | null = null
   /**
    * The Kortix message id of each pi message object (root and children): pi
@@ -864,16 +876,21 @@ export class PiRuntime {
   compact(): void {
     if (!this.pi || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
     const session = this.pi.session
+    const stops = this.stops
     this.pendingTurns += 1
     this.queue = this.queue
       .then(() => {
+        // A Stop after the request drops it: no model call after a Stop.
+        if (this.stops !== stops) return
         // The summary reads every message in the context.
         this.unreadNoReply.clear()
+        this.summarizing = true
         return session.compact()
       })
       // The failure is on the wire (`compaction_end`); nothing else waits for it.
       .catch((err) => logger.warn('[pi] compaction failed', { err: err instanceof Error ? err.message : String(err) }))
       .finally(() => {
+        this.summarizing = false
         this.pendingTurns -= 1
       })
   }
@@ -938,6 +955,7 @@ export class PiRuntime {
 
   /** Stop the run in flight. Idempotent: aborting an idle agent is a no-op. */
   async abort(): Promise<boolean> {
+    this.stops += 1
     this.pi?.session.abortCompaction()
     if (!this.active) return false
     this.permissions.rejectAll()
@@ -1155,8 +1173,12 @@ export class PiRuntime {
       this.publish({ type: 'message.updated', properties: { sessionID, info: this.compaction } })
       // A `/summarize` (`compact()`, between turns) is a turn of its own, named by its marker: apps/api
       // binds the id to the turn and marks it durable when the log acknowledges the compaction.
-      // An auto compaction runs inside a prompt turn, which owns it.
-      if (event.reason === 'manual') this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: markerId })
+      // An auto compaction runs inside a prompt turn, which owns it; an extension's `ctx.compact()` has no turn.
+      if (this.summarizing && event.reason === 'manual') {
+        this.summarizing = false
+        this.summarizeMarker = markerId
+        this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: markerId })
+      }
       return
     }
     if (event.type !== 'compaction_end' || !this.compaction) return
@@ -1195,10 +1217,12 @@ export class PiRuntime {
     // P2.12: a compaction between turns goes to the session log now (the `/summarize` turn end
     // below flushes it too). One inside a turn waits for that turn's end.
     if (event.result && !this.active) void flushSessionLogJournal()
-    // The `/summarize` turn ends here. A refusal (a short context: "Nothing to compact") or a
-    // failure ends it with its reason, as a failed prompt does; a stop ends it idle.
-    if (event.reason === 'manual' && info.parentID) {
-      const failed = error?.name === 'UnknownError' ? { name: error.name, message: error.data.message } : undefined
+    // The `/summarize` turn ends here. A failure ends it with its reason, as a failed prompt does.
+    // A stop and pi's refusals (nothing stored: a no-op, not a failure) end it idle; the summary
+    // message above keeps the refusal's text for the client.
+    if (info.parentID && info.parentID === this.summarizeMarker) {
+      this.summarizeMarker = null
+      const failed = error?.name === 'UnknownError' && !PI_COMPACTION_REFUSALS.has(error.data.message) ? { name: error.name, message: error.data.message } : undefined
       this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: info.parentID, status: failed ? 'error' : 'idle', ...(failed ? { error: failed } : {}) })
     }
   }
