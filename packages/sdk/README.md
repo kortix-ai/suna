@@ -951,6 +951,8 @@ the root import — offers the same agents and models and sends the same pick.
 | `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
 | `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
 | `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
+| `sessionModelCandidates({ session, lastPromptModel, gatewayEnabled })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
+| `latestPromptModel(messages)` | transcript → the model of the newest user message that records one |
 
 The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
 never includes the ~7.6 MB models.dev snapshot, so a bundler that does not

@@ -9897,6 +9897,11 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recargar",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Administrar plan",
     "composerAttachments": {
+      "notAttached": "{count, plural, one {# archivo no se adjuntó} other {# archivos no se adjuntaron}}",
+      "refusedEmpty": "{name} está vacío.",
+      "refusedTooLarge": "{name} supera los 50 MiB.",
+      "refusedTooMany": "{name}: un mensaje admite hasta 20 archivos.",
+      "refusedTotalTooLarge": "{name}: un mensaje admite hasta 100 MiB de archivos.",
       "couldNotAttach": "No se pudieron adjuntar los archivos",
       "couldNotRetry": "No se pudo reintentar el archivo adjunto",
       "couldNotSend": "No se pudo enviar",

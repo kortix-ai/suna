@@ -5,7 +5,7 @@ description: "Generative UI for Kortix: the agent writes typed UI blocks (cards,
 
 # Generative UI (`genui`)
 
-**Status (2026-10-10): built on branch `genui`, not merged to `dev`.** SDK (`@kortix/sdk/genui`, `/genui/react`), runtime (`genui` flag, prompt on OpenCode and pi, channel guards), web, and mobile are implemented. Plans 1–5 are built. Open: plan-4 task 8 (full `pnpm test` attestation, browser checks), and plan-5 task 7's device check and OTA publish, which wait on Jay (`references/mobile-device-check.md`).
+**Status (2026-10-10): built on branch `genui`, not merged to `dev`.** SDK (`@kortix/sdk/genui`, `/genui/react`), runtime (`genui` flag, prompt on OpenCode and pi, channel guards), web, and mobile are implemented. Plans 1–5 are built. Open: plan-4 task 8 (browser checks), and plan-5 task 7's device check and OTA publish, which wait on Jay (`references/mobile-device-check.md`).
 
 Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). Valid: deepseek-v4.1-flash 100.0%, glm-5.3-flash 100.0%, gate 97.0%; kimi-k3 unavailable (503); Jay's 4 models untested. See `references/eval-results.md`.
 

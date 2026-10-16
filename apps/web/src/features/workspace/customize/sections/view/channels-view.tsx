@@ -27,8 +27,7 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
  *
  * Nesting a second `CapabilityPageShell` inside the page's would print a
  * second `<h1>` and a second `overflow-y-auto` inside the layout's one bounded
- * column, so this file must not reintroduce one; `channels-view.chrome.test.ts`
- * pins that.
+ * column, so this file must not reintroduce one.
  *
  * ## The redesign (this file's shape changed; the data layer did not)
  *
