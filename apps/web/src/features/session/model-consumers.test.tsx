@@ -143,6 +143,12 @@ mock.module('@/components/ui/command', () => ({
   CommandFooter: Slot,
   CommandShortcut: Slot,
 }));
+// The palette's theme preview reads the highlighted row from the cmdk store,
+// which the host-node slots above do not create. Nothing is highlighted.
+mock.module('cmdk', () => ({
+  useCommandState: <T,>(selector: (state: { value: string; search: string }) => T) =>
+    selector({ value: '', search: '' }),
+}));
 mock.module('@/components/ui/select', () =>
   Object.fromEntries(
     ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'].map((key) => [
