@@ -8,7 +8,7 @@
  * `helpers/fake-session-storage.ts`.
  */
 import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test';
-import { fromV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
+import { fromV1, modelView, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import {
   accountMembers,
   projectSessions,
@@ -36,9 +36,11 @@ mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => (
 
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
-const { captureSessionTranscriptMirror } = await import('../projects/lib/session-transcript-capture');
+const { backfillSessionTranscriptMirrorOnWake, captureSessionTranscriptMirror, resetTranscriptBackfillMemoForTests } = await import('../projects/lib/session-transcript-capture');
+const { claimSessionLog } = await import('../projects/session-log-restore');
 const { setTranscriptRewindMarker } = await import('../projects/lib/session-transcript-mirror');
 const { ingestSessionLogJournal, sessionLogContentHash, SESSION_LOG_CAPTURE_REV_LIMIT } = await import('../projects/session-log-ingest');
+const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 
 const OWNER = crypto.randomUUID();
 const ROOT = 'ses_capturelogroot0000000001';
@@ -355,7 +357,9 @@ describe('a box with a journal: journal rows always win', () => {
     const other = { ...(await fromMirror(session)).threads[0]!.messages[1]!, message_id: 'msg_journal_only', seq: 2 };
     expect((await ingestSessionLogJournal(scope(session), { generation: 0, puts: [{ rev: REV, message: other }], tombstones: [], threads: [] })).status).toBe(200);
     const rows = await logRows(session);
-    expect(rows.map((r) => r.id)).not.toContain('msg_000001');
+    // The provisional row is tombstoned and moved to seq -rev, never deleted.
+    expect(rows.find((r) => r.id === 'msg_000001')).toMatchObject({ seq: -2, rev: 2 });
+    expect(rows.find((r) => r.id === 'msg_000001')?.deletedAt).not.toBeNull();
     expect(rows.find((r) => r.seq === 2)).toMatchObject({ id: 'msg_journal_only', rev: REV });
 
     const clash = await ingestSessionLogJournal(scope(session), { generation: 0, puts: [{ rev: REV + 1, message: { ...other, message_id: 'msg_journal_two' } }], tombstones: [], threads: [] });
@@ -485,5 +489,196 @@ describe('a cursor on a tombstoned message', () => {
     } finally {
       await setFlag(false);
     }
+  });
+});
+
+describe('a converted log on a box that wakes with a journal (P3.3)', () => {
+  const ROOT2 = 'ses_capturelogroot0000000002';
+  const target = { provider: 'kortix', model: 'm' };
+  const toolInput = (rows: Array<{ id: string; record: Record<string, unknown> }>, id = 'msg_000001') =>
+    (rows.find((r) => r.id === id)?.record.blocks as Array<{ type: string; input?: unknown }>).find((b) => b.type === 'tool_call')?.input;
+  /** A root history with one bash call. */
+  const history = (): Msg[] => {
+    const call = plain(1);
+    call.parts.push({
+      id: 'prt_1_bash', sessionID: ROOT, messageID: 'msg_000001', type: 'tool', callID: 'call_1', tool: 'bash',
+      state: { status: 'completed', input: { command: 'ls', description: 'List files' }, output: 'a.txt', title: 'ls', metadata: { exit: 0, output: 'a.txt', description: 'List files' }, time: { start: 1, end: 2 } },
+    });
+    return [plain(0), call, plain(2), plain(3)];
+  };
+  /** A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without `input`), then the converter. */
+  const convertStripped = async (session: string, extra: Msg[] = []) => {
+    await capture(session, [...history(), ...extra]);
+    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
+    expect((await writeSessionLogFromMirror(session)).outcome).toBe('written');
+    const log = await logRow(session);
+    expect({ grade: log?.restoreGrade, counts: log?.gradeCounts }).toEqual({ grade: 'partial', counts: { tool_input: 1, cut_point: 0, attachment: 0 } });
+    expect(toolInput(await liveRows(session))).toBeNull();
+  };
+  /** What a box's daemon exports: its native store, `restore_grade: 'native'` without `grade_counts`. */
+  const nativeExport = (harness: 'opencode' | 'pi', rows: Msg[], root = ROOT): SessionLogJournalRequest => {
+    const log = fromV1({ session_id: 'ignored', root_id: root, rows: rows.map((m) => ({ runtime_session_id: root, info: { ...m.info, sessionID: root }, parts: m.parts })) as unknown as V1Row[] }, { harness });
+    const batch = journalOf(log);
+    const { grade_counts: _counts, ...session } = { ...batch.session!, restore_grade: 'native' as const, harness: { current: harness, history: [] } };
+    for (const put of batch.puts) put.message.producer = { harness, harness_version: '1', adapter_version: '1' };
+    return { ...batch, session };
+  };
+  /** The log a batch describes, as `modelView` reads it. */
+  const logOf = (batch: SessionLogJournalRequest): SessionLog =>
+    ({ ...batch.session, session_id: 'ignored', threads: batch.threads.map((t) => ({ ...t, messages: batch.puts.map((p) => p.message).filter((m) => m.thread_id === t.thread_id) })) }) as unknown as SessionLog;
+  /** The stored log as `modelView` reads it: the session record, the threads, the live rows in seq order. */
+  const storedLog = async (session: string): Promise<SessionLog> => {
+    const threads = await db.select({ id: sessionLogThreads.threadId, record: sessionLogThreads.record }).from(sessionLogThreads).where(eq(sessionLogThreads.sessionId, session));
+    const rows = (await liveRows(session)).sort((a, b) => a.seq - b.seq);
+    return { ...(await logRow(session))!.record, threads: threads.map((t) => ({ ...t.record, messages: rows.filter((r) => r.thread === t.id).map((r) => r.record) })) } as unknown as SessionLog;
+  };
+  const readLog = async (session: string) => {
+    const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/log?limit=500`, { headers: { Authorization: `Bearer ${ownerToken}` } });
+    expect(res.status).toBe(200);
+    return (await res.json()) as { session: Record<string, unknown>; messages: Array<{ message_id: string; in_context: boolean; producer: { harness: string } }> };
+  };
+  /** Grade `native`, no `grade_counts` in the column or the record. */
+  const expectNativeGrade = async (session: string) => {
+    const row = await logRow(session);
+    expect({ grade: row?.restoreGrade, counts: row?.gradeCounts ?? null, recordCounts: 'grade_counts' in (row?.record ?? {}) }).toEqual({ grade: 'native', counts: null, recordCounts: false });
+    expect((await readLog(session)).session.restore_grade).toBe('native');
+  };
+  /** Capture rows: never hard-deleted. Live ones and their `in_context` (column and record). */
+  const captureRows = async (session: string) => {
+    const rows = await db
+      .select({ id: sessionLogMessages.messageId, seq: sessionLogMessages.seq, rev: sessionLogMessages.rev, inContext: sessionLogMessages.inContext, deletedAt: sessionLogMessages.deletedAt, record: sessionLogMessages.record })
+      .from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, session), lt(sessionLogMessages.rev, LIMIT)))
+      .orderBy(asc(sessionLogMessages.messageId));
+    for (const r of rows) expect(r.record.in_context).toBe(r.inContext);
+    return rows;
+  };
+
+  test('OpenCode: the export replaces converted rows under the same ids; a row the store lacks stays visible, out of context; modelView equals the native view', async () => {
+    const session = await seedSession(project, OWNER);
+    // The mirror holds two messages the box no longer has.
+    await convertStripped(session, [plain(4), plain(5)]);
+
+    const batch = nativeExport('opencode', history());
+    expect((await ingestSessionLogJournal(scope(session), batch)).status).toBe(200);
+
+    await expectNativeGrade(session);
+    const rows = await liveRows(session);
+    expect(toolInput(rows)).toEqual({ command: 'ls', description: 'List files' });
+    expect(rows.map((r) => [r.id, r.seq, r.rev >= REV])).toEqual([
+      ['msg_000000', 1, true], ['msg_000001', 2, true], ['msg_000002', 3, true], ['msg_000003', 4, true], ['msg_000004', 5, false], ['msg_000005', 6, false],
+    ]);
+    expect((await captureRows(session)).map((r) => [r.id, r.inContext, r.deletedAt])).toEqual([['msg_000004', false, null], ['msg_000005', false, null]]);
+    expect((await readLog(session)).messages.filter((m) => m.producer.harness === 'kortix-v1-import').map((m) => [m.message_id, m.in_context])).toEqual([['msg_000004', false], ['msg_000005', false]]);
+    expect(modelView(await storedLog(session), target)).toEqual(modelView(logOf(batch), target));
+  });
+
+  test('a fresh box whose first journal batch is a prompt: every converted message stays visible (out of context) next to the new turn', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    // A new box with an empty store: a new OpenCode root, and the boot export had no message.
+    const batch = nativeExport('opencode', [plain(10), plain(11)], ROOT2);
+    expect((await ingestSessionLogJournal(scope(session), batch)).status).toBe(200);
+
+    await expectNativeGrade(session);
+    expect((await liveRows(session)).map((r) => r.id).sort()).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003', 'msg_000010', 'msg_000011']);
+    expect((await captureRows(session)).every((r) => r.deletedAt === null && r.inContext === false)).toBe(true);
+    const view = modelView(await storedLog(session), target);
+    expect(view[ROOT2]).toEqual(modelView(logOf(batch), target)[ROOT2]!);
+    expect(view[ROOT]).toEqual([]);
+  });
+
+  test('pi with a dump from before P2.5: `pi:` ids hide the converted duplicates of their thread (tombstones, never deletes); modelView equals the native view', async () => {
+    const session = await seedSession(project, OWNER);
+    await db.insert(sessionRuntimeProjections).values({
+      sessionId: session, projectId: project.project_id, accountId: project.account_id, externalId: session,
+      harness: 'pi', projectionEtag: 'etag', projection: {}, source: 'push', capturedAt: new Date(),
+    });
+    await convertStripped(session);
+
+    // `pi:<entry id>` ids, seq = the entry position (gaps; 2 and 4 collide with converted seqs).
+    const batch = nativeExport('pi', history());
+    for (const [i, put] of batch.puts.entries()) {
+      const id = `pi:e${i}`;
+      put.message = { ...put.message, message_id: id, seq: 2 * (i + 1), blocks: put.message.blocks.map((b, j) => ({ ...b, id: `${id}-n${j}` })) };
+    }
+    expect((await ingestSessionLogJournal(scope(session), batch)).status).toBe(200);
+
+    await expectNativeGrade(session);
+    expect((await liveRows(session)).map((r) => r.id)).toEqual(['pi:e0', 'pi:e1', 'pi:e2', 'pi:e3']);
+    expect(toolInput(await liveRows(session), 'pi:e1')).toEqual({ command: 'ls', description: 'List files' });
+    const hidden = await captureRows(session);
+    expect(hidden.map((r) => r.id).sort()).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003']);
+    for (const r of hidden) expect({ deleted: r.deletedAt !== null, seq: r.seq }).toEqual({ deleted: true, seq: -r.rev });
+    expect(modelView(await storedLog(session), target)).toEqual(modelView(logOf(batch), target));
+  });
+
+  test('a split first export whose second batch never arrives hides nothing it did not replace', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    const batch = nativeExport('opencode', history());
+    expect((await ingestSessionLogJournal(scope(session), { ...batch, puts: batch.puts.slice(0, 2) })).status).toBe(200);
+
+    const rows = await liveRows(session);
+    expect(rows.map((r) => [r.id, r.rev >= REV, r.record.in_context])).toEqual([
+      ['msg_000000', true, true], ['msg_000001', true, true], ['msg_000002', false, false], ['msg_000003', false, false],
+    ]);
+    expect((await logRows(session)).filter((r) => r.deletedAt !== null)).toEqual([]);
+  });
+
+  test('a first journal batch after a restore claim tombstones nothing and keeps the converted rows in context', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    // A restored box journals under the claimed generation: its native store was written from this log.
+    await claimSessionLog(scope(session));
+    const restored = nativeExport('opencode', [...history(), plain(4)]);
+    expect((await ingestSessionLogJournal(scope(session), { ...restored, generation: 1, puts: restored.puts.slice(-1) })).status).toBe(200);
+    expect((await liveRows(session)).map((r) => r.id)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003', 'msg_000004']);
+    expect((await captureRows(session)).every((r) => r.inContext && r.deletedAt === null)).toBe(true);
+  });
+
+  test('after a restore claim, a `pi:` reply (a restore writes them, e.g. a layout compaction) tombstones nothing', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    await claimSessionLog(scope(session));
+    const restored = nativeExport('pi', [...history(), plain(5)]);
+    const reply = { ...restored.puts.at(-1)!.message, message_id: 'pi:layout1', seq: 6 };
+    expect(reply.role).toBe('assistant');
+    expect((await ingestSessionLogJournal(scope(session), { ...restored, generation: 1, puts: [{ rev: REV, message: reply }] })).status).toBe(200);
+    expect((await liveRows(session)).map((r) => r.id)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003', 'pi:layout1']);
+    expect((await captureRows(session)).every((r) => r.inContext && r.deletedAt === null)).toBe(true);
+  });
+
+  test('an identical re-put (a restarted daemon) is acknowledged and leaves the row; a changed put updates it; a capture row is always replaced', async () => {
+    const session = await seedSession(project, OWNER);
+    await capture(session, range(0, 2));
+    // The capture row's own record, sent by the journal: the content hash is equal, the row is still replaced.
+    const [first] = (await logRows(session)) as Array<{ record: Record<string, unknown> }>;
+    const same = first!.record as unknown as SessionLogJournalRequest['puts'][number]['message'];
+    expect((await ingestSessionLogJournal(scope(session), { generation: 0, threads: [], tombstones: [], puts: [{ rev: REV, message: same }] })).status).toBe(200);
+    const replaced = (await db.select().from(sessionLogMessages).where(and(eq(sessionLogMessages.sessionId, session), eq(sessionLogMessages.messageId, 'msg_000000'))))[0]!;
+    expect(replaced.rev).toBe(REV);
+
+    const resend = await ingestSessionLogJournal(scope(session), { generation: 0, threads: [], tombstones: [], puts: [{ rev: REV + 10, message: same }] });
+    expect(resend).toEqual({ status: 200, body: { acked: [{ message_id: 'msg_000000', rev: REV + 10 }] } });
+    const kept = (await db.select().from(sessionLogMessages).where(and(eq(sessionLogMessages.sessionId, session), eq(sessionLogMessages.messageId, 'msg_000000'))))[0]!;
+    expect({ rev: kept.rev, updatedAt: kept.updatedAt }).toEqual({ rev: REV, updatedAt: replaced.updatedAt });
+
+    const changed = { ...same, blocks: [{ type: 'text', id: 'prt_0', text: 'edited' }] } as typeof same;
+    expect((await ingestSessionLogJournal(scope(session), { generation: 0, threads: [], tombstones: [], puts: [{ rev: REV + 11, message: changed }] })).status).toBe(200);
+    const updated = (await db.select().from(sessionLogMessages).where(and(eq(sessionLogMessages.sessionId, session), eq(sessionLogMessages.messageId, 'msg_000000'))))[0]!;
+    expect(updated.rev).toBe(REV + 11);
+  });
+
+  test('a box that keeps an old daemon: the wake backfill reads the stripped calls again and the converter writes them to the log', async () => {
+    const session = await seedSession(project, OWNER);
+    await convertStripped(session);
+    resetTranscriptBackfillMemoForTests();
+    await backfillSessionTranscriptMirrorOnWake(session, {
+      readMessages: async () => ({ opencodeSessionId: ROOT, payload: history(), headComplete: true, complete: true, children: [] }),
+    });
+    expect(toolInput(await liveRows(session))).toEqual({ command: 'ls', description: 'List files' });
+    expect((await logRow(session))?.restoreGrade).toBe('converted');
+    expect((await logRow(session))?.journalSeenAt).toBeNull();
   });
 });

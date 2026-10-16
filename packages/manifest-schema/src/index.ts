@@ -22,6 +22,7 @@ import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
 import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
 import { appReleaseInputFromBlock } from './app-config';
+import { validateManifestBodyV3 } from './index.v3';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -210,7 +211,23 @@ export {
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
+  CODEMODE_VALUES,
+  EXTENSION_HARNESSES,
+  KORTIX_SKILL_NAMES,
+  KORTIX_SKILL_PREFIX,
+  OPENCODE_BUILTIN_AGENTS_V3,
+  REGISTRY_NAME_MAX,
+  REGISTRY_NAME_RE,
 } from './constants';
+
+export {
+  type AgentBlockV3,
+  type AgentToolsV3,
+  type CodemodeV3,
+  type CommandV3,
+  type ExtensionV3,
+  type ManifestV3,
+} from './index.v3';
 
 // Re-exported for backward compatibility — the v2 types + validators lived
 // in this file until the `index.v2.ts` extraction (thermo-nuclear-review
@@ -221,6 +238,9 @@ export {
 export {
   type AgentModeV2,
   type WorkspaceModeV2,
+  type AgentWorkspaceV2,
+  type ProjectRepositoryResult,
+  resolveProjectRepository,
   type RuntimeV2,
   type PermissionActionV2,
   type PermissionRuleV2,
@@ -335,7 +355,9 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version !== undefined && version >= 2) {
+  if (version === 3) {
+    validateManifestBodyV3(parsed, format, issues);
+  } else if (version !== undefined && version >= 2) {
     validateManifestBodyV2(parsed, format, issues);
   } else {
     validateManifestBodyV1(parsed, format, issues);
@@ -385,9 +407,7 @@ function validateManifestBodyV2(
   validateImports(parsed.imports, 'imports', issues);
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
-  if (parsed.kortix_version === 3 && parsed.opencode !== undefined) {
-    issues.push({ path: 'opencode', message: 'v3 uses YAML-only agent configuration; remove the raw opencode config.', severity: 'error' });
-  } else validateOpenCode(parsed.opencode, 'opencode', issues);
+  validateOpenCode(parsed.opencode, 'opencode', issues);
   validateOpenCode(parsed.pi, 'pi', issues);
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
@@ -398,7 +418,7 @@ function validateManifestBodyV2(
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
   validateToolsV2(parsed.tools, 'tools', issues);
-  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
+  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
@@ -409,7 +429,7 @@ function validateManifestBodyV2(
  * `resolveManifestImports` — this only guards the list a root file declares, so
  * `kortix validate` and the editor schema flag a bad path before any read.
  */
-function validateImports(value: unknown, path: string, issues: ManifestIssue[]): void {
+export function validateImports(value: unknown, path: string, issues: ManifestIssue[]): void {
   if (value === undefined || value === null) return;
   if (!Array.isArray(value)) {
     issues.push({ path, message: '`imports` must be a list of paths', severity: 'error' });
@@ -692,7 +712,7 @@ function validateRoot(
     issues.push({
       path: 'kortix_version',
       message:
-        'kortix_version 2 and 3 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+        'kortix_version 2 and 3 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml, or run `kortix migrate --write` to convert it to a kortix_version 3 kortix.yaml.',
       severity: 'error',
     });
     return version;
@@ -700,7 +720,7 @@ function validateRoot(
   return version;
 }
 
-function validateProject(node: unknown, path: string, issues: ManifestIssue[]): void {
+export function validateProject(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return; // optional
   if (!isTable(node)) {
     issues.push({ path, message: '[project] must be a table.', severity: 'error' });
@@ -710,7 +730,7 @@ function validateProject(node: unknown, path: string, issues: ManifestIssue[]): 
   expectStringOrAbsent(node.description, `${path}.description`, issues);
 }
 
-function validateEnv(node: unknown, path: string, issues: ManifestIssue[]): void {
+export function validateEnv(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({ path, message: '[env] must be a table.', severity: 'error' });
@@ -770,7 +790,7 @@ function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]):
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+export function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
@@ -1034,7 +1054,7 @@ function validateAppReleaseConfig(block: AppBlockV2, where: string, issues: Mani
   }
 }
 
-function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+export function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node === undefined) return;
   if (!isTable(node)) {
     issues.push({ path, message: 'must be a map keyed by App slug.', severity: 'error' });
@@ -1342,7 +1362,7 @@ function validateEventTrigger(
   }
 }
 
-function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+export function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1554,7 +1574,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+export function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({

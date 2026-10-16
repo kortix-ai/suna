@@ -87,6 +87,10 @@ export interface ProjectSecret {
   }>;
   /** False when the value is shared with specific people and the caller is not one of them. */
   usable?: boolean;
+  /** Can the server decrypt the shared value? Absent when none is set, and on older servers. */
+  status?: 'ok' | 'undecryptable';
+  /** The caller's own override; `status` says whether the server can decrypt it. */
+  mine?: { active: boolean; updated_at: string; status?: 'ok' | 'undecryptable' } | null;
 }
 
 export interface ProjectSecretsResponse {
@@ -175,6 +179,10 @@ export interface ProjectSession {
   child_count?: number;
   /** Present only with `q` + `parent=root`. */
   search_match?: 'self' | 'child';
+  /** When you pinned / archived the session in your own list; null when not.
+   *  Absent for an agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
 }
 
 export interface ProjectSessionInitiator {
@@ -350,6 +358,9 @@ export interface ChangeRequest {
 
 export interface ChangeRequestsListResponse {
   change_requests: ChangeRequest[];
+  /** The next page's `cursor`; null on the last page. Absent on an API
+   *  older than KRTX-2316, which returned the whole list. */
+  next_cursor?: string | null;
 }
 
 export interface ChangeRequestDetailResponse {

@@ -660,21 +660,32 @@ describe('ActivityBurst', () => {
     expect(renderBurst([done('1', 'bash'), done('2', 'bash')])).toContain('Completed 2 steps');
   });
 
-  test('inside an opened "Worked for" fold, a burst drops its own summary and shows its steps', () => {
-    // The fold row already summarises the turn. A second "Completed 2 steps"
-    // row under it is a door in front of a door.
+  test('inside a "Worked for" fold, a burst is one closed line that names its work', () => {
+    // The fold reads like Codex: narration, one line of work, narration. The
+    // per-call rows and thoughts are one click down, not spread between sentences.
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <WorkFoldContext.Provider value>
-            <ActivityBurst blocks={blocksOf([done('1', 'bash'), done('2', 'read')])} sessionId="session-1" working={false} disableNavigation />
+            <ActivityBurst
+              blocks={blocksOf([
+                { id: 'r1', type: 'reasoning', text: 'checking', time: { start: 1, end: 2 } } as unknown as Part,
+                done('1', 'bash'),
+                done('2', 'read'),
+                tool('3', 'bash', { status: 'error', error: 'exit 1', input: {}, time: { start: 1, end: 2 } }),
+              ])}
+              sessionId="session-1"
+              working={false}
+              disableNavigation
+            />
           </WorkFoldContext.Provider>
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
-    expect(markup).not.toContain('Completed 2 steps');
-    expect(markup).toContain('data-state="open"');
-    expect(markup).toContain('data-status="done"');
+    expect(markup).toContain('Ran 2 commands, read 1 file · 1 failed');
+    expect(markup).not.toContain('Completed');
+    expect(markup).not.toContain('data-state="open"');
+    expect(markup).not.toContain('data-status="done"');
   });
 
   test('one ROW over three calls keeps the summary line', () => {

@@ -592,8 +592,11 @@ function createLiveStream(
           schedule();
 
           if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;
-          yieldedAt = t.now();
           await new Promise<void>((resolve) => t.setTimeout(resolve, 0));
+          // The budget starts when reading resumes. The host renders inside the
+          // yield; counting that wait as reading made every later event yield
+          // again, one event per render, so the transcript trailed the wire.
+          yieldedAt = t.now();
         }
 
         // Healthy stream ONLY if it actually delivered events. There used to

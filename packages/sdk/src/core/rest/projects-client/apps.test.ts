@@ -471,12 +471,12 @@ test('Apps have no budget: no App, create or update type carries one, and an alw
     app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
     url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
     active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
-    always_on: true, estimated_monthly_usd: 73.48, last_request_at: null, warnings: [],
+    always_on: true, estimated_monthly_usd: 39.95, last_request_at: null, warnings: [],
     created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
   };
   responses.push({ status: 201, body: app });
   const created = await createApp('project-1', { slug: 'demo', name: 'Demo' });
-  expect(created.estimated_monthly_usd).toBe(73.48);
+  expect(created.estimated_monthly_usd).toBe(39.95);
   expect(last().body).toEqual({ slug: 'demo', name: 'Demo' });
 });
 
@@ -507,4 +507,19 @@ test('createAppToken mints a sign-in token for the App naming the caller', async
 
   expect(await createAppToken('project-1', 'app-1')).toEqual(minted);
   expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/projects/project-1/apps/app-1/token' });
+});
+
+test('an external App: created and moved by external_url, carried on the App', async () => {
+  const external: Equal<App['external_url'], string | null | undefined> = true;
+  const createInput: Equal<CreateAppInput['external_url'], string | undefined> = true;
+  const updateInput: Equal<UpdateAppInput['external_url'], string | undefined> = true;
+  expect([external, createInput, updateInput]).toEqual([true, true, true]);
+  responses.push({ status: 201, body: { app_id: 'app-ext', external_url: 'https://grafana.example.com', capabilities: ['preview'] } });
+  const app = await createApp('project-1', { slug: 'grafana', name: 'Grafana', external_url: 'https://grafana.example.com' });
+  expect(calls[0]!.body).toEqual({ slug: 'grafana', name: 'Grafana', external_url: 'https://grafana.example.com' });
+  expect(app.external_url).toBe('https://grafana.example.com');
+  responses.push({ body: { app_id: 'app-ext', external_url: 'https://grafana.example.org' } });
+  await updateApp('project-1', 'app-ext', { external_url: 'https://grafana.example.org' });
+  expect(calls[1]!.method).toBe('PATCH');
+  expect(calls[1]!.body).toEqual({ external_url: 'https://grafana.example.org' });
 });

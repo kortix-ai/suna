@@ -10,7 +10,7 @@
  *   `planAnchorMessageId` (`plan`) and `getChildSessionId` lookups (`threads`).
  * - `sessionLogTurnSegments`: `segmentTurn` + `groupShowSegments`. `splitSessionLogTurnWork`: `splitTurnWork`.
  * - `sessionLogBurstSteps`: `mergeBurstSteps` + `stepLabel` + the host's `burstSteps`.
- * - `sessionLogBurstSummary`: `burstSummary`. `sessionLogBurstRunning`: the host's `burstIsRunning`.
+ * - `sessionLogBurstSummary`: `burstSummary`. `sessionLogBurstWorkLabel`: `burstWorkLabel`. `sessionLogBurstRunning`: the host's `burstIsRunning`.
  * - `sessionLogOpenCall`: the host's `openCall` (the open shape of a closure-rule call).
  * - `sessionLogShowGroupCall`: the host's `mergeShowParts`. `sessionLogAnsweredQuestionCall`: the
  *   host's synthetic answered question part.
@@ -20,7 +20,11 @@
  * - `sessionLogCallStatus`: the per-call status rule (new: a closure-rule block is open on a live turn).
  * - `sessionLogPromptMessage`: the host's synthetic row for a queued inbox prompt.
  * - `sessionLogRetrying`: `hasRetryingAssistantTurn` over a thread (the busy state's input).
+ * - `subAgentCalls`: `getChildSessionToolParts` (a sub-agent row's calls, from its thread).
  * - `sessionLogThreadMetrics`: a thread's cost, message counts and token totals (the context modal).
+ * - `isSessionLogRestoreNote`, `sessionLogHarnessSwitches`, `sessionLogRestoreNotice`,
+ *   `sessionLogReferencedTexts`, `sessionLogWithFullTexts`, `sessionLogFullTextAction`, `sessionLogFullTextPlan` (P5.6, `./history.ts`): a session's
+ *   history in a transcript, new (no v1 equivalent).
  * `getPermissionForTool(permissions, call.call_id)` and `getQuestionForTool` already take the
  * call id, so they serve a `ToolCallBlock` as they are.
  */
@@ -31,10 +35,12 @@ export {
   sessionLogBurstRunning,
   sessionLogBurstSteps,
   sessionLogBurstSummary,
+  sessionLogBurstWorkLabel,
   sessionLogOpenCall,
   sessionLogShowGroupCall,
   sessionLogTurnSegments,
   splitSessionLogTurnWork,
+  subAgentCalls,
   type SessionLogBurstStep,
   type SessionLogSegment,
   type SessionLogTurnWorkSplit,
@@ -47,8 +53,22 @@ export {
   type SessionLogTurnsOptions,
   type SessionLogCallStatus,
   type SessionLogCompaction,
+  type SessionLogContinuation,
   type SessionLogTurn,
   type SessionLogTurnError,
   type SessionLogTurnStatus,
 } from './turn';
 export { sessionLogThreadMetrics, type SessionLogThreadMetrics } from './metrics';
+export {
+  SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES,
+  isSessionLogRestoreNote,
+  sessionLogFullTextAction,
+  sessionLogFullTextPlan,
+  sessionLogHarnessSwitches,
+  sessionLogReferencedTexts,
+  sessionLogRestoreNotice,
+  sessionLogWithFullTexts,
+  type SessionLogHarnessSwitch,
+  type SessionLogReferencedText,
+  type SessionLogRestoreNotice,
+} from './history';

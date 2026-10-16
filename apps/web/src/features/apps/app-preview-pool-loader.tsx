@@ -6,7 +6,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { CLIPBOARD_IFRAME_ALLOW } from '@/lib/security/iframe-sandbox';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import type { App } from '@kortix/sdk';
-import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
+import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useEffect, useState } from 'react';
 
 import { ensureFrame, frameKey, framesKeepAlive, pruneFrames } from './app-preview-pool';
@@ -40,8 +40,7 @@ export function preloadApps(apps: App[], canAdmin: boolean): App[] {
  * project shell: the frames survive every page switch inside the project.
  */
 export function AppPreviewPoolLoader({ projectId }: { projectId: string }) {
-  const gate = useFeatureFlag(projectId, 'apps');
-  const apps = useProjectApps(gate.enabled ? projectId : null);
+  const apps = useProjectApps(projectId);
   const canAdmin = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_ADMIN).allowed === true;
   const [idle, setIdle] = useState(false);
 

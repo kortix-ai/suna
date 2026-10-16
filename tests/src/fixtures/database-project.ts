@@ -111,6 +111,15 @@ export async function createDatabaseProject(
   return { id: projectId, name: input.name };
 }
 
+/**
+ * Turn the Enterprise demo on or off for a fixture account. Enterprise is a
+ * feature layer (off | demo | licensed, #9999); trials no longer exist. The
+ * demo grants the five Enterprise features (SSO, SCIM, RBAC, audit, branding)
+ * on any billing plan (`enterpriseStateOf` in
+ * `apps/api/src/billing/services/resolve-billing.ts`). This writes the one
+ * column `PUT /v1/accounts/:id/iam/enterprise-demo` writes, without that
+ * route's sales email.
+ */
 export async function setDatabaseEnterpriseDemo(
   env: Env,
   accountId: string,
@@ -123,8 +132,7 @@ export async function setDatabaseEnterpriseDemo(
     await client.query(
       `INSERT INTO kortix.credit_accounts (account_id, demo_enterprise)
        VALUES ($1::uuid, $2)
-       ON CONFLICT (account_id)
-       DO UPDATE SET demo_enterprise = EXCLUDED.demo_enterprise`,
+       ON CONFLICT (account_id) DO UPDATE SET demo_enterprise = EXCLUDED.demo_enterprise`,
       [accountId, enabled],
     );
   } finally {
@@ -196,6 +204,98 @@ export async function seedDatabaseRunningFirstPrompt(
         }),
         JSON.stringify({ delivery_started_at: new Date().toISOString() }),
       ],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * A turn a member's prompt started and the control plane still holds as
+ * running: the prompt row that names the member, the box's `activeTurns`
+ * entry, and the ledger row. No sandbox runs, so the turn never ends by
+ * itself; `endDatabaseTurn` ends it.
+ */
+export async function seedDatabaseRunningTurn(
+  env: Env,
+  input: { projectId: string; sessionId: string; accountId: string; prompterUserId: string; messageId: string },
+  open: OpenProjectDb = openProjectDb,
+): Promise<{ turnToken: string }> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "seed a running turn for");
+  const turnToken = randomUUID();
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `INSERT INTO kortix.session_lifecycle_commands
+         (command_type, source, status, project_id, session_id, account_id,
+          actor_user_id, idempotency_key, payload, result)
+       VALUES ('continue_session', 'ui', 'succeeded', $1, $2, $3, $4, $5, $6::jsonb, '{}'::jsonb)`,
+      [
+        input.projectId,
+        input.sessionId,
+        input.accountId,
+        input.prompterUserId,
+        `prompt:${input.sessionId}:${input.messageId}`,
+        JSON.stringify({
+          text: "run the long task",
+          clientMessageId: randomUUID(),
+          wireMessageId: input.messageId,
+          bindTurnIdentity: true,
+          parts: [{ type: "text", text: "run the long task" }],
+        }),
+      ],
+    );
+    const activeTurns = {
+      [turnToken]: {
+        token: turnToken,
+        state: "active",
+        messageId: input.messageId,
+        runtimeSessionId: "ses_ke2e_root",
+        startedAtMs: Date.now(),
+      },
+    };
+    await client.query(
+      `INSERT INTO kortix.session_sandboxes (
+         sandbox_id, session_id, account_id, project_id, provider, status, config, metadata
+       ) VALUES ($1::uuid, $1::text, $2::uuid, $3::uuid, 'platinum', 'active', '{}'::jsonb, $4::jsonb)
+       ON CONFLICT (sandbox_id) DO UPDATE SET status = 'active', metadata = EXCLUDED.metadata`,
+      [input.sessionId, input.accountId, input.projectId, JSON.stringify({ activeTurns })],
+    );
+    await client.query(
+      `INSERT INTO kortix.session_turns
+         (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state, accepted_at)
+       VALUES ($1, $2::text, $2::uuid, $3::uuid, $4::uuid, 'ses_ke2e_root', $5, 'active', now())`,
+      [turnToken, input.sessionId, input.projectId, input.accountId, input.messageId],
+    );
+  } finally {
+    await client.end();
+  }
+  return { turnToken };
+}
+
+/**
+ * End a seeded turn the way an abort ends it: the ledger row closes as
+ * `failed` and keeps the stop stamp it holds, and the box drops the turn.
+ */
+export async function endDatabaseTurn(
+  env: Env,
+  input: { sessionId: string; turnToken: string },
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "end a turn for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `UPDATE kortix.session_turns
+          SET state = 'ended', end_reason = 'failed', ended_at = now(), updated_at = now()
+        WHERE turn_token = $1`,
+      [input.turnToken],
+    );
+    await client.query(
+      `UPDATE kortix.session_sandboxes
+          SET metadata = metadata #- ARRAY['activeTurns', $2::text]
+        WHERE session_id = $1`,
+      [input.sessionId, input.turnToken],
     );
   } finally {
     await client.end();

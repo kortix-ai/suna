@@ -39,7 +39,7 @@ export function registerAppCapabilityRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
-      const refusal = capabilityRefusal(c, 'member_tokens');
+      const refusal = capabilityRefusal(c, 'member_tokens', null, app);
       if (refusal) return refusal;
       // An agent session's credential names the human who launched it. A token
       // for that id would carry the human's role and groups, so the agent gets

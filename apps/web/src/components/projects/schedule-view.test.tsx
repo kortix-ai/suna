@@ -4,50 +4,46 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TriggerPauseSwitch } from './schedule-view';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { TriggerPauseButton } from './schedule-view';
 
 /**
- * Pins the access-control fix from Task 18's review: `TriggerActivationMenu`
- * (the pause-all-triggers kill switch, rehomed here from the deleted
- * `settings-view.tsx`, and named `TriggersActivationCard` while it was a
- * banner) must stay manager-only, the same gate the deleted
- * code used — NOT `ScheduleView`'s own `canWrite` (`project.trigger.create`,
- * a `MANAGER_EXTRAS`-tier leaf per `apps/api/src/iam/role-perms.ts`), which
- * would let editors see and toggle it too. `TriggerPauseSwitch` is the pure
- * half of that gate — see its own header comment for why the split exists
- * (no DOM testing library in this repo, so a pure `canManage` prop is the
- * only way to pin "an editor doesn't see this" under `renderToStaticMarkup`).
+ * Pins the access-control fix from Task 18's review: the pause-all control
+ * (`TriggerActivationMenu`, the kill switch rehomed here from the deleted
+ * `settings-view.tsx`) must stay manager-only — NOT `ScheduleView`'s own
+ * `canWrite` (`project.trigger.create`), which would let editors toggle it
+ * too. `TriggerPauseButton` is the pure half of that gate, testable under
+ * `renderToStaticMarkup` because it takes `canManage` as a prop.
  */
-describe('TriggerPauseSwitch — manager-only access gate', () => {
-  test('renders for a manager', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage paused={false} isPending={false} onToggle={() => {}} />,
-    );
-    expect(out).toContain('Pause all triggers');
-    expect(out).toContain('role="switch"');
+function render(props: Parameters<typeof TriggerPauseButton>[0]) {
+  return renderToStaticMarkup(
+    <TooltipProvider>
+      <TriggerPauseButton {...props} />
+    </TooltipProvider>,
+  );
+}
+
+describe('TriggerPauseButton — manager-only access gate', () => {
+  test('renders a labelled Pause all button for a manager', () => {
+    const out = render({ canManage: true, paused: false, isPending: false, onToggle: () => {} });
+    expect(out).toContain('Pause all');
+    expect(out).toContain('aria-pressed="false"');
   });
 
   test('does not render for an editor (or any non-manager)', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage={false} paused={false} isPending={false} onToggle={() => {}} />,
-    );
+    const out = render({ canManage: false, paused: false, isPending: false, onToggle: () => {} });
     expect(out).toBe('');
-    expect(out).not.toContain('Pause all triggers');
   });
 
-  test('reflects the paused state in its label', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage paused isPending={false} onToggle={() => {}} />,
-    );
-    expect(out).toContain('· paused');
-    expect(out).toContain('aria-checked="true"');
+  test('reads Resume all while the project is paused', () => {
+    const out = render({ canManage: true, paused: true, isPending: false, onToggle: () => {} });
+    expect(out).toContain('Resume all');
+    expect(out).toContain('aria-pressed="true"');
   });
 
-  test('a pending mutation disables the switch', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage paused={false} isPending onToggle={() => {}} />,
-    );
-    expect(out).toMatch(/role="switch"[^>]*disabled/);
+  test('a pending mutation disables the button', () => {
+    const out = render({ canManage: true, paused: false, isPending: true, onToggle: () => {} });
+    expect(out).toMatch(/<button[^>]*disabled/);
   });
 });
 
@@ -98,14 +94,18 @@ describe('ScheduleView page chrome', () => {
     code.indexOf('export function ScheduleView'),
   );
 
-  test('pause-all lives behind the header gear, not in the content flow', () => {
+  test('pause-all is a labelled header button, not a gear or a list banner', () => {
     expect(shellHeader).toContain('<TriggerActivationMenu projectId={projectId} />');
-    expect(menu).toContain("raw('text17c982d8eb68')");
-    expect(menu).toContain('GearSixIcon');
-    expect(menu).toContain('<PopoverTrigger asChild>');
-    // Never back in the list column as a banner.
+    expect(code).not.toContain('GearSixIcon');
+    expect(code).not.toContain('PopoverTrigger');
     expect(shellChildren).not.toContain('TriggerActivationMenu');
     expect(shellChildren).not.toContain('Pause all triggers');
+  });
+
+  test('the empty state has no brand mark and offers the create action', () => {
+    expect(code).not.toContain('PixelKortixMark');
+    expect(shellChildren).toContain('icon={LightningIcon}');
+    expect(shellChildren).toContain('onClick={() => openCreate()}');
   });
 
   // Who sees the gear is rendered per role in `trigger-activation-menu.test.tsx`.

@@ -16,6 +16,9 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
+// A person's pins and archive (consumed by account erasure and offboarding).
+export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
+
 // Session helpers (consumed by channels and provisioning).
 export {
   buildSessionSandboxEnvVars,
@@ -28,6 +31,7 @@ export {
   continueSession,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
+  retireWarmProjectSessions,
 } from './session-lifecycle';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
@@ -47,6 +51,12 @@ export {
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
+
+// Who may decide a gated connector call (consumed by ../setup-links/approval-app,
+// so the approval page refuses exactly whom the resolve route refuses).
+export { mayResolveApproval } from './lib/approval-authority';
+export { approvalCallerOf } from './lib/http-approval-caller';
+export { approvalTargetSession } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';
@@ -58,6 +68,10 @@ export { currentInstanceId } from './instance-scope';
 export { sessionAttachmentStore } from './lib/session-attachments';
 export { deleteManagedProjectRepo } from './lib/project-deletion';
 export { isAlreadyNotRunning } from './reaping/policy';
+
+// Offboarding pauses the reminders a departed member set (consumed by
+// ../accounts/core/offboard-member).
+export { disableRemindersAuthoredBy } from './lib/session-reminders';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
@@ -93,3 +107,12 @@ export { readStoredTranscriptWindow } from './session-log-read';
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 // The backfill of old sessions into the session log (consumed by workers/session-log-backfill-worker.ts).
 export { backfillSessionLogs, newBackfillState } from './session-log-backfill';
+
+// Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
+export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
+export { refreshIntervalMs, refreshMirror } from './git/mirror';
+export type { GitBackedProject } from './git/types';
+
+// Who may stop a running turn (consumed by channels/core/turn-stop.ts and
+// sandbox-proxy/forward/abort-authority.ts).
+export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';

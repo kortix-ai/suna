@@ -228,7 +228,7 @@ function GroupsList({
         {createAction}
       </div>
 
-      {upsellOnly ? <EnterpriseUpsell feature="groups" /> : null}
+      {upsellOnly ? <EnterpriseUpsell feature="groups" accountId={accountId} /> : null}
 
       {/* Search narrows a list. With no groups there is nothing to narrow. */}
       {settled && total > 0 ? (

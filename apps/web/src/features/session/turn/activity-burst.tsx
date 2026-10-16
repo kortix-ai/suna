@@ -27,6 +27,7 @@ import {
   sessionLogBurstRunning,
   sessionLogBurstSteps,
   sessionLogBurstSummary,
+  sessionLogBurstWorkLabel,
   type SessionLogBlock,
 } from '@kortix/sdk';
 import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -121,29 +122,31 @@ function ActivityBurstImpl({
 
   const steps = useMemo(() => sessionLogBurstSteps(blocks), [blocks]);
   const summary = useMemo(() => sessionLogBurstSummary(blocks), [blocks]);
-  // The summary goes through unchanged: `burstSummaryLabel` already ignores
-  // failures while running, so the "no failure count mid-flight" rule lives in
-  // one place rather than being re-applied by every caller.
-  const title = burstSummaryLabel(summary, running);
+  // Under an opened "Worked for" row the burst sits between two sentences of
+  // the agent's narration, so its closed line names the work ("Ran 9 commands,
+  // updated 2 files · 1 failed") instead of counting steps. Thoughts and the
+  // per-call rows stay one click down. Elsewhere the summary goes through
+  // unchanged: `burstSummaryLabel` already ignores failures while running.
+  const inFold = useContext(WorkFoldContext);
+  const title = useMemo(
+    () => (inFold ? sessionLogBurstWorkLabel(blocks) : burstSummaryLabel(summary, running)),
+    [inFold, blocks, summary, running],
+  );
 
   const bare = steps.length === 1 && summary.total === 1;
-  // Under an opened "Worked for" row the summary line is the second door to
-  // the same steps: hide it and keep the chain open. Rows keep their glyphs —
-  // `bare` stays the single-call rule.
-  const flat = useContext(WorkFoldContext);
   if (steps.length === 0) return null;
 
   return (
     <Disclosure
       // Bare is permanently open — there is no trigger to close it with.
-      open={bare || flat || open}
+      open={bare || open}
       onOpenChange={(next) => {
         userToggled.current = true;
         setOpen(next);
       }}
       className="group/burst flex-row"
     >
-      <BurstSummaryTrigger bare={bare || flat} running={running} title={title} />
+      <BurstSummaryTrigger bare={bare} running={running} title={title} />
 
       <DisclosureContent>
         {/*
@@ -159,7 +162,7 @@ function ActivityBurstImpl({
         <ToolActivateContext.Provider value={null}>
           {/* `mt-3` is the gap under the summary line. Bare has no summary
 					    line, so it has no gap to open. */}
-          <div className={bare || flat ? undefined : 'mt-3'}>
+          <div className={bare ? undefined : 'mt-3'}>
             <ChainOfThought>
               {/* A thought row IS a `ChainOfThoughtStep` — it owns the step's
 							    open state so it can open itself while the model thinks. */}

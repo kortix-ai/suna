@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../http/config';
+import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
 import {
   OPEN_BUNDLE_SHARE_MS,
-  OPEN_BUNDLE_TRANSCRIPT_TTL_MS,
+  OPEN_BUNDLE_TRANSCRIPT_LIMIT,
   claimOpenBundle,
+  heldSavedWindow,
+  holdSavedWindow,
   openBundleAudit,
+  openBundleHistory,
   openBundleQueue,
   openBundleTurn,
   openSessionBundle,
   resetSessionOpenBundles,
-  takeOpenBundleTranscript,
-  takeOpenBundleTranscriptAbsence,
 } from './open-bundle';
 
 const PID = 'P1';
@@ -148,6 +150,46 @@ describe('the session-open bundle coalescer', () => {
   });
 });
 
+describe('the saved-window hold — one slot per session, not one global slot', () => {
+  const envelopeFor = (root: string) =>
+    ({
+      available: true,
+      reason: null,
+      source: 'mirror',
+      complete: true,
+      captured_at: '2026-09-26T10:00:00Z',
+      opencode_session_id: root,
+      message_count: 0,
+      messages: [],
+    }) as unknown as SessionTranscriptSyncEnvelope;
+
+  test('a late hold for session B does not evict session A\'s hold', () => {
+    holdSavedWindow(PID, 'A', envelopeFor('ses_a'));
+    holdSavedWindow(PID, 'B', envelopeFor('ses_b'));
+    expect(heldSavedWindow(PID, 'A')?.opencode_session_id).toBe('ses_a');
+    expect(heldSavedWindow(PID, 'B')?.opencode_session_id).toBe('ses_b');
+  });
+
+  test('the bind asks the pointer only while its own hold lives, even after another session held', async () => {
+    holdSavedWindow(PID, SID, envelopeFor('ses_root'));
+    // Another session's connecting view settles late and holds its own window.
+    holdSavedWindow(PID, 'LATE', envelopeFor('ses_late'));
+    openSessionBundle(PID, SID);
+    await claimOpenBundle(PID, SID);
+    expect(requests[0]).toContain('transcript=0');
+  });
+
+  test('the cap keeps the hold map bounded: the oldest hold gives its slot', () => {
+    for (let i = 0; i < 16; i++) holdSavedWindow(PID, `s${i}`, envelopeFor(`ses_${i}`));
+    expect(heldSavedWindow(PID, 's0')?.opencode_session_id).toBe('ses_0');
+    holdSavedWindow(PID, 's16', envelopeFor('ses_16'));
+    expect(heldSavedWindow(PID, 's0')).toBeNull();
+    expect(heldSavedWindow(PID, 's16')?.opencode_session_id).toBe('ses_16');
+    // The surviving holds keep their envelopes.
+    expect(heldSavedWindow(PID, 's15')?.opencode_session_id).toBe('ses_15');
+  });
+});
+
 describe('the bundle legs — every one is tri-state', () => {
   test('turn projects onto a stamped observation, clocked from observed_at', async () => {
     openSessionBundle(PID, SID);
@@ -217,120 +259,26 @@ describe('the bundle legs — every one is tri-state', () => {
   });
 });
 
-describe('the transcript stash', () => {
-  test('is consumed ONCE — a second reader must go to the runtime', async () => {
+describe('the transcript leg', () => {
+  test('an open asks for the first saved window; a pointer-only open asks for none', async () => {
     openSessionBundle(PID, SID);
     await claimOpenBundle(PID, SID);
-    const first = takeOpenBundleTranscript(PID, SID);
-    expect(first?.source).toBe('mirror');
-    expect(first?.messages).toHaveLength(1);
-    expect(takeOpenBundleTranscript(PID, SID)).toBeNull();
-  });
-
-  test('outlives the claim window, because the mirror paints after the box wakes', async () => {
-    let now = 1_000;
-    openSessionBundle(PID, SID, { now: () => now });
-    await claimOpenBundle(PID, SID, now);
-    // The transcript hydrate runs once the OpenCode root is known, which on a
-    // cold box is 18.9-24.5s after the open. A 5s share window would throw the
-    // mirror away exactly when it is needed.
-    now += OPEN_BUNDLE_SHARE_MS + 1;
-    expect(takeOpenBundleTranscript(PID, SID, now)).not.toBeNull();
-  });
-
-  test('expires with the transcript TTL', async () => {
-    let now = 1_000;
-    openSessionBundle(PID, SID, { now: () => now });
-    await claimOpenBundle(PID, SID, now);
-    now += OPEN_BUNDLE_TRANSCRIPT_TTL_MS + 1;
-    expect(takeOpenBundleTranscript(PID, SID, now)).toBeNull();
-  });
-
-  test('a pointer-only bundle stashes nothing', async () => {
-    respond = () => ({
-      status: 200,
-      body: bundleBody({ transcript: { known: true, requested: false } }),
-    });
-    openSessionBundle(PID, SID, { transcript: 0 });
-    await claimOpenBundle(PID, SID);
-    expect(requests[0]).toContain('transcript=0');
-    expect(takeOpenBundleTranscript(PID, SID)).toBeNull();
-  });
-
-  test('an unavailable mirror stashes nothing — an empty thread is not an answer', async () => {
-    respond = () => ({
-      status: 200,
-      body: bundleBody({
-        transcript: {
-          known: true,
-          requested: true,
-          available: false,
-          reason: 'no server-side transcript has been captured for this session yet',
-          source: 'none',
-          complete: false,
-          captured_at: null,
-          opencode_session_id: null,
-          message_count: 0,
-          messages: [],
-        },
-      }),
-    });
-    openSessionBundle(PID, SID);
-    await claimOpenBundle(PID, SID);
-    expect(takeOpenBundleTranscript(PID, SID)).toBeNull();
-  });
-});
-
-describe('the transcript answer "no saved copy"', () => {
-  const unavailable = {
-    known: true,
-    requested: true,
-    available: false,
-    reason: 'no server-side transcript has been captured for this session yet',
-    source: 'none',
-    complete: false,
-    captured_at: null,
-    opencode_session_id: null,
-    message_count: 0,
-    messages: [],
-  };
-
-  test('is recorded once, so the mirror read need not ask the question again', async () => {
-    respond = () => ({ status: 200, body: bundleBody({ transcript: unavailable }) });
-    openSessionBundle(PID, SID);
-    await claimOpenBundle(PID, SID);
-    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(true);
-    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
-    expect(takeOpenBundleTranscript(PID, SID)).toBeNull();
-  });
-
-  test('is not recorded for a saved copy, a pointer-only read, or a failed bundle', async () => {
-    openSessionBundle(PID, SID);
-    await claimOpenBundle(PID, SID);
-    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
+    expect(requests[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
 
     resetSessionOpenBundles();
-    respond = () => ({
-      status: 200,
-      body: bundleBody({ transcript: { known: true, requested: false } }),
-    });
     openSessionBundle(PID, SID, { transcript: 0 });
     await claimOpenBundle(PID, SID);
-    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
-
-    resetSessionOpenBundles();
-    respond = () => ({ status: 500, body: { error: 'boom' } });
-    openSessionBundle(PID, SID);
-    await claimOpenBundle(PID, SID);
-    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
+    expect(requests[1]).toContain('transcript=0');
   });
 
-  test('expires with the transcript TTL', async () => {
-    let now = 1_000;
-    respond = () => ({ status: 200, body: bundleBody({ transcript: unavailable }) });
-    openSessionBundle(PID, SID, { now: () => now });
-    await claimOpenBundle(PID, SID, now);
-    now += OPEN_BUNDLE_TRANSCRIPT_TTL_MS + 1;
-    expect(takeOpenBundleTranscriptAbsence(PID, SID, now)).toBe(false);
+  test('the saved window is served by the history projection, for the row root only', async () => {
+    respond = () => ({
+      status: 200,
+      body: bundleBody({ session: { session_id: SID, runtime_session_id: 'ses_root' } }),
+    });
+    openSessionBundle(PID, SID);
+    const bundle = await claimOpenBundle(PID, SID);
+    expect(openBundleHistory(bundle!)?.messages).toHaveLength(1);
+    expect(openBundleHistory({ ...bundle!, session: { session_id: SID, runtime_session_id: 'ses_other' } } as never)).toBeNull();
   });
 });

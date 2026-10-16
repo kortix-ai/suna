@@ -5,21 +5,31 @@
  * `restore` calls it.
  *
  * HOW IT WRITES. Each thread becomes one OpenCode session file
- * (`{ info, messages: [{ info, parts }] }`) and goes through OpenCode's own
- * `opencode import`, which validates every row with OpenCode's decoders, keeps
- * every id, and keys the session to the project of the directory it runs in
- * (`cwd`: the project id is re-keyed to the box's). The restore first removes
+ * (`{ info, messages: [{ info, parts }] }`). One `opencode import` writes every
+ * message and part of every thread under a holding session: OpenCode's own
+ * decoders validate every row, every id is kept, and the session is keyed to the
+ * project of the directory it runs in (`cwd`: the project id is re-keyed to the
+ * box's). One transaction then gives each thread its session row (the holding
+ * row with the thread's id, parent, slug, title, permission, creation and update
+ * times), moves the thread's messages and parts to it, and deletes the holding
+ * row. A row of any table still keyed to the holding session fails the restore
+ * before that delete, which would cascade it away. The store's rows equal one
+ * import per thread except the write times (a message's `time_updated`, a part's
+ * times): `opencode-session-log-restore-one-import.test.ts` compares them row by row. It
+ * costs one process start instead of one per thread plus `--version` (about 2 s
+ * each on a 2-vCPU Platinum box). The restore first removes
  * every session from the store, so the store holds exactly the log. A running
  * OpenCode (a warm seed) needs no stop: it reads sessions from the store per
  * request, also a session it served before the restore
- * (`opencode-session-log-restore.test.ts` proves both).
+ * (`opencode-session-log-restore-golden-cases.test.ts` proves both).
  *
  * PRECONDITION (the caller's, P6.4). The removal deletes every session in the
  * store, work the journal has not sent included. Run the restore only when the
  * native store is missing or behind the log, and never while a turn runs. A
- * crash between the removal and the last import leaves an empty or partial
- * store: the caller treats a store without the pinned root, or without
- * `opencode-session-log.json` after a re-keying restore, as behind.
+ * crash between the removal and the end of the transaction leaves a store
+ * without the root (empty, or only the holding session): the caller treats a
+ * store without the pinned root, or without `opencode-session-log.json` after a
+ * re-keying restore, as behind.
  *
  * ONE ROOT. The root thread's id is the OpenCode session id, whatever harness
  * minted it (pi's `ses_pi…` is a valid OpenCode id), and the pin names it.
@@ -88,6 +98,7 @@ import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
 import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
+import { readOpencodeVersion } from './assets'
 import { OpencodeDb } from './opencode-db'
 import { writeOpenCodeSessionPin } from './runtime-state'
 import { openCodeSessionLog, openCodeSessionLogStatePath, renameRow, writeSeqState, type IdMap, type SeqState } from './session-log'
@@ -103,6 +114,8 @@ export interface OpenCodeRestoreTarget {
   sessionId: string
   /** The environment `opencode import` runs in; default the daemon's. */
   env?: NodeJS.ProcessEnv
+  /** The running OpenCode of `bin` (its internal URL): its health answers the version. Without it, or when it does not answer, `bin --version` runs. */
+  url?: string
   /** The seq file (`opencode-session-log.json`). */
   statePath?: string
   /** The bytes behind an attachment `ref`; null when they cannot be read. Without it, no attachment is restored. */
@@ -433,6 +446,50 @@ async function run(target: OpenCodeRestoreTarget, args: string[]): Promise<strin
   return stdout
 }
 
+/**
+ * Every session file into the store with ONE `opencode import` (see the header, HOW IT WRITES):
+ * the files' messages under a holding session, then one transaction moves each file's messages
+ * and parts to its own session row. `files[0]` is the root.
+ */
+async function importSessions(target: OpenCodeRestoreTarget, files: J[], dir: string): Promise<void> {
+  const hold = `ses_${sha256(`hold\0${files[0]!.info.id}`).slice(0, 26)}`
+  const path = join(dir, 'sessions.json')
+  writeFileSync(path, JSON.stringify({ info: { ...files[0]!.info, id: hold }, messages: files.flatMap((f) => f.messages) }), { mode: 0o600 })
+  const out = await run(target, ['--pure', 'import', path])
+  if (!out.includes(`Imported session: ${hold}`)) throw new Error(`opencode import did not import the restore: ${out.trim().slice(0, 500)}`)
+  const db = new Database(target.dbPath)
+  try {
+    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON')
+    const row = db.query('SELECT * FROM session WHERE id = ?').get(hold) as J | null
+    if (!row) throw new Error('opencode import wrote no session row')
+    const cols = Object.keys(row)
+    const insert = db.query(`INSERT INTO session (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+    const moveMessage = db.query('UPDATE message SET session_id = ?1 WHERE id = ?2 AND session_id = ?3')
+    const moveParts = db.query('UPDATE part SET session_id = ?1 WHERE message_id = ?2 AND session_id = ?3')
+    const tables = db
+      .query("SELECT m.name FROM sqlite_master m WHERE m.type = 'table' AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'session_id')")
+      .all() as Array<{ name: string }>
+    db.transaction(() => {
+      for (const { info, messages } of files) {
+        const own: J = { ...row, id: info.id, parent_id: info.parentID ?? null, slug: info.slug, title: info.title, permission: info.permission ? JSON.stringify(info.permission) : null, time_created: info.time.created, time_updated: info.time.updated }
+        insert.run(...cols.map((c) => own[c]))
+        for (const m of messages as J[]) {
+          moveMessage.run(info.id, m.info.id, hold)
+          moveParts.run(info.id, m.info.id, hold)
+        }
+      }
+      // A row still keyed to the holding session would go with it (ON DELETE CASCADE): refuse instead.
+      for (const { name } of tables) {
+        const left = (db.query(`SELECT count(*) AS n FROM "${name}" WHERE session_id = ?`).get(hold) as { n: number }).n
+        if (left) throw new Error(`the restore left ${left} row(s) of ${name} on the holding session`)
+      }
+      db.run('DELETE FROM session WHERE id = ?', [hold])
+    })()
+  } finally {
+    db.close()
+  }
+}
+
 /** Every session out of the store (cascading to messages, parts and todos), so it holds exactly the log. */
 function clearStore(dbPath: string): void {
   if (!existsSync(dbPath)) return
@@ -463,8 +520,16 @@ function writeTodos(dbPath: string, sessionId: string, todos: SessionLog['todos'
   }
 }
 
-/** `seqMax`: the highest seq the API holds per thread, tombstones included (P6.1 `seq_max`). */
-export async function restoreOpenCodeSessionLog(input: SessionLog, target: OpenCodeRestoreTarget, seqMax: Readonly<Record<string, number>> = {}): Promise<SessionLogRestoreResult> {
+/**
+ * `seqMax`: the highest seq the API holds per thread, tombstones included (P6.1 `seq_max`).
+ * `write` puts the session files into the cleared store; a test passes one import per file to compare.
+ */
+export async function restoreOpenCodeSessionLog(
+  input: SessionLog,
+  target: OpenCodeRestoreTarget,
+  seqMax: Readonly<Record<string, number>> = {},
+  write: (target: OpenCodeRestoreTarget, files: J[], dir: string) => Promise<void> = importSessions,
+): Promise<SessionLogRestoreResult> {
   const log = structuredClone(input)
   const root = log.threads.find((t) => t.parent_thread_id === null) ?? log.threads[0]
   if (!root) throw new Error('session log has no thread')
@@ -483,7 +548,7 @@ export async function restoreOpenCodeSessionLog(input: SessionLog, target: OpenC
   for (const row of rows) renameRow(row, (id) => toNative[id] ?? id, (id, msg) => toNative[`${msg}\0${id}`] ?? id)
   const rootId = toNative[root.thread_id] ?? root.thread_id
   if (rootId !== root.thread_id) logger.warn('[session-log] OpenCode rejects the root thread id; the restore re-keys it', { rootId })
-  const version = (await run(target, ['--version'])).trim() || 'unknown'
+  const version = (target.url && (await readOpencodeVersion(target.url))) || (await run(target, ['--version'])).trim() || 'unknown'
   const files = sessionFiles(log, rows, toNative, target.cwd, version)
 
   // The seq map (every log seq, each thread's next seq above the floor) and native id → log id
@@ -502,12 +567,7 @@ export async function restoreOpenCodeSessionLog(input: SessionLog, target: OpenC
   const dir = mkdtempSync(join(tmpdir(), 'kortix-oc-restore-'))
   try {
     clearStore(target.dbPath)
-    for (const [i, f] of files.entries()) {
-      const path = join(dir, `${i}.json`)
-      writeFileSync(path, JSON.stringify(f), { mode: 0o600 })
-      const out = await run(target, ['--pure', 'import', path])
-      if (!out.includes(`Imported session: ${f.info.id}`)) throw new Error(`opencode import did not import ${f.info.id}: ${out.trim().slice(0, 500)}`)
-    }
+    await write(target, files, dir)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

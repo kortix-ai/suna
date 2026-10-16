@@ -43,6 +43,10 @@ function writeConfig(apiBase: string): string {
   return path;
 }
 
+// What the mock's GET /keys reports as gateway_url. null = the API serves the
+// gateway itself (no LLM_GATEWAY_BASE_URL) — the case the CLI must resolve.
+let keysGatewayUrl: string | null = 'https://gw.test/v1/llm';
+
 // A routing policy the mock mutates on PUT so a set→get round-trip is observable.
 let routingProject = {
   defaultModel: null as string | null,
@@ -94,8 +98,20 @@ function startServer(): string {
       }
       if (url.pathname === `${base}/budgets` && req.method === 'GET') {
         return Response.json({
-          project_spend: { requests: 4, cost: 1.23 },
-          budgets: [],
+          project_spend: { requests: 4, cost: 280 },
+          budgets: [
+            {
+              budget_id: 'budget_1',
+              scope: 'project',
+              subject_user_id: null,
+              limit_usd: 20,
+              period: 'day',
+              action: 'block',
+              spent_usd: 15,
+              period_start: '2026-10-13T00:00:00.000Z',
+              resets_at: '2026-10-14T00:00:00.000Z',
+            },
+          ],
           members: [],
         });
       }
@@ -103,7 +119,7 @@ function startServer(): string {
         return Response.json({ ok: true });
       }
       if (url.pathname === `${base}/keys` && req.method === 'GET') {
-        return Response.json({ gateway_url: 'https://gw.test/v1/llm', keys: [] });
+        return Response.json({ gateway_url: keysGatewayUrl, keys: [] });
       }
       if (url.pathname === `${base}/keys` && req.method === 'POST') {
         return Response.json({
@@ -111,6 +127,7 @@ function startServer(): string {
           name: (entry.body as { name: string }).name,
           key_prefix: 'kortix_gw_ab',
           secret_key: 'kortix_gw_secretshownonce',
+          gateway_url: keysGatewayUrl,
         });
       }
       if (url.pathname === `${base}/overview`) {
@@ -153,7 +170,10 @@ function startServer(): string {
         });
       }
       if (url.pathname === `${base}/logs/req_1`) {
-        return Response.json({ log_id: '11111111-1111-4111-8111-111111111111', request_id: 'req_1' });
+        return Response.json({
+          log_id: '11111111-1111-4111-8111-111111111111',
+          request_id: 'req_1',
+        });
       }
       if (url.pathname === `${base}/playground` && req.method === 'POST') {
         const models = (entry.body as { models: string[] }).models;
@@ -205,6 +225,7 @@ describe('kortix gateway command', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-gw-'));
     requests = [];
     routingProject = { defaultModel: null, visionModel: null, defaultFallback: null, rules: [] };
+    keysGatewayUrl = 'https://gw.test/v1/llm';
     process.env = { ...ORIGINAL_ENV };
     for (const key of SANDBOX_ENV_OVERRIDES) delete process.env[key];
   });
@@ -247,6 +268,16 @@ describe('kortix gateway command', () => {
     });
   }, 15_000);
 
+  test('budget ls: each budget shows the spend of its own period and its reset, not the month', async () => {
+    const cfg = writeConfig(startServer());
+    const r = await runCli(['gateway', 'budget', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('PROJECT SPEND (this month)  28,000 credits · 4 req');
+    expect(r.stdout).toContain('1,500 of 2,000 credits/day project (block) resets 2026-10-14T00:00:00.000Z budget_1');
+    const raw = await runCli(['gateway', 'budget', '--json', '--project', PROJECT], cfg);
+    expect(JSON.parse(raw.stdout).budgets[0].limit_usd).toBe(20);
+  }, 15_000);
+
   test('budget set: PUTs limit/scope with the expected shape', async () => {
     const cfg = writeConfig(startServer());
     const r = await runCli(
@@ -255,7 +286,9 @@ describe('kortix gateway command', () => {
     );
     expect(r.code).toBe(0);
     const put = requests.find((q) => q.method === 'PUT');
+    // --limit is USD (the API field); the confirmation names both units.
     expect(put?.body).toMatchObject({ scope: 'project', limit_usd: 25, period: 'month' });
+    expect(r.stdout).toContain('budget set: 2,500 credits ($25.00)/month (project)');
   }, 15_000);
 
   test('keys new: POSTs the name and surfaces the one-time secret', async () => {
@@ -264,6 +297,56 @@ describe('kortix gateway command', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('kortix_gw_secretshownonce');
     expect(requests.find((q) => q.method === 'POST')?.body).toMatchObject({ name: 'ci-key' });
+  }, 15_000);
+
+  test('keys ls --json: an API-reported gateway_url passes through', async () => {
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'ls', '--json', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).gateway_url).toBe('https://gw.test/v1/llm');
+  }, 15_000);
+
+  test("keys ls --json: no API-reported URL falls back to the API host's own gateway mount (regression KRTX-1750)", async () => {
+    keysGatewayUrl = null;
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'ls', '--json', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.gateway_url).not.toBeNull();
+    expect(out.gateway_url).toBe(`${apiBase}/v1/llm`);
+  }, 15_000);
+
+  test('keys ls: prints the resolved gateway URL, never the string "null" (regression KRTX-1750)', async () => {
+    keysGatewayUrl = null;
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'ls', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`Gateway URL: ${apiBase}/v1/llm`);
+    expect(r.stdout).not.toContain('Gateway URL: null');
+  }, 15_000);
+
+  test('keys new: prints the full gateway URL the key works against (regression KRTX-1750)', async () => {
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(['gateway', 'keys', 'new', 'ci-key', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    // The complete OpenAI-compatible endpoint, not an unnamed "the gateway URL".
+    expect(r.stdout).toContain('https://gw.test/v1/llm/v1/chat/completions');
+  }, 15_000);
+
+  test('keys new --json: includes the gateway_url the new key works against', async () => {
+    keysGatewayUrl = null;
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(
+      ['gateway', 'keys', 'new', 'ci-key', '--json', '--project', PROJECT],
+      cfg,
+    );
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).gateway_url).toBe(`${apiBase}/v1/llm`);
   }, 15_000);
 
   test('usage: aggregates overview + breakdown', async () => {
@@ -280,6 +363,11 @@ describe('kortix gateway command', () => {
       `/v1/projects/${PROJECT}/gateway/breakdown?days=30`,
       `/v1/projects/${PROJECT}/gateway/overview?days=30`,
     ]);
+    expect(out.overview.total_cost).toBe(0.5);
+    const human = await runCli(['gateway', 'usage', '--project', PROJECT], cfg);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('10 req · 1 err · 50 credits · 100/50 tok');
+    expect(human.stdout).toMatch(/openai\/gpt-5\.5\s+7 req  42 credits/);
   }, 15_000);
 
   test('logs --limit N: the value is a query param, never mistaken for a logId (regression)', async () => {

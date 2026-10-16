@@ -2,7 +2,7 @@ import { type QueryClient } from '@tanstack/react-query';
 import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
 import { runtimeKeys, type Session } from '../use-opencode-sessions';
 import { qk } from '../query-keys';
-import { updateCachedProjectSessions } from '../session-cache-write';
+import { findCachedProjectSession, updateCachedProjectSessions } from '../session-cache-write';
 import type { RuntimeEvent } from './types';
 
 /**
@@ -267,4 +267,33 @@ export function patchKortixSessionTitleMirrors(
     });
     return changed ? next : rows;
   });
+}
+
+/**
+ * The Kortix session a notification about runtime session `runtimeId` names.
+ * A session stream's events carry the runtime's id (`ses_…`); the app's pages,
+ * links and "is this on screen" checks know only the Kortix `session_id`.
+ *
+ * - The global stream (no `streamSessionId`) has no mapping: the runtime id.
+ * - The stream's own runtime session: its Kortix id.
+ * - Another runtime session on the stream (a sub-agent): `null`, or the
+ *   stream's session with `subAgentAsStream`, for what blocks the turn.
+ */
+export function notificationSessionId(
+  queryClient: QueryClient,
+  projectId: string | null | undefined,
+  streamSessionId: string | null | undefined,
+  runtimeId: string,
+  subAgentAsStream = false,
+): string | null {
+  if (!streamSessionId) return runtimeId;
+  const row = projectId
+    ? findCachedProjectSession(
+        queryClient,
+        projectId,
+        (session) => (session.runtime_session_id ?? session.opencode_session_id) === runtimeId,
+      )
+    : undefined;
+  if (row) return row.session_id;
+  return subAgentAsStream ? streamSessionId : null;
 }

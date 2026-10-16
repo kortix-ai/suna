@@ -20,6 +20,8 @@ let appFields: Record<string, unknown> = {};
 let configuredSecrets: string[] = [];
 /** Slugs of the Apps created during the test (one id serves them all). */
 let created: string[] = [];
+/** The deployments route answers 400 app_config_invalid with these issues. */
+let configIssues: Array<{ path: string; message: string }> | null = null;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -171,6 +173,7 @@ function startServer(): string {
         return Response.json(artifact('archive', null));
       }
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'POST') {
+        if (configIssues) return Response.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: configIssues }, { status: 400 });
         return Response.json(deployment());
       }
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'GET') {
@@ -243,6 +246,7 @@ describe('kortix apps deploy (characterization)', () => {
     appFields = {};
     configuredSecrets = [];
     created = [];
+    configIssues = null;
   });
 
   afterEach(() => {
@@ -482,6 +486,28 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stderr).toContain('Dockerfile deployments require --command and --port');
   });
 
+  test('--manifest-app with a kortix.yaml that declares no kortix_version 2 or 3 is refused, never deployed as a static folder', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'apps:\n  db:\n    type: oci_image\n    image: busybox:1.36\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'deploy', '--manifest-app', 'db', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('kortix_version 2 or 3');
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  test('a refused release config prints every issue with its path', async () => {
+    writeFileSync(
+      join(tmp, 'kortix.yaml'),
+      'kortix_version: 2\napps:\n  db:\n    type: oci_image\n    image: busybox:1.36\n    command: [sh]\n    http_service:\n      internal_port: 8080\n',
+    );
+    configIssues = [{ path: 'http_service.internal_port', message: '8080 is reserved by the App supervisor.' }];
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'deploy', '--manifest-app', 'db', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('The release config is invalid');
+    expect(r.stderr).toContain('http_service.internal_port: 8080 is reserved by the App supervisor.');
+  });
+
   test('--manifest-app names a missing block loudly', async () => {
     writeFileSync(
       join(tmp, 'kortix.yaml'),
@@ -548,5 +574,18 @@ describe('kortix apps deploy (characterization)', () => {
     const r = await runCli(['apps', 'deploy', 'site', '--bogus', '--project', PROJECT], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Unknown deploy option --bogus');
+  });
+});
+
+describe('loadManifestApps reads kortix_version 3', () => {
+  test('a v3 manifest\'s apps blocks seed a deploy', async () => {
+    const { loadManifestApps } = await import('../commands/apps-deploy.ts');
+    const dir = mkdtempSync(join(tmpdir(), 'apps-v3-'));
+    try {
+      writeFileSync(join(dir, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: a\napps:\n  web:\n    path: web\nagents:\n  a: {}\n');
+      expect(loadManifestApps(dir)?.blocks).toEqual({ web: { path: 'web' } });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -161,6 +161,13 @@ mock.module('../session-turn-ledger', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
+  retireWarmProjectSessions: async () => { throw new Error('retireWarmProjectSessions: not used by the turn-stream routes'); },
+  continueSession: async () => { throw new Error('continueSession: not used by the turn-stream routes'); },
+  startSession: async () => { throw new Error('startSession: not used by the turn-stream routes'); },
+  buildContinueSessionCommandValues: async () => { throw new Error('buildContinueSessionCommandValues: not used by the turn-stream routes'); },
+  resolveProjectAutomationActor: async () => { throw new Error('resolveProjectAutomationActor: not used by the turn-stream routes'); },
+  enqueueContinueSessionCommand: async () => { throw new Error('enqueueContinueSessionCommand: not used by the turn-stream routes'); },
+  createSession: async () => { throw new Error('createSession: not used by the turn-stream routes'); },
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
   },
@@ -204,6 +211,11 @@ mock.module('../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
   },
+  // Other modules in this graph (sandbox-proxy/pre-prompt-env-sync, lib/session-create)
+  // import these; no prompt here carries text or a model.
+  extractPromptInfo: () => ({ text: null, model: null }),
+  TITLE_SOURCE_MAX_CHARS: 4000,
+  titleSourceForCreate: () => null,
 }));
 
 const triggerRunEnds: unknown[] = [];
@@ -485,6 +497,35 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     expect(await response.json()).toEqual({
       ok: true,
       initial_turn: null,
+      runtime_session_id: null,
+      opencode_session_id: null,
+    });
+  });
+
+  test('the claim carries the session contract as context beside the prompt', async () => {
+    sessionRow = session({
+      initial_prompt: 'build it',
+      initial_context: '--- session contract ---',
+    });
+    sandboxRow = { sandboxId: SANDBOX_ID, sessionId: SESSION_ID };
+    ownedRow = {
+      sessionId: SESSION_ID,
+      metadata: {
+        activeTurns: {
+          'turn-token-1': { state: 'delivering', messageId: 'msg_1' },
+        },
+      },
+    };
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      initial_turn: {
+        prompt: 'build it',
+        context: '--- session contract ---',
+        turn_token: 'turn-token-1',
+        message_id: 'msg_1',
+      },
       runtime_session_id: null,
       opencode_session_id: null,
     });

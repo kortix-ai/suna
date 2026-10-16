@@ -32,7 +32,6 @@ function failedWakeRow(providerError: string, extra: Record<string, unknown> = {
     status: 'error',
     config: {},
     metadata: {
-      ephemeralWakeAt: FAILED_AT.toISOString(),
       platinumCreateAttempt: 301,
       initStatus: 'failed',
       initFailedAt: FAILED_AT.toISOString(),

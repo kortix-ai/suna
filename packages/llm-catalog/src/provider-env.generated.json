@@ -1088,6 +1088,12 @@
     ]
   },
   {
+    "id": "sambanova",
+    "env": [
+      "SAMBANOVA_API_KEY"
+    ]
+  },
+  {
     "id": "tempr",
     "env": [
       "TEMPR_API_KEY"
@@ -1373,6 +1379,12 @@
     "id": "digitalocean",
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
+    ]
+  },
+  {
+    "id": "boundless",
+    "env": [
+      "BOUNDLESS_API_KEY"
     ]
   },
   {

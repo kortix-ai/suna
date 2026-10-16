@@ -40,8 +40,7 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  * connector connection, an unreadable repo.
  *
  * 409 rather than 5xx because none of those are server faults, and a 5xx on
- * every page view of a repo-less project is both wrong and noisy enough to fail
- * `08-accounts-project-access.spec.ts` (which asserts no 5xx on /v1/projects).
+ * every page view of a repo-less project is both wrong and noisy.
  */
 /**
  * `workspace_refresh` is a required field of the published
@@ -52,7 +51,10 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  */
 const NO_REFRESH = { status: 'skipped' as const };
 
-const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'`;
+// Not tombstoned too: a `genui` flag change deletes warm sessions with the
+// marker kept (retireWarmProjectSessions), and neither adoption CAS may revive one.
+const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'
+  AND coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
 // Platinum's default/home compute placement; unrelated to Kortix deployment geography.
 const PLATINUM_HOME_REGION = 'eu-west';
 const WARM_PROVISIONING_STATUSES = ['queued', 'branching', 'provisioning'] as const;

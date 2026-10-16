@@ -7,6 +7,7 @@ import {
   getSessionProviderSecretPool, setSessionProviderSecretPool,
   listSessionProviderSecretPools,
 } from './account-secret-resources';
+import type { SecretValueStatus } from './secrets';
 
 const calls: Array<{ url: string; method: string; body: unknown }> = [];
 beforeEach(() => {
@@ -107,4 +108,15 @@ test('a ChatGPT account whose login stopped working says since when', async () =
   const { secrets } = await listAccountSecretResources('account', 'project');
   const since: Array<string | null | undefined> = secrets.map((secret) => secret.needs_reauth_at);
   expect(since).toEqual(['2026-09-25T10:00:00.000Z', null]);
+});
+
+test('a provider key the server can no longer decrypt says so', async () => {
+  globalThis.fetch = mock(async () => new Response(JSON.stringify({ secrets: [
+    { secret_id: 'lost', label: 'Primary', active: true, status: 'undecryptable' },
+    { secret_id: 'fine', label: 'Backup', active: true, status: 'ok' },
+    { secret_id: 'older', label: 'Older server', active: true },
+  ] }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+  const { secrets } = await listAccountSecretResources('account');
+  const statuses: Array<SecretValueStatus | undefined> = secrets.map((secret) => secret.status);
+  expect(statuses).toEqual(['undecryptable', 'ok', undefined]);
 });

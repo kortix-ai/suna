@@ -21,6 +21,7 @@ import {
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command';
+import { useCommandState } from 'cmdk';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Kbd } from '@/components/ui/kbd';
@@ -30,10 +31,14 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
 import { useWorkspaceSearch } from '@/features/files';
-import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
+import {
+  ThemeSwatch,
+  useInterfaceTheme,
+  useInterfaceThemePreview,
+} from '@/features/layout/interface-theme';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
-import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import { openChangeRequestListQuery } from '@/features/project-files/hooks/use-change-requests';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
@@ -41,7 +46,9 @@ import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
+import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
@@ -82,6 +89,7 @@ import { copyToClipboard } from '@/lib/utils/clipboard';
 import { isDesktop } from '@/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
+import type { InterfaceThemeId } from '@/lib/interface-themes';
 import {
   type MenuItemDef,
   type SettingsTabId,
@@ -160,7 +168,6 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Copy } from '@/features/icon/icons/copy';
@@ -228,6 +235,29 @@ function sanitizeCmdkValue(value: string): string {
  * a user could not tell apart either. `command-palette-search.test.ts` asserts
  * it for every row the palette can render at once.
  */
+/**
+ * Previews the theme of the highlighted row (↑/↓ or pointer) on the whole
+ * page; Enter keeps it. Leaving theme rows, changing page or closing the
+ * palette (it unmounts with the dialog) puts the saved theme back.
+ */
+function ThemeHighlightPreview({
+  themeByValue,
+  onPreview,
+}: {
+  themeByValue: ReadonlyMap<string, InterfaceThemeId>;
+  onPreview: (id: InterfaceThemeId | null) => void;
+}) {
+  const highlighted = useCommandState((state) => state.value);
+  const themeId = themeByValue.get(highlighted) ?? null;
+
+  useEffect(() => {
+    onPreview(themeId);
+  }, [themeId, onPreview]);
+  useEffect(() => () => onPreview(null), [onPreview]);
+
+  return null;
+}
+
 export function buildPaletteSearchText(item: { label: string; keywords?: string }): string {
   return sanitizeCmdkValue(`${item.label} ${item.keywords ?? ''}`);
 }
@@ -580,15 +610,15 @@ function FileSearchPage({
  * The 'changes' page — this workspace's OPEN change requests, listed by number
  * and title, each opening its own detail dialog.
  *
- * **Why it reads the list itself instead of `useChangeRequests`.** That hook
- * takes its project id from `ProjectFilesContext`, and the palette mounts
+ * **Why it reads the list itself instead of `useOpenChangeRequestList`.** That
+ * hook takes its project id from `ProjectFilesContext`, and the palette mounts
  * outside every provider that supplies one (`AppHeader` and `ProjectShell`
  * both render it as a sibling of the file explorer, not inside it). Wrapping
  * the whole palette in a `ProjectFilesProvider` to satisfy one page would put
  * the file feature's context on every route the palette mounts on. Reading
- * `fetchChangeRequests` directly under the SAME query key the hook uses
- * (`changeRequestKeys.list`) costs nothing extra: the sidebar pill's cache
- * entry is reused when it is mounted, and populated for it when it is not.
+ * `openChangeRequestListQuery` (the hook's own key and read) costs nothing
+ * extra: the count badge's cache entry is reused when it is mounted, and
+ * populated for it when it is not.
  *
  * The detail dialog DOES need the context (it resolves the project id for the
  * manifest filename and every mutation), so it — and only it — is wrapped, in
@@ -605,8 +635,7 @@ function ChangeRequestsPage({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading } = useQuery({
-    queryKey: changeRequestKeys.list(projectId, 'open'),
-    queryFn: () => fetchChangeRequests(projectId, 'open'),
+    ...openChangeRequestListQuery(projectId),
     staleTime: 5_000,
   });
 
@@ -868,7 +897,13 @@ export function CommandPalette() {
   const sidebarOpen = sidebarCtx?.open ?? false;
   const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
-  const { theme, setTheme } = useTheme();
+  const {
+    selected: activeInterfaceTheme,
+    select: selectInterfaceTheme,
+    choice: themeChoice,
+  } = useInterfaceTheme();
+  const { preview: previewInterfaceTheme, commit: commitThemePreview } =
+    useInterfaceThemePreview(themeChoice);
   const activeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
@@ -968,14 +1003,13 @@ export function CommandPalette() {
   /**
    * The open change requests, for the count on the "Review changes" row.
    *
-   * Same query key the sidebar pill and the 'changes' page use
-   * (`changeRequestKeys.list`), so the three share one cache entry and one
+   * Same key and read as the count badge and the 'changes' page
+   * (`openChangeRequestListQuery`), so the three share one cache entry and one
    * request. `enabled` on `open` keeps it off every route the palette merely
    * mounts on.
    */
   const { data: openChangeRequests } = useQuery({
-    queryKey: changeRequestKeys.list(projectId ?? '', 'open'),
-    queryFn: () => fetchChangeRequests(projectId!, 'open'),
+    ...openChangeRequestListQuery(projectId ?? ''),
     enabled: open && !!projectId,
     staleTime: 5_000,
   });
@@ -1137,6 +1171,8 @@ export function CommandPalette() {
 
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
+  // Joined so the memo below keys on the answer, not on a fresh array.
+  const customizeTabs = useCapabilityAccess(projectId ?? undefined).tabs.join(' ');
   const allPaletteItems = useMemo(() => {
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
@@ -1163,6 +1199,10 @@ export function CommandPalette() {
       if (href?.includes('{projectId}')) {
         if (!projectId) continue;
         href = href.replaceAll('{projectId}', projectId);
+        // A Customize tab is offered only when `capabilityAccess()` lists it:
+        // the same rule the sidebar row and the tab bar follow.
+        const tab = activeCapabilityTab(href.split('?')[0]);
+        if (tab && !customizeTabs.split(' ').includes(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
         if (!selectedAccountId) continue;
@@ -1180,6 +1220,7 @@ export function CommandPalette() {
     sidebarCtx,
     projectFlags,
     tI18nComplete,
+    customizeTabs,
   ]);
 
   const filteredNavItems = useMemo(() => {
@@ -1882,12 +1923,27 @@ export function CommandPalette() {
   }, []);
 
   const handleSetTheme = useCallback(
-    (newTheme: string) => {
-      setTheme(newTheme);
+    (newTheme: InterfaceThemeId) => {
+      // `<html>` already shows `newTheme` (the highlighted row's preview):
+      // keep it, so no restore runs after the store write.
+      commitThemePreview();
+      selectInterfaceTheme(newTheme);
       close();
     },
-    [setTheme, close],
+    [commitThemePreview, selectInterfaceTheme, close],
   );
+
+  // cmdk's highlighted value (`buildPaletteSearchText`, trimmed and lowercased
+  // the way cmdk stores it) -> the theme that row picks.
+  const themeByHighlightValue = useMemo(() => {
+    const map = new Map<string, InterfaceThemeId>();
+    for (const item of filteredNavItems) {
+      if (item.kind === 'theme' && item.themeValue) {
+        map.set(buildPaletteSearchText(item).trim().toLowerCase(), item.themeValue);
+      }
+    }
+    return map;
+  }, [filteredNavItems]);
 
   const handleSetWallpaper = useCallback(
     (newWallpaperId: string) => {
@@ -2341,7 +2397,14 @@ export function CommandPalette() {
         />
 
         <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)]">
-          <CommandList className="max-h-none overflow-visible">
+          {/* `scroll-my-10` = the fade's `h-10`: cmdk scrolls the highlighted
+              row with `scrollIntoView({ block: 'nearest' })`, which stops at
+              the edge — under the fade. The margin stops it clear of it. */}
+          <CommandList className="max-h-none overflow-visible [&_[cmdk-item]]:scroll-my-10">
+            <ThemeHighlightPreview
+              themeByValue={themeByHighlightValue}
+              onPreview={previewInterfaceTheme}
+            />
             {page === 'root' && (
               <>
                 {!hasQuery && (
@@ -2609,7 +2672,8 @@ export function CommandPalette() {
                                 ? tHardcodedUi.raw('i18nComplete.text5f7c8d97889a')
                                 : tHardcodedUi.raw('i18nComplete.text9b21dbb9a947')
                               : item.label;
-                          const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
+                          const isActiveTheme =
+                            item.kind === 'theme' && activeInterfaceTheme === item.themeValue;
                           const isActiveWallpaper =
                             item.kind === 'wallpaper' && activeWallpaperId === item.wallpaperValue;
                           const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
@@ -2625,6 +2689,9 @@ export function CommandPalette() {
                             >
                               {item.id === 'new-session' && isCreating ? (
                                 <Loading className="text-muted-foreground size-4 shrink-0" />
+                              ) : item.kind === 'theme' && item.themeValue ? (
+                                // The same live palette preview the Appearance tab shows.
+                                <ThemeSwatch value={item.themeValue} choice={themeChoice} />
                               ) : (
                                 <SidebarIcon className="size-4" />
                               )}

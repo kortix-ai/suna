@@ -774,7 +774,7 @@ test('session delete releases references', async () => {
       accountId: scope.accountId,
       userId: scope.userId,
     }),
-  ).toEqual({ ok: true });
+  ).toMatchObject({ ok: true });
   expect(await referenceCount(only)).toBe(0);
   expect(await referenceCount(shared)).toBe(1);
 

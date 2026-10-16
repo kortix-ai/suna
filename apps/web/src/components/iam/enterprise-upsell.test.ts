@@ -1,8 +1,8 @@
 // The IAM surfaces (Audit, SSO/SCIM) are enterprise-gated: non-entitled
-// accounts must see the upsell card — with the "Request a demo" CTA —
-// instead of the feature. The CTA opens the in-app demo-request modal
-// (useRequestDemo) rather than navigating out to the marketing page. Guards
-// the page wiring so a refactor can't silently un-gate a tab.
+// accounts must see the upsell card instead of the feature. An owner or admin
+// turns on the Enterprise demo in one click; anyone talks to sales in one
+// click, with no form. Guards the page wiring so a refactor can't silently
+// un-gate a tab.
 //
 // Roles is deliberately NOT one of them (its `roles` copy variant was
 // deleted 2026-08-18 — written, never rendered), and neither is Groups: both
@@ -18,10 +18,15 @@ const upsellSource = readFileSync(join(dir, 'enterprise-upsell.tsx'), 'utf8');
 const pageSource = readFileSync(join(dir, '../../features/accounts/hub/account-hub-content.tsx'), 'utf8');
 
 describe('EnterpriseUpsell component', () => {
-  test('CTA opens the in-app demo-request modal', () => {
-    expect(upsellSource).toContain('useRequestDemo');
-    expect(upsellSource).toContain('openDemo(');
-    expect(upsellSource).toContain('Request a demo');
+  test('a billing manager turns on the demo; everyone else is told who can, and anyone talks to sales', () => {
+    expect(upsellSource).toContain('useEnterpriseDemo(accountId)');
+    expect(upsellSource).toContain('demo.set(true)');
+    expect(upsellSource).toContain("t('demoTurnOnEnterprise')");
+    expect(upsellSource).toContain("manager ? t('upsellDemoHint') : t('upsellAskManager')");
+    expect(upsellSource).toContain('canManageBilling(');
+    // One click, no demo-booking form.
+    expect(upsellSource).toContain('useTalkToSales(accountId)');
+    expect(upsellSource).not.toContain('useRequestDemo');
   });
 
   test('covers the gated surfaces, Roles included', () => {
@@ -55,7 +60,7 @@ describe('account page gates each IAM surface behind the entitlement', () => {
       /activeSection === 'groups' && sectionVisible\.groups \?[\s\S]*?<GroupsTab/,
     );
     expect(pageSource).toMatch(/<GroupsTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
-    expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" />');
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" accountId={account.account_id} />');
   });
 
   test('roles tab: no entitlement gate, passed rbacEnabled to gate its own controls', () => {
@@ -63,13 +68,13 @@ describe('account page gates each IAM surface behind the entitlement', () => {
       /activeSection === 'roles' && sectionVisible\.roles \?[\s\S]*?<RolesTab/,
     );
     expect(pageSource).toMatch(/<RolesTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
-    expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" />');
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" accountId={account.account_id} />');
   });
 
   test('audit tab: auditAccess entitlement or upsell', () => {
     expect(pageSource).toContain('const auditEnabled = !!entitlements?.auditAccess');
     expect(pageSource).toMatch(/auditEnabled \? \(\s*<AuditTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="audit" />');
+    expect(pageSource).toContain('<EnterpriseUpsell feature="audit" accountId={account.account_id} />');
   });
 
   test('identity section: sso/scim entitlement or upsell (cards no longer just hidden)', () => {
@@ -77,13 +82,13 @@ describe('account page gates each IAM surface behind the entitlement', () => {
     // it between the entitlement check and <SsoCard> while still asserting
     // SsoCard renders before ScimCard.
     expect(pageSource).toMatch(/enterpriseIdentityEnabled \? \([\s\S]*?<SsoCard[\s\S]*?<ScimCard/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="identity" />');
+    expect(pageSource).toContain('<EnterpriseUpsell feature="identity" accountId={account.account_id} />');
   });
 
   test('branding pane: branding entitlement or upsell', () => {
     expect(pageSource).toContain('const brandingEnabled = !!entitlements?.branding');
     expect(pageSource).toMatch(/brandingEnabled \? \(\s*<BrandingTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="branding" />');
+    expect(pageSource).toContain('<EnterpriseUpsell feature="branding" accountId={account.account_id} />');
   });
 
   test('no upsell flash while entitlements load', () => {
@@ -127,26 +132,10 @@ describe('account page rail groups every access surface under Access', () => {
     }
   });
 
-  test('the enterprise-demo toggle moved OUT of Identity and INTO Settings (tucked away, not headline)', () => {
-    const identityStart = pageSource.indexOf("activeSection === 'identity' && canWriteAccount");
-    const identityEnd = pageSource.indexOf('section-panes:end', identityStart);
-    const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
-    const identityBody = pageSource.slice(identityStart, Math.min(identityEnd, settingsStart));
-    expect(identityBody).not.toContain('EnterpriseDemoCard');
-
-    const settingsEnd = pageSource.indexOf('section-panes:end', settingsStart);
-    const settingsBody = pageSource.slice(settingsStart, settingsEnd);
-    expect(settingsBody).toContain('EnterpriseDemoCard');
-    // Placed above Danger zone, not at the top — tucked away.
-    const demoIdx = settingsBody.indexOf('EnterpriseDemoCard');
-    const dangerIdx = settingsBody.indexOf('Danger zone');
-    expect(demoIdx).toBeGreaterThan(-1);
-    expect(dangerIdx).toBeGreaterThan(-1);
-    expect(demoIdx).toBeLessThan(dangerIdx);
-  });
-
-  test('the demo card + upsell are skipped entirely when a self-host Enterprise license already forces entitlements on', () => {
-    expect(pageSource).toContain('accountStateQuery.data?.enterprise_license_available');
+  // The Enterprise row moved to Billing (2026-10-15): the demo, the license
+  // and the plan are read and managed in one place.
+  test('the Enterprise access row is not in Settings or Identity', () => {
+    expect(pageSource).not.toContain('EnterpriseAccessRow');
   });
 
   /**

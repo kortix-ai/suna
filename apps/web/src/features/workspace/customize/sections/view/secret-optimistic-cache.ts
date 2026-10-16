@@ -64,6 +64,8 @@ export function applyOptimisticProjectSecretSave(
     strategy_locked: existing?.strategy_locked ?? false,
     last_rotated_at: existing?.last_rotated_at ?? null,
     requires_rotation: input.valueChanged ? false : (existing?.requires_rotation ?? false),
+    // A new value is one Kortix just encrypted; without one the stored value keeps its status.
+    status: input.valueChanged ? 'ok' : existing?.status,
   };
   return replaceOrAppend(cache, input.identifier, nextSecret);
 }

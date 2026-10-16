@@ -26,9 +26,9 @@ import { getCreditAccount } from '../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../billing/services/account-write-owner';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
-/** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
-const setDemoEnterprise = (accountId: string, enabled: boolean) =>
-  applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
+/** Test fixture: put the account on, or take it off, the Enterprise plan through the ownership chokepoint. */
+const setEnterprisePlan = (accountId: string, tier: string) =>
+  applyAdminOverride(accountId, { tier }, { action: 'test.enterprise_plan.set' });
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -40,6 +40,12 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 // approval-authority rules, not JWT verification.
 const HUMAN_SESSION = 'approvals-human-session';
 const READER_SESSION = 'approvals-reader-session';
+// KRTX-1724: the shared-session cast. A member launches the session and shares
+// it with the project, a second member prompts the turn that raises the call,
+// and a project manager oversees it.
+const LAUNCHER_SESSION = 'approvals-launcher-session';
+const PROMPTER_SESSION = 'approvals-prompter-session';
+const MANAGER_SESSION = 'approvals-manager-session';
 mock.module('../shared/jwt-verify', () => ({
   verifySupabaseJwt: async (token: string) => {
     if (token === HUMAN_SESSION) {
@@ -52,6 +58,10 @@ mock.module('../shared/jwt-verify', () => ({
         email: 'approvals-reader@example.test',
         payload: {},
       };
+    }
+    const shared = sharedCast[token];
+    if (shared) {
+      return { ok: true, userId: shared, email: `${token}@example.test`, payload: {} };
     }
     return { ok: false, reason: 'invalid-signature' as const };
   },
@@ -72,7 +82,24 @@ let humanToken = HUMAN_SESSION;
 let humanUserId = '';
 let readOnlyToken = READER_SESSION;
 let readOnlyUserId = '';
-let priorDemoEnterprise = false;
+let priorTier = 'free';
+const SHARED_SESSION = crypto.randomUUID();
+// The same launcher, but the session came from an API token (the CLI, a
+// service account): `origin: 'backend'`, so only managers decide.
+const BACKEND_SESSION = crypto.randomUUID();
+const launcherUserId = crypto.randomUUID();
+const prompterUserId = crypto.randomUUID();
+const managerUserId = crypto.randomUUID();
+const sharedCast: Record<string, string> = {
+  [LAUNCHER_SESSION]: launcherUserId,
+  [PROMPTER_SESSION]: prompterUserId,
+  [MANAGER_SESSION]: managerUserId,
+};
+const SHARED_CAST_ROLES: Array<[string, 'member' | 'manager']> = [
+  [launcherUserId, 'member'],
+  [prompterUserId, 'member'],
+  [managerUserId, 'manager'],
+];
 
 beforeAll(async () => {
   await db.execute(
@@ -134,17 +161,71 @@ beforeAll(async () => {
     projectRole: 'member',
   });
   readOnlyUserId = readOnlyUserIdCandidate;
+  for (const [userId, projectRole] of SHARED_CAST_ROLES) {
+    await insertIntoView(db, accountMembers, {
+      accountId: ctx.accountId,
+      userId,
+      accountRole: 'member',
+    });
+    await insertIntoView(db, projectMembers, {
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      userId,
+      projectRole,
+    });
+  }
+  // Launched by a plain member and shared with the whole project.
+  await db.insert(projectSessions).values({
+    sessionId: SHARED_SESSION,
+    accountId: ctx.accountId,
+    projectId: ctx.projectId,
+    branchName: 'approvals-shared-test',
+    createdBy: launcherUserId,
+    visibility: 'project',
+  });
+  await db.insert(projectSessions).values({
+    sessionId: BACKEND_SESSION,
+    accountId: ctx.accountId,
+    projectId: ctx.projectId,
+    branchName: 'approvals-backend-test',
+    createdBy: launcherUserId,
+    origin: 'backend',
+    visibility: 'project',
+  });
   // The full-trail assertions below need the auditAccess entitlement; flip the
   // enterprise demo on for the suite (restored in afterAll). The unentitled
   // contract has its own dedicated test that toggles it off.
-  priorDemoEnterprise = (await getCreditAccount(ctx.accountId))?.demoEnterprise ?? false;
-  await setDemoEnterprise(ctx.accountId, true);
+  priorTier = (await getCreditAccount(ctx.accountId))?.tier ?? 'free';
+  await setEnterprisePlan(ctx.accountId, 'enterprise');
 }, 30_000);
 
 afterAll(async () => {
   for (const id of execIds)
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));
+  await db
+    .delete(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.sessionId, SHARED_SESSION));
+  await db
+    .delete(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.sessionId, BACKEND_SESSION));
+  await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, SHARED_SESSION));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, SHARED_SESSION));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, BACKEND_SESSION));
+  if (ctx) {
+    for (const [userId] of SHARED_CAST_ROLES) {
+      await deleteFromView(
+        db,
+        projectMembers,
+        sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${userId}`,
+      );
+      await deleteFromView(
+        db,
+        accountMembers,
+        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${userId}`,
+      );
+    }
+  }
   await db.transaction(async (tx) => {
     await tx.execute(sql`set local kortix.audit_maintenance = 'on'`);
     await tx
@@ -163,7 +244,7 @@ afterAll(async () => {
       sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${ctx.userId}`,
     );
   }
-  if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
+  if (ctx) await setEnterprisePlan(ctx.accountId, priorTier);
   if (seeded) await removeSeeded([seeded]);
   if (ctx && humanUserId) {
     await deleteFromView(
@@ -189,6 +270,7 @@ afterAll(async () => {
 async function seedPending(
   argsPreviewComplete = true,
   argsPreview: Record<string, unknown> | null = { repo: 'kortix-ai/suna' },
+  call: { sessionId: string; actingUserId: string } | null = null,
 ): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
   const [row] = await db
@@ -197,8 +279,8 @@ async function seedPending(
       accountId: ctx.accountId,
       projectId: ctx.projectId,
       actionPath: 'github.repos.delete',
-      actingUserId: ctx.userId,
-      sessionId: SESSION,
+      actingUserId: call?.actingUserId ?? ctx.userId,
+      sessionId: call?.sessionId ?? SESSION,
       status: 'pending_approval',
       risk: null,
       resolvedAt: null, // genuinely awaiting a decision
@@ -392,7 +474,7 @@ describe('approvals inbox + resolution', () => {
     });
     const pendingId = await seedPending();
 
-    await setDemoEnterprise(ctx.accountId, false);
+    await setEnterprisePlan(ctx.accountId, 'free');
     try {
       const res = await authGet(`/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit`);
       expect(res.status).toBe(200);
@@ -406,7 +488,7 @@ describe('approvals inbox + resolution', () => {
       expect(ids).not.toContain(resolvedId);
       expect(body.actions.every((action) => action.status === 'pending_approval')).toBe(true);
     } finally {
-      await setDemoEnterprise(ctx.accountId, true);
+      await setEnterprisePlan(ctx.accountId, 'enterprise');
     }
   });
 
@@ -717,5 +799,181 @@ describe('approvals inbox + resolution', () => {
       decision: 'maybe',
     });
     expect(bad.status).toBe(400);
+  });
+});
+
+// KRTX-1724: a client offers Approve / Deny only where the POST would succeed.
+// `can_resolve` on GET .../audit, on the session snapshot's audit leg, and on
+// the Review Center item must each equal the resolve route's own answer, for
+// every caller. Today's rule: a project manager or the session's launcher.
+// The prompter of the turn that raised the call is neither, so they wait.
+describe('can_resolve is the resolve route verdict, per caller (KRTX-1724)', () => {
+  const asCaller = (token: string) => ({
+    get: (path: string) => app.request(path, { headers: { Authorization: `Bearer ${token}` } }),
+    approve: (executionId: string) =>
+      app.request(`/v1/projects/${ctx?.projectId}/approvals/${executionId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision: 'approve' }),
+      }),
+  });
+  const sharedPending = (sessionId = SHARED_SESSION) =>
+    seedPending(true, { repo: 'kortix-ai/suna' }, { sessionId, actingUserId: prompterUserId });
+
+  type AuditRow = { execution_id: string; can_resolve: boolean; resolvers: string | null };
+  type ReviewRow = {
+    review_item_id: string;
+    status: string;
+    can_resolve?: boolean;
+    resolvers?: string | null;
+  };
+
+  /** One fresh pending call per caller: a resolved call answers 409. */
+  async function readsAndResolve(token: string, sessionId = SHARED_SESSION) {
+    if (!ctx) throw new Error('approval integration test has no project context');
+    const execId = await sharedPending(sessionId);
+    const caller = asCaller(token);
+    const base = `/v1/projects/${ctx.projectId}`;
+
+    const audit = await caller.get(`${base}/sessions/${sessionId}/audit?include_events=false`);
+    expect(audit.status).toBe(200);
+    const auditRow = ((await audit.json()) as { actions: AuditRow[] }).actions.find(
+      (action) => action.execution_id === execId,
+    );
+
+    const snapshot = await caller.get(`${base}/sessions/${sessionId}/snapshot?transcript=0`);
+    expect(snapshot.status).toBe(200);
+    const snapshotBody = (await snapshot.json()) as {
+      audit: { known: boolean; actions?: AuditRow[] };
+    };
+    expect(snapshotBody.audit.known).toBe(true);
+    const snapshotRow = snapshotBody.audit.actions?.find(
+      (action) => action.execution_id === execId,
+    );
+
+    const review = await caller.get(`${base}/review/items`);
+    expect(review.status).toBe(200);
+    const reviewItem = ((await review.json()) as { review_items: ReviewRow[] }).review_items.find(
+      (item) => item.review_item_id === `call:${execId}`,
+    );
+
+    // The approval page reads through the same caller and target.
+    const { token: linkToken } = mintSetupLink(ctx.projectId, {
+      kind: 'approval',
+      executionId: execId,
+      sessionId,
+    });
+    const link = await caller.get(`/v1/approval-links/${linkToken}`);
+
+    const resolve = await caller.approve(execId);
+    return { auditRow, snapshotRow, reviewItem, link, resolve };
+  }
+
+  const cases: Array<[string, string, boolean]> = [
+    ['the account owner (a manager)', HUMAN_SESSION, true],
+    ['a project manager', MANAGER_SESSION, true],
+    ['the member who launched the session', LAUNCHER_SESSION, true],
+    ['the member who prompted the turn, not the launcher', PROMPTER_SESSION, false],
+    ['a member who only views the session', READER_SESSION, false],
+  ];
+
+  for (const [who, token, resolves] of cases) {
+    test(`${who}: can_resolve ${resolves} on every read, and the POST agrees`, async () => {
+      if (!ctx) return;
+      const { auditRow, snapshotRow, reviewItem, link, resolve } = await readsAndResolve(token);
+      expect(auditRow?.can_resolve).toBe(resolves);
+      expect(snapshotRow?.can_resolve).toBe(resolves);
+      expect(reviewItem?.can_resolve).toBe(resolves);
+      // A person started this session: managers and that launcher decide.
+      expect(auditRow?.resolvers).toBe('managers_and_launcher');
+      expect(snapshotRow?.resolvers).toBe('managers_and_launcher');
+      expect(reviewItem?.resolvers).toBe('managers_and_launcher');
+      // A resolver finds the call under Needs you; everyone else under Waiting.
+      expect(reviewItem?.status).toBe(resolves ? 'needs_you' : 'waiting');
+      expect(link.status).toBe(resolves ? 200 : 403);
+      expect(resolve.status).toBe(resolves ? 200 : 403);
+    });
+  }
+
+  // `created_by` of a session started with an API token names the wrapper, so
+  // the launcher half of the rule never applies there. Every read must say so,
+  // or the launcher gets Approve / Deny that the POST answers with 403.
+  const backendCases: Array<[string, string, boolean]> = [
+    ['a project manager', MANAGER_SESSION, true],
+    ['the account owner (a manager)', HUMAN_SESSION, true],
+    ['the member whose API token started it', LAUNCHER_SESSION, false],
+  ];
+
+  for (const [who, token, resolves] of backendCases) {
+    test(`origin backend, ${who}: can_resolve ${resolves}, managers decide`, async () => {
+      if (!ctx) return;
+      const { auditRow, snapshotRow, reviewItem, link, resolve } = await readsAndResolve(
+        token,
+        BACKEND_SESSION,
+      );
+      expect(auditRow).toMatchObject({ can_resolve: resolves, resolvers: 'managers' });
+      expect(snapshotRow).toMatchObject({ can_resolve: resolves, resolvers: 'managers' });
+      expect(reviewItem).toMatchObject({
+        can_resolve: resolves,
+        resolvers: 'managers',
+        status: resolves ? 'needs_you' : 'waiting',
+      });
+      expect(link.status).toBe(resolves ? 200 : 403);
+      expect(resolve.status).toBe(resolves ? 200 : 403);
+    });
+  }
+
+  test('an agent token bound to the session reads can_resolve false and is refused', async () => {
+    if (!ctx) return;
+    const sandboxId = crypto.randomUUID();
+    await db.insert(sessionSandboxes).values({
+      sandboxId,
+      sessionId: SHARED_SESSION,
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      status: 'active',
+    });
+    // Minted by the account owner: the owner's role on the token must not make
+    // the agent its own approver.
+    const agentToken = await createAccountToken({
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      projectId: ctx.projectId,
+      name: 'approvals-test-shared-agent',
+      sessionId: SHARED_SESSION,
+    });
+    minted.push(agentToken.tokenId);
+    const execId = await sharedPending();
+    const agent = asCaller(agentToken.secretKey);
+
+    const audit = await agent.get(
+      `/v1/projects/${ctx.projectId}/sessions/${SHARED_SESSION}/audit?include_events=false`,
+    );
+    expect(audit.status).toBe(200);
+    const row = (
+      (await audit.json()) as { actions: Array<{ execution_id: string; can_resolve: boolean }> }
+    ).actions.find((action) => action.execution_id === execId);
+    expect(row?.can_resolve).toBe(false);
+
+    const resolve = await agent.approve(execId);
+    expect(resolve.status).toBe(403);
+    expect(await resolve.json()).toMatchObject({ code: 'APPROVAL_REQUIRES_HUMAN' });
+  });
+
+  test('a decided call carries can_resolve false, even for a manager', async () => {
+    if (!ctx) return;
+    const execId = await sharedPending();
+    const owner = asCaller(HUMAN_SESSION);
+    expect((await owner.approve(execId)).status).toBe(200);
+    const audit = await owner.get(
+      `/v1/projects/${ctx.projectId}/sessions/${SHARED_SESSION}/audit?include_events=false`,
+    );
+    expect(audit.status).toBe(200);
+    const row = (
+      (await audit.json()) as {
+        actions: Array<{ execution_id: string; can_resolve: boolean; status: string }>;
+      }
+    ).actions.find((action) => action.execution_id === execId);
+    expect(row).toMatchObject({ status: 'ok', can_resolve: false });
   });
 });

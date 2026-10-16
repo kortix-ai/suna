@@ -8,15 +8,28 @@ const errorToast = mock(() => {});
 const upsertProjectSecret = mock(async () => {});
 mock.module('@/components/ui/toast', () => ({ successToast, errorToast }));
 mock.module('@/i18n/use-translations', () => ({
-  useTranslations: () => ({ raw: (key: string) => `localized:${key}` }),
+  useTranslations: () =>
+    Object.assign((key: string) => `localized:${key}`, { raw: (key: string) => `localized:${key}` }),
 }));
-mock.module('@kortix/sdk', () => ({ upsertProjectSecret }));
+// Spread the real SDK modules: the form's import graph (the Shiki snippet)
+// reaches other SDK exports, and a bare stub breaks module linking.
+const realSdk = await import('@kortix/sdk');
+mock.module('@kortix/sdk', () => ({ ...realSdk, upsertProjectSecret }));
+const realSdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({
+  ...realSdkReact,
   qk: { project: { secrets: (id: string) => ['secrets', id] } },
   refreshProjectProviderState: mock(() => {}),
 }));
+const realMotion = await import('motion/react');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject, via its UI imports).
+// Spread the real module.
 mock.module('motion/react', () => ({
+  ...realMotion,
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
+  MotionConfig: ({ children }: { children: ReactNode }) => children,
   m: { span: ({ children }: { children: ReactNode }) => <span>{children}</span> },
 }));
 const { CustomProviderForm } = await import('./custom-provider-form');
@@ -116,5 +129,42 @@ describe('CustomProviderForm clipboard characterization', () => {
     expect(successToast).not.toHaveBeenCalled();
     expect(copyButton()).toBeDefined();
     expect(renderer.root.findAllByProps({ 'aria-label': 'Copied' })).toHaveLength(0);
+  });
+  test('the live preview copies the snippet as typed, before saving', async () => {
+    const writeText = mock(async (_text: string) => {});
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { clipboard: { writeText } },
+    });
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    await act(async () => {
+      renderer = create(
+        <QueryClientProvider client={client}>
+          <CustomProviderForm projectId="test-project" onDone={() => {}} />
+        </QueryClientProvider>,
+      );
+    });
+    for (const [id, value] of Object.entries({
+      'custom-provider-id': 'example',
+      'custom-display-name': 'Example',
+      'custom-base-url': 'https://api.example.com/v1',
+      'custom-api-key': 'synthetic-key',
+      'custom-model-id': 'model-one',
+      'custom-model-name': 'Model One',
+    })) {
+      await act(async () => renderer.root.findByProps({ id }).props.onChange({ target: { value } }));
+    }
+    const previewCopy = renderer.root
+      .findAllByType('button')
+      .find((button) => button.props.type === 'button' && typeof button.props.onClick === 'function' && !button.props['aria-label']);
+    if (!previewCopy) throw new Error('Missing preview copy button');
+    await act(async () => {
+      await previewCopy.props.onClick();
+    });
+    expect(writeText).toHaveBeenCalledWith(expectedSnippet);
+    expect(successToast).toHaveBeenCalledWith('localized:texte957fd04449d');
+    expect(upsertProjectSecret).not.toHaveBeenCalled();
   });
 });

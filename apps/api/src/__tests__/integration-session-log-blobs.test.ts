@@ -248,3 +248,194 @@ describe('a text over 256 kB is stored by reference', () => {
     expect([...bucket.objects.keys()].filter((k) => k.startsWith(`${project.project_id}/`))).toEqual([]);
   });
 });
+
+describe('attachment bytes the journal uploads (P2.13)', () => {
+  // A synthetic 2x2 PNG.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAD0lEQVR4nGNgaPgPQhAKACX2Bf2gcp/LAAAAAElFTkSuQmCC', 'base64');
+  const PNG_SHA = createHash('sha256').update(PNG).digest('hex');
+  let box = '';
+  let boxToken = '';
+  const blob = (sha: string, init: RequestInit = {}, token = boxToken) =>
+    app.request(`${base(box)}/log/blobs/${sha}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers as Record<string, string>) } });
+  const put = (bytes: Buffer, sha = createHash('sha256').update(bytes).digest('hex'), mime = 'image/png', token = boxToken, session = box) =>
+    app.request(`${base(session)}/log/blobs/${sha}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': mime }, body: new Uint8Array(bytes) });
+  /** Another session of the project with its box credential. */
+  const newBox = async () => {
+    const id = await seedSession(project, OWNER);
+    await db.insert(sessionSandboxes).values({ sandboxId: id, sessionId: id, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
+    const token = (await createAccountToken({ accountId: project.account_id, userId: OWNER, projectId: project.project_id, sessionId: id, name: 'session-log-blobs-attachments' })).secretKey;
+    return { id, token };
+  };
+
+  /**
+   * Holds every upload in Storage until the returned release is called. A slot is held from the gate to the end
+   * of the upload, so a held upload keeps its slot for as long as the test needs it. A fixed Storage delay did not:
+   * a request whose auth took longer than the delay reached the gate after an earlier one had already freed its slot.
+   */
+  const holdUploads = () => {
+    let release!: () => void;
+    bucket.heldUploads.until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      bucket.heldUploads.until = undefined;
+      release();
+    };
+  };
+  /** Waits until `count` uploads have reached Storage, each holding its slot. */
+  const uploadsReach = async (count: number) => {
+    while (bucket.uploads.length < count) await Bun.sleep(5);
+  };
+
+  beforeAll(async () => {
+    ({ id: box, token: boxToken } = await newBox());
+  });
+
+  test('an unknown sha256 answers ref null; the upload stores the bytes once and answers the ref; the lookup then answers it', async () => {
+    const before = bucket.uploads.length;
+    const missing = await blob(PNG_SHA);
+    expect(missing.status).toBe(200);
+    expect(await missing.json()).toEqual({ ref: null });
+
+    const first = await put(PNG);
+    expect(first.status).toBe(200);
+    const { ref } = (await first.json()) as { ref: string };
+    expect(ref).toMatch(new RegExp(`^kortix-attachment://${project.project_id}/${box}/${UUID}$`));
+    const object = bucket.objects.get(objectKey(ref))!;
+    expect(Buffer.from(await object.arrayBuffer())).toEqual(PNG);
+    expect(object.type).toBe('image/png');
+    expect((await blobRows(box)).map((b) => ({ sha256: b.sha256, objectKey: b.objectKey, bytes: b.bytes, mime: b.mime }))).toEqual([
+      { sha256: PNG_SHA, objectKey: objectKey(ref), bytes: PNG.length, mime: 'image/png' },
+    ]);
+    // The same image again: the same ref, no second upload.
+    expect(await (await put(PNG)).json()).toEqual({ ref });
+    expect(await (await blob(PNG_SHA)).json()).toEqual({ ref });
+    expect(bucket.uploads.length - before).toBe(1);
+
+    // The box reads it back through the attachments route, as a restore does.
+    const read = await app.request(`${base(box)}/attachments/${ref.split('/').at(-1)}`, { headers: { Authorization: `Bearer ${boxToken}` } });
+    expect(read.status).toBe(200);
+    expect(createHash('sha256').update(Buffer.from(await read.arrayBuffer())).digest('hex')).toBe(PNG_SHA);
+
+    // A record naming the object is stored as sent: GET .../log serves the ref, sha256 and bytes.
+    const image = { type: 'attachment', id: 'prt_img', ref, mime: 'image/png', bytes: PNG.length, sha256: PNG_SHA };
+    const res = await app.request(`${base(box)}/log/journal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${boxToken}` },
+      body: Bun.gzipSync(JSON.stringify(batch([{ rev: REV + 1, message: message('msg_img', 0, [image], { role: 'user' }) }]))) as BodyInit,
+    });
+    expect(res.status).toBe(200);
+    expect(((await stored('msg_img', box))!.record as { blocks: unknown[] }).blocks).toEqual([image]);
+  });
+
+  test('a body whose sha256 is not the path, a bad sha256 or Content-Type → 400; a token not bound to the session → 403; nothing stored', async () => {
+    const before = bucket.uploads.length;
+    expect((await put(PNG, '0'.repeat(64))).status).toBe(400);
+    expect((await put(PNG, 'not-a-sha')).status).toBe(400);
+    expect((await put(Buffer.from('x'), undefined, 'not a mime')).status).toBe(400);
+    expect((await put(Buffer.from('owner bytes'), undefined, 'image/png', ownerToken)).status).toBe(403);
+    expect((await blob(PNG_SHA, {}, ownerToken)).status).toBe(403);
+    expect(bucket.uploads.length).toBe(before);
+  });
+
+  test('a body over 50 MiB → 413; the operator switch off → 503 on both routes; nothing stored', async () => {
+    const before = bucket.uploads.length;
+    const big = Buffer.alloc(50 * 1024 * 1024 + 1);
+    expect((await put(big, '0'.repeat(64))).status).toBe(413);
+    const { config } = await import('../config');
+    config.SESSION_LOG_INGEST_ENABLED = false;
+    try {
+      expect((await blob(PNG_SHA)).status).toBe(503);
+      expect((await put(PNG)).status).toBe(503);
+    } finally {
+      config.SESSION_LOG_INGEST_ENABLED = true;
+    }
+    expect(bucket.uploads.length).toBe(before);
+  });
+
+  test('a fifth upload while 4 are in flight on the replica, or a second of one session → 429 with Retry-After; the 4 store', async () => {
+    const boxes = [{ id: box, token: boxToken }, ...(await Promise.all(Array.from({ length: 4 }, newBox)))];
+    let release = holdUploads();
+    try {
+      // 4 sessions hold the 4 slots in Storage; a fifth session is answered 429 at once.
+      const start = bucket.uploads.length;
+      const four = boxes.slice(0, 4).map((b, i) => put(Buffer.from(`synthetic concurrent upload ${i}`), undefined, 'application/octet-stream', b.token, b.id));
+      await uploadsReach(start + 4);
+      const fifth = await put(Buffer.from('synthetic concurrent upload 4'), undefined, 'application/octet-stream', boxes[4]!.token, boxes[4]!.id);
+      expect(fifth.status).toBe(429);
+      expect(fifth.headers.get('retry-after')).toBe('5');
+      release();
+      expect((await Promise.all(four)).map((r) => r.status)).toEqual([200, 200, 200, 200]);
+
+      // One slot in use: a second upload of the same session is still 429.
+      release = holdUploads();
+      const one = put(Buffer.from('synthetic one of a session'));
+      await uploadsReach(start + 5);
+      expect((await put(Buffer.from('synthetic two of a session'))).status).toBe(429);
+      release();
+      expect((await one).status).toBe(200);
+      // The slots are free again.
+      expect((await put(Buffer.from('synthetic after the burst'), undefined, 'application/octet-stream')).status).toBe(200);
+    } finally {
+      release();
+    }
+  });
+
+  test('a stalled body is cancelled at SESSION_LOG_BLOB_READ_MS with 408; its slot is freed and other sessions upload meanwhile', async () => {
+    const { config } = await import('../config');
+    const readMs = config.SESSION_LOG_BLOB_READ_MS;
+    config.SESSION_LOG_BLOB_READ_MS = 1_500;
+    try {
+      const other = await newBox();
+      // A client that sends one chunk and then stops.
+      const stalled = new ReadableStream<Uint8Array>({ start: (controller) => controller.enqueue(new Uint8Array([1, 2, 3])) });
+      const started = Date.now();
+      const hung = Promise.resolve(app.request(`${base(box)}/log/blobs/${'a'.repeat(64)}`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${boxToken}`, 'Content-Type': 'image/png' }, body: stalled, duplex: 'half',
+      } as RequestInit));
+      await Bun.sleep(400);
+      expect((await put(Buffer.from('synthetic same session while stalled'))).status).toBe(429);
+      expect((await put(Buffer.from('synthetic other session while stalled'), undefined, 'image/png', other.token, other.id)).status).toBe(200);
+      const answer = await hung;
+      expect(answer.status).toBe(408);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      // Released once: the session uploads again, and 4 sessions still fill exactly the 4 slots.
+      expect((await put(Buffer.from('synthetic same session after the stall'))).status).toBe(200);
+      const boxes = [{ id: box, token: boxToken }, other, ...(await Promise.all(Array.from({ length: 3 }, newBox)))];
+      const release = holdUploads();
+      try {
+        const start = bucket.uploads.length;
+        const four = boxes.slice(0, 4).map((b, i) => put(Buffer.from(`synthetic slot check ${i}`), undefined, 'image/png', b.token, b.id));
+        await uploadsReach(start + 4);
+        expect((await put(Buffer.from('synthetic slot check 4'), undefined, 'image/png', boxes[4]!.token, boxes[4]!.id)).status).toBe(429);
+        release();
+        expect((await Promise.all(four)).map((r) => r.status)).toEqual([200, 200, 200, 200]);
+      } finally {
+        release();
+      }
+    } finally {
+      config.SESSION_LOG_BLOB_READ_MS = readMs;
+    }
+  });
+
+  test('a text and an attachment with the same bytes share one object', async () => {
+    const text = 'x'.repeat(300_000);
+    const sha = sha256(text);
+    const res = await app.request(`${base(box)}/log/journal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${boxToken}` },
+      body: Bun.gzipSync(JSON.stringify(batch([{ rev: REV + 2, message: message('msg_big', 1, [{ type: 'text', id: 'prt_big', text }]) }]))) as BodyInit,
+    });
+    expect(res.status).toBe(200);
+    const textRef = ((await stored('msg_big', box))!.record as { blocks: Array<{ ref: string }> }).blocks[0]!.ref;
+    expect(await (await put(Buffer.from(text), sha, 'text/plain')).json()).toEqual({ ref: textRef });
+  });
+
+  test('session deletion removes the index rows (cascade) and account erasure the objects', async () => {
+    expect((await blobRows(box)).length).toBeGreaterThan(0);
+    await deleteAccountExternalStores(project.account_id);
+    expect([...bucket.objects.keys()].filter((k) => k.startsWith(`${project.project_id}/${box}/`))).toEqual([]);
+    await db.execute(sql`delete from kortix.project_sessions where session_id = ${box}`);
+    expect(await blobRows(box)).toEqual([]);
+  });
+});

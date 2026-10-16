@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type AssistantMessage, type MessageWithParts, type SessionLogMessage, type SessionLogPage, type SessionLogPageQuery, type ToolCallBlock, sessionLogOfV1Rows } from '@kortix/sdk';
-import { printLogMessage, printMessage, readStoredSessionLog, withLiveTurn } from './sessions-chat.ts';
+import { logHeaderState, printLogMessage, printMessage, readStoredSessionLog, withLiveTurn } from './sessions-chat.ts';
 
 /** `printMessage` writes straight to stdout; swap the writer for the test. */
 function render(msg: MessageWithParts): string {
@@ -160,6 +160,19 @@ describe('printLogMessage — the human output is rendered from blocks', () => {
     expect(capture(() => printLogMessage(record('m2', 2, { role: 'assistant', status: 'streaming', blocks: [open] })))).toContain('[bash · running]');
   });
 
+  test('a failed call prints its error text: the result error, else the result text', () => {
+    const failed = (result: ToolCallBlock['result']): ToolCallBlock => ({
+      type: 'tool_call', id: 'b2', call_id: 'c2', name: 'bash', kind: 'shell', input: { command: 'cat /w/missing.txt' }, status: 'error', result,
+    });
+    const text = 'cat: /w/missing.txt: No such file or directory\n\nCommand exited with code 1';
+    const print = (block: ToolCallBlock) => capture(() => printLogMessage(record('m4', 4, { role: 'assistant', blocks: [block] })));
+    const shown = '[bash · error]\n  cat: /w/missing.txt: No such file or directory\n  \n  Command exited with code 1\n';
+    // The error only on `result.error`, no result text: this printed `[bash · error]` and nothing else.
+    expect(print(failed({ content: [], is_error: true, error: { message: text } }))).toContain(shown);
+    // A native export closes a failed call with `is_error` and the tool's text only.
+    expect(print(failed({ content: [{ type: 'text', text }], is_error: true }))).toContain(shown);
+  });
+
   test('a compaction is one message: its header says compaction, its body is the summary', () => {
     const out = capture(() => printLogMessage(record('m3', 3, { kind: 'compaction', blocks: [{ type: 'compaction', id: 'c', summary: 'SUMMARY of turns 0-2.', first_kept_message_id: null, trigger: 'manual' }] })));
     expect(out).toBe(`\ncompaction ${new Date(AT + 3000).toLocaleTimeString()}\n  SUMMARY of turns 0-2.\n`);
@@ -199,7 +212,29 @@ describe('withLiveTurn — a running session shows the turn the log does not hol
   /** The live read as `sessionLogOfV1Rows` gives it: one thread, seqs by position from 1. */
   const live = (...ids: string[]) => ({ ...head('ses_root', null), messages: ids.map((id, i) => record(id, i + 1, { role: i % 2 ? 'assistant' : 'user' })) });
   const shape = (threads: Array<{ thread_id: string; messages: SessionLogMessage[]; has_more: boolean }>) =>
-    threads.map((t) => [t.thread_id, t.messages.map((m) => [m.message_id, m.seq, (m as { provisional?: boolean }).provisional ?? false]), t.has_more]);
+    threads.map((t) => [t.thread_id, t.messages.map((m) => [m.message_id, m.seq, (m.ext?.kortix?.data as { provisional?: boolean } | undefined)?.provisional ?? false]), t.has_more]);
+
+  test('a live message carries both marks (top-level `provisional`, deprecated, and `ext.kortix.data.provisional`); a stored one neither', () => {
+    const own = { pi: { version: '1', data: { cwd: '/w' } }, kortix: { version: '1', data: { origin: 'x' } } };
+    const window = { ...head('ses_root', null), messages: [record('m1', 1), { ...record('m2', 2, { role: 'assistant' }), ext: own }] };
+    const [thread] = withLiveTurn([root([record('m1', 1)])], window, 10);
+    const [stored, tail] = thread!.messages as Array<SessionLogMessage & { provisional?: boolean }>;
+    expect(tail!.provisional).toBe(true);
+    expect(tail!.ext).toEqual({ pi: own.pi, kortix: { version: '1', data: { origin: 'x', provisional: true } } });
+    expect('provisional' in stored!).toBe(false);
+    expect(stored!.ext?.kortix).toBeUndefined();
+  });
+
+  test('an `ext.kortix.data` that is not a plain object is left as it is; the top-level mark still says provisional', () => {
+    for (const data of ['text', [1, 2], null]) {
+      const ext = { kortix: { version: '1', data } };
+      const window = { ...head('ses_root', null), messages: [record('m1', 1), { ...record('m2', 2, { role: 'assistant' }), ext }] };
+      const [thread] = withLiveTurn([root([record('m1', 1)])], window, 10);
+      const tail = thread!.messages[1] as SessionLogMessage & { provisional?: boolean };
+      expect(tail.provisional).toBe(true);
+      expect(tail.ext).toEqual(ext);
+    }
+  });
 
   test("the live seqs agree with the stored ones: the tail keeps fromV1's seqs, marked provisional", () => {
     const threads = withLiveTurn([root([record('m1', 1), record('m2', 2)]), child], live('m1', 'm2', 'm3', 'm4'), 10);
@@ -248,5 +283,23 @@ describe('readStoredSessionLog — a credential the log route refuses', () => {
     expect(await readStoredSessionLog(async () => { throw refused; }, 10)).toBeNull();
     const broken = Object.assign(new Error('boom'), { status: 500 });
     await expect(readStoredSessionLog(async () => { throw broken; }, 10)).rejects.toThrow('boom');
+  });
+});
+
+describe('logHeaderState — the `sessions log` header names the sandbox and, when read live, the agent', () => {
+  const row = (role: 'user' | 'assistant', completed?: number) =>
+    ({ info: { id: `m_${role}_${completed ?? 'open'}`, role, sessionID: 's', time: { created: 1, ...(completed ? { completed } : {}) } }, parts: [] }) as unknown as MessageWithParts;
+
+  test('a running sandbox whose agent finished its turn reads idle, not just "running"', () => {
+    expect(logHeaderState('running', [row('user'), row('assistant', 2)])).toBe('sandbox running · idle');
+  });
+
+  test('a running sandbox whose agent is mid-turn reads working', () => {
+    expect(logHeaderState('running', [row('user'), row('assistant')])).toBe('sandbox running · working');
+  });
+
+  test('a sandbox not read live names only its status', () => {
+    expect(logHeaderState('stopped', null)).toBe('sandbox stopped');
+    expect(logHeaderState('running', null)).toBe('sandbox running');
   });
 });

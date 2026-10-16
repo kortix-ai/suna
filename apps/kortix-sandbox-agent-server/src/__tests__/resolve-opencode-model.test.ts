@@ -95,6 +95,21 @@ describe('buildInitialPromptBody', () => {
     })
   })
 
+  test('delivers the session contract as a synthetic part beside the user prompt', () => {
+    delete process.env.KORTIX_OPENCODE_MODEL
+    process.env.KORTIX_AGENT_NAME = 'default'
+    const body = buildInitialPromptBody(
+      'Reply with the single word pong.',
+      'msg_initial_turn',
+      '--- session contract ---',
+    )
+    expect(body.messageID).toBe('msg_initial_turn')
+    expect(body.parts).toEqual([
+      { type: 'text', text: 'Reply with the single word pong.' },
+      { type: 'text', text: '--- session contract ---', synthetic: true },
+    ])
+  })
+
   test('applies the session model and concrete selected agent to an automated first turn', () => {
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:4319'
     process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-sonnet-4-6'

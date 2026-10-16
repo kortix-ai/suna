@@ -20,6 +20,7 @@ import type {
   SessionLogSessionPatch,
   SessionLogThreadUpsert,
 } from '@kortix/api-contract/session-log'
+import type { BytesReader } from '../shared/session-log-restore'
 
 /** A message read from the native store, with the digest of its native form. */
 export interface ExportedMessage {
@@ -66,11 +67,17 @@ export interface SessionLogPort {
    * cursor per thread, holding the native hash of every message written, and
    * what it could not write. `seqMax` is the highest seq the API holds per
    * thread, tombstones included (the restore answer's `seq_max`): the harness
-   * numbers every new message above it.
+   * numbers every new message above it. `readAttachment` replaces the reader the port was
+   * built with (the boot passes the bytes it read beside the texts).
    */
-  restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult>
-  /** A digest of the whole native store, for the boot reconcile. */
-  fingerprint(): Promise<string>
+  restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>, readAttachment?: BytesReader): Promise<SessionLogRestoreResult>
+  /**
+   * For the boot reconcile (P6.4, `shared/session-log-boot.ts`): the ids of every message the
+   * native store holds, plus the ids it held and deleted (a revert) that the journal may not
+   * have tombstoned yet. Null when the store is missing or cannot be trusted (no store, no
+   * pinned root, a lost seq map): the boot reads null as behind the log.
+   */
+  held(): Promise<ReadonlySet<string> | null>
   /**
    * What a message of the live turn (P4.3b) has in its turn end's record that
    * its v1 frames do not carry: the seq it has, or gets when the harness
@@ -79,4 +86,10 @@ export interface SessionLogPort {
    * puts carry these, so they equal the turn end's record.
    */
   live(threadId: string, messageId: string): { seq: number; created_at?: string } | null
+  /**
+   * The bytes behind an attachment the last `changes` exported as `ref: blob:<sha256>`, or null
+   * when the store no longer has them. The journal uploads them and writes the stored object's
+   * `kortix-attachment://` ref into the record (P2.13). Without it every attachment keeps `blob:`.
+   */
+  blob?(sha256: string): Buffer | null
 }

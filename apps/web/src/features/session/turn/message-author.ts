@@ -1,11 +1,11 @@
 import type { SessionMessageAuthor, SessionMessageAuthors } from '@kortix/sdk';
 
 /** One author, one key: two members never share it, nor do two sessions. */
-export function authorKey(author: SessionMessageAuthor): string {
+function authorKey(author: SessionMessageAuthor): string {
   return author.kind === 'member' ? `member:${author.user_id}` : `session:${author.session_id}`;
 }
 
-export interface TranscriptAuthors {
+interface TranscriptAuthors {
   /** The author of each user message that has one, by runtime message id. */
   byMessage: Map<string, SessionMessageAuthor>;
   /** True when the transcript reads as a group chat: 2+ distinct authors. */
@@ -78,6 +78,21 @@ export function showAuthorName(
   if (!author) return false;
   if (multiAuthor) return true;
   return author.kind === 'session' || author.user_id !== viewerId;
+}
+
+/**
+ * Who to name under a turn someone ELSE stopped: "Stopped by <name>". Null
+ * when nobody is recorded, when the stop came from an agent session, and when
+ * the viewer stopped it: a stop you asked for is not news.
+ */
+export function stoppedByName(
+  data: SessionMessageAuthors | undefined,
+  messageId: string,
+  viewerId: string | undefined,
+): string | null {
+  const stopper = data?.stops?.[messageId];
+  if (stopper?.kind !== 'member' || stopper.user_id === viewerId) return null;
+  return stopper.name || stopper.email || null;
 }
 
 /** A prompt an agent will answer. A `no_reply` prompt runs no turn. */

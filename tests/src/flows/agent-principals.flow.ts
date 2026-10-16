@@ -19,11 +19,9 @@
  *
  * Denials follow spec §4: `403 { code, action }`.
  */
-import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow } from '../core/flow';
 import type { FlowContext, Principal, TeamFixture } from '../core/types';
 import { CliSandbox } from '../fixtures/cli';
-import { stagingAppsEdgeQuarantine } from '../fixtures/apps-edge';
 import {
   AgentPrincipalsWorld,
   type AgentSession,
@@ -770,7 +768,6 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);
@@ -860,22 +857,11 @@ flow(
 // Apps answer under `*.apps.localhost`; a deployed preview has no DNS for its
 // Apps domain and runs the API in direct-edge mode, where `x-kortix-app-host`
 // is ignored. `requires: ['appHost']` states that instead of hiding it.
-//
-// Staging has no working public Apps host (probed 2026-10-09):
-// `staging-<slug>-<key>.apps.kortix.com` answers Cloudflare 530 "Tunnel error |
-// staging-api.kortix.com", while the same probe on dev and prod answers 404
-// `{"error":"App not found"}` from the API. The apps-router Worker fetches
-// STAGING_API_ORIGIN (infra/cloudflare/workers/apps-router/wrangler.toml).
-// staging-api is a Worker ROUTE over a dead cfargotunnel record, so the
-// same-zone subrequest skips staging-api-kortix-router and hits the tunnel.
-// Un-quarantine in the PR that points STAGING_API_ORIGIN at a live origin
-// and sets KE2E_CAP_APP_HOST=1 in tests-release.yml. The local lane still runs it.
 flow(
   'AGP-13',
   {
     domain: 'agent-principals',
     requires: ['database', 'appHost'],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       'POST /v1/projects/:projectId/apps',
@@ -896,7 +882,6 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);

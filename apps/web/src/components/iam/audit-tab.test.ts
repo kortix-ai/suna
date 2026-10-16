@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 import type { ListAuditFilter } from '@/lib/iam-client';
 import { auditFilterWire } from './audit-tab';
@@ -80,5 +81,18 @@ describe('auditFilterWire', () => {
     expect(list.limit).toBe(50);
     expect(download.format).toBe('jsonl');
     expect(download.cursor).toBe('c2');
+  });
+});
+
+// KRTX-2399: the quick-filter labels are translated, so the tabs must not use
+// them as their value. A label-keyed tab matched no preset outside English.
+describe('audit quick filters', () => {
+  const source = readFileSync(new URL('./audit-tab.tsx', import.meta.url), 'utf8');
+
+  test('each tab is keyed by its stable id, not its translated label', () => {
+    expect(source).toContain('value={preset.id}');
+    expect(source).toContain('QUICK_FILTERS.find((item) => item.id === value)');
+    expect(source).not.toContain('value={preset.label}');
+    expect(source).not.toContain('item.label === value');
   });
 });

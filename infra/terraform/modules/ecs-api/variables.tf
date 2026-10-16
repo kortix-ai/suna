@@ -188,12 +188,6 @@ variable "fargate_base_on_demand" {
   }
 }
 
-variable "container_insights" {
-  description = "Enable CloudWatch Container Insights."
-  type        = bool
-  default     = true
-}
-
 variable "log_retention_days" {
   description = "CloudWatch log retention. The security baseline requires at least 365 days."
   type        = number
@@ -301,4 +295,28 @@ variable "ses_send_region" {
     condition     = length(var.ses_send_identity_names) == 0 || length(trimspace(var.ses_send_region)) > 0
     error_message = "ses_send_region is required when ses_send_identity_names is not empty."
   }
+}
+
+variable "capture_enabled" {
+  description = "Grant the TASK role the Kortix Capture store (modules/capture-store). A literal bool so the grant's count is known at plan time even when the store is created in the same apply."
+  type        = bool
+  default     = false
+}
+
+variable "capture_bucket_arn" {
+  description = "ARN of the capture bucket (modules/capture-store bucket_arn). Used only when capture_enabled."
+  type        = string
+  default     = ""
+}
+
+variable "capture_queue_arn" {
+  description = "ARN of the capture manifest-event queue (modules/capture-store queue_arn). Used only when capture_enabled."
+  type        = string
+  default     = ""
+}
+
+variable "capture_device_role_arn" {
+  description = "ARN of the capture device role the API assumes to issue device credentials (modules/capture-store device_role_arn). Used only when capture_enabled."
+  type        = string
+  default     = ""
 }

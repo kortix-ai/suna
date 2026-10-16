@@ -87,11 +87,20 @@ describe('LLM provider modal shell', () => {
     }
   });
 
+  /**
+   * The page keeps its list + SplitSheet. A 900px dialog has no room for a
+   * second column, so here providers open in place (Paper PM01 + AK01).
+   */
+  test('providers open in place in the dialog — the page keeps its sheet', () => {
+    expect(modalSource).toContain('providersVariant="accordion"');
+    expect(modalSource).toContain('providerId={null}');
+  });
+
   test('it shows the page’s heading, not a second wording of it', () => {
     expect(MODELS_PAGE_TITLE).toBe('Models');
-    expect(MODELS_PAGE_DESCRIPTION).toBe('Which providers and models this project can use.');
+    expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this project can use.');
     expect(modalSource).toContain(
-      '<ModalTitle className="text-base font-medium">{MODELS_PAGE_TITLE}</ModalTitle>',
+      '<ModalTitle className="text-base leading-8 font-medium">{MODELS_PAGE_TITLE}</ModalTitle>',
     );
     expect(modalSource).toContain('<ModalDescription>{MODELS_PAGE_DESCRIPTION}</ModalDescription>');
     expect(modalSource).not.toContain('Connect your own AI accounts');
@@ -116,18 +125,19 @@ describe('LLM provider modal shell', () => {
    * close button is `absolute top-3 right-3` at `size-8`, so 44px of the right
    * edge is spoken for and the header has to stop short of it.
    */
-  test('the project-default picker sits in the header and clears the close button', () => {
-    const header = modalSource.slice(
-      modalSource.indexOf('<ModalHeader'),
-      modalSource.indexOf('</ModalHeader>'),
-    );
-    expect(header).toContain('<ProjectDefaultPicker projectId={projectId} />');
-    // Write-gated AND gateway-gated: a read-only member sees the list, not the
-    // one control that POSTs from this bar — and a native project has no
-    // model-defaults chain for the picker to write.
-    expect(header).toContain('canWrite && llmGatewayEnabled ? <ProjectDefaultPicker');
-    expect(modalSource).toContain('sm:pr-11');
+  test('the project-default picker shares the close button row, gated like before', () => {
+    // In the close button's own row (ModalContent's closeButtonChildren), so
+    // the picker and the × share one centre line.
+    expect(modalSource).toContain('closeButtonChildren={');
+    expect(modalSource).toContain('canWrite && open ? <HeaderDefaultPicker projectId={projectId} /> : null');
+    // Gateway-gated: a native project has no model-defaults chain to write.
+    const picker = modalSource.slice(modalSource.indexOf('function HeaderDefaultPicker'));
+    expect(picker).toContain('isLlmGatewayEnabled(detailQuery.data?.project) ? (');
+    expect(picker).toContain('<ProjectDefaultPicker projectId={projectId} />');
+    // The header text clears the picker + close button on the right.
+    expect(modalSource).toContain('pr-64');
   });
+
 
   /**
    * The width moved from `600px` to a named `lg:max-w-*` step when the

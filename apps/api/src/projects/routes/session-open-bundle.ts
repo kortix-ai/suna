@@ -62,13 +62,18 @@ import {
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
+import { loadSessionUserStates } from '../lib/session-user-state';
+import { personUserId } from './session-watch';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import { readSessionAuditActions } from '../lib/session-audit-read';
+import { sessionApprovalVerdict } from '../lib/http-approval-caller';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
+import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
@@ -165,8 +170,18 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models, runtime, audit, log] = await Promise.allSettled([
-      readSessionTurnState(sessionId),
+    const personId = personUserId(c, loaded);
+    const [turn, queue, transcript, models, runtime, audit, log, listState] = await Promise.allSettled([
+      // = GET .../turn, `can_stop` included: one prompter read, only while a
+      // turn runs for a caller who is not the owner or a manager.
+      readSessionTurnState(sessionId).then(async (state) => ({
+        ...state,
+        can_stop: await canStopTurns(state, {
+          sessionId,
+          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+          canManageLifecycle: visible.canManageLifecycle,
+        }),
+      })),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
         ? Promise.resolve(null)
@@ -226,6 +241,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           agentName: (visible.row.agentName as string | null) ?? null,
           audited,
           limit: AUDIT_ACTIONS_LIMIT,
+          // `can_resolve` + `resolvers`: the resolve route's verdict (KRTX-1724).
+          ...sessionApprovalVerdict(c, loaded, projectId, visible.row),
         });
       })(),
       // = `GET .../log`, the first page of the root thread, only with the
@@ -234,6 +251,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
       logEnabled
         ? readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value })
         : Promise.resolve(undefined),
+      // The person's pin and archive, as the read by id serves them (KRTX-2418).
+      personId ? loadSessionUserStates([sessionId], personId) : Promise.resolve(null),
     ]);
 
     const prompts =
@@ -269,6 +288,11 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         // Owner email is a second lookup for a display string the composer does
         // not need to paint. The session route still serves it.
         ownerEmail: null,
+        // A failed read omits the fields rather than claiming "not pinned".
+        userState:
+          listState.status === 'fulfilled' && listState.value
+            ? (listState.value.get(sessionId) ?? { pinnedAt: null, archivedAt: null })
+            : undefined,
       }),
 
       // = GET .../turn. `known: false` means the read failed — render UNKNOWN,

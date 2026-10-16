@@ -16,11 +16,12 @@ const sidebar = [
     label: 'Connect',
     items: ['connect/connectors', 'connect/channels', 'connect/triggers', 'connect/computers', 'connect/mcp'],
   },
+  { label: 'Kortix Capture', items: ['capture', 'capture/rollout'] },
   { label: 'Ship', items: ['apps'] },
   { label: 'Administer', items: ['accounts', 'accounts/identity', 'audit-actions', 'credits'] },
   { label: 'Self-host', items: ['host'] },
   { label: 'Develop', items: ['git', 'cli', 'tui', 'api'] },
-  { label: 'SDK', items: ['sdk', 'sdk/auth', 'sdk/sessions', 'sdk/react', 'sdk/reference'] },
+  { label: 'SDK', items: ['sdk', 'sdk/auth', 'sdk/sessions', 'sdk/react', 'sdk/genui', 'sdk/reference'] },
 ];
 
 // The docs render through Blume, not through the Next app. Nothing in

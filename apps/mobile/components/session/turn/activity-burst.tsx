@@ -1,5 +1,5 @@
 /**
- * One burst — a maximal run of non-text parts (`segmentTurn` kind `burst`).
+ * One burst — a maximal run of non-text blocks (`sessionLogTurnSegments` kind `burst`).
  *
  * The summary line matches apps/web `turn/activity-burst.tsx`:
  * `text-sm text-muted-foreground/70`, `gap-2`, the SDK's `burstSummaryLabel`
@@ -16,13 +16,15 @@
  *
  * - every burst is this line, even ONE call ("Completed 1 step"): web shows
  *   those bare, mobile never expands a step inline (Jay, 2026-09-24);
- * - thinking never shows: `burstView` drops reasoning parts;
- * - a burst that merges to nothing (plumbing only) renders nothing.
+ * - thinking never shows: `burstView` drops reasoning blocks;
+ * - a burst that merges to nothing (plumbing only) renders nothing;
+ * - under an opened "Worked for" row (`inFold`) the settled line names the
+ *   work instead ("Ran 9 commands, read 2 files · 1 failed", `sessionLogBurstWorkLabel`).
  */
 
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
-import type { Part } from '@kortix/sdk';
+import { sessionLogBurstWorkLabel, type SessionLogBlock } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { CaretRightIcon } from '@/lib/icons';
@@ -36,7 +38,7 @@ import type { ActivityContextValue } from '@/lib/session/activity-sheet-store';
 // ─── Burst ───────────────────────────────────────────────────────────────────
 
 interface ActivityBurstProps {
-  segment: { kind: 'burst'; parts: Part[] };
+  segment: { kind: 'burst'; blocks: SessionLogBlock[] };
   /** The owning turn is still working (web `working`). */
   turnLive: boolean;
   /** Last segment in the turn — stays running across SSE gaps between tool calls. */
@@ -45,6 +47,8 @@ interface ActivityBurstProps {
   onOpenFile?: (path: string) => void;
   toDisplayPath?: (path: string) => string;
   onPermissionReply?: (requestId: string, reply: PermissionReply) => void;
+  /** Under an opened "Worked for" row: the line names the work (`sessionLogBurstWorkLabel`), not the step count. */
+  inFold?: boolean;
 }
 
 function ActivityBurstImpl({
@@ -55,11 +59,12 @@ function ActivityBurstImpl({
   onOpenFile,
   toDisplayPath,
   onPermissionReply,
+  inFold = false,
 }: ActivityBurstProps) {
   const palette = useTurnPalette();
-  const { parts } = segment;
-  const view = useMemo(() => burstView(parts, turnLive, isTrailing), [parts, turnLive, isTrailing]);
-  const ownsSheet = useActivitySheetStore((state) => state.sheet !== null && ownsBurst(state.sheet.partIds, parts));
+  const { blocks } = segment;
+  const view = useMemo(() => burstView(blocks, turnLive, isTrailing), [blocks, turnLive, isTrailing]);
+  const ownsSheet = useActivitySheetStore((state) => state.sheet !== null && ownsBurst(state.sheet.blockIds, blocks));
 
   const context = useMemo<ActivityContextValue>(
     () => ({ sessionId, turnLive, onOpenFile, toDisplayPath, onPermissionReply }),
@@ -67,10 +72,12 @@ function ActivityBurstImpl({
   );
 
   useEffect(() => {
-    if (ownsSheet) useActivitySheetStore.getState().sync(parts, view, context);
-  }, [ownsSheet, parts, view, context]);
+    if (ownsSheet) useActivitySheetStore.getState().sync(blocks, view, context);
+  }, [ownsSheet, blocks, view, context]);
 
-  const openSheet = useCallback(() => useActivitySheetStore.getState().show(parts, view, context), [parts, view, context]);
+  const openSheet = useCallback(() => useActivitySheetStore.getState().show(blocks, view, context), [blocks, view, context]);
+
+  const title = useMemo(() => (inFold && !view.running ? sessionLogBurstWorkLabel(blocks) : view.title), [inFold, view, blocks]);
 
   if (view.hidden) return null;
 
@@ -83,11 +90,11 @@ function ActivityBurstImpl({
     >
       {view.running ? (
         <TextShimmer variant="muted" tone="muted" style={[TURN_TYPE.sm, TABULAR]} numberOfLines={1}>
-          {view.title}
+          {title}
         </TextShimmer>
       ) : (
         <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.sm, TABULAR, { flexShrink: 1, color: palette.muted70 }]}>
-          {view.title}
+          {title}
         </Text>
       )}
       <CaretRightIcon size={TURN_SPACE.caret} color={palette.muted40} />
@@ -97,7 +104,7 @@ function ActivityBurstImpl({
 
 const TABULAR = { fontVariant: ['tabular-nums' as const] };
 
-/** `segment.parts` is a fresh array per frame while a turn streams — compare element-wise. */
+/** `segment.blocks` is a fresh array per frame while a turn streams — compare element-wise. */
 export const ActivityBurst = memo(
   ActivityBurstImpl,
   (a, b) =>
@@ -107,6 +114,7 @@ export const ActivityBurst = memo(
     a.onOpenFile === b.onOpenFile &&
     a.toDisplayPath === b.toDisplayPath &&
     a.onPermissionReply === b.onPermissionReply &&
-    samePartsList(a.segment.parts, b.segment.parts),
+    a.inFold === b.inFold &&
+    samePartsList(a.segment.blocks, b.segment.blocks),
 );
 ActivityBurst.displayName = 'ActivityBurst';

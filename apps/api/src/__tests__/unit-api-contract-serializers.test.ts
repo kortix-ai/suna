@@ -481,7 +481,9 @@ describe('buildSecretView ⇄ SecretSchema', () => {
     const parsed = SecretSchema.strict().parse(out);
     expect(parsed.configured).toBe(false);
     expect(parsed.effective_source).toBe('mine');
-    expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString() });
+    // The fixture's `valueEnc` is no real envelope, so the override reads undecryptable.
+    expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString(), status: 'undecryptable' });
+    expect(parsed.status).toBeUndefined();
   });
 
   test('system git-auth secret parses and cannot be managed even by an editor', () => {

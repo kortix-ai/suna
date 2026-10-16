@@ -71,11 +71,19 @@ import { useTranslations } from '@/i18n/use-translations';
  * double-indents the page.
  */
 
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
+import { SplitSheet, SplitSheetContent, SplitSheetMain } from '@/components/ui/split-sheet';
+import { ProviderAccordion } from '@/features/providers/provider-accordion';
 import { ProviderConnect } from '@/features/providers/provider-connect';
+import { ProviderSheet } from '@/features/providers/provider-sheet';
+import {
+  ModelsPageSheetContext,
+  type ModelsPageSheetHost,
+} from '@/features/workspace/customize/sections/models-page-sheet';
+import { cn } from '@/lib/utils';
 import { ModelSelector } from '@/features/session/model-selector';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { GatewayAccessTab } from '@/features/workspace/customize/sections/gateway-access-tab';
@@ -91,7 +99,7 @@ import { gatewayRoutingPolicyKey, resolveModelDefault, useModelDefaults, useProj
 import { useIsMutating } from '@tanstack/react-query';
 
 export const MODELS_PAGE_TITLE = 'Models';
-export const MODELS_PAGE_DESCRIPTION = 'Which providers and models this project can use.';
+export const MODELS_PAGE_DESCRIPTION = 'Choose the providers and models this project can use.';
 
 export type LlmTab =
   'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs';
@@ -258,11 +266,9 @@ export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
   const effectiveDefault = resolveModelDefault(modelDefaults.data, undefined) ?? null;
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
-      <span className="text-muted-foreground hidden text-xs sm:inline">
-        {tI18nComplete.raw('texte8cb80e5c5cb')}
-      </span>
+    <div className="flex shrink-0 items-center" title={tI18nComplete.raw('texte8cb80e5c5cb')}>
       <ModelSelector
+        triggerVariant="secondary"
         models={models}
         selectedModel={effectiveDefault}
         unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
@@ -297,6 +303,9 @@ export function LlmSections({
   onTabChange,
   canWrite,
   enabled,
+  selectedProviderId,
+  onSelectProvider,
+  providersVariant = 'split',
 }: {
   projectId: string;
   tab: LlmTab;
@@ -306,12 +315,21 @@ export function LlmSections({
   canWrite: boolean;
   /** Gates the provider list's fetch. False while the host is closed. */
   enabled: boolean;
+  /** The provider open in the host's `SplitSheet` (`ProviderSheetSplit`). */
+  selectedProviderId?: string | null;
+  onSelectProvider: (providerId: string) => void;
+  /** `split`: the page's list + SplitSheet. `accordion`: the quick dialog's
+   *  rows that open in place (Paper PM01 + AK01) — no room for a second column. */
+  providersVariant?: 'split' | 'accordion';
 }) {
   const modelDefaults = useModelDefaults(projectId);
 
   return (
     <>
-      {tab === 'providers' && (
+      {tab === 'providers' && providersVariant === 'accordion' && (
+        <ProviderAccordion projectId={projectId} canWrite={canWrite} enabled={enabled} />
+      )}
+      {tab === 'providers' && providersVariant === 'split' && (
         /* JAY-510: this path mounts `ProviderConnect` DIRECTLY — no nested
            dialog, so connecting Anthropic here opens nothing on top of what
            you are already looking at. `p-0` because the host column already
@@ -320,8 +338,8 @@ export function LlmSections({
           projectId={projectId}
           canWrite={canWrite}
           enabled={enabled}
-          onOpenModels={() => onTabChange('models')}
-          className="gap-4 p-0"
+          selectedId={selectedProviderId}
+          onSelect={onSelectProvider}
         />
       )}
       {/* The model-visibility list used to sit one level deeper, inside the
@@ -392,25 +410,29 @@ export function LlmManagementView({
     if (next) setTab(next);
   }, [section]);
 
+  const [providerId, setProviderId] = useState<string | null>(null);
+
   return (
+    <ProviderSheetSplit
+      projectId={projectId}
+      providerId={effectiveTab === 'providers' ? providerId : null}
+      onProviderChange={setProviderId}
+      canWrite={canWrite}
+    >
     <CapabilityPageShell
       title={MODELS_PAGE_TITLE}
       description={MODELS_PAGE_DESCRIPTION}
-      action={
-        /* The page's one page-level control, in the slot every sibling page
-           puts its one page-level control in. It is NOT in the `filters` row
-           beside the tabs: a bordered dropdown opposite a filled pill strip
-           reads as a second tab strip, and the row that has to look identical
-           to Connectors / Agents / Skills is exactly that one.
-           Native mode has no model-defaults chain, so no picker at all. */
-        canWrite && llmGatewayEnabled ? <ProjectDefaultPicker projectId={projectId} /> : undefined
-      }
       filters={
-        <LlmTabStrip
-          value={effectiveTab}
-          tabs={llmGatewayEnabled ? undefined : NATIVE_LLM_TABS}
-          onValueChange={(v) => setTab(v as LlmTab)}
-        />
+        /* The tab strip on the left, the project default on the right of the
+           same row. Native mode has no model-defaults chain, so no picker. */
+        <>
+          <LlmTabStrip
+            value={effectiveTab}
+            tabs={llmGatewayEnabled ? undefined : NATIVE_LLM_TABS}
+            onValueChange={(v) => setTab(v as LlmTab)}
+          />
+          {canWrite && llmGatewayEnabled ? <ProjectDefaultPicker projectId={projectId} /> : null}
+        </>
       }
     >
       <LlmSections
@@ -419,7 +441,66 @@ export function LlmManagementView({
         onTabChange={setTab}
         canWrite={canWrite}
         enabled={open}
+        selectedProviderId={providerId}
+        onSelectProvider={setProviderId}
       />
     </CapabilityPageShell>
+    </ProviderSheetSplit>
+  );
+}
+
+/**
+ * The provider list beside the provider it opened — the page and the quick
+ * dialog both host it. In-flow `SplitSheet`, not an overlay: the list narrows
+ * and stays usable, and below 48rem of width the sheet covers it instead.
+ */
+export function ProviderSheetSplit({
+  projectId,
+  providerId,
+  onProviderChange,
+  canWrite,
+  className,
+  contentClassName,
+  children,
+}: {
+  projectId: string;
+  providerId: string | null;
+  onProviderChange: (providerId: string | null) => void;
+  canWrite: boolean;
+  className?: string;
+  /** The sheet column's surface — the quick dialog matches its own background. */
+  contentClassName?: string;
+  children: ReactNode;
+}) {
+  // Another tab's claim on the column (`useModelsPageSheet`): its close
+  // handler, and the element its portal renders into.
+  const [sectionClose, setSectionClose] = useState<(() => void) | null>(null);
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const host = useMemo<ModelsPageSheetHost>(
+    () => ({ target, claim: (onClose) => setSectionClose(() => onClose) }),
+    [target],
+  );
+  return (
+    <ModelsPageSheetContext.Provider value={host}>
+      <SplitSheet
+        open={!!providerId || !!sectionClose}
+        onOpenChange={(open) => {
+          if (open) return;
+          if (providerId) onProviderChange(null);
+          else sectionClose?.();
+        }}
+        size="lg"
+        className={cn('flex-1', className)}
+      >
+        <SplitSheetMain>{children}</SplitSheetMain>
+        <SplitSheetContent className={contentClassName}>
+          {providerId ? (
+            <ProviderSheet projectId={projectId} providerId={providerId} canWrite={canWrite} />
+          ) : (
+            <div ref={setTarget} className="contents" />
+          )}
+        </SplitSheetContent>
+      </SplitSheet>
+    </ModelsPageSheetContext.Provider>
   );
 }

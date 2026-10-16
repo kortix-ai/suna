@@ -54,9 +54,21 @@ function openDB(): Promise<IDBDatabase> {
   const pending = new Promise<IDBDatabase>((resolve, reject) => {
     const request = idb.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
-      const db = request.result;
-      if (db.objectStoreNames.contains(RETIRED_STORE_NAME)) db.deleteObjectStore(RETIRED_STORE_NAME);
-      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+      // A throw here escapes to window.onerror (seen on Chrome 115 as
+      // InvalidStateError from createObjectStore). Fail the open instead: the
+      // cache is optional, and every caller already handles a failed open.
+      try {
+        const db = request.result;
+        if (db.objectStoreNames.contains(RETIRED_STORE_NAME)) db.deleteObjectStore(RETIRED_STORE_NAME);
+        if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+      } catch (error) {
+        reject(error);
+        try {
+          request.transaction?.abort();
+        } catch {
+          // The transaction is already finished; the open fails on its own.
+        }
+      }
     };
     request.onsuccess = () => {
       const db = request.result;

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { SessionCreateInputSchema } from '@kortix/api-contract';
+import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
@@ -764,7 +764,6 @@ async function resolveSessionSandboxPlacement(params: {
     sandboxSlug: string;
     providerLocked: boolean;
     providerName: SandboxProviderName;
-    persistentMachine: boolean;
   }>
 > {
   const { project, body, agentName, loadedAgents, platformMetaAgent } = params;
@@ -819,29 +818,10 @@ async function resolveSessionSandboxPlacement(params: {
     };
   }
   const providerLocked = sessionProviderIsLocked(picked);
-  // A persistent machine boots from a Platinum root volume: it takes Platinum
-  // unless the request or the project pinned another provider.
-  // Only for a project with Volumes on; otherwise the option does not exist.
-  const persistentMachine = body.persistent_machine === true && resolveFeatureFlag(project.metadata, 'volumes');
-  if (persistentMachine && platformMetaAgent) {
-    return {
-      error: { status: 400, body: { error: 'The meta agent cannot run on a persistent machine', code: 'PERSISTENT_MACHINE_UNSUPPORTED' } },
-    };
-  }
   const providerName: SandboxProviderName = providerLocked
     ? (picked as { provider: string }).provider as SandboxProviderName
-    : persistentMachine && config.isProviderEnabled('platinum' as SandboxProviderName)
-      ? ('platinum' as SandboxProviderName)
-      : await selectProvider();
-  if (persistentMachine && providerName !== 'platinum') {
-    return {
-      error: {
-        status: 400,
-        body: { error: 'A persistent machine needs the Platinum sandbox provider', code: 'PERSISTENT_MACHINE_UNSUPPORTED' },
-      },
-    };
-  }
-  return { sandboxSlug, providerLocked, providerName, persistentMachine };
+    : await selectProvider();
+  return { sandboxSlug, providerLocked, providerName };
 }
 
 /** A non-default sandbox template must exist in the project before the session row does. */
@@ -896,7 +876,6 @@ async function checkSessionBillingAdmission(accountId: string): Promise<{ error:
           // Lets the client tell a genuinely-free/no-plan account ("subscribe")
           // from a paying Team account whose wallet ran dry ("top up") instead
           // of pitching the Free plan to a Team account. See web error-handler.
-          billing_model: billingCheck.billingModel,
           has_subscription: billingCheck.hasSubscription,
           // The unambiguous state — the one field a client should branch on.
           billing_state: billingCheck.billingState,
@@ -920,6 +899,7 @@ function resolveSessionIdentity(params: {
 }): SessionCreateStep<{
   sessionId: string;
   initialPrompt: string | null;
+  initialContext: string | null;
   initialTurn: ReturnType<typeof prepareInitialSandboxTurn> | null;
   pendingPromptConversion: PendingPromptConversion | null;
 }> {
@@ -932,6 +912,18 @@ function resolveSessionIdentity(params: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  // Harness context riding beside the prompt (see `initial_context` in the
+  // create contract). Bounded here because the create route validates the
+  // body ad hoc, not through the contract schema.
+  const initialContext = normalizeString(body.initial_context ?? body.initialContext);
+  if (initialContext && initialContext.length > SESSION_INITIAL_CONTEXT_MAX_CHARS) {
+    return {
+      error: {
+        status: 400,
+        body: { error: `initial_context must be at most ${SESSION_INITIAL_CONTEXT_MAX_CHARS} characters` },
+      },
+    };
+  }
   const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
   const pendingPrompt =
     body.pending_prompt &&
@@ -961,7 +953,7 @@ function resolveSessionIdentity(params: {
       },
     };
   }
-  return { sessionId, initialPrompt, initialTurn, pendingPromptConversion };
+  return { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion };
 }
 
 /** The initiator and the metadata the session row is created with. */
@@ -977,13 +969,13 @@ function buildSessionCreateMetadata(params: {
   validatedConnectorBindings: { bindings: ValidatedSessionConnectorBindings };
   secretsAllowlist: string[] | null;
   initialPrompt: string | null;
+  initialContext: string | null;
   pendingPromptConversion: PendingPromptConversion | null;
   opencodeModel: string | null;
   opencodeModelSource: ModelSource | null;
   parentSession: ParentSession;
   repositoryAccess: boolean;
   sandboxSlug: string;
-  persistentMachine: boolean;
 }) {
   const {
     input,
@@ -997,13 +989,13 @@ function buildSessionCreateMetadata(params: {
     validatedConnectorBindings,
     secretsAllowlist,
     initialPrompt,
+    initialContext,
     pendingPromptConversion,
     opencodeModel,
     opencodeModelSource,
     parentSession,
     repositoryAccess,
     sandboxSlug,
-    persistentMachine,
   } = params;
   const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
@@ -1070,6 +1062,8 @@ function buildSessionCreateMetadata(params: {
     ...requestMetadata,
     ...(sessionName ? { custom_name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    // Harness context beside the prompt; server-read by the initial-turn claim.
+    ...(initialContext ? { initial_context: initialContext } : {}),
     // Picks only — the prompt itself is a durable inbox row (see below), and a
     // pre-deploy web bundle replays `pending_prompt.text` client-side, so
     // storing the text would double-send it.
@@ -1094,7 +1088,6 @@ function buildSessionCreateMetadata(params: {
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
-    ...(persistentMachine ? { persistent_machine: true } : {}),
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
@@ -1679,7 +1672,7 @@ export async function createProjectSession(input: {
   });
   if (placement.error) return { error: placement.error };
   let { sandboxSlug } = placement;
-  const { providerLocked, providerName, persistentMachine } = placement;
+  const { providerLocked, providerName } = placement;
 
   const callbackUnreachable =
     sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
@@ -1705,7 +1698,7 @@ export async function createProjectSession(input: {
 
   const identity = resolveSessionIdentity({ input, projectId, accountId });
   if (identity.error) return { error: identity.error };
-  const { sessionId, initialPrompt, initialTurn, pendingPromptConversion } = identity;
+  const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
   const { initiator, metadata } = buildSessionCreateMetadata({
     input,
     projectId,
@@ -1718,13 +1711,13 @@ export async function createProjectSession(input: {
     validatedConnectorBindings,
     secretsAllowlist,
     initialPrompt,
+    initialContext,
     pendingPromptConversion,
     opencodeModel,
     opencodeModelSource,
     parentSession,
     repositoryAccess,
     sandboxSlug,
-    persistentMachine,
   });
 
   let sessionRow: ProjectSessionRow | null = null;

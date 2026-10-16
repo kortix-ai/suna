@@ -13,6 +13,7 @@ import {
   sessionLogBurstRunning,
   sessionLogBurstSteps,
   sessionLogBurstSummary,
+  sessionLogBurstWorkLabel,
   sessionLogOpenCall,
   sessionLogShowGroupCall,
   sessionLogTurnSegments,
@@ -139,6 +140,16 @@ describe('sessionLogBurstSummary / sessionLogBurstRunning', () => {
       call('b2', 'bash', { command: 'false' }, { kind: 'shell', status: 'error', result: { content: [{ type: 'text', text: 'exit 1' }], is_error: true, error: { message: 'exit 1' } } }),
     ]);
     expect(sessionLogBurstSummary(turn.blocks)).toEqual({ total: 3, failed: 1, completed: 2, hasPlumbing: true });
+  });
+
+  test('the work label names the calls and the failures, never the thinking or the plumbing', () => {
+    const turn = turnOf([
+      { type: 'reasoning', id: 'r1', text: 'one' },
+      call('mem', 'memory_search', { query: 'x' }),
+      call('b1', 'bash', { command: 'ls' }, { kind: 'shell' }),
+      call('b2', 'bash', { command: 'false' }, { kind: 'shell', status: 'error', result: { content: [{ type: 'text', text: 'exit 1' }], is_error: true, error: { message: 'exit 1' } } }),
+    ]);
+    expect(sessionLogBurstWorkLabel(turn.blocks)).toBe('Ran 2 commands · 1 failed');
   });
 
   test('a burst runs while the turn works: the trailing one always, another while a call is open or a thought streams', () => {

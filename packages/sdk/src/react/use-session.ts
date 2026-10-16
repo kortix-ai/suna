@@ -100,8 +100,9 @@ import { useSessionLogSync } from './use-session-log';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
-import { useSessionTurnOutcome, useSessionWorking } from './use-session-working';
+import { useSessionCanStop, useSessionTurnOutcome, useSessionWorking } from './use-session-working';
 import { cancelSessionTurn } from './session-stop';
+import { useTurnEndHandoff } from './turn-end-handoff';
 import { useVisibleAgents } from './use-visible-agents';
 import { createKortix } from '../core/client/kortix';
 import { platformConfig } from '../core/http/config';
@@ -138,6 +139,29 @@ export function shouldRetrySessionStart(
     return failureCount < FRESH_START_404_RETRIES;
   }
   return !isSessionStartError(error) && failureCount < 3;
+}
+
+/**
+ * Whether a human coming BACK to this tab should re-open (wake) a stopped
+ * session. Two states park a session with no way back except an explicit
+ * Restart or a remount:
+ *
+ * - the hold: a user Stop made from this tab (`stoppedByUserRef`);
+ * - the cached answer is terminal-`stopped`: the poll stopped dead on the
+ *   dormant answer (a manual stop from any host, or the idle reaper), and
+ *   `shouldPollSessionStart` will never fire again for it.
+ *
+ * The caller fires this only on an absent→present presence transition — a
+ * person who left and returned — and resets the open intent before it, so the
+ * wake wins the `userStopFollowsIntent` race that parked the session. A stop
+ * pressed moments ago in this same tab (presence never dropped) is not a
+ * return, and stays stopped.
+ */
+export function presenceReturnReopensSession(
+  heldByThisTab: boolean,
+  cachedStage: string | null | undefined,
+): boolean {
+  return heldByThisTab || cachedStage === 'stopped';
 }
 
 /**
@@ -1060,7 +1084,8 @@ export interface UseSessionOptions {
    * When `false`: `messages`/`diffs`/`todos` are empty arrays, `status` is the
    * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions` stay
    * live (populated by SSE via the still-active event stream, just without the
-   * self-heal poll backstop), and `replayStartStash` is force-disabled (it reads
+   * self-heal poll backstop), the session log (v2) is still negotiated, so
+   * `useSessionLogThread` serves the log's records, and `replayStartStash` is force-disabled (it reads
    * the now-empty chat state, so it would never fire correctly). Everything the
    * boot/lifecycle fields need — `start`/`switch`/`runtimePhase`/`sandbox`/`stage`/
    * `runtimeSessionId` — is unaffected.
@@ -1131,6 +1156,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const presenceAlertsRef = useRef(presenceAlerts);
   const presencePageExitRef = useRef(presencePageExit);
   const presenceReporterRef = useRef<ReturnType<typeof presenceReporter> | null>(null);
+  // The previous presence report, to recognize an absent→present transition —
+  // a human coming BACK (tab shown again, input after idle, page unhidden).
+  // Null until the first report: the initial present at mount is not a return.
+  const lastPresenceActiveRef = useRef<boolean | null>(null);
   // Until when this person's presence keeps the computer on (KRTX-1729), from
   // the latest present PUT's response. Null while absent, for a viewer, for a
   // computer the renewal found not running, and from a turn's start until the
@@ -1155,6 +1184,25 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // Without page exit, an absent PUT goes without `keepalive`, as before
     // KRTX-1742: a closing page may cancel it, and the lease then expires.
     const reporter = presenceReporter(({ active, alerts }) => {
+      // A human coming back to a stopped session is a fresh visit: release the
+      // stop hold and re-open (`presenceReturnReopensSession`). Presence-gated
+      // on purpose — a background tab never reports a return, so it never
+      // wakes a box for nobody. A stop made seconds ago in THIS tab (presence
+      // never dropped) is not a return and stays stopped.
+      if (
+        active &&
+        lastPresenceActiveRef.current === false &&
+        presenceReturnReopensSession(
+          stoppedByUserRef.current === sessionId,
+          queryClient.getQueryData<SessionStartResult | null>(sessionStartKey(projectId, sessionId))
+            ?.stage,
+        )
+      ) {
+        stoppedByUserRef.current = null;
+        openedAtRef.current = { sessionId, at: Date.now() };
+        void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+      }
+      lastPresenceActiveRef.current = active;
       const report = ++presenceReportRef.current;
       if (!active) setPresenceAwake(null);
       const keepalive = !active && presencePageExitRef.current;
@@ -1183,7 +1231,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       presenceReporterRef.current = null;
       stop();
     };
-  }, [browserPresence, presenceTabId, projectId, sessionId]);
+  }, [browserPresence, presenceTabId, projectId, sessionId, queryClient]);
   useEffect(() => {
     presenceAlertsRef.current = presenceAlerts;
     presenceReporterRef.current?.setAlerts(presenceAlerts);
@@ -1396,9 +1444,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // whole chat path (SSE, sync, send) rides this single global switch — there is no
   // separate per-session client to keep in sync.
   //
-  // Keyed on the box (`external_id`), not on `sandbox_id`: an ephemeral session
-  // keeps its `sandbox_id` (= the session id) across a stop that deletes its box
-  // and a wake that boots a new one. Keyed on `sandbox_id`, the switch never
+  // Keyed on the box (`external_id`), not on `sandbox_id`: a session keeps its
+  // `sandbox_id` (= the session id) when its box is replaced (a restore, a
+  // re-provision). Keyed on `sandbox_id`, the switch never
   // re-ran for the new box, and every read stayed on the deleted one until a
   // reload ("Lost contact with this session's computer").
   const [switchedBoxId, setSwitchedBoxId] = useState<string | null>(null);
@@ -1437,8 +1485,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [switched, switchedBoxId]);
 
-  // 3b. The proxy says the box behind our runtime URL is gone (deleted by an
-  // ephemeral stop; another tab or the send path may already have woken the
+  // 3b. The proxy says the box behind our runtime URL is gone (deleted or
+  // replaced; another tab or the send path may already have woken the
   // session on a new box). The URL can never answer again, so ask `/start`
   // now instead of waiting out its once-a-minute recheck.
   const refetchStart = start.refetch;
@@ -1465,8 +1513,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
   // 5a. The session log (v2) when negotiated; until then a no-op and the
-  // transcript below stays the only source (`use-session-log.ts`).
-  useSessionLogSync(projectId, sessionId, { enabled: transcriptHistoryEnabled });
+  // transcript below stays the only source (`use-session-log.ts`). Also without
+  // the chat engine: a host that reads its own transcript renders the log's
+  // threads (`useSessionLogThread`).
+  useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
   const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
@@ -1500,6 +1550,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled,
     runtimeSessionId: ocSessionId,
   });
+  const canStop = useSessionCanStop(projectId, sessionId);
   // A turn keeps the computer on and moves presence's cap (2 h after the
   // latest turn), so the window from before it is wrong after it (KRTX-1729):
   // a turn that starts clears it, and a turn that ends reads it again.
@@ -1531,9 +1582,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
     streamConnected,
-    // Until the saved-history read answers with a copy, the session-open
-    // bundle's copy of the same mirror may paint (`undefined` = read it).
-    mirror: transcriptHistory.envelope ?? undefined,
+    // The saved-history read above is this open's ONE transcript read: its
+    // copy, or `null` while it runs and when it found none. Never `undefined`,
+    // which would make the sync layer read the same window again (KRTX-189).
+    mirror: transcriptHistory.envelope,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
@@ -1591,6 +1643,19 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     lastEndedSeenRef.current = lastEndedToken;
     if (seen !== undefined && seen !== lastEndedToken) presenceReporterRef.current?.refresh();
   }, [turnRead, lastEndedToken]);
+  // This view's stream is the only thing that announces a turn's end. A turn
+  // still running when the view unmounts (the person opened another page) is
+  // handed to a `/turn` watch that announces it instead; mounting again takes
+  // it back (`turn-end-handoff.ts`).
+  useTurnEndHandoff({
+    enabled,
+    projectId,
+    sessionId,
+    runtimeSessionId: ocSessionId || null,
+    working: turnRunning,
+    openTurnToken: working.serverOpenTurnToken,
+    lastEndedToken,
+  });
   const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
@@ -2058,6 +2123,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      *  and for which turn. The one answer; `isBusy` is its boolean face. */
     working,
     isBusy: working.state === 'working',
+    /**
+     * May this viewer stop the running turn? In a shared session only the
+     * member who started it, the session owner or a project manager may. False
+     * only when the server's latest `/turn` answer says so (`can_stop`); a host
+     * then shows no Stop and a send queues. True when nothing runs, and when
+     * the server did not say. A stop the server refuses still ends as a
+     * `failed` settlement (403 `not_turn_prompter`).
+     */
+    canStop,
     /**
      * Until when this person's presence keeps the session's computer on
      * (KRTX-1729): `until` is the computer's stop time after the latest

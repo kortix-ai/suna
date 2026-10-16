@@ -4,11 +4,33 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { ToolSurfaceContext, useToolIndent } from '@/features/session/tool/shared/surface';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import { cn } from '@/lib/utils';
-import type { MessageWithParts, ToolPart } from '@/ui';
-import { getChildSessionError, getRetryInfo, getRetryMessage } from '@/ui';
-import { toolCallBlock } from '@kortix/sdk';
-import { useSessionStateStore } from '@kortix/sdk/react';
+import { getRetryInfo, getRetryMessage } from '@/ui';
+import { classifySessionLogMessage, type SessionLogThread, type ToolCallBlock } from '@kortix/sdk';
+import { canQueryRuntimeSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
+import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+
+const NO_SESSION = { projectId: '', sessionId: '', runtimeSessionId: null };
+
+/**
+ * A sub-agent's thread: `useSessionLogThread` of the session on screen (the route's project
+ * and session; none on a debug page), by the child's runtime session id. On v2 the API's
+ * session log holds it; on v1 it is the `fromV1` view of the child's rows. Holds the child's
+ * rows while the row is mounted, as a session view does: the store frees a session once its
+ * last consumer is gone, and a preview has no re-hydrate path of its own.
+ */
+export function useSubAgentThread(childSessionId: string | undefined): SessionLogThread | null {
+  const params = useParams<{ id?: string; sessionId?: string }>();
+  useEffect(() => {
+    if (!canQueryRuntimeSession(childSessionId)) return;
+    return useSessionStateStore.getState().retainSession(childSessionId);
+  }, [childSessionId]);
+  const source = useMemo(
+    () => (childSessionId ? { projectId: params?.id ?? '', sessionId: params?.sessionId ?? '', runtimeSessionId: null } : NO_SESSION),
+    [childSessionId, params?.id, params?.sessionId],
+  );
+  return useSessionLogThread(source, childSessionId ?? null);
+}
 
 /**
  * A sub-agent's steps, listed under the row that dispatched it.
@@ -52,21 +74,21 @@ import { useEffect, useMemo, useState } from 'react';
  */
 export function SubAgentActivity({
   childSessionId,
-  parts,
+  calls,
 }: {
   childSessionId?: string;
-  parts: ToolPart[];
+  calls: readonly ToolCallBlock[];
 }) {
   const indent = useToolIndent();
 
-  if (parts.length === 0) return null;
+  if (calls.length === 0) return null;
   return (
     <ToolSurfaceContext.Provider value="inline">
       <div className={cn('space-y-1', indent)}>
-        {parts.map((tp) => (
+        {calls.map((call) => (
           <ToolPartRenderer
-            key={tp.callID}
-            call={toolCallBlock(tp)}
+            key={call.call_id}
+            call={call}
             sessionId={childSessionId}
             disableNavigation
           />
@@ -78,17 +100,21 @@ export function SubAgentActivity({
 
 export function SubAgentStatusBanner({
   childSessionId,
-  childMessages,
+  childThread,
 }: {
   childSessionId?: string;
-  childMessages?: MessageWithParts[];
+  childThread: SessionLogThread | null;
 }) {
   const childStatus = useSessionStateStore((s) =>
     childSessionId ? s.sessionStatus[childSessionId] : undefined,
   );
   const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);
   const retryMessage = useMemo(() => getRetryMessage(childStatus), [childStatus]);
-  const childError = useMemo(() => getChildSessionError(childMessages), [childMessages]);
+  // The newest reply's error, as the transcript words a turn error.
+  const childError = useMemo(() => {
+    const failed = childThread?.messages.findLast((m) => m.role === 'assistant' && m.error);
+    return failed ? classifySessionLogMessage(failed).error?.message : undefined;
+  }, [childThread]);
 
   const [secondsLeft, setSecondsLeft] = useState(0);
   useEffect(() => {

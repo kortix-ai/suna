@@ -1,11 +1,45 @@
 import { SessionSnapshotSchema, SessionTranscriptSyncEnvelopeSchema } from "@kortix/api-contract";
 import { Client } from "pg";
 import { flow } from "../core/flow";
+import type { FlowContext, FlowMeta, Principal } from "../core/types";
 import { CliSandbox, throwIfCliInfraFailure } from "../fixtures/cli";
 import { createDatabaseSession } from "../fixtures/database-project";
 import { seedSessionTranscript } from "../fixtures/session-transcript";
 
-flow(
+type Store = "mirror" | "log";
+
+/**
+ * Registers `<id>` with the saved history in the v1 mirror (what every project reads today)
+ * and `<id>-log` with it in the session log, written through the journal with the project's
+ * `session_log` flag on (Session Log Plan P5.7). Both implement spec `<id>`.
+ */
+function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext, store: Store) => Promise<void>): void {
+  flow(id, meta, (ctx) => fn(ctx, "mirror"));
+  flow(
+    `${id}-log`,
+    {
+      ...meta,
+      specId: id,
+      routes: [
+        ...(meta.routes ?? []),
+        "POST /v1/accounts/tokens",
+        "DELETE /v1/accounts/tokens/:tokenId",
+        "POST /v1/projects/:projectId/sessions/:sessionId/log/journal",
+      ],
+    },
+    (ctx) => fn(ctx, "log"),
+  );
+}
+
+/** The fixture's `log` option for `store`: the owner's current token mints the journal credential. */
+async function logOption(store: Store, owner: Principal) {
+  if (store === "mirror") return {};
+  if (owner.auth.mode !== "bearer") throw new Error(`the -log twin needs a bearer owner to journal, got auth mode ${owner.auth.mode}`);
+  await owner.auth.ensureFresh?.();
+  return { log: { bearer: owner.auth.token } };
+}
+
+storeFlow(
   "SESS-32",
   {
     domain: "sessions",
@@ -23,7 +57,7 @@ flow(
       "GET /v1/projects/:projectId/sessions/:sessionId/snapshot",
     ],
   },
-  async (ctx) => {
+  async (ctx, store) => {
     const project = await ctx.fixtures.project();
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
@@ -31,10 +65,31 @@ flow(
       userId: ctx.P.OWNER.userId!,
     });
     ctx.track("session", sessionId, { projectId: project.id });
+    const child = "ses_subagentwindow";
     const fixture = await seedSessionTranscript(ctx.env, {
       projectId: project.id,
       accountId: ctx.P.OWNER.accountId!,
       sessionId,
+      // The prompt and the reply, which dispatched a sub-agent (a `task` call naming its
+      // runtime session), and the sub-agent's first message in that session.
+      messages: (root, [prompt, reply]) => [
+        prompt!,
+        {
+          ...reply!,
+          parts: [
+            ...reply!.parts,
+            {
+              id: "prt_history_task", sessionID: root, messageID: reply!.info.id, type: "tool", callID: "call_history_task", tool: "task",
+              state: { status: "completed", input: { description: "List", prompt: "List the files." }, output: "", title: "List", metadata: { sessionId: child }, time: { start: 1, end: 2 } },
+            },
+          ],
+        },
+        {
+          info: { id: "msg_subagent_000000000000001", sessionID: child, role: "user", time: { created: Date.now() - 30_000 } },
+          parts: [{ id: "prt_subagent", sessionID: child, messageID: "msg_subagent_000000000000001", type: "text", text: "List the files." }],
+        },
+      ],
+      ...(await logOption(store, ctx.P.OWNER)),
     });
     const route = "/v1/projects/:projectId/sessions/:sessionId/transcript";
     const options = {
@@ -92,7 +147,7 @@ flow(
         await db.connect();
         try {
           await db.query(
-            `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
+            `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"session_transcript_history":false}'::jsonb) WHERE project_id = $1`,
             [project.id],
           );
         } finally {
@@ -118,32 +173,6 @@ flow(
     await ctx.step(
       "a sub-agent's saved transcript is its own window, and the conversation never includes it",
       async () => {
-        const child = "ses_subagentwindow";
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        // A dropped connection must fail the next query, not crash the runner.
-        db.on("error", () => {});
-        await db.connect();
-        try {
-          const info = {
-            id: "msg_subagent_000000000000001",
-            sessionID: child,
-            role: "user",
-            time: { created: Date.now() - 30_000 },
-          };
-          await db.query(
-            "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,'user',$4,$5,$6)",
-            [
-              sessionId,
-              info.id,
-              child,
-              new Date(info.time.created),
-              JSON.stringify(info),
-              JSON.stringify([{ id: "prt_subagent", type: "text", text: "List the files." }]),
-            ],
-          );
-        } finally {
-          await db.end();
-        }
         (await owner.get(route, options))
           .status(200)
           .body()
@@ -301,24 +330,28 @@ flow(
           throwIfCliInfraFailure(run, "kortix sessions log");
           if (run.exitCode !== 0)
             throw new Error(`kortix sessions log exited ${run.exitCode}: ${run.all}`);
-          // No stored session log: the saved v1 transcript, converted to the
-          // kortix.session/2 records, so scripts read one shape. The source is
+          // Mirror: no stored session log, so the saved v1 transcript converted to
+          // the kortix.session/2 records (one thread: the root), so scripts read one
+          // shape. Log: the stored session log, every thread. The source is
           // reported on stderr so it cannot break them.
+          const expected = store === "log"
+            ? { source: "log", threads: [fixture.root, child], stderr: "Stored session log" }
+            : { source: "v1", threads: [fixture.root], stderr: "Saved transcript" };
           const log = JSON.parse(run.stdout) as {
             schema: string;
             source: string;
-            threads: Array<{ messages: Array<{ role: string; blocks: Array<{ type: string; text?: string }> }> }>;
+            threads: Array<{ thread_id: string; messages: Array<{ role: string; blocks: Array<{ type: string; text?: string }> }> }>;
           };
-          if (log.schema !== "kortix.session/2" || log.source !== "v1")
-            throw new Error(`expected schema kortix.session/2 from source v1: ${run.stdout.slice(0, 300)}`);
+          if (log.schema !== "kortix.session/2" || log.source !== expected.source)
+            throw new Error(`expected schema kortix.session/2 from source ${expected.source}: ${run.stdout.slice(0, 300)}`);
           const messages = log.threads[0]?.messages ?? [];
-          if (log.threads.length !== 1 || messages.length !== 2)
-            throw new Error(`expected 1 thread with the 2 saved messages: ${run.stdout.slice(0, 300)}`);
+          if (log.threads.map((t) => t.thread_id).join() !== expected.threads.join() || messages.length !== 2)
+            throw new Error(`expected threads ${expected.threads}, the root with the 2 saved messages; got ${JSON.stringify(log.threads.map((t) => [t.thread_id, t.messages.length]))}`);
           if (messages[0]!.role !== "user" || messages[1]!.role !== "assistant")
             throw new Error(`saved messages out of order: ${run.stdout}`);
           if (!messages[1]!.blocks.some((b) => b.type === "text" && b.text?.includes("stored in the database")))
             throw new Error(`log lost the saved reply: ${run.stdout}`);
-          if (!run.stderr.includes("Saved transcript"))
+          if (!run.stderr.includes(expected.stderr))
             throw new Error(`log did not say where the messages came from: ${run.stderr}`);
           // The old v1 JSON, for one release: the message array, and a deprecation note on stderr.
           const old = await cli.run(["sessions", "log", sessionId, "--project", project.id, "--json", "--schema", "v1"]);
@@ -380,10 +413,11 @@ flow(
   },
 );
 
-flow(
+storeFlow(
   "SESS-31",
   {
     domain: "sessions",
+    tags: ["deployed"],
     requires: ["database"],
     routes: [
       "POST /v1/projects/:projectId/sessions/:sessionId/attachments",
@@ -397,7 +431,7 @@ flow(
       "GET /v1/projects/:projectId/sessions/:sessionId/transcript",
     ],
   },
-  async (ctx) => {
+  async (ctx, store) => {
     const project = await ctx.fixtures.project();
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
@@ -530,43 +564,22 @@ flow(
         // The saved transcript is the index of what a session stored. Seed one
         // whose user message references the uploaded file, stop the session,
         // and read it back through `kortix sessions attachments`.
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        // A dropped connection must fail the next query, not crash the runner.
-        db.on("error", () => {});
-        await db.connect();
-        try {
-          const root = `ses_${sessionId.replaceAll("-", "")}`;
-          await db.query(
-            "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2 WHERE session_id = $1",
-            [sessionId, root],
-          );
-          await db.query(
-            "INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)",
-            [sessionId, project.id, ctx.P.OWNER.accountId, root],
-          );
-          const info = {
-            id: "msg_attach_000000000000001",
-            sessionID: root,
-            role: "user",
-            time: { created: Date.now() - 1_000 },
-          };
-          const parts = [
-            { id: "prt_text", type: "text", text: "Here are my notes." },
+        await seedSessionTranscript(ctx.env, {
+          projectId: project.id,
+          accountId: ctx.P.OWNER.accountId!,
+          sessionId,
+          ensureSandbox: false,
+          messages: (root) => [
             {
-              id: "prt_file",
-              type: "file",
-              filename: "notes.txt",
-              mime: "text/plain",
-              url: ref,
+              info: { id: "msg_attach_000000000000001", sessionID: root, role: "user", time: { created: Date.now() - 1_000 } },
+              parts: [
+                { id: "prt_text", type: "text", text: "Here are my notes." },
+                { id: "prt_file", type: "file", filename: "notes.txt", mime: "text/plain", url: ref },
+              ],
             },
-          ];
-          await db.query(
-            "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,'user',$4,$5,$6)",
-            [sessionId, info.id, root, new Date(info.time.created), JSON.stringify(info), JSON.stringify(parts)],
-          );
-        } finally {
-          await db.end();
-        }
+          ],
+          ...(await logOption(store, ctx.P.OWNER)),
+        });
         const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-attachments") });
         const cli = new CliSandbox("attachments");
         try {
@@ -644,7 +657,7 @@ flow(
       },
     );
     await ctx.step(
-      "deleting the session removes its stored bytes and denies subsequent reads",
+      "deleting the session denies every read and keeps its stored bytes for a restore until the retention purge",
       async () => {
         (
           await owner.request(
@@ -663,8 +676,10 @@ flow(
             "SELECT count(*)::int AS count FROM storage.objects WHERE bucket_id='session-attachments' AND name=$1",
             [`${project.id}/${sessionId}/${attachmentId}`],
           );
-          if (result.rows[0].count !== 0)
-            throw new Error("Deleted session still owns attachment bytes");
+          // KRTX-1734: the session is restorable for 30 days, so its file is
+          // kept. The purge deletes it 37 days after the delete (SESS-51).
+          if (result.rows[0].count !== 1)
+            throw new Error(`a deleted session's file should stay until the purge, found ${result.rows[0].count}`);
         } finally {
           await db.end();
         }

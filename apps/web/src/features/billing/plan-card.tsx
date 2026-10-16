@@ -1,129 +1,144 @@
 'use client';
 
 /**
- * The plan card — the subscription, at hero scale, with the seat properties
- * that only a per-seat account has.
+ * The plan card: the subscription at hero scale, and the control that changes
+ * it.
  *
- * **Why it exists** (Jay, 2026-09-03): "in the plan, you need to show just the
- * team part, team seat". The Plan tab opened on `AccountOverviewTab`, whose
- * subject is the WALLET — available balance, credits, this period's compute
- * and LLM spend, and the concurrency limits — with the plan itself demoted to
- * a two-line right-hand column beside the balance. Every one of those numbers
- * now has its own pane (`settings/tabs/credits-tab.tsx`), so on the Plan tab
- * that card was both a duplicate and a card about the wrong thing.
+ * The plan is the subject. The Credits pane (`settings/tabs/credits-tab.tsx`)
+ * owns the wallet: balance, composition, period spend. This card names the
+ * plan, says where it stands (renews, cancels, past due), and, for an account
+ * owner, lets them pick a new tier with the same `CreditTierSelect` the pricing
+ * page and the upgrade modal use.
  *
- * This inverts it: the plan is the subject, and the seat economics — count,
- * price each, monthly total — are the properties under it.
- *
- * **It replaces `SeatManagementCard` on this pane, and only on this pane.**
- * That card states the same three seat figures as a sentence
- * (`3 seats · $25 per teammate, compute included`) plus a right-aligned total.
- * Rendering both would print the seat count three times in two boxes. The card
- * is untouched and still renders on `/accounts/[id]?tab=billing`, which keeps
- * the wallet-first layout — see `billing-tab.tsx`'s `showWallet`.
- *
- * The strip is per-seat ONLY. A flat plan has no seat properties, and its
- * monthly grant is already a meter on the Credits pane, so a strip here would
- * be a second rendering of a number that has a better one elsewhere.
+ * There are no seats. Members are unlimited and share one credit pool, so the
+ * only thing a person can change is the tier.
  */
 
-import { cn } from '@/lib/utils';
-import type { AccountState } from '@kortix/sdk';
+import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import {
+  DEFAULT_TIER_USD,
+  FREE_MONTHLY_CREDITS,
+  formatWholeUsd,
+  isValidMonthlyUsd,
+  monthlyCreditsForUsd,
+  tierForMonthlyUsd,
+} from '@/features/billing/compute-pricing';
+import { CreditTierSelect } from '@/features/billing/credit-tier-select';
+import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
+import { isBillingEnabled } from '@/lib/config';
+import { cn } from '@/lib/utils';
+import { useBillingAccountId } from '@/stores/billing-account-context';
+import { canManageBilling, resolvedPlan, type AccountState } from '@kortix/sdk';
+import { useBillingPlanPreview } from '@kortix/sdk/react';
+import { formatCredits } from '@kortix/shared';
+import { useState } from 'react';
 
-import { describePlanStatus, formatUsd } from './account-overview';
+import { describePlanStatus } from './account-overview';
 
-export interface SeatProperty {
-  id: 'count' | 'price' | 'total';
-  label: string;
-  value: string;
-}
+export type PlanChangeKind = 'subscribe' | 'raise' | 'cut' | 'keep' | 'unchanged' | 'invalid';
 
 /**
- * The three facts about a team's seats, or `null` for any account that does
- * not bill per seat.
- *
- * `monthlyTotal` is multiplied here rather than read from the API for the same
- * reason `SeatManagementCard` multiplies it: there is no field for it. Both
- * derive it from the same two numbers, so they cannot disagree.
+ * What choosing `nextUsd` does, given the account's live subscription.
+ * The API decides the outcome; this only says it before the click, in the
+ * same terms (`POST /v1/billing/plan`): no paid subscription starts Stripe
+ * Checkout, a raise is instant (charged now, prorated), a cut waits for the
+ * next renewal, and the amount in effect again keeps the plan when a cut is
+ * scheduled. `currentUsd` is the amount in effect this period.
  */
-export interface SeatPropertyCopy {
-  seats: string;
-  perSeat: string;
-  monthlyTotal: string;
-  perMonth: (amount: string) => string;
-  locale: string;
+export function describePlanChange(opts: {
+  currentUsd: number | null;
+  nextUsd: number | null;
+  hasSubscription: boolean;
+  /** A lower amount already scheduled for the next renewal. */
+  scheduledUsd?: number | null;
+}): PlanChangeKind {
+  if (!isValidMonthlyUsd(opts.nextUsd) || !tierForMonthlyUsd(opts.nextUsd)) return 'invalid';
+  if (!opts.hasSubscription) return 'subscribe';
+  if (opts.currentUsd === null || opts.nextUsd > opts.currentUsd) return 'raise';
+  const scheduled = opts.scheduledUsd ?? null;
+  if (opts.nextUsd === opts.currentUsd) return scheduled === null ? 'unchanged' : 'keep';
+  return opts.nextUsd === scheduled ? 'unchanged' : 'cut';
 }
 
-const DEFAULT_SEAT_PROPERTY_COPY: SeatPropertyCopy = {
-  seats: 'Seats',
-  perSeat: 'Per seat',
-  monthlyTotal: 'Monthly total',
-  perMonth: (amount) => `${amount}/mo`,
-  locale: 'en-US',
-};
-
-export function seatProperties(
+/** A lower credits amount waiting for the next renewal, from the account state. */
+export function scheduledDowngrade(
   state: AccountState,
-  copy: SeatPropertyCopy = DEFAULT_SEAT_PROPERTY_COPY,
-): SeatProperty[] | null {
-  const seats = state.seats;
-  if (!seats || state.billing_model !== 'per_seat') return null;
+): { monthlyUsd: number; effectiveAt: string } | null {
+  const change = state.subscription?.scheduled_change;
+  const monthlyUsd = change?.target_tier?.monthly_usd;
+  if (!change || change.target_tier.name !== 'credits' || monthlyUsd == null) return null;
+  return { monthlyUsd, effectiveAt: change.effective_date };
+}
 
-  const perSeat = seats.price_per_seat_usd ?? 0;
-  const count = seats.count ?? 0;
+function formatShortDate(iso: string | null | undefined, locale: string): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+}
 
-  return [
-    { id: 'count', label: copy.seats, value: String(count) },
-    { id: 'price', label: copy.perSeat, value: copy.perMonth(formatUsd(perSeat, copy.locale)) },
-    {
-      id: 'total',
-      label: copy.monthlyTotal,
-      value: copy.perMonth(formatUsd(perSeat * count, copy.locale)),
-    },
-  ];
+/** A charge due now: cents matter here, unlike the whole-dollar plan prices. */
+function formatChargeUsd(amount: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(amount);
+}
+
+/** Monthly credits the account's current plan grants, or `null` when unknown. */
+function currentPlanCredits(state: AccountState): number | null {
+  const plan = resolvedPlan(state);
+  if (plan.monthlyUsd != null) return monthlyCreditsForUsd(plan.monthlyUsd);
+  if (plan.family === 'free') return FREE_MONTHLY_CREDITS;
+  return null;
 }
 
 export function PlanCard({ state }: { state: AccountState }) {
   const t = useTranslations('billing.plan');
+  const tCredits = useTranslations('billing.credits');
   const locale = useLocale();
   const planCopy = {
     locale,
-    teamSeats: (count: number) => t('teamSeats', { count }),
+    perMonth: (amount: string) => t('perMonth', { amount }),
     cancels: (date: string) => t('cancels', { date }),
     cancelsAtPeriodEnd: t('cancelsAtPeriodEnd'),
     renews: (date: string) => t('renews', { date }),
     active: t('active'),
     noSubscription: t('noSubscription'),
+    graceUntil: (date: string) => t('graceUntil', { date }),
     status: (status: string) =>
       t.has(`statuses.${status}`)
         ? t(`statuses.${status}`)
         : t('status', { status: status.replace(/_/g, ' ') }),
   };
   const { name, sublabel, detail, isActive, isWindingDown } = describePlanStatus(state, planCopy);
-  const seats = seatProperties(state, {
-    seats: t('seats'),
-    perSeat: t('perSeat'),
-    monthlyTotal: t('monthlyTotal'),
-    perMonth: (amount) => t('perMonth', { amount }),
-    locale,
-  });
+  const credits = currentPlanCredits(state);
 
   return (
     <div className="bg-popover rounded-md border">
       {/* Same geometry as the balance card on the Credits pane — label, hero
           line, qualifier, with the status opposite it — so hopping between the
-          two sibling panes does not move the eye. `items-center`, for the
-          reason that card documents: the left block is taller than the right,
-          and top-aligning them reads as a diagonal rather than a row. */}
+          two sibling panes does not move the eye. `items-center`: the left
+          block is taller than the right, and top-aligning them reads as a
+          diagonal rather than a row. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4">
         <div className="min-w-0">
           <p className="text-muted-foreground text-xs">{t('currentPlan')}</p>
           <p className="text-foreground mt-1.5 truncate text-2xl leading-none font-semibold tracking-tight">
             {name}
           </p>
-          {sublabel ? (
-            <p className="text-muted-foreground mt-1.5 truncate text-xs">{sublabel}</p>
+          {sublabel || credits !== null ? (
+            <p className="text-muted-foreground mt-1.5 truncate text-xs tabular-nums">
+              {[
+                sublabel,
+                credits !== null
+                  ? tCredits('tiers.creditsPerMonth', {
+                      credits: formatCredits(credits, { locale }),
+                    })
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
           ) : null}
         </div>
         <span className="flex min-w-0 shrink-0 items-center gap-1.5">
@@ -144,18 +159,154 @@ export function PlanCard({ state }: { state: AccountState }) {
         </span>
       </div>
 
-      {seats ? (
-        <div className="divide-border grid grid-cols-3 divide-x border-t">
-          {seats.map((property) => (
-            <div key={property.id} className="min-w-0 px-4 py-3">
-              <p className="text-muted-foreground truncate text-xs">{property.label}</p>
-              <p className="text-foreground mt-0.5 truncate text-sm font-medium tabular-nums">
-                {property.value}
-              </p>
-            </div>
-          ))}
+      <PlanChanger state={state} className="border-t" />
+    </div>
+  );
+}
+
+export interface PlanPickerView {
+  /** The monthly amount the account pays, or null when it pays none. */
+  currentUsd: number | null;
+  /** The amount the picker opens on. */
+  initialUsd: number | null;
+}
+
+/**
+ * What the plan picker opens on: the amount the account pays, or the default
+ * tier. Enterprise never changes the billing plan, so every account gets the
+ * picker. A live subscription on an amount the API does not report (an
+ * off-ladder legacy price) opens on the select's "choose a tier" state.
+ */
+export function planPickerView(state: AccountState): PlanPickerView {
+  const currentUsd = resolvedPlan(state).monthlyUsd ?? state.subscription?.monthly_usd ?? null;
+  const initialUsd = currentUsd ?? (accountHasLiveSubscription(state) ? null : DEFAULT_TIER_USD);
+  return { currentUsd, initialUsd };
+}
+
+/**
+ * Pick a monthly amount and apply it. Renders nothing when billing is off, and
+ * shows who to ask to anyone who may not change billing.
+ */
+export function PlanChanger({ state, className }: { state: AccountState; className?: string }) {
+  const t = useTranslations('billing.credits.planCard');
+  const locale = useLocale();
+  const { currentUsd, initialUsd } = planPickerView(state);
+  const hasSubscription = accountHasLiveSubscription(state);
+  const scheduled = scheduledDowngrade(state);
+  const [monthlyUsd, setMonthlyUsd] = useState<number | null>(initialUsd);
+  const { change, isPending } = useChangeCreditPlan();
+  const billingAccountId = useBillingAccountId();
+  const kind = describePlanChange({
+    currentUsd,
+    nextUsd: monthlyUsd,
+    hasSubscription,
+    scheduledUsd: scheduled?.monthlyUsd,
+  });
+  // Only a raise needs the server: the charge due now is Stripe's proration.
+  const preview = useBillingPlanPreview({
+    monthlyUsd: kind === 'raise' && isBillingEnabled() ? monthlyUsd : null,
+    accountId: billingAccountId ?? undefined,
+  });
+
+  if (!isBillingEnabled()) return null;
+  if (!canManageBilling(state)) {
+    return (
+      <p className={cn('text-muted-foreground px-4 py-3 text-xs', className)}>{t('ownerOnly')}</p>
+    );
+  }
+
+  const amount = monthlyUsd !== null ? formatWholeUsd(monthlyUsd, locale) : '';
+  const renewal = formatShortDate(
+    scheduled?.effectiveAt ??
+      (state.subscription?.current_period_end
+        ? new Date(state.subscription.current_period_end * 1000).toISOString()
+        : null),
+    locale,
+  );
+  const due = preview.data ? formatChargeUsd(preview.data.due_now_usd, locale) : null;
+  const creditsNow = preview.data ? formatCredits(preview.data.credits_now, { locale }) : null;
+
+  const hint =
+    kind === 'raise'
+      ? due && creditsNow
+        ? t('raiseSummary', { due, credits: creditsNow, amount })
+        : t('raiseSummaryLoading')
+      : kind === 'cut'
+        ? renewal
+          ? t('cutSummary', { date: renewal, amount })
+          : t('cutHint')
+        : kind === 'keep' && scheduled
+          ? t('keepSummary', { amount: formatWholeUsd(scheduled.monthlyUsd, locale) })
+          : kind === 'subscribe'
+            ? t('subscribeSummary', {
+                amount,
+                credits: formatCredits(monthlyCreditsForUsd(monthlyUsd ?? 0), { locale }),
+              })
+            : t('rate');
+  const label =
+    kind === 'subscribe'
+      ? t('subscribeAction', { amount })
+      : kind === 'raise'
+        ? due
+          ? t('raiseAction', { due })
+          : t('updateAction', { amount })
+        : kind === 'cut'
+          ? renewal
+            ? t('cutAction', { date: renewal })
+            : t('updateAction', { amount })
+          : kind === 'keep'
+            ? t('keepAction')
+            : t('chooseAction');
+
+  return (
+    <section className={cn('space-y-3 px-4 py-4', className)}>
+      <div className="space-y-0.5">
+        <h3 className="text-foreground text-sm font-medium">{t('title')}</h3>
+        <p className="text-muted-foreground text-xs">{t('description')}</p>
+      </div>
+      {scheduled ? (
+        <div className="bg-muted flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md px-3 py-2">
+          <p className="text-foreground min-w-0 flex-1 text-xs">
+            {t('scheduledNotice', {
+              amount: formatWholeUsd(scheduled.monthlyUsd, locale),
+              date: formatShortDate(scheduled.effectiveAt, locale),
+            })}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={isPending || currentUsd === null}
+            onClick={() => currentUsd !== null && change(currentUsd)}
+          >
+            {t('keepAction')}
+          </Button>
         </div>
       ) : null}
-    </div>
+      <CreditTierSelect
+        value={monthlyUsd}
+        onChange={setMonthlyUsd}
+        current={currentUsd}
+        disabled={isPending}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="text-muted-foreground min-w-0 flex-1 text-xs text-balance" aria-live="polite">
+          {hint}
+        </p>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          disabled={
+            isPending ||
+            kind === 'invalid' ||
+            kind === 'unchanged' ||
+            (kind === 'raise' && preview.isLoading)
+          }
+          onClick={() => monthlyUsd !== null && change(monthlyUsd)}
+        >
+          {isPending ? <Loading className="size-4 shrink-0" /> : null}
+          {label}
+        </Button>
+      </div>
+    </section>
   );
 }

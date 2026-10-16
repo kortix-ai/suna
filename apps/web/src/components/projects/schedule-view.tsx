@@ -27,9 +27,9 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
+import { triggerRunActions, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
   InputGroupSearch,
@@ -37,12 +37,10 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import { PixelKortixMark } from '@/components/ui/pixel-kortix-mark';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { agentDisplayLabel } from '@/features/session/session-chat-input';
@@ -63,9 +61,12 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
 import {
-  GearSixIcon,
+  LightningIcon,
   LockKeyIcon,
   MagnifyingGlassIcon as SearchIcon,
+  PauseIcon,
+  PlayIcon,
+  PlusIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -109,20 +110,22 @@ const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
 };
 
 /**
- * Pure — no hooks, no data fetching. Renders the pause switch for a MANAGER
- * only; returns `null` for anyone else. Split out from
+ * Pure — no hooks, no data fetching. Renders the pause-all button for a
+ * MANAGER only; returns `null` for anyone else. Split out from
  * {@link TriggerActivationMenu} (its data-fetching container, below) purely
  * so this gate is testable under `renderToStaticMarkup` — apps/web has no DOM
- * testing library (no jsdom, no `@testing-library/react`), so a pure component
- * taking `canManage` as a prop is the only way `schedule-view.test.tsx` can pin
- * "an editor doesn't see this" without a live QueryClient. See
- * {@link TriggerActivationMenu}'s header comment for why `canManage` here is
- * deliberately NOT `ScheduleView`'s own `canWrite`.
+ * testing library, so a pure component taking `canManage` as a prop is the
+ * only way `schedule-view.test.tsx` can pin "an editor doesn't see this"
+ * without a live QueryClient. See {@link TriggerActivationMenu}'s header
+ * comment for why `canManage` here is deliberately NOT `ScheduleView`'s own
+ * `canWrite`.
  *
- * It is the body of a popover now, not a banner, so it carries no surface of
- * its own — `PopoverContent` supplies the border, background and padding.
+ * A labelled button, not a switch behind a gear: the gear hid the one control
+ * it held. The label names the action the click takes — "Pause all" while
+ * triggers run, "Resume all" while they are paused — and the tooltip says
+ * what pausing means.
  */
-export function TriggerPauseSwitch({
+export function TriggerPauseButton({
   canManage,
   paused,
   isPending,
@@ -137,41 +140,40 @@ export function TriggerPauseSwitch({
   if (!canManage) return null;
 
   return (
-    <Field orientation="horizontal" className="items-start gap-3">
-      <FieldContent>
-        <FieldTitle>
-          {tI18nComplete.raw('textf31740d0e328')}
-          {paused && (
-            <span className="text-muted-foreground font-normal">
-              {' '}
-              {tI18nComplete.raw('textcfaba14736c2')}
-            </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={isPending}
+          aria-pressed={paused}
+          onClick={() => onToggle(!paused)}
+        >
+          {paused ? (
+            <PlayIcon className="size-4 shrink-0" />
+          ) : (
+            <PauseIcon className="size-4 shrink-0" />
           )}
-        </FieldTitle>
-        <FieldDescription>{tI18nComplete.raw('text19a4be984642')}</FieldDescription>
-      </FieldContent>
-      <Switch
-        checked={paused}
-        disabled={isPending}
-        onCheckedChange={onToggle}
-        aria-label={tI18nComplete.raw('textac910c2802d5')}
-      />
-    </Field>
+          {paused ? tI18nComplete.raw('text43e673c5503d') : tI18nComplete.raw('text0b6258b50010')}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-64">
+        {tI18nComplete.raw('text19a4be984642')}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
 /**
- * Project-wide "pause everything" switch — rendered on Triggers only (see
+ * Project-wide "pause everything" control — rendered on Triggers only (see
  * {@link ScheduleView}'s call site), since it needs exactly one home.
- * Formerly `TriggersActivationCard`, a full-width banner above the list.
+ * Formerly `TriggersActivationCard`, a full-width banner above the list, then
+ * a switch inside a gear popover.
  *
- * **Why it is a menu now.** Pausing every trigger in a project is a rare,
- * deliberate act; the banner spent the top of the page on it and pushed the
- * list — the reason anyone opens this tab — below the fold. It lives behind
- * the gear beside "New trigger": one click away, and no longer the first
- * thing a reader sees. The paused STATE keeps its prominent home in the
- * page's warning banner, which is real, actionable information; only the
- * control moved.
+ * It sits in the header beside "New trigger": one click, labelled, and not in
+ * the list column. The paused STATE keeps its prominent home in the page's
+ * warning banner; only the control lives here.
  *
  * **Access gate — the update control, not the create one.** `ScheduleView`
  * below offers New trigger on `canCreate`. This control is the project-wide
@@ -183,7 +185,7 @@ export function TriggerPauseSwitch({
  *
  * Reads `qk.project.triggers(projectId)` with its OWN `useQuery` — the SAME
  * key `ScheduleView` queries below. React Query dedupes both calls into one
- * request and one cache write, so this switch and `ScheduleView`'s paused
+ * request and one cache write, so this button and `ScheduleView`'s paused
  * banner can never disagree or double-fetch.
  *
  * Exported for `trigger-activation-menu.test.tsx`, which renders it per role.
@@ -215,32 +217,13 @@ export function TriggerActivationMenu({ projectId }: { projectId: string }) {
     onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
   });
 
-  // The SAME leaf, applied one level up as well: the trigger
-  // button must not exist for a non-manager either, or the header would carry
-  // a control that opens an empty popover.
-  if (!canManage) return null;
-
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon-base"
-          aria-label={tI18nComplete.raw('text17c982d8eb68')}
-          title={tI18nComplete.raw('text17c982d8eb68')}
-        >
-          <GearSixIcon className="size-4 shrink-0" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
-        <TriggerPauseSwitch
-          canManage={canManage}
-          paused={paused}
-          isPending={mutation.isPending || triggersQuery.isLoading}
-          onToggle={(v) => mutation.mutate(v)}
-        />
-      </PopoverContent>
-    </Popover>
+    <TriggerPauseButton
+      canManage={canManage}
+      paused={paused}
+      isPending={mutation.isPending || triggersQuery.isLoading}
+      onToggle={(v) => mutation.mutate(v)}
+    />
   );
 }
 
@@ -316,19 +299,22 @@ export function ScheduleView({ projectId }: { projectId: string }) {
 
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
-    onSuccess: (res) => {
+    onSuccess: (res, trigger) => {
+      const entity = triggerToastEntity(trigger);
       if (res.status === 'fired') {
         successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          description: res.session_id
-            ? `Session ${res.session_id.slice(0, 8)}…`
-            : tI18nComplete.raw('text747e9e0e8e92'),
+          entity,
+          ...(res.session_id
+            ? { actions: triggerRunActions(projectId, res.session_id, tI18nComplete.raw('textb205bb47f81a')) }
+            : { description: tI18nComplete.raw('text747e9e0e8e92') }),
         });
       } else if (res.status === 'queued') {
         successToast(tI18nComplete.raw('text661ff40a07e0'), {
+          entity,
           description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
         });
       } else {
-        errorToast(tI18nComplete.raw('text9c18cb990345'), { description: res.error });
+        errorToast(tI18nComplete.raw('text9c18cb990345'), { entity, description: res.error });
       }
       invalidate();
     },
@@ -344,6 +330,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         trigger.enabled
           ? tI18nComplete.raw('texte159b06187d3')
           : tI18nComplete.raw('texta97d32ddb6ba'),
+        { entity: triggerToastEntity(trigger) },
       );
       invalidate();
     },
@@ -359,6 +346,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       const noun = kindCopy[trigger.type as TriggerKind].noun;
       successToast(
         tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
+        { entity: triggerToastEntity(trigger) },
       );
       setDeleteTarget(null);
       setSelectedSlug(null);
@@ -468,14 +456,16 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         ) : undefined
       }
       action={
-        /* One right-hand cluster, secondary control first: the gear holds the
-           project-wide pause (its own manager-only probe, NOT this view's
-           `canWrite`), and the primary create action stays last and labelled.
+        /* One right-hand cluster, secondary control first: the project-wide
+           pause (its own manager-only probe, NOT this view's `canWrite`), then
+           the primary create action, last and labelled.
            Both are hidden until the list has loaded — neither means anything
            on an error or a 403. */
         showContent ? (
           <div className="flex items-center gap-2">
-            <TriggerActivationMenu projectId={projectId} />
+            {triggers.length > 0 || paused ? (
+              <TriggerActivationMenu projectId={projectId} />
+            ) : null}
             {canWrite ? (
               <NewEntityMenu
                 label={copy.createLabel}
@@ -491,16 +481,15 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       <div className="space-y-4">
         {/* The paused STATE, not the control: it stays at the top of the page
             because a project that runs nothing on its own is something a
-            reader has to know before they read the list. The switch itself
-            now lives behind the header gear. */}
+            reader has to know before they read the list. The control itself
+            is the header's Pause all / Resume all button. */}
         {paused && showContent && (
           <InfoBanner
             tone="warning"
             icon={WarningIcon}
             title={tI18nComplete.raw('textb18b93a52cd2')}
           >
-            {tI18nComplete.raw('text3bc554b5c290')}{' '}
-            {copy.createLabel}.
+            {tI18nComplete.raw('text3bc554b5c290')}
           </InfoBanner>
         )}
 
@@ -536,10 +525,20 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         ) : filter !== 'all' && ofKind.length === 0 ? (
           <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
         ) : triggers.length === 0 ? (
-          <div className="text-muted-foreground flex flex-col items-center gap-6 py-8">
-            <EmptyState size="sm" title={copy.emptyTitle} description={copy.emptyBody} />
-            <PixelKortixMark className="opacity-50" />
-          </div>
+          <EmptyState
+            icon={LightningIcon}
+            title={copy.emptyTitle}
+            description={copy.emptyBody}
+            className="py-12"
+            action={
+              canWrite ? (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openCreate()}>
+                  <PlusIcon className="size-4 shrink-0" />
+                  {copy.createLabel}
+                </Button>
+              ) : undefined
+            }
+          />
         ) : filtered.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
             {tI18nComplete.raw('text965b516df3ba')}{' '}

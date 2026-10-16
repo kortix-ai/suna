@@ -39,7 +39,7 @@ import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/compo
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat } from '@/components/ui/status';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { infoToast, successToast } from '@/components/ui/toast';
+import { infoToast, successToast, toastIcon, undoToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -336,6 +336,9 @@ const EVERY_VERDICT = () => true;
 
 export function ReviewCenter({
   initialItems,
+  segment: segmentProp,
+  onSegmentChange,
+  loadMore,
   onAct,
   onBulkAct,
   onOpenSession,
@@ -351,6 +354,11 @@ export function ReviewCenter({
 }: {
   /** When provided, the inbox renders real data instead of the mock fixtures. */
   initialItems?: ReviewItem[];
+  /** Connected mode: the segment is the server's filter, so the parent owns it. */
+  segment?: ReviewSegment;
+  onSegmentChange?: (segment: ReviewSegment) => void;
+  /** Connected mode: the segment has more pages than `initialItems` holds. */
+  loadMore?: { onLoadMore: () => void; isLoading: boolean; isError: boolean };
   /** Connected mode: fire the server verdict for a single item. */
   onAct?: (id: string, verdict: ReviewVerdict, feedback?: string) => void;
   /** Connected mode: fire the server verdict for many items (multi-select). */
@@ -380,6 +388,7 @@ export function ReviewCenter({
   verdictAllowed?: (item: ReviewItem, verdict: ReviewVerdict) => boolean;
 } = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const segments = useMemo(
     () => localizeUiCatalog(SEGMENTS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS),
     [tI18nComplete],
@@ -393,7 +402,9 @@ export function ReviewCenter({
   const [items, setItems] = useState<ReviewItem[]>(
     initialItems ?? (connected ? [] : localizedMockItems),
   );
-  const [segment, setSegment] = useState<ReviewSegment>('needs_you');
+  const [localSegment, setLocalSegment] = useState<ReviewSegment>('needs_you');
+  const segment = segmentProp ?? localSegment;
+  const setSegment = onSegmentChange ?? setLocalSegment;
   const [kindFilter, setKindFilter] = useState<ReviewKind | 'all'>('all');
   const [query, setQuery] = useState('');
   // Per-session view: filter to one session, and/or group the list by session so
@@ -412,8 +423,9 @@ export function ReviewCenter({
   const [kbNav, setKbNav] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   // "Fresh" = items that arrived on a poll while the user wasn't looking. We diff
-  // incoming ids against the last-known set; any interaction clears the marks.
-  const knownIdsRef = useRef<Set<string> | null>(null);
+  // incoming ids against the last-known set of each segment (each segment is
+  // its own read); any interaction clears the marks.
+  const knownIdsRef = useRef(new Map<ReviewSegment, Set<string>>());
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const markSeen = () => setFreshIds((prev) => (prev.size ? new Set() : prev));
   // The single item id currently mid-mutation (row quick-decide or the detail
@@ -516,18 +528,19 @@ export function ReviewCenter({
   }, [initialItems]);
 
   // Detect items that arrived since the user last looked → flag them "fresh".
-  // First load seeds the known set silently (nothing is "new" on open).
+  // The first load of each segment seeds its known set silently (nothing is
+  // "new" on open, or on a first visit to a segment).
+  // Reads the server list, not the optimistic copy: the copy lags a segment
+  // switch by one commit and would seed the new segment with nothing.
   useEffect(() => {
-    if (!connected) return;
-    if (knownIdsRef.current === null) {
-      knownIdsRef.current = new Set(items.map((i) => i.id));
-      return;
-    }
-    const known = knownIdsRef.current;
-    const arrived: string[] = [];
-    for (const item of items) {
-      if (!known.has(item.id)) arrived.push(item.id);
-    }
+    if (!connected || isLoading || !initialItems) return;
+    const ids = initialItems
+      .filter((i) => segmentForStatus(i.status) === segment)
+      .map((i) => i.id);
+    const known = knownIdsRef.current.get(segment);
+    knownIdsRef.current.set(segment, new Set(ids));
+    if (!known) return;
+    const arrived = ids.filter((id) => !known.has(id));
     if (arrived.length > 0) {
       setFreshIds((prev) => {
         const n = new Set(prev);
@@ -535,31 +548,23 @@ export function ReviewCenter({
         return n;
       });
     }
-    knownIdsRef.current = new Set(items.map((i) => i.id));
-  }, [items, connected]);
+  }, [initialItems, connected, segment, isLoading]);
 
   /** Prototype mode: optimistic change with an Undo affordance in the toast. */
   function commit(next: ReviewItem[], message: string, tone: 'success' | 'info' = 'success') {
     undoRef.current = items;
     setItems(next);
-    const toastFn = tone === 'info' ? infoToast : successToast;
-    toastFn(message, {
+    undoToast(message, {
       duration: UNDO_TOAST_MS,
-      button: (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            if (undoRef.current) {
-              setItems(undoRef.current);
-              undoRef.current = null;
-              infoToast(tI18nComplete.raw('text5d561a1e3f17'));
-            }
-          }}
-        >
-          {tI18nComplete.raw('texta8283ade3185')}
-        </Button>
-      ),
+      icon: tone === 'info' ? toastIcon('info') : toastIcon('success'),
+      undoLabel: tI18nComplete.raw('texta8283ade3185'),
+      onUndo: () => {
+        if (undoRef.current) {
+          setItems(undoRef.current);
+          undoRef.current = null;
+          infoToast(tI18nComplete.raw('text5d561a1e3f17'));
+        }
+      },
     });
   }
 
@@ -802,6 +807,25 @@ export function ReviewCenter({
     },
   };
 
+  // The Sessions page's Load more, same control and words (`sidebar.*`).
+  const loadMoreButton = loadMore ? (
+    <div className="flex justify-center pb-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={loadMore.isLoading}
+        onClick={loadMore.onLoadMore}
+      >
+        {/* A failed page keeps the rows above it; the button is the retry. */}
+        {loadMore.isLoading
+          ? tSidebar('loadingMore')
+          : loadMore.isError
+            ? tSidebar('retry')
+            : tSidebar('loadMore')}
+      </Button>
+    </div>
+  ) : null;
+
   const shortcutsButton = (
     <button
       type="button"
@@ -836,6 +860,7 @@ export function ReviewCenter({
     <ApprovalDecisionModal
       details={approval}
       previewAuthorized={approvalCall?.previewAuthorized !== false}
+      resolvers={approvalCall?.resolvers}
       busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
       onDecision={
         // Only the viewer the API lets decide this call gets the decision.
@@ -1014,6 +1039,10 @@ export function ReviewCenter({
             />
           ) : isLoading && items.length === 0 ? (
             <ListSkeleton />
+          ) : visible.length === 0 && loadMore ? (
+            // Nothing on the pages read so far matches, and more pages exist:
+            // offer them, never the empty state (KRTX-1727).
+            <div className="pt-6">{loadMoreButton}</div>
           ) : visible.length === 0 ? (
             <EmptyState
               icon={CheckCircleSolid}
@@ -1067,6 +1096,7 @@ export function ReviewCenter({
               {visible.map((item, idx) => renderRow(item, idx, false))}
             </ul>
           )}
+          {visible.length > 0 && loadMore ? loadMoreButton : null}
         </div>
       </div>
 

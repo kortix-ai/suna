@@ -18,6 +18,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { cn } from '@/lib/utils';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { toolKind } from '@kortix/sdk';
 import { useCallback, useMemo } from 'react';
 
 /**
@@ -50,7 +51,15 @@ export function GlobTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
     },
     [filePaths, openFileWithList],
   );
-  const isNoResults = !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
+  // Another harness's glob output (pi `find` lists paths relative to the search directory)
+  // is not the format the parser reads: it falls through to the plain output instead of
+  // reading as "no matches".
+  const isNoResults =
+    !hasResults &&
+    status === 'completed' &&
+    !!output &&
+    !isErrorOutput(output) &&
+    toolKind(call.name) === 'glob';
 
   // Same trigger shape as web search: what was searched for, then how much came
   // back. The row used to read `Glob /workspace pattern=**/*.tsx 5 files` — a

@@ -106,7 +106,7 @@ describe('loadProjectSessionInventory — when the first chunk starts', () => {
     expect(started).toEqual(['share-subject']);
   });
 
-  test('scope=project with manager standing reads its first chunk and the oversight policy beside the share subject', async () => {
+  test('scope=project with manager standing reads its first chunk after the oversight verdict, beside the share subject', async () => {
     const subject = gate();
     const oversight = gate();
     shareSubjectGate = subject.held;
@@ -114,12 +114,17 @@ describe('loadProjectSessionInventory — when the first chunk starts', () => {
 
     const inventory = inventoryOf({ scope: 'project', effectiveRole: 'manager' });
     await settle();
-    // The verdict allowed the scan, so neither read waits for the share subject
-    // and the chunk does not wait for the oversight verdict.
+    // The verdict allowed the scan. The page WHERE carries the oversight
+    // verdict, so the chunk waits for it.
+    expect([...started].sort()).toEqual(['oversight-policy', 'share-subject']);
+
+    oversight.release();
+    await settle();
+    // The chunk does not wait for the share subject: the WHERE reads the
+    // viewer's groups itself.
     expect([...started].sort()).toEqual(['first-chunk', 'oversight-policy', 'share-subject']);
 
     subject.release();
-    oversight.release();
     const result = await inventory;
     expect(result.authorized).toBe(true);
     expect(started.filter((read) => read === 'first-chunk')).toHaveLength(1);

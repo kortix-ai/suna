@@ -15,10 +15,11 @@
  * - `seq`: minted once per message (the seq rule below); `fromV1` numbers by position.
  * - `producer`: `opencode` with the store's OpenCode version, not `kortix-v1-import`.
  * - attachments: `ref: blob:<sha256>`, `bytes` and `sha256` of the bytes in the store
- *   (an offloaded attachment's sidecar file). The bytes stay in the store; nothing
- *   uploads them yet (P2.3). `fromV1` without a resolver sets neither (F13), and
- *   the mirror row of a prompt file can carry the `kortix-attachment://` `url` of
- *   the copy the API's capture uploaded, which the daemon never sees.
+ *   (an offloaded attachment's sidecar file). The journal uploads the bytes (`blob`)
+ *   and replaces the ref with the stored object's `kortix-attachment://` ref (P2.13).
+ *   `fromV1` without a resolver sets neither (F13), and the mirror row of a prompt
+ *   file can carry the `kortix-attachment://` `url` of the copy the API's capture
+ *   uploaded, which the daemon never sees (so a prompt file is stored twice).
  * - session: `title`, `created_at` and `todos` from the store, `restore_grade: 'native'`
  *   without `grade_counts`, and the harness history. Thread `title` from the store.
  * The mirror also cuts strings over 200,000 characters, drops `data:` strings
@@ -64,9 +65,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import {
   fromV1,
-  SESSION_LOG_MINOR,
-  type AdapterCapabilities,
-  type CapabilityFeatures,
+  OPENCODE_CAPABILITIES,
   type ExportCursor,
   type SessionLog,
   type V1Attachment,
@@ -77,6 +76,8 @@ import { logger } from '@/lib/log/logger'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import type { SessionLogChanges, SessionLogPort, SessionLogRestoreResult } from '../contract/session-log'
 import { logChanges, startSessionLogJournal } from '../shared/session-log-journal'
+import type { BytesReader } from '../shared/session-log-restore'
+import { reconcileSessionLog, isRestoreNote } from '../shared/session-log-boot'
 import { readControlPlaneEnv } from '@/lib/kortix-api/relay-context'
 import { isOffloadPlaceholder, opencodeDbPath } from './attachment-offload'
 import { OpencodeDb, type MessageRow, type StoreSnapshot } from './opencode-db'
@@ -86,28 +87,12 @@ import { restoreOpenCodeSessionLog, type OpenCodeRestoreTarget } from './session
 
 export const OPENCODE_ADAPTER_VERSION = '1.0.0'
 
-const native: CapabilityFeatures = {
-  tool_error_channel: false, // openai-chat role:tool has no error flag
-  attachments: { user: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'], tool_result: false },
-  compaction: ['summary_first_tail'],
-  subagents: 'sync', // `task` runs a child session
-  todos: true,
-  reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
-  freeform_tool_input: false,
-}
-/** From the prototype adapter's tests (OpenCode 1.18.23); the restore (P6.3) is proved against them in `opencode-session-log-restore.test.ts`. */
-export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
-  harness: 'opencode',
-  harness_versions: '1.18',
-  schema_minors: [SESSION_LOG_MINOR],
-  dialects: ['openai-chat'],
-  native,
-  // A tool-result attachment becomes a follow-up user turn; a layout is emulated.
-  rendered: { ...native, attachments: { ...native.attachments, tool_result: true }, compaction: ['summary_first_tail', 'layout'] },
-}
+/** The manifest (C12, F9) lives in `@kortix/api-contract/session-log` (`capabilities.ts`): apps/api reads it for the switch preflight. */
+export { OPENCODE_CAPABILITIES }
 
 type J = Record<string, any>
-type Resolved = V1Attachment & { sha256: string }
+/** `read` gives the bytes again, for `SessionLogPort.blob`. */
+type Resolved = V1Attachment & { sha256: string; read: () => Buffer | null }
 const sha256 = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
 const parse = (data: string): J | null => {
   try {
@@ -169,10 +154,10 @@ function takeBytes(file: J, sidecar: (path: string) => Resolved | null): Resolve
     return null // a malformed url: unresolved, as the mirror holds it
   }
   const digest = sha256(bytes)
-  return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest }
+  return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, read: () => bytes }
 }
 
-/** The whole store as a session log, each message's native hash, and the seqs it issued. */
+/** The whole store as a session log, each message's native hash, the seqs it issued, and each attachment's bytes by sha256. */
 export function openCodeSessionLog(input: {
   sessionId: string
   rootId: string
@@ -180,7 +165,7 @@ export function openCodeSessionLog(input: {
   seqs: SeqState
   ids?: IdMap
   sidecar?: (path: string) => Resolved | null
-}): { log: SessionLog; hashes: Map<string, string>; issued: boolean } {
+}): { log: SessionLog; hashes: Map<string, string>; issued: boolean; blobs: Map<string, () => Buffer | null> } {
   const { store } = input
   const sidecar = input.sidecar ?? (() => null)
   const toLog = (id: string) => input.ids?.[id] ?? id
@@ -240,6 +225,7 @@ export function openCodeSessionLog(input: {
       }
       m.seq = state.seqs[m.message_id]!
       m.producer = producer
+      if (m.role === 'user' && isRestoreNote(m)) m.origin = 'notification'
       for (const b of m.blocks) {
         const r = b.type === 'attachment' ? attachments.get(b.id) : undefined
         if (b.type === 'attachment' && r) Object.assign(b, { ref: r.ref, bytes: r.bytes, sha256: r.sha256 })
@@ -265,7 +251,7 @@ export function openCodeSessionLog(input: {
   log.todos = store.todos
     .filter((t) => toLog(t.session_id) === rootId)
     .map((t) => ({ content: t.content, status: t.status as SessionLog['todos'][number]['status'], priority: t.priority as SessionLog['todos'][number]['priority'] }))
-  return { log, hashes, issued }
+  return { log, hashes, issued, blobs: new Map([...attachments.values()].map((r) => [r.sha256, r.read])) }
 }
 
 export function openCodeSessionLogStatePath(): string {
@@ -319,13 +305,14 @@ export function createOpenCodeSessionLogPort(options: {
     try {
       const bytes = readFileSync(path)
       const digest = sha256(bytes)
-      const resolved = { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest }
+      const resolved = { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, read: () => readFileOrNull(path) }
       sidecars.set(path, resolved)
       return resolved
     } catch {
       return null
     }
   }
+  let blobs = new Map<string, () => Buffer | null>()
   const read = (): StoreSnapshot | null => (existsSync(options.dbPath) && options.db.probe().supported ? options.db.storeSnapshot() : null)
   let lastSession: string | null = null
   let unsaved = false
@@ -335,7 +322,8 @@ export function createOpenCodeSessionLogPort(options: {
       const rootId = options.rootId()
       const store = rootId ? read() : null
       if (!rootId || !store) return { messages: [], tombstones: [], threads: [] }
-      const { log, hashes, issued } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, ids, sidecar })
+      const { log, hashes, issued, blobs: bytes } = openCodeSessionLog({ sessionId: options.sessionId, rootId, store, seqs, ids, sidecar })
+      blobs = bytes
       // The seqs are durable before any record that carries one leaves the box.
       if (issued || unsaved) {
         try {
@@ -352,17 +340,28 @@ export function createOpenCodeSessionLogPort(options: {
       return out.changes
     },
     /** Writes `log` into `opencode.db` and the seq map (`session-log-restore.ts`), then reads that map back. */
-    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>): Promise<SessionLogRestoreResult> {
+    async restore(log: SessionLog, seqMax?: Readonly<Record<string, number>>, readAttachment?: BytesReader): Promise<SessionLogRestoreResult> {
       if (!options.restoreTarget) throw new Error('OpenCode session-log restore needs a target (binary, project directory)')
-      const result = await restoreOpenCodeSessionLog(log, { ...options.restoreTarget, dbPath: options.dbPath, sessionId: options.sessionId, statePath }, seqMax)
+      const target = { ...options.restoreTarget, ...(readAttachment && { readAttachment }), dbPath: options.dbPath, sessionId: options.sessionId, statePath }
+      const result = await restoreOpenCodeSessionLog(log, target, seqMax)
       ;({ threads: seqs, ids } = readSeqState(statePath))
       lastSession = null
       unsaved = false
       return result
     },
-    async fingerprint(): Promise<string> {
-      const store = read()
-      return sha256(JSON.stringify(store ? [store.sessions, store.messages, store.parts, store.todos] : null))
+    /**
+     * Every message id of the store (log ids), plus every id the seq map issued: a message
+     * OpenCode deleted (a revert) whose tombstone the journal may not have sent. Null when the
+     * store or its pinned root is missing (a crash mid-restore), or when the seq map is gone
+     * from a store that holds messages (its next export would issue seqs from 1).
+     */
+    async held() {
+      const rootId = options.rootId()
+      const store = rootId ? read() : null
+      if (!store || !store.sessions.some((s) => s.id === rootId)) return null
+      if (!existsSync(statePath) && store.messages.length > 0) return null
+      const { log } = openCodeSessionLog({ sessionId: options.sessionId, rootId: rootId!, store, seqs: structuredClone(seqs), ids, sidecar })
+      return new Set([...log.threads.flatMap((t) => t.messages.map((m) => m.message_id)), ...Object.values(seqs).flatMap((t) => Object.keys(t.seqs))])
     },
     live(threadId: string, messageId: string) {
       const state = (seqs[threadId] ??= { next: 1, seqs: {} })
@@ -376,21 +375,36 @@ export function createOpenCodeSessionLogPort(options: {
       }
       return { seq: state.seqs[messageId]! }
     },
+    blob: (sha256: string) => blobs.get(sha256)?.() ?? null,
+  }
+}
+
+function readFileOrNull(path: string): Buffer | null {
+  try {
+    return readFileSync(path)
+  } catch {
+    return null
   }
 }
 
 /**
- * Start this boot's journal over OpenCode's store (P2.6), before the first
- * turn so its turn end flushes it. Nothing mints a session generation before
- * P6's restore, so the box writes under generation 0. A box without a
- * control plane journals nothing.
+ * This boot's session log over OpenCode's store (P2.6, P6.4): the boot reconcile
+ * (`shared/session-log-boot.ts`, which restores into `opencode.db` when the store is
+ * missing or behind the log), then the journal at the generation it returns, before the
+ * event loop and the first prompt so the first turn's end flushes it. `target` is the
+ * binary and the directory OpenCode serves (`opencode import` runs there), and the
+ * running OpenCode's URL (its version). True when it
+ * restored. Throws when the reconcile fails: no journal starts. A box without a control
+ * plane journals nothing.
  */
-export function startOpenCodeSessionLog(): void {
+export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd' | 'url'>): Promise<boolean> {
   const sessionId = readControlPlaneEnv().sessionId
-  if (!sessionId) return
+  if (!sessionId) return false
   const dbPath = opencodeDbPath(OPENCODE_HOME)
-  const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId, rootId: readOpenCodeSessionPin })
-  if (startSessionLogJournal(port, { generation: 0 })) {
-    logger.info('[session-log] journal started', { harness: 'opencode', generation: 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
+  const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId, rootId: readOpenCodeSessionPin, restoreTarget: target })
+  const boot = await reconcileSessionLog(port)
+  if (boot && startSessionLogJournal(port, boot)) {
+    logger.info('[session-log] journal started', { harness: 'opencode', generation: boot.generation, restored: boot.cursors.length > 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
   }
+  return (boot?.cursors.length ?? 0) > 0
 }

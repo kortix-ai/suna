@@ -28,11 +28,14 @@ export const CONNECTORS_MCP_COMMAND = ['/usr/local/bin/kortix', 'connectors', 'm
  * them. A kortixd test fails when the daemon imports a file not listed here.
  */
 export const KORTIXD_SHARED_SOURCES = [
+  'packages/api-contract/src/compiled-agent-config-env.ts',
   'packages/api-contract/src/egress-shim-rules.ts',
   'packages/api-contract/src/fallback-models.ts',
+  'packages/api-contract/src/permission-rules.ts',
   'packages/api-contract/src/runtime-relay.ts',
   'packages/api-contract/src/sandbox-layout.ts',
   'packages/api-contract/src/secret-relay.ts',
+  'packages/api-contract/src/session-log/capabilities.ts',
   'packages/api-contract/src/session-log/events.ts',
   'packages/api-contract/src/session-log/index.ts',
   'packages/api-contract/src/session-log/live.ts',

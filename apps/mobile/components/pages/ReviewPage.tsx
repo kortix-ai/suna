@@ -28,6 +28,7 @@ import * as React from 'react';
 import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useCans } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import {
@@ -112,6 +113,7 @@ export function ReviewPage({
   isRightDrawerOpen,
 }: ReviewPageProps) {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const sheetRef = React.useRef<SheetRef>(null);
   const createSheetRef = React.useRef<BottomSheetModal>(null);
   const queryClient = useQueryClient();
@@ -141,9 +143,18 @@ export function ReviewPage({
     return labels;
   }, [sessionsQuery.data]);
 
-  const { data, isLoading, isError, error, refetch } = useReviewItems(projectId, {
-    sessionLabels,
-  });
+  // One segment, a page at a time: the server filters it (KRTX-2316).
+  const reviewQuery = React.useMemo(() => ({ segment }), [segment]);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useReviewItems(projectId, { sessionLabels, query: reviewQuery });
   // Only a pull shows the refresh spinner. The 8 s poll refetches silently:
   // `isRefetching` would show the spinner and push the list down on every poll.
   const [pulling, setPulling] = React.useState(false);
@@ -151,8 +162,9 @@ export function ReviewPage({
     setPulling(true);
     void refetch().finally(() => setPulling(false));
   }, [refetch]);
-  const items = data ?? [];
+  const items = React.useMemo(() => data ?? [], [data]);
 
+  // A verdict made here moves its item out of the segment at the tap.
   const visible = React.useMemo(
     () => items.filter((item) => reviewSegmentForStatus(item.status) === segment),
     [items, segment],
@@ -165,10 +177,17 @@ export function ReviewPage({
     [isDark],
   );
   // Read from the live list, so a verdict made elsewhere updates the open sheet.
-  const selected = React.useMemo<ReviewItem | null>(
+  // The list holds one segment: a verdict moves the item out of it on the next
+  // read, so the sheet keeps the last copy it showed.
+  const found = React.useMemo<ReviewItem | null>(
     () => items.find((item) => item.id === selectedId) ?? null,
     [items, selectedId],
   );
+  const [lastShown, setLastShown] = React.useState<ReviewItem | null>(null);
+  React.useEffect(() => {
+    if (found) setLastShown(found);
+  }, [found]);
+  const selected = found ?? (lastShown?.id === selectedId ? lastShown : null);
 
   const openItem = React.useCallback((id: string) => {
     haptics.tap();
@@ -233,7 +252,7 @@ export function ReviewPage({
                   <Text>Try again</Text>
                 </Button>
               </View>
-            ) : visible.length === 0 ? (
+            ) : visible.length === 0 && !hasNextPage ? (
               <View className="items-center px-6 pt-16">
                 <Text variant="muted">{EMPTY_TITLE[segment]}</Text>
               </View>
@@ -241,26 +260,38 @@ export function ReviewPage({
               // Settings rows in a group (Jay, 2026-09-23): the app's list, as on
               // Agents, Skills and Schedules — not `ListRow`.
               <View className="px-4 pt-1">
-                <SettingsGroup>
-                  {visible.map((item) => {
-                    const meta = [item.agent, formatReviewAge(item.createdAt)].filter(Boolean).join(' · ');
-                    return (
-                      <SettingsRow
-                        key={item.id}
-                        leading={
-                          <Icon
-                            as={REVIEW_KIND_ICONS[item.kind]}
-                            size={20}
-                            color={toneColor(reviewItemTone(item.kind, item.status))}
-                          />
-                        }
-                        label={item.title}
-                        description={item.summary ? `${item.summary} · ${meta}` : meta}
-                        onPress={() => openItem(item.id)}
-                      />
-                    );
-                  })}
-                </SettingsGroup>
+                {visible.length > 0 ? (
+                  <SettingsGroup>
+                    {visible.map((item) => {
+                      const meta = [item.agent, formatReviewAge(item.createdAt)].filter(Boolean).join(' · ');
+                      return (
+                        <SettingsRow
+                          key={item.id}
+                          leading={
+                            <Icon
+                              as={REVIEW_KIND_ICONS[item.kind]}
+                              size={20}
+                              color={toneColor(reviewItemTone(item.kind, item.status))}
+                            />
+                          }
+                          label={item.title}
+                          description={item.summary ? `${item.summary} · ${meta}` : meta}
+                          onPress={() => openItem(item.id)}
+                        />
+                      );
+                    })}
+                  </SettingsGroup>
+                ) : null}
+                {hasNextPage ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="mt-3 self-center rounded-full"
+                    disabled={isFetchingNextPage}
+                    onPress={() => void fetchNextPage()}>
+                    <Text>{t('common.loadMore')}</Text>
+                  </Button>
+                ) : null}
               </View>
             )}
           </ScrollView>

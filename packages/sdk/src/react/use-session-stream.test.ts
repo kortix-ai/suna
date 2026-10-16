@@ -17,6 +17,29 @@ describe('applySessionControlFrame', () => {
     expect(client.getQueryData<unknown>(qk.project.sessionTurn(P, S))).toEqual({ turns: [], working, atMs: 42 });
   });
 
+  test('a turn frame writes the caller\'s can_stop when the server sends one', () => {
+    const client = new QueryClient();
+    const turns = [{ turn_token: 't1', state: 'active', message_id: 'm1' }];
+    applySessionControlFrame(client, P, S, frame('kortix.control.turn', { known: true, turns, can_stop: false }), {}, 7);
+    expect(client.getQueryData<{ can_stop?: boolean }>(qk.project.sessionTurn(P, S))?.can_stop).toBe(false);
+  });
+
+  // The control stream is one broadcast per session, so a frame may carry no
+  // per-caller answer. The `/turn` read's answer holds while the SAME turns stay
+  // open; once they change, the old answer is about another run and is dropped.
+  test('a turn frame without can_stop keeps the last answer only while the same turns are open', () => {
+    const client = new QueryClient();
+    const key = qk.project.sessionTurn(P, S);
+    const turns = [{ turn_token: 't1', state: 'active', message_id: 'm1' }];
+    client.setQueryData(key, { turns, can_stop: false, atMs: 1 });
+    applySessionControlFrame(client, P, S, frame('kortix.control.turn', { known: true, turns }), {}, 2);
+    expect(client.getQueryData<{ can_stop?: boolean }>(key)?.can_stop).toBe(false);
+
+    const next = [{ turn_token: 't2', state: 'active', message_id: 'm2' }];
+    applySessionControlFrame(client, P, S, frame('kortix.control.turn', { known: true, turns: next }, 2), {}, 3);
+    expect(client.getQueryData<unknown>(key)).toEqual({ turns: next, atMs: 3 });
+  });
+
   test('a session frame patches the title; a moved secrets version refreshes providers once', async () => {
     const client = new QueryClient();
     client.setQueryData(qk.project.session(P, S), { session_id: S, name: 'New session' });

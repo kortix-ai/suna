@@ -7,8 +7,8 @@
  */
 import type { Part, ToolPart } from '../../runtime/runtime-types';
 import { classifyTurn, toToolView, type ClassifiedTurn } from '../../turns/classify';
-import { isReasoningPart, isToolPart } from '../../turns/parts';
-import { burstSummary, type BurstSummary } from '../../turns/segments/burst-summary';
+import { isReasoningPart, isToolPart, shouldShowToolPart } from '../../turns/parts';
+import { burstSummary, burstWorkLabel, type BurstSummary } from '../../turns/segments/burst-summary';
 import { mergeBurstSteps, reasoningIsRunning, type BurstStep } from '../../turns/segments/merge-steps';
 import type { StepFamily } from '../../turns/segments/narration';
 import { segmentTurn, type SegmentTurnOptions } from '../../turns/segments/segment-turn';
@@ -19,7 +19,7 @@ import { splitTurnWork } from '../../turns/segments/work-split';
 import { getTurnStatus } from '../../turns/state';
 import { parseQuestionAnswersFromOutput } from '../../turns/tools/question-helpers';
 import { toolCallBlock, toolPartOf } from '../tool-call';
-import type { SessionLogBlock, SessionLogMessage, TextBlock, ToolCallBlock } from '../types';
+import type { SessionLogBlock, SessionLogMessage, SessionLogThread, TextBlock, ToolCallBlock } from '../types';
 import { isClosedByRule, type SessionLogTurn } from './turn';
 import { blockOf, messageOfBlock, partOf, partsOf, v1RowsOf } from './v1-parts';
 
@@ -106,6 +106,11 @@ export function sessionLogBurstSummary(blocks: ReadonlyArray<SessionLogBlock>): 
   return burstSummary(partsOf(blocks));
 }
 
+/** What a settled burst did (`burstWorkLabel`): "Ran 3 commands, read 2 files · 1 failed". */
+export function sessionLogBurstWorkLabel(blocks: ReadonlyArray<SessionLogBlock>): string {
+  return burstWorkLabel(partsOf(blocks));
+}
+
 /**
  * The burst is in progress: never once the turn stops working; the trailing burst for the whole
  * working turn (so a gap between two calls does not close it); another burst while a call is open
@@ -187,4 +192,21 @@ export function classifySessionLogMessage(message: SessionLogMessage): Classifie
   const rows = v1RowsOf(message).map((row) => classifyTurn(row));
   const error = rows.find((row) => row.error)?.error;
   return { parts: rows.flatMap((row) => row.parts), error, isEmpty: rows.every((row) => row.isEmpty) && !error };
+}
+
+const NO_CALLS: readonly ToolCallBlock[] = Object.freeze([]);
+const threadCalls = new WeakMap<Pick<SessionLogThread, 'messages'>, readonly ToolCallBlock[]>();
+
+/** A sub-agent thread's tool calls a row lists: every shown call of its replies, in order. One array per thread object. */
+export function subAgentCalls(thread: Pick<SessionLogThread, 'messages'> | null | undefined): readonly ToolCallBlock[] {
+  if (!thread) return NO_CALLS;
+  let calls = threadCalls.get(thread);
+  if (!calls) {
+    const found = thread.messages.flatMap((m) =>
+      m.role === 'assistant' ? m.blocks.filter((b): b is ToolCallBlock => b.type === 'tool_call' && shouldShowToolPart(b)) : [],
+    );
+    calls = found.length ? found : NO_CALLS;
+    threadCalls.set(thread, calls);
+  }
+  return calls;
 }

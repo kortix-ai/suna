@@ -15,8 +15,8 @@
  * page, with no composer (Jay, 2026-10-02: nothing can be sent). Web parity with the dashboard's "OpenCode runtime is not ready"
  * screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
  *
- * With a SAVED COPY (`messages`: the copy this device kept, then the server's;
- * `lib/session/saved-copy.ts`) the view is the thread itself: its turns,
+ * With a SAVED COPY (`thread`: the copy this device kept, then the server's;
+ * `hooks/useSavedCopy.ts`) the view is the thread itself: its turns,
  * read-only, and a status card above the composer saying what the computer
  * is doing. The loader is gone — the conversation is the content. A failure takes
  * the composer's slot here too, so the thread stays readable, the rule the web
@@ -32,7 +32,13 @@
 
 import React from 'react';
 import { ScrollView, View } from 'react-native';
-import { groupMessagesIntoTurns, type SessionMessageAuthors, type SessionParticipants } from '@kortix/sdk';
+import {
+  sessionLogTurns,
+  type SessionLogThread,
+  type SessionLogTurn,
+  type SessionMessageAuthors,
+  type SessionParticipants,
+} from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
@@ -48,7 +54,6 @@ import { MessageBody, UserMessageBubble } from '@/components/session/turn/user-m
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
-import type { MessageWithParts, Turn } from '@/lib/session/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
 import { THEME } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
@@ -58,12 +63,15 @@ import { openPastedText } from '@/stores/pasted-text-store';
 import { webSpace } from '@/lib/session/user-message';
 import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson } from '@/lib/session/participants';
+import { turnStoppedBy } from '@/lib/session/turn-stop';
 
 export interface SessionConnectError {
   title: string;
   message: string;
   /** Raw runtime failure detail (e.g. the git clone error). Shown verbatim. */
   detail?: string;
+  /** The provider removed the box: the primary action is Continue (`recover`), not Restart. */
+  lost?: boolean;
 }
 
 /** The first prompt has no session mentions yet. */
@@ -78,7 +86,7 @@ export function SessionConnecting({
   onRestart,
   restarting,
   showLoader = true,
-  messages,
+  thread,
   statusLabel,
   sessionId,
   empty = false,
@@ -101,7 +109,7 @@ export function SessionConnecting({
    */
   showLoader?: boolean;
   /** The session's saved copy, shown as the thread while the computer wakes. */
-  messages?: MessageWithParts[];
+  thread?: SessionLogThread;
   /** What the computer is doing, for the status card above the composer (`sessionConnectionLabel`). */
   statusLabel?: string | null;
   /** The runtime session the saved copy belongs to; tool rows read it. */
@@ -128,10 +136,7 @@ export function SessionConnecting({
   // The home send carries pastes inline: tiles here, the typed words in the bubble.
   const firstPrompt = React.useMemo(() => splitPastedContent(firstMessage ?? ''), [firstMessage]);
   const hasFiles = files.length > 0 || firstPrompt.pastes.length > 0;
-  const turns = React.useMemo(
-    () => (messages && messages.length > 0 ? (groupMessagesIntoTurns(messages) as unknown as Turn[]) : []),
-    [messages],
-  );
+  const turns = React.useMemo(() => (thread ? sessionLogTurns(thread) : []), [thread]);
 
   if (turns.length > 0) {
     return (
@@ -306,7 +311,7 @@ function SavedThread({
   participants,
   messageAuthors,
 }: {
-  turns: Turn[];
+  turns: SessionLogTurn[];
   participants?: SessionParticipants;
   messageAuthors?: SessionMessageAuthors;
   sessionId?: string;
@@ -318,6 +323,7 @@ function SavedThread({
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
   // The floating composer area's height: the newest turn rests above it.
   const [bottomHeight, setBottomHeight] = React.useState(0);
   // Laid out exactly as `SessionPage`'s list: no list-level side padding (each
@@ -334,20 +340,14 @@ function SavedThread({
         {turns.map((turn, index) => {
           const gap = turnTopGap({ index, working: false, pending: false, previousPending: false });
           return (
-            <View key={turn.userMessage.info.id} style={gap > 0 ? { marginTop: gap } : undefined}>
+            <View key={turn.id} style={gap > 0 ? { marginTop: gap } : undefined}>
               <SessionTurn
                 turn={turn}
-                isWorkingTurn={false}
-                isBusy={false}
                 sessionId={sessionId}
                 onFileMention={openFilePreview}
                 rewindDisabled
-                sender={messageAvatarPerson(
-                  messageAuthors,
-                  participants,
-                  participants?.participants.find((person) => person.is_viewer)?.user_id,
-                  turn.userMessage.info.id,
-                )}
+                sender={messageAvatarPerson(messageAuthors, participants, viewerId, turn.id)}
+                stoppedBy={turnStoppedBy(messageAuthors, viewerId, turn.id)}
               />
             </View>
           );
@@ -380,7 +380,8 @@ function openFilePreview(path: string) {
 
 /**
  * The failure: the composer card's surface, the words on top, and Back to
- * project · Restart side by side, 50/50, the primary on the right. Centred in
+ * project · Restart (Continue for a lost computer) side by side, 50/50, the
+ * primary on the right. Centred in
  * the page when there is no conversation; in the composer's slot under a
  * saved copy.
  */
@@ -425,7 +426,11 @@ function ConnectErrorState({
             ) : (
               <Icon as={RotateCcw} size={15} />
             )}
-            <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
+            <Text>
+              {error.lost
+                ? restarting ? 'Continuing…' : 'Continue session'
+                : restarting ? 'Restarting…' : 'Restart session'}
+            </Text>
           </Button>
         ) : null}
       </View>

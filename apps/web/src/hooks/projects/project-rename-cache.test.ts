@@ -32,8 +32,8 @@ describe('renameOnMutate', () => {
     const context = renameOnMutate(qc, ID, 'New');
 
     expect(context).toBeDefined();
-    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
-    expect(qc.getQueryData(qk.project.detail(ID))).toEqual({
+    expect<unknown>(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
+    expect<unknown>(qc.getQueryData(qk.project.detail(ID))).toEqual({
       project: { project_id: ID, name: 'New' },
     });
   });
@@ -45,7 +45,7 @@ describe('renameOnMutate', () => {
     const context = renameOnMutate(qc, ID, undefined);
 
     expect(context).toBeUndefined();
-    expect(qc.getQueryData(qk.project.detail(ID))).toEqual({
+    expect<unknown>(qc.getQueryData(qk.project.detail(ID))).toEqual({
       project: { project_id: ID, name: 'Old' },
     });
   });
@@ -75,11 +75,11 @@ describe('renameOnError — the Critical rollback path', () => {
     // The server rejected the rename.
     renameOnError(qc, ID, context);
 
-    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([
+    expect<unknown>(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([
       { project_id: ID, name: 'Original' },
       { project_id: 'other', name: 'Untouched' },
     ]);
-    expect(qc.getQueryData(qk.project.detail(ID))).toEqual({
+    expect<unknown>(qc.getQueryData(qk.project.detail(ID))).toEqual({
       project: { project_id: ID, name: 'Original' },
     });
   });
@@ -90,7 +90,7 @@ describe('renameOnError — the Critical rollback path', () => {
 
     expect(() => renameOnError(qc, ID, undefined)).not.toThrow();
 
-    expect(qc.getQueryData(qk.project.detail(ID))).toEqual({
+    expect<unknown>(qc.getQueryData(qk.project.detail(ID))).toEqual({
       project: { project_id: ID, name: 'Original' },
     });
   });
@@ -154,7 +154,7 @@ describe('the full success and failure round trips', () => {
 
     // The optimistic value is still what's rendered; invalidation only marks
     // it stale for the next observed refetch, it doesn't overwrite it.
-    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
+    expect<unknown>(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
     expect(qc.getQueryState(qk.projects.list('acct_1'))?.isInvalidated).toBe(true);
   });
 
@@ -167,10 +167,10 @@ describe('the full success and failure round trips', () => {
     renameOnError(qc, ID, context);
     await renameOnSettled(qc, ID);
 
-    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([
+    expect<unknown>(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([
       { project_id: ID, name: 'Original' },
     ]);
-    expect(qc.getQueryData(qk.project.detail(ID))).toEqual({
+    expect<unknown>(qc.getQueryData(qk.project.detail(ID))).toEqual({
       project: { project_id: ID, name: 'Original' },
     });
     expect(qc.getQueryState(qk.projects.list('acct_1'))?.isInvalidated).toBe(true);

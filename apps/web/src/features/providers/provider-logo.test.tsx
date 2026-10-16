@@ -35,3 +35,19 @@ describe('ProviderLogo xs', () => {
     expect(html).toContain('BN');
   });
 });
+
+describe('ProviderLogo tone="light"', () => {
+  test('is a white tile with the mark never inverted, in both themes', () => {
+    const html = render({ providerID: 'anthropic', size: 'small', tone: 'light' });
+    expect(html).toContain('bg-white');
+    expect(html).toContain('border-border');
+    expect(html).not.toContain('bg-muted');
+    expect(html).not.toContain('dark:invert');
+  });
+
+  test('the initials fallback paints black on white', () => {
+    const html = render({ providerID: 'some-brand-new-provider', name: 'Brand New', tone: 'light' });
+    expect(html).toContain('bg-white');
+    expect(html).toContain('text-black');
+  });
+});

@@ -35,7 +35,9 @@ export function bindProjectOperationsWorkspace(projectId: string) {
     },
 
     changeRequests: {
-      list: () => P.listChangeRequests(projectId),
+      /** One page, newest first. Walk the rest with `next_cursor` → `{ cursor }`. */
+      list: (...a: DropFirst<Parameters<typeof P.listChangeRequests>>) =>
+        P.listChangeRequests(projectId, ...a),
       get: (crId: string) => P.getChangeRequest(projectId, crId),
       /** Edit an open change request's title or description. */
       update: (...a: DropFirst<Parameters<typeof P.updateChangeRequest>>) =>

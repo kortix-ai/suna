@@ -22,7 +22,7 @@ import {
   type SessionLogJournalRequest,
   type SessionLogMessage,
 } from '@kortix/api-contract/session-log'
-import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, type PiSessionSnapshot } from '@/harness/pi/session-log'
+import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, PI_VERSION, type PiSessionSnapshot } from '@/harness/pi/session-log'
 import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-restore'
 import { mintRootId } from '@/harness/pi/message-id'
 import { SessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
@@ -37,7 +37,7 @@ const PNG = Buffer.from('synthetic-png-bytes').toString('base64')
 const PDF = `data:application/pdf;base64,${Buffer.from('synthetic-pdf').toString('base64')}`
 const ts = (n: number) => 1_760_000_000_000 + n * 1000
 const at = (n: number) => new Date(ts(n)).toISOString()
-const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
+const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, reasoning: 19, totalTokens: 15, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
 
 let n = 0
 let leaf: string | null = null
@@ -104,7 +104,7 @@ function fixture(): PiSessionSnapshot {
     entryMessageIds: ids,
     transcript: [
       v1('msg_a', 'user', [{ type: 'text', text: 'Describe the image.' }, { type: 'file', mime: 'image/png', url: `data:image/png;base64,${PNG}`, filename: 'shot.png' }, { type: 'file', mime: 'application/pdf', url: PDF, filename: 'notes.pdf' }]),
-      v1('msg_b', 'assistant', [{ type: 'reasoning', text: 'I should list files.' }, { type: 'text', text: 'Listing.' }, { type: 'tool', tool: 'bash', callID: 'msg_b-p2', state: { status: 'completed', input: { command: 'ls' }, output: 'a.txt', time: { start: ts(3), end: ts(4) } } }], { parentID: 'msg_a' }),
+      v1('msg_b', 'assistant', [{ type: 'reasoning', text: 'I should list files.' }, { type: 'text', text: 'Listing.' }, { type: 'tool', tool: 'bash', callID: 'msg_b-p2', state: { status: 'completed', input: { command: 'ls' }, output: 'a.txt', title: 'bash', time: { start: ts(3), end: ts(4) } } }], { parentID: 'msg_a' }),
       v1('msg_c', 'assistant', [{ type: 'text', text: 'One file.' }]),
       v1('msg_d', 'user', [{ type: 'text', text: 'Run sleep.' }]),
       v1('msg_e', 'assistant', [{ type: 'tool', tool: 'bash', callID: 'msg_e-p0', state: { status: 'running', input: { command: 'sleep 60' }, time: { start: ts(9) } } }]),
@@ -133,7 +133,7 @@ describe('pi session-log export', () => {
     expect(log.threads.map((t) => [t.thread_id, t.messages.length])).toEqual([[ROOT, 12], [CHILD, 3]])
     expect(log).toMatchObject({ restore_grade: 'native', harness: { current: 'pi' }, session_id: 'session-pi-log' })
     expect(AdapterCapabilitiesSchema.parse(PI_CAPABILITIES)).toBeTruthy()
-    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: '1.0.3', adapter_version: '1.0.0' })
+    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: PI_VERSION, adapter_version: '1.1.0' })
   })
 
   test('block ids are the pi part ids; a block with no part gets a position id', () => {
@@ -178,6 +178,24 @@ describe('pi session-log export', () => {
     expect(byId(messages, 'msg_h')).toMatchObject({ status: 'error', in_context: false, hidden_reason: 'failed_attempt' })
   })
 
+  test('P2.10: usage carries pi\'s reasoning tokens; a call keeps the v1 title', () => {
+    const b = byId(root(fixture()), 'msg_b')
+    expect(b.usage).toEqual({ input: 10, output: 5, cache_read: 0, cache_write: 0, reasoning: 19 })
+    expect(b.blocks[2]).toMatchObject({ type: 'tool_call', name: 'bash', title: 'bash' })
+    // A v1 call with no title (the task call) has none in the log.
+    expect(byId(root(fixture()), 'msg_k').blocks[0]).not.toHaveProperty('title')
+  })
+
+  test('P2.10: a child\'s context message pi-ai stamps 0 is timed at the child\'s creation', () => {
+    const s = fixture()
+    const child = s.children[0]!
+    child.agentMessages = [{ role: 'system', content: 'You are a helper.', timestamp: 0 }, ...child.agentMessages] as never
+    child.messageIds = [null, ...child.messageIds]
+    child.seqs = [5, ...child.seqs]
+    const context = piSessionLog(s).log.threads[1]!.messages.find((m) => m.kind === 'context')!
+    expect(context).toMatchObject({ role: 'system', created_at: at(50), completed_at: at(50) })
+  })
+
   test('a compaction keeps pi shape: summary, first kept message, trigger', () => {
     const c = byId(root(fixture()), 'msg_i')
     expect(c).toMatchObject({ role: 'user', kind: 'compaction', in_context: true })
@@ -192,6 +210,16 @@ describe('pi session-log export', () => {
     expect(image).toEqual({ type: 'attachment', id: 'msg_a-p1', ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, mime: 'image/png', name: 'shot.png' })
     expect(pdf).toMatchObject({ type: 'harness', id: 'msg_a-p2', kind: 'undelivered_file', model_visible: false, data: { mime: 'application/pdf', filename: 'notes.pdf' } })
     expect(JSON.stringify(pdf)).not.toContain('base64')
+  })
+
+  test('P2.13: blob() gives the bytes behind each blob: ref the last changes() exported', async () => {
+    const bytes = Buffer.from(PNG, 'base64')
+    const digest = createHash('sha256').update(bytes).digest('hex')
+    const port = createPiSessionLogPort(fixture)
+    expect(port.blob!(digest)).toBeNull()
+    await port.changes([])
+    expect(port.blob!(digest)).toEqual(bytes)
+    expect(port.blob!('0'.repeat(64))).toBeNull()
   })
 
   test('a sub-agent child is a thread spawned by the task call', () => {
@@ -372,16 +400,21 @@ describe('pi session-log adapter through the journal', () => {
       port: 0,
       hostname: '127.0.0.1',
       async fetch(request) {
+        // P2.13: the image's bytes are asked for, then uploaded, before its record goes out.
+        if (new URL(request.url).pathname.includes('/log/blobs/')) return Response.json({ ref: request.method === 'PUT' ? STORED : null })
         const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await request.arrayBuffer())))) as SessionLogJournalRequest
         bodies.push(body)
         return Response.json({ acked: [...body.puts.map((p) => ({ message_id: p.message.message_id, rev: p.rev })), ...body.tombstones] })
       },
     })
+    const STORED = 'kortix-attachment://project-1/session-pi-log/00000000-0000-4000-8000-000000000001'
     servers.push(server)
     process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
     const journal = startSessionLogJournal(createPiSessionLogPort(fixture), { generation: 0 })!
     expect(await journal.flush()).toBe(true)
     expect(bodies.length).toBeGreaterThan(0)
+    const image = bodies.flatMap((b) => b.puts.flatMap((p) => p.message.blocks)).find((b) => b.type === 'attachment')
+    expect([image?.ref, typeof image?.sha256, typeof image?.bytes]).toEqual([STORED, 'string', 'number'])
     for (const body of bodies) expect(SessionLogJournalRequestSchema.safeParse(body).success).toBe(true)
     expect(bodies.flatMap((b) => b.puts)).toHaveLength(15)
     expect(bodies[0]!.threads.map((t) => t.thread_id)).toEqual([ROOT, CHILD])

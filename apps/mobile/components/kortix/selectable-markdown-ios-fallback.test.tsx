@@ -18,6 +18,7 @@ const flatten = (style: unknown): Record<string, unknown> =>
 const pressables: Array<Record<string, unknown>> = [];
 const markdownInputs: Array<Record<string, unknown>> = [];
 const presented: number[] = [];
+const copied: string[] = [];
 
 mock.module('react-native', () => ({
   StyleSheet: { flatten, create: (s: unknown) => s, absoluteFill: {} },
@@ -53,7 +54,7 @@ mock.module('@expensify/react-native-live-markdown/src/MarkdownTextInput', () =>
   },
 }));
 mock.module('expo-haptics', () => ({ impactAsync: noop, notificationAsync: noop, ImpactFeedbackStyle: { Medium: 'medium' }, NotificationFeedbackType: { Success: 'success' } }));
-mock.module('expo-clipboard', () => ({ setStringAsync: async () => {} }));
+mock.module('expo-clipboard', () => ({ setStringAsync: async (text: string) => void copied.push(text) }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 mock.module('@/lib/icons', () => ({ CopyIcon: none }));
@@ -71,14 +72,30 @@ mock.module('@kortix/shared', () => ({
   isMermaidCode: () => false,
   prepareMarkdownForMath: (s: string) => s,
 }));
+// The renderer stub runs the real `fence` rule for a block that is one fence.
+const FENCE = /^```([^\n]*)\n([\s\S]*?)\n```\s*$/;
 mock.module('react-native-markdown-display', () => ({
-  default: host('markdown'),
+  default: ({ rules, children }: { rules: { fence: (node: unknown) => React.ReactNode }; children: string }) => {
+    const match = FENCE.exec(children);
+    if (match) return <>{rules.fence({ key: 'fence', content: `${match[2]}\n`, sourceInfo: match[1] })}</>;
+    return React.createElement('markdown', null, children);
+  },
   MarkdownIt: () => ({ use: () => ({}) }),
 }));
-mock.module('@/components/markdown/code-block', () => ({ CodeBlock: none, fenceCode: String, fenceLanguage: String }));
+mock.module('@/components/markdown/code-block', () => ({
+  CodeBlock: host('code-block'),
+  fenceCode: (content: string) => content.replace(/\n$/, ''),
+  fenceLanguage: (info: string) => info.trim().split(/\s+/)[0] ?? '',
+}));
 mock.module('@/components/markdown/inline-code', () => ({ InlineCode: host('inline-code') }));
 mock.module('@/components/markdown/math', () => ({ BlockMath: none, InlineMath: host('inline-math') }));
 mock.module('@/components/markdown/mermaid/MermaidBlock', () => ({ MermaidBlock: none }));
+// A block that falls back to markdown (Rich answers off), with the markdown a test sets.
+let fallbackMarkdown = '[shipped]';
+mock.module('@/components/genui/genui-message-block', () => ({
+  GenuiMessageBlock: ({ renderMarkdown }: { renderMarkdown: (markdown: string) => React.ReactNode }) =>
+    React.createElement('genui-block', null, renderMarkdown(fallbackMarkdown)),
+}));
 mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImage: none,
   MarkdownImageGallery: none,
@@ -101,6 +118,8 @@ afterEach(() => {
   pressables.length = 0;
   markdownInputs.length = 0;
   presented.length = 0;
+  copied.length = 0;
+  fallbackMarkdown = '[shipped]';
 });
 
 const render = (text: string) =>
@@ -159,5 +178,30 @@ describe('the iOS selection fallback (no RNUITextView in the binary)', () => {
     });
     expect(texts(tree!)).toContain('Select Text');
     expect(markdownInputs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a reply with a generative UI block shows and copies its markdown, not OpenUI source', async () => {
+    render('Done.\n\n```openui\nroot = Stack([b])\nb = Badge("shipped")\n```');
+    const press = tapTarget();
+    act(() => {
+      press?.();
+      press?.();
+    });
+    expect(markdownInputs[markdownInputs.length - 1].value).toBe('Done.\n\n[shipped]');
+    const copyAll = tree!.root.findByType('bs-touchable' as never);
+    await act(async () => {
+      await (copyAll.props.onPress as () => Promise<void>)();
+    });
+    expect(copied).toEqual(['Done.\n\n[shipped]']);
+  });
+
+  test('a block markdown fallback adds no second tap target, and an openui fence inside it stays code', () => {
+    fallbackMarkdown = '```openui\nroot = Badge("x")\n```';
+    render('Done.\n\n```openui\nroot = Stack([b])\nb = Badge("shipped")\n```');
+    const find = (type: string) => tree!.root.findAllByType(type as never);
+    expect(find('genui-block')).toHaveLength(1);
+    // One Pressable: a double tap anywhere, the block included, opens the whole message.
+    expect(find('pressable')).toHaveLength(1);
+    expect(find('code-block').map((n: { props: { code?: unknown } }) => n.props.code)).toEqual(['root = Badge("x")']);
   });
 });

@@ -6,9 +6,10 @@ name: Terraform CI
 # variable TF_PLAN_ROLE_ARN is set, so it can't fail before that role is provisioned.
 
 on:
-  # A pull request into `dev` runs no CI. Release pull requests are the gate.
+  # A pull request into `dev` or `staging` runs no CI. The release pull
+  # request into `prod` is the gate (2026-10-16).
   pull_request:
-    branches: [staging, prod]
+    branches: [prod]
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform-ci.yml"
@@ -222,12 +223,6 @@ jobs:
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
-      # Read-only plan: a stale regional state copy is a warning here, not a failure.
-      - name: Check the regional state copy
-        uses: ./.aws-env/.github/actions/state-copy-guard
-        with:
-          root: ${{ matrix.root }}
-          mode: warn
       - name: plan -detailed-exitcode
         run: |
           set -uo pipefail

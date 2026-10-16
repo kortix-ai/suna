@@ -435,6 +435,9 @@ resource "aws_s3_account_public_access_block" "this" {
 
 # ════════════════════════════════════════════════════════════════════════════
 # AWS Backup — Drata DCF-99 (daily backups monitored)
+# The plan backs up the eu-west-2 Terraform state bucket (prod, staging and the
+# two global roots). Until 2026-10-14 it lived in us-west-2 and backed up the
+# old `kortix-terraform-locks` table, which no backend used after the state move.
 # ════════════════════════════════════════════════════════════════════════════
 resource "aws_iam_role" "backup" {
   name               = "AWSBackupDefaultServiceRole"
@@ -455,7 +458,19 @@ resource "aws_iam_role_policy_attachment" "backup_restore" {
   role       = aws_iam_role.backup.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
 }
-resource "aws_kms_key" "backup" {
+# S3 backups need their own managed policies. They include kms:Decrypt through
+# S3 for the state bucket's CMK.
+resource "aws_iam_role_policy_attachment" "backup_s3_backup" {
+  role       = aws_iam_role.backup.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSBackupServiceRolePolicyForS3Backup"
+}
+resource "aws_iam_role_policy_attachment" "backup_s3_restore" {
+  role       = aws_iam_role.backup.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSBackupServiceRolePolicyForS3Restore"
+}
+resource "aws_kms_key" "backup_euw2" {
+  provider = aws.euw2
+
   description             = "AWS Backup vault encryption (SOC2 DCF-99)"
   deletion_window_in_days = 30
   enable_key_rotation     = true
@@ -466,10 +481,15 @@ resource "aws_kms_key" "backup" {
         Sid       = "EnableAccountAdministration"
         Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }
+        # DeleteAlias and CancelKeyDeletion: without them no principal can
+        # retire the alias or undo a scheduled deletion (Apply Global run
+        # 38603594941 failed on DeleteAlias for the us-west-2 copy).
         Action = [
+          "kms:CancelKeyDeletion",
           "kms:CreateAlias",
           "kms:CreateGrant",
           "kms:Decrypt",
+          "kms:DeleteAlias",
           "kms:DescribeKey",
           "kms:DisableKey",
           "kms:DisableKeyRotation",
@@ -528,24 +548,30 @@ resource "aws_kms_key" "backup" {
     Compliance = "soc2"
   }
 }
-resource "aws_kms_alias" "backup" {
+resource "aws_kms_alias" "backup_euw2" {
+  provider = aws.euw2
+
   name          = "alias/kortix-backup"
-  target_key_id = aws_kms_key.backup.key_id
+  target_key_id = aws_kms_key.backup_euw2.key_id
 }
-resource "aws_backup_vault" "encrypted" {
+resource "aws_backup_vault" "encrypted_euw2" {
+  provider = aws.euw2
+
   name        = "kortix-backup-vault-cmk"
-  kms_key_arn = aws_kms_key.backup.arn
+  kms_key_arn = aws_kms_key.backup_euw2.arn
   tags        = local.tags
 
   lifecycle {
     prevent_destroy = true
   }
 }
-resource "aws_backup_plan" "daily" {
+resource "aws_backup_plan" "daily_euw2" {
+  provider = aws.euw2
+
   name = "kortix-daily"
   rule {
     rule_name         = "daily-35d"
-    target_vault_name = aws_backup_vault.encrypted.name
+    target_vault_name = aws_backup_vault.encrypted_euw2.name
     schedule          = "cron(0 5 * * ? *)"
     start_window      = 60
     completion_window = 180
@@ -553,11 +579,13 @@ resource "aws_backup_plan" "daily" {
   }
   tags = local.tags
 }
-resource "aws_backup_selection" "daily" {
+resource "aws_backup_selection" "daily_euw2" {
+  provider = aws.euw2
+
   name         = "kortix-daily-sel"
-  plan_id      = aws_backup_plan.daily.id
+  plan_id      = aws_backup_plan.daily_euw2.id
   iam_role_arn = aws_iam_role.backup.arn
-  resources    = ["arn:aws:dynamodb:us-west-2:${local.account_id}:table/kortix-terraform-locks"]
+  resources    = [aws_s3_bucket.terraform_state_euw2.arn]
   selection_tag {
     type  = "STRINGEQUALS"
     key   = "backup"

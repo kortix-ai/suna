@@ -24,6 +24,7 @@ import {
   relayTurnAccepted,
   relayTurnBegin,
   relayTurnEnd,
+  turnEndAfterBegin,
 } from '../shared/turn-relay'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { scheduleHistoryBackfill } from '@/services/workspace-provider/git'
@@ -49,6 +50,8 @@ import type { PiRuntimeHooks } from './runtime'
 import { createPiHarnessService, type PiHarnessService } from './service'
 import { createPiSessionLogPort } from './session-log'
 import { startSessionLogJournal } from '../shared/session-log-journal'
+import { reconcileSessionLog, type SessionLogBoot } from '../shared/session-log-boot'
+import { readPiSnapshot } from './session-log-restore'
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
@@ -98,15 +101,17 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
   const relayedTurnEnds = new Set<string>()
+  const turnOrder = turnEndAfterBegin()
   const sessionTreeChanged = createSessionTreeWatch()
   const hooks: PiRuntimeHooks = {
     onTurnBegin: ({ rootId, messageId }) => {
-      void relayTurnBegin(rootId, messageId)
+      turnOrder.begin(messageId, relayTurnBegin(rootId, messageId))
     },
     onTurnEnd: ({ rootId, messageId, status, error }) => {
       kortixEventBus().publishDaemon('kortix.turn', { runtime_session_id: rootId, verdict: status, error: error ?? null }, rootId)
+      const begun = turnOrder.end(messageId)
       if (relayedTurnEnds.has(messageId)) return
-      void relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error }).then((settled) => {
+      void begun.then(() => relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error })).then((settled) => {
         if (settled) relayedTurnEnds.add(messageId)
       })
     },
@@ -142,6 +147,15 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     exit: (code) => shutdown({ reason: 'agent-swap', exitCode: code }),
   })
   bootMark('proxy-up')
+
+  // The session log's boot reconcile (P6.4, shared/session-log-boot.ts), beside
+  // the checkout: a restore writes pi's dump, which needs no /workspace, and the
+  // runtime loads it at start. A failed reconcile fails the boot below.
+  const sessionLog: Promise<SessionLogBoot | null | Error> = sessionId
+    ? reconcileSessionLog(
+        createPiSessionLogPort(() => readPiSnapshot(cfg.piStateDir, sessionId), { stateDir: cfg.piStateDir, sessionId, cwd: cfg.projectTarget || cfg.workspace }),
+      ).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+    : Promise.resolve(null)
 
   // The first turn's claim is a read; prefetch it while the workspace lands.
   const claimPromise = bootstrapSession && sessionId
@@ -205,6 +219,12 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   // tree IS the config, so pi waits for it. The only wait on the workspace.
   if (harness.releases.projectRoot() === undefined) await workspace
 
+  const logBoot = await sessionLog
+  if (logBoot instanceof Error) {
+    bootState.initialRuntimeSessionError = `session log restore failed: ${logBoot.message}`
+    logger.error('[boot] session log restore failed; the session does not start', { err: bootState.initialRuntimeSessionError })
+    return
+  }
   try {
     await harness.lifecycle.start()
   } catch (err) {
@@ -238,11 +258,11 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
 
-  // ── The session log (P2.5) ──────────────────────────────────────────────
-  // Before the first turn, so its turn end flushes it. Nothing mints a session
-  // generation before P6's restore, so this box writes under generation 0.
-  if (startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })) {
-    logger.info('[session-log] journal started', { harness: 'pi', generation: 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
+  // ── The session log (P2.5, P6.4) ────────────────────────────────────────
+  // Before the first turn, so its turn end flushes it, at the generation and
+  // with the cursors the boot reconcile returned.
+  if (logBoot && startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), logBoot)) {
+    logger.info('[session-log] journal started', { harness: 'pi', generation: logBoot.generation, restored: logBoot.cursors.length > 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
   }
 
   // ── The session's root and its first turn ───────────────────────────────
@@ -251,7 +271,12 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   const claim = await claimPromise
   if (claim?.prompt) {
     try {
-      const admitted = runtime.admit({ messageID: claim.messageId, text: claim.prompt, files: [] })
+      // ponytail: pi's admission takes plain text only, so the harness context
+      // still rides inside the prompt here; the transcript shows the caller's
+      // words plus the contract tail until pi grows a synthetic-part carrier
+      // (OpenCode already delivers it as a model-only part).
+      const text = claim.context ? `${claim.prompt}\n\n${claim.context}` : claim.prompt
+      const admitted = runtime.admit({ messageID: claim.messageId, text, files: [] })
       bootMark('initial-prompt-delivered')
       // Published AFTER admission, like OpenCode's publish-after-prompt: the
       // control plane must never promote a `delivering` record for a turn the

@@ -276,10 +276,19 @@ working when the account loses it.
 - **New person:** a `POST /Users` for an email with no Kortix sign-in creates a
   pending invitation with the `member` role, valid for 14 days. SCIM lists it as
   an active user. A person who already has a Kortix sign-in joins as a `member`.
+  On a self-hosted instance that confirms sign-ups without an email, a password
+  sign-in that is not yet a member gets the pending invitation instead. That
+  sign-in cannot see or accept the invitation: the person joins through the
+  account's SAML provider. See
+  [Unconfirmed email addresses](/docs/host#unconfirmed-email-addresses).
 - **Groups:** a SCIM group is an ordinary Kortix group. Give it project roles
   like any other.
 - **Remove a person:** `active: false` or `DELETE` removes the membership, its
-  roles and groups, and revokes the person's keys and live session tokens.
+  roles and groups, and revokes the person's keys and live session tokens. It
+  also revokes the computer accounts that reach their machines and pauses their
+  reminders, the same as a removal. See
+  [When a person leaves](/docs/accounts#when-a-person-leaves). A repeated
+  `active: false` changes nothing more.
 - **Last owner:** deactivating the account's last owner returns `409`.
 
 ## API keys and tokens
@@ -390,7 +399,18 @@ request. The app must ask you again.
 ## Enterprise features
 
 An entitlement decides whether a feature exists for the account. The role still
-decides who may use it. The Enterprise plan holds all five.
+decides who may use it. Enterprise turns all five on, on any plan, in one of
+two ways:
+
+- **Enterprise demo.** An owner or admin turns it on in **Billing → Plan** or in
+  the account settings, and turns it off at any time. The account is marked
+  "Demo", and Kortix sales gets in touch.
+- **Enterprise license.** An annual license from Kortix sales. The account is
+  marked "Licensed". A license carries no credits: usage is paid from the
+  account's plan and top-ups, like any account.
+
+When a license ends, SSO and SCIM stay on for 14 days so nobody is locked out of
+sign-in.
 
 | Entitlement | Unlocks |
 |---|---|

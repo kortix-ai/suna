@@ -165,9 +165,8 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
 /**
  * `@kortix/starter`'s `base` template — the scaffold every managed project
  * gets by default on provisioning (`managed-repo-seed.ts`: "seeding is the
- * default, not an opt-in") — ships the harness-agnostic layout PR #7681
- * introduced: `harnesses/opencode/opencode.jsonc`, root `agents/`, root
- * `skills/kortix-cli/`, root `memory/`. This flow deliberately drives the
+ * default, not an opt-in") — ships the kortix_version 3 layout: root
+ * `agents/`, `skills/`, `extensions/`, `memory/`. This flow deliberately drives the
  * LEGACY `.kortix/opencode` layout with a fixed, hand-authored config
  * (`CONFIG_FILES` below), so every managed project it creates clears that
  * scaffold in the SAME commit that lays down `CONFIG_FILES`. Without this,
@@ -179,7 +178,7 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
  * the wrong tree. The `local` target never seeds a starter template
  * (`createLocalGitRepository`), so this is a no-op there.
  */
-const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'memory'];
+const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'extensions', 'memory'];
 
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,
@@ -300,7 +299,14 @@ async function commitTo(
     await run('git', ['add', '-A'], work);
     await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', message], work);
     await run('git', [...repo.auth, 'push', '-q', 'origin', `HEAD:refs/heads/${repo.branch}`], work);
-    return (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+    const tip = (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+    // A push straight to a path upstream (the local target) bypasses Kortix, as
+    // a push straight to GitHub does: the API sees it within one mirror refresh
+    // interval (apps/api/src/config-releases/base-tip.ts), which the local
+    // stack sets to 1 s (`KORTIX_GIT_REFRESH_INTERVAL_MS`). A push through the
+    // git proxy is seen at once.
+    if (repo.url.startsWith('/')) await sleep(1_100);
+    return tip;
   } finally {
     await rm(work, { recursive: true, force: true });
   }
@@ -751,6 +757,37 @@ flow(
         }
         const download = await fixture.download(restricted.secret, descriptor.config_tree_id!);
         if (download.status !== 403) throw new Error(`restricted download: expected 403, got ${download.status}`);
+      });
+
+      await ctx.step('a session without repository access receives only the modules of its agent\'s project tools, and downloads no other tree', async () => {
+        const manifest = MANIFEST.replace('agents:\n', 'tools:\n  lookup_order: tools/lookup_order.ts\n  hidden_tool: tools/hidden.ts\nagents:\n')
+          .replace('  reviewer:\n', '  reviewer:\n    tools:\n      exclude: [hidden_tool]\n');
+        await fixture.commit(
+          {
+            'kortix.yaml': manifest,
+            'tools/lookup_order.ts': "import { client } from './lib/client'\nexport default { description: 'Look up an order.', parameters: { type: 'object' }, execute: () => client() }\n",
+            'tools/lib/client.ts': 'export const client = () => "order"\n',
+            'tools/hidden.ts': "export default { description: 'Hidden.', parameters: { type: 'object' }, execute: () => 'x' }\n",
+          },
+          'project tools',
+        );
+        const restricted = await fixture.mint({ repositoryAccess: false, agentName: 'reviewer' });
+        const r = await fixture.descriptor(restricted.secret, restricted.sessionId, { accept: ['config-release-v3'] });
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const d = r.body as Descriptor & { snapshot?: unknown };
+        const paths = d.files?.map(([path]) => path).join(',');
+        if (paths !== 'tools/lib/client.ts,tools/lookup_order.ts') throw new Error(`restricted files: ${paths}`);
+        if (d.config_dir !== null || d.reason !== null) throw new Error(`config_dir ${d.config_dir}, reason ${d.reason}`);
+        if (d.snapshot) throw new Error('a tools-only release carried the whole-commit snapshot');
+        const query = d.archive!.url.slice(d.archive!.url.indexOf('?'));
+        if (query !== `?commit=${d.source_commit}&agent=reviewer`) throw new Error(`archive url ${d.archive!.url}`);
+        const download = await fixture.download(restricted.secret, d.config_tree_id!, query);
+        if (download.status !== 200) throw new Error(`tools download: expected 200, got ${download.status}`);
+        await assertArchiveMatches(d, download.bytes);
+        const whole = await fixture.download(restricted.secret, descriptor.config_tree_id!, query);
+        if (whole.status !== 403) throw new Error(`whole tree with the tools query: expected 403, got ${whole.status}`);
+        const otherAgent = await fixture.download(restricted.secret, d.config_tree_id!, `?commit=${d.source_commit}&agent=kortix`);
+        if (otherAgent.status !== 403) throw new Error(`another agent's query: expected 403, got ${otherAgent.status}`);
       });
 
       await ctx.step('the release is the base commit\'s whole tree: a root skills/ folder and a file outside every config dir ship at their repository paths', async () => {
@@ -2042,6 +2079,9 @@ harnessFlow(
 // fix is 50; a round costs one push plus one turn, so 50 needs the flow's own
 // timeout raised with it.
 const RACE_ROUNDS = Math.max(1, Number(process.env.KORTIX_CFG_RACE_ROUNDS ?? '5') || 5);
+/** Which layer said 503: kortixd's boot phase header and body, or the API's. */
+const describe503 = (r: { header(name: string): string | undefined; text(): string }) =>
+  `(phase=${r.header('x-kortix-boot-phase') ?? 'none'}): ${r.text().slice(0, 400)}`;
 /** Commit to `running_release_id === desired_release_id` on a box nobody is prompting. */
 const IDLE_CONVERGENCE_CEILING_MS = 65_000;
 
@@ -2123,7 +2163,7 @@ harnessFlow(
           const r = await box.send(prompt);
           // THE DEFECT: `503` here, because the swap killed the process that
           // had already accepted this prompt.
-          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503`);
+          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503 ${describe503(r)}`);
           r.status(200);
           const body = r.json<any>();
           if (body?.deduplicated) throw new Error(`round ${round}: the prompt was swallowed as a duplicate`);
@@ -2166,7 +2206,7 @@ harnessFlow(
         await new Promise((resolve) => setTimeout(resolve, 1_000));
 
         const r = await box.send(MARKER_PROMPT);
-        if (r.statusCode === 503) throw new Error('the send answered 503 while a convergence was parked');
+        if (r.statusCode === 503) throw new Error(`the send answered 503 while a convergence was parked ${describe503(r)}`);
         r.status(200);
         const body = r.json<any>();
         if (!body?.info || !Array.isArray(body?.parts)) {
@@ -2250,14 +2290,11 @@ harnessFlow(
       await fixture.cleanup();
     }
   },
-  // pi on deployed staging answers from a stale system prompt after an idle
-  // convergence (gates 37557504543 and 37933459772: DEF-DEV-2 answered
-  // marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both times).
-  // Suspected: harness/pi/config-release.ts swap + reconfigure keeps the old
-  // compiled governance. Remove when the pi fix lands.
-  process.env.KE2E_TARGET === 'staging'
-    ? { quarantine: 'pi keeps a stale system prompt after idle config convergence on staging (DEF-DEV-2), open since v0.13.52 — quarantined 2026-10-09 until the pi reconfigure fix lands' }
-    : {},
+  // Known pi defect on deployed staging: pi answers from a stale system prompt
+  // after an idle convergence (gates 37557504543 and 37933459772: DEF-DEV-2
+  // answered marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both
+  // times). Suspected: harness/pi/config-release.ts swap + reconfigure keeps
+  // the old compiled governance. A red CFG-12-pi is that bug, not this test.
 );
 
 // ── CFG-13 — the meta coordinator runs the platform governance, on a real box ─

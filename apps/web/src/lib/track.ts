@@ -20,6 +20,7 @@ export const PANEL_EVENTS = [
   'image_copied',
   'panel_mode_switched',
   'conversation_density_switched',
+  'genui_block',
 ] as const;
 
 export type PanelEvent = (typeof PANEL_EVENTS)[number];

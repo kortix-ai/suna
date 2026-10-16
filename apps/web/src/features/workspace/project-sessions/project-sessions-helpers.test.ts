@@ -1,4 +1,6 @@
 import type { ProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
+import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { createTranslator } from 'next-intl';
 
@@ -6,6 +8,7 @@ import deMessages from '../../../../translations/de.json';
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
   bulkDeleteConfirmLabel,
+  cachedSessionsScope,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -429,5 +432,57 @@ describe('filterProjectSessions — owner and access facets', () => {
 
   test('omitting the owner and access facets keeps the old behaviour', () => {
     expect(ids(filterProjectSessions([alice, bob, bob2], [], [], testUiTranslator))).toEqual(['alice', 'bob', 'bob-2']);
+  });
+});
+
+describe('cachedSessionsScope — the list a reload shows before the manager probe answers', () => {
+  const ROOT = { parent: 'root' } as const;
+  const page = (id: string) => ({ pages: [{ items: [{ session_id: id }], next_cursor: null }], pageParams: [null] });
+  const write = (
+    client: QueryClient,
+    scope: 'project' | 'visible',
+    filters: Parameters<typeof qk.project.sessionsPaged>[2],
+    updatedAt: number,
+  ) => client.setQueryData(qk.project.sessionsPaged('p-1', scope, filters), page(scope), { updatedAt });
+
+  test('nothing restored: no scope, the page waits for the probe as before', () => {
+    expect(cachedSessionsScope(new QueryClient(), 'p-1', ROOT)).toBeNull();
+  });
+
+  test("a manager's restored inventory: the 'project' scope", () => {
+    const client = new QueryClient();
+    write(client, 'project', ROOT, 1_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('project');
+  });
+
+  test("a member's restored list: the 'visible' scope", () => {
+    const client = new QueryClient();
+    write(client, 'visible', ROOT, 1_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('visible');
+  });
+
+  test('both restored: the newer read, which carries the latest access this user had', () => {
+    const client = new QueryClient();
+    write(client, 'project', ROOT, 1_000);
+    write(client, 'visible', ROOT, 2_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('visible');
+    write(client, 'project', ROOT, 3_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('project');
+  });
+
+  test('only the entry of the filters on screen counts', () => {
+    const client = new QueryClient();
+    // The sidebar's own list, and this page under another tab.
+    write(client, 'visible', { parent: 'root', startedBy: 'me' }, 1_000);
+    write(client, 'project', { parent: 'root', startedBy: 'automated' }, 1_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBeNull();
+    expect(cachedSessionsScope(client, 'p-1', { parent: 'root', startedBy: 'automated' })).toBe('project');
+    expect(cachedSessionsScope(client, 'p-2', { parent: 'root', startedBy: 'automated' })).toBeNull();
+  });
+
+  test('a query that never answered holds no rows to show', () => {
+    const client = new QueryClient();
+    client.getQueryCache().build(client, { queryKey: qk.project.sessionsPaged('p-1', 'project', ROOT) });
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { InfoBanner } from '@/components/ui/info-banner';
 import { InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import { m, useReducedMotion } from 'motion/react';
@@ -8,6 +9,7 @@ const EASE = [0.23, 1, 0.32, 1] as const;
 
 export function EmailLinkStep({
   sentEmail,
+  errorMessage,
   info,
   resendIn,
   pending,
@@ -18,6 +20,7 @@ export function EmailLinkStep({
   onPassword,
 }: {
   sentEmail: string | null;
+  errorMessage: string | null;
   info: string | null;
   resendIn: number;
   pending: boolean;
@@ -50,6 +53,7 @@ export function EmailLinkStep({
 
       <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
+        {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
         <div className="text-muted-foreground mt-6 space-y-2 text-sm">
           <p>
