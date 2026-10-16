@@ -279,14 +279,14 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
   });
   const manifestFile = starterFiles.find((f) => f.path === 'kortix.yaml');
 
-  test('the starter ships a v3 kortix.yaml, not a v1 kortix.toml', () => {
+  test('the starter ships a v2 kortix.yaml, not a v1 kortix.toml', () => {
     expect(manifestFile).toBeDefined();
     expect(starterFiles.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
   test('a first session with no explicit agent ("default") RESOLVES — ok:true, not AGENT_NOT_DECLARED', () => {
     const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
-    expect(manifest.schemaVersion).toBe(3);
+    expect(manifest.schemaVersion).toBe(2);
     const loaded = extractAgents(manifest);
     expect(loaded.errors).toEqual([]);
     // The manifest must name a default agent, and must declare it.

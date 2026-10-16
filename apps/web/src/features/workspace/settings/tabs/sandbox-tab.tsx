@@ -176,7 +176,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import {
   manifestFilename,
   useProjectManifestVersion,
-} from '@/features/workspace/customize/migrate-to-v3/manifest-version';
+} from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import type { UiTranslator } from '@/i18n/translator';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';

@@ -126,6 +126,8 @@ mock.module('../shared/daytona', () => ({
 }));
 
 const { daytonaProvider } = await import('../snapshots/providers/daytona');
+// The retry's 2 s pause is not under test; which calls each attempt makes is.
+daytonaProvider.buildRetryBaseMs = 1;
 
 afterAll(() => {
   rmSync(fixtureRoot, { recursive: true, force: true });

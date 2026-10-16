@@ -26,6 +26,7 @@
     "@earendil-works/pi-codemode": "1.2.0",
     "@earendil-works/pi-coding-agent": "1.2.0",
     "@earendil-works/pi-tui": "1.2.0",
+    "@silvia-odwyer/photon-node": "0.3.4",
     "hono": "^4.13.7",
     "node-forge": "^1.4.0",
     "quickjs-wasi": "3.6.2",

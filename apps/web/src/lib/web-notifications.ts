@@ -54,7 +54,12 @@ import {
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
-import { broadcastTurnComplete, type TurnCompleteMsg } from '@/lib/turn-broadcast';
+import {
+  broadcastTurnComplete,
+  noteTurnCompleteShown,
+  turnCompleteShownSince,
+  type TurnCompleteMsg,
+} from '@/lib/turn-broadcast';
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
@@ -681,11 +686,19 @@ export function notifyTaskComplete(
   sessionId: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
+  /** Set when the SDK's turn-end watch found this end: the session page was
+   *  not mounted here. `watchedSinceMs` is when the watch started; `projectId`
+   *  is the session's project, which the page on screen may not be. */
+  handoff?: { watchedSinceMs?: number; projectId?: string },
 ) {
+  // Another tab's stream already announced this end and its relay reached
+  // this tab: the watch is the second announcer of the same end.
+  const since = handoff?.watchedSinceMs;
+  if (since !== undefined && turnCompleteShownSince(sessionId, since)) return;
   // Captured now, while the raising event proves which project is open — a
   // receiving tab may be on a page whose path holds no project id, and may
   // never have loaded the project's `notification_center` flag.
-  const projectId = currentProjectId();
+  const projectId = handoff?.projectId ?? currentProjectId();
   const msg = {
     sessionId,
     sessionTitle,
@@ -705,6 +718,7 @@ export function notifyTaskCompleteFor(
   { sessionId, sessionTitle, projectId, notificationCenter }: Omit<TurnCompleteMsg, 'at'>,
   tI18nComplete: UiTranslator,
 ) {
+  noteTurnCompleteShown(sessionId);
   const name = sessionDisplayName(sessionTitle, sessionId);
   const label = sessionTitle ? `"${name.slice(0, 60)}"` : name;
 
@@ -734,6 +748,8 @@ export function notifySessionError(
   errorTitle: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
+  /** The session's project, from the SDK's turn-end watch (see `notifyTaskComplete`). */
+  projectIdOverride?: string,
 ) {
   const name = sessionDisplayName(sessionTitle, sessionId);
   const label = sessionTitle ? `"${name.slice(0, 50)}"` : name;
@@ -749,7 +765,7 @@ export function notifySessionError(
     sessionId,
     actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
-    projectId: currentProjectId(),
+    projectId: projectIdOverride ?? currentProjectId(),
   });
 }
 

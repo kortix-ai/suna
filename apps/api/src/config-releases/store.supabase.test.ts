@@ -142,11 +142,11 @@ describe.skipIf(!live)('config archive store on Supabase Storage (S3 protocol)',
   test('pruneProject keeps the newest archives and deletes the rest', async () => {
     const project = crypto.randomUUID();
     const keys = ['1', '2', '3'].map((n) => configArchiveKey(project, n.repeat(40)));
-    for (const key of keys) {
+    for (const [i, key] of keys.entries()) {
+      // Distinct LastModified values: Storage stamps at second resolution.
+      if (i > 0) await Bun.sleep(1100);
       written.push(key);
       await store!.putIfAbsent(key, Buffer.from(key));
-      // Distinct LastModified values: Storage stamps at second resolution.
-      await Bun.sleep(1100);
     }
     const deleted = await store!.pruneProject(project, 2);
     expect(deleted).toEqual([keys[0]!]);

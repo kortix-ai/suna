@@ -71,6 +71,9 @@ export interface QueueRow {
   /** "Stop and send" can turn it into Quick Queue: it is still waiting and
    *  not yet on the wire. */
   interruptible: boolean;
+  /** A `/` command held in this tab until the session can run it
+   *  (`held-commands.ts`). Not an inbox row. */
+  command?: true;
   /** Up (or the pencil) opens it in the composer for an in-place edit. */
   takeBackEligible: boolean;
   /** The prompt's whole text as the server holds it: quotes, file and

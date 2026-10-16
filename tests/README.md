@@ -5,7 +5,9 @@
 The API package's direct `scripts/test.sh` command selects one to four Bun
 workers from available memory. It reserves 2 GiB for the agent and OS and
 budgets 4 GiB per worker. It restarts workers every 80 test files because a
-single long-lived Bun worker retained 8.9 GiB during a full suite. Set
+single long-lived Bun worker retained 8.9 GiB during a full suite. A batch
+ends when its slowest file ends, so the files in `apps/api/scripts/slow-tests.txt`
+(1 s or more) run first. Add a file there when it passes 1 s. Set
 `KORTIX_API_TEST_WORKERS` only on a dedicated
 runner with measured headroom. A detached suite continues after an agent turn
 ends; check and stop that process before retrying a memory-guarded turn.
@@ -23,8 +25,9 @@ The local API that the flows start refreshes its git mirror every second
 (`KORTIX_GIT_REFRESH_INTERVAL_MS=1000`, `src/core/local-stack.ts`). The 60 s
 default made each flow that pushes `kortix.yaml` wait up to 60 s per push.
 
-The default run has six lanes plus package quality. It runs only the lanes and
-packages the branch's diff can affect ([Diff-scoped default run](#diff-scoped-default-run)):
+The default run has six lanes plus package quality. It always runs every lane
+and every package. There is no diff scope, no lane reuse, and no attestation:
+CI runs the whole suite at the dev -> staging promote and nightly on `dev`.
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
@@ -37,47 +40,21 @@ The REST runner is language-agnostic at the product boundary. It sends HTTP
 requests and starts the compiled CLI as a process. It never imports API route
 handlers.
 
-## Diff-scoped default run
+## Default run
 
-Plain `pnpm test` runs only what the branch's diff can affect
-(`tests/src/core/test-scope.ts`). The diff is every file that differs from the
-merge-base with `origin/dev`, uncommitted edits included.
+A Mac refuses a suite-wide run (`pnpm test`, `--full`, `--packages-only`,
+`--browser-only`, `--db-only` with no filter) and prints the targeted
+commands. Run the targeted tests that cover your change: one flow
+(`--id <FLOW>`), one DB suite filter, the SDK, or one package test file.
+`KORTIX_FULL_TEST=1` overrides the refusal on a box with headroom.
 
-| Changed path | What runs |
-| --- | --- |
-| a file in a workspace package | that package, every package that depends on it (`pnpm --filter "...{dir}"`), and every package that imports it by relative path (`../../packages/x`) |
-| `.github/`, `.githooks/`, `infra/`, `tests/e2e/` | the packages whose files name that path |
-| `tests/src/flows/`, `tests/spec/`, `tests/migration/` | the REST/CLI flows and DB suites |
-| `.agents/`, `.claude/`, `tests/unit/`, a root `*.md` | only the always-on lanes |
-| anything else (root config, `pnpm-lock.yaml`, `scripts/`, `supabase/`, the runner itself, an app that is not a workspace package) | everything |
-
-- The runner unit tests, route coverage and worktree tests always run.
-- The flows and DB suites run when the scope reaches `apps/api`, `apps/cli`,
-  `apps/llm-gateway` or `packages/db`, or a flow path changed. Otherwise the
-  attestation records `db-suites=skipped-unaffected`.
-- The SDK lane runs when the scope reaches `packages/sdk`.
-- Package quality runs the publish checks, lint, typecheck and workspace tests
-  of the packages in scope only.
-
-A run also reuses lane groups (`core`, `packages`, `db-suites`) that already
-passed for the same diff: rerunning after a flake runs only the red groups. A
-merge of `origin/dev` that touches other files keeps the diff, so it keeps the
-reuse. A file that joins the diff or an edit to a changed file drops every
-reused group. Delete `tests/attestations/<branch>.json` to rerun everything on
-the same diff. The attestation hashes the working tree, so commit the tested
-edits as they are: a tested file that the commit leaves out makes it stale.
-A run fingerprints the working tree before its lanes start. When the tree
-differs at the end (an edit or commit made during the run), it writes no
-attestation and exits 1: rerun `pnpm test` on the final tree.
-
-`CI=1 pnpm test` runs the whole suite and reuses nothing. GitHub Actions sets
-`CI`, so the `Tests` run on every push to `dev` and the release lanes always
-run everything: they are the backstop for a dependency the scope cannot see.
+A box without Docker (a factory sandbox) drops the `api-cli-flows` and
+`db-suites` lanes and logs `SKIP <lane> (no Docker, not a pass)`.
 
 ## Commands
 
 ```bash
-pnpm test                       # Fast local core
+pnpm test                       # Whole core suite; refused on a Mac unless KORTIX_FULL_TEST=1
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
@@ -142,14 +119,18 @@ dispatch only; the `preview` label deploys without it) and `tests-release.yml` (
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is ten lanes in parallel, each natively on one free GitHub-hosted
-runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Core and
-package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight browser
-lanes run shards `1/8` through `8/8` with one Playwright worker each
+The run is seven lanes in parallel, each natively on one free GitHub-hosted
+runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). The core lane
+runs `pnpm test -- --no-packages`. Four package lanes run one slice of package
+quality each: `pnpm test -- --packages-only --package-group=api` (`cli`,
+`kortixd`, `rest`; `rest` holds the repo-wide checks and every other package).
+On one runner the API, CLI and kortixd suites and three `tsc` shared 4 vCPU and
+the lane took 18.5 min. Two browser
+lanes run shards `1/2` and `2/2` with one Playwright worker each
 (`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The runner hands
 each shard its spec files by path, balanced by measured duration (see
-"Browser shard balancing"). The ten lanes are the parallel equivalent of
+"Browser shard balancing"). The seven lanes are the parallel equivalent of
 `pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
@@ -273,7 +254,9 @@ bun tests/bin/refresh-shard-durations.ts deployed <tests-release.yml run id>...
 
 A spec file that no run executed (quarantined, local-only) gets 0. A shard wall
 time is about `fixed overhead + sum of its files` at one worker: 295 s local, 105 s
-deployed. The largest file (`27-desktop-parity`, 520 s local) is the floor.
+deployed. The largest file is the floor. `27-desktop-parity` was one 520 s file
+(655 s on CI run 38777589705); its journeys now live in
+`e2e/helpers/desktop-parity.ts` and run from two spec files, one per runtime.
 
 #### Release gate shards
 
@@ -597,11 +580,27 @@ that asks creates it again.
 Playwright exists only for behavior that requires a browser. Browser tests live
 in `tests/e2e/specs`. API-only behavior belongs in a REST flow.
 
-The browser suite does not repeat every REST contract. It covers selected
-browser-visible journeys. REST flows remain authoritative for complete API and
-CLI contracts. The browser suite does not claim complete customer-journey
-coverage. A browser journey is incomplete when it skips for a missing provider,
-OAuth, or mutation capability; report that skip explicitly.
+The browser suite covers the money path only: the journeys a paying user
+cannot work around when they break. Since 2026-10-16 it has these spec files:
+
+| Spec | Money-path step |
+| --- | --- |
+| `01-account-auth` | Sign up from the delivered email, sign out, sign in again. |
+| `37-new-user-lands-on-projects` | A new user lands on the project selector. |
+| `free-tier-pricing-onboarding` | The pricing page (`@target-smoke`). |
+| `10-billing-journey` | Checkout, credits, billing portal (deployed only: needs Stripe). |
+| `34-instant-session-loads` | A session opens instantly from its saved copy. |
+| `27-desktop-parity`, `27-desktop-parity-desktop` | Send, steer and queue a prompt; the web and desktop gate (journeys in `e2e/helpers/desktop-parity.ts`). |
+| `55-session-own-model` | A session keeps the model it was started with. |
+| `13-sdk-only-session` | A real sandbox streams a real prompt (deployed, `@quarantine`). |
+| `49-connector-connect-landing` | Connect a connector and land on its page. |
+| `45-invite-lands-in-invited-project` | Accept a project invite and land in the project. |
+
+Every other browser-visible behavior belongs in a component test in its app or
+in a REST flow. Add a spec only for a new money-path step, and delete one when
+its step leaves the money path. REST flows remain authoritative for complete
+API and CLI contracts. A browser journey is incomplete when it skips for a
+missing provider, OAuth, or mutation capability; report that skip explicitly.
 
 Local browser runs use two Playwright workers. Four workers make cold Next.js
 route compilation slower and can exceed the five-minute journey timeout.
@@ -616,11 +615,6 @@ pnpm test -- --browser-only
 The lane writes its Playwright HTML report to
 `tests/test-results/html/index.html`. CI includes that directory in the browser
 artifact.
-
-The regular browser lane excludes provider-mutating journeys. Set
-`E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1` only for the dedicated sandbox-template
-journey. That journey creates and deletes its own product snapshot. The
-Platinum CI worker remains a separate infrastructure sandbox.
 
 ### Tag filters
 
@@ -714,11 +708,15 @@ How the lane runs a file:
    `--db-only`) starts Supabase before the first stage and stops it at the end
    when it started it. `test:integration` and `bun tests/bin/db-suites.ts`
    need a running Supabase.
-2. It builds one template database per content hash of the migrations, the
-   `packages/db` scripts, and the platform `auth` schema. It copies `auth` from
-   the Supabase database with `pg_dump` inside the Supabase container, applies
-   `test-prereqs.sql`, and runs `migrate.ts local-up`. A second run with the
-   same hash reuses the template (0.1 s instead of ~1 s).
+2. It grants `SET ON PARAMETER session_replication_role` to `postgres`, so a
+   fixture on the suites' own connection can write past a trigger on any
+   stack — the stack's init demotes that role from superuser, and Supabase's
+   supautils allowance for the parameter belongs to the image, not the stack
+   (KRTX-2026). It then builds one template database per content hash of the
+   migrations, the `packages/db` scripts, and the platform `auth` schema. It
+   copies `auth` from the Supabase database with `pg_dump` inside the Supabase
+   container, applies `test-prereqs.sql`, and runs `migrate.ts local-up`. A
+   second run with the same hash reuses the template (0.1 s instead of ~1 s).
 3. For every file it clones a fresh database from the template
    (`CREATE DATABASE … TEMPLATE`, ~150 ms), runs `bun test <file>` in its own
    process, and drops the database. No file sees another file's rows
@@ -784,7 +782,7 @@ contracts moved into the canonical lanes before deletion.
 
 | Retired path | Canonical disposition |
 | --- | --- |
-| `tests/accessibility` | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`. |
+| `tests/accessibility` | Removed. The axe journey was cut with the 2026-10-16 money-path reset. |
 | `tests/pentest` | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`. |
 | `tests/migration` shell runner | The disposable-Postgres contracts run in the `db-suites` lane of `pnpm test`. |
 | `tests/e2e/specs/10-production-*` | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |

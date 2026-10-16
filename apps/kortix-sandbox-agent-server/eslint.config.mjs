@@ -76,7 +76,8 @@ const SERVICE_EXTERNALS = {
 export const ADAPTERS = {
   'open-code': ['bun:sqlite'],
   // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist path: a setter pi does not export (pi/codemode.ts).
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
+  // photon-node: pi's image resizer wasm, embedded as a file (pi/images.ts).
+  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), ...pkg('@silvia-odwyer/photon-node'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
 }
 
 const lib = at('src/lib/**')

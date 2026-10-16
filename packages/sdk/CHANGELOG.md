@@ -5,6 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session-log restore notice)
+- `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
+  restore of a session log could not bring back, from the session record
+  (`restore_grade: 'partial'`, `grade_counts`, `ext.kortix.data.restore`).
+  `missing[].kind` includes `'message'`: the log was over the API's restore cap
+  (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
+  messages; the transcript keeps them.
+
 ### Deprecated (public transcript shares removed)
 The API removed public transcript sharing (KRTX-2358): no `/v1/public/session-shares/**`
 route is served and `createSessionPublicShare` with `{ transcript: true }` answers 400.

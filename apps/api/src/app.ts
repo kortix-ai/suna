@@ -174,9 +174,7 @@ app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedbac
 app.use('/v1/platform/boot-timeline', supabaseAuth);
 // Same wiring, same reason, for the daemon's runtime-projection push. A route
 // mounted without this is not "insecure" — it is UNREACHABLE, answering 403 to
-// every fire-and-forget push, in silence. That is the exact defect
-// `__tests__/unit-boot-timeline-auth-mount.test.ts` exists to pin, and it now
-// pins this route too.
+// every fire-and-forget push, in silence.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 // A project's sign-in token issuer: public OpenID configuration and key set

@@ -98,6 +98,43 @@ export function SendStopControl({
         ? tAttachments('failedBlocksSend')
         : attachmentUnsupported;
 
+  const sendButton = (
+    <Hint side="top" label={refusal ?? t('sendMessage')}>
+      {/* The span, not the button, carries the tooltip trigger: a disabled
+          button takes no pointer events, so the reason the send is off would
+          never open — which is exactly the state where the reason matters
+          most. */}
+      <span className="inline-flex">
+        <Button
+          size="icon-base"
+          disabled={
+            lockForQuestion
+              ? (!canSubmit && !questionCanAct) || disabled
+              : !canSubmit || submitDisabled
+          }
+          onClick={onSubmit}
+          // The control's NAME stays "Send message" in every state. The
+          // refusal is a `aria-describedby`-style detail, not an identity —
+          // swapping the name for it made a screen reader announce the button
+          // as "No agent available", with nothing left saying what it does.
+          aria-label={t('sendMessage')}
+          title={refusal ?? undefined}
+          className={ICON_BUTTON}
+        >
+          <AnimatePresence mode="popLayout" initial={false}>
+            <m.span key={disabled ? 'busy' : 'send'} className="flex items-center" {...ICON_SWAP}>
+              {disabled ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <ArrowUp className="size-4" />
+              )}
+            </m.span>
+          </AnimatePresence>
+        </Button>
+      </span>
+    </Hint>
+  );
+
   if (isSending && !lockForQuestion) {
     return (
       <Button size="icon-base" aria-label={t('sending')} disabled className={ICON_BUTTON}>
@@ -135,7 +172,11 @@ export function SendStopControl({
   // says "working, cannot cancel yet"; nothing at all says "broken", and
   // `project-home.tsx:249` had to pass a dummy `stopDisabled` to work around it.
   if (!isSending && isBusy && canStop && !lockForQuestion) {
-    return (
+    // A follow-up typed during the turn gets Send too (KRTX-2556): with Stop
+    // alone, a click meant to send it ended the run and left it unsent. Send
+    // goes out the way Enter does; Stop steps back to secondary beside it.
+    const followUp = hasText || canSubmit;
+    const stop = (
       <div className="relative flex items-center">
         {escCount > 0 && (
           <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-(--duration-normal)">
@@ -159,6 +200,7 @@ export function SendStopControl({
         >
           <Button
             size="icon-base"
+            variant={followUp ? 'secondary' : 'default'}
             aria-label={t('stop')}
             onClick={onStop}
             disabled={stopDisabled || !onStop}
@@ -171,6 +213,13 @@ export function SendStopControl({
             </AnimatePresence>
           </Button>
         </Hint>
+      </div>
+    );
+    if (!followUp) return stop;
+    return (
+      <div className="flex items-center gap-1.5">
+        {stop}
+        {sendButton}
       </div>
     );
   }
@@ -188,40 +237,5 @@ export function SendStopControl({
     );
   }
 
-  return (
-    <Hint side="top" label={refusal ?? t('sendMessage')}>
-      {/* The span, not the button, carries the tooltip trigger: a disabled
-          button takes no pointer events, so the reason the send is off would
-          never open — which is exactly the state where the reason matters
-          most. */}
-      <span className="inline-flex">
-        <Button
-          size="icon-base"
-          disabled={
-            lockForQuestion
-              ? (!canSubmit && !questionCanAct) || disabled
-              : !canSubmit || submitDisabled
-          }
-          onClick={onSubmit}
-          // The control's NAME stays "Send message" in every state. The
-          // refusal is a `aria-describedby`-style detail, not an identity —
-          // swapping the name for it made a screen reader announce the button
-          // as "No agent available", with nothing left saying what it does.
-          aria-label={t('sendMessage')}
-          title={refusal ?? undefined}
-          className={ICON_BUTTON}
-        >
-          <AnimatePresence mode="popLayout" initial={false}>
-            <m.span key={disabled ? 'busy' : 'send'} className="flex items-center" {...ICON_SWAP}>
-              {disabled ? (
-                <Loading className="size-3.5 shrink-0" />
-              ) : (
-                <ArrowUp className="size-4" />
-              )}
-            </m.span>
-          </AnimatePresence>
-        </Button>
-      </span>
-    </Hint>
-  );
+  return sendButton;
 }

@@ -1,3 +1,8 @@
+import {
+  MAX_PROMPT_ATTACHMENT_BYTES,
+  MAX_PROMPT_ATTACHMENT_FILES,
+  MAX_PROMPT_ATTACHMENTS_BYTES,
+} from '@kortix/shared';
 import type { PromptAttachmentItem, SessionPromptPart } from '@kortix/sdk';
 
 import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
@@ -43,6 +48,63 @@ export interface StageComposerFilesDependencies {
   addMany: (files: readonly File[]) => string[];
   createObjectURL: (file: File) => string;
   isImage: (file: File) => boolean;
+}
+
+/** Why a file was left out of a drop or a pick. */
+export type RefusedFileReason = 'empty' | 'tooLarge' | 'tooMany' | 'totalTooLarge';
+
+/**
+ * Split a drop or a pick into the files that fit and the files that do not,
+ * against the message limits the SDK enforces (`@kortix/shared`). `held` is
+ * what the tray already holds. The SDK refuses a whole batch when one file is
+ * out of bounds, so every file that fits must be split off first (KRTX-2557).
+ */
+export function splitComposerFiles(
+  files: readonly File[],
+  held: { count: number; bytes: number },
+): { accepted: File[]; refused: { file: File; reason: RefusedFileReason }[] } {
+  const accepted: File[] = [];
+  const refused: { file: File; reason: RefusedFileReason }[] = [];
+  let count = held.count;
+  let bytes = held.bytes;
+  for (const file of files) {
+    const reason: RefusedFileReason | null =
+      !Number.isSafeInteger(file.size) || file.size <= 0
+        ? 'empty'
+        : file.size > MAX_PROMPT_ATTACHMENT_BYTES
+          ? 'tooLarge'
+          : count >= MAX_PROMPT_ATTACHMENT_FILES
+            ? 'tooMany'
+            : bytes + file.size > MAX_PROMPT_ATTACHMENTS_BYTES
+              ? 'totalTooLarge'
+              : null;
+    if (reason) {
+      refused.push({ file, reason });
+      continue;
+    }
+    accepted.push(file);
+    count += 1;
+    bytes += file.size;
+  }
+  return { accepted, refused };
+}
+
+const REFUSED_KEY: Record<RefusedFileReason, string> = {
+  empty: 'refusedEmpty',
+  tooLarge: 'refusedTooLarge',
+  tooMany: 'refusedTooMany',
+  totalTooLarge: 'refusedTotalTooLarge',
+};
+
+/** The toast for the files a drop left out: how many, then each by name and why. */
+export function refusedFilesToast(
+  refused: readonly { file: File; reason: RefusedFileReason }[],
+  t: (key: string, values?: Record<string, string | number>) => string,
+): { title: string; description: string } {
+  return {
+    title: t('notAttached', { count: refused.length }),
+    description: refused.map(({ file, reason }) => t(REFUSED_KEY[reason], { name: file.name })).join('\n'),
+  };
 }
 
 /** Validate and start every upload before creating preview URLs or React state. */

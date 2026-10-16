@@ -1,16 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { parseManifestText } from '@kortix/manifest-schema';
 
 import { getStarterFiles } from '../index';
 
 describe('starter passive continuation policy', () => {
-  test('does not ship or register the passive continuation plugin', () => {
+  test('does not install or register the passive continuation plugin', () => {
     const files = getStarterFiles({ projectName: 'Test Project', template: 'minimal' });
-    const manifest = files.find((file) => file.path === 'kortix.yaml');
+    const paths = files.map((file) => file.path);
+    const opencodeConfig = files.find(
+      (file) => file.path === 'harnesses/opencode/opencode.jsonc',
+    );
 
-    expect(files.some((file) => file.path.includes('continuation'))).toBe(false);
-    expect(manifest).toBeDefined();
-    const { extensions } = parseManifestText(manifest!.content, 'yaml') as { extensions?: Record<string, unknown> };
-    expect(Object.keys(extensions ?? {})).toEqual(['pty']);
+    expect(paths.some((path) => path.startsWith('harnesses/opencode/continuation/'))).toBe(false);
+    expect(opencodeConfig).toBeDefined();
+    expect(opencodeConfig?.content).not.toContain('"plugin"');
+    expect(opencodeConfig?.content).not.toContain('kortix-continuation');
   });
 });
