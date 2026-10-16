@@ -117,6 +117,14 @@ kortix sessions queue <session_id> now <prompt_id> # run this one next
 
 `kortix sessions chat -p` without `--steer` or `--queue` hands the message to the running sandbox directly and prints the reply. Without `-p` it opens a REPL. `kortix sessions queue <id> rm` is refused with `409` after a model step reads the message.
 
+### Mention files, agents and sessions
+
+In the composer, type `@` to mention a file, an agent or another session, and `/` to run a command.
+
+- Kortix sends each mention to the agent as a reference: a file's path, an agent's name, a session's id. The agent can open the file, hand off to the agent, or read the session.
+- References work on a chat's first message, on every later message, and in a command's arguments.
+- On a new chat, the `@` list shows agents only. Files show once the session's sandbox runs.
+
 ### Stop a turn or stop the session
 
 - **The Stop button** ends the running turn and holds the queue. The sandbox keeps running. Send any new message to release the hold. From the CLI: `kortix sessions queue <id> hold` and `kortix sessions queue <id> release`.
