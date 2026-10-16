@@ -64,6 +64,7 @@ const FILES: Record<string, string> = {
   'harnesses/opencode/plugins/audit.ts': 'export default async () => ({})\n',
   'harnesses/opencode/plugins/notes.ts': 'export default async () => ({})\n',
   'harnesses/opencode/plugins/lib/helper.ts': 'export {}\n',
+  'harnesses/opencode/package.json': '{ "name": "cfg", "dependencies": { "zod": "4.1.8" } }\n',
   'harnesses/opencode/commands/weekly-report.md': '---\ndescription: Write the weekly report.\nagent: reviewer\n---\nReport on $ARGUMENTS.\n',
   'harnesses/opencode/commands/standup.md': '---\ndescription: Standup notes.\n---\nWrite standup notes.\n',
   'skills/triage/SKILL.md': '---\nname: triage\ndescription: Sort tickets.\n---\nBody.\n',
@@ -137,12 +138,12 @@ describe('kortix migrate --write', () => {
     expect(manifest.skills).toEqual({ triage: 'skills/triage' });
     expect(manifest.tools).toEqual({ lookup_order: 'tools/lookup_order.ts' });
     expect(manifest.commands).toEqual({
-      standup: { description: 'Standup notes.', prompt_file: 'harnesses/opencode/commands/standup.md' },
-      'weekly-report': { description: 'Write the weekly report.', prompt_file: 'harnesses/opencode/commands/weekly-report.md' },
+      standup: { description: 'Standup notes.', prompt_file: 'commands/standup.md' },
+      'weekly-report': { description: 'Write the weekly report.', prompt_file: 'commands/weekly-report.md' },
     });
     expect(manifest.extensions).toEqual({
-      audit: { opencode: 'harnesses/opencode/plugins/audit.ts' },
-      notes: { opencode: 'harnesses/opencode/plugins/notes.ts' },
+      audit: { opencode: 'extensions/opencode/audit.ts' },
+      notes: { opencode: 'extensions/opencode/notes.ts' },
       'pi-web-access': { pi: 'npm:pi-web-access@0.30.0' },
     });
 
@@ -183,9 +184,16 @@ describe('kortix migrate --write', () => {
     // Prompt files hold the prompt alone; opencode.jsonc is gone; plugin modules stay.
     expect(read('agents/lead.md')).toBe('You lead.\n');
     expect(read('agents/reviewer.md')).toBe('You review.\n');
-    expect(read('harnesses/opencode/commands/weekly-report.md')).toBe('Report on $ARGUMENTS.\n');
+    // The prompt moves out of the harness folder; the old file is deleted.
+    expect(read('commands/weekly-report.md')).toBe('Report on $ARGUMENTS.\n');
+    expect(existsSync(join(cwd, 'harnesses/opencode/commands/weekly-report.md'))).toBe(false);
     expect(existsSync(join(cwd, 'harnesses/opencode/opencode.jsonc'))).toBe(false);
-    expect(existsSync(join(cwd, 'harnesses/opencode/plugins/audit.ts'))).toBe(true);
+    // The plugins folder moves whole, with its relative imports and its dependency manifest.
+    expect(existsSync(join(cwd, 'extensions/opencode/audit.ts'))).toBe(true);
+    expect(read('extensions/opencode/lib/helper.ts')).toBe('export {}\n');
+    expect(read('extensions/opencode/package.json')).toContain('zod');
+    expect(existsSync(join(cwd, 'harnesses/opencode/plugins/audit.ts'))).toBe(false);
+    expect(existsSync(join(cwd, 'harnesses/opencode/package.json'))).toBe(false);
 
     expect(kortix('validate', '--json', '--no-dockerfile-lint').code).toBe(0);
   });

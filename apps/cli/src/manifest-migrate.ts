@@ -221,12 +221,15 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
       const path = `${opencodeDir}/${sub}/${entry.name}`;
       const { frontmatter, body } = splitFrontmatter(read(path));
       const name = registryName(entry.name.replace(/\.md$/, ''), new Set(Object.keys(commands)));
-      commands[name] = ordered({ description: typeof frontmatter.description === 'string' ? frontmatter.description : undefined, prompt_file: path }, ['description', 'prompt_file']);
+      // The prompt moves out of the harness folder, to commands/<name>.md.
+      const target = exists(`commands/${name}.md`) ? path : `commands/${name}.md`;
+      commands[name] = ordered({ description: typeof frontmatter.description === 'string' ? frontmatter.description : undefined, prompt_file: target }, ['description', 'prompt_file']);
       const agent = typeof frontmatter.agent === 'string' && agents[frontmatter.agent] ? frontmatter.agent : defaultAgent;
       if (agent) commandsOf.set(agent, [...(commandsOf.get(agent) ?? []), name]);
       const lost = Object.keys(frontmatter).filter((key) => !['description', 'agent'].includes(key));
       if (lost.length > 0) dropped.push(`${path}: ${lost.join(', ')} (a v3 command is description + prompt)`);
-      changes.push({ path, action: 'rewrite', note: `frontmatter → commands.${name}`, content: body });
+      changes.push({ path: target, action: 'rewrite', note: `frontmatter → commands.${name}`, content: body });
+      if (target !== path) changes.push({ path, action: 'delete', note: `moved to ${target}` });
     }
   }
 
@@ -236,7 +239,23 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
   const taken = new Set<string>();
   const plugins = files(`${opencodeDir}/plugins`).filter((entry) => entry.isFile() && /\.[cm]?[jt]s$/.test(entry.name)).map((entry) => entry.name);
   const pluginName = new Map(plugins.map((file) => [file, registryName(file, taken)]));
-  for (const [file, name] of pluginName) extensions[name] = { opencode: `${opencodeDir}/plugins/${file}` };
+  // The plugins folder moves whole to extensions/opencode/, so a plugin's
+  // relative imports still resolve, and the config dir's package.json and
+  // bun.lock move beside it, so its npm dependencies still install.
+  const pluginRoot = 'extensions/opencode';
+  if (plugins.length > 0) {
+    const walk = (dir: string): string[] =>
+      files(dir).flatMap((entry) => (entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`]));
+    const moves = [
+      ...walk(`${opencodeDir}/plugins`).map((path) => [path, `${pluginRoot}/${path.slice(`${opencodeDir}/plugins/`.length)}`] as const),
+      ...['package.json', 'bun.lock'].filter((name) => exists(`${opencodeDir}/${name}`)).map((name) => [`${opencodeDir}/${name}`, `${pluginRoot}/${name}`] as const),
+    ];
+    for (const [from, to] of moves) {
+      changes.push({ path: to, action: 'rewrite', note: `moved from ${from}`, content: read(from) });
+      changes.push({ path: from, action: 'delete', note: `moved to ${to}` });
+    }
+  }
+  for (const [file, name] of pluginName) extensions[name] = { opencode: `${pluginRoot}/${file}` };
   const globalPlugins = list(table(harnesses.opencode)?.plugins).map(String);
   const selection = table(harnesses.opencode)?.plugins !== undefined || names.some((name) => table(table(table(agents[name])?.harnesses)?.opencode)?.plugins !== undefined || table(table(table(agents[name])?.harnesses)?.opencode)?.exclude !== undefined);
   const piPackages = list(table(harnesses.pi)?.packages);
