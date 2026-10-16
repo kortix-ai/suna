@@ -3,7 +3,9 @@ import { TERMINAL_THEMES } from '@/lib/interface-themes';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AppearanceTabView, DEFAULT_APPEARANCE_TAB_COPY } from './appearance-tab';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { AppearanceTabView, DEFAULT_APPEARANCE_TAB_COPY, themeRowValue } from './appearance-tab';
 
 /** A row's expected trigger label: the catalog entry for a Kortix row, the
  *  terminal theme's own name verbatim otherwise — mirrors `nameFor` in
@@ -158,5 +160,30 @@ describe('AppearanceTabView', () => {
   test('conversation density marks the selected card', () => {
     const minimal = renderToStaticMarkup(<AppearanceTabView conversationDensity="minimal" />);
     expect(densityChecks(minimal)).toEqual({ normal: 'false', minimal: 'true' });
+  });
+});
+
+/**
+ * KRTX-2468: cmdk marks the HIGHLIGHTED row `aria-selected`, and it highlights
+ * the first row (System) when the list opens. A screen reader announced System
+ * while Dark was applied. The list now opens with the applied theme's row
+ * highlighted, as a native listbox does.
+ */
+describe('theme picker opening highlight', () => {
+  const copy = DEFAULT_APPEARANCE_TAB_COPY;
+  const option = (value: string) => INTERFACE_THEME_OPTIONS.find((o) => o.value === value)!;
+
+  test('the list opens on the applied theme', () => {
+    const source = readFileSync(join(import.meta.dir, 'appearance-tab.tsx'), 'utf8');
+    expect(source).toContain('defaultValue={themeRowValue(theme, copy)}');
+  });
+
+  test('a row value names the theme, its id and its group: what search reads and the highlight names', () => {
+    expect(themeRowValue('dark', copy)).toBe(`${labelFor(option('dark'))} dark ${copy.themeGroups.kortix}`);
+    expect(themeRowValue('system', copy)).toBe(`${labelFor(option('system'))} system ${copy.themeGroups.kortix}`);
+    const darkTerminal = INTERFACE_THEME_OPTIONS.find((o) => o.kind === 'named' && o.group === 'dark')!;
+    const lightTerminal = INTERFACE_THEME_OPTIONS.find((o) => o.kind === 'named' && o.group === 'light')!;
+    expect(themeRowValue(darkTerminal.value, copy)).toBe(`${labelFor(darkTerminal)} ${darkTerminal.value} ${copy.themeGroups.darkThemes}`);
+    expect(themeRowValue(lightTerminal.value, copy)).toBe(`${labelFor(lightTerminal)} ${lightTerminal.value} ${copy.themeGroups.lightThemes}`);
   });
 });

@@ -11,23 +11,19 @@ here. It has four components, all in git:
 
 | Component | Location | What it is |
 |---|---|---|
-| **Prompts** | `agents.<name>` in `kortix.yaml`: `prompt`, or the file `prompt_file` names | Each agent's instructions and strategy |
-| **Sub-agents** | `agents.<name>` blocks with `mode: subagent`, granted with `subagents` | Specialist agents the orchestrator invokes |
-| **Skills** | a folder with `SKILL.md`, registered under `skills:` and granted per agent | Reusable routines: text heuristics and guides |
-| **Tools** | modules registered under `kortix.yaml` `tools:` (every harness); harness code under `extensions:`, enabled per agent | Executable code: wrappers, scripts, automations |
+| **Prompts** | `agents/<name>.md` (body) | Each agent's instructions and strategy |
+| **Sub-agents** | `agents/*.md` | Specialist agents the orchestrator invokes |
+| **Skills** | `skills/<name>/SKILL.md` | Reusable routines: text heuristics and guides |
+| **Tools** | modules declared in `kortix.yaml` `tools:` (every harness); legacy `harnesses/opencode/tools/*.ts` (OpenCode only), `harnesses/pi/extensions/*.ts` (pi only) | Executable code: wrappers, scripts, automations |
 | **Memory** | `memory/` | Persistent facts, strategies, observations |
 
-In a `kortix_version: 3` project, `kortix.yaml` (with the files it
-imports) is the only harness config: no `harnesses/`, `.kortix/`,
-`.opencode/` or `.pi/` folder is read. A new skill, tool, command or
-extension needs a registry entry and a grant on each agent that uses it.
-Legacy v1/v2 projects keep agent `.md` files and harness folders; move them
-with `kortix migrate` (`--write` applies it).
+Projects created before 2026-09 keep agents, skills and tools under
+`.kortix/opencode/` and memory under `.kortix/memory/`. Both layouts work.
+Edit files where they already are; put new files in the root layout.
 
-A session runs one harness, OpenCode or pi. `echo "${KORTIX_HARNESS:-opencode}"`
-prints the one this session runs. Prompts, sub-agents, skills, tools and
-memory serve both; an extension loads only its implementation for the
-session's harness.
+A session runs one harness, OpenCode or pi, and a harness loads only its own
+tools directory. `echo "${KORTIX_HARNESS:-opencode}"` prints the one this
+session runs. Prompts, sub-agents, skills and memory serve both.
 
 **Refinement** means: read your recent trajectory, find where the harness
 failed you, and fix the harness — not just the immediate task. A memory
@@ -66,7 +62,7 @@ signatures. Each one names the component to fix:
   sequence more than twice by hand. → Codify it: a skill (if guidance)
   or a tool (if executable).
 - **Exception-raising code** — an executable tool or script (a `kortix.yaml`
-  `tools:` module, or an `extensions:` implementation)
+  `tools:` module, `harnesses/opencode/tools/` or `harnesses/pi/extensions/`)
   raised; you worked around it instead of fixing it. → Repair the code now.
 - **Missed opportunities** — information or shortcuts visible in the
   trajectory that no component captured. → Whichever component fits.
@@ -77,7 +73,7 @@ Run four passes over the harness, one per component. Every pass is CRUD:
 create, update, or **delete**. Deletion is a first-class outcome — a
 harness accumulates cruft without it.
 
-**Pass 1 — Prompts (Δp).** Reread the responsible agent's prompt
+**Pass 1 — Prompts (Δp).** Reread the responsible agent's `.md` body
 against the identified failures. Tighten instructions that were ignored,
 add the missing rule, remove guidance that no longer earns its tokens.
 Keep prompts short; a prompt that only grows is a failing prompt.
@@ -90,9 +86,8 @@ have not been invoked productively — check before keeping.
 **Pass 3 — Skills and tools (ΔK).** Codify successful sequences from the
 trajectory into a skill (guidance) or a tool (executable). Repair every
 tool the trajectory shows raising exceptions. Prefer editing an existing
-skill over creating a near-duplicate. Register each new skill under
-`skills:` and grant it to the agents that need it: an unregistered or
-ungranted skill is invisible.
+skill over creating a near-duplicate. Keep skills one directory level
+deep under `skills/` (nested SKILL.md files register as phantom entries).
 
 **Pass 4 — Memory (ΔM).** Follow the `kortix-memory` skill's rubric with
 the `memory` tool: fill gaps the trajectory exposed, update stale
@@ -146,8 +141,8 @@ CRs. Only the orchestrating reflector writes.
 2. Commit them separately from task work:
 
    ```sh
-   # Stages the harness files this project has (kortix.yaml, imports, legacy folders).
-   git add -A -- $(ls -d kortix.yaml agents skills tools extensions memory harnesses .kortix 2>/dev/null)
+   # Stages the harness folders this project has (root layout and/or legacy .kortix).
+   git add -A -- $(ls -d agents skills memory harnesses .kortix 2>/dev/null)
    git commit -m "harness: <one-line summary of what failed and what changed>"
    ```
 
@@ -179,8 +174,7 @@ what future sessions inherit.
   harness edits safe; self-authored + self-merged scaffolding is known to
   degrade agent performance.
 - **One concern per CR.** Harness CRs contain only harness changes
-  (`kortix.yaml` and its imports, prompt files, `skills/`, `tools/`,
-  `extensions/`, `memory/`) — never mixed with
+  (`agents/`, `skills/`, `memory/`, `harnesses/`) — never mixed with
   task/code changes.
 - **No secrets, tokens, or PII** in any harness file. Secrets belong in
   the Kortix Secrets Manager.

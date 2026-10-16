@@ -4,20 +4,19 @@ An extension adds tools, hooks or commands to a pi session. pi's own
 extension system runs every extension. Kortix writes no adapter code for an
 extension, so a package from <https://pi.dev/packages> runs unmodified.
 
-This is the pi counterpart of an OpenCode plugin. Both are extensions in
-`kortix.yaml`: the project registers each one under `extensions`, with one
-implementation per harness, and each agent enables the ones it uses. A tool
-that takes arguments and returns text needs no extension: write it as a
-project tool (`kortix.yaml` `tools:`, `../kortix/tools.md`) and both
-harnesses run it.
+This is the pi counterpart of an OpenCode plugin. An OpenCode file in
+`harnesses/opencode/plugins/` or `harnesses/opencode/tools/` does nothing in
+a pi session. A tool that takes arguments and returns text needs no
+extension: write it as a project tool (`kortix.yaml` `tools:`,
+`../kortix/tools.md`) and both harnesses run it.
 
 ## An extension file in the repository
 
-Write the file anywhere in the repository, for example
-`extensions/word-count.ts`:
+Put the file in `harnesses/pi/extensions/`. pi loads each `.ts`, `.js`,
+`.mjs` and `.cjs` file there when the runtime starts.
 
 ```ts
-// extensions/word-count.ts
+// harnesses/pi/extensions/word-count.ts
 export default function (pi) {
   pi.registerTool({
     name: 'word_count',
@@ -36,17 +35,6 @@ export default function (pi) {
 }
 ```
 
-Register it and enable it on an agent:
-
-```yaml
-extensions:
-  word-count:
-    pi: extensions/word-count.ts
-agents:
-  writer:
-    extensions: [word-count]
-```
-
 - The default export receives the pi extension API. `pi.registerTool` adds a
   tool. `pi.on('<event>', handler)` adds a hook (`tool_call`,
   `before_agent_start`, `input`, `session_shutdown`, …).
@@ -59,52 +47,43 @@ agents:
 - The session has no pi terminal UI. `ctx.ui` calls do nothing. Use the
   `question` tool to ask the user.
 
+pi also loads `.pi/extensions/*.ts` at the repository root, which is pi's own
+default location.
+
 ## pi packages
 
-An npm package is an extension too. The `pi` value is the pi.dev install
-line with an exact version:
+Declare npm packages in `kortix.yaml`. Each entry is the pi.dev install line
+with an exact version:
 
 ```yaml
-extensions:
-  web-access:
-    pi: npm:pi-web-access@0.30.0
-  mcp-adapter:
-    pi:
-      source: npm:pi-mcp-adapter@2.36.0
-      extensions: ["extensions/*.ts"]   # load only these files of the package
-      skills: []                        # load none of its skills
-  audit:
-    opencode: extensions/audit.opencode.ts
-    pi: extensions/audit.pi.ts          # an extension file in this repository
+runtime: pi
+harnesses:
+  pi:
+    packages:
+      - npm:pi-web-access@0.30.0
+      - source: npm:pi-mcp-adapter@2.36.0
+        extensions: ["extensions/*.ts"]   # load only these files of the package
+        skills: []                        # load none of its skills
+      - ./harnesses/pi/audit.ts           # an extension file in this repository
 agents:
-  researcher:
-    extensions: [web-access, audit]
   reviewer:
-    extensions: none                    # the default: no extension
+    harnesses:
+      pi:
+        exclude: [pi-web-access]          # this agent does not load it
 ```
 
-- A `pi` value is `npm:<name>@<x.y.z>`, a repository path to a file or a
-  folder, or `{ source, extensions, skills, prompts, themes }`. Each filter
-  is a list of glob patterns. An omitted filter loads everything; `[]` loads
-  nothing.
+- A top-level package loads for every agent. An agent adds its own under
+  `agents.<name>.harnesses.pi.packages` and drops a top-level one with
+  `exclude`.
 - A version range, a missing version or a Git source fails `kortix validate`.
-- An agent loads only the extensions its `extensions` grant names. Kortix
-  sends them to the session as `KORTIX_PI_PACKAGES`; a repository path
-  becomes `./<path>`.
-- A session loads the extensions of the agent it starts with. A switch to
-  another agent in the running session keeps them.
-- An extension with only an `opencode` value does nothing on pi.
-- Kortix builds the npm packages when the change request merges. Nothing
+- At most 20 entries.
+- Kortix builds the package list when the change request merges. Nothing
   installs when a session boots. A session started before the merge does not
   have the package.
 - A package that fails to load is reported in the session's health
   (`harness.details.extensions.failed`). The session still starts.
 
-`../kortix/kortix-yaml.md` has the full entry schema.
-
-Legacy: a `kortix_version` 1 or 2 project declares packages under
-`harnesses.pi.packages` and files under `harnesses/pi/extensions/`.
-`kortix migrate` prints the v3 manifest; `kortix migrate --write` writes it.
+`../kortix/kortix-yaml.md` → `harnesses:` has the full entry schema.
 
 ## Test an extension
 

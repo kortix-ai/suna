@@ -1,22 +1,23 @@
 import { describe, expect, test } from 'bun:test';
 
-import { MIGRATE_TO_V3_PROMPT } from './migration-prompt';
+import { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
 import { PROJECT_UPGRADES, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
 
 describe('PROJECT_UPGRADES registry', () => {
-  test('the v3 upgrade applies to v1 and v2 projects, never to v3', () => {
-    expect(applicableUpgrades({ manifestVersion: 1 }).map((u) => u.id)).toEqual(['manifest-v3']);
-    expect(applicableUpgrades({ manifestVersion: 2 }).map((u) => u.id)).toEqual(['manifest-v3']);
-    expect(applicableUpgrades({ manifestVersion: 3 })).toHaveLength(0);
+  test('the v2 migration applies to v1 projects only', () => {
+    expect(applicableUpgrades({ manifestVersion: 1 }).map((u) => u.id)).toContain('manifest-v2');
+    expect(applicableUpgrades({ manifestVersion: 2 }).map((u) => u.id)).not.toContain(
+      'manifest-v2',
+    );
   });
 
   test('an unresolved manifest read applies nothing — no premature offers', () => {
     expect(applicableUpgrades({ manifestVersion: null })).toHaveLength(0);
   });
 
-  test('the v3 entry carries the real migration prompt, not a copy', () => {
-    const entry = PROJECT_UPGRADES.find((u) => u.id === 'manifest-v3');
-    expect(entry?.prompt).toBe(MIGRATE_TO_V3_PROMPT);
+  test('the v2 entry carries the real migration prompt, not a copy', () => {
+    const entry = PROJECT_UPGRADES.find((u) => u.id === 'manifest-v2');
+    expect(entry?.prompt).toBe(MIGRATE_TO_V2_PROMPT);
   });
 
   test('every registry entry is fully described', () => {
