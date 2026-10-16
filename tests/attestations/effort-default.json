@@ -1,6 +1,7 @@
 {
-  "source_hash": "48e1ce4054b068eca2713d538be34a51d3348b9f394075d4579f180d428cb287",
+  "source_hash": "1d152888fcde80bb85511e8d718c048e3a93611ac8246c23350c855d6631102f",
   "diff_files": [
+    "apps/api/src/config-releases/base-tip.integration.test.ts",
     "apps/api/src/projects/lib/effort-default.test.ts",
     "apps/api/src/projects/lib/effort-default.ts",
     "apps/api/src/projects/lib/metadata-merge.ts",
@@ -39,13 +40,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/projects-misc.flow.ts"
   ],
-  "diff_hash": "f5c582e2d51bf9cd21b7bec4ba90c1eaefb1e3eb4498b42db643755d18c08f84",
-  "head": "13640eaf53b6253b401ac668dca08d5fc4f6b6a8",
-  "passed": false,
+  "diff_hash": "b58a4c10a1432c025282656e59f21639ecaf465d4ca15ac46f4bf221b96dfaee",
+  "head": "e342a1683927cb3b87da144c7fdb1a799ba436c8",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-16T05:18:50.844Z"
+  "at": "2026-10-16T06:19:37.206Z"
 }
