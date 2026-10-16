@@ -17,9 +17,13 @@ function head(cwd: string): string {
   return git(cwd, 'rev-parse', 'HEAD').trim();
 }
 function run(cwd: string, ...args: string[]) {
+  return runEnv(cwd, {}, ...args);
+}
+function runEnv(cwd: string, env: Record<string, string>, ...args: string[]) {
   const r = spawnSync('node', [join(cwd, 'tests', 'verify-attestation.mjs'), ...args], {
     cwd,
     encoding: 'utf8',
+    env: { ...process.env, ...env },
   });
   return { status: r.status, out: `${r.stdout}${r.stderr}` };
 }
@@ -309,5 +313,30 @@ describe('diff-scoped runs and lane reuse', GIT_TIMEOUT, () => {
   it('k: on dev (no PR diff) status reports null files', () => {
     const dir = initRepo();
     expect(status(dir).files).toBeNull();
+  });
+});
+
+describe('a write certifies only the source the run started on', () => {
+  it('refuses when a file changed after the fingerprint, and writes when nothing did', () => {
+    const dir = initRepo();
+    git(dir, 'checkout', '-q', '-b', 'pr', 'dev');
+    writeFileSync(join(dir, 'pr.txt'), 'v1\n');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-qm', 'pr change');
+
+    const started = run(dir, 'fingerprint').out.trim();
+    expect(started).toMatch(/^[0-9a-f]{64}$/);
+
+    // A commit lands while the lanes run (the 2026-10-15 race).
+    writeFileSync(join(dir, 'pr.txt'), 'v2\n');
+    git(dir, 'commit', '-qam', 'edit during the run');
+    const refused = runEnv(dir, { KORTIX_ATTEST_FINGERPRINT: started }, 'write', ...GREEN);
+    expect(refused.status).toBe(1);
+    expect(refused.out).toContain('changed during this run');
+    expect(existsSync(join(dir, 'tests', 'attestations', 'pr.json'))).toBe(false);
+
+    const now = run(dir, 'fingerprint').out.trim();
+    expect(runEnv(dir, { KORTIX_ATTEST_FINGERPRINT: now }, 'write', ...GREEN).status).toBe(0);
+    expect(existsSync(join(dir, 'tests', 'attestations', 'pr.json'))).toBe(true);
   });
 });

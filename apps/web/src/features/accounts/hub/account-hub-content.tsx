@@ -46,7 +46,6 @@ import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
-import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
@@ -491,7 +490,7 @@ export function AccountHubContent() {
               ) : auditEnabled ? (
                 <AuditTab accountId={account.account_id} />
               ) : (
-                <EnterpriseUpsell feature="audit" />
+                <EnterpriseUpsell feature="audit" accountId={account.account_id} />
               )}
               {/* Webhooks ship the same events the log above shows, so they
                   live on this tab rather than buried in Settings. Only
@@ -569,7 +568,7 @@ export function AccountHubContent() {
                   <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                 </>
               ) : (
-                <EnterpriseUpsell feature="identity" />
+                <EnterpriseUpsell feature="identity" accountId={account.account_id} />
               )}
             </div>
           ) : null}
@@ -584,7 +583,7 @@ export function AccountHubContent() {
             ) : brandingEnabled ? (
               <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
             ) : (
-              <EnterpriseUpsell feature="branding" />
+              <EnterpriseUpsell feature="branding" accountId={account.account_id} />
             )
           ) : null}
 
@@ -618,28 +617,6 @@ export function AccountHubContent() {
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>
-
-              {/* Tucked away, not headline: this reports whether the
-                  Enterprise surface (SSO/SCIM/RBAC/audit) is unlocked for
-                  evaluation, not a feature admins configure day-to-day. The
-                  toggle is platform-admin-only now; account admins see the
-                  state read-only (see EnterpriseDemoCard). Hidden entirely
-                  when a self-host operator's Enterprise license already
-                  forces every entitlement on — there's nothing left to
-                  demo-toggle or upsell in that case. */}
-              {!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available ? (
-                <SettingsGroup
-                  title={tI18nComplete.raw('textc2ef82e31689')}
-                  description={tI18nComplete.raw('text9c7d38b81f41')}
-                >
-                  <SettingsRowGroup>
-                    <EnterpriseDemoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                  </SettingsRowGroup>
-                </SettingsGroup>
-              ) : null}
 
               {canDeleteAccount ? (
                 <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>
@@ -1719,8 +1696,8 @@ function SelectCell({ select }: { select?: MemberSelect }) {
           onClick={(event) => event.stopPropagation()}
           aria-label={select.label}
           className={cn(
-            // A 14px box with a 32px hit area: the pseudo-element takes the clicks.
-            "relative size-3.5 rounded after:absolute after:-inset-2.5 after:content-['']",
+            // A 32px hit area: the pseudo-element takes the clicks.
+            "relative after:absolute after:-inset-2 after:content-['']",
             !select.visible &&
               'opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100',
           )}
@@ -1918,20 +1895,17 @@ function PendingInvitesSection({
         // admin the link directly so they can share it manually.
         warningToast(tI18nComplete.raw('text146fd497badf'), {
           duration: 8_000,
-          button: (
-            <Button
-              size="sm"
-              onClick={() =>
+          actions: [
+            {
+              label: tI18nComplete.raw('text9adff6870471'),
+              onClick: () =>
                 copyInviteLink(
                   res.invite_url,
                   tI18nComplete.raw('text0dc2f4c75de6'),
                   tI18nComplete.raw('textfa6453683837'),
-                )
-              }
-            >
-              {tI18nComplete.raw('text9adff6870471')}
-            </Button>
-          ),
+                ),
+            },
+          ],
         });
       }
       invalidate();

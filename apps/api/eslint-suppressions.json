@@ -72,11 +72,6 @@
       "count": 9
     }
   },
-  "src/accounts/iam/enterprise-demo.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/accounts/iam/groups.ts": {
     "no-restricted-syntax": {
       "count": 10
@@ -169,7 +164,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 27
+      "count": 22
     }
   },
   "src/admin/queries.ts": {
@@ -343,7 +338,7 @@
   },
   "src/billing/services/compute-metering.ts": {
     "no-console": {
-      "count": 8
+      "count": 7
     }
   },
   "src/billing/services/free-tier-rotation.ts": {
@@ -2837,11 +2832,6 @@
       "count": 1
     }
   },
-  "src/sandbox-proxy/index.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/sandbox-proxy/pre-prompt-env-sync.ts": {
     "kortix-api/projects-surface": {
       "count": 6
@@ -2865,6 +2855,11 @@
   },
   "src/sandbox-proxy/prompt-wire-id-repair.ts": {
     "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
+  "src/sandbox-proxy/provider.ts": {
+    "no-console": {
       "count": 1
     }
   },

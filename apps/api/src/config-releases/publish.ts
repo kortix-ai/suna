@@ -25,7 +25,7 @@ import { configReleaseHeads, projects } from '@kortix/db';
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
-import { resolveCommitSha, type GitBackedProject } from '../projects/surface';
+import type { GitBackedProject } from '../projects/surface';
 import { db } from '../shared/db';
 import { bumpBounded } from '../shared/ttl-memo';
 import { loadAgentRosterAtCommit } from './agent-roster';
@@ -65,7 +65,9 @@ export interface PublishDeps {
 const defaultDeps: PublishDeps = {
   build: (project, commit) => buildConfigRelease(project, commit, 'project'),
   roster: loadAgentRosterAtCommit,
-  resolveTip: resolveCommitSha,
+  // Loaded on first use: projects/surface reaches session code that imports the sandbox
+  // proxy root, which reaches back here through session-open (an import cycle).
+  resolveTip: async (project, ref) => (await import('../projects/surface')).resolveCommitSha(project, ref),
   store: getConfigArchiveStore,
   ledger: dbConfigReleaseLedger,
   now: () => new Date(),
@@ -124,7 +126,13 @@ export async function publishConfigRelease(
     sourceCommit: tip,
     configTreeId: descriptor.config_tree_id,
     descriptorKey,
-    roster: { enabled: [...roster.enabled], defaultAgent: roster.defaultAgent, readable: roster.readable, governed: roster.governed },
+    roster: {
+      enabled: [...roster.enabled],
+      defaultAgent: roster.defaultAgent,
+      readable: roster.readable,
+      governed: roster.governed,
+      ...(roster.onlyDeclared ? { onlyDeclared: true } : {}),
+    },
     resolvedAt,
     publishedAt: resolvedAt,
   };

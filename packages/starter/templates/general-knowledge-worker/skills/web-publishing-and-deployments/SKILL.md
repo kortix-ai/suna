@@ -110,14 +110,14 @@ final output directory (`dist/`, `out/`, `build/`, `.next/`, …), not source.
 
 ## Which one?
 
-**Kortix Apps first.** Run `kortix apps ls`. When it exits `0`, the project has
-Kortix Apps: deploy with the `kortix-apps` system skill
+**Kortix Apps first.** Apps are available in every project. Deploy with the
+`kortix-apps` system skill
 (`kortix system-skills get kortix-apps`). It gives a stable Kortix URL that
 stays up, private to the user by default, with Kortix sign-in for the project
 or selected people, and no user account on another host. A built static site
 or SPA deploys in seconds as a static App with no compute cost. Use another
-host only when `kortix apps ls` answers `feature_disabled`, when the user names
-Cloudflare, Vercel, or another host, or when the repo already deploys to one
+host only when the user names Cloudflare, Vercel, or another host, or when
+the repo already deploys to one
 (next paragraph).
 
 **Then check whether the project already answers this.** If the repo targets a

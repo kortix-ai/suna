@@ -132,8 +132,9 @@ pnpm worktree create <n>        [flags]   # positional name also works
 | `--yes` | off | Auto-install missing deps; non-interactive. |
 | `--no-tunnel` | off | Skip the Cloudflare tunnel (offline; cloud sandboxes won't be reachable). |
 
-What it does, in order: toolchain preflight → allocate the lowest free slot
-(probing app ports, skipping any in use) → `git worktree add` (new branch from
+What it does, in order: toolchain preflight → allocate the lowest slot that no
+registered worktree holds and whose whole port block is free (one `lsof` scan, up
+to 100 unregistered slots, the first 5 clashes logged) → `git worktree add` (new branch from
 `--from`, or checkout existing `--branch`) → `pnpm install` into the worktree's
 own store → build runtime artifacts → (unless `--no-start`) boot the stack
 against the shared primary Supabase DB. With `--db`, it also copies the primary
@@ -309,7 +310,16 @@ pnpm worktree doctor [--yes]
 Checks required tools (bun, node >=22, pnpm, dotenvx, plus Supabase/Docker/psql
 for DB modes) and the optional `cloudflared`, then flags any worktree whose dir
 is missing, isn't a registered git worktree, or has orphaned isolated-DB
-containers. `--yes` auto-installs missing deps.
+containers, and any slot two worktrees share (allocators before 2026-10-15 could
+reuse a registered slot; nuke and recreate all but one). `--yes` auto-installs
+missing deps.
+
+## Kortix Capture in a worktree
+
+A worktree's API stores Kortix Capture objects in its own Supabase Storage
+(bucket `kortix-capture`). Device credentials need STS, which Supabase Storage
+lacks: run MinIO and point the API at it with
+[references/capture-local-store.md](references/capture-local-store.md).
 
 ## What each worktree isolates
 

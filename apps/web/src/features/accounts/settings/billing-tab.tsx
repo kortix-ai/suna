@@ -8,6 +8,8 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { PlanCard, PlanChanger } from '@/features/billing/plan-card';
+import { EnterpriseAccessRow } from '@/features/billing/enterprise-access-row';
+import { PlanAccessNotice } from '@/features/billing/plan-access-notice';
 import { TopupControls } from '@/features/billing/topup-controls';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
@@ -143,6 +145,10 @@ export function BillingTab({
         </InfoBanner>
       )}
 
+      {/* An Enterprise license offer, or the grace after a license ended:
+          stated before anything else. */}
+      {accountState ? <PlanAccessNotice state={accountState} /> : null}
+
       {showWallet ? (
         <>
           <AccountOverviewTab accountId={billingAccountId} />
@@ -167,6 +173,15 @@ export function BillingTab({
               renders them only when the plan may buy credits and this person
               may change billing (KRTX-1720). */}
       {showWallet ? <TopupControls state={accountState} heading={t('addCredits')} /> : null}
+
+      {/* Enterprise is a feature layer, separate from the plan: off, a
+          self-serve demo, or licensed. Hidden when a self-host Enterprise
+          license already turns every feature on. */}
+      {accountState && !accountState.enterprise_license_available ? (
+        <SettingsRowGroup>
+          <EnterpriseAccessRow state={accountState} accountId={billingAccountId} />
+        </SettingsRowGroup>
+      ) : null}
 
       {/* The Stripe billing portal doesn't exist without billing enabled
               (self-host with KORTIX_BILLING_INTERNAL_ENABLED=false) — hide the

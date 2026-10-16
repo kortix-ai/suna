@@ -268,6 +268,11 @@ describe('golden SQL: requested-stop marks', () => {
     expect(executed).toMatchSnapshot();
   });
 
+  test('markTurnStopRequested records the person who stopped the turn', async () => {
+    await markTurnStopRequested('sess-1', 'UserStop', { opencodeSessionId: 'ses_root' }, 'user-1');
+    expect(executed).toMatchSnapshot();
+  });
+
   test('clearTurnStopRequest withdraws the mark', async () => {
     await clearTurnStopRequest('sess-1', 'QueueInterrupt');
     expect(executed).toMatchSnapshot();

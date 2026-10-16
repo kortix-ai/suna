@@ -298,6 +298,13 @@ const envSchema = z.object({
   // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
   // On by default. Off answers 503 and claims nothing: the box boots without a restore.
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
+  // Default of the project flag `session_log_restore` for a project with no stored value. Off by
+  // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
+  // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
+  SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // How long `PUT …/log/blobs/<sha256>` waits for its body (P2.13): a body not read by then is
+  // cancelled with 408 and its upload slot freed. Under the route's 95 s request deadline.
+  SESSION_LOG_BLOB_READ_MS: optInt(60_000),
   // Operator switch for the retention purge of session content (P2.8, decision D6): session
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
@@ -329,8 +336,7 @@ const envSchema = z.object({
   // audit access) regardless of the account's billing tier — see
   // getAccountEntitlements()/accountHasEntitlement() in
   // billing/services/entitlements.ts. Off by default; billing is irrelevant
-  // for a self-host license check, unlike the `demoEnterprise` per-account
-  // preview toggle this mirrors.
+  // for a self-host license check.
   ENTERPRISE_LICENSE_AVAILABLE: optBoolFalse,
   // Self-host account-creation restriction: when true, POST /v1/accounts
   // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
@@ -659,6 +665,46 @@ const envSchema = z.object({
   // answers 302 to them. Unset = presign for the API's own endpoint, and the
   // route streams the bytes when that host is loopback or private.
   KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: optUrl(''),
+
+  // ── Kortix Capture (optional) ───────────────────────────────────────────
+  // Devices write the Kortix Capture format to this bucket under
+  // `orgs/<account_id>/<device_id>/`. The API reads it
+  // (ingestion), writes `policy.json`, and signs short-lived media URLs.
+  //   dev/staging/prod: the Terraform bucket, credentials from the ECS task role.
+  //   local/self-host: an S3-compatible store (MinIO, Supabase Storage).
+  // Unset bucket ⇒ every capture route that needs storage answers 503.
+  KORTIX_CAPTURE_S3_BUCKET: optStr,
+  KORTIX_CAPTURE_S3_REGION: optStr,
+  /** S3-compatible endpoint for the API's own calls. Empty = the AWS regional endpoint. */
+  KORTIX_CAPTURE_S3_ENDPOINT: optUrl(''),
+  /** Endpoint a DEVICE reaches (credentials response, signed URLs). Empty = the endpoint above / AWS. */
+  KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: optUrl(''),
+  KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: optBoolFalse,
+  /**
+   * Self-host without a domain (loopback, Cloudflare tunnel): the in-network S3
+   * endpoint this API forwards `/<bucket>/*` to, so a device reaches the store
+   * over the API's own origin. Unset in domain mode, where Caddy does it.
+   */
+  KORTIX_CAPTURE_S3_PROXY_TARGET: optUrl(''),
+  /** Create the bucket if it is missing (self-host's bundled store). AWS: Terraform owns it. */
+  KORTIX_CAPTURE_S3_CREATE_BUCKET: optBoolFalse,
+  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: optStr,
+  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: optStr,
+  // Credential issuer: STS AssumeRole with an inline session policy that
+  // narrows the role to one device's prefix. AWS: the Terraform device role
+  // (trusts the API task role). MinIO: any ARN; MinIO enforces the session
+  // policy. Unset ⇒ `POST /v1/capture/credentials` answers 503.
+  KORTIX_CAPTURE_STS_ROLE_ARN: optStr,
+  /** STS endpoint override (MinIO serves STS on its S3 endpoint). Empty = AWS STS. */
+  KORTIX_CAPTURE_STS_ENDPOINT: optUrl(''),
+  /** SQS queue with the bucket's `*.manifest.json` ObjectCreated events. Unset ⇒ index polling only. */
+  KORTIX_CAPTURE_SQS_QUEUE_URL: optStr,
+  /** How often the index reader polls each active device's `index/<day>.jsonl` and `status.json`. */
+  KORTIX_CAPTURE_INDEX_POLL_SECONDS: optInt(60),
+  /** Minutes a device must be not recording (awake time) before the account's managers are told. */
+  KORTIX_CAPTURE_ALERT_AFTER_MINUTES: optInt(30),
+  /** The update manifest that names the newest published Capture version. Empty: no version check. */
+  KORTIX_CAPTURE_UPDATE_MANIFEST_URL: optUrl('https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json'),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -1233,6 +1279,8 @@ export const config = {
   GENUI_ENABLED: env.GENUI_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
+  SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+  SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
@@ -1381,6 +1429,21 @@ export const config = {
   AUDIT_ARCHIVE_ACCESS_KEY_ID: env.AUDIT_ARCHIVE_ACCESS_KEY_ID,
   AUDIT_ARCHIVE_SECRET_ACCESS_KEY: env.AUDIT_ARCHIVE_SECRET_ACCESS_KEY,
   AUDIT_ARCHIVE_ROWS_PER_SECOND: env.AUDIT_ARCHIVE_ROWS_PER_SECOND,
+  KORTIX_CAPTURE_S3_BUCKET: env.KORTIX_CAPTURE_S3_BUCKET,
+  KORTIX_CAPTURE_S3_REGION: env.KORTIX_CAPTURE_S3_REGION,
+  KORTIX_CAPTURE_S3_ENDPOINT: env.KORTIX_CAPTURE_S3_ENDPOINT,
+  KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: env.KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT,
+  KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: env.KORTIX_CAPTURE_S3_FORCE_PATH_STYLE,
+  KORTIX_CAPTURE_S3_PROXY_TARGET: env.KORTIX_CAPTURE_S3_PROXY_TARGET,
+  KORTIX_CAPTURE_S3_CREATE_BUCKET: env.KORTIX_CAPTURE_S3_CREATE_BUCKET,
+  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID,
+  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: env.KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY,
+  KORTIX_CAPTURE_STS_ROLE_ARN: env.KORTIX_CAPTURE_STS_ROLE_ARN,
+  KORTIX_CAPTURE_STS_ENDPOINT: env.KORTIX_CAPTURE_STS_ENDPOINT,
+  KORTIX_CAPTURE_SQS_QUEUE_URL: env.KORTIX_CAPTURE_SQS_QUEUE_URL,
+  KORTIX_CAPTURE_INDEX_POLL_SECONDS: env.KORTIX_CAPTURE_INDEX_POLL_SECONDS,
+  KORTIX_CAPTURE_ALERT_AFTER_MINUTES: env.KORTIX_CAPTURE_ALERT_AFTER_MINUTES,
+  KORTIX_CAPTURE_UPDATE_MANIFEST_URL: env.KORTIX_CAPTURE_UPDATE_MANIFEST_URL,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,

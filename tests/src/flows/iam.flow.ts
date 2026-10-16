@@ -10,14 +10,12 @@
  * Source of truth: apps/api/src/accounts/iam.ts (mounted on accountsRouter
  * at '/', i.e. under /v1/accounts).
  *
- * Entitlement-gated routes (rbac/sso/scim) need the fixture account unlocked
- * first. The enterprise-demo PUT that does the unlock is platform-admin-only,
- * so the unlock runs as the run-scoped platform admin — see
- * fixtures/enterprise-demo.ts.
+ * Entitlement-gated routes (rbac/sso/scim) need the Enterprise features first:
+ * the fixture turns the Enterprise demo on — see fixtures/enterprise-access.ts.
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { createDatabaseSession } from '../fixtures/database-project';
 
 // ─── Groups ──────────────────────────────────────────────────────────────
@@ -31,7 +29,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group creation)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -85,7 +83,7 @@ flow(
     const team = await ctx.fixtures.team();
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group creation)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -161,7 +159,7 @@ flow(
     const member = await team.addMember('member');
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group/member management)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group/member management)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -244,7 +242,7 @@ flow(
     const team = await ctx.fixtures.team();
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group creation)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -695,7 +693,7 @@ flow(
     const team = await ctx.fixtures.team();
     let tokenId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for scim-gated token minting)',
+      'the Enterprise demo is turned on (entitles this fresh account for scim-gated token minting)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -855,7 +853,7 @@ flow(
     const supabaseProviderId = crypto.randomUUID();
     const primaryDomain = `${ctx.fixtures.name('sso')}.test`;
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for sso-gated provider writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for sso-gated provider writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -938,7 +936,7 @@ flow(
     let groupId = '';
     let mappingId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for sso-gated mapping writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for sso-gated mapping writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -1049,7 +1047,7 @@ flow(
     let roleId = '';
 
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated custom-role writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated custom-role writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -1184,7 +1182,7 @@ flow(
     let policyId = '';
 
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated role/policy writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated role/policy writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },

@@ -908,7 +908,7 @@ describe('ProjectsLevelContent', () => {
     );
 
     const headers = collectElementsByType(tree, CostSortHeader);
-    expect(headers.map((header) => header.props.label)).toEqual(['Project', 'Total']);
+    expect(headers.map((header) => header.props.label)).toEqual(['Project', 'Total (credits)']);
 
     (headers[0]!.props.onSort as () => void)();
     (headers[1]!.props.onSort as () => void)();
@@ -921,7 +921,7 @@ describe('ProjectsLevelContent', () => {
     const sessionsIndex = html.indexOf('>Sessions<');
     const llmIndex = html.indexOf('>LLM<');
     const computeIndex = html.indexOf('>Compute<');
-    const totalIndex = html.indexOf('>Total<');
+    const totalIndex = html.indexOf('>Total (credits)<');
 
     expect(projectIndex).toBeGreaterThan(-1);
     expect(sessionsIndex).toBeGreaterThan(projectIndex);
@@ -978,19 +978,19 @@ describe('ProjectsLevelContent', () => {
   test('the footer reconciles on all four numeric columns, including unassigned', () => {
     const html = renderContent({ page: twoProjectPage, summary: summaryWithTotal(20) });
     // Alpha: $10.00, Beta: $3.25, Unassigned: $20 - 13.25 = $6.75.
-    expect(html).toContain('$10.00');
-    expect(html).toContain('$3.25');
-    expect(html).toContain('$6.75');
+    expect(html).toContain('>1,000<');
+    expect(html).toContain('>325<');
+    expect(html).toContain('>675<');
 
     const footerHtml = extractFooterHtml(html);
     // Sessions: 4 + 2 + 0 (unassigned) = 6.
     expect(footerHtml).toContain('>6<');
     // LLM: $6 + $3 + $0 (unassigned) = $9.00.
-    expect(footerHtml).toContain('$9.00');
+    expect(footerHtml).toContain('>900<');
     // Compute: $4 + $0.25 + $0 (unassigned) = $4.25.
-    expect(footerHtml).toContain('$4.25');
+    expect(footerHtml).toContain('>425<');
     // Total: $10 + $3.25 + $6.75 (unassigned) = $20.00 — the account total.
-    expect(footerHtml).toContain('$20.00');
+    expect(footerHtml).toContain('>2,000<');
 
     // Read the four assertions above literally: each footer cell equals the
     // sum of ITS column. They do not equal each other across the row —
@@ -1037,9 +1037,9 @@ describe('ProjectsLevelContent', () => {
 
     const footerHtml = extractFooterHtml(html);
     expect(footerHtml).toContain('>3<');
-    expect(footerHtml).toContain('$2.50');
-    expect(footerHtml).toContain('$1.50');
-    expect(footerHtml).toContain('$4.00');
+    expect(footerHtml).toContain('>250<');
+    expect(footerHtml).toContain('>150<');
+    expect(footerHtml).toContain('>400<');
     expect(footerHtml).not.toContain('999');
   });
 
@@ -1054,12 +1054,12 @@ describe('ProjectsLevelContent', () => {
     });
 
     expect(html).not.toContain('Unassigned');
-    expect(html).not.toContain('$49.27');
+    expect(html).not.toContain('>4,927<');
 
     const footerHtml = extractFooterHtml(html);
     // Alpha $10.00 + Beta $3.25 — the two rows actually on screen.
-    expect(footerHtml).toContain('$13.25');
-    expect(footerHtml).not.toContain('$62.52');
+    expect(footerHtml).toContain('>1,325<');
+    expect(footerHtml).not.toContain('>6,252<');
   });
 
   // Defect 2, projects level. The footer sums one page; the Total tile above

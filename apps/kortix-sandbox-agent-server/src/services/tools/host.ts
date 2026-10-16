@@ -12,6 +12,8 @@ import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { AGENT_ENV_FILE } from '@kortix/api-contract/sandbox-layout'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
+import connectorCall from './kortix/kortix-connectors_call'
+import connectorDescribe from './kortix/kortix-connectors_describe'
 import imageSearch from './kortix/image_search'
 import memory from './kortix/memory'
 import scrapeWebpage from './kortix/scrape_webpage'
@@ -33,6 +35,8 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   scrape_webpage: scrapeWebpage,
   memory,
   show,
+  'kortix-connectors_call': connectorCall,
+  'kortix-connectors_describe': connectorDescribe,
 }
 
 export interface HostedTool extends KortixTool {

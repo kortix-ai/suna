@@ -3,7 +3,7 @@ import { isMetaAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
 import { platformMetaAgentGrant } from '../lib/platform-meta-agent';
-import type { ManifestFormat } from '@kortix/manifest-schema';
+import { type ManifestFormat, OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
 import { parseManifestString } from '../manifest-io';
 import { extractAgents, loadProjectAgents } from './parse';
 import type { AgentSpec, LoadedAgents } from './types';
@@ -65,7 +65,9 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
  * one of those sessions lost its CLI and connector access.
  *
  *   - `default`, the platform meta agent and OpenCode's built-in agents are
- *     always launchable: none of them is ever another project's agent.
+ *     launchable: none of them is ever another project's agent. In a v3
+ *     project `build`/`plan`/`general`/`explore` are launchable only when
+ *     declared.
  *   - A project with no per-agent governance (no specs, no parse errors) keeps
  *     the runtime roster as the authority, unchanged.
  *   - Otherwise the name must be a declared, enabled spec. A manifest that
@@ -80,8 +82,11 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
-  // deny-all grant in `grantFromLoadedAgents`, never a widening.
-  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name)) return true;
+  // deny-all grant in `grantFromLoadedAgents`, never a widening. kortix_version 3
+  // runs only declared agents: its compiled config disables build/plan/general/
+  // explore unless the manifest declares the name.
+  const v3Disabled = (loaded.schemaVersion ?? 0) >= 3 && (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
+  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !v3Disabled) return true;
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return true;
   return loaded.specs.some((s) => s.name === name && s.enabled);
 }

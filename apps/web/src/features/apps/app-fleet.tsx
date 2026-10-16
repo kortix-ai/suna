@@ -15,23 +15,51 @@ import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 
 import { useTranslations } from '@/i18n/use-translations';
+import { relativeTime } from '@/lib/relative-time';
+import { cn } from '@/lib/utils';
 
 import { type App, type AppMachine, type AppVolume } from '@kortix/sdk';
 import { useAppMachines, useAppVolumeSnapshots, useAppVolumes } from '@kortix/sdk/react';
-import { ArrowCounterClockwiseIcon, CameraIcon, CopyIcon, MinusIcon, PauseIcon, PlayIcon, PlusIcon } from '@phosphor-icons/react';
+import { CameraIcon, CopyIcon } from '@phosphor-icons/react';
 
 import { useState } from 'react';
 
 import { appCan } from './app-shared';
 
-const STATE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
-  started: 'default',
-  starting: 'secondary',
-  stopping: 'secondary',
-  stopped: 'outline',
+/** How long a machine has been up: "3h 12m", "12m", "2d 4h". */
+export function uptime(since: string, now = Date.now()): string {
+  const minutes = Math.max(0, Math.floor((now - Date.parse(since)) / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
+}
+
+/** The stepper's glyphs, 16px, drawn in the text color. */
+const GLYPH = {
+  minus: <path d="M4 8h8" />,
+  plus: <path d="M4 8h8M8 4v8" />,
 };
 
-/** One row per machine, grouped by process group, with the group's machine count. */
+function Glyph({ name }: { name: keyof typeof GLYPH }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      className="size-4 shrink-0 fill-none stroke-current stroke-[1.5] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      {GLYPH[name]}
+    </svg>
+  );
+}
+
+/**
+ * The machines of each process group. Built from the Paper pick "M01 · Process
+ * group card": the group is the card, its size and its machine count sit in
+ * the card's header where they apply to every machine at once, and each
+ * machine is one row with one labeled action.
+ */
 export function AppMachinesPanel({ projectId, app, canDeploy }: { projectId: string; app: App; canDeploy: boolean }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const machines = useAppMachines(projectId, app.app_id);
@@ -42,45 +70,95 @@ export function AppMachinesPanel({ projectId, app, canDeploy }: { projectId: str
   }
   const groups = [...new Set(rows.map((machine) => machine.process_group))];
   const scaleOf = (group: string) => app.scale?.[group] ?? rows.filter((machine) => machine.process_group === group).length;
+  const canScale = canDeploy && appCan(app, 'scale');
   return (
-    <div className="space-y-3">
-      {groups.map((group) => (
-        <div key={group} className="space-y-1">
-          <div className="flex items-center gap-2 px-2">
-            <span className="text-foreground font-mono text-xs">{group}</span>
-            {canDeploy && appCan(app, 'scale') ? (
-              <span className="ml-auto flex items-center gap-1">
-                <Hint label={tI18nComplete.raw('text8265774743cb')}>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    disabled={machines.scale.isPending || scaleOf(group) <= 0}
-                    onClick={() => machines.scale.mutate({ [group]: scaleOf(group) - 1 })}
-                    aria-label={tI18nComplete.raw('text8265774743cb')}
-                  >
-                    <MinusIcon className="size-3.5 shrink-0" />
-                  </Button>
-                </Hint>
-                <span className="text-muted-foreground w-6 text-center text-xs tabular-nums">{scaleOf(group)}</span>
-                <Hint label={tI18nComplete.raw('text191338ba2258')}>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    disabled={machines.scale.isPending || scaleOf(group) >= 20}
-                    onClick={() => machines.scale.mutate({ [group]: scaleOf(group) + 1 })}
-                    aria-label={tI18nComplete.raw('text191338ba2258')}
-                  >
-                    <PlusIcon className="size-3.5 shrink-0" />
-                  </Button>
-                </Hint>
-              </span>
-            ) : null}
+    <div className="flex flex-col gap-6">
+      {groups.map((group) => {
+        const members = rows.filter((machine) => machine.process_group === group);
+        const vm = members[0]!.vm;
+        return (
+          <div key={group} className="flex flex-col">
+            {/* Same two sections as the Releases tab ("Live now", "History"):
+                a labeled card for the group, then a labeled list of its
+                machines, with the same spacing between them. */}
+            <section className="flex flex-col gap-2">
+              <h3 className="text-muted-foreground/70 text-xs font-medium">{tI18nComplete.raw('textb1a7e40c2d19')}</h3>
+              <div className="bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-foreground truncate font-mono text-sm font-medium">{group}</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="text-muted-foreground/70 text-xs">{tI18nComplete.raw('textc061da196eae')}</span>
+                    {canScale ? (
+                      <MachineCount
+                        count={scaleOf(group)}
+                        pending={machines.scale.isPending}
+                        onScale={(next) => machines.scale.mutate({ [group]: next })}
+                      />
+                    ) : (
+                      <span className="text-foreground font-mono text-sm tabular-nums">{scaleOf(group)}</span>
+                    )}
+                  </span>
+                </div>
+                <dl className="flex gap-6">
+                  {[
+                    { label: tI18nComplete.raw('textb1a7e40c2d1c'), value: `${vm.cpu} vCPU` },
+                    { label: tI18nComplete.raw('textc3963aedaac6'), value: `${vm.memory_gb} GB` },
+                    { label: tI18nComplete.raw('textb1a7e40c2d1d'), value: `${vm.disk_gb} GB` },
+                  ].map((fact) => (
+                    <div key={fact.label} className="flex flex-col gap-0.5">
+                      <dt className="text-muted-foreground/70 text-xs">{fact.label}</dt>
+                      <dd className="text-foreground text-sm">{fact.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </section>
+            <section className="flex flex-col gap-1 pt-6">
+              <h3 className="text-muted-foreground/70 pb-1 text-xs font-medium">{tI18nComplete.raw('textc061da196eae')}</h3>
+              <ul className="-mx-2 flex flex-col gap-1">
+                {members.map((machine) => (
+                  <MachineRow key={machine.instance_id} machine={machine} canDeploy={canDeploy} machines={machines} />
+                ))}
+              </ul>
+            </section>
           </div>
-          {rows.filter((machine) => machine.process_group === group).map((machine) => (
-            <MachineRow key={machine.instance_id} machine={machine} canDeploy={canDeploy} machines={machines} />
-          ))}
-        </div>
-      ))}
+        );
+      })}
+    </div>
+  );
+}
+
+/** The group's machine count as one bordered stepper: −, the count, +. */
+function MachineCount({ count, pending, onScale }: { count: number; pending: boolean; onScale: (next: number) => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const step =
+    'text-muted-foreground hover:text-foreground hover:bg-muted/50 flex h-full w-7.5 items-center justify-center transition-colors disabled:pointer-events-none disabled:opacity-40';
+  return (
+    <div className="flex h-7.5 items-center overflow-hidden rounded-md border">
+      <button
+        type="button"
+        className={step}
+        disabled={pending || count <= 0}
+        onClick={() => onScale(count - 1)}
+        aria-label={tI18nComplete.raw('text8265774743cb')}
+      >
+        <Glyph name="minus" />
+      </button>
+      <span
+        aria-live="polite"
+        className="text-foreground flex h-full w-7.5 items-center justify-center border-x font-mono text-sm tabular-nums"
+      >
+        {count}
+      </span>
+      <button
+        type="button"
+        className={step}
+        disabled={pending || count >= 20}
+        onClick={() => onScale(count + 1)}
+        aria-label={tI18nComplete.raw('text191338ba2258')}
+      >
+        <Glyph name="plus" />
+      </button>
     </div>
   );
 }
@@ -96,45 +174,51 @@ function MachineRow({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const running = machine.state === 'started';
+  const stopped = machine.state === 'stopped';
   const busy = machines.start.isPending || machines.stop.isPending || machines.restart.isPending;
+  const stateLabel = {
+    started: tI18nComplete.raw('textf4ccae29e1bb'),
+    starting: tI18nComplete.raw('textb1a7e40c2d17'),
+    stopping: tI18nComplete.raw('textb1a7e40c2d18'),
+    stopped: tI18nComplete.raw('text1a4f630ac1b6'),
+    provisioning: tI18nComplete.raw('textc2b1b8e2e039'),
+  }[machine.state];
+  const detail = [`v${machine.release.version}`, machine.volume?.name ?? null].filter(Boolean).join(' · ');
+  // Up for how long, or stopped since when: the release row's age lane.
+  const since = running && machine.started_at
+    ? tI18nComplete('textb1a7e40c2d1b', { value0: uptime(machine.started_at) })
+    : stopped && machine.stopped_at
+      ? relativeTime(machine.stopped_at)
+      : null;
+
+  // Same lanes as a release row: id (w-20), state and version on one line,
+  // time (w-15), one action (w-20).
   return (
-    <div className="hover:bg-muted/40 flex items-center gap-3 rounded-md px-2 py-1.5">
-      <span className="text-foreground w-20 shrink-0 font-mono text-xs">{machine.machine_id.slice(0, 8)}</span>
-      <Badge variant={STATE_VARIANT[machine.state] ?? 'outline'} size="sm">{machine.state}</Badge>
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-        {[
-          `v${machine.release.version}`,
-          tI18nComplete('textce0eabb01151', { value0: machine.vm.cpu, value1: machine.vm.memory_gb, value2: machine.vm.disk_gb }),
-          machine.volume ? tI18nComplete('text451df0325fb4', { value0: machine.volume.name ?? machine.volume.volume_id.slice(0, 8) }) : null,
-        ].filter(Boolean).join(' · ')}
+    <li className="hover:bg-muted/50 flex h-11 items-center gap-3 rounded-md px-2">
+      <span className="text-foreground w-20 shrink-0 font-mono text-sm font-medium">{machine.machine_id.slice(0, 8)}</span>
+      <span className="min-w-0 flex-1 truncate text-sm">
+        <span className={running ? 'text-kortix-green' : 'text-foreground'}>{stateLabel}</span>
+        <span className="text-muted-foreground/70"> · {detail}</span>
       </span>
-      {canDeploy ? (
-        <span className="flex shrink-0 items-center gap-1">
-          <Hint label={running ? tI18nComplete.raw('textcae7d57bc067') : tI18nComplete.raw('texte4bb9f1ece9a')}>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              disabled={busy}
-              onClick={() => (running ? machines.stop : machines.start).mutate(machine.machine_id)}
-              aria-label={running ? tI18nComplete.raw('textcae7d57bc067') : tI18nComplete.raw('texte4bb9f1ece9a')}
-            >
-              {running ? <PauseIcon weight="fill" className="size-3.5 shrink-0" /> : <PlayIcon className="size-3.5 shrink-0" />}
-            </Button>
-          </Hint>
-          <Hint label={tI18nComplete.raw('text6b983a81e5e8')}>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              disabled={busy || !running}
-              onClick={() => machines.restart.mutate(machine.machine_id)}
-              aria-label={tI18nComplete.raw('text6b983a81e5e8')}
-            >
-              <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
-            </Button>
-          </Hint>
-        </span>
-      ) : null}
-    </div>
+      <span className="text-muted-foreground/70 w-15 shrink-0 text-right text-xs tabular-nums">{since}</span>
+      <span className="flex w-20 shrink-0 justify-end">
+        {canDeploy && running ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-muted-foreground"
+            disabled={busy}
+            onClick={() => machines.restart.mutate(machine.machine_id)}
+          >
+            {tI18nComplete.raw('text6b983a81e5e8')}
+          </Button>
+        ) : canDeploy && stopped ? (
+          <Button size="xs" variant="secondary" disabled={busy} onClick={() => machines.start.mutate(machine.machine_id)}>
+            {tI18nComplete.raw('texte4bb9f1ece9a')}
+          </Button>
+        ) : null}
+      </span>
+    </li>
   );
 }
 

@@ -413,8 +413,8 @@ describe('SessionsLevelTable', () => {
     expect(html).toContain('Marko Kraemer');
     expect(html).toContain('Build service');
     expect(html).toContain('Service');
-    expect(html).toContain('$1.10');
-    expect(html).toContain('$3.50');
+    expect(html).toContain('>110<');
+    expect(html).toContain('>350<');
   });
 
   // Presence alone would still pass with the columns in any order — position
@@ -433,7 +433,7 @@ describe('SessionsLevelTable', () => {
       />,
     );
 
-    const markers = ['>Session<', '>Owner<', '>Requests<', '>LLM<', '>Compute<', '>Total<'];
+    const markers = ['>Session<', '>Owner<', '>Requests<', '>LLM<', '>Compute<', '>Total (credits)<'];
     const positions = markers.map((marker) => html.indexOf(marker));
     positions.forEach((position, index) => {
       expect(position, `expected to find ${markers[index]}`).toBeGreaterThan(-1);
@@ -462,9 +462,9 @@ describe('SessionsLevelTable', () => {
     );
 
     expect(html).toContain('8'); // 3 + 5 requests
-    expect(html).toContain('$3.30'); // 1.10 + 2.20 LLM
-    expect(html).toContain('$1.70'); // 0.40 + 1.30 compute
-    expect(html).toContain('$5.00'); // 1.50 + 3.50 total
+    expect(html).toContain('>330<'); // 1.10 + 2.20 LLM
+    expect(html).toContain('>170<'); // 0.40 + 1.30 compute
+    expect(html).toContain('>500<'); // 1.50 + 3.50 total
   });
 
   // Defect 2. This footer sums `sessions` — one page — while the Total tile
@@ -492,7 +492,7 @@ describe('SessionsLevelTable', () => {
     expect(footerMatch![0]).toContain('Page total');
     expect(footerMatch![0]).not.toContain('>Total<');
     // The page subtotal, not the 55-session figure the tile would show.
-    expect(footerMatch![0]).toContain('$5.00');
+    expect(footerMatch![0]).toContain('>500<');
   });
 
   // renderToStaticMarkup strips event-handler props from its HTML output, so
@@ -614,7 +614,7 @@ describe('SessionsLevelTable', () => {
     });
 
     const headers = collectElementsByType(tree, CostSortHeader);
-    expect(headers.map((header) => header.props.label)).toEqual(['Session', 'Total']);
+    expect(headers.map((header) => header.props.label)).toEqual(['Session', 'Total (credits)']);
 
     (headers[0]!.props.onSort as () => void)();
     (headers[1]!.props.onSort as () => void)();

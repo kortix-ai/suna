@@ -1,159 +1,182 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
 #
-# Kortix project manifest. Source of truth for project-wide config that
-# lives in git alongside the code. `kortix_version` pins the schema so
-# the platform can evolve safely. v2 manifests are YAML-only, with one
-# `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_permissions/skills/workspace/enabled), plus `file`, the path of the
-# agent's `.md`. Agent BEHAVIOR (description, model, mode, temperature,
-# permission, the prompt itself, …) lives entirely in that `.md`'s
-# frontmatter + body — a stock OpenCode agent file works as-is.
+# Kortix project manifest: the one file that defines this project's agents.
 #
-# Project layout — harness-neutral content at the root:
-#   agents/<name>.md          one file per agent (`agents.<name>.file`)
-#   skills/<name>/SKILL.md    skills, loaded by every harness
+# The project REGISTERS what exists (skills, tools, commands, extensions,
+# connectors, secrets). Each AGENT decides: its prompt, model and permission,
+# and which registered things it enables, by name. Nothing applies to every
+# agent by itself, and an agent sees only what it enables.
+#
+# Layout:
+#   kortix.yaml               this file
+#   agents/<name>.md          agent prompts (`agents.<name>.prompt_file`)
+#   skills/<name>/SKILL.md    skills (`skills:` below)
+#   tools/<name>.ts           project tools (`tools:` below)
+#   extensions/<name>/        harness extensions (`extensions:` below)
 #   memory/                   the project brain (the `kortix-memory` skill)
-#   tools/<name>.ts           project tools, loaded by every harness (`tools:` below)
-#   harnesses/opencode/       files only OpenCode reads (`opencode.config_dir`)
-#   harnesses/pi/             files only pi reads (`pi.config_dir`); create it when needed
-kortix_version: 2
-
-# The agent a session/trigger boots when it names no concrete agent (the
-# "default" sentinel). Must always resolve to a declared agent below.
-default_agent: kortix
+#
+# `kortix validate` checks this file. `kortix schema --version 3` prints the
+# full schema.
+kortix_version: 3
 
 project:
   name: "{{projectName}}"
   description: A Kortix project.
 
-# Env vars the runtime needs. Required values must be set in the Kortix
-# Secrets Manager before a session can start.
+# The agent a session or trigger runs when it names none.
+default_agent: kortix
+
+# Secret names the runtime needs. Set the values in the Kortix Secrets
+# Manager; a session cannot start until every required secret has a value.
+# An agent receives only the secrets it enables (`agents.<name>.secrets`).
 env:
   required: []
   optional: [STRIPE_API_KEY]
 
 # ─── Sandbox templates ───────────────────────────────────────────────────
-# Sessions boot from a sandbox image. The platform's default image (Ubuntu +
-# the Kortix runtime layer) is always available — sessions clone your repo
-# into /workspace at boot, so no per-project build is needed by default.
+# Sessions boot from the platform's default image (Ubuntu + the Kortix
+# runtime) and clone this repo into /workspace. Add named images only when a
+# project needs more: a Dockerfile in the repo (`dockerfile:`) or a public
+# image (`image:`). Hardware: cpu = cores, memory and disk = GiB.
 #
-# Define `sandbox.templates` entries below if you want named custom images
-# for this project. Each entry can point at either a Dockerfile in the repo
-# (`dockerfile: …`) or a public Docker image (`image: …`). Pick one or
-# the other. The Kortix runtime layer is always added on top.
-#
-# Hardware: cpu = cores, memory = GiB, disk = GiB. All optional.
-#
-# Example — custom Dockerfile:
 # sandbox:
-#   templates:
-#     - slug: ml
-#       name: ML Development
-#       dockerfile: Dockerfile.ml
-#       cpu: 4
-#       memory: 16
-#       disk: 50
-#
-# Example — public Docker image:
-# sandbox:
+#   default: python                  # every agent; `agents.<name>.sandbox` overrides
 #   templates:
 #     - slug: python
 #       name: Python 3.12
 #       image: python:3.12-slim
 #       cpu: 2
 #       memory: 4
-#
-# Make one template the project-wide default. An agent can override it with
-# `agents.<name>.sandbox`. Omit both fields for the platform default.
-# sandbox:
-#   default: python
+#     - slug: ml
+#       name: ML Development
+#       dockerfile: Dockerfile.ml
+#       cpu: 4
+#       memory: 16
+#       disk: 50
 
-# Files only OpenCode reads: `opencode.jsonc` (plugins, MCP servers,
-# providers, runtime defaults), `plugins/`, `commands/`. The agent
-# daemon launches opencode with OPENCODE_CONFIG_DIR pointed here. Agents and
-# skills do NOT live here — they sit at the root and serve every harness.
-opencode:
-  config_dir: harnesses/opencode
+# ═══ Registry: what this project has ═════════════════════════════════════
+
+# ─── Skills ──────────────────────────────────────────────────────────────
+# name → the folder that holds its SKILL.md. The folder is named after the
+# skill. The Kortix skills (kortix-cli, kortix-system, kortix-memory, …) are
+# always registered and need no entry. An agent loads a skill only when it
+# enables it (`agents.<name>.skills`).
+skills: {}
 
 # ─── Tools ───────────────────────────────────────────────────────────────
-# The tools every agent of this project gets, on every harness (OpenCode, pi).
-# `kortix:<name>` is a tool Kortix maintains and updates. A path is your own
-# module, in any folder (https://kortix.com/docs/project/tools).
-#   - Delete a line to remove that tool from every agent.
-#   - Run `kortix tools eject <name>` to own and change a Kortix tool.
-#   - Use `agents.<name>.tools` to limit one agent.
-# `kortix tools ls` lists what a session gets.
-tools:
-  web_search: kortix:web_search      # maintained by Kortix, updated automatically
-  image_search: kortix:image_search
-  scrape_webpage: kortix:scrape_webpage
-  memory: kortix:memory
-  show: kortix:show
-  # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
+# name → a module in this repo. The Kortix tools (web_search, image_search,
+# scrape_webpage, memory, show, kortix-connectors_call,
+# kortix-connectors_describe) are always registered; a project tool with one
+# of those names replaces it. `kortix tools eject <name>` copies a Kortix
+# tool here for you to change. Every agent gets every tool unless it narrows
+# them (`agents.<name>.tools`).
+#
+# tools:
+#   lookup_order: tools/lookup_order.ts
 
-# ─── Agents ──────────────────────────────────────────────────────────────
-# One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/
-# skills grants the runtime itself can't express, plus workspace (the git
-# boundary) and enabled. `file` names the agent's `.md`; everything else
-# (description, mode, permission, temperature, the prompt itself, …) lives
-# in that file — open it to see/change what the agent actually does.
-# v2 is deny-by-default: an omitted connectors/secrets/kortix_permissions/
-# skills grant resolves to "none", so a scoped specialist starts locked down.
-# The starter's own `kortix` agent is deliberately
-# granted "all" across the board so a fresh project is capable out of the
-# box — narrow it once you know what this project actually needs.
+# ─── Commands ────────────────────────────────────────────────────────────
+# Slash commands. `$ARGUMENTS` takes the arguments; `$1`, `$2`, … take them
+# one word at a time. An agent offers a command only when it enables it
+# (`agents.<name>.commands`).
+#
+# commands:
+#   review:
+#     description: Review the open change request.
+#     prompt_file: commands/review.md
+#   summarize:
+#     prompt: Summarize $ARGUMENTS in five bullets.
+
+# ─── Extensions ──────────────────────────────────────────────────────────
+# Harness extensions: one implementation per harness. `opencode:` is a module
+# loaded as an OpenCode plugin; `pi:` is a pi package (an exact npm pin or a
+# repo path). A session loads the extensions its agent enables.
+extensions:
+  # Interactive terminals: the pty_spawn, pty_write, pty_read, pty_list and
+  # pty_kill tools, for dev servers, watchers and REPLs that outlive one
+  # command. pi's own bash tool covers the same ground there.
+  pty:
+    opencode: extensions/pty/pty.ts
+
+# ═══ Agents: what each one does and may use ══════════════════════════════
+#
+# Each block is one agent. Behavior: description, mode (primary | subagent |
+# all), model, prompt or prompt_file, and permission (per tool: allow | ask |
+# deny; omitted = allow, so a tool never waits for an answer the agent did not
+# ask for). Grants are deny-by-default: an omitted skills, subagents,
+# commands, extensions, connectors, secrets or kortix_permissions grant is
+# none. Write `all`, `none`, or a list of names.
+#
+# Only declared agents run. The harness's own build/plan/general/explore
+# agents are off unless you declare one here.
 agents:
   kortix:
-    file: agents/kortix.md
+    description: >-
+      Generic Kortix general knowledge worker. Hands-on, full tool access,
+      handles coding / research / content / ops / data tasks end-to-end in an
+      isolated session sandbox. Edit agents/kortix.md to specialize it for
+      your project.
+    mode: primary
+    prompt_file: agents/kortix.md
+    # The project's own front-door agent gets everything, so a fresh project
+    # is capable out of the box. Narrow it once you know what this project
+    # needs.
+    skills: all
+    subagents: all
+    commands: all
+    extensions: all
     connectors: all
     secrets: all
     kortix_permissions: all
-    skills: all
-    # Tools this agent may use (harness, Kortix and project tools). Default: all.
     # tools: [read, grep, web_search, lookup_order]   # only these
     # tools: { exclude: [bash] }                      # every tool but these
-    # sandbox: python # Must name an available project template, or "default".
-    # What new sessions get in /workspace. Default: the project repository.
-    # workspace: { project_repository: false }   # no checkout, no repository access
+    # sandbox: python                                 # a template above, or "default"
+    # workspace: { project_repository: false }        # no repo checkout
 
   harness-reflector:
-    file: agents/harness-reflector.md
-    # Continual-harness reflector: refines the shared harness (prompts,
-    # sub-agents, skills/tools, memory — memory curation is its fourth
-    # pass) from session evidence. Fans out session-reviewer sub-agents,
-    # one per recent session, then opens — never merges — a harness CR.
-    # Runs unattended on a cron: a scoped kortix_permissions grant 403s the CLI
-    # reads it needs (skills, agents, triggers) with nobody present to
-    # widen it, so it gets `all`. It reads untrusted transcripts, so it
-    # gets NO connectors and NO project secrets — nothing to exfiltrate.
-    kortix_permissions: all
+    description: >-
+      Continual-harness reflector. Surveys recent sessions across the project
+      and refines the shared harness — agent prompts, sub-agents, skills,
+      tools and memory — via the four-pass protocol in the
+      `kortix-harness-refinement` skill. Runs on a cron (the
+      `harness-reflector` trigger below) and ends every run by opening a
+      single change request titled `harness: …`.
+    mode: primary
+    prompt_file: agents/harness-reflector.md
+    # It runs unattended: a scoped kortix_permissions grant would 403 the CLI
+    # reads it needs (skills, agents, triggers) with nobody there to widen it,
+    # so it gets `all`. It reads untrusted transcripts, so it gets NO
+    # connectors and NO secrets — nothing to exfiltrate.
     skills: all
+    subagents: [session-reviewer]
+    extensions: [pty]
+    kortix_permissions: all
 
   session-reviewer:
-    file: agents/session-reviewer.md
-    # Sub-agent of the harness-reflector: deep-reviews ONE session's full
-    # history and reports failure-signature findings. "Read-only" (never
-    # edits, never opens CRs) is its prompt discipline; it runs inside the
-    # reflector's session with the same grant, so it mirrors it here.
-    kortix_permissions: all
+    description: >-
+      Read-only sub-agent of the harness-reflector. Given ONE session id,
+      gathers that session's full history — transcript (when available), git
+      branch commits and diffs, change requests — works through it turn by
+      turn, and returns a structured failure-signature findings report.
+      Never edits the harness, never opens change requests.
+    mode: subagent
+    prompt_file: agents/session-reviewer.md
+    # "Read-only" is its prompt's discipline, not a permission gate: it runs
+    # inside the reflector's session and needs the same CLI reads.
     skills: all
+    extensions: [pty]
+    kortix_permissions: all
 
 # ─── Triggers ────────────────────────────────────────────────────────────
-# Each entry spawns a fresh session that runs `prompt` as its initial
-# message. Add from the Kortix UI or uncomment one below. Slugs must be
-# lowercase URL-safe and unique per project. `agent` must name a declared
-# agent above (or be omitted to fall back to `default_agent`).
-
+# Each entry starts a fresh session that runs `prompt` as its first message.
+# `agent` names a declared agent (omitted: `default_agent`). Slugs are
+# lowercase, URL-safe and unique per project.
 triggers:
-  # Harness reflector — the continual-harness loop across sessions.
-  # Surveys what every recent session actually did, finds failure
-  # signatures (repeated tool failures, rediscovery loops, stalled
-  # objectives), and refines the shared harness — agent prompts,
-  # sub-agents, skills/tools, memory — via the four-pass protocol in
-  # the `kortix-harness-refinement` skill. Opens a `harness: …` change
-  # request; exits silently when nothing is worth changing. Disabled by
-  # default because every run creates a sandbox. Flip `enabled: true` after
-  # the project has enough activity for daily reflection to be useful.
+  # The continual-harness loop. It surveys what recent sessions did, finds
+  # failure signatures (repeated tool failures, rediscovery loops, stalled
+  # objectives) and refines the harness through one `harness: …` change
+  # request; it exits silently when nothing is worth changing. Off by
+  # default because every run creates a sandbox: set `enabled: true` once the
+  # project has enough activity for a daily reflection.
   - slug: harness-reflector
     name: Harness reflector
     type: cron
@@ -171,39 +194,29 @@ triggers:
       components with observed failures, and open a single CR titled
       `harness: …`. Exit silently if nothing is worth changing.
 
-  # Cron trigger — fires on a 6-field croner expression
-  # (second minute hour day month weekday).
+  # A cron trigger fires on a 6-field croner expression
+  # (second minute hour day month weekday):
   #
   # - slug: daily-digest
   #   name: Daily digest
   #   type: cron
-  #   agent: kortix                  # must name a declared agent above
-  #   enabled: true
+  #   agent: kortix
   #   cron: "0 0 9 * * 1-5"          # 09:00 Mon–Fri
   #   timezone: America/Los_Angeles
   #   prompt: |
-  #     Summarize yesterday's commits across the repo. Save the result to
-  #     notes/digest-{{ fired_at }}.md and open a PR against main.
+  #     Summarize yesterday's commits. Save the result to
+  #     notes/digest-{{ fired_at }}.md and open a change request.
   #
-  # Webhook trigger — fires on signed POSTs to
-  #   /v1/webhooks/projects/<project_id>/<slug>
-  # Signature header: `X-Kortix-Signature: sha256=<hmac>` (HMAC-SHA256 over
-  # the raw body using the secret named by `secret_env`).
-  # GitHub's `X-Hub-Signature-256` is also accepted.
+  # A webhook trigger fires on signed POSTs to
+  # /v1/webhooks/projects/<project_id>/<slug>, signed with
+  # `X-Kortix-Signature: sha256=<hmac>` (HMAC-SHA256 of the raw body with the
+  # secret `secret_env` names; GitHub's `X-Hub-Signature-256` also works):
   #
   # - slug: slack-hook
   #   name: Slack handler
   #   type: webhook
   #   agent: kortix
-  #   enabled: true
-  #   secret_env: WEBHOOK_SLACK_SECRET  # add the value via Secrets Manager
+  #   secret_env: WEBHOOK_SLACK_SECRET
   #   prompt: |
   #     Slack event from {{ headers.user_agent }}.
   #     User said: {{ body.text }}
-
-# ─── Channels ────────────────────────────────────────────────────────────
-# v2 removes `channels` from the manifest — channel↔agent routing (Slack
-# today; Teams/Discord/etc. later) is managed live in the dashboard
-# (Customize → Channels), not committed to git. The channel connection
-# itself still shows up here as a `connectors` entry with
-# `provider: channel` once you connect one — that part is unchanged.

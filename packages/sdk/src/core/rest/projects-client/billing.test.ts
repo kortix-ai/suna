@@ -20,6 +20,10 @@ import {
   getBillingTierConfigurations,
   getDefaultAccountState,
   setBillingPlan,
+  previewBillingPlan,
+  type PlanChangePreview,
+  acceptEnterpriseOffer,
+  contactEnterpriseSales,
   purchaseCredits,
   reactivateSubscription,
   requestTopUp,
@@ -185,11 +189,77 @@ test('setBillingPlan returns the updated, unchanged and payment_pending variants
   }
 });
 
+test('setBillingPlan returns what changed: raised (charged, credits added), scheduled (from when), kept', async () => {
+  const input = { monthlyUsd: 500, successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' };
+  for (const body of [
+    { status: 'updated', change: 'raised', monthly_usd: 500, charged_usd: 133.33, credits_added: 13_333 },
+    { status: 'updated', change: 'scheduled', monthly_usd: 100, effective_at: '2026-11-14T00:00:00.000Z' },
+    { status: 'updated', change: 'kept', monthly_usd: 500 },
+    { status: 'unchanged', change: 'none', monthly_usd: 500 },
+  ]) {
+    nextResponse = { status: 200, body };
+    const result = await setBillingPlan(input);
+    expect(result).toEqual(body as never);
+  }
+});
+
+test('previewBillingPlan posts monthly_usd to /billing/plan/preview and returns the preview', async () => {
+  const preview = {
+    change: 'raised',
+    monthly_usd: 500,
+    current_monthly_usd: 300,
+    due_now_usd: 66.67,
+    credits_now: 6_667,
+    effective_at: null,
+  };
+  nextResponse = { status: 200, body: preview };
+  const result: PlanChangePreview = await previewBillingPlan({ monthlyUsd: 500, accountId: 'acc-1' });
+  expect(last().url).toContain('/billing/plan/preview');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ monthly_usd: 500, account_id: 'acc-1' });
+  expect(result).toEqual(preview as never);
+});
+
 test('setBillingPlan surfaces the 400 for an out-of-range amount', async () => {
   nextResponse = { status: 400, body: { error: 'monthly_usd out of range' } };
   await expect(
     setBillingPlan({ monthlyUsd: 5, successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' }),
   ).rejects.toMatchObject({ status: 400 });
+});
+
+test('acceptEnterpriseOffer posts to /billing/enterprise-offer/checkout and returns the checkout link', async () => {
+  nextResponse = { status: 200, body: { checkout_url: 'https://checkout.stripe.test/e', contract_id: 'ctr-1' } };
+  const result = await acceptEnterpriseOffer({
+    successUrl: 'https://example.com/ok',
+    cancelUrl: 'https://example.com/no',
+    accountId: 'acc-1',
+  });
+  expect(last().url).toContain('/billing/enterprise-offer/checkout');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    success_url: 'https://example.com/ok',
+    cancel_url: 'https://example.com/no',
+    account_id: 'acc-1',
+  });
+  expect(result).toEqual({ checkout_url: 'https://checkout.stripe.test/e', contract_id: 'ctr-1' });
+});
+
+test('acceptEnterpriseOffer surfaces the 404 when there is no open offer', async () => {
+  nextResponse = { status: 404, body: { error: 'the account has no open Enterprise offer' } };
+  await expect(
+    acceptEnterpriseOffer({ successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' }),
+  ).rejects.toMatchObject({ status: 404 });
+});
+
+test('account state carries the trial, contract, offer and grace the API sends', () => {
+  const state = {
+    trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+    contract: null,
+    enterprise_offer: { id: 'ctr-1', license_usd: 25000, credits_usd: 15000, term_months: 12, collection: 'checkout' },
+    grace: null,
+  } satisfies Partial<AccountState>;
+  expect(state.trial.days_left).toBe(9);
+  expect(state.enterprise_offer.collection).toBe('checkout');
 });
 
 test('tier configurations expose the purchasable range', async () => {
@@ -436,4 +506,20 @@ test('canOfferTopup offers nothing while the account state loads, or without a s
   expect(canOfferTopup(null)).toBe(false);
   expect(canOfferTopup({} as AccountState)).toBe(false);
   expect(canOfferTopup(getDefaultAccountState())).toBe(false);
+});
+
+// The amount the account PAYS, kept during a trial: the plan picker needs it
+// to mark the current tier while `plan.monthly_usd` describes the trial.
+test('subscription.monthly_usd: the default state carries it as null, never undefined', () => {
+  expect(getDefaultAccountState().subscription.monthly_usd).toBeNull();
+});
+
+// "Talk to sales" is one click: no form, the account and the signed-in user
+// are known to the API (POST /billing/enterprise/contact).
+test('contactEnterpriseSales posts the account and an optional note, and returns whether sales was emailed', async () => {
+  nextResponse = { status: 200, body: { sent: true } };
+  expect(await contactEnterpriseSales({ accountId: 'acc-1', note: 'SSO for 40 people' })).toEqual({ sent: true });
+  expect(last().url).toContain('/billing/enterprise/contact');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ account_id: 'acc-1', note: 'SSO for 40 people' });
 });

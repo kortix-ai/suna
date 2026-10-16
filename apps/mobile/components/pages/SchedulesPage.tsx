@@ -306,40 +306,43 @@ function ScheduleDetailSheet({
 
   const oneOff = !!trigger.run_at;
 
+  // Every schedule toast names the schedule, behind its clock (web's trigger toast).
+  const entity = { icon: Clock, label: trigger.name || trigger.slug };
+
   const handleFire = () => {
     haptics.tap();
     fire.mutate(trigger.slug, {
       onSuccess: (res) => {
         if (res.status === 'failed') {
-          toast.error('Unable to fire the schedule', { description: res.error || res.reason || 'Try again.' });
+          toast.error('Unable to fire the schedule', { entity, description: res.error || res.reason || 'Try again.' });
         } else {
-          toast.success(res.status === 'queued' ? 'Schedule queued' : 'Schedule fired');
+          toast.success(res.status === 'queued' ? 'Schedule queued' : 'Schedule fired', { entity });
         }
       },
-      onError: (e: any) => toast.error('Unable to fire the schedule', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to fire the schedule', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const togglePaused = () => {
     haptics.tap();
     update.mutate({ slug: trigger.slug, input: { enabled: !trigger.enabled } }, {
-      onError: (e: any) => toast.error('Unable to update the schedule', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to update the schedule', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleSavePrompt = (next: string) => {
     haptics.tap();
     update.mutate({ slug: trigger.slug, input: { prompt_template: next } }, {
       onSuccess: closePromptEditor,
-      onError: (e: any) => toast.error('Unable to save the prompt', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to save the prompt', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleAgentChange = (agent: string) => {
     update.mutate({ slug: trigger.slug, input: { agent } }, {
-      onError: (e: any) => toast.error('Unable to change the agent', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to change the agent', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleModelChange = (model: string | null) => {
     update.mutate({ slug: trigger.slug, input: { model } }, {
-      onError: (e: any) => toast.error('Unable to change the model', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to change the model', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleDelete = () => {
@@ -352,7 +355,7 @@ function ScheduleDetailSheet({
         haptics.medium();
         del.mutate(trigger.slug, {
           onSuccess: onClose,
-          onError: (e: any) => toast.error('Unable to remove the schedule', { description: e?.message || 'Try again.' }),
+          onError: (e: any) => toast.error('Unable to remove the schedule', { entity, description: e?.message || 'Try again.' }),
         });
       },
     });

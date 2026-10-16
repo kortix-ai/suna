@@ -31,31 +31,12 @@ Every App lists what it supports in `capabilities`, for example `machines` or
 `volumes`. A call that needs a missing capability answers
 `409 app_capability_unsupported`.
 
-## Turn Apps on
+## Self-hosting prerequisites
 
-Apps are off until a platform admin turns them on for a project. A project
-member cannot turn them on: the write answers `403` `feature_operator_only`.
-
-- **Kortix Cloud:** email [support@kortix.com](mailto:support@kortix.com) with
-  the project id.
-- **Self-hosted:** a platform admin (an email in `KORTIX_PLATFORM_ADMIN_EMAILS`)
-  who is a project member runs `kortix projects features enable apps`. For any
-  other project, the admin sends `PUT /v1/admin/api/projects/<project_id>/features`
-  with `{"feature": "apps", "enabled": true}` and their sign-in JWT. The
-  instance also needs `KORTIX_APPS_BASE_DOMAIN` and a wildcard DNS record: see
-  [Self-hosting](/docs/host#configure).
-
-While Apps is off:
-
-- Every Apps route answers `403` with `code: "feature_disabled"`,
-  `feature: "apps"` and the message `Apps is not enabled for this project. Contact Kortix to enable it.`
-- `kortix apps <subcommand>` exits `1` before it calls the API.
-- The project sidebar has no **Apps** entry. `/projects/<id>/apps` shows a gate
-  screen.
-
-Check the state with `kortix projects features`, or in **Customize → Settings →
-Feature flags**. Both show `apps` only while it is on, as a locked row: origin
-`kortix` in the CLI, **Managed by Kortix** in the web app.
+Apps is generally available: every project can create and deploy Apps, and
+there is nothing to turn on. On a self-host instance the operator still needs
+`KORTIX_APPS_BASE_DOMAIN` and a wildcard DNS record so App hostnames resolve:
+see [Self-hosting](/docs/host#configure).
 
 ## Deploy your first App
 
@@ -151,7 +132,7 @@ deployment is queued.
 
 ## Configure in kortix.yaml
 
-An `apps.<slug>` block in a v2 `kortix.yaml` holds an App's deploy settings and
+An `apps.<slug>` block in `kortix.yaml` holds an App's deploy settings and
 release config. Commit it, and every deploy uses the same settings.
 
 ```yaml
@@ -626,8 +607,8 @@ agents:
 ```
 
 Set the list in `kortix.yaml`, with `kortix agents scope report-writer --apps reports`
-(also `all` and `none`; needs a v2 `kortix.yaml`), or in Customize → Agents →
-the agent → **Apps**. The App's access dialog lists the agents granted to it.
+(also `all` and `none`; edits a legacy v2 `kortix.yaml`), or in Customize → Agents →
+the agent → **Apps** on a v2 manifest. The App's access dialog lists the agents granted to it.
 From code, call `apps.access.agents(appId)`. See
 [Agents & permissions](/docs/project/agents).
 
@@ -979,8 +960,9 @@ for (;;) {
 | Access | `access.get`, `access.update` (`mode`, `member_ids`, `group_ids`, `password`, `viewer_token_scope`), `access.session` (a 5-minute link), `access.agents` |
 | Sign-in | `token(appId)`, `authEnv(appId)` |
 
-`isFeatureDisabledError(error)` is `true` for the `403 feature_disabled` that a
-project without Apps answers. React hooks in `@kortix/sdk/react`:
+`isFeatureDisabledError(error)` is `true` for the `403 feature_disabled` a
+feature-flagged route answers (another feature than Apps; Apps routes no
+longer carry a flag). React hooks in `@kortix/sdk/react`:
 `useProjectApps`, `useAppDeployments`, `useAppDeployment`, `useAppAccess`,
 `useAppMachines`, `useAppVolumes` and `useAppVolumeSnapshots`. Signatures and
 types: [SDK reference](/docs/sdk/reference#the-project-handle) and

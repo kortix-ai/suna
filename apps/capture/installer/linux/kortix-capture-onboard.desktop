@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kortix Capture
+Comment=First-run setup
+Exec=/usr/bin/kortix-capture onboard
+Icon=kortix-capture
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
