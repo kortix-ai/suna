@@ -13,7 +13,9 @@
  */
 
 import {
+  applyInterfaceThemes,
   interfaceThemeFor,
+  isThemedSurface,
   normalizeDarkTheme,
   normalizeLightTheme,
   resolveInterfaceTheme,
@@ -24,7 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useTheme } from 'next-themes';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 /** `settings.appearance.themes.<labelKey>`. */
 export type InterfaceThemeLabel = 'system' | 'light' | 'pureLight' | 'dark' | 'pureDark';
@@ -170,4 +172,94 @@ export function useInterfaceTheme() {
   );
 
   return { selected, select, choice, resolvedTheme };
+}
+
+/** What `<html>` looked like before the first preview frame. */
+interface PreviewSnapshot {
+  light: string | null;
+  dark: string | null;
+  mode: 'light' | 'dark' | null;
+  colorScheme: string;
+}
+
+/**
+ * A look-before-you-pick preview for a theme row. `preview(id)` paints `<html>`
+ * with that row — mode class, `color-scheme` and, on a themed route, the
+ * palette attribute — and writes nothing to the store or to next-themes.
+ * `preview(null)` puts `<html>` back as it was. `commit()` drops the snapshot,
+ * so the caller's `select(id)` lands on a page that already shows `id` and no
+ * restore runs after it.
+ */
+export function useInterfaceThemePreview(choice: ThemeChoice) {
+  const snapshot = useRef<PreviewSnapshot | null>(null);
+  const choiceRef = useRef(choice);
+  choiceRef.current = choice;
+
+  const preview = useCallback((id: InterfaceThemeId | null) => {
+    const root = document.documentElement;
+    if (id === null) {
+      const saved = snapshot.current;
+      if (!saved) return;
+      snapshot.current = null;
+      paintWithoutTransitions(() => {
+        if (saved.light !== null) root.setAttribute('data-light-theme', saved.light);
+        if (saved.dark !== null) root.setAttribute('data-dark-theme', saved.dark);
+        root.classList.remove('light', 'dark');
+        if (saved.mode) root.classList.add(saved.mode);
+        root.style.colorScheme = saved.colorScheme;
+      });
+      return;
+    }
+
+    snapshot.current ??= {
+      light: root.getAttribute('data-light-theme'),
+      dark: root.getAttribute('data-dark-theme'),
+      mode: root.classList.contains('dark')
+        ? 'dark'
+        : root.classList.contains('light')
+          ? 'light'
+          : null,
+      colorScheme: root.style.colorScheme,
+    };
+
+    const next = resolveInterfaceTheme(id);
+    const mode =
+      next.mode === 'system'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+        : next.mode;
+    paintWithoutTransitions(() => {
+      // Off a themed route `<html>` carries no palette attributes on purpose
+      // (`syncInterfaceThemes`); the preview keeps it that way.
+      if (isThemedSurface(root)) {
+        applyInterfaceThemes(root, {
+          light: next.mode === 'light' ? next.light : choiceRef.current.light,
+          dark: next.mode === 'dark' ? next.dark : choiceRef.current.dark,
+        });
+      }
+      root.classList.remove('light', 'dark');
+      root.classList.add(mode);
+      root.style.colorScheme = mode;
+    });
+  }, []);
+
+  const commit = useCallback(() => {
+    snapshot.current = null;
+  }, []);
+
+  return { preview, commit };
+}
+
+/**
+ * The same trick as next-themes' `disableTransitionOnChange`: arrowing through
+ * forty themes must repaint at once, not fade every `transition-colors` node.
+ */
+function paintWithoutTransitions(paint: () => void) {
+  const style = document.createElement('style');
+  style.appendChild(document.createTextNode('*,*::before,*::after{transition:none!important}'));
+  document.head.appendChild(style);
+  paint();
+  void window.getComputedStyle(document.body).opacity;
+  setTimeout(() => style.remove(), 1);
 }
