@@ -77,7 +77,7 @@ run everything: they are the backstop for a dependency the scope cannot see.
 ## Commands
 
 ```bash
-pnpm test                       # Fast local core
+pnpm test                       # Diff-scoped suite; refused on a Mac unless KORTIX_FULL_TEST=1
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Manifest version detection for the "Upgrade to v3" surfaces. `ProjectConfigSummary`
+ * Manifest version detection for the manifest upgrade surfaces. `ProjectConfigSummary`
  * doesn't carry a parsed `kortix_version` field, so we read it straight out
  * of the raw manifest text the project-detail endpoint already returns
  * (`config.manifest_raw`) — a plain regex works because both TOML
@@ -33,9 +33,9 @@ export function manifestFilename(version: number | null): 'kortix.toml' | 'korti
   return (version ?? 1) >= 2 ? 'kortix.yaml' : 'kortix.toml';
 }
 
-/** A v1 or v2 project is offered the upgrade to v3. `null` (not read yet) is not. */
+/** Only a v1 project is offered an upgrade (to v2). v3 is opt-in and not offered yet. `null` (not read yet) is not. */
 export function manifestNeedsUpgrade(version: ManifestVersion | null): boolean {
-  return version === 1 || version === 2;
+  return version === 1;
 }
 
 export interface ProjectManifestVersionState {

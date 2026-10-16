@@ -5,7 +5,7 @@
  * fresh session, stash the given prompt as its first message, close the
  * overlay, and drop the user into the thread. The generic engine behind both
  * the registry entries in `upgrade-defs.ts` and the one-off prompt runner;
- * `useMigrateToV3` is the manifest-upgrade wrapper the sidebar alert uses.
+ * `useMigrateToV2` is the v2-specific wrapper kept for its button.
  *
  * Deliberately does NOT pass `agent_name` — the session boots the project's
  * default agent (the one with git/CR powers).
