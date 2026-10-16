@@ -109,9 +109,10 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
       output: 'Script completed\nWall time 1.2 seconds\nOutput:\n==> text 1/2 <==\nsrc/lib/format.ts:1\nsrc/components/RevenueCard.tsx:4\n==> text 2/2 <==\n3 pass, 0 fail',
       metadata: {
         calls: [
-          { call_id: 'call_codemode/1', name: 'grep', kind: 'search', input: { pattern: 'formatCurrency', path: 'src' }, status: 'complete', duration_ms: 40 },
+          { call_id: 'call_codemode/1', name: 'grep', kind: 'grep', input: { pattern: 'formatCurrency', path: 'src' }, status: 'complete', duration_ms: 40 },
           { call_id: 'call_codemode/2', name: 'bash', kind: 'shell', input: { command: 'bun test src/lib/format.test.ts' }, status: 'complete', duration_ms: 1100 },
         ],
+        complete: true,
       },
       runningMetadata: {
         calls: [
@@ -119,8 +120,9 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
           { id: 'call_codemode/2', name: 'bash', args: '{"command":"bun test src/lib/format.test.ts"}', status: 'running' },
         ],
       },
-      error: 'Script failed\nWall time 0.1 seconds\nOutput:\nScript error:\nThe project policy denies this bash call.',
-      note: "pi's codemode: one script that calls other tools. Running, the calls come from pi's live record (`id`, `args` as JSON text); at rest, from the session log's record (`call_id`, `input`). The result drops pi's `Script completed` / `Wall time` / `Output:` header.",
+      error:
+        'Script failed\nWall time 0.1 seconds\nOutput:\nScript error:\nError: The project policy denies this bash call.\n\nTool calls made before the failure (they are not undone): grep (ok), bash (error)',
+      note: "pi's codemode: one script that calls other tools. Running, the calls come from pi's live record (`id`, `args` as JSON text); at rest, from the session log's record (`call_id`, `input`, `complete`). The result drops pi's `Script completed` / `Wall time` / `Output:` header. A denied nested call throws inside the script, so `error` ends with `Error: <reason>` and the live-status call summary.",
     },
   ],
 };
