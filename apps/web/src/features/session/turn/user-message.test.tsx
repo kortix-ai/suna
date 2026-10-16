@@ -1176,7 +1176,7 @@ describe('UserMessage renders N inline reply quotes at their positions', () => {
     );
     const quotes = blockquotes(markup);
     expect(quotes).toHaveLength(2);
-    expect(markup).toContain('bg-sidebar');
+    expect(markup).toContain('bg-muted');
   });
 
   test('the quote is not inside the bold body-text run', () => {
