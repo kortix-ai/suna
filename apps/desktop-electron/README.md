@@ -221,9 +221,11 @@ count is the number of sessions with a finished turn you have not seen yet. The
 in-app toast fades after 8 s; the badge stays until you look.
 
 - **What counts.** The web app's turn-attention store
-  (`apps/web/src/stores/turn-attention-store.ts`). A finished turn counts when
-  the window is not focused, or when another session is on screen. Opening the
-  session removes it from the count.
+  (`apps/web/src/stores/turn-attention-store.ts`). A turn counts when it
+  finishes while the window is hidden or not focused, including on the session
+  the window shows. It also counts when it finishes while another session is on
+  screen and the app still hears it (another window or browser tab has it
+  open). Looking at the session in a focused window removes it from the count.
 - **How it reaches the icon.** `TurnAttentionBadge` sends the count through the
   sender-gated `set_badge_count` command (`setDesktopBadgeCount` in
   `apps/web/src/lib/desktop.ts`), and `src/attention-badge.js` shows it:
