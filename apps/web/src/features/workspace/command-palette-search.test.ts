@@ -348,11 +348,14 @@ describe('queries return the rows they name', () => {
   });
 
   test('"apps" reaches the Apps page, not Connectors', () => {
-    // `nav:proj-apps` is the page the word names. `settings:computer` also
-    // answers because its own description says "… the files, terminal, and
-    // apps on your computer" — a real word the user read on that row, not a
-    // wildcard leak; the Connectors rows still answer nothing.
-    expect(hits('apps').sort()).toEqual(['nav:proj-apps', 'settings:computer']);
+    // `nav:proj-apps` is the page the word names. #9974 codified the
+    // Computer row answering "apps" through its description ("…the files,
+    // terminal, and apps on your computer"), but the query names the Apps
+    // page and an unrelated settings row answering it is the ambiguity
+    // KRTX-2475 flags. The description now reads "applications" — same
+    // sentence, the plural stops matching, and the singular "app" still
+    // reaches the row (kept by the next test).
+    expect(hits('apps')).toEqual(['nav:proj-apps']);
   });
 
   // The Computer row USED to answer "apps" too: PR #9992 shipped a rail
