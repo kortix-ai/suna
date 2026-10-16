@@ -38,30 +38,15 @@ describe('ProjectOnboardingWizard: completion wiring', () => {
     expect(code).not.toMatch(/const complete = useCallback\(\(\) => onboarding\.complete\(\)/);
   });
 
-  // The stamp is optimistic, so `isPending` flips in the same tick as the
-  // last click. On `/new` the wizard must hold the screen until the route
-  // swaps, or it uncovers the "Creating …" loader. On the project shell (no
-  // callbacks) it still disappears in place.
-  test('an exit that navigates keeps the wizard up until the route swaps', () => {
-    expect(code).toContain('if (onCompleted) setLeaving(true);');
-    expect(code).toContain('if (!isPending && !leaving) return null;');
-  });
-
   // The project shell passes `onSkip` only to render the control and does not
   // navigate, so a skip that set `leaving` left the wizard on screen until a
   // reload (KRTX-2378). Skip closes it in place through the optimistic stamp.
+  // (Upstream #9963 added this assertion; the `leaving` machinery it contrasts
+  // with is gone entirely here, which the tests below pin.)
   test('skip closes the wizard in place', () => {
     const skip = code.slice(code.indexOf('const skip = useCallback'), code.indexOf('const openProject'));
     expect(skip).not.toContain('setLeaving');
     expect(skip).toContain('completeThenNotify(() => onboarding.complete(), onSkip)');
-  });
-
-  // `/new` has no effects by contract, so the wizard prefetches the project
-  // route it is about to open.
-  // The exit opens the first chat (`firstChatHref`), so that is the address
-  // worth warming.
-  test('prefetches the first chat when an exit navigates', () => {
-    expect(code).toContain('if (navigatesOnExit) router.prefetch(firstChatHref(projectId));');
   });
 
   test('both exits start the first chat', () => {
