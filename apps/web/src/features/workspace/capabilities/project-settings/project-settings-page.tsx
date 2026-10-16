@@ -20,8 +20,8 @@ import {
   channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
+import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v3/manifest-version';
+import { UpgradesView } from '@/features/workspace/customize/migrate-to-v3/upgrade-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 import {

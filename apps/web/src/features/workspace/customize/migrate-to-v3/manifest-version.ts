@@ -1,11 +1,11 @@
 'use client';
 
 /**
- * v1-vs-v2 detection for the "Migrate to v2" surfaces. `ProjectConfigSummary`
+ * Manifest version detection for the "Upgrade to v3" surfaces. `ProjectConfigSummary`
  * doesn't carry a parsed `kortix_version` field, so we read it straight out
  * of the raw manifest text the project-detail endpoint already returns
  * (`config.manifest_raw`) — a plain regex works because both TOML
- * (`kortix_version = 1`) and YAML (`kortix_version: 2`) write it as a bare
+ * (`kortix_version = 1`) and YAML (`kortix_version: 3`) write it as a bare
  * `key <sep> value` line at the top of the file. Missing/unparsable defaults
  * to v1 (the schema itself treats an absent version as invalid-but-legacy —
  * treating it as "not yet migrated" is the safer UI default).
@@ -15,7 +15,7 @@ import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
-export type ManifestVersion = 1 | 2;
+export type ManifestVersion = 1 | 2 | 3;
 
 const VERSION_RE = /kortix_version\s*[:=]\s*"?(\d+)"?/;
 
@@ -24,7 +24,18 @@ export function detectManifestVersion(manifestRaw: string | null | undefined): M
   const match = manifestRaw.match(VERSION_RE);
   if (!match) return 1;
   const parsed = Number(match[1]);
-  return parsed >= 2 ? 2 : 1;
+  // A version newer than this client reads as the newest it knows.
+  return parsed >= 3 ? 3 : parsed === 2 ? 2 : 1;
+}
+
+/** The manifest file a version lives in. An unresolved read (`null`) reads as v1. */
+export function manifestFilename(version: number | null): 'kortix.toml' | 'kortix.yaml' {
+  return (version ?? 1) >= 2 ? 'kortix.yaml' : 'kortix.toml';
+}
+
+/** A v1 or v2 project is offered the upgrade to v3. `null` (not read yet) is not. */
+export function manifestNeedsUpgrade(version: ManifestVersion | null): boolean {
+  return version === 1 || version === 2;
 }
 
 export interface ProjectManifestVersionState {

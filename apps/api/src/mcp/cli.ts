@@ -40,6 +40,7 @@ export const DENY_COMMANDS: Record<string, Denial> = {
     use: 'the Capture API with a Kortix API key: GET /v1/accounts/<account_id>/capture/… (timeline, timeline/items, search, frames, media)',
   },
   tools: { reason: "it reads and edits a local kortix.yaml, and this server has no project checkout", use: 'run_command in a session sandbox, where the project lives: `kortix tools ls` there' },
+  migrate: { reason: 'it rewrites a local kortix.yaml, and this server has no project checkout', use: 'run_command in a session sandbox, where the project lives: `kortix migrate` there' },
 };
 
 /** [command, subcommand] → refusal. */

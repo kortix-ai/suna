@@ -7,7 +7,7 @@ describe('ignoredAgentSettings', () => {
   });
 
   test('OpenCode applies every setting', () => {
-    expect(ignoredAgentSettings('opencode')).toEqual([]);
+    expect(ignoredAgentSettings('opencode')).toEqual(['codemode']);
   });
 
   test('an unknown harness applies none', () => {

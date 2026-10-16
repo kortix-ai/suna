@@ -62,6 +62,10 @@ describe('denial', () => {
     expect(denial(['apps', 'deploy'])?.use).toContain('run_command in a session sandbox');
   });
 
+  test('migrate points at a session sandbox, where the project checkout lives', () => {
+    expect(denial(['migrate', '--write'])?.use).toContain('`kortix migrate` there');
+  });
+
   test('apps list and create run; token points at a session sandbox', () => {
     expect(denial(['apps', 'list'])).toBeNull();
     expect(denial(['apps', 'create', 'main'])).toBeNull();

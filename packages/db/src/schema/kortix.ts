@@ -686,7 +686,7 @@ export const configReleaseHeads = kortixSchema.table(
     /** The descriptor JSON's store key. */
     descriptorKey: text('descriptor_key').notNull(),
     /** The agent roster at `source_commit`. Session create only checks it; it re-points nothing. */
-    roster: jsonb('roster').$type<{ enabled: string[]; defaultAgent: string | null; readable: boolean; governed: boolean }>().notNull(),
+    roster: jsonb('roster').$type<{ enabled: string[]; defaultAgent: string | null; readable: boolean; governed: boolean; onlyDeclared?: boolean }>().notNull(),
     /** When the publish read the ref's tip. A slower publish of an older tip never overwrites a newer one. */
     resolvedAt: timestamp('resolved_at', { withTimezone: true }).notNull(),
     publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),

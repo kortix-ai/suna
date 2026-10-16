@@ -1,24 +1,13 @@
 # OpenCode reference — overview
 
-OpenCode is the Kortix session runtime. Version 2 uses OpenCode REST. This
-directory is the complete OpenCode reference.
+OpenCode is one of the two Kortix session harnesses. The other is pi
+(`../pi/overview.md`). This directory is the complete OpenCode reference.
 
-OpenCode reads its own files from `harnesses/opencode/` (the
-`opencode.config_dir` in `kortix.yaml`). That directory drives both surfaces:
-
-- **Remote** — when a Kortix session boots, the platform points OpenCode
-  at this dir via `OPENCODE_CONFIG_DIR=harnesses/opencode` and launches
-  the agent inside the sandbox VM.
-- **Local** — a local `opencode` run with
-  `OPENCODE_CONFIG_DIR=harnesses/opencode` reads the same OpenCode files.
-
-Agents and skills do not live in this directory. Kortix compiles agents
-from `agents/` and `kortix.yaml` and hands them to the harness. Every
-harness loads the skills in `skills/`. A local `opencode` run does not
-read the root `agents/` and `skills/`.
-
-Projects created before 2026-09 use `.kortix/opencode/` as the config dir,
-and it also holds their `agents/` and `skills/`. Both layouts work.
+In a `kortix_version: 3` project, `kortix.yaml` is the only source of
+OpenCode config. Kortix compiles the manifest (and every file it imports)
+and the session daemon gives OpenCode the result. OpenCode reads no project
+config folder: not `harnesses/opencode/`, `.kortix/opencode/` or
+`.opencode/`, and no `opencode.json` or `opencode.jsonc` from the project.
 
 This folder mirrors the upstream OpenCode docs as standalone Markdown
 files so an agent can read them without a network fetch. Pages are
@@ -39,31 +28,29 @@ linked upstream page wins.
 | Rules (`AGENTS.md`)         | `rules.md`       | <https://opencode.ai/docs/rules/>                                                 |
 | Models                      | `models.md`      | <https://opencode.ai/docs/models/>                                                |
 
-## Where OpenCode looks for things in a Kortix project
+## Where each OpenCode concept lives in a Kortix project
 
-OpenCode discovers its own config from `OPENCODE_CONFIG_DIR`, which the
-Kortix runtime sets to `opencode.config_dir` (default `harnesses/opencode/`).
-Agents and skills sit at the repo root.
+The upstream pages listed above describe OpenCode's own config files. In a v3
+project, each concept is a key in `kortix.yaml` instead:
 
-| Surface       | Path inside the Kortix project                                                              |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| Config root   | `harnesses/opencode/opencode.jsonc`                                                         |
-| Agents        | `agents/<name>.md` (`agents.<name>.file` in `kortix.yaml`)                                  |
-| Skills        | `skills/<name>/SKILL.md`                                                                    |
-| Commands      | `harnesses/opencode/commands/<name>.md`                                                     |
-| Custom tools  | a module declared in `kortix.yaml` `tools:` (every harness, `../kortix/tools.md`); `harnesses/opencode/tools/<file>.ts` is OpenCode-only |
-| Plugins       | `harnesses/opencode/plugins/<file>.ts` (+ `harnesses/opencode/package.json` for npm deps)   |
-| MCP servers   | `harnesses/opencode/opencode.jsonc` → `mcp` key                                             |
+| OpenCode concept | `kortix_version: 3` key |
+| ---------------- | ----------------------- |
+| Agents (`opencode.json` `agent`, `.opencode/agents/*.md`) | `agents.<name>`: one block with `prompt` or `prompt_file`, `model`, `mode`, `permission`, … |
+| Built-in agents `build`, `plan`, `general`, `explore` | Off unless `agents` declares that name. |
+| Subagents an agent may call (`permission.task`) | `agents.<name>.subagents` |
+| Permissions (`permission`) | `agents.<name>.permission`, per agent. Omitted: `allow`. No project-wide permission. |
+| Skills (`.opencode/skills/`, `permission.skill`) | `skills:` registry (name → folder) and `agents.<name>.skills` |
+| Commands (`.opencode/commands/*.md`) | `commands:` registry and `agents.<name>.commands` |
+| Custom tools (`.opencode/tools/`) | `tools:` registry (name → module); both harnesses run it (`../kortix/tools.md`) |
+| Tool visibility (`tools`) | `agents.<name>.tools`: `all`, `none`, a list, or `{ exclude: [...] }` |
+| Plugins (`.opencode/plugins/`, `plugin`) | `extensions.<name>.opencode` (a repo module) and `agents.<name>.extensions` |
+| MCP servers (`mcp`) | `connectors` with `provider: mcp` |
+| Custom providers (`provider`) | No v3 key. Legacy projects only. |
+| Rules (`AGENTS.md`) | The root `AGENTS.md`, else `CLAUDE.md`. Unchanged. |
 
-## The contract with Kortix
+The full key reference is `../kortix/kortix-yaml.md`.
 
-OpenCode owns the behavior under `harnesses/opencode/`. Kortix can inspect agent
-metadata and overlays current managed system skills, but it does not reinterpret
-OpenCode prompts, permissions, tools, providers, or plugins.
-
-Conversely, Kortix-specific config (triggers, secrets schema, sandbox
-image, project metadata) lives in `kortix.yaml` at
-the repo root. OpenCode never reads `kortix.yaml`.
-
-Both halves are versioned in the same repo, but the boundary is
-strict — see `../kortix/kortix-yaml.md` for the Kortix half.
+Legacy: a `kortix_version` 1 or 2 project still uses `harnesses/opencode/`
+(or `opencode.config_dir`, or `.kortix/opencode/`) for `opencode.jsonc`,
+`plugins/`, `tools/` and `commands/`, and `agents/<name>.md` files.
+`kortix migrate` prints the v3 manifest; `kortix migrate --write` writes it.

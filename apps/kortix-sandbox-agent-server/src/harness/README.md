@@ -721,6 +721,42 @@ runs on the session's agent, as on OpenCode. A pick of a subagent, a disabled
 agent or an unknown name is logged and runs on the session's agent. pi
 packages and extensions stay the ones the session booted with.
 
+### kortix.yaml v3
+
+A compiled set with `schema: 3` (`CompiledAgentSet`) is the only config input
+for a v3 session. Every rule below holds for the working tree and for a config
+release. v1 and v2 sessions keep the folder behavior the rest of this section
+describes.
+
+- **No harness folder.** pi reads no `pi.config_dir`, `harnesses/pi` or
+  `.kortix/pi`: no project `settings.json`, `extensions/` or `prompts/`
+  (`PiRuntime.projectConfigDir`, `config-release.ts` `piDirIn`). pi's own
+  discovery of `.pi/` and `.agents/skills` is off (`discoveryRoot: null`).
+- **Skills.** The managed `kortix-*` skills, then exactly the folders in
+  `compiled.skills`, under the config root: the active release root, else
+  `/workspace` (`resolvePiV3SkillDirectories`). The image default has no
+  project skill. pi does not scan `skills/` or the legacy dir. The agent's
+  `permission.skill` allowlist still hides every skill it does not grant.
+- **Subagents.** No built-in `general` or `explore`. The `task` tool offers
+  only declared, enabled agents with `mode` `subagent` or `all` that the
+  calling agent's `permission.task` rule does not deny. The rule's subject is
+  `subagent_type`, so a call to a denied name is refused before it runs.
+- **Commands.** `GET /command` lists every `compiled.commands` entry with its
+  `agents`. `POST /session/:id/command` runs on the body's `agent`, else the
+  session's agent. An agent outside `agents` gets `403 { error:
+  "command_not_enabled", command, agent }` and no turn runs. The runtime
+  expands the template as OpenCode does (`expandCommandTemplate`): `$1`…`$n`
+  take the words (a quoted string is one word), the highest placeholder takes
+  the rest, `$ARGUMENTS` takes the raw text, and a template with neither gets
+  the arguments appended. OpenCode's `` !`cmd` `` shell expansion is not
+  supported.
+- **Extensions.** The API sends the session agent's pi packages as
+  `KORTIX_PI_PACKAGES`; a repo entry is `./<path>` and resolves against the
+  config root. Extensions load once per runtime start, so an agent switch
+  later in the session keeps them.
+- **codemode.** `KORTIX_PI_CODEMODE`, else the session agent's compiled
+  `codemode`, else `on`. It is fixed at start, like the extensions.
+
 ### Config releases
 
 pi runs the base branch's current config release, exactly as OpenCode does
@@ -836,8 +872,9 @@ the hidden `kortix-nested-calls` gate and `codemode`.
 pi-coding-agent's `createCodemodeExtension()` (`pi/codemode.ts`): one tool, `codemode`, whose
 input is a JavaScript script that calls the other tools as `await tools.<name>(args)` in a
 QuickJS VM (no Node, file system, network or timers; 256 MB). Only the script's output
-returns to the model. kortix.yaml `harnesses.pi.codemode` (`KORTIX_PI_CODEMODE`, sent by
-the API at session start; an agent's value replaces the top-level one) picks `on` (the
+returns to the model. kortix.yaml `harnesses.pi.codemode` (v3: the agent's `codemode`;
+`KORTIX_PI_CODEMODE`, sent by the API at session start; an agent's value replaces the
+top-level one; without the variable the session agent's compiled `codemode`) picks `on` (the
 default: the other tools stay declared), `only` (requests declare codemode alone) or `off`
 (the extension is not loaded). `models` stays off: it would call providers past the LLM gateway.
 
@@ -877,7 +914,9 @@ own wire transcript served by `/session`, `/session/:id`,
 `/kortix/runtime/messages/:id`, and persisted in the root's dump so `task_id`
 resumes it after a restart. Types: `general` (all workspace and Kortix tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
-or `all`. A child gets no `task` (no nesting) and no `question`. Several task
+or `all`; v3 has only the declared agents. The calling agent's
+`permission.task` rule (subject: `subagent_type`) removes a denied type from
+the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. Several task
 calls in one message run concurrently; a batch that includes any other tool
 stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
@@ -922,7 +961,8 @@ provider and model only, so the restore gives a `kortix` message without `api`
 pi-ai then sees the same model and keeps its reasoning.
 
 `GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
-dir, and the templates of pi packages) as slash commands.
+dir, and the templates of pi packages) as slash commands. A v3 session lists
+its compiled commands instead (see "kortix.yaml v3").
 `POST /session/:id/command` runs one: it admits `/name arguments`, pi expands
 the template, and the user message on the wire becomes the expanded text, as
 on OpenCode. A command pi does not have is a 400. pi does not read OpenCode's
@@ -987,6 +1027,61 @@ directory; pi does not. The warm-seed adoption and monitor mode call the same
 function in `git` mode. `contract/boot-state.ts` carries the outcome:
 `workspaceProvider` (reported in `/kortix/health` as `workspace_provider`)
 and `deferredHistoryBackfill` (`backfillAfterHydration` for an S3 start).
+
+## kortix.yaml v3 on OpenCode
+
+A v3 project's compiled set (`KORTIX_COMPILED_AGENT_CONFIG` with `schema: 3`)
+is the only input. `open-code/manifest-v3.ts` turns it into OpenCode config.
+v1 and v2 sets keep the behavior above.
+
+- **No project config dir.** OpenCode reads the image default config dir.
+  `resolveOpencodeConfigDir` ignores `opencode.config_dir`,
+  `harnesses/opencode` and `.kortix/opencode`. `manifestFromDescriptor`
+  sets a v3 release's `config_dir` to null, so the release serves the image
+  default and is proven there. The boot release link still names the
+  release: the config root is the release root, else `/workspace`.
+- **No discovery.** OpenCode spawns with `OPENCODE_DISABLE_PROJECT_CONFIG=1`
+  (no `opencode.json(c)` or `.opencode/` upward from the working directory)
+  and `OPENCODE_DISABLE_EXTERNAL_SKILLS=1` (no `.claude/skills` or
+  `.agents/skills`). A change between v2 and v3 respawns OpenCode instead of
+  disposing it, because these values ride the process env.
+- **Skills.** `skills.paths` is each registered folder (`compiled.skills`,
+  under the config root) plus the managed Kortix skills. OpenCode scans
+  `**/SKILL.md` under a path, the folder itself included, so a folder loads
+  its own skill and nothing beside it. The root `skills/` is not declared.
+  The compiled `permission.skill` allowlist decides which agent sees which
+  skill.
+- **Extensions.** The session agent is `KORTIX_AGENT_NAME`, else
+  `default_agent`. Each name in its `extensions` with an `opencode` path
+  becomes a plugin. A missing file is logged and skipped. A mid-session
+  agent switch keeps the plugins of the boot agent.
+- **Extension dependencies.** A module with no `package.json` between it and
+  the config root loads as `file://<config root>/<path>`. Otherwise the
+  nearest such folder is copied to
+  `<runtime state dir>/opencode/extensions/<content hash>/` and the plugin
+  loads from there (`open-code/extension-deps.ts`). Its `node_modules` is a
+  link to the baked tree (`/opt/kortix/opencode-config-deps`) when every
+  declared dependency is there at a version the declared range accepts, else
+  an `ensureOpencodeConfigDeps` install (offline, then the declared ranges,
+  then the registry). The working tree and a sealed release never get a
+  `node_modules`. An unchanged folder reuses its copy. A failed install
+  skips that plugin and the boot goes on. The starter's pty extension pins
+  `zod 4.1.8`; the baked tree's top-level `zod` is 3.x, so it installs.
+- **Commands.** `compiled.commands` becomes OpenCode `command`
+  (`template`, `description`). `GET /command` (proxy) and the `commands`
+  section of `/kortix/runtime/state` list only the compiled commands, each
+  with `agents`. OpenCode's own `init` and `review`, MCP prompts and skills
+  are not listed. `POST /session/:id/command` for an agent the command does
+  not list answers `403 { error: "command_not_enabled", command, agent }`.
+  The agent is the body's `agent`, else the session agent.
+- **Kortix-only keys.** `schema`, `skills`, `commands`, `extensions` and the
+  per-agent `extensions` and `codemode` are removed before OpenCode reads the
+  config. `OPENCODE_CONFIG_CONTENT` from the environment is not merged.
+- **Built-in agents.** The API sends `build`, `plan`, `general` and `explore`
+  as `{ disable: true }` unless the manifest declares them. OpenCode deletes
+  a disabled agent, so the `task` tool cannot start one.
+- **Session notice.** The config-release notice names `kortix.yaml` as the
+  file to edit.
 
 ## OpenCode instance guard
 

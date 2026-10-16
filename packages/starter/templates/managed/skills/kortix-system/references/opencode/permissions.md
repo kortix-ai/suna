@@ -4,6 +4,13 @@
 
 Control which actions require approval to run.
 
+> **In a Kortix project (`kortix_version: 3`):** `permission` is set per
+> agent, on `agents.<name>.permission` in `kortix.yaml`. There is no
+> project-wide permission and no `opencode.json`. Omitted, it is `allow`.
+> `skill` and `task` keys are errors: the agent's `skills` and `subagents`
+> grants compile to `permission.skill` and `permission.task` (each granted
+> name `allow`, then `"*": deny`). The rule syntax below applies unchanged.
+
 OpenCode uses the `permission` config to decide whether a given action should run automatically, prompt you, or be blocked.
 
 As of `v1.1.1`, the legacy `tools` boolean config is deprecated and has been merged into `permission`. The old `tools` config is still supported for backwards compatibility.

@@ -1,0 +1,166 @@
+---
+title: "Legacy manifests"
+description: "kortix_version 1 and 2: what still runs, how they differ from v3, and how to migrate a project to kortix_version 3."
+---
+
+`kortix_version` 3 is the current manifest. Versions 1 and 2 still read and run, and new features land in v3 only. This page is for people who maintain a v1 or v2 project or migrate one. For v3, see the [`kortix.yaml` reference](/docs/project/manifest).
+
+| Version | File | Agent behavior | Harness settings |
+| --- | --- | --- | --- |
+| `1` | `kortix.toml` or YAML, `[[agents]]` array | the agent `.md` | the harness config folder |
+| `2` | `kortix.yaml`, `agents:` map of grants | `agents/<name>.md`: frontmatter plus the prompt | `harnesses/opencode/`, `harnesses/pi/`, top-level `harnesses` |
+| `3` | `kortix.yaml`, `agents:` map of complete agents | the agent block in `kortix.yaml` | `extensions`, enabled per agent |
+
+## Migrate v2 to v3
+
+Run the migration from the project root:
+
+```bash
+kortix migrate            # print the v3 manifest, change nothing
+kortix migrate --write    # write it
+kortix validate
+```
+
+Commit the result and merge it with a change request. What changes:
+
+| v2 | v3 |
+| --- | --- |
+| `agents.<name>.file` and the agent `.md` frontmatter | behavior keys on the agent block; the `.md` body becomes `prompt_file` |
+| `disable: true` in the frontmatter | `enabled: false` |
+| top-level `tools`, `kortix:<name>` values | Kortix tools need no entry. `tools` registers project tools only. |
+| skills found in `skills/` and `.kortix/opencode/skills/` | `skills`: each skill registered by name and folder |
+| omitted agent `skills`: the `.md` rule decides | omitted agent `skills`: no skill |
+| `harnesses/opencode/commands/*.md`, pi `prompts/` | `commands`, enabled per agent |
+| `harnesses/opencode/plugins/`, `harnesses.opencode.plugins` | `extensions.<name>.opencode`, enabled per agent |
+| `harnesses.pi.packages`, agent `pi.packages` and `pi.exclude` | `extensions.<name>.pi`, enabled per agent |
+| `harnesses.pi.codemode` | `agents.<name>.codemode` |
+| `"permission"` in `opencode.jsonc` | `agents.<name>.permission`, per agent; omitted is `allow` |
+| OpenCode `build`, `plan`, `general`, `explore`; pi `general`, `explore` | off; declare the agents you want and grant them under `subagents` |
+| MCP servers in `opencode.jsonc` | `connectors` with `provider: mcp` |
+
+A v3 session reads nothing from `harnesses/`, `.kortix/`, `.opencode/` or `.pi/`. Delete those folders after the migration merges. A custom model provider in `opencode.jsonc` has no v3 key: see [Models](/docs/project/models).
+
+## kortix_version 2
+
+A v2 agent has two parts: governance in `kortix.yaml` and behavior in a Markdown file.
+
+`agents/support.md`:
+
+```markdown
+---
+description: Answers support tickets from the help desk.
+mode: primary
+permission:
+  bash: ask
+---
+
+You answer support tickets. Read the ticket, check the order history,
+draft a reply, and submit it for review. Never close a ticket yourself.
+```
+
+`kortix.yaml`:
+
+```yaml
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    file: agents/support.md
+    connectors: [helpdesk]
+    secrets: [HELPDESK_API_KEY]
+    skills: [kortix-cli, triage]
+    kortix_permissions: [project.session.read, project.review.submit]
+```
+
+### The agent file
+
+The frontmatter takes `description`, `model`, `mode`, `variant`, `temperature`, `top_p`, `steps`, `hidden`, `disable`, `options`, `color` and `permission`, with the same values as a v3 agent block. The body is the system prompt. A stock OpenCode agent file is valid as is. `tools` and `maxSteps` in the frontmatter are errors.
+
+- `file` names the agent file. Without it, Kortix reads `agents/<name>.md`, then `.kortix/opencode/agents/<name>.md`, or `<opencode.config_dir>/agents/<name>.md` when that key is set.
+- The path ends in `.md`, does not start with `/` or `-`, and has no `.`, `..` or empty segment.
+- The API refuses a request that changes `file` (`400`, `invalid_config`). To move an agent, move its `.md` and edit `file` in the same commit.
+- `enabled: false` in `kortix.yaml` turns the agent off whatever `disable` says.
+
+### The v2 agent block
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `file` | `agents/<name>.md` | The agent `.md`. |
+| `enabled` | `true` | `false`: Kortix does not start the agent. |
+| `connectors`, `secrets`, `apps`, `kortix_permissions` | none | Grant sets, as in v3. |
+| `skills` | the `.md` decides | Set, it replaces `permission.skill` in the agent file. Omitted, the file's rule applies. |
+| `tools` | all | `all`, `none`, a list, `{ exclude: [names] }`, or the map form `{ bash: false }`. |
+| `sandbox`, `workspace`, `network_egress` | as in v3 | |
+| `harnesses` | none | `pi.packages`, `pi.exclude`, `pi.codemode`, `opencode.plugins`, `opencode.exclude`. |
+
+A behavior key (`model`, `mode`, `prompt`, `permission`, …) in a v2 block is an error that points at the agent file. Deprecated aliases warn: `connectors_personal` (use `connectors_required`), `kortix_cli` (use `kortix_permissions`), `repository_access` (use `workspace.project_repository`).
+
+The dashboard agent editor and `kortix agents scope`, `config` and `default` edit v2 manifests.
+
+### Harness folders and keys
+
+| Key | Default | Holds |
+| --- | --- | --- |
+| `opencode.config_dir` | `harnesses/opencode`, then `.kortix/opencode` | `opencode.jsonc` (plugins, MCP servers, providers, `permission`, `subagent_depth`), `plugins/`, `tools/`, `commands/` |
+| `pi.config_dir` | `harnesses/pi`, then `.kortix/pi` | `settings.json`, `extensions/`, `skills/`, `prompts/` |
+
+`harnesses.pi.packages` lists the pi packages every pi session loads. An entry is `npm:<name>@<x.y.z>`, a `./` repository path, or `{ source, extensions, skills, prompts, themes }`, at most 20 entries. An agent loads the top-level list, minus its `harnesses.pi.exclude`, plus its own `harnesses.pi.packages`.
+
+```yaml
+runtime: pi
+harnesses:
+  pi:
+    codemode: on
+    packages:
+      - npm:pi-web-access@0.30.0
+      - ./extensions/audit.ts
+agents:
+  reviewer:
+    harnesses:
+      pi:
+        exclude: [pi-web-access]
+        codemode: off
+```
+
+`harnesses.pi.codemode` sets pi's codemode tool for every agent, and an agent's value replaces it. `harnesses.opencode.plugins` lists the files in `<opencode config dir>/plugins/` that load. Without it, every plugin file loads.
+
+### Tools in v2
+
+The top-level `tools` key selects Kortix tools and declares project tools:
+
+```yaml
+tools:
+  web_search: kortix:web_search
+  memory: kortix:memory
+  lookup_order: tools/lookup_order.ts
+```
+
+With no `tools` key, sessions get all seven Kortix tools. With a `tools` key in any file, sessions get only the Kortix tools it lists. OpenCode also loads tool files from `<opencode config dir>/tools/`. A file there wins over a Kortix or project tool of the same name on OpenCode, and pi does not read it.
+
+### Skills in v2
+
+A session reads skills from the managed `kortix-*` skills, then `skills/`, then `.kortix/opencode/skills/`. pi also reads `harnesses/pi/skills/`. The first skill of a name wins.
+
+### Imports in v2
+
+An imported v2 file declares `triggers`, `connectors`, `agents`, `apps`, `tools`, `skills`, `commands`, `extensions` and `imports`. Kortix drops any other key in an imported v2 file, for example `harnesses`. In v3 such a key is an error.
+
+## kortix_version 1
+
+Kortix reads and runs a v1 `kortix.toml`. A v1 project with no agents declared runs ungoverned: its sessions act as the person who started them. To move it to v2, open **Customize → Settings → Upgrades** and run **Migrate manifest to v2 (kortix.yaml)**, or run:
+
+```bash
+kortix projects upgrade [<id>]
+```
+
+Both start a session with the project's default agent. The agent rewrites the manifest, runs `kortix validate` and opens a change request. The session never merges it. Then run `kortix migrate` to move the v2 result to v3.
+
+To migrate v1 to v2 by hand:
+
+1. Turn the `[[agents]]` array into the `agents:` map, keyed by name, and add `default_agent`.
+2. Rename each agent `env` to `secrets`. v1 gives an agent every secret when `env` is omitted. v2 gives none, so list every secret and connector each agent needs.
+3. Delete `[[channels]]` and reconnect each channel from the dashboard.
+4. Write each `[[sandbox.templates]]`, `[[triggers]]` and `[[connectors]]` table as a YAML list entry with the same fields.
+5. Remove `credential = "per_user"`, `agent_scope`, and the no-op `kortix_permissions` entries. All three are errors in v2.
+6. Run `kortix validate --file kortix.yaml`, then delete `kortix.toml`.
