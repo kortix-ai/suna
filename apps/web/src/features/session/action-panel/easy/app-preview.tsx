@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { ProjectAppsGrid } from '@/features/apps/apps-view';
+import { useAppInBrowser, withoutAppAccessToken } from '@/features/apps/app-in-browser';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
@@ -45,9 +45,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   PreviewLoadingOverlay,
-  PreviewRecentsLanding,
   SandboxAddressBar,
 } from '../shared/sandbox-browser-chrome';
+import { BrowserLanding } from '../shared/browser-landing';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PREVIEW_MAX_WAIT_MS,
@@ -127,8 +127,23 @@ export function AppPreview({
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
   // Null while the auth token is still being fetched — the landing state holds.
-  const previewUrl = useAuthenticatedPreviewUrl(proxied);
+  const authenticatedUrl = useAuthenticatedPreviewUrl(proxied);
+  // A project App frames signed in, on its own origin (`useAppInBrowser`).
+  const { app, apps, src: previewUrl } = useAppInBrowser(projectId, authenticatedUrl);
   const hasPreview = !!previewUrl;
+  // A Kortix App is named by its App, not by its route-key host.
+  const title = app?.name ?? name;
+  const suggestions = useMemo(() => apps.map((row) => ({ label: row.name, url: row.url })), [apps]);
+  const appCopy = useMemo(
+    () =>
+      app
+        ? {
+            ariaLabel: tI18nComplete.raw('text9adff6870471'),
+            run: () => navigator.clipboard.writeText(withoutAppAccessToken(current)),
+          }
+        : undefined,
+    [app, current, tI18nComplete],
+  );
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -296,13 +311,14 @@ export function AppPreview({
           onReload={reload}
           onHome={() => navigateTo('')}
           onNavigate={navigateTo}
+          suggestions={suggestions}
           placeholder={tI18nComplete.raw('text878abd024f27')}
           inputRef={addressRef}
           trailing={
             // An app has no file to save and no text to put on a clipboard, so
             // `Copy link` is the one copy action — the thing you can hand
             // someone for a running port.
-            <ViewerActions shareContext={shareContext} shareInput={shareInput} />
+            <ViewerActions copy={appCopy} shareContext={shareContext} shareInput={shareInput} />
           }
         />
 
@@ -343,7 +359,7 @@ export function AppPreview({
             icon={WarningIcon}
             size="sm"
             className="bg-background absolute inset-0 z-10"
-            title={tI18nComplete('textba601cdb484b', { value0: name })}
+            title={tI18nComplete('textba601cdb484b', { value0: title })}
             /* The single most common cause, said plainly: the agent started the
                server a moment ago and it isn't listening yet. Only a SETTLED
                `dead` verdict earns the stopped-workspace wording — see
@@ -366,33 +382,24 @@ export function AppPreview({
         )}
 
         {noApp ? (
-          /* Landing — the project's Apps, then recent ports (the same list
-             BrowserPanel's landing shows); a quiet search hint when neither. */
+          /* Landing — the project's Apps and recent ports as one timeline
+             (`BrowserLanding`); a quiet search hint when there is neither. */
           <div className="flex h-full flex-col overflow-y-auto">
-            {projectId ? (
-              <ProjectAppsGrid
-                projectId={projectId}
-                onOpen={navigateTo}
-                empty={localhostRecents.length > 0 ? null : <SearchHint />}
-              />
-            ) : localhostRecents.length > 0 ? null : (
-              <SearchHint />
-            )}
-            {localhostRecents.length > 0 ? (
-              <PreviewRecentsLanding
-                recents={localhostRecents}
-                onOpen={(url) => {
-                  const parsed = parseLocalhostUrl(url);
-                  if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
-                }}
-              />
-            ) : null}
+            <BrowserLanding
+              projectId={projectId}
+              recents={localhostRecents}
+              empty={<SearchHint />}
+              onOpen={(url) => {
+                const parsed = parseLocalhostUrl(url);
+                navigateTo(parsed ? toInternalUrl(parsed.port, parsed.path) : url);
+              }}
+            />
           </div>
         ) : hasPreview ? (
           <iframe
             key={refreshKey}
             src={previewUrl}
-            title={name}
+            title={title}
             className="h-full w-full border-0"
             sandbox={framePolicy('app', previewUrl).sandbox}
             onLoad={() => {

@@ -15,7 +15,6 @@ import {
 import { Home } from '@/features/icon/icons/home';
 import {
   parseAddressInput,
-  PreviewRecentsLanding,
   SandboxAddressBar,
   splitUrlForDisplay,
 } from './sandbox-browser-chrome';
@@ -93,6 +92,19 @@ describe('parseAddressInput — the sandbox-port address grammar', () => {
     expect(parseAddressInput('http://localhost:3000/docs')).toBe('http://localhost:3000/docs');
     expect(parseAddressInput('localhost:3005/app?q=1')).toBe('http://localhost:3005/app?q=1');
     expect(parseAddressInput('3000/docs')).toBe('http://localhost:3000/docs');
+  });
+
+  test('a Kortix App URL is kept, and gets its scheme when typed bare', () => {
+    expect(parseAddressInput('https://dev-crm-0123456789abcdef.apps.kortix.com/deals')).toBe(
+      'https://dev-crm-0123456789abcdef.apps.kortix.com/deals',
+    );
+    expect(parseAddressInput('dev-crm-0123456789abcdef.apps.kortix.com')).toBe(
+      'https://dev-crm-0123456789abcdef.apps.kortix.com',
+    );
+    expect(parseAddressInput('0123456789abcdef.apps.localhost:14008/x')).toBe(
+      'http://0123456789abcdef.apps.localhost:14008/x',
+    );
+    expect(parseAddressInput('github.com')).toBeNull();
   });
 
   test('an empty or blank draft parses to nothing', () => {
@@ -205,39 +217,6 @@ describe('SandboxAddressBar — the shared toolbar', () => {
   });
 });
 
-describe('PreviewRecentsLanding — the shared recents list', () => {
-  test('renders one row per recent with its display label', () => {
-    const html = render(
-      <PreviewRecentsLanding
-        recents={[{ url: 'http://localhost:3000' }, { url: 'http://localhost:8080/x' }]}
-        onOpen={noop}
-      />,
-    );
-    expect(html).toContain('>Recents</h3>');
-    expect(html).toContain('localhost:3000');
-    expect(html).toContain('localhost:8080/x');
-    expect(html.match(/<button/g)?.length).toBe(2);
-  });
-
-  test('the default row icon is the Globe span; renderIcon overrides it', () => {
-    const html = render(
-      <PreviewRecentsLanding recents={[{ url: 'http://localhost:3000' }]} onOpen={noop} />,
-    );
-    expect(html).toContain('<svg');
-    expect(html).toContain('class="text-muted-foreground/60 size-4"');
-
-    const custom = render(
-      <PreviewRecentsLanding
-        recents={[{ url: 'http://localhost:3000' }]}
-        onOpen={noop}
-        renderIcon={() => <b data-testid="favicon" />}
-      />,
-    );
-    expect(custom).toContain('data-testid="favicon"');
-    expect(custom).not.toContain('class="text-muted-foreground/60 size-4"');
-  });
-});
-
 /**
  * Both surfaces render the SAME toolbar: the control set lives in
  * `SandboxAddressBar`, so each adopter only wires its own model (history
@@ -283,8 +262,8 @@ describe('the two surfaces render the shared chrome', () => {
     }
   });
 
-  test('both landings render the shared recents list', () => {
-    expect(browserPanelSource).toContain('<PreviewRecentsLanding');
-    expect(appPreviewSource).toContain('<PreviewRecentsLanding');
+  test('both landings render the one Apps + recents timeline', () => {
+    expect(browserPanelSource).toContain('<BrowserLanding');
+    expect(appPreviewSource).toContain('<BrowserLanding');
   });
 });

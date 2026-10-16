@@ -22,6 +22,9 @@ globals.location = win.location;
 // Persisted stores read the bare `localStorage` binding at import.
 globals.localStorage = win.localStorage;
 globals.sessionStorage = win.sessionStorage;
+// Other files in the same `bun test` process see these globals too; a
+// `window` without `customElements` breaks their web-component imports.
+globals.customElements = win.customElements;
 for (const key of Object.getOwnPropertyNames(win)) {
   if (/^[A-Z]/.test(key) && !(key in globals)) globals[key] = Reflect.get(win, key);
 }
@@ -56,7 +59,7 @@ function click(href: string): MouseEvent {
   anchor.target = '_blank';
   host.appendChild(anchor);
   const event = new win.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
-  anchor.dispatchEvent(event);
+  anchor.dispatchEvent(event as unknown as Event);
   anchor.remove();
   return event as unknown as MouseEvent;
 }

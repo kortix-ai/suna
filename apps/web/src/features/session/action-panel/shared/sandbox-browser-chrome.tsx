@@ -26,19 +26,18 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { Home } from '@/features/icon/icons/home';
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
-import { recentDisplayLabel } from '@/stores/browser-recents-store';
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
-  GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
 } from '@phosphor-icons/react';
 import type { FormEvent, ReactNode, RefObject } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 /** Split a URL so the hostname can be rendered brighter than the rest. */
 export function splitUrlForDisplay(
@@ -57,18 +56,23 @@ export function splitUrlForDisplay(
 /**
  * Normalize an address-bar draft into the internal localhost URL it names.
  *
- * This bar controls the sandbox's local PORTS only — not arbitrary external
- * sites — so we accept a bare port, `:port`, `localhost:port`,
- * `127.0.0.1:port`, or a full localhost URL (each optionally followed by a
- * path). Anything else (e.g. `google.com`) is rejected inline rather than
- * attempting to browse it.
+ * This bar controls the sandbox's local PORTS and Kortix Apps only — not
+ * arbitrary external sites — so we accept a bare port, `:port`,
+ * `localhost:port`, `127.0.0.1:port`, or a full localhost URL (each optionally
+ * followed by a path), and a Kortix App URL with or without its scheme.
+ * Anything else (e.g. `google.com`) is rejected inline rather than attempting
+ * to browse it.
  *
- * Returns `http://localhost:<port><path>`, or null when the input is empty or
- * names no sandbox port.
+ * Returns `http://localhost:<port><path>` or the App URL, or null when the
+ * input is empty or names neither.
  */
 export function parseAddressInput(value: string): string | null {
   let url = value.trim();
   if (!url) return null;
+
+  const scheme = /\.apps\.localhost(?::\d+)?(?:[/?#]|$)/i.test(url) ? 'http' : 'https';
+  const appUrl = /^https?:\/\//i.test(url) ? url : `${scheme}://${url}`;
+  if (isKortixAppUrl(appUrl)) return appUrl;
 
   if (/^\d{1,5}(?:[/?#]|$)/.test(url)) {
     url = `http://localhost:${url}`;
@@ -102,6 +106,7 @@ export function SandboxAddressBar({
   onReload,
   onHome,
   onNavigate,
+  suggestions = [],
   placeholder,
   ariaLabel,
   inputRef,
@@ -119,9 +124,12 @@ export function SandboxAddressBar({
   onReload: () => void;
   /** Back to the browser's landing (the project's Apps and recents). */
   onHome: () => void;
-  /** Called with the internal `http://localhost:<port><path>` URL after the
-   *  draft parses as a sandbox port. */
+  /** Called with the internal `http://localhost:<port><path>` URL or a Kortix
+   *  App URL, after the draft parses as one, or names a `suggestions` entry. */
   onNavigate: (internalUrl: string) => void;
+  /** Named destinations the bar completes (the project's Apps). Typing a
+   *  label opens its URL. */
+  suggestions?: readonly { label: string; url: string }[];
   placeholder: string;
   ariaLabel?: string;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -158,7 +166,10 @@ export function SandboxAddressBar({
       e.preventDefault();
       if (!addressValue.trim()) return;
 
-      const internal = parseAddressInput(addressValue);
+      const wanted = addressValue.trim().toLowerCase();
+      const internal =
+        suggestions.find((entry) => entry.label.toLowerCase() === wanted)?.url ??
+        parseAddressInput(addressValue);
       if (!internal) {
         setAddressError(true);
         return;
@@ -168,8 +179,9 @@ export function SandboxAddressBar({
       setIsEditing(false);
       onNavigate(internal);
     },
-    [addressValue, onNavigate],
+    [addressValue, onNavigate, suggestions],
   );
+  const suggestionsId = useId();
 
   return (
     <>
@@ -226,6 +238,7 @@ export function SandboxAddressBar({
                 size="xs"
                 value={urlParts ? displayValue : addressValue}
                 aria-label={ariaLabel}
+                list={suggestions.length ? suggestionsId : undefined}
                 onChange={(e) => {
                   setAddressValue(e.target.value);
                   if (addressError) setAddressError(false);
@@ -245,7 +258,8 @@ export function SandboxAddressBar({
                 }}
                 placeholder={placeholder}
                 className={cn(
-                  'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none focus:ring-0',
+                  // The `<datalist>` suggestions must not paint Chrome's dropdown arrow.
+                  'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none focus:ring-0 [&::-webkit-calendar-picker-indicator]:hidden',
                   urlParts && 'text-transparent',
                 )}
               />
@@ -262,6 +276,13 @@ export function SandboxAddressBar({
                 </span>
               )}
             </div>
+            {suggestions.length ? (
+              <datalist id={suggestionsId}>
+                {suggestions.map((entry) => (
+                  <option key={entry.url} value={entry.label} />
+                ))}
+              </datalist>
+            ) : null}
             {addressError && (
               <span className="text-kortix-red shrink-0 text-xs">
                 {tI18nComplete.raw('textce1e609b7bf5')}
@@ -299,54 +320,6 @@ export function PreviewLoadingOverlay({ label }: { label: string }) {
         <Loading className="size-4" />
         <p className="text-xs">{label}</p>
       </div>
-    </div>
-  );
-}
-
-/**
- * The landing list of recently opened URLs, shared by both surfaces'
- * empty-state landings. `renderIcon` overrides the default Globe span —
- * `BrowserPanel` shows a favicon for external URLs.
- */
-export function PreviewRecentsLanding({
-  recents,
-  onOpen,
-  renderIcon,
-}: {
-  recents: readonly { url: string }[];
-  onOpen: (url: string) => void;
-  renderIcon?: (url: string) => ReactNode;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <div className="mx-auto w-full max-w-md px-6 py-12">
-      <section className="space-y-3">
-        <h3 className="text-muted-foreground px-2 text-sm">
-          {tI18nComplete.raw('text41a86988751a')}
-        </h3>
-        <ul className="space-y-1">
-          {recents.map((recent) => (
-            <li key={recent.url}>
-              <button
-                type="button"
-                onClick={() => onOpen(recent.url)}
-                className="hover:bg-foreground/5 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors active:scale-[0.99]"
-              >
-                {renderIcon ? (
-                  renderIcon(recent.url)
-                ) : (
-                  <span className="flex size-5 shrink-0 items-center justify-center">
-                    <Globe className="text-muted-foreground/60 size-4" />
-                  </span>
-                )}
-                <span className="text-foreground/90 min-w-0 flex-1 truncate text-sm">
-                  {recentDisplayLabel(recent.url)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
     </div>
   );
 }

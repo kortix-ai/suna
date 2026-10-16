@@ -9,8 +9,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { FaviconAvatar } from '@/components/ui/favicon-avatar';
-import { ProjectAppsGrid } from '@/features/apps/apps-view';
+import { useAppInBrowser, withoutAppAccessToken } from '@/features/apps/app-in-browser';
+import { successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { isKortixAppUrl } from '@/features/session/kortix-app-url';
@@ -44,7 +44,8 @@ import type { CreateSessionPublicShareInput } from '@kortix/sdk';import {
   GearSixIcon as Settings2,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PreviewLoadingOverlay, PreviewRecentsLanding, SandboxAddressBar } from './shared/sandbox-browser-chrome';
+import { BrowserLanding } from './shared/browser-landing';
+import { PreviewLoadingOverlay, SandboxAddressBar } from './shared/sandbox-browser-chrome';
 
 interface PreviewTabContentProps {
   tabId: string;
@@ -125,7 +126,26 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   // Inject auth token for cloud preview proxy URLs.
   // Returns null while auth is in progress — the landing state below renders
   // until the token is ready.
-  const previewUrl = useAuthenticatedPreviewUrl(proxiedPreviewUrl);
+  const authenticatedUrl = useAuthenticatedPreviewUrl(proxiedPreviewUrl);
+  // A project App frames signed in, on its own origin (`useAppInBrowser`).
+  const { app, apps, src: previewUrl } = useAppInBrowser(projectId, authenticatedUrl);
+  const suggestions = useMemo(() => apps.map((row) => ({ label: row.name, url: row.url })), [apps]);
+
+  // Name the tab after its App, not its route-key host. A direct store write:
+  // `openTab` would also activate the tab.
+  useEffect(() => {
+    if (!app || !tab || tab.title === app.name) return;
+    useTabStore.setState((state) =>
+      state.tabs[tabId] ? { tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], title: app.name } } } : state,
+    );
+  }, [app, tab, tabId]);
+
+  const copyAppLink = useCallback(() => {
+    void navigator.clipboard.writeText(withoutAppAccessToken(originalUrl)).then(
+      () => successToast(tI18nComplete.raw('textd12860c21e78')),
+      () => undefined,
+    );
+  }, [originalUrl, tI18nComplete]);
 
   useEffect(() => {
     if (!proxiedPreviewUrl) return;
@@ -333,7 +353,6 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   }, [fullUrl, isExternalBrowsing, originalUrl, port, tab?.metadata?.path, tab?.title]);
 
   const hasPreview = !!previewUrl;
-  const showRecents = mounted && recents.length > 0;
   const emptyState = (
     <EmptyState
       icon={Globe}
@@ -374,6 +393,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           onReload={handleRefresh}
           onHome={handleHome}
           onNavigate={navigateTo}
+          suggestions={suggestions}
           placeholder={tHardcodedUi.raw(
             'autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9',
           )}
@@ -403,8 +423,8 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               )}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={shareLink.copyLink}
-              disabled={!canShare || shareLink.isPending}
+              onClick={app ? copyAppLink : shareLink.copyLink}
+              disabled={app ? false : !canShare || shareLink.isPending}
             >
               <Link2 />
               {tHardcodedUi.raw('i18nComplete.text8a29ed34cf47')}
@@ -476,9 +496,11 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
             key={refreshKey}
             src={previewUrl}
             title={
-              isExternalBrowsing
-                ? tI18nComplete('text62132c007f48', { value0: originalUrl })
-                : tI18nComplete('text8d0218f233bb', { value0: port })
+              app
+                ? app.name
+                : isExternalBrowsing
+                  ? tI18nComplete('text62132c007f48', { value0: originalUrl })
+                  : tI18nComplete('text8d0218f233bb', { value0: port })
             }
             className="h-full w-full border-0"
             sandbox={framePolicy('app', previewUrl).sandbox}
@@ -487,29 +509,15 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           />
         </div>
       ) : (
-        /* Landing — the project's Apps, then recent URLs; helper copy when
-           there is neither. */
+        /* Landing — the project's Apps and recent URLs as one timeline
+           (`BrowserLanding`); helper copy when there is neither. */
         <div className="flex flex-1 flex-col overflow-y-auto">
-          {projectId ? (
-            <ProjectAppsGrid
-              projectId={projectId}
-              onOpen={navigateTo}
-              empty={showRecents ? null : emptyState}
-            />
-          ) : showRecents ? null : (
-            emptyState
-          )}
-          {showRecents ? (
-            <PreviewRecentsLanding
-              recents={recents}
-              onOpen={navigateTo}
-              renderIcon={(url) =>
-                isExternalUrl(url) ? (
-                  <FaviconAvatar value={url} size="xs" className="shrink-0" />
-                ) : undefined
-              }
-            />
-          ) : null}
+          <BrowserLanding
+            projectId={projectId}
+            recents={mounted ? recents : []}
+            onOpen={navigateTo}
+            empty={emptyState}
+          />
         </div>
       )}
     </div>
