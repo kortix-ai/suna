@@ -1430,6 +1430,7 @@
     "kortixSignInHref",
     "kortixSignOutHref",
     "livenessBusy",
+    "loadSessionExportMessages",
     "loadSessionRuntimeStatus",
     "loadSessionTranscriptMessages",
     "logRuntimeEvent",

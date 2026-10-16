@@ -548,7 +548,7 @@
         },
         "computer": {
           "label": "Computador",
-          "description": "Deixe os agentes do Kortix trabalharem com os arquivos, o terminal e os apps do seu computador."
+          "description": "Deixe os agentes do Kortix trabalharem com os arquivos, o terminal e os aplicativos do seu computador."
         }
       }
     },

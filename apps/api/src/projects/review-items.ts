@@ -97,7 +97,15 @@ export function serializeReviewItem(row: ReviewItemRow) {
   };
 }
 
+/**
+ * One native review item by id, scoped to its project. A non-uuid id can never
+ * match the uuid column — Postgres would answer 22P02 and the request would
+ * die as a 500 (KRTX-2442: a client sent `nonexistent-item` to the act and
+ * bulk endpoints). Answer like a miss instead, the same contract `getInboxItem`
+ * keeps for an id that is not a uuid.
+ */
 export async function getReviewItemById(reviewItemId: string, projectId: string) {
+  if (!isUuid(reviewItemId)) return null;
   const [row] = await db
     .select()
     .from(reviewItems)
@@ -608,6 +616,8 @@ export async function applyVerdict(
   projectId: string,
   opts: { verdict: ReviewVerdict; feedback?: string | null; actingUserId: string },
 ) {
+  // Same 22P02 contract as `getReviewItemById`: a non-uuid id is a miss (KRTX-2442).
+  if (!isUuid(reviewItemId)) return null;
   const [row] = await db
     .update(reviewItems)
     .set({
@@ -628,7 +638,10 @@ export async function bulkApplyVerdict(
   projectId: string,
   opts: { verdict: ReviewVerdict; actingUserId: string },
 ) {
-  if (reviewItemIds.length === 0) return [];
+  // An id that is not a uuid would make the whole batch die on the uuid cast
+  // (22P02, KRTX-2442): drop it and apply the verdict to the rest.
+  const ids = reviewItemIds.filter((id) => isUuid(id));
+  if (ids.length === 0) return [];
   return db
     .update(reviewItems)
     .set({
@@ -638,7 +651,7 @@ export async function bulkApplyVerdict(
       updatedAt: new Date(),
     })
     .where(
-      and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, reviewItemIds)),
+      and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, ids)),
     )
     .returning();
 }

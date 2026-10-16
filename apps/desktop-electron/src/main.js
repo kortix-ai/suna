@@ -16,7 +16,7 @@
 // `window.__TAURI__` bridge shape (see preload.js) so the web app's desktop
 // bridge (apps/web/src/lib/desktop.ts) runs UNCHANGED.
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage, clipboard, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeImage, nativeTheme, safeStorage, clipboard, globalShortcut } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
@@ -38,6 +38,7 @@ const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
 const { setupComputer } = require('./computer-tray');
+const { setAttentionBadge } = require('./attention-badge');
 const { setupQuickEntry } = require('./quick-entry');
 const { SHORTCUTS, shortcutLabel } = require('./quick-entry-rules');
 
@@ -460,6 +461,8 @@ function createMainWindow() {
   // Go menu state follows every committed navigation, including the App
   // Router's same-document ones.
   mainWindow.webContents.on('did-navigate', refreshNavigationMenu);
+  // A new document starts with nothing unseen; its page re-sends the count.
+  mainWindow.webContents.on('did-navigate', clearAttentionBadge);
   mainWindow.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
     if (isMainFrame) refreshNavigationMenu();
   });
@@ -545,6 +548,7 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     if (persistTimer) clearTimeout(persistTimer);
+    clearAttentionBadge();
     mainWindow = null;
     quickEntry?.close();
   });
@@ -1136,6 +1140,14 @@ function isTrustedSender(event) {
   }
 }
 
+function showAttentionBadge(count) {
+  setAttentionBadge({ app, window: mainWindow, nativeImage, platform: process.platform }, count);
+}
+
+function clearAttentionBadge() {
+  showAttentionBadge(0);
+}
+
 function registerIpc() {
   // Single funnel matching the Tauri `core.invoke(cmd, args)` contract so the
   // web app's existing calls (set_zoom / open_external / get_frontend_url /
@@ -1193,6 +1205,10 @@ function registerIpc() {
         if (saveError) throw new Error(`Kortix could not save the URL: ${saveError}`);
         return null;
       }
+      case 'set_badge_count':
+        // Finished turns the user has not seen yet (web TurnAttentionBadge).
+        showAttentionBadge(args.count);
+        return null;
       case 'quick_entry_take':
         // The prompt typed in the Quick Entry bar, once (null when none).
         return quickEntry?.take() ?? null;
