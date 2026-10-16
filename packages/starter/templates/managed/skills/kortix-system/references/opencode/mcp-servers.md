@@ -4,13 +4,6 @@
 
 Add local and remote MCP tools.
 
-> **In a Kortix project (`kortix_version: 3`):** OpenCode's `mcp` config is
-> not read. Declare an MCP server as a connector in `kortix.yaml`
-> (`connectors:` entry with `provider: mcp` and `url`), and grant it per
-> agent with `agents.<name>.connectors`. Agents call it through the
-> `kortix connectors` CLI and the `kortix-connectors_call` tool. The
-> `kortix-connectors` skill has the details.
-
 You can add external tools to OpenCode using the _Model Context Protocol_, or MCP. OpenCode supports both local and remote servers.
 
 Once added, MCP tools are automatically available to the LLM alongside built-in tools.

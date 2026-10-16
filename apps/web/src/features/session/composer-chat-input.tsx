@@ -295,6 +295,7 @@ export function ComposerChatInput({
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
       commands={commands || []}
+      commandsResolved={commands !== undefined}
       draftScope={draftScope}
       draftActive={draftActive}
       submitLabel={submitLabel}

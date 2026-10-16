@@ -14,7 +14,7 @@
  *   never a second one: two unpinned shared accounts leave no default.
  * - That empty shared account is a placeholder: it is not listed, so a new
  *   connector reads "has no account", never "Everyone in <project>".
- * - The form starts on MCP and proposes the slug from the URL's host.
+ * - The form proposes the slug from the URL's domain.
  * - Removing a connector lands on the list with no "connector not found".
  */
 import { randomUUID } from "node:crypto";
@@ -150,8 +150,9 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     await page.getByRole("menuitem", { name: /^Add a custom connector/i }).click();
     const form = page.getByRole("dialog", { name: /^Add a custom connector$/i });
     await expect(form).toBeVisible();
-    // MCP is the default: pasting a server URL is the whole first step.
-    await expect(form.getByRole("combobox", { name: "Provider" })).toHaveText("MCP");
+    await form.getByRole("combobox", { name: "Provider" }).click();
+    await page.getByRole("option", { name: "MCP", exact: true }).click();
+    // The server has not named itself yet: the slug comes from the URL's domain.
     await form.getByLabel("URL", { exact: true }).fill(unreachableMcp);
     await expect(form.getByLabel("Slug")).toHaveValue("example");
     await form.getByLabel("Slug").fill(slug);

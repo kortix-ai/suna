@@ -376,6 +376,23 @@ describe('the composer submits through the latch', () => {
     );
   });
 
+  test('the dispatch closure lists commandsResolved in its deps, beside commands', () => {
+    // The unresolved-chip guard (KRTX-1903) reads `commandsResolved` inside
+    // `dispatchSubmission`. The list and the bit flip together in today's
+    // hosts (both derive from one query datum), but nothing obliges a host to
+    // keep that coincidence — the bit is a separate prop. A deps array that
+    // omits it freezes the closure on the first render's value: a chip +
+    // attachment stays refused after the list resolves (and exhaustive-deps
+    // flags the omission today).
+    const dispatch = between(
+      'const dispatchSubmission = useCallback(',
+      'const dispatchSubmissionRef = useRef',
+    );
+    const deps = dispatch.slice(dispatch.lastIndexOf('['), dispatch.lastIndexOf(']') + 1);
+    expect(deps).toContain('commandsResolved');
+    expect(deps).toContain('commands');
+  });
+
   test('a stashed dispatch reports whether the host took the draft', () => {
     // Every refusal before the host is a bare `return;`, which `dispatchLatched`
     // reads as "give the stash back". Only three exits count as taken.

@@ -17,6 +17,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
 import { connectorHeaderCta } from './connector-header-cta';
+import { connectorUsable } from './connector-status';
 
 export type CredentialTarget = { connectionId: string; owner: 'project' | 'me' };
 
@@ -68,7 +69,7 @@ export function useConnectorDetail({
   // Server-computed and account-aware: `needs_auth` means no reachable account
   // holds a usable credential, whatever the owner type.
   const setupStatus = connectorSetupStatus(connector);
-  const connected = setupStatus === 'connected' || setupStatus === 'user_managed';
+  const connected = connectorUsable(setupStatus, accounts.length);
 
   const refreshAccounts = () => {
     void connectionsQuery.refetch();

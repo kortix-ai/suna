@@ -1272,9 +1272,9 @@
       "oneOffDescription": "Descreva uma única alteração. Uma sessão a realiza, valida e abre uma solicitação de alteração.",
       "oneOffPlaceholder": "ex. Renomeie o agente release-bot para deploy-bot em todas as referências",
       "runUpgrade": "Executar atualização",
-      "manifestV3": {
-        "title": "Atualizar o manifesto para v3 (kortix.yaml)",
-        "description": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
+      "manifestV2": {
+        "title": "Migrar o manifesto para v2 (kortix.yaml)",
+        "description": "Converte o kortix.toml v1 no kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
       },
       "agentEditorHint": "Este projeto usa um manifesto da versão 1. Atualize-o para <code>kortix.yaml</code> versão 3 para editar aqui as instruções, o modelo, as permissões de ferramentas e o acesso deste agente."
     },
@@ -1594,8 +1594,8 @@
       "localComputer": "Seu computador"
     },
     "manifestUpgrade": {
-      "title": "Atualizar para v3",
-      "description": "Este projeto usa um manifesto anterior. Um agente leva-o para <yaml>kortix.yaml</yaml> versão 3, atualiza as competências geridas e abre um pedido de alteração. Nada muda até à sua aprovação.",
+      "title": "Atualizar para v2",
+      "description": "Este projeto ainda usa <toml>kortix.toml</toml>. Um agente converte-o em <yaml>kortix.yaml</yaml>, atualiza as competências geridas e abre um pedido de alteração. Nada muda até à sua aprovação.",
       "start": "Iniciar atualização"
     },
     "filter": {
@@ -2135,6 +2135,7 @@
     "queuedActions": "Ações da mensagem",
     "steerNextStep": "Lido no próximo passo",
     "queuedByAnotherMember": "Enviada por outro membro. Só essa pessoa pode editá-la ou enviá-la.",
+    "commandRunsWhenDone": "Executa quando o agente terminar",
     "steerFallbackUnsupported": "Aguarda este turno. Esta sessão não aceita mensagens durante um turno.",
     "steerFallbackNotPrompter": "Aguarda este turno. Outro membro o iniciou.",
     "steerFallbackTurnEnded": "Executa como um turno próprio. O turno terminou antes.",
@@ -15076,7 +15077,7 @@
       "text967549497036": "Desmarcar todos",
       "text9676bdc9332f": "Conectar minha conta",
       "text96879611650f": "ativo",
-      "text968cf44e4d9c": "Um comando inicia seu próprio turno, então interromperia este turno.",
+      "text1d28e1a19048": "Envie novamente quando este turno terminar. Enviar agora interromperia o turno.",
       "text968d0a9d24a6": "Copiar snippet",
       "text9696f2b4e020": "my-api",
       "text969a25894852": "Migrar para outro provedor…",
@@ -16659,7 +16660,6 @@
       "textc3bf78fdd3b9": "Não foi possível enviar sua inscrição",
       "textc3c25857485f": "Faz",
       "textc3c709a999c1": "Lendo a memória…",
-      "text7823a1f3af93": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Termos e condições",
       "textc3e58a73609d": "Destrutivo",
@@ -17362,7 +17362,7 @@
       "textd728c56ec935": "Atua como essa pessoa no Kortix",
       "textd72e311c4dda": "Minimizar",
       "textd75025a6a12f": "Traga",
-      "textd780563bef66": "Aguarde o agente terminar antes de executar um comando.",
+      "text634e8a443a91": "Comando não enviado. O agente ainda está trabalhando.",
       "textd787477fa89b": "Removido do grupo",
       "textd78d6709320c": "Escrito com base nas evidências e no código existente — ele lê o repositório, então o rascunho sabe qual das três propostas já está quase pronta. É um rascunho para discutir, não um plano a aceitar.",
       "textd78ffa71af82": "O agente redige a resposta e chega a send_email.",
@@ -17400,7 +17400,6 @@
       "textd83a0d814c59": "API Status mostra um \"Enabled\" verde, o parâmetro \"SCIM Username\" está mapeado para Email e o provisionamento está ativado sem a retenção de aprovação do administrador.",
       "textd84b8be91e7b": "Kortix — Apresentações",
       "textd84ee1e1e08b": "tente kortix init ou / para ver os comandos",
-      "text08edd5b6dcdc": "Atualizar o manifesto para v3 (kortix.yaml)",
       "textd861cc0af73c": "kortix init cria a estrutura, e kortix ship coloca tudo no ar. É o mesmo repo fazendo a mesma coisa, então o desenvolvimento local e o sistema em produção deixaram de ser categorias diferentes.",
       "textd864380a766f": "O sandbox usa um token Kortix com escopo de projeto e nenhuma chave de terceiros. As credenciais do tracker e do helpdesk são descriptografadas no servidor e anexadas à chamada de saída.",
       "textd8707d411d99": "Segredos",
@@ -20054,6 +20053,8 @@
       "textc3371113b9c5": "Uma licença ativa todos os recursos Enterprise durante a vigência. Não inclui créditos.",
       "text81e6bf495c98": "Planos, créditos, Enterprise, direitos, membros e estado de cobrança, por conta.",
       "textfe3436af86b4": "Extensões",
+      "textdffd02b805cb": "Os comandos ainda estão carregando",
+      "textd943cb31f962": "Nada foi enviado. Sua mensagem e seus arquivos ficam no compositor — envie novamente em instantes.",
       "text8142608686a2": "Pré-visualizou uma alteração do plano de créditos",
       "text0f046f7588f9": "Custo (créditos)",
       "text42144adfea3c": "Saldo (créditos)",
@@ -20064,7 +20065,9 @@
       "textb8fd28863a22": "Valor em créditos (ex.: 2500)",
       "textc6813a9e41ac": "Em créditos: {value0} LLM · {value1} computação · {value2} outros.",
       "textc86ce3b8097b": "ex.: 5000",
-      "textfaaf56a699c2": "Limite (créditos)"
+      "textfaaf56a699c2": "Limite (créditos)",
+      "textc3d1545dd522": "Converte o kortix.toml v1 em kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma para a versão mais recente do marketplace e abre uma solicitação de alteração para revisão.",
+      "textd85a383e851d": "Migrar o manifesto para v2 (kortix.yaml)"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20593,6 +20596,18 @@
     "setUp": "Configurar autenticador"
   },
   "connectorPages": {
+    "addMcpMenu": "Servidor MCP",
+    "addMcpMenuHint": "Cole a URL de um servidor e entre",
+    "addMcpTitle": "Adicionar um servidor MCP",
+    "addMcpDescription": "Cole a URL do servidor e escolha quem pode usá-lo. O Kortix faz seu login e carrega as ferramentas dele.",
+    "addMcpUrlLabel": "URL do servidor",
+    "addMcpUrlHint": "O endpoint remoto do servidor, começando com https://",
+    "addMcpUrlNamed": "Adiciona o conector {name}.",
+    "addMcpUrlInvalid": "Digite uma URL que comece com https://",
+    "addMcpConnect": "Conectar",
+    "addMcpConnected": "{name} está conectado. Os agentes podem usar as ferramentas dele.",
+    "addMcpSignInFailed": "Não foi possível iniciar o login em {name}: {reason}",
+    "addMcpFailed": "Não foi possível adicionar o servidor MCP",
     "install": "Instalar",
     "installNamed": "Instalar {name}",
     "added": "Adicionado",

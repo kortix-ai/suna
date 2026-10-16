@@ -75,6 +75,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
+import { mcpServerIdentity } from '@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
@@ -159,10 +160,11 @@ import { autoConnectPlan, mergeResourceDiscoveryIntoForm } from './connector-oau
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { startOAuth2SignIn } from './connector-oauth2-start';
 import { DiscoverCatalogue } from './discover-catalogue';
-import { slugFromTitle, slugFromUrl } from './connector-slug';
+import { useAddRequest } from './use-add-request';
 import { useCreateCustomConnector } from './use-create-custom-connector';
 import { AudienceText } from './view/audience-badge';
 import {
+  accountNeedsSignIn,
   accountVisibility,
   connectorConnectionRows,
   type NewAccountDraft,
@@ -251,6 +253,7 @@ function ConnectionRow({
   onSetCredential,
   onShare,
   onConnect,
+  needsSignIn,
   pending,
   disabled = false,
 }: {
@@ -273,6 +276,8 @@ function ConnectionRow({
   onShare?: () => void;
   /** Sign this account in. Shown only while it is not signed in. */
   onConnect?: () => void;
+  /** Not signed in, on a connector that has a sign-in (`accountNeedsSignIn`). */
+  needsSignIn: boolean;
   pending: boolean;
   disabled?: boolean;
 }) {
@@ -322,7 +327,7 @@ function ConnectionRow({
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {/* An account nobody has signed in yet, such as the shared one a new
               connector starts with: say so beside its Connect button. */}
-          {active && connection.authorized === false ? (
+          {active && needsSignIn ? (
             <span>{tConnectorPages('notSignedIn')}</span>
           ) : null}
           {active ? null : (
@@ -350,7 +355,7 @@ function ConnectionRow({
           set of actions for this account. */}
       {/* An account that never finished signing in (an abandoned OAuth flow)
           gets its next step on the row, not behind the menu. */}
-      {onConnect && mayMutate && connection.authorized === false ? (
+      {onConnect && mayMutate && needsSignIn ? (
         <Button size="sm" className="shrink-0" onClick={onConnect} disabled={pending || disabled}>
           {tConnectorPages('connectAccount')}
         </Button>
@@ -588,18 +593,7 @@ export function ConnectionsList({
   };
   const proposedLabel = addAccount.proposedLabel();
   if (addOpen && !labelEdited && draft.label !== proposedLabel) setDraft({ ...draft, label: proposedLabel });
-  // Adjusted during render, not in an effect: each new request opens the
-  // dialog once, including one made before this list mounted (right after
-  // Install). The caller resets it (`onAddRequestHandled`), so a remount on a
-  // tab switch does not open it again.
-  const [seenAddRequest, setSeenAddRequest] = useState(0);
-  if (addRequest !== seenAddRequest) {
-    setSeenAddRequest(addRequest);
-    if (addRequest > 0) {
-      openAdd();
-      onAddRequestHandled?.();
-    }
-  }
+  useAddRequest(addRequest, openAdd, onAddRequestHandled);
   const labelTaken = newAccountLabelTaken(draft, rows);
   const canSubmitAdd =
     !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
@@ -690,6 +684,7 @@ export function ConnectionsList({
       onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
       onSetCredential={setCredential ? () => setCredential(connection) : undefined}
       onConnect={onConnect ? () => onConnect(connection) : undefined}
+      needsSignIn={accountNeedsSignIn(connection, connector)}
       onShare={
         accountId
           ? () => {
@@ -2638,6 +2633,22 @@ function AppCatalogue({
 }
 
 /**
+ * Slugify the source document's own name — OpenAPI `info.title`, Postman
+ * `info.name` — so adding a spec proposes the slug the API calls itself
+ * ("Kortix WhatsApp Gateway" → `kortix-whatsapp-gateway`). Derived from the
+ * document rather than its URL: a hostname is a guess, a title is a statement.
+ */
+function slugFromTitle(title: string | null | undefined): string {
+  return (title ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '');
+}
+
+/**
  * Postman-style static header table. Any header, any value, sent on every call
  * this connector makes. Kept as ordered rows (not an object) while editing so a
  * half-typed or duplicate name doesn't silently drop a row out from under the
@@ -2786,9 +2797,11 @@ function ConnectorConfigFields({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // Once the slug is typed in by hand, never overwrite it from the source again.
   const slugTouched = useRef(false);
+  // An MCP server answers 401 before it names itself: fall back to the
+  // URL's domain (`https://api.acme.ai/mcp` → `acme`).
+  const sourceUrl = draft.url ?? draft.endpoint ?? draft.baseUrl ?? draft.spec ?? '';
   const suggestedSlug =
-    slugFromTitle(detectedTitle) ||
-    slugFromUrl(draft.url ?? draft.endpoint ?? draft.baseUrl ?? draft.spec);
+    slugFromTitle(detectedTitle) || (sourceUrl ? (mcpServerIdentity(sourceUrl, [])?.slug ?? '') : '');
   useEffect(() => {
     // Follows the source until the user types a slug. Editing an existing
     // connector (slugEditable false) is never touched.
@@ -3227,8 +3240,7 @@ export function CustomConnectorForm({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
-    // MCP is what most people paste: a server URL, as in every MCP client.
-    provider: 'mcp',
+    provider: 'openapi',
   });
   const [oauth2Selected, setOauth2Selected] = useState(false);
   const [oauth2, setOauth2] = useState<OAuth2CredentialForm>(EMPTY_OAUTH2_CREDENTIAL_FORM);
