@@ -25,7 +25,7 @@ describe('local test runner', () => {
       'sdk',
       'package-quality',
     ]);
-    // Package quality is its own stage: the attestation's `packages` lane.
+    // Package quality is its own stage.
     // The SDK gets one too: it owns the gate's only wall-clock assertions
     // (the ReDoS guards), which the start burst of the heavy lanes pushes
     // past their bounds (PR #9266 measured 1272 ms against 1000 ms there).

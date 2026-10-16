@@ -4,15 +4,6 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
-// The diff-scoped core run (src/core/test-scope.ts) passes the affected package
-// directories. Unset: every package, as CI and `--packages-only` run it.
-const scope: string[] | null = process.env.KORTIX_TEST_SCOPE
-  ? JSON.parse(process.env.KORTIX_TEST_SCOPE)
-  : null;
-const inScope = (dir: string) => scope === null || scope.includes(dir);
-/** Run `task` only when `dir` is in scope. */
-const when = (dir: string, task: () => Promise<unknown>): Promise<unknown> =>
-  inScope(dir) ? task() : Promise.resolve();
 
 /**
  * Runner controls that must survive the hermetic scrub below.
@@ -220,29 +211,27 @@ await rejectFocusedTests();
 // lane bare does not, and the test then fails with "Executable doesn't exist".
 // `playwright install` is idempotent (near-instant when the browser is
 // present) and honors PLAYWRIGHT_BROWSERS_PATH, so a CI cache still hits.
-await when('apps/web', () => run(['pnpm', '--dir', 'tests', 'run', 'playwright:install']));
+await run(['pnpm', '--dir', 'tests', 'run', 'playwright:install']);
 await runAll([
-  when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'typecheck'])),
-  when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install'])),
+  run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
+  run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
   // Frozen counts (apps/api/eslint.config.mjs): new violations fail, fixed ones must be pruned.
-  when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'lint'])),
+  run(['pnpm', '--filter', 'kortix-api', 'lint']),
   // The migration file lint (backfill-safe sign-off, CONCURRENTLY, safety header).
   // A PR into dev runs no CI, so without this it first ran after the merge,
   // where a merged file can no longer be fixed (migrations are immutable).
-  when('packages/db', () => run(['pnpm', '--filter', '@kortix/db', 'run', 'migrate:lint'])),
+  run(['pnpm', '--filter', '@kortix/db', 'run', 'migrate:lint']),
 ]);
 await runAll([
-  ...['llm-catalog', 'sdk'].map((directory) =>
-    when(`packages/${directory}`, () => verifyPublishablePackage(directory, false)),
-  ),
-  when('packages/agent-tunnel', verifyAgentTunnelCli),
+  ...['llm-catalog', 'sdk'].map((directory) => verifyPublishablePackage(directory, false)),
+  verifyAgentTunnelCli(),
 ]);
 
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. Keep the CLI and
 // agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
 await runAll([
-  when('apps/api', () => runWorkspaceTests(['kortix-api'], 1)),
+  runWorkspaceTests(['kortix-api'], 1),
   // Bun runs TypeScript without checking types, so the API and CLI unit tests
   // pass with type errors. tsc is single-threaded (~105 s API, ~18 s CLI of
   // CPU), so it rides inside this wave next to the two test chains instead of
@@ -251,37 +240,31 @@ await runAll([
   // image build runs its `tsc` (noUncheckedIndexedAccess) over the workspace
   // packages it imports, so an api-contract change that only kortixd's flags
   // reject failed the dev API image build (#9556) with every lane green.
-  // The diff scope reaches kortixd from api-contract through its relative imports.
-  when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'typecheck'])),
-  when('apps/cli', () => run(['pnpm', '--filter', '@kortix/cli', 'typecheck'])),
-  when('apps/kortix-sandbox-agent-server', () => run(['pnpm', '--filter', 'kortixd', 'typecheck'])),
+  run(['pnpm', '--filter', 'kortix-api', 'typecheck']),
+  run(['pnpm', '--filter', '@kortix/cli', 'typecheck']),
+  run(['pnpm', '--filter', 'kortixd', 'typecheck']),
   (async () => {
-    await when('apps/cli', () => runWorkspaceTests(['@kortix/cli'], 1));
-    await when('apps/kortix-sandbox-agent-server', () => runWorkspaceTests(['kortixd'], 1));
+    await runWorkspaceTests(['@kortix/cli'], 1);
+    await runWorkspaceTests(['kortixd'], 1);
   })(),
 ]);
 // The root `.npmrc` sets `ignore-scripts=true`, so `pnpm install` never runs
 // apps/mobile's `postinstall: patch-package`. Its tests assert the patched
 // libraries (`lib/markdown/markdown-keys.test.ts`), so apply the patches here.
 // patch-package is idempotent: a checkout that already applied them passes.
-await when('apps/mobile', () => run(['pnpm', '--filter', './apps/mobile', 'exec', 'patch-package']));
-const separate = ['apps/api', 'apps/cli', 'apps/kortix-sandbox-agent-server', 'packages/db'];
-const rest = scope
-  ? scope
-      .filter((dir) => !separate.includes(dir) && !(skipSdkTests && dir === 'packages/sdk'))
-      .map((dir) => `./${dir}`)
-  : [
-      './packages/**',
-      './apps/**',
-      '!kortix-api',
-      '!@kortix/cli',
-      '!kortixd',
-      '!@kortix/db',
-      ...(skipSdkTests ? ['!@kortix/sdk'] : []),
-    ];
+await run(['pnpm', '--filter', './apps/mobile', 'exec', 'patch-package']);
+const rest = [
+  './packages/**',
+  './apps/**',
+  '!kortix-api',
+  '!@kortix/cli',
+  '!kortixd',
+  '!@kortix/db',
+  ...(skipSdkTests ? ['!@kortix/sdk'] : []),
+];
 await runAll([
   // `@kortix/db`'s PostgreSQL contracts (`*.integration.test.ts`) and
   // `tests/migration` run in the `db-suites` lane of the core run.
-  when('packages/db', () => runWorkspaceTests(['@kortix/db'], 1)),
-  rest.length > 0 ? runWorkspaceTests(rest, 2) : Promise.resolve(),
+  runWorkspaceTests(['@kortix/db'], 1),
+  runWorkspaceTests(rest, 2),
 ]);

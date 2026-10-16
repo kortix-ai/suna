@@ -23,8 +23,9 @@ The local API that the flows start refreshes its git mirror every second
 (`KORTIX_GIT_REFRESH_INTERVAL_MS=1000`, `src/core/local-stack.ts`). The 60 s
 default made each flow that pushes `kortix.yaml` wait up to 60 s per push.
 
-The default run has six lanes plus package quality. It runs only the lanes and
-packages the branch's diff can affect ([Diff-scoped default run](#diff-scoped-default-run)):
+The default run has six lanes plus package quality. It always runs every lane
+and every package. There is no diff scope, no lane reuse, and no attestation:
+CI runs the whole suite at the dev -> staging promote and nightly on `dev`.
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
@@ -37,47 +38,21 @@ The REST runner is language-agnostic at the product boundary. It sends HTTP
 requests and starts the compiled CLI as a process. It never imports API route
 handlers.
 
-## Diff-scoped default run
+## Default run
 
-Plain `pnpm test` runs only what the branch's diff can affect
-(`tests/src/core/test-scope.ts`). The diff is every file that differs from the
-merge-base with `origin/dev`, uncommitted edits included.
+A Mac refuses a suite-wide run (`pnpm test`, `--full`, `--packages-only`,
+`--browser-only`, `--db-only` with no filter) and prints the targeted
+commands. Run the targeted tests that cover your change: one flow
+(`--id <FLOW>`), one DB suite filter, the SDK, or one package test file.
+`KORTIX_FULL_TEST=1` overrides the refusal on a box with headroom.
 
-| Changed path | What runs |
-| --- | --- |
-| a file in a workspace package | that package, every package that depends on it (`pnpm --filter "...{dir}"`), and every package that imports it by relative path (`../../packages/x`) |
-| `.github/`, `.githooks/`, `infra/`, `tests/e2e/` | the packages whose files name that path |
-| `tests/src/flows/`, `tests/spec/`, `tests/migration/` | the REST/CLI flows and DB suites |
-| `.agents/`, `.claude/`, `tests/unit/`, a root `*.md` | only the always-on lanes |
-| anything else (root config, `pnpm-lock.yaml`, `scripts/`, `supabase/`, the runner itself, an app that is not a workspace package) | everything |
-
-- The runner unit tests, route coverage and worktree tests always run.
-- The flows and DB suites run when the scope reaches `apps/api`, `apps/cli`,
-  `apps/llm-gateway` or `packages/db`, or a flow path changed. Otherwise the
-  attestation records `db-suites=skipped-unaffected`.
-- The SDK lane runs when the scope reaches `packages/sdk`.
-- Package quality runs the publish checks, lint, typecheck and workspace tests
-  of the packages in scope only.
-
-A run also reuses lane groups (`core`, `packages`, `db-suites`) that already
-passed for the same diff: rerunning after a flake runs only the red groups. A
-merge of `origin/dev` that touches other files keeps the diff, so it keeps the
-reuse. A file that joins the diff or an edit to a changed file drops every
-reused group. Delete `tests/attestations/<branch>.json` to rerun everything on
-the same diff. The attestation hashes the working tree, so commit the tested
-edits as they are: a tested file that the commit leaves out makes it stale.
-A run fingerprints the working tree before its lanes start. When the tree
-differs at the end (an edit or commit made during the run), it writes no
-attestation and exits 1: rerun `pnpm test` on the final tree.
-
-`CI=1 pnpm test` runs the whole suite and reuses nothing. GitHub Actions sets
-`CI`, so the `Tests` run on every push to `dev` and the release lanes always
-run everything: they are the backstop for a dependency the scope cannot see.
+A box without Docker (a factory sandbox) drops the `api-cli-flows` and
+`db-suites` lanes and logs `SKIP <lane> (no Docker, not a pass)`.
 
 ## Commands
 
 ```bash
-pnpm test                       # Diff-scoped suite; refused on a Mac unless KORTIX_FULL_TEST=1
+pnpm test                       # Whole core suite; refused on a Mac unless KORTIX_FULL_TEST=1
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only

@@ -70,12 +70,10 @@ describe('local test runner contract', () => {
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
     expect(source).toContain("KORTIX_ATTACHMENT_OFFLOAD: '0'");
     // The CLI and the agent server stay sequential (concurrent isolated Bun workers can spin).
-    expect(source).toContain("await when('apps/cli', () => runWorkspaceTests(['@kortix/cli'], 1))");
-    expect(source).toContain(
-      "await when('apps/kortix-sandbox-agent-server', () => runWorkspaceTests(['kortixd'], 1))",
-    );
-    // A diff-scoped run narrows every step to the affected packages; unset runs all.
-    expect(source).toContain('process.env.KORTIX_TEST_SCOPE');
+    expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
+    expect(source).toContain("await runWorkspaceTests(['kortixd'], 1)");
+    // Package quality always runs every package: no diff scope.
+    expect(source).not.toContain('KORTIX_TEST_SCOPE');
     expect(source).toContain("'--no-bail'");
     expect(source).not.toContain("['@kortix/cli', 'kortixd']");
     expect(source).toContain("runWorkspaceTests(['@kortix/db'], 1)");
