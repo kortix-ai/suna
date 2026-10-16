@@ -1,11 +1,19 @@
 {
-  "source_hash": "178ecde96a9857dbe89b3d03b1dd10b7c612e8115bed130e341395cc73322593",
+  "source_hash": "c45f47633a45810da6b2585bfa4f679f2f08cb0fde5a52420e09ae706c89fb50",
   "diff_files": [
+    "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
     "apps/web/src/features/session/composer-chat-input.tsx",
     "apps/web/src/features/session/composer/command-attachments.test.ts",
     "apps/web/src/features/session/composer/command-attachments.ts",
     "apps/web/src/features/session/composer/composer.tsx",
+    "apps/web/src/features/session/model-consumers.test.tsx",
     "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/features/workspace/command-palette-search.test.ts",
+    "apps/web/src/features/workspace/customize/sections/channels-view.email.test.tsx",
+    "apps/web/src/features/workspace/customize/sections/component/slack-connect-card.tsx",
+    "apps/web/src/features/workspace/customize/sections/component/teams-connect-card.tsx",
+    "apps/web/src/features/workspace/settings/settings-panel.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/sandbox-tab.empty-new.test.tsx",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -16,13 +24,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "6d347cd22ac03c834ac5a2d4409c3da1ff8044fe852fb9e9cdc81d5216d1b287",
-  "head": "baffcfc1d84345618d7e7861b8ccf643b0c6c6c5",
-  "passed": false,
+  "diff_hash": "844c7a1a9785735243c6464819913b406d039508289dadc6652a54108357ce37",
+  "head": "95623ce27f0ce46892760bb7995c86d4a8997aa0",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "skipped-unaffected"
   },
-  "at": "2026-10-15T23:21:22.744Z"
+  "at": "2026-10-16T01:48:52.307Z"
 }
