@@ -9,9 +9,10 @@
  *   It never asks: requestPushPermissionOnce() asks after the first send.
  * - Removes the token row a failed sign-out left (flushPendingRelease), on
  *   mount, on a sign-in change and on resume (KRTX-2242).
- * - Re-posts this phone's Notifications switches 500 ms after a change.
+ * - Re-posts this phone's Notifications switches 500 ms after a change, and
+ *   on resume when the last post failed.
  * - Opens the tapped session, or its project for an automation alert, also
- *   for the tap that cold-started the app. The tap marks its inbox row read
+ *   for the tap that cold-started the app. A tap while signed out is dropped. The tap marks its inbox row read
  *   (KRTX-1742), fire and forget.
  * - A push that arrives while the app is open refetches the inbox: the
  *   drawer's count, and ProjectScreen reads the row of the session on screen.
@@ -36,8 +37,10 @@ import {
   shouldPresentInForeground,
 } from '@/lib/notifications/push';
 import {
+  beginPushSignIn,
   flushPendingRelease,
   getNotifications,
+  registeredForThisSignIn,
   remotePushSupported,
   syncPushPreferences,
   syncPushRegistration,
@@ -60,9 +63,15 @@ function markRead(ids: string[], queryClient: QueryClient) {
     .catch((error: unknown) => log.warn('[PUSH] Mark read failed:', error));
 }
 
-function handleResponse(response: NotificationResponse | null, queryClient: QueryClient) {
+function handleResponse(
+  response: NotificationResponse | null,
+  queryClient: QueryClient,
+  signedOut: { current: boolean }
+) {
   const Notifications = getNotifications();
   if (!response || !Notifications) return;
+  // Signed out: the tap belongs to the previous user; never open it for the next one.
+  if (signedOut.current) return;
   if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
   const id = response.notification.request.identifier;
   if (handledResponses.has(id)) return;
@@ -111,9 +120,11 @@ function setUpNotifications() {
 }
 
 export function PushNotificationsBridge() {
-  const { isAuthenticated, mfaRequired } = useAuthContext();
+  const { isAuthenticated, isLoading, mfaRequired } = useAuthContext();
   // A session that owes the TOTP code gets no pushes and opens no session.
   const signedIn = isAuthenticated && !mfaRequired;
+  // Auth resolved with no session. While auth loads (a cold-start tap), a tap waits.
+  const signedOut = !isLoading && !isAuthenticated;
   const router = useRouter();
   const navigationRef = useNavigationContainerRef();
   const segments = useSegments() as string[];
@@ -123,6 +134,13 @@ export function PushNotificationsBridge() {
 
   const signedInRef = useRef(signedIn);
   signedInRef.current = signedIn;
+  const signedOutRef = useRef(signedOut);
+  signedOutRef.current = signedOut;
+
+  // A tap queued while auth loaded, on a launch that resolved signed out.
+  useEffect(() => {
+    if (signedOut) usePushStore.setState({ pendingOpen: null });
+  }, [signedOut]);
 
   // Channels, handler, and the tap and arrival listeners. The last response
   // covers a tap that launched the app before this listener existed.
@@ -133,14 +151,14 @@ export function PushNotificationsBridge() {
     const subscriptions: { remove: () => void }[] = [];
     try {
       subscriptions.push(
-        Notifications.addNotificationResponseReceivedListener((response) => handleResponse(response, queryClient)),
+        Notifications.addNotificationResponseReceivedListener((response) => handleResponse(response, queryClient, signedOutRef)),
         // A push that arrived while the app is open: refetch the inbox. A row
         // of the session on screen is then read (ProjectScreen).
         Notifications.addNotificationReceivedListener(() => {
           void queryClient.invalidateQueries({ queryKey: qk.notifications.scope() });
         })
       );
-      handleResponse(Notifications.getLastNotificationResponse(), queryClient);
+      handleResponse(Notifications.getLastNotificationResponse(), queryClient, signedOutRef);
       Notifications.clearLastNotificationResponse();
     } catch (error) {
       log.warn('[PUSH] Notification listeners not set:', error);
@@ -161,16 +179,22 @@ export function PushNotificationsBridge() {
   }, [signedIn]);
 
   // Sign-in: register when permission is already granted. Back in the
-  // foreground without a token: the user may have allowed it in Settings.
-  // With a pending release: the last register failed to bind the old row.
-  // That check waits until the resume work that cannot wait has run.
+  // foreground with no register for this sign-in yet: the last one failed, or
+  // the user may have allowed it in Settings. With a pending release: the
+  // last register failed to bind the old row. Each resume also retries a
+  // failed preference sync (it skips values the server already has). That
+  // check waits until the resume work that cannot wait has run.
   useEffect(() => {
     if (!signedIn || !remotePushSupported()) return;
+    beginPushSignIn();
     void syncPushRegistration();
     return addResumeListener(() => {
-      const { token, pendingRelease } = usePushStore.getState();
-      if (signedInRef.current && (!token || pendingRelease?.backendUrl === API_URL)) {
+      if (!signedInRef.current) return;
+      const { pendingRelease } = usePushStore.getState();
+      if (!registeredForThisSignIn() || pendingRelease?.backendUrl === API_URL) {
         void syncPushRegistration();
+      } else {
+        void syncPushPreferences();
       }
     }, PUSH_RESUME_DELAY_MS);
   }, [signedIn]);

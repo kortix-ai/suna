@@ -13,6 +13,9 @@ const STORE_KEY = '@notification_preferences';
 const registered: { preferences: Record<string, boolean> }[] = [];
 const patches: unknown[] = [];
 let patchFails = false;
+/** The register POST rejects while set. */
+let registerFails = false;
+let trayDismissals = 0;
 /** The sign-out DELETE: resolves this, or throws when it is an Error, or never settles when null. */
 let unregisterResult: { success: true; deleted: boolean } | Error | null = { success: true, deleted: true };
 const released: { token: string; backendUrl?: string }[] = [];
@@ -20,6 +23,10 @@ const released: { token: string; backendUrl?: string }[] = [];
 let releaseError: unknown = null;
 /** While set, the release POST waits for it. */
 let releaseGate: Promise<void> | null = null;
+/** While set, the register POST waits for it. */
+let registerGate: Promise<void> | null = null;
+/** Call order of the register and sign-out requests. */
+const calls: string[] = [];
 const API_URL = 'https://api.kortix.test';
 
 mock.module('react-native', () => ({ Platform: { OS: 'ios' } }));
@@ -29,6 +36,9 @@ mock.module('expo-device', () => ({ isDevice: true }));
 mock.module('expo-notifications', () => ({
   getPermissionsAsync: async () => ({ status: 'granted' }),
   getExpoPushTokenAsync: async () => ({ data: 'ExponentPushToken[test]' }),
+  dismissAllNotificationsAsync: async () => {
+    trayDismissals += 1;
+  },
 }));
 mock.module('@/api/config', () => ({ API_URL }));
 mock.module('@/lib/logger', () => ({ log: { log() {}, warn() {}, error() {} } }));
@@ -36,9 +46,13 @@ mock.module('@kortix/sdk', () => ({
   INBOX_NOTIFICATION_KINDS: ['turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered'],
   registerDeviceToken: async (input: { preferences: Record<string, boolean> }) => {
     registered.push(input);
+    if (registerGate) await registerGate;
+    calls.push('register');
+    if (registerFails) throw new Error('503');
     return { success: true, message: 'ok' };
   },
   unregisterDeviceToken: () => {
+    calls.push('delete');
     const result = unregisterResult;
     if (result === null) return new Promise(() => {});
     return result instanceof Error ? Promise.reject(result) : Promise.resolve(result);
@@ -88,10 +102,15 @@ beforeEach(() => {
   registered.length = 0;
   patches.length = 0;
   patchFails = false;
+  registerFails = false;
+  trayDismissals = 0;
   unregisterResult = { success: true, deleted: true };
   released.length = 0;
   releaseError = null;
   releaseGate = null;
+  registerGate = null;
+  calls.length = 0;
+  registration.beginPushSignIn();
 });
 // Sign-out clears the last posted key, so each test posts from scratch.
 afterEach(() => registration.unregisterPushOnSignOut());
@@ -309,5 +328,101 @@ describe('pendingRelease', () => {
     usePushStore.setState({ pendingRelease: OLD_BACKEND });
     await registration.syncPushRegistration();
     expect(pending()).toEqual(OLD_BACKEND);
+  });
+});
+
+describe('sign-out ends this sign-in on the device', () => {
+  test('a register for this sign-in is tracked apart from the persisted token', async () => {
+    await loadStored(null);
+    registration.beginPushSignIn();
+    expect(registration.registeredForThisSignIn()).toBe(false);
+
+    // The token from the last sign-in stays persisted; a failed register is not this sign-in's row.
+    usePushStore.setState({ token: 'ExponentPushToken[test]' });
+    registerFails = true;
+    expect(await registration.syncPushRegistration()).toBeNull();
+    expect(registration.registeredForThisSignIn()).toBe(false);
+
+    registerFails = false;
+    expect(await registration.syncPushRegistration()).toBe('ExponentPushToken[test]');
+    expect(registration.registeredForThisSignIn()).toBe(true);
+
+    // Sign-out keeps the flag: a resume before the bridge sees the sign-out must not re-register.
+    await registration.unregisterPushOnSignOut();
+    expect(registration.registeredForThisSignIn()).toBe(true);
+    expect(usePushStore.getState().token).toBe('ExponentPushToken[test]');
+
+    // The next sign-in starts with no register for it.
+    registration.beginPushSignIn();
+    expect(registration.registeredForThisSignIn()).toBe(false);
+  });
+
+  // Real timers: the DELETE never settles, so sign-out waits the 3 s deadline.
+  test('while the sign-out DELETE runs, no sync posts for the outgoing user', async () => {
+    await loadStored(null);
+    await registration.syncPushRegistration();
+    expect(registered).toHaveLength(1);
+
+    unregisterResult = null;
+    const signOut = registration.unregisterPushOnSignOut();
+    // A resume or a debounced toggle during the sign-out window.
+    useNotificationStore.getState().setPreference('onError', false);
+    await registration.syncPushPreferences();
+    expect(await registration.syncPushRegistration()).toBeNull();
+    expect(registered).toHaveLength(1);
+
+    await signOut;
+    unregisterResult = { success: true, deleted: true }; // the shared afterEach signs out again
+    usePushStore.setState({ pendingRelease: null });
+  }, 10_000);
+
+  test('a register POST already sent completes before the sign-out DELETE', async () => {
+    await loadStored(null);
+    await registration.syncPushRegistration();
+    calls.length = 0;
+    let open = () => {};
+    registerGate = new Promise<void>((resolve) => (open = resolve));
+    const sync = registration.syncPushRegistration();
+    while (registered.length < 2) await new Promise((resolve) => setTimeout(resolve, 1));
+    const signOut = registration.unregisterPushOnSignOut();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls).toEqual([]);
+
+    open();
+    await sync;
+    await signOut;
+    expect(calls).toEqual(['register', 'delete']);
+  });
+
+  test('the next sign-in registers again after a sign-out', async () => {
+    await loadStored(null);
+    await registration.unregisterPushOnSignOut();
+    expect(await registration.syncPushRegistration()).toBeNull();
+    expect(registered).toHaveLength(0);
+
+    registration.beginPushSignIn();
+    expect(await registration.syncPushRegistration()).toBe('ExponentPushToken[test]');
+    expect(registered).toHaveLength(1);
+  });
+
+  test("sign-out clears the tray and drops a queued tap", async () => {
+    usePushStore.getState().requestOpen('project-a', 'session-a');
+    await registration.unregisterPushOnSignOut();
+    expect(usePushStore.getState().pendingOpen).toBeNull();
+    expect(trayDismissals).toBe(1);
+  });
+
+  test('a failed preference sync is retried by the next call', async () => {
+    await loadStored(null);
+    await registration.syncPushRegistration();
+    useNotificationStore.getState().setPreference('onError', false);
+    registerFails = true;
+    await registration.syncPushPreferences();
+    registerFails = false;
+    await registration.syncPushPreferences();
+    expect(registered).toHaveLength(3);
+    expect(registered.at(-1)?.preferences).toEqual({ ...ALL_ON, on_error: false });
+    await registration.syncPushPreferences();
+    expect(registered).toHaveLength(3);
   });
 });

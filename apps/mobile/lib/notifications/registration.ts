@@ -102,6 +102,30 @@ async function fetchExpoPushToken(Notifications: NotificationsModule): Promise<s
 let syncInFlight: Promise<string | null> | null = null;
 /** `<token>|<preferences JSON>` last accepted by the server, to skip repeats. */
 let lastPosted: string | null = null;
+/**
+ * A register succeeded since the last `beginPushSignIn()`. The persisted token
+ * survives sign-out, so it cannot tell whether this sign-in has a row yet.
+ * Sign-out leaves it as is: until the bridge sees the sign-out, a resume must
+ * not re-register the outgoing user's row after its DELETE.
+ */
+let registeredThisSignIn = false;
+/**
+ * Set by `unregisterPushOnSignOut()`, cleared by `beginPushSignIn()`. While
+ * set, no register posts: the outgoing user's JWT still works, and a POST
+ * after the DELETE re-binds the row to them (KRTX-2242).
+ */
+let signingOut = false;
+
+/** True once a register succeeded for the current sign-in. */
+export function registeredForThisSignIn(): boolean {
+  return registeredThisSignIn;
+}
+
+/** Starts a sign-in: no register has succeeded for it yet. */
+export function beginPushSignIn(): void {
+  signingOut = false;
+  registeredThisSignIn = false;
+}
 
 function postedKey(token: string, prefs: ReturnType<typeof serverPreferences>): string {
   return `${token}|${JSON.stringify(prefs)}`;
@@ -177,17 +201,23 @@ function register(token: string, preferences: ServerPreferences) {
 }
 
 async function runSync(): Promise<string | null> {
+  if (signingOut) return null;
   // A release still in flight must not delete the row this sign-in registers.
   await flushInFlight;
-  if (!remotePushSupported()) return null;
+  if (signingOut || !remotePushSupported()) return null;
   const Notifications = getNotifications()!;
   if (!(await permissionGranted(Notifications))) return null;
   const token = await fetchExpoPushToken(Notifications);
   if (!token) return null;
   const prefs = serverPreferences(useNotificationStore.getState().preferences);
+  // Sign-out can start during the permission and token reads above.
+  if (signingOut) return null;
   try {
     await register(token, prefs);
+    // Sign-out started while the POST ran: its DELETE owns the row now.
+    if (signingOut) return null;
     lastPosted = postedKey(token, prefs);
+    registeredThisSignIn = true;
     const push = usePushStore.getState();
     push.setToken(token);
     // The row is now bound to this sign-in: nothing is left to release.
@@ -203,17 +233,17 @@ async function runSync(): Promise<string | null> {
 
 /**
  * Re-posts the current preferences for the registered token. Skips when the
- * server already has these values. The caller guarantees a signed-in user.
+ * server already has these values, and during sign-out. The caller guarantees a signed-in user.
  */
 export async function syncPushPreferences(): Promise<void> {
   const token = usePushStore.getState().token;
-  if (!token || !remotePushSupported()) return;
+  if (signingOut || !token || !remotePushSupported()) return;
   const prefs = serverPreferences(useNotificationStore.getState().preferences);
   const key = postedKey(token, prefs);
   if (key === lastPosted) return;
   try {
     await register(token, prefs);
-    lastPosted = key;
+    if (!signingOut) lastPosted = key;
   } catch (error) {
     log.warn('[PUSH] Preference sync failed:', error);
   }
@@ -245,11 +275,24 @@ const TIMED_OUT = Symbol('timed out');
  * Deletes this device's token row for the signed-in user. Resolves within
  * SIGN_OUT_UNREGISTER_TIMEOUT_MS; never throws. A failure or timeout records
  * the row as `pendingRelease` for `flushPendingRelease()`. The local token
- * stays: the next sign-in re-registers it for the new user.
+ * stays: the next sign-in re-registers it for the new user. Also removes the
+ * previous user's notifications from the tray and drops a queued tap.
  */
 export async function unregisterPushOnSignOut(): Promise<void> {
+  signingOut = true;
+  // A register POST already sent must reach the server before the DELETE,
+  // or it re-binds the row to this sign-in.
+  if (syncInFlight) await withDeadline(syncInFlight, SIGN_OUT_UNREGISTER_TIMEOUT_MS, null);
   const token = usePushStore.getState().token;
   lastPosted = null;
+  usePushStore.setState({ pendingOpen: null });
+  try {
+    getNotifications()
+      ?.dismissAllNotificationsAsync()
+      .catch((error: unknown) => log.warn('[PUSH] Tray clear failed:', error));
+  } catch (error) {
+    log.warn('[PUSH] Tray clear failed:', error);
+  }
   if (!token) {
     log.log('[PUSH] Sign-out: no push token on this device');
     return;
