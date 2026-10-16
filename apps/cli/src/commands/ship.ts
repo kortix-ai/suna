@@ -2,7 +2,7 @@ import { basename } from 'node:path';
 
 import { type Auth, loadAuthForHost } from '../api/auth.ts';
 import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
-import { activeHostName } from '../api/config.ts';
+import { activeHostName, getHost } from '../api/config.ts';
 import type { ProjectSecretsResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
@@ -48,15 +48,16 @@ Every run:
   5. connect any declared connector that still needs auth   (skip with --no-connect)
 
 First ship vs. after:
-  * First ship   creates the cloud project + a git repo, links this folder
-                 (.kortix/link.json), then pushes.
+  * First ship   uses the saved host default project when this folder is unlinked.
+                 Without a default, creates a cloud project + git repo, links
+                 this folder (.kortix/link.json), then pushes.
   * Every ship   after that sees the link, skips setup, and just commits +
                  pushes. Continuous by design — re-run as often as you like.
                  The link travels in .kortix/link.json, so a teammate who
                  clones a linked repo can \`kortix ship\` from it too.
                  Ship uses --host, the link's host, or the configured active
-                 host's saved login; injected session auth/project and global
-                 default projects do not select the workspace to ship.
+                 host's saved login. Project order: --project, folder link,
+                 saved host default. Injected session auth/project is ignored.
 
 Branches:
   Ship pushes whatever branch you're on to the matching remote branch — on
@@ -91,7 +92,7 @@ Options:
   --no-connect         Skip the connector connect/credential prompts.
   -y, --yes            Don't prompt; use the active account, skip secret prompts.
   -n, --dry-run        Print what would happen, do nothing.
-  --project <id>       Operate on this project id (default: linked).
+  --project <id>       Target this project (default: linked, then saved host default).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 `;
@@ -192,7 +193,8 @@ export async function runShip(argv: string[]): Promise<number> {
   if (!prepared.ok) return 1;
 
   // ── Resolve state: already linked (sync) vs first ship (create) ───────────
-  const linkedId = flags.project ?? link?.project_id;
+  const linkedId = flags.project ?? link?.project_id ??
+    (hostName ? getHost(hostName)?.default_project?.project_id : undefined);
   try {
     if (linkedId) {
       return await shipExisting(client, auth, linkedId, flags, prepared.env);
@@ -412,19 +414,19 @@ async function shipFirstTime(
     }
     // GitHub origin → the seamless import (one-click App install, or --github-token).
     // Non-GitHub remote → the generic project link.
-    project = github
-      ? await linkGitHubBackedProject(client, {
+    project = await (github
+      ? linkGitHubBackedProject(client, {
           repoUrl: byoUrl,
           name,
           accountId,
           githubToken: flags.githubToken,
           yes: flags.yes,
         })
-      : await client.post<ProjectSummary>('/projects', {
+      : client.post<ProjectSummary>('/projects', {
           repo_url: byoUrl,
           name,
           account_id: accountId,
-        });
+        })).catch(explainCreationRefusal);
     bindShippedFolder(project, hostName, auth);
     // BYO stays BYO: push with the user's own git credentials, to their remote.
     gitTarget = { repoUrl: project.repo_url, credentialMode: 'none' };
@@ -453,7 +455,7 @@ async function shipFirstTime(
       // project still ends up with a kortix.yaml either way; this only picks
       // who writes it.
       seed_starter: false,
-    });
+    }).catch(explainCreationRefusal);
     project = prov;
     // Bind the folder to the project the INSTANT it exists — before resolving a
     // push credential, committing, or pushing, any of which can fail. Without
@@ -470,6 +472,13 @@ async function shipFirstTime(
   }
 
   return finishShip(client, auth, project, project.project_id, gitTarget, cred, env, flags);
+}
+
+function explainCreationRefusal(err: unknown): never {
+  if (err instanceof ApiError && err.status === 403) {
+    process.stderr.write('To ship to an existing project, run kortix projects link <project_id>, then kortix ship.\n');
+  }
+  throw err;
 }
 
 // ── Subsequent ship: commit + push to the linked project ────────────────────

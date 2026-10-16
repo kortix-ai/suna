@@ -189,6 +189,39 @@ export async function loadOlderSessionTranscriptMirror(input: {
 	}
 }
 
+/** The route's largest window: an export walks the whole saved copy. */
+const SAVED_EXPORT_WINDOW = 500;
+
+/**
+ * Every message of the saved copy, oldest first: each window back from the
+ * newest, until the server leaves no cursor. For an export, which needs the
+ * whole conversation while the computer cannot answer. Unlike the reads above
+ * it throws on a failed read: a partial export must not pass for a whole one.
+ */
+export async function loadSavedSessionTranscriptMessages(
+	scope: { projectId: string; sessionId: string },
+	signal?: AbortSignal,
+): Promise<Array<{ info: Message; parts: Part[] }>> {
+	const windows: Array<Array<{ info: Message; parts: Part[] }>> = [];
+	const seen = new Set<string>();
+	let before: string | null = null;
+	do {
+		const envelope = await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+			limit: SAVED_EXPORT_WINDOW,
+			history: true,
+			before,
+			signal,
+		});
+		if (!envelope.available) break;
+		windows.unshift(mirrorMessagesForHydrate(envelope));
+		before = envelope.next_cursor ?? null;
+		// A cursor the server already gave is a server that is not advancing.
+		if (before !== null && seen.has(before)) break;
+		if (before !== null) seen.add(before);
+	} while (before !== null);
+	return windows.flat();
+}
+
 /**
  * How long after a turn ends the device's copy is re-read. The server writes
  * its saved copy on the turn-end relay, a moment after the runtime goes idle;

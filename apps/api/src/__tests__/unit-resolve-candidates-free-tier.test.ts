@@ -20,7 +20,6 @@ let managedProviderEnabled = true;
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
-  KORTIX_MARKUP: 1.2,
   PLATFORM_FEE_MARKUP: 0.1,
   config: new Proxy(
     {},
@@ -186,7 +185,7 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 
   test('allows managed premium candidates for Team accounts', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     const candidates = await resolveCandidates(principal('team-managed'), 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('credits');
@@ -197,7 +196,7 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 
   test('rejects stale raw auto for paid accounts', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     await expect(resolveCandidates(principal('team-auto'), 'auto')).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'model_not_found',
@@ -227,7 +226,7 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 
   test('does not charge BYOK or add a managed fallback for Team accounts', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     const candidates = await resolveCandidates(principal('team-byok'), 'openai/gpt-4.1');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('none');
@@ -254,7 +253,7 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('CLOUD-ONLY gate: blocks an explicitly-named managed model when KORTIX_MANAGED_PROVIDER_ENABLED is off, even for a paid tier', async () => {
     managedProviderEnabled = false;
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     await expect(
       resolveCandidates(principal('self-host-flag-off'), 'glm-5.3-flash'),
     ).rejects.toMatchObject({
@@ -265,7 +264,7 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('CLOUD-ONLY gate: a self-host BYOK request gets no managed fallback candidate appended when the flag is off', async () => {
     managedProviderEnabled = false;
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     const candidates = await resolveCandidates(
       principal('self-host-byok-flag-off'),
       'openai/gpt-4.1',

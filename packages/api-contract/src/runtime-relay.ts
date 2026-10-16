@@ -338,6 +338,27 @@ export interface CompiledAgent {
   tools?: Record<string, boolean>;
   /** Tool policy: capability → action, or capability → pattern → action. */
   permission?: unknown;
+  /** kortix.yaml v3: the registered extensions a session of this agent loads (`CompiledAgentSet.extensions`). */
+  extensions?: string[];
+  /** kortix.yaml v3: pi's codemode tool. Omitted: `on`. */
+  codemode?: 'on' | 'only' | 'off';
+}
+
+/** A kortix.yaml v3 slash command. */
+export interface CompiledCommand {
+  description?: string;
+  /** The prompt. `$ARGUMENTS` takes the arguments; `$1`, `$2`, … take them one word at a time, the last takes the rest. */
+  template: string;
+  /** The agents that enable the command. Running it on any other agent is refused. */
+  agents: string[];
+}
+
+/** A kortix.yaml v3 extension: one implementation per harness. */
+export interface CompiledExtension {
+  /** Repo-relative module path, loaded as an OpenCode plugin. */
+  opencode?: string;
+  /** `npm:<name>@<x.y.z>`, a repo-relative path, or pi's `{ source, extensions, skills, prompts, themes }` form. */
+  pi?: string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] };
 }
 
 /** The compiled agent set of a session. */
@@ -359,6 +380,17 @@ export interface CompiledAgentSet {
    * plus the ones `project_tools` replaces. Absent: all of them load.
    */
   kortix_tools?: string[];
+  /**
+   * `3` for a kortix.yaml v3 project. A harness then runs only the declared
+   * agents (no built-in `general`/`explore`) and reads no harness config folder.
+   */
+  schema?: 3;
+  /** v3: the project's registered skills, name → repo-relative folder holding `SKILL.md`. Kortix skills are not listed. */
+  skills?: Record<string, string>;
+  /** v3: slash commands, by name. */
+  commands?: Record<string, CompiledCommand>;
+  /** v3: registered extensions, by name. An agent loads the ones its `extensions` list names. */
+  extensions?: Record<string, CompiledExtension>;
 }
 
 /** May an agent with this compiled `tools` map use `tool`? Its own entry, else `*`, else yes. */
@@ -384,6 +416,8 @@ export const AGENT_SETTING_HARNESSES = {
   permission: ['opencode', 'pi'],
   disable: ['opencode', 'pi'],
   prompt: ['opencode', 'pi'],
+  extensions: ['opencode', 'pi'],
+  codemode: ['pi'],
 } as const satisfies Record<keyof CompiledAgent, readonly ('opencode' | 'pi')[]>;
 export type AgentSetting = keyof typeof AGENT_SETTING_HARNESSES;
 

@@ -17,8 +17,8 @@ describe('classifyTurnError', () => {
       message: 'Payment Required: Insufficient credits. Balance: $-0.06',
     });
     expect(r.title).toBe('Out of credits');
-    // Balance is parsed out of the message and surfaced.
-    expect(r.text).toContain('$-0.06');
+    // Balance is parsed out of the message and surfaced in credits.
+    expect(r.text).toContain('*-6 credits*');
   });
 
   test('usage limit — 429 status', () => {
@@ -319,11 +319,16 @@ describe('classifyTurnError — the daemon code decides (W5 E11)', () => {
 });
 
 describe('parseBalance', () => {
-  test('parses a negative balance', () => {
-    expect(parseBalance('Insufficient credits. Balance: $-0.06')).toBe('$-0.06');
+  test('reads the credits message the API sends', () => {
+    expect(parseBalance('Insufficient credits. Balance: 1,250 credits, required: 3 credits')).toBe('1,250 credits');
+    expect(parseBalance('Insufficient credits. Balance: -6 credits, required: 0.34 credits')).toBe('-6 credits');
   });
-  test('parses a positive balance without a dollar sign', () => {
-    expect(parseBalance('balance: 12.5 remaining')).toBe('$12.50');
+  test('reads the dollar message an older server sends, in credits', () => {
+    expect(parseBalance('Insufficient credits. Balance: $-0.06')).toBe('-6 credits');
+    expect(parseBalance('Insufficient credits. Balance: $1.0000, required: $5.0000')).toBe('100 credits');
+  });
+  test('reads a bare positive balance as dollars', () => {
+    expect(parseBalance('balance: 12.5 remaining')).toBe('1,250 credits');
   });
   test('returns null when there is no balance', () => {
     expect(parseBalance('Payment Required')).toBeNull();

@@ -1,17 +1,17 @@
 ---
 title: Tools
-description: The five Kortix tools, project tools you write in TypeScript or JavaScript, and which agent may call which.
+description: The seven Kortix tools, project tools you write in TypeScript or JavaScript and register in kortix.yaml, and which agent may call which.
 ---
 
-A tool is a function the model calls during a turn. This page is for project authors who choose the tools a project loads, write their own, and limit them per agent. Tool selection and per-agent access live in [`kortix.yaml`](/docs/project/manifest).
+A tool is a function the model calls during a turn. This page is for project authors who choose the tools a project loads, write their own, and limit them per agent. The tool registry and per-agent access live in [`kortix.yaml`](/docs/project/manifest).
 
 ## Three kinds of tools
 
 | Kind | Names | Comes from |
 | --- | --- | --- |
 | Harness tools | `bash`, `read`, `write`, `edit`, `apply_patch`, `glob`, `grep`, `list`, `task`, `question`, `todowrite`, `webfetch`, `websearch`, `skill`, `lsp` | The harness, OpenCode or pi. |
-| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Kortix maintains them. You select them under `tools:`. |
-| Project tools | Any name you declare | One module in your repo, declared under `tools:`. |
+| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe` | Kortix maintains them. Every project has them without an entry. |
+| Project tools | Any name you register | One module in your repo, registered under `tools:`. |
 
 Kortix tools and project tools are one module each. The sandbox runs the same module on both [harnesses](/docs/project/agents#harnesses-opencode-and-pi), with the same name, arguments, and output.
 
@@ -22,60 +22,34 @@ Kortix tools and project tools are one module each. The sandbox runs the same mo
 | `scrape_webpage` | Fetches one or more pages and returns them as Markdown. |
 | `memory` | Views, creates, edits, renames, and deletes files under `memory/`, the project memory. |
 | `show` | Presents a file, image, URL, document, or text to the person in the session. |
+| `kortix-connectors_call` | Calls a session connector action (e.g. `gmail.list_messages`) through the gateway, under the agent's policy. |
+| `kortix-connectors_describe` | Describes one connector action's arguments from the session's connector catalog. |
 
-## Choose Kortix tools
+## Register project tools
 
-A new project lists all five under the top-level `tools:` key:
+The top-level `tools:` key is the tool registry. It maps a name to a module in your repository:
 
 ```yaml
 tools:
-  web_search: kortix:web_search      # maintained by Kortix, updated automatically
-  image_search: kortix:image_search
-  scrape_webpage: kortix:scrape_webpage
-  memory: kortix:memory
-  show: kortix:show
-  # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
+  lookup_order: tools/lookup_order.ts            # your own tool
+  web_search: integrations/search/web_search.ts  # replaces the Kortix web_search
 ```
 
-`<name>: kortix:<name>` keeps the tool Kortix maintains. A fix to it reaches the project with no change in the repo.
-
-| `kortix.yaml` | Kortix tools a session gets |
-| --- | --- |
-| No `tools:` key, in the root file or in any [imported](/docs/project/manifest#imports) file | All five. |
-| A `tools:` key in any file, even an empty one | Only the Kortix tools it lists. |
-
-Project tools load in both cases.
-
-- **Remove a Kortix tool:** delete its line. Every agent of the project loses it. To hide a tool from one agent only, use [`agents.<name>.tools`](#give-each-agent-its-tools).
-- **A skill that names a removed tool still loads.** The model finds no such tool and uses other tools.
-- **See what a session gets:** run `kortix tools ls` from the project root.
-
-```text
-$ kortix tools ls
-NAME            KIND                 SOURCE
-web_search      kortix (overridden)  tools/web_search.ts
-scrape_webpage  kortix               kortix:scrape_webpage
-memory          kortix               kortix:memory
-show            kortix               kortix:show
-lookup_order    project              tools/lookup_order.ts
-
-Removed Kortix tools: image_search
-Add `<name>: kortix:<name>` under `tools:` to get one back.
-```
-
-`KIND` is `kortix`, `kortix (overridden)` (a Kortix tool name with your module), or `project`. `kortix tools ls --json` prints `{ manifest, tools_key, tools: [{ name, kind, source }], removed }`.
+- **Kortix tools need no entry.** Every agent can call all seven unless its [`tools`](#give-each-agent-its-tools) grant hides them. Kortix updates them with no change in the repository.
+- **A Kortix tool's name replaces that tool.** The module runs instead of the Kortix tool, for every agent. See [Eject or override a Kortix tool](#eject-or-override-a-kortix-tool).
+- **To hide a tool from an agent**, use that agent's `tools` grant. There is no project-wide removal.
 
 Rules for every entry under `tools:`:
 
-- A name matches `^[a-z][a-z0-9_]{0,63}$`: snake case, 64 characters at most.
+- A name matches `^[a-z][a-z0-9_]{0,63}$`: snake case, 64 characters at most. A Kortix tool name is also accepted, to replace that tool.
 - A harness tool name (the table above, plus the OpenCode internals `invalid`, `execute`, and `plan_exit`) or a name that starts with `pty_` is an error.
-- A value is `kortix:<name>` with the same name as the key, or a repo-relative module path.
-- A path ends in `.ts`, `.js`, `.mts`, `.mjs`, `.cts`, or `.cjs`. It does not start with `/` or `-` and has no `.` or `..` segment. The folder is your choice.
-- An imported file may declare tools. A name declared in two files is an error.
+- A value is a repository-relative module path that ends in `.ts`, `.js`, `.mts`, `.mjs`, `.cts`, or `.cjs`. It does not start with `/` or `-` and has no `.` or `..` segment. The folder is your choice.
+- The value `kortix:<name>` belongs to `kortix_version` 2 and is an error in v3. See [Legacy manifests](/docs/project/legacy-manifests#tools-in-v2).
+- An imported file may register tools. A name registered in two files is an error.
 
 ## Write a project tool
 
-Project tools need `kortix.yaml` with `kortix_version: 2` or `3`.
+Project tools need `kortix.yaml` with `kortix_version: 3` (or the legacy version 2).
 
 <Steps>
 <Step title="Store the secret the tool reads">
@@ -86,7 +60,7 @@ kortix secrets set WEATHER_API_KEY=-
 
 The command reads the value from stdin. Grant the secret to each agent that calls the tool, in `kortix.yaml`: `agents.<name>.secrets: all`, or a list such as `[WEATHER_API_KEY]`. See [Secrets](/docs/project/secrets).
 
-Declare the name under `env:` in `kortix.yaml` too. In a `kortix_version: 2` manifest, `kortix validate` and `kortix ship` report an undeclared grant as an error:
+Declare the name under `env:` in `kortix.yaml` too, so the dashboard and `kortix ship` prompt for a missing value:
 
 ```yaml
 env:
@@ -118,16 +92,16 @@ export default {
 ```
 
 </Step>
-<Step title="Declare it in kortix.yaml">
+<Step title="Register it in kortix.yaml">
 
 ```yaml
 env:
   optional: [WEATHER_API_KEY]
 tools:
-  # … the Kortix tools you keep
   weather_now: tools/weather_now.ts
 agents:
   my-agent:
+    tools: all                 # the default: every tool, weather_now included
     secrets: [WEATHER_API_KEY]
 ```
 
@@ -190,14 +164,35 @@ agents:
 | `none` | No tool. |
 | A list | Only the tools listed. A list that contains `*` is `all`. |
 | `{ exclude: [...] }` | Every tool except the ones listed. |
-| `{ bash: false, … }` | The map form: `false` removes a tool. |
 
 - **Visibility, not permission.** A hidden tool is also denied if the model calls it. For a visible tool, the agent's `permission` rules decide allow, ask, or deny. See [Agents & permissions](/docs/project/agents#ask-allow-or-deny).
-- **Kortix tools.** An agent list cannot add a Kortix tool the project does not load. List it under the top-level `tools:` first.
+- **Names.** Each name is a harness tool, a Kortix tool, or a tool registered under `tools:`. Any other name is an error. The legacy map form `{ bash: false }` is an error: use `{ exclude: [bash] }`.
 - **Connector tools** follow `agents.<name>.connectors`, not this list. See [Connectors](/docs/connect/connectors).
 - **Subagents.** On pi, a subagent gets only the tools that both its own list and the parent agent's list allow. On OpenCode, a subagent gets the tools of its own list. To stop an agent from delegating, leave `task` out of its list.
 - **OpenCode groups.** On OpenCode, `bash` also covers the `pty_*` terminal tools. `write`, `edit`, and `apply_patch` share one permission: listing one shows all three, and excluding one hides all three. pi has separate `write` and `edit` tools.
-- **Typos.** `kortix validate` warns about a name that is not a harness, Kortix, or project tool, and about a Kortix tool the project does not load. A typo in an `exclude` list leaves the real tool on.
+
+### Agents without the project repository
+
+An agent with [`workspace: { project_repository: false }`](/docs/project/manifest#kortix-access) has no checkout in `/workspace`. Its project tools still load. The sandbox receives only these files from the default branch:
+
+- the module of each project tool the agent may call (`agents.<name>.tools`);
+- every file those modules import by a relative path (`./lib/client`, `../data/regions.json`), followed transitively.
+
+No other file of the repository reaches the sandbox. A tool the agent may not call ships no file. Lock an agent down with both settings:
+
+```yaml
+tools:
+  lookup_order: tools/lookup_order.ts
+agents:
+  support:
+    workspace:
+      project_repository: false
+    tools: [lookup_order, web_search]   # no bash, read, or write
+```
+
+- A package import (`import { z } from 'zod'`) does not resolve: no `node_modules` ships. Use `fetch` and `node:*` modules.
+- `context.directory` is `/workspace`, which is empty for this agent.
+- A change to a shipped file reaches running sessions as their config converges, like any tool change.
 
 ## Eject or override a Kortix tool
 
@@ -221,9 +216,8 @@ In a local checkout, give `kortix cr open` the branch you pushed: `--head <branc
 
 - It writes the source the sandbox runs to `tools/<name>.ts`. The copy imports only `node:*` modules, so it runs as it is. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `memory` and `show` work on files in the project checkout.
 - It sets `<name>: tools/<name>.ts` in the file that declares the entry, the root file or an imported file. The line ends with `# ejected from kortix:<name>`. Other lines and comments stay.
-- With no `tools:` key, it creates one and also lists the other four Kortix tools as `kortix:<name>`, so the eject removes nothing.
 - It refuses when `tools/<name>.ts` exists or when the tool already points at another module. `--force` overwrites.
-- It refuses a name that is not a Kortix tool, and a project without `kortix.yaml` at `kortix_version` 2 or 3.
+- It refuses a name that is not a Kortix tool, and a project without `kortix.yaml`.
 
 Kortix does not update an ejected copy. To override without a copy, point the Kortix tool name at any module of yours:
 
@@ -234,21 +228,21 @@ tools:
 
 The module replaces the Kortix tool on every harness. Keep the name, the arguments, and the output shape, so skills that name the tool and the web app's view of it still work.
 
-To return to the maintained tool, set the line back to `<name>: kortix:<name>` and delete the module.
+To return to the maintained tool, delete the line and the module.
 
 ## Test a tool
 
-A tool change reaches sessions when it reaches the default branch, usually through a [change request](/docs/git#change-requests). New sessions then load the change, and running sessions pick it up as their config converges. On pi, a change to a project tool or to the Kortix tool list restarts the runtime in place while no turn runs. The session keeps its messages. See [How a change takes effect](/docs/project#how-a-change-takes-effect).
+A tool change reaches sessions when it reaches the default branch, usually through a [change request](/docs/git#change-requests). New sessions then load the change, and running sessions pick it up as their config converges. On pi, a change to a project tool restarts the runtime in place while no turn runs. The session keeps its messages. See [How a change takes effect](/docs/project#how-a-change-takes-effect).
 
 <Steps>
 <Step title="Validate">
 
-`kortix validate` checks names, paths, missing module files, and `kortix:` values. It warns when a `tools:` key lists no Kortix tool.
+`kortix validate` checks tool names and paths, and each agent's `tools` grant against the harness, Kortix and registered tools.
 
 </Step>
 <Step title="Check the list">
 
-`kortix tools ls` shows each tool a session gets and the Kortix tools the project removed.
+`kortix tools ls` shows each tool the project registers and each Kortix tool it overrides.
 
 </Step>
 <Step title="Merge">
@@ -270,13 +264,11 @@ kortix sessions new --wait --prompt "Call the weather_now tool once with city Be
 </Step>
 </Steps>
 
-## Tools in `harnesses/opencode/tools`
+## Tools in harness folders
 
-OpenCode also loads tool files from the `tools/` folder of its config directory (`opencode.config_dir`, `harnesses/opencode` in a new project). pi does not read that folder.
+A `kortix_version: 3` session does not read the `tools/` folder of an OpenCode config directory (`harnesses/opencode/tools/`, `.kortix/opencode/tools/`). To keep such a tool, port it to a project tool:
 
-- On OpenCode, a tool in that folder wins over a Kortix tool or project tool of the same name. Delete copies of Kortix tools from it, so the maintained tools run.
-- To run an OpenCode tool on both harnesses, port it to a project tool:
-  1. Move the file out of the folder, for example to `tools/<name>.ts`.
-  2. Replace `tool({ description, args, execute })` with the plain default export object. Write `args` as JSON Schema under `parameters`.
-  3. Read secrets from `context.env`.
-  4. Declare it under `tools:` in `kortix.yaml`.
+1. Move the file out of the folder, for example to `tools/<name>.ts`.
+2. Replace `tool({ description, args, execute })` with the plain default export object. Write `args` as JSON Schema under `parameters`.
+3. Read secrets from `context.env`.
+4. Register it under `tools:` in `kortix.yaml`.

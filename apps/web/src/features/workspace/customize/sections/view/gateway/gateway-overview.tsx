@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { type ReactNode, useMemo, useState } from 'react';
 
@@ -26,8 +26,8 @@ import {
   UsageChart,
   chartConfig,
   fmtCompact,
+  fmtCredits,
   fmtMs,
-  fmtUsd,
   weightedP50,
 } from './_metrics';
 import { displayModel } from './_shared';
@@ -41,7 +41,8 @@ const METRICS: {
   keys: (keyof typeof chartConfig)[];
   fmt: (v: number) => string;
 }[] = [
-  { key: 'cost', label: 'Spend', keys: ['cost'], fmt: fmtUsd },
+  // Spend reads in credits; the tooltip appends the unit in the component.
+  { key: 'cost', label: 'Spend', keys: ['cost'], fmt: (v) => fmtCredits(v) },
   {
     key: 'traffic',
     label: 'Requests',
@@ -98,6 +99,9 @@ export function GatewayOverview({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('gatewayCosts');
   const metrics = useLocalizedUiCatalog(METRICS);
+  const locale = useLocale();
+  const creditsUnit = tI18nComplete.raw('textbe379a30f1aa');
+  const credits = (usd: number) => fmtCredits(usd, locale);
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>('cost');
 
@@ -152,10 +156,11 @@ export function GatewayOverview({
   const activeMetric = metrics.find((m) => m.key === metric) ?? metrics[0];
   const tab = (key: MetricKey) => metrics.find((m) => m.key === key)?.label ?? key;
 
-  const tabs: { key: MetricKey; value: string; sub: ReactNode }[] = [
+  const tabs: { key: MetricKey; value: string; unit?: string; sub: ReactNode }[] = [
     {
       key: 'cost',
-      value: fmtUsd(cost),
+      value: credits(cost),
+      unit: creditsUnit,
       sub: <SpendSplit kortixCost={kortixCost} providerCost={providerCost} days={days} />,
     },
     {
@@ -200,6 +205,7 @@ export function GatewayOverview({
                   key={m.key}
                   label={tab(m.key)}
                   value={m.value}
+                  unit={m.unit}
                   selected={metric === m.key}
                   onSelect={() => setMetric(m.key)}
                 />
@@ -215,7 +221,15 @@ export function GatewayOverview({
             <p className="text-muted-foreground text-xs tabular-nums">
               {tabs.find((m) => m.key === metric)?.sub}
             </p>
-            <UsageChart data={series} keys={activeMetric.keys} yFormatter={activeMetric.fmt} />
+            <UsageChart
+              data={series}
+              keys={activeMetric.keys}
+              yFormatter={
+                activeMetric.key === 'cost'
+                  ? (v) => `${credits(v)} ${creditsUnit}`
+                  : activeMetric.fmt
+              }
+            />
           </div>
         </section>
 
@@ -236,13 +250,13 @@ export function GatewayOverview({
                     <SpendRow
                       key={`${model.provider}/${model.model}`}
                       label={displayModel(model.model) || 'unknown'}
-                      value={`${fmtUsd(model.cost)} · ${share}%`}
+                      value={`${credits(model.cost)} ${creditsUnit} · ${share}%`}
                     />
                   ))}
                   {spend.rest ? (
                     <SpendRow
                       label={t('everythingElse')}
-                      value={`${fmtUsd(spend.rest.cost)} · ${spend.rest.share}%`}
+                      value={`${credits(spend.rest.cost)} ${creditsUnit} · ${spend.rest.share}%`}
                     />
                   ) : null}
                 </>
@@ -276,8 +290,8 @@ export function GatewayOverview({
                         </span>
                         <span className="text-muted-foreground truncate text-xs tabular-nums">
                           {name ? <span className="font-mono">{s.session_id.slice(0, 8)} · </span> : null}
-                          {t('sessionModel', { cost: fmtUsd(s.llm_cost) })} ·{' '}
-                          {t('sessionSandbox', { cost: fmtUsd(s.compute_cost) })} ·{' '}
+                          {t('sessionModel', { cost: credits(s.llm_cost) })} ·{' '}
+                          {t('sessionSandbox', { cost: credits(s.compute_cost) })} ·{' '}
                           {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
                         </span>
                       </div>
@@ -292,7 +306,7 @@ export function GatewayOverview({
                         ]}
                       />
                       <span className="text-foreground w-14 shrink-0 text-right text-xs font-medium tabular-nums">
-                        {fmtUsd(s.total_cost)}
+                        {credits(s.total_cost)}
                       </span>
                     </div>
                   );
@@ -354,7 +368,7 @@ function SpendRow({ label, value }: { label: string; value: string }) {
  * Two payees, never more: the Kortix wallet (managed inference, or the
  * platform fee on a BYOK route) and your own provider account (BYOK, billed
  * to your own key). A payee that collected nothing is left out rather than
- * printed as a `$0.0000` — on the two common deployments (all-managed and
+ * printed as a `0` — on the two common deployments (all-managed and
  * all-BYOK) exactly one side is real, and naming it is more useful than a
  * two-term sum with a zero in it.
  */
@@ -394,11 +408,13 @@ function SpendSplit({
   );
 }
 
+/** Bare credits: the Spend tab above carries the unit. */
 function Payee({ color, label, amount }: { color: string; label: string; amount: number }) {
+  const locale = useLocale();
   return (
     <span className="inline-flex items-center gap-1 tabular-nums">
       <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-      {fmtUsd(amount)} {label}
+      {fmtCredits(amount, locale)} {label}
     </span>
   );
 }

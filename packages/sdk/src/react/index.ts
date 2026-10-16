@@ -147,6 +147,29 @@ export {
   projectTriggerEventTypesKey,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export {
+  useApproveCaptureDevice,
+  useApproveCaptureEnrollment,
+  useCaptureChunkMedia,
+  useCaptureDays,
+  useCaptureDeviceGrant,
+  useCaptureDevices,
+  useCaptureEnrollments,
+  useCaptureEnrollmentTokens,
+  useCapturePolicy,
+  useCaptureSearch,
+  useCaptureTimeline,
+  useCaptureTimelineItems,
+  useCaptureWorkspace,
+  useCreateCaptureEnrollmentToken,
+  useDenyCaptureDevice,
+  useDenyCaptureEnrollment,
+  useLinkCaptureDevice,
+  useRevokeCaptureDevice,
+  useRevokeCaptureEnrollmentToken,
+  useSetCaptureEnabled,
+  useSetCapturePolicy,
+} from './use-capture';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
@@ -180,6 +203,7 @@ export * from './use-admin-feedback';
 export * from './use-system-status';
 export * from './use-ops-overview';
 export * from './use-admin-billing';
+export * from './use-billing-plan';
 export * from './use-impersonation';
 export * from './use-teams-installations';
 export * from './use-tunnel';
@@ -225,6 +249,7 @@ export * from './use-sessions-needing-input';
 export * from './use-review-summary';
 // The caller's notification inbox, preferences and session watch (KRTX-1742).
 export * from './use-notifications';
+export * from './use-session-list-state';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';

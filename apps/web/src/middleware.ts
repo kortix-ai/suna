@@ -188,6 +188,9 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/oauth',
   '/checkout',
   '/tunnel',
+  // The Kortix Capture area (`/capture/[accountId]/…`): the app menu item
+  // "Kortix Capture…" and its menu bar item open it.
+  '/capture',
   '/github',
   '/cli',
   '/marketplace',
@@ -318,8 +321,7 @@ export async function middleware(request: NextRequest) {
   // read only picks the language of content that is identical for every
   // visitor; it never grants anything.
   const cookieLocale = (): Locale =>
-    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ??
-    defaultLocale;
+    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ?? defaultLocale;
 
   // Skip middleware for static files, API routes, and telemetry endpoints.
   // The auth route handlers (KRTX-2072) invoke the same server actions the
@@ -353,15 +355,16 @@ export async function middleware(request: NextRequest) {
     return finalizeEnvironmentAccess(NextResponse.next());
   }
 
-  // ── Terms of Service → public Drive file (permanent 308) ────────────────
-  // The Terms document moved to an externally-owned Google Drive file. Both
-  // the new stable path (`/legal/terms`) and the legacy tab query
-  // (`/legal?tab=terms`), including every supported locale prefix
-  // (`/de/legal/terms`, `/de/legal?tab=terms`, …), permanently redirect there
-  // so existing links/bookmarks keep resolving. Privacy and imprint stay local
-  // on `/legal`. This runs before auth/locale logic — the destination is an
-  // external URL that needs no session. See `lib/legal-terms-redirect.ts`.
-  const termsDestination = legalTermsRedirectUrl(pathname, request.nextUrl.searchParams);
+  // ── Terms of Service → the Terms tab of /legal (permanent 308) ─────────
+  // Every link points at the stable `/legal/terms`, in each locale prefix.
+  // It maps onto `<prefix>/legal?tab=terms`, where the Terms render. This runs
+  // before auth/locale logic: the legal page needs no session. See
+  // `lib/legal-terms-redirect.ts`.
+  const termsDestination = legalTermsRedirectUrl(
+    pathname,
+    request.nextUrl.searchParams,
+    request.nextUrl,
+  );
   if (termsDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
   }
@@ -615,7 +618,8 @@ export async function middleware(request: NextRequest) {
   // (see lib/supabase/middleware-identity.ts) instead of round-tripping
   // GoTrue, so a client-side navigation no longer pays an edge -> Supabase hop
   // before its RSC payload can start. getUser() still runs for what cannot be
-  // settled locally.
+  // settled locally, and once per session per 30 s to confirm it was not
+  // signed out (KRTX-2387).
   //
   // IMPORTANT: Skip the lookup entirely for auth routes — the auth page
   // handles its own session client-side. Resolving here can trigger a
@@ -657,13 +661,15 @@ export async function middleware(request: NextRequest) {
   // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
   // erroring on every request and dead-ends the user on /auth. Drop the Supabase
   // auth cookies (they can be chunked: name, name.0, name.1, …) so the next load
-  // starts clean instead of looping on the bad token.
+  // starts clean instead of looping on the bad token. A signed-out session
+  // (`session_not_found`) can never come back either.
   if (authError) {
     const message = authError.message || '';
     const code = (authError as { code?: string }).code;
     if (
       code === 'refresh_token_already_used' ||
       code === 'refresh_token_not_found' ||
+      code === 'session_not_found' ||
       /refresh token/i.test(message) ||
       /invalid.*(jwt|token)/i.test(message)
     ) {

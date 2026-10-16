@@ -3,10 +3,12 @@ import { type SQL, sql } from 'drizzle-orm';
 import { accountIdsWithMemberEmailLikeSql } from '../iam/membership-read';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { escapeLike } from '../shared/sql-like';
+import { isUuid } from '../shared/validate';
 
 /**
  * The `search` filter of the admin accounts list: the account's name or any
- * member's email contains the term (case-insensitive). Shared by the list
+ * member's email contains the term (case-insensitive), or the term is the
+ * account id (exact, a primary-key lookup). Shared by the list
  * query and its count query in `./index.ts`.
  *
  * The email branch is resolved users-first BY FORCE. A plain
@@ -23,6 +25,8 @@ import { escapeLike } from '../shared/sql-like';
  */
 export function adminAccountsSearchCondition(search: string): SQL {
   const pattern = `%${escapeLike(search)}%`;
-  return sql`(${qualifiedColumn(accounts.name)} ilike ${pattern} or ${qualifiedColumn(accounts.accountId)} IN (
+  const id = search.trim();
+  const byId = isUuid(id) ? sql` or ${qualifiedColumn(accounts.accountId)} = ${id}::uuid` : sql``;
+  return sql`(${qualifiedColumn(accounts.name)} ilike ${pattern}${byId} or ${qualifiedColumn(accounts.accountId)} IN (
     ${accountIdsWithMemberEmailLikeSql(pattern)}))`;
 }

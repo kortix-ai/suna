@@ -220,7 +220,7 @@ value/credential. `projects-client/setup-links.ts` ✅; facade
 ### 13e. Manifest validate + git token  ✅
 Two small project-scoped mutations, added to `projects-client/projects.ts`:
 - `project(id).validateManifest(raw)` → `POST /v1/projects/:id/manifest/validate`
-  (validates a `kortix.yaml` — or legacy `kortix.toml` — manifest's raw text
+  (validates a `kortix.yaml` (`kortix_version: 3`; legacy v1/v2 and `kortix.toml` still validate) manifest's raw text
   server-side, format auto-resolved from the project's manifest path; same
   schema `kortix ship`/`kortix validate`/the CR-merge gate use; always
   resolves with `{valid, issues}`, never throws on an invalid manifest).
@@ -253,19 +253,20 @@ pagination. Use `kortix.billing.sessionCosts.get(sessionId, options)` for model
 usage and mixed LLM/compute ledger entries.
 
 Mutations — a deliberately curated subset of `apps/api/src/billing/routes`
-(Stripe-webhook-only routes and legacy/per-seat-claim internals stay
+(Stripe-webhook-only routes and retired per-seat internals stay
 unwired) now live in `projects-client/billing.ts` and are grouped on the
-facade as `kortix.billing.{checkout, subscription, credits}`:
+facade as `kortix.billing.{setPlan, checkout, subscription, credits}`:
 | group | op | REST |
 |---|---|---|
+| (top level) | setPlan | `POST /v1/billing/plan` (`useSetBillingPlan()` hook) |
 | `checkout` | createSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `checkout` | confirmSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `subscription` | createPortalSession | `POST /v1/billing/create-portal-session` |
 | `subscription` | cancel | `POST /v1/billing/cancel-subscription` |
 | `subscription` | reactivate | `POST /v1/billing/reactivate-subscription` |
 | `subscription` | scheduleDowngrade | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
-| `subscription` | cancelScheduledChange | `POST /v1/billing/cancel-scheduled-change` |
-| `subscription` | prorationPreview | `GET /v1/billing/proration-preview` |
+| `subscription` | cancelScheduledChange | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
+| `subscription` | prorationPreview | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `credits` | purchase | `POST /v1/billing/purchase-credits` |
 | `credits` | autoTopupSettings | `GET /v1/billing/auto-topup/settings` |
 | `credits` | configureAutoTopup | `POST /v1/billing/auto-topup/configure` |

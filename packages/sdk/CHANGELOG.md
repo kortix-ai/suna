@@ -5,6 +5,107 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (Enterprise is a feature layer; trials removed)
+- `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.
+  Demo is self-serve (owners and admins); Licensed is a license contract.
+- `getEnterpriseDemo` / `setEnterpriseDemo` call `GET`/`PUT
+  /accounts/:id/iam/enterprise-demo` again (they rejected with
+  `ENDPOINT_RETIRED`). New hook `useSetEnterpriseDemo()`.
+- `contactEnterpriseSales(params)` (`POST /billing/enterprise/contact`),
+  `kortix.billing.contactSales`, `useContactSales()`: one-click "Talk to sales".
+- `AccountState.trial` is always null (`@deprecated`): trials are removed.
+- `AccountContract.credits_usd` / `AccountEnterpriseOffer.credits_usd` are
+  optional and `@deprecated`: a license carries no credits.
+
+### Added (BYOK fee entitlement)
+- `ADMIN_OVERRIDE_KEYS` and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS` add `'byokFee'`
+  (additive union member): the BYOK platform fee is an entitlement, on by
+  default for Free and Credits, off on Enterprise, and an operator override
+  switches it per account.
+
+### Changed (Enterprise is a feature layer)
+- An Enterprise trial no longer sets `AccountState.plan` to Enterprise: `plan`
+  stays the billing plan (what the account pays for), and the trial lends the
+  Enterprise features only (`trial.plan === 'enterprise'`, `tier.entitlements`).
+  A Credits trial still overlays `plan`. `plan.family === 'enterprise'` now
+  means an Enterprise contract.
+- `AccountState.subscription.monthly_usd` (optional, additive): the credits
+  plan's monthly amount the account pays, kept during a trial.
+
+### Added (Enterprise contracts and trials)
+One plan system (2026-10-15): the plan decides features; a trial is a dated
+grant of a plan; Enterprise is an annual contract (license + credit pool).
+
+- `AccountState` adds optional `trial` (`AccountTrial`: `plan`, `ends_at`,
+  `days_left`), `contract` (`AccountContract`), `enterprise_offer`
+  (`AccountEnterpriseOffer`) and `grace` (`AccountAccessGrace`: SSO/SCIM kept
+  14 days after an Enterprise trial or contract ends). Absent on an older
+  server. Additive.
+- `acceptEnterpriseOffer(params)` (`POST /billing/enterprise-offer/checkout`),
+  `kortix.billing.acceptEnterpriseOffer` and `useAcceptEnterpriseOffer()`:
+  a Stripe Checkout link for the open offer. Needs `billing.write`, which owners
+  AND admins now hold. Additive.
+- Admin: `useAdminEnterpriseContracts`, `useAdminCreateEnterpriseContract`,
+  `useAdminEndEnterpriseContract`, `useAdminWithdrawEnterpriseOffer`,
+  `useAdminEnterpriseOfferLink`, types `AdminEnterpriseContract`,
+  `AdminAccountContract`, `AdminContractCollection`,
+  `AdminCreateEnterpriseContractVariables`, and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS`
+  (the six override keys the server accepts). `AdminAccount` adds optional
+  `contract` and `graceEndsAt`. Additive.
+
+### Deprecated (Enterprise preview and flags)
+- `getEnterpriseDemo`, `setEnterpriseDemo`, `useAdminSetEnterpriseDemo`,
+  `useAdminSetEnterpriseEntitled`, `useAdminSetManagedModels` now reject with
+  `ENDPOINT_RETIRED` and send no request (the API answers 410). Grant an
+  Enterprise trial (`useAdminGrantTrial`), create a contract, or set the
+  `managedModels` override. Removed in the next major. No export was removed.
+- Type changes (the API no longer sends these fields): `AdminAccount`
+  `managedModelsOverride`, `demoEnterprise`, `enterpriseEntitled` and
+  `computeRateMultiplier` become optional and `@deprecated`;
+  `AdminAccountTrial.monthlyUsd` becomes optional and `@deprecated`;
+  `AccountState.enterprise_entitled` is `@deprecated` (read `plan.family`).
+
+### Changed (credits-only billing)
+Seat pricing is gone. Every legacy plan reads as `credits`: one paid plan, any
+whole monthly amount from $50 to $10,000, one shared credit wallet, unlimited
+members. 1 credit = $0.01.
+
+- Added: `setBillingPlan(params)` (`POST /v1/billing/plan`), `kortix.billing.setPlan`,
+  and the `useSetBillingPlan()` mutation hook in `@kortix/sdk/react`. Params
+  `{ monthlyUsd, successUrl, cancelUrl, locale?, accountId? }`; result
+  `SetBillingPlanResult` = `checkout_created` | `updated` | `unchanged` |
+  `payment_pending`. The hook invalidates the `['account-state']` queries.
+  Types `SetBillingPlanParams` and `SetBillingPlanResult`. Additive.
+- Deprecated, now reject with `ENDPOINT_RETIRED` and send no request (the API
+  answers `410`): `createPerSeatCheckout`, `claimPerSeatBilling`,
+  `cancelScheduledChange` (also `kortix.billing.subscription.cancelScheduledChange`),
+  `getProrationPreview` (also `...subscription.prorationPreview`). Their result
+  types stay exported. Removed in the next major. No export name was removed.
+- Breaking type changes (the API no longer sends these fields; nothing is
+  renamed):
+  - `PlanFamily` is `'free' | 'credits' | 'enterprise'` (`'team'` is gone).
+  - `AccountState.plan`: `status` is `'current' | 'non_plan'`, `shape` is
+    `'none' | 'credits' | 'contract'`, `is_grandfathered` is removed, and
+    `monthly_usd: number | null` is added.
+  - `AccountState` drops `billing_model`, `seats`, `member_count`,
+    `can_claim_per_seat` and `can_claim_computer`. `usage_this_period` is
+    present for every account.
+  - `ResolvedPlanView.isGrandfathered` is replaced by `monthlyUsd`.
+  - `BillingTierConfigurationsResponse` adds required `min_monthly_usd` and
+    `max_monthly_usd`.
+  - Admin: `AdminGrantTrialVariables.seats` is removed (`creditGrant` is granted
+    now and every 30 days during the trial); `AdminAccountTrial.seats` becomes
+    `monthlyUsd`; `AdminAccount` drops `billingModel` and `seatCount`;
+    `AdminAccountPlan` drops `is_grandfathered`, adds `monthlyUsd`, and its
+    `family` and `status` unions narrow as above.
+- The 402 body no longer carries `billing_model`. Branch on `billing_state`
+  (`out_of_credits`, `no_subscription`, `payment_failed`).
+- Added: `ProjectLlmCatalogResponse.platformFeePercent`, Kortix's fee on managed
+  model usage in percent (5.5). `managedPricingRoutes` now carries base provider
+  prices, before the fee. Optional, absent on an older server. Additive.
+- Changed: `COST_MARKUP` is `1.055` (was `1.2`), so displayed session cost
+  matches what credits are charged.
+
 ### Added (session-log follow-ups)
 - `sessionLogFullTextPlan(refs)`: which texts stored by reference a host shows
   inline and which it downloads. The smallest fill the 1 MiB inline budget;
@@ -26,6 +127,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `notebook_path` and `new_source`. `toolKind` maps `MultiEdit` and
   `NotebookEdit` to `edit`; `inputPath` reads `notebook_path`. The
   `file-edit` view model reads the same blocks.
+- Unchanged message arrays keep their rows past 20 sessions
+  (`buildSessionMessages`). This stops the "Maximum update depth exceeded"
+  in a host that reads more than 20 sessions per render (the web session
+  context modal with 20+ sub-agents).
 
 ### Added (block readers a host draws a tool call with)
 - `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),

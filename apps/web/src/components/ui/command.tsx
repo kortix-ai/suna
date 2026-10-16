@@ -305,6 +305,7 @@ function CommandPopoverContent({
   sideOffset = 8,
   className,
   shouldFilter = false,
+  defaultValue,
 }: {
   children: React.ReactNode;
   side?: 'top' | 'bottom' | 'left' | 'right';
@@ -312,6 +313,8 @@ function CommandPopoverContent({
   sideOffset?: number;
   className?: string;
   shouldFilter?: boolean;
+  /** The item value highlighted when the list opens (cmdk `defaultValue`). */
+  defaultValue?: string;
 }) {
   return (
     <PopoverContent
@@ -331,7 +334,7 @@ function CommandPopoverContent({
         className,
       )}
     >
-      <Command shouldFilter={shouldFilter} className={CMDK_SHARED_CLASSES}>
+      <Command shouldFilter={shouldFilter} defaultValue={defaultValue} className={CMDK_SHARED_CLASSES}>
         {children}
       </Command>
     </PopoverContent>

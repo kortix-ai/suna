@@ -35,13 +35,13 @@ describe('UserAvatar initials', () => {
   });
 });
 
-// Avatar v2 (Paper "Avatar · v2"): a circle, one solid fill from the email,
+// Avatar v2 (Paper "Avatar · v2"): a `rounded-sm` tile, never a circle, one solid fill from the email,
 // white initials, no border.
 describe('UserAvatar v2 look', () => {
-  test('a circle with a solid fill and white initials, no border', () => {
+  test('a rounded-sm tile with a solid fill and white initials, no border', () => {
     const html = renderToStaticMarkup(<UserAvatar size="md" name="Dana Gray" email="dana@example.com" />);
-    expect(html).toContain('rounded-full');
-    expect(html).not.toContain('rounded-sm');
+    expect(html).toContain('rounded-sm');
+    expect(html).not.toContain('rounded-full');
     expect(html).not.toContain('border');
     expect(html).toContain(`color:${AVATAR_INK}`);
     expect(html).toContain(`background-color:${avatarFill('dana@example.com')}`);

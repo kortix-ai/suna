@@ -478,6 +478,18 @@ describe('qk.accounts — a real cache cannot serve one user another user\'s lis
   });
 });
 
+describe('qk.project.sessionsPaged pinned / archived view (KRTX-2418)', () => {
+  test('each view gets its own cache slot; no view keeps the plain key', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
+    const archived = qk.project.sessionsPaged('P1', 'visible', { view: 'archived' });
+    expect(pinned).not.toEqual(plain);
+    expect(archived).not.toEqual(pinned);
+    expect(qk.project.sessionsPaged('P1', 'visible', {})).toEqual(plain);
+    expect(pinned.slice(0, plain.length)).toEqual([...plain]);
+  });
+});
+
 describe('qk.project.sessionsPaged label filter', () => {
   test('labels get their own cache slot, independent of label order', () => {
     const plain = qk.project.sessionsPaged('P1');

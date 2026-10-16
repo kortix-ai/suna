@@ -63,6 +63,8 @@ const TABS_DIR = join(import.meta.dir, 'tabs');
  */
 const TAB_ID_FOR_FILE: Record<string, string> = {
   'appearance-tab.tsx': 'appearance',
+  'computer-tab.tsx': 'computer',
+  'mcp-tab.tsx': 'mcp',
   'connected-tab.tsx': 'connected',
   // Renamed on the move to `/projects/[id]/customize/settings`: the section is called
   // "Feature flags" there, which is also the `CustomizeSection` id it has

@@ -7,6 +7,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
+import { topUpBonusCredits } from '@/features/billing/compute-pricing';
 import { spring } from '@/lib/springs';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
@@ -41,8 +42,9 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
  */
 
 /** Preset one-time credit amounts, in dollars. $1 = 100 credits
- *  (CREDITS_PER_DOLLAR). Anything else goes through Custom. */
-const CREDIT_PRESETS = [10, 25, 50, 100] as const;
+ *  (CREDITS_PER_DOLLAR). The last three sit on the top-up bonus ladder, so the
+ *  presets show the bonus growing. Anything else goes through Custom. */
+const CREDIT_PRESETS = [25, 100, 250, 1000] as const;
 
 /** Minimum custom top-up. Stripe rejects sub-$0.50 charges; $5 keeps the
  *  checkout worthwhile and matches the smallest amount worth a card round-trip. */
@@ -76,9 +78,14 @@ export function describeTopup(
     : tooHigh
       ? copy.contactSales(formatWholeUsd(CUSTOM_MAX_USD, copy.locale))
       : amount !== null
-        ? copy.creditHint(
-            formatCredits(dollarsToCredits(Math.round(amount)), { locale: copy.locale }),
-          )
+        ? topUpBonusCredits(amount) > 0
+          ? copy.creditHintBonus(
+              formatCredits(dollarsToCredits(Math.round(amount)), { locale: copy.locale }),
+              formatCredits(topUpBonusCredits(amount), { locale: copy.locale }),
+            )
+          : copy.creditHint(
+              formatCredits(dollarsToCredits(Math.round(amount)), { locale: copy.locale }),
+            )
         : copy.noExpiry;
 
   const actionLabel = isPurchasing
@@ -94,6 +101,8 @@ export interface TopupCopy {
   minimum: (amount: string) => string;
   contactSales: (amount: string) => string;
   creditHint: (credits: string) => string;
+  /** The hint when the amount earns a top-up bonus. */
+  creditHintBonus: (credits: string, bonus: string) => string;
   noExpiry: string;
   processing: string;
   addAmount: (amount: string) => string;
@@ -105,7 +114,8 @@ const DEFAULT_TOPUP_COPY: TopupCopy = {
   minimum: (amount) => `Minimum top-up is ${amount}.`,
   contactSales: (amount) => `For more than ${amount}, contact sales.`,
   creditHint: (credits) => `${credits} credits · added as soon as you pay.`,
-  noExpiry: 'Credits never expire. $1 = 100 credits.',
+  creditHintBonus: (credits, bonus) => `${credits} credits + ${bonus} bonus · added as soon as you pay.`,
+  noExpiry: 'Credits never expire. $1 = 100 credits, plus a bonus from $50.',
   processing: 'Processing',
   addAmount: (amount) => `Add ${amount}`,
   addCredits: 'Add credits',
@@ -159,6 +169,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
     minimum: (value) => t('minimum', { amount: value }),
     contactSales: (value) => t('contactSales', { amount: value }),
     creditHint: (credits) => t('creditHint', { credits }),
+    creditHintBonus: (credits, bonus) => t('creditHintBonus', { credits, bonus }),
     noExpiry: t('noExpiry'),
     processing: t('processing'),
     addAmount: (value) => t('addAmount', { amount: value }),

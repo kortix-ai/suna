@@ -39,7 +39,7 @@ import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/compo
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat } from '@/components/ui/status';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { infoToast, successToast } from '@/components/ui/toast';
+import { infoToast, successToast, toastIcon, undoToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -554,24 +554,17 @@ export function ReviewCenter({
   function commit(next: ReviewItem[], message: string, tone: 'success' | 'info' = 'success') {
     undoRef.current = items;
     setItems(next);
-    const toastFn = tone === 'info' ? infoToast : successToast;
-    toastFn(message, {
+    undoToast(message, {
       duration: UNDO_TOAST_MS,
-      button: (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            if (undoRef.current) {
-              setItems(undoRef.current);
-              undoRef.current = null;
-              infoToast(tI18nComplete.raw('text5d561a1e3f17'));
-            }
-          }}
-        >
-          {tI18nComplete.raw('texta8283ade3185')}
-        </Button>
-      ),
+      icon: tone === 'info' ? toastIcon('info') : toastIcon('success'),
+      undoLabel: tI18nComplete.raw('texta8283ade3185'),
+      onUndo: () => {
+        if (undoRef.current) {
+          setItems(undoRef.current);
+          undoRef.current = null;
+          infoToast(tI18nComplete.raw('text5d561a1e3f17'));
+        }
+      },
     });
   }
 

@@ -16,6 +16,7 @@ import {
   ArchiveIcon as Archive,
   RobotIcon as Bot,
   BrainIcon as Brain,
+  CodeIcon as Code,
   QuestionIcon as CircleHelp,
   NotePencilIcon as FilePen,
   FolderOpenIcon as FolderOpen,
@@ -38,6 +39,9 @@ const FAMILY_ICON: Record<StepFamily, LucideIcon> = {
   explore: Search,
   edit: FilePen,
   run: Terminal,
+  // pi's codemode: a script the model wrote that calls the other tools. Code,
+  // not the run family's Terminal — the card renders source, not a shell.
+  script: Code,
   web: Globe,
   create: Sparkles,
   plan: ListChecks,

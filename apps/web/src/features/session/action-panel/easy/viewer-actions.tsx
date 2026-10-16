@@ -29,6 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
@@ -100,7 +101,10 @@ export function fileShareInput(
  */
 export function pathCrumbs(path: string | undefined): string[] {
   if (!path) return [];
-  const parts = path.replace(/^\/workspace(?=\/|$)/, '').split('/').filter(Boolean);
+  const parts = path
+    .replace(/^\/workspace(?=\/|$)/, '')
+    .split('/')
+    .filter(Boolean);
   return parts.slice(0, -1);
 }
 
@@ -134,7 +138,7 @@ export function ViewerPathPill({
         )}
         <span className="text-foreground min-w-0 truncate font-medium">{fileName}</span>
       </span>
-      {children && <span className="flex shrink-0 items-center gap-0.5">{children}</span>}
+      {children && <ButtonGroup className="shrink-0">{children}</ButtonGroup>}
     </span>
   );
 }
@@ -372,9 +376,7 @@ function PublicLinkPopover({
                 onClick={() => revokeAll(liveShares.map((s) => s.share_id))}
                 className="text-destructive"
               >
-                {isRevoking && (
-                  <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />
-                )}
+                {isRevoking && <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />}
                 {tHardcodedUi('publicShareConfirm.revoke', { count: liveShares.length })}
               </Button>
             </div>
@@ -425,7 +427,9 @@ function PublicLinkPopover({
                 {tHardcodedUi('publicShareConfirm.cancel')}
               </Button>
               <Button size="toolbar" disabled={share.isPending} onClick={create}>
-                {share.isPending && <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />}
+                {share.isPending && (
+                  <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />
+                )}
                 {tHardcodedUi.raw('publicShareConfirm.confirm')}
               </Button>
             </div>
@@ -469,11 +473,12 @@ export function ViewerDownloadAction({ download }: { download?: ViewerDownload }
     }
   };
 
-  // Ghost, like full screen and close beside it: outside the pill every
-  // control carries the same weight.
-  return <ViewerDownloadButton variant="ghost" onDownload={() => void run()} pending={pending} />;
+  // Secondary, like full screen and close beside it in the toolbar's
+  // `ButtonGroup`: every member carries the same weight.
+  return (
+    <ViewerDownloadButton variant="secondary" onDownload={() => void run()} pending={pending} />
+  );
 }
-
 
 /**
  * Re-read the open file from the sandbox now.
@@ -532,7 +537,7 @@ export function PanelWidthButton({ isMobile }: { isMobile: boolean }) {
   return (
     <Hint label={label} side="bottom">
       <Button
-        variant="ghost"
+        variant="secondary"
         size="icon"
         onClick={toggleExpanded}
         aria-label={label}

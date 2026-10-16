@@ -28,10 +28,12 @@ import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import { logger } from '@/lib/log/logger'
-import type { PiRuntimeHooks } from '@/harness/pi/runtime'
+import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
+import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
 import { SESSION_LOG_EVENTS, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
+import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { spawnSync } from 'node:child_process'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
@@ -77,7 +79,7 @@ function startFakeGateway() {
   /** The chat messages of each request, so a test reads what the model was sent. */
   const sent: Array<Array<{ role: string; content: unknown }>> = []
   /** The sampling fields of each request body. */
-  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number }> = []
+  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[] }> = []
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
@@ -85,9 +87,9 @@ function startFakeGateway() {
     async fetch(req) {
       const url = new URL(req.url)
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: unknown[] }
+      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }> }
       sent.push(json.messages)
-      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0 })
+      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)) })
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
@@ -612,7 +614,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'codemode', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -630,8 +632,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 13 },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 13 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 16, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 16, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
   })
 
@@ -659,6 +661,46 @@ describe('pi harness', () => {
     const text = await readSse(stream, (t) => t.includes('event: permission.replied'))
     expect(text).toContain('event: permission.asked')
     expect(text).toContain('event: permission.replied')
+  })
+
+  test('a new prompt dismisses an open question, so an unattended session never wedges behind it', async () => {
+    // Prod 2026-10-09: a keyed cron session called `question`, nobody answered,
+    // and every later fire queued behind the blocked turn for 5 days.
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'went on without an answer' },
+        { text: 'second prompt answered' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 0 && !runtime.busy() && runtime.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: { role: string }; parts: Array<Record<string, any>> }> }
+    const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'question')!
+    expect(tool.state.status).not.toBe('running')
+    const texts = page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)
+    expect(texts).toContain('second prompt answered')
+    const text = await readSse(await r.bearer('/kortix/opencode/events?since=0'), (t) => t.includes('event: question.rejected'))
+    expect(text).toContain('event: question.rejected')
+  })
+
+  test('a steered message dismisses an open question, so the turn reads it', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'read the steer' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect(runtime.steer({ messageID: runtime.activeTurnMessageId()!.replace(/.$/, 'z'), text: 'STEERED while asked', parts: [] } as never)).toBe('steered')
+    await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
   test('a rejected permission blocks the tool and the turn still ends', async () => {
@@ -835,6 +877,24 @@ describe('pi harness', () => {
         KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'writer', agent: { build: { prompt: 'You build.' }, writer: { prompt: 'You write docs.' } } }),
       },
     })
+    expect(r.service.runtime()!.agentNameValue()).toBe('writer')
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))).toContain('You write docs.')
+  })
+
+  // Over 128 KiB the guest cannot exec with the raw var, so the API sends it gzip-encoded
+  // (@kortix/api-contract/compiled-agent-config-env). Platinum prod, 2026-10-14.
+  test('a compiled config over the exec limit arrives gzip-encoded and pi runs it', async () => {
+    const compiled = JSON.stringify({
+      default_agent: 'writer',
+      agent: { build: { prompt: 'You build.' }, writer: { prompt: `You write docs. ${'Keep every section short. '.repeat(6_000)}` } },
+    })
+    const encoded = encodeCompiledAgentConfigEnv(compiled)
+    expect(encoded).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG')
+    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'default', ...encoded } })
     expect(r.service.runtime()!.agentNameValue()).toBe('writer')
     const root = r.service.runtime()!.rootId
     const before = gateway.sent.length
@@ -1343,7 +1403,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'lookup_order', 'question', 'codemode', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -1372,7 +1432,7 @@ describe('project tools on pi', () => {
       script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'hi' } }, { tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} }, kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] }) },
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'codemode', 'task'])
     await promptAndSettle(r, 'show hi, then view memory')
     const show = toolParts(await page(r), 'show')[0]!
     expect(show.state.status).toBe('error')
@@ -1906,14 +1966,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'codemode', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'codemode', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'question', 'codemode', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {
@@ -2307,6 +2367,35 @@ describe('config releases on pi', () => {
     const second = await ask(r, 'second question')
     expect(second).toContain('PACKAGE-V2')
     expect(second).not.toContain('PACKAGE-V1')
+  })
+
+  test('a v3 release loads its ./ extension package and registered skills from the release root, and no harness folder', async () => {
+    const extension = (text: string) => `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${text}' }))\n`
+    write(repo, 'harnesses/pi/extensions/native.ts', extension('FOLDER-EXTENSION'))
+    write(repo, 'harnesses/pi/skills/folder-skill/SKILL.md', '---\nname: folder-skill\ndescription: f\n---\nx\n')
+    write(repo, '.pi/extensions/discovered.ts', extension('DISCOVERED'))
+    write(repo, 'skills/deploy/SKILL.md', '---\nname: deploy\ndescription: not registered\n---\nx\n')
+    write(repo, 'team/review/SKILL.md', '---\nname: review\ndescription: review from the release\n---\nx\n')
+    write(repo, 'extensions/package.ts', extension('PACKAGE-FROM-RELEASE'))
+    const governance = JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { mode: 'primary', prompt: 'V3', permission: 'allow' } }, skills: { review: 'team/review' } })
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'v3'), null, { projectId: 'proj-pi-test', governance }))
+    const r = await boot({
+      script: [{ text: 'first' }],
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/package.ts']) },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+      prepare: (workspace) => {
+        mkdirSync(join(workspace, 'extensions'), { recursive: true })
+        writeFileSync(join(workspace, 'extensions', 'package.ts'), extension('PACKAGE-FROM-WORKSPACE'))
+      },
+    })
+    expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('release')
+    expect(await skillsOf(r)).toEqual([['review', 'review from the release']])
+    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => name !== 'subagents')
+    expect(loaded).toHaveLength(1)
+    expect(loaded[0]!.startsWith(join(dir, 'store')) && loaded[0]!.endsWith('/extensions/package.ts')).toBe(true)
+    const first = await ask(r, 'first question')
+    expect(first).toContain('PACKAGE-FROM-RELEASE')
+    for (const text of ['PACKAGE-FROM-WORKSPACE', 'FOLDER-EXTENSION', 'DISCOVERED']) expect(first).not.toContain(text)
   })
 
   test('a ./ pi package in a release loads by native import: host modules resolve, a restart on the same release does not re-run it', async () => {
@@ -3449,5 +3538,330 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     expect(frames.some((f) => f.type === 'log.block.delta' && f.payload.block_id === text.id)).toBe(true)
     // No streaming record reaches the API.
     for (const p of batches.flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
+  })
+})
+
+describe('pi codemode', () => {
+  const script = (code: string) => ({ tool: 'codemode', args: { code } })
+  type Part = Record<string, any>
+  /** Run one prompt, then the root's tool parts. */
+  const run = async (r: Rig, text = 'go'): Promise<Part[]> => {
+    await promptAndSettle(r, text)
+    const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    return page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool')
+  }
+
+  test('on by default: one script runs two tools, and the model sees only its output', async () => {
+    const r = await boot({
+      script: [
+        // Kortix's bash declares no output schema: a script gets its text.
+        script("const a = await tools.bash({ command: 'echo one' }); const b = await tools.bash({ command: 'echo two' }); return a.trim() + '+' + b.trim()"),
+        { text: 'done' },
+      ],
+    })
+    const first = gateway.sampling.length
+    const parts = await run(r)
+    // The other tools stay declared beside codemode.
+    expect(gateway.sampling[first]!.toolNames).toEqual(expect.arrayContaining(['bash', 'read', 'codemode']))
+    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Use codemode to batch independent tool calls')
+    // One part, for the script: its nested calls are metadata, never parts of their own.
+    expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+    expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('one+two') })
+    expect(parts[0]!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([['bash', 'ok'], ['bash', 'ok']])
+    // The model's next request carries one tool result: the script's output.
+    const results = gateway.sent[first + 1]!.filter((m) => m.role === 'tool')
+    expect(results).toHaveLength(1)
+    expect(String(results[0]!.content)).toContain('one+two')
+  })
+
+  test('off removes codemode; only declares codemode alone and still runs every tool through it', async () => {
+    const off = await boot({ script: [{ text: 'hi' }], env: { KORTIX_PI_CODEMODE: 'off' } })
+    let first = gateway.sampling.length
+    await run(off)
+    expect(gateway.sampling[first]!.toolNames).toContain('bash')
+    expect(gateway.sampling[first]!.toolNames).not.toContain('codemode')
+
+    const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
+    first = gateway.sampling.length
+    const parts = await run(only)
+    expect(gateway.sampling[first]!.toolNames).toEqual(['codemode'])
+    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Every tool runs from a codemode script')
+    expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
+  })
+
+  test('the project policy denies a script\'s call like a direct one', async () => {
+    const r = await boot({
+      script: [script("return await tools.bash({ command: 'rm -rf ./keep' })"), { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: { 'rm -rf *': 'deny', '*': 'allow' } } } } }) },
+    })
+    mkdirSync(join(r.workspace, 'keep'))
+    writeFileSync(join(r.workspace, 'keep', 'sentinel'), 'still here')
+    const [part] = await run(r)
+    expect(existsSync(join(r.workspace, 'keep', 'sentinel'))).toBe(true)
+    expect(r.service.runtime()!.permissions.list()).toHaveLength(0)
+    // The call rejects inside the script, so the script fails with the policy's reason.
+    expect(part!.state.status).toBe('error')
+    expect(part!.state.error).toContain('Script failed')
+    expect(part!.state.error).toContain('The project policy denies this bash call.')
+  })
+
+  test('an ask from a script pauses it on the codemode part until the product replies', async () => {
+    const r = await boot({
+      script: [script("return await tools.bash({ command: 'echo gated' })"), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+    })
+    const rt = r.service.runtime()!
+    expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const [pending] = (await r.user('/permission').then((res) => res.json())) as Array<Record<string, any>>
+    expect(pending).toMatchObject({ permission: 'bash', patterns: ['echo gated'] })
+    const page = (await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    const codemode = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'codemode')!
+    expect(pending!.tool).toEqual({ messageID: codemode.messageID, callID: codemode.callID })
+    expect((await r.user(`/permission/${pending!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    const after = (await r.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    expect(after.messages.flatMap((m) => m.parts).find((p) => p.tool === 'codemode')!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('gated') })
+  })
+
+  test('a script cannot spawn a subagent or ask a question', async () => {
+    const r = await boot({
+      script: [
+        script("const out = await Promise.allSettled([tools.task({ description: 'x', prompt: 'x', subagent_type: 'general' }), tools.question({ questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] })]); return out.map((o) => o.status + ':' + (o.reason?.message ?? ''))"),
+        { text: 'done' },
+      ],
+    })
+    const [part] = await run(r)
+    expect(part!.state.output).toContain('rejected:Call task directly, not from a script.')
+    expect(part!.state.output).toContain('rejected:Call question directly, not from a script.')
+    expect(r.service.runtime()!.questions.list()).toHaveLength(0)
+  })
+
+  test('the session log keeps one code call with its nested calls, and a restore brings back the store', async () => {
+    const r = await boot({
+      script: [
+        script("store('cursor', 7); await tools.bash({ command: 'echo logged' }); return 'stored'"),
+        { text: 'done' },
+      ],
+    })
+    await run(r)
+    const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+    expect(() => upcastSessionLog(log)).not.toThrow()
+    const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'codemode')!
+    // A copy: Bun's toMatchObject writes its asymmetric matchers into the object it reads.
+    expect(structuredClone(block)).toMatchObject({ kind: 'code', status: 'complete', input: { code: expect.stringContaining("store('cursor', 7)") } })
+    expect((block as { result: { details: unknown } }).result.details).toEqual({
+      calls: [{ call_id: expect.any(String), name: 'bash', kind: 'shell', status: 'complete', input: { command: 'echo logged' }, duration_ms: expect.any(Number) }],
+      complete: true,
+    })
+    expect((log.threads[0]!.ext?.pi?.data as { codemode_store?: unknown } | undefined)?.codemode_store).toEqual({ cursor: 7 })
+
+    // A fresh box restored from the log: `load()` reads what the old box stored, and the export is unchanged.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    await restorePiSessionLog(log, { stateDir: join(workspace, '.state'), sessionId: log.session_id, cwd: workspace })
+    const restored = await boot({ workspace, script: [script("return 'loaded:' + load('cursor')"), { text: 'done' }] })
+    const again = piSessionLog(restored.service.runtime()!.sessionLogSnapshot()!).log
+    const before = log.threads[0]!.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'tool_call')
+    expect(again.threads[0]!.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'tool_call')).toEqual(before)
+    const parts = await run(restored)
+    expect(parts.at(-1)!.state.output).toContain('loaded:7')
+  })
+})
+
+// kortix.yaml v3: the compiled set (`schema: 3`) is the only config input. Every
+// behavior is per agent: skills, subagents, commands and codemode.
+describe('kortix.yaml v3 on pi', () => {
+  const marker = (text: string) => `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${text}' }))\n`
+  const skill = (workspace: string, path: string, name: string) => {
+    mkdirSync(join(workspace, path), { recursive: true })
+    writeFileSync(join(workspace, path, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name} skill\n---\nBody.\n`)
+  }
+  /** Every harness folder and discovery path a v2 project could use, each with a skill, an extension, a prompt and a setting. */
+  const harnessFolders = (workspace: string) => {
+    for (const dir of ['harnesses/pi', '.kortix/pi']) {
+      mkdirSync(join(workspace, dir, 'extensions'), { recursive: true })
+      mkdirSync(join(workspace, dir, 'prompts'), { recursive: true })
+      writeFileSync(join(workspace, dir, 'extensions', 'native.ts'), marker(`FOLDER-${dir}`))
+      writeFileSync(join(workspace, dir, 'prompts', 'folder-prompt.md'), '---\ndescription: from a folder\n---\nDo it.\n')
+      writeFileSync(join(workspace, dir, 'settings.json'), JSON.stringify({ packages: ['./extensions/native.ts'] }))
+      skill(workspace, `${dir}/skills/folder-${dir.replaceAll(/[/.]/g, '')}`, `folder-${dir.replaceAll(/[/.]/g, '')}`)
+    }
+    repoExtension(workspace, 'discovered', marker('DISCOVERED'))
+    skill(workspace, '.agents/skills/agents-dir', 'agents-dir')
+    skill(workspace, '.pi/skills/pi-dir', 'pi-dir')
+    skill(workspace, 'skills/unregistered', 'unregistered')
+    skill(workspace, 'skills/deploy', 'deploy')
+    skill(workspace, 'team/review', 'review')
+  }
+  const v3 = (set: Record<string, unknown>) => JSON.stringify({ schema: 3, ...set })
+  const skillNames = async (r: Rig) => ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>).map((s) => s.name).sort()
+
+  test('v3 reads no harness folder and no discovery path: only the registered skill folders and the managed skills load', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: harnessFolders,
+      env: {
+        KORTIX_COMPILED_AGENT_CONFIG: v3({
+          default_agent: 'build',
+          agent: { build: { mode: 'primary', prompt: 'You build.', permission: 'allow' } },
+          skills: { deploy: 'skills/deploy', review: 'team/review' },
+        }),
+      },
+    })
+    expect(await skillNames(r)).toEqual(['deploy', 'review'])
+    // `subagents` is the runtime's own task tool, not a project extension.
+    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['subagents'], failed: [] })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([])
+    const before = gateway.sent.length
+    await promptAndSettle(r, 'hello')
+    const system = systemSent(gateway.sent[before]!)
+    for (const text of ['FOLDER-harnesses/pi', 'FOLDER-.kortix/pi', 'DISCOVERED', 'unregistered', 'agents-dir', 'pi-dir']) expect(system).not.toContain(text)
+    expect(system).toContain('deploy')
+  })
+
+  test('a disabled compiled agent is not listed: the built-ins v3 disables never reach a picker', async () => {
+    const r = await boot({
+      script: [],
+      env: {
+        KORTIX_COMPILED_AGENT_CONFIG: v3({
+          default_agent: 'lead',
+          agent: { lead: { mode: 'primary', prompt: 'Lead.' }, off: { mode: 'subagent', prompt: 'Off.', disable: true }, build: { disable: true }, general: { disable: true } },
+        }),
+      },
+    })
+    const agents = (r.service.runtime()!.stateDoc().agents as { value: Array<{ name: string }> }).value.map((agent) => agent.name)
+    expect(agents).toEqual(['lead'])
+  })
+
+  test('v2 with the same tree keeps reading the harness folder and the skills/ dir', async () => {
+    const r = await boot({ script: [], prepare: harnessFolders })
+    const names = await skillNames(r)
+    expect(names).toContain('folder-harnessespi')
+    expect(names).toContain('unregistered')
+    expect(names).not.toContain('review')
+    expect(((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)).toEqual(['folder-prompt'])
+  })
+
+  test('the per-agent skill grant still filters the registered skills', async () => {
+    const r = await boot({
+      script: [],
+      prepare: harnessFolders,
+      env: {
+        KORTIX_COMPILED_AGENT_CONFIG: v3({
+          agent: { build: { mode: 'primary', permission: { skill: { review: 'allow', '*': 'deny' } } } },
+          skills: { deploy: 'skills/deploy', review: 'team/review' },
+        }),
+      },
+    })
+    expect(await skillNames(r)).toEqual(['review'])
+  })
+
+  const TASK = (subagent_type: string) => ({ tool: 'task', args: { description: 'Delegate', prompt: 'do it', subagent_type } })
+  const SUBAGENTS = v3({
+    default_agent: 'build',
+    agent: {
+      build: { mode: 'primary', prompt: 'You build.', permission: { '*': 'allow', task: { reviewer: 'allow', '*': 'deny' } } },
+      reviewer: { mode: 'subagent', description: 'Reviews one change', prompt: 'You review.', permission: { '*': 'allow', task: 'deny' } },
+      auditor: { mode: 'subagent', description: 'Audits the books', prompt: 'You audit.', permission: { '*': 'allow', task: 'deny' } },
+    },
+  })
+
+  test('an agent with subagents: [reviewer] offers and starts only reviewer; no built-in general or explore exists', async () => {
+    const r = await boot({
+      script: [TASK('auditor'), TASK('general'), TASK('reviewer'), { text: 'reviewed' }, { text: 'parent done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: SUBAGENTS },
+    })
+    const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!.description
+    expect(described).toContain('- reviewer: Reviews one change')
+    for (const name of ['auditor', 'general', 'explore']) expect(described).not.toContain(`- ${name}:`)
+
+    await promptAndSettle(r, 'delegate')
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [auditor, general, reviewer] = toolParts(page, 'task')
+    expect(auditor!.state.status).toBe('error')
+    expect(String(auditor!.state.error)).toContain('denies')
+    // `general` is not declared, and the allowlist denies every name but reviewer.
+    expect(general!.state.status).toBe('error')
+    expect(String(general!.state.error)).toContain('denies')
+    expect(reviewer!.state.status).toBe('completed')
+    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+  })
+
+  test('with every subagent granted, general is still unknown in v3', async () => {
+    const set = v3({ agent: { build: { mode: 'primary', permission: 'allow' }, reviewer: { mode: 'subagent', description: 'Reviews', permission: 'allow' } } })
+    const r = await boot({ script: [TASK('general'), { text: 'done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: set } })
+    await promptAndSettle(r, 'delegate')
+    const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'task')[0]!.state.error).toBe('Unknown subagent_type "general". Available: reviewer.')
+  })
+
+  test('v2 keeps the built-in general and explore subagents', async () => {
+    const r = await boot({ script: [], env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { mode: 'primary' } } }) } })
+    const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!.description
+    expect(described).toContain('- general:')
+    expect(described).toContain('- explore:')
+  })
+
+  const COMMANDS = v3({
+    default_agent: 'build',
+    agent: { build: { mode: 'primary', prompt: 'You build.', permission: 'allow' }, reviewer: { mode: 'all', prompt: 'You review.', permission: 'allow' } },
+    commands: {
+      audit: { description: 'Audit a module', template: 'Audit $1 for $ARGUMENTS.', agents: ['reviewer'] },
+      ship: { template: 'Ship it.', agents: ['build', 'reviewer'] },
+    },
+  })
+  const command = (r: Rig, root: string, body: Record<string, unknown>) =>
+    r.user(`/session/${root}/command`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  test('GET /command lists every compiled command with its agents; no folder prompt is a command', async () => {
+    const r = await boot({ script: [], prepare: harnessFolders, env: { KORTIX_COMPILED_AGENT_CONFIG: COMMANDS } })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([
+      { name: 'audit', description: 'Audit a module', source: 'command', template: 'Audit $1 for $ARGUMENTS.', hints: ['$1', '$ARGUMENTS'], agents: ['reviewer'] },
+      { name: 'ship', description: '', source: 'command', template: 'Ship it.', hints: [], agents: ['build', 'reviewer'] },
+    ])
+  })
+
+  test('a command on an agent that does not enable it is refused with 403; on one that does, its expanded template runs', async () => {
+    const r = await boot({ script: [{ text: 'Audited.' }], env: { KORTIX_COMPILED_AGENT_CONFIG: COMMANDS } })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const refused = await command(r, root, { command: 'audit', arguments: 'billing' })
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toEqual({ error: 'command_not_enabled', command: 'audit', agent: 'build' })
+    const named = await command(r, root, { command: 'audit', arguments: 'billing', agent: 'build' })
+    expect(named.status).toBe(403)
+    expect(await named.json()).toEqual({ error: 'command_not_enabled', command: 'audit', agent: 'build' })
+    expect(gateway.requests.length).toBe(calls)
+
+    const messageID = 'msg_0198e2a4b0e3ABCDEFGHIJKLAB'
+    expect((await command(r, root, { command: 'audit', arguments: 'billing "the ledger"', agent: 'reviewer', messageID })).status).toBe(200)
+    const sent = JSON.stringify(gateway.sent.at(-1))
+    // `$1` is the last placeholder: it takes every word, unquoted. `$ARGUMENTS` is the raw text.
+    expect(sent).toContain('Audit billing the ledger for billing \\"the ledger\\".')
+    expect(sent).toContain('You review.')
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.find((m) => m.info.id === messageID)!.parts.map((p) => p.text)).toEqual(['Audit billing the ledger for billing "the ledger".'])
+  })
+
+  test('codemode follows the session agent when KORTIX_PI_CODEMODE is absent; the env still wins', async () => {
+    const set = v3({ default_agent: 'build', agent: { build: { mode: 'primary', permission: 'allow', codemode: 'off' } } })
+    const off = await boot({ script: [], env: { KORTIX_COMPILED_AGENT_CONFIG: set } })
+    expect((await off.user('/tool/ids').then((res) => res.json())) as string[]).not.toContain('codemode')
+    const env = await boot({ script: [], env: { KORTIX_COMPILED_AGENT_CONFIG: set, KORTIX_PI_CODEMODE: 'on' } })
+    expect((await env.user('/tool/ids').then((res) => res.json())) as string[]).toContain('codemode')
+  })
+})
+
+describe('command template expansion', () => {
+  test.each([
+    ['$ARGUMENTS takes all of them', 'Fix $ARGUMENTS now', 'a b  c', 'Fix a b  c now'],
+    ['the last placeholder takes the rest', 'From $1 to $2', 'x y z', 'From x to y z'],
+    ['a quoted argument is one word without its quotes', 'A=$1 B=$2', '"one two" three', 'A=one two B=three'],
+    ['a missing argument is empty', 'A=$1 B=$2', 'only', 'A=only B='],
+    ['a template with no placeholder gets the arguments appended', 'Ship it.', 'now please', 'Ship it.\n\nnow please'],
+    ['no arguments leave a plain template alone', 'Ship it.', '', 'Ship it.'],
+  ])('%s', (_name, template, args, expected) => {
+    expect(expandCommandTemplate(template, args)).toBe(expected)
   })
 })

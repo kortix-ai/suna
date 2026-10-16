@@ -42,10 +42,12 @@ import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runReminders } from './commands/reminders.ts';
+import { runCapture } from './commands/capture.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
+import { runMigrate } from './commands/migrate.ts';
 import { runTools } from './commands/tools.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { type Command, TIERS } from './command-table.ts';
@@ -202,6 +204,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   ship: (rest) => runShip(rest),
   deploy: (rest) => runShip(rest),
   validate: (rest) => runValidate(rest),
+  migrate: (rest) => runMigrate(rest),
   schema: (rest) => runSchema(rest),
   'self-host': (rest) => runSelfHost(rest),
   login: (rest) => runLogin(rest),
@@ -228,6 +231,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   review: (rest) => runReview(rest),
   triggers: (rest) => runTriggers(rest),
   reminders: (rest) => runReminders(rest),
+  capture: (rest) => runCapture(rest),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),
   secrets: (rest) => runSecrets(rest),

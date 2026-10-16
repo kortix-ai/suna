@@ -37,7 +37,7 @@ export interface SandboxStatusBuild {
 }
 
 export type SandboxRuntimeState =
-  /** Every provider this project can route to holds the current image. */
+  /** An available provider this project can route to holds the current image. */
   | 'ready'
   /** The current image is on its way up somewhere. Sessions may wait, not fail. */
   | 'building'
@@ -154,16 +154,17 @@ function resolveState(counts: {
     return 'unknown';
   }
 
-  const usable = counts.readyCount > 0;
+  // Automatic readiness means an image is available, not complete replication.
+  // Pins already narrowed coverage to their provider before this derivation.
+  if (counts.readyCount > 0) return 'ready';
+
   // Positive evidence that the image is absent or broken somewhere routable.
   // An all-`unknown` probe is NOT evidence — a transient provider blip must
   // never turn into a red "your sandbox is broken".
   const missingEvidence = counts.failedCount > 0 || counts.absentCount > 0;
   const failureEvidence = counts.failedCount > 0 || counts.latestCurrentStatus === 'failed';
 
-  if (!usable && counts.buildingCount === 0 && missingEvidence && failureEvidence) return 'blocked';
-  if (usable && counts.failedCount > 0) return 'degraded';
-  if (counts.readyCount === counts.routableCount) return 'ready';
+  if (counts.buildingCount === 0 && missingEvidence && failureEvidence) return 'blocked';
   if (counts.buildingCount > 0) return 'building';
   if (counts.absentCount > 0) return 'not_built';
   return 'unknown';
@@ -178,7 +179,7 @@ function staleFailureReason<B extends SandboxStatusBuild>(
   },
 ): StaleFailureReason {
   if (!ctx.snapshotName || failure.snapshotName !== ctx.snapshotName) return 'superseded';
-  if (ctx.state === 'building' || ctx.latestCurrent?.status === 'building') return 'retrying';
+  if (ctx.state !== 'ready' && (ctx.state === 'building' || ctx.latestCurrent?.status === 'building')) return 'retrying';
   return 'recovered';
 }
 

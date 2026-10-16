@@ -1,12 +1,12 @@
 ---
 title: Generative UI
-description: Render the agent's cards, comparisons, charts, maps, and tabs in your own app.
+description: Render the agent's step rows, cards, checklists, comparisons, charts, maps, and tabs in your own app.
 ---
 
 The agent answers in markdown. When a project turns on **Generative UI**, the agent may add
 ` ```openui ` blocks for structured content: a ranked recommendation, a comparison, a chart from
-tool data, places on a map. Prose stays the default; the agent uses a block only when the content
-has structure.
+tool data, places on a map. Short answers, explanations, and code stay prose. A guide, a trip, or a
+shortlist reads as short paragraphs with one block per section.
 
 ## How the agent learns the blocks
 
@@ -54,17 +54,24 @@ block name, or `defaultGenuiComponents` for unbranded HTML defaults.
 | `enabled` | `false` renders the block as markdown (a viewer setting) |
 | `onSettled` | One event per block: outcome, component names, timing. Never content |
 
+A Checklist keeps its ticks in the component only: nothing is stored or sent.
+
 ## Plain text hosts
 
 `genuiToMarkdown(text)` replaces every block with deterministic markdown. Charts become tables with a
 `Source:` line; maps become place lists; tabs and accordions expand.
 Blocks inside blockquotes and list items convert too. For a reply that is still streaming, pass
 `genuiToMarkdown(text, { streaming: true })`: the unfinished last block shows no "cut off" note.
+Steps become a numbered list; a Checklist becomes a task list (`- [ ]`).
+
+A host on an older `@kortix/sdk` does not know a block added later (Steps and Checklist arrived after
+v1). It shows *This content could not be displayed.* in that block's place, not the block's markdown.
+Update the SDK to render or convert new blocks.
 
 ## Blocks
 
-Stack, Card, Stat, StatRow, Table, Compare, RankedList, BarChart, LineChart, PieChart, Map, Tabs,
-Accordion, Badge, Callout, Image, Link. Limits (counts, lengths) are enforced by the SDK; a block that
+Stack, Card, Stat, StatRow, Table, Compare, RankedList, BarChart, LineChart, PieChart, Map, Steps,
+Checklist, Tabs, Accordion, Badge, Callout, Image, Link. Limits (counts, lengths) are enforced by the SDK; a block that
 breaks a limit is dropped and its siblings still render.
 
 ## Safety

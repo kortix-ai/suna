@@ -167,6 +167,12 @@ mock.module('../accounts/email', () => ({
 mock.module('../shared/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
+  // The Capture enrollment routes (mounted on accountsRouter) build a limiter at import.
+  TokenBucketRateLimiter: class {
+    check() {
+      return { allowed: true };
+    }
+  },
 }));
 
 mock.module('../shared/resolve-account', () => ({

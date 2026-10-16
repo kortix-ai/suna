@@ -1,0 +1,35 @@
+#!/bin/sh
+# Registers the machine service (LaunchDaemon) and starts the agent for the
+# person at the screen. Everyone else gets the agent at their next login
+# (/Library/LaunchAgents loads it into every GUI session).
+APP="/Applications/Kortix Capture.app"
+SUPPORT="/Library/Application Support/Kortix/Capture"
+
+/bin/mkdir -p "$SUPPORT/logs" /usr/local/bin
+/bin/chmod 755 "/Library/Application Support/Kortix" "$SUPPORT"
+/bin/ln -sf "$APP/Contents/MacOS/Kortix Capture" /usr/local/bin/kortix-capture
+
+for plist in /Library/LaunchDaemons/ai.kortix.capture.machine.plist /Library/LaunchAgents/ai.kortix.capture.agent.plist; do
+  /usr/sbin/chown root:wheel "$plist"
+  /bin/chmod 644 "$plist"
+done
+
+# Only a live system gets loaded (not an install to another volume).
+if [ "$3" = "/" ] || [ -z "$3" ]; then
+  /bin/launchctl bootstrap system /Library/LaunchDaemons/ai.kortix.capture.machine.plist >/dev/null 2>&1
+  console_uid=$(/usr/bin/stat -f %u /dev/console 2>/dev/null)
+  if [ -n "$console_uid" ] && [ "$console_uid" != "0" ]; then
+    # After an upgrade the old agent may still be unloading: retry until launchd takes it.
+    n=0
+    until /bin/launchctl bootstrap "gui/$console_uid" /Library/LaunchAgents/ai.kortix.capture.agent.plist >/dev/null 2>&1 || [ "$n" -ge 20 ]; do
+      n=$((n + 1))
+      /bin/sleep 1
+    done
+    # A personal install (no configuration from IT): open the window once, on onboarding.
+    # A computer IT configured is preconfigured and silent: no window.
+    if [ ! -f "$SUPPORT/config.json" ] && [ ! -f "/Library/Managed Preferences/ai.kortix.capture.plist" ] && [ ! -f "/Library/Managed Preferences/$(/usr/bin/id -un "$console_uid" 2>/dev/null)/ai.kortix.capture.plist" ]; then
+      /bin/launchctl asuser "$console_uid" /usr/bin/open -n -a "$APP" --args ui >/dev/null 2>&1 &
+    fi
+  fi
+fi
+exit 0

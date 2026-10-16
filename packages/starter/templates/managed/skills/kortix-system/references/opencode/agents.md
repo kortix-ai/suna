@@ -4,6 +4,15 @@
 
 Configure and use specialized agents.
 
+> **In a Kortix project (`kortix_version: 3`):** do not write `opencode.json`
+> or `.opencode/agents/*.md`. Each agent is one block under `agents` in
+> `kortix.yaml`, with the same behavior keys (`description`, `mode`, `model`,
+> `variant`, `temperature`, `top_p`, `steps`, `options`, `color`, `hidden`,
+> `permission`) plus `prompt` or `prompt_file`. `enabled: false` replaces
+> `disable`. OpenCode's built-in `build`, `plan`, `general` and `explore` are
+> off unless `kortix.yaml` declares that name. An agent starts only the
+> subagents its `subagents` grant lists. See `../kortix/kortix-yaml.md`.
+
 Agents are specialized AI assistants that can be configured for specific tasks and workflows. They allow you to create focused tools with custom prompts, models, and tool access.
 
 > Tip: Use the plan agent to analyze code and review suggestions without making any code changes.

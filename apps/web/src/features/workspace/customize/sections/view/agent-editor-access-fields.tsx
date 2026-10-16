@@ -99,7 +99,7 @@ export function GrantHeaderTrailing({
 }: {
   value: AgentGrantSetV2 | undefined;
   tab?: 'skills' | 'connectors' | 'secrets';
-  /** A page `tab` cannot name — Apps is a flag-gated Customize tab, reached
+  /** A page `tab` cannot name — Apps is a Customize tab, reached
    *  through `capabilityTabHref(projectId, 'apps')`. */
   href?: (projectId: string) => string;
   label: string;
@@ -235,6 +235,38 @@ export function SecretsSection({ draft, set, options }: GrantSectionProps) {
           options={options}
           allLabel={tI18nComplete.raw('text86fdc0c950d5')}
           emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
+        />
+      </div>
+    </EditorSection>
+  );
+}
+
+/**
+ * A kortix_version 3 grant over a project registry: the declared subagents
+ * this agent may start, the registered commands it may run, the registered
+ * extensions a session of it loads. One card, the same All · Pick · None
+ * control as Skills.
+ */
+export function RegistryGrantSection({
+  grant,
+  draft,
+  set,
+  options,
+}: GrantSectionProps & { grant: 'subagents' | 'commands' | 'extensions' }) {
+  const t = useI18nTranslations('agents.grants');
+  return (
+    <EditorSection
+      title={t(`${grant}.title`)}
+      description={t(`${grant}.description`)}
+      trailing={<GrantChip value={draft[grant]} />}
+    >
+      <div className="py-4">
+        <GrantSetField
+          value={draft[grant]}
+          onChange={(v: AgentGrantSetV2) => set(grant, v)}
+          options={options}
+          allLabel={t(`${grant}.all`)}
+          emptyLabel={t(`${grant}.empty`)}
         />
       </div>
     </EditorSection>

@@ -16,7 +16,7 @@
 // `window.__TAURI__` bridge shape (see preload.js) so the web app's desktop
 // bridge (apps/web/src/lib/desktop.ts) runs UNCHANGED.
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage, clipboard, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeImage, nativeTheme, safeStorage, clipboard, globalShortcut } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
@@ -24,7 +24,7 @@ const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
 const { menuContextForUrl, copyableUrl } = require('./menu-state');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
-const { backgroundForTheme, normalizeTheme } = require('./theme-state');
+const { backgroundForTheme, normalizeChoice, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
 const { buildFrontendMenu } = require('./frontend-menu');
 const { resolveChannel } = require('./update-channel');
@@ -38,6 +38,7 @@ const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
 const { setupComputer } = require('./computer-tray');
+const { setAttentionBadge } = require('./attention-badge');
 const { setupQuickEntry } = require('./quick-entry');
 const { SHORTCUTS, shortcutLabel } = require('./quick-entry-rules');
 
@@ -148,24 +149,38 @@ function themePath() {
   return path.join(app.getPath('userData'), 'theme.json');
 }
 
+// Which light and which dark palette the web app's interface theme uses. Only
+// the launch background depends on it; nativeTheme needs just the mode.
+let themeChoice = normalizeChoice();
+
 function readTheme() {
   try {
-    return normalizeTheme(JSON.parse(fs.readFileSync(themePath(), 'utf8')).theme);
+    const stored = JSON.parse(fs.readFileSync(themePath(), 'utf8'));
+    themeChoice = normalizeChoice(stored.palettes);
+    return normalizeTheme(stored.theme);
   } catch {
     return 'system';
   }
 }
 
-function writeTheme(theme) {
+function writeTheme(theme, choice) {
   try {
-    fs.writeFileSync(themePath(), JSON.stringify({ theme: normalizeTheme(theme) }), 'utf8');
+    fs.writeFileSync(
+      themePath(),
+      JSON.stringify({ theme: normalizeTheme(theme), palettes: normalizeChoice(choice) }),
+      'utf8',
+    );
   } catch {
     /* best-effort */
   }
 }
 
 function currentBackgroundColor() {
-  return backgroundForTheme(nativeTheme.themeSource, nativeTheme.shouldUseDarkColors);
+  return backgroundForTheme(
+    nativeTheme.themeSource,
+    nativeTheme.shouldUseDarkColors,
+    themeChoice,
+  );
 }
 
 /* ─── Navigation gate (port of lib.rs) ───────────────────────────────────── */
@@ -446,6 +461,8 @@ function createMainWindow() {
   // Go menu state follows every committed navigation, including the App
   // Router's same-document ones.
   mainWindow.webContents.on('did-navigate', refreshNavigationMenu);
+  // A new document starts with nothing unseen; its page re-sends the count.
+  mainWindow.webContents.on('did-navigate', clearAttentionBadge);
   mainWindow.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
     if (isMainFrame) refreshNavigationMenu();
   });
@@ -531,6 +548,7 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     if (persistTimer) clearTimeout(persistTimer);
+    clearAttentionBadge();
     mainWindow = null;
     quickEntry?.close();
   });
@@ -1122,6 +1140,14 @@ function isTrustedSender(event) {
   }
 }
 
+function showAttentionBadge(count) {
+  setAttentionBadge({ app, window: mainWindow, nativeImage, platform: process.platform }, count);
+}
+
+function clearAttentionBadge() {
+  showAttentionBadge(0);
+}
+
 function registerIpc() {
   // Single funnel matching the Tauri `core.invoke(cmd, args)` contract so the
   // web app's existing calls (set_zoom / open_external / get_frontend_url /
@@ -1139,8 +1165,9 @@ function registerIpc() {
       }
       case 'set_native_theme': {
         const theme = normalizeTheme(args.theme);
+        themeChoice = normalizeChoice(args.palettes);
         nativeTheme.themeSource = theme;
-        writeTheme(theme);
+        writeTheme(theme, themeChoice);
         const background = currentBackgroundColor();
         mainWindow?.setBackgroundColor(background);
         splashWindow?.setBackgroundColor(background);
@@ -1178,6 +1205,10 @@ function registerIpc() {
         if (saveError) throw new Error(`Kortix could not save the URL: ${saveError}`);
         return null;
       }
+      case 'set_badge_count':
+        // Finished turns the user has not seen yet (web TurnAttentionBadge).
+        showAttentionBadge(args.count);
+        return null;
       case 'quick_entry_take':
         // The prompt typed in the Quick Entry bar, once (null when none).
         return quickEntry?.take() ?? null;

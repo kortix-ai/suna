@@ -94,3 +94,25 @@ export async function releaseChannelQuestion(input: {
   }
   return outcome;
 }
+
+/**
+ * A session a trigger started (cron, webhook, monitor) runs with nobody to
+ * answer its `question` call, so the call would block the turn until the box
+ * is parked and every later fire queues behind it (prod 2026-10-09: a keyed
+ * cron session blocked 5 days on one question). Keyed on the session's own
+ * metadata, like `channelOfSessionMetadata`.
+ */
+export function isUnattendedSessionMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  const source = (metadata as Record<string, unknown>).source;
+  return typeof source === 'string' && source.startsWith('trigger:');
+}
+
+/** What an unattended session's agent reads as the answer to its own question. */
+export function unattendedQuestionSentinel(): string {
+  return (
+    '(This session was started by a trigger and runs unattended: nobody can answer this question. ' +
+    'Do not ask it again. Decide yourself where that is safe; otherwise record the open decision ' +
+    'where a person will see it (the issue or ticket you are working on), then continue and finish this turn.)'
+  );
+}

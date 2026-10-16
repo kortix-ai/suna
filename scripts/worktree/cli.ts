@@ -19,7 +19,7 @@
  */
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
-  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, freshBase, worktreeAddArgs, removeWorktree,
+  pickSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, freshBase, worktreeAddArgs, removeWorktree,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
@@ -39,6 +39,8 @@ import pc from 'picocolors';
 const API_FILTER = 'kortix-api';
 const WEB_FILTER = 'Kortix-Computer-Frontend';
 const GATEWAY_FILTER = '@kortix/llm-gateway-server';
+// Per-port clash lines `create` prints before it summarises the rest.
+const CLASH_LOG_LIMIT = 5;
 
 const step = (s: string) => console.log(`\n${pc.cyan('▸')} ${pc.bold(s)}`);
 const sub = (s: string) => console.log(`  ${pc.dim(s)}`);
@@ -435,14 +437,18 @@ async function cmdCreate(a: Args) {
       return existing;
     }
     isNew = true;
-    let slot = lowestFreeSlot(reg);
-    for (let tries = 0; tries < 6; tries++) {
-      const ports = computePorts(slot);
-      const clash = (Object.entries(ports) as [string, number][]).map(([k, p]) => ({ k, p, ...portInUse(p) })).find((x) => x.inUse);
-      if (!clash) break;
-      sub(`port ${clash.p} (${clash.k}) in use by ${clash.cmd ?? '?'} (pid ${clash.pid ?? '?'}) — trying next slot`);
-      slot++;
-      if (tries === 5) die('could not find a free port block after 6 slots');
+    // One lsof scan for the whole box; a missing lsof probes as "all free", as
+    // the old per-port probe did.
+    const live = listenPorts() ?? new Set<number>();
+    const { slot, clashes } = pickSlot(reg, (p) => live.has(p));
+    for (const c of clashes.slice(0, CLASH_LOG_LIMIT)) {
+      const who = portInUse(c.port);
+      sub(`port ${c.port} (${c.service}) in use by ${who.cmd ?? '?'} (pid ${who.pid ?? '?'}) — trying next slot`);
+    }
+    if (clashes.length > CLASH_LOG_LIMIT) sub(`… and ${clashes.length - CLASH_LOG_LIMIT} more slots with a port in use`);
+    // Throw, not die(): process.exit would skip withLock's unlock.
+    if (slot === null) {
+      throw new Error(`could not find a free port block: slots ${clashes[0].slot}–${clashes.at(-1)!.slot} (${clashes.length} unregistered) each have a port in use`);
     }
     const ports = computePorts(slot);
     const e: SlotEntry = { slot, projectId: `kortix-wt-${name}`, path: wtPath, branch, ports, dbMode: requestedDbMode, createdAt: new Date().toISOString(), status: 'created' };
@@ -969,6 +975,13 @@ async function cmdDoctor(a: Args) {
       ? sh(['bash', '-lc', `docker ps -aq --filter "name=_${e.projectId}$" | head -1`]).stdout.trim()
       : '';
     console.log(`  ${issues.length ? pc.red('✗') : pc.green('✓')} ${n} ${pc.dim('(' + dbMode + ')')}${issues.length ? ' ' + pc.red(issues.join('; ')) : ''}${orphan ? pc.dim(' (containers present)') : ''}`);
+  }
+  // Allocators before pickSlot could hand one slot to several worktrees. They
+  // share every port, and `start` on one kills the other's servers.
+  const owners = new Map<number, string[]>();
+  for (const [n, e] of Object.entries(reg.slots)) owners.set(e.slot, [...(owners.get(e.slot) ?? []), n]);
+  for (const [slot, names] of owners) {
+    if (names.length > 1) console.log(`  ${pc.red('✗')} slot ${slot} is shared by ${names.join(', ')} ${pc.red('— nuke and recreate all but one')}`);
   }
 
   // Memory pressure is the failure mode that actually bites here, and the registry

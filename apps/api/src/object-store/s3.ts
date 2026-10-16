@@ -324,9 +324,14 @@ export class ObjectStore {
     }
   }
 
-  async getBytes(key: string): Promise<Uint8Array | null> {
+  /** One object's bytes, or null when it is missing. `maxBytes` refuses a larger object before its body is read. */
+  async getBytes(key: string, opts: { maxBytes?: number } = {}): Promise<Uint8Array | null> {
     try {
       const res = await this.client().send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      if (opts.maxBytes !== undefined && (res.ContentLength ?? 0) > opts.maxBytes) {
+        res.Body?.transformToWebStream().cancel().catch(() => undefined);
+        throw new Error(`object too large: ${key}: ${res.ContentLength} > ${opts.maxBytes} bytes`);
+      }
       return res.Body ? await res.Body.transformToByteArray() : new Uint8Array();
     } catch (err) {
       if (isMissing(err)) return null;

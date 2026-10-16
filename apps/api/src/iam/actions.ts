@@ -64,6 +64,11 @@ export const ACCOUNT_ACTIONS = {
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
   PROJECT_CREATE: 'project.create',
+
+  // Kortix Capture. Every member records and reads their own capture; these
+  // reach other people's. Owner and admin hold both by default.
+  CAPTURE_READ_ALL: 'capture.read_all',
+  CAPTURE_MANAGE: 'capture.manage',
 } as const;
 
 // ─── Project-scoped actions ────────────────────────────────────────────────
@@ -265,6 +270,7 @@ export function resourceTypeForAction(action: string): ResourceType {
     action.startsWith('token.') ||
     action.startsWith('billing.') ||
     action.startsWith('audit.') ||
+    action.startsWith('capture.') ||
     action === 'project.create'
   ) {
     return 'account';
