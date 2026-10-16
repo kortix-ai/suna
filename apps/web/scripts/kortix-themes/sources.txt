@@ -15,6 +15,7 @@ gruvbox__light|/downloads/ghostty/gruvbox-light
 iceberg__dark|/downloads/ghostty/iceberg-dark
 iceberg__light|/downloads/ghostty/iceberg-light
 jellybeans__default|/downloads/ghostty/jellybeans-default
+jellybeans__light|/downloads/ghostty/jellybeans-light
 kanagawa__dragon|/downloads/ghostty/kanagawa-dragon
 kanagawa__lotus|/downloads/ghostty/kanagawa-lotus
 kanagawa__wave|/downloads/ghostty/kanagawa-wave

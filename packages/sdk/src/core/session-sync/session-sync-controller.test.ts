@@ -1614,3 +1614,59 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
     expect(olderBefore[readsAfterFailure]).toBe('cursor-5');
   });
 });
+
+/**
+ * Returning to a tab re-read the newest 50 messages (up to ~400 kB) on every
+ * visit, even when the session stream never dropped, and the read replaced
+ * every recent message object, so recent turns redrew. While the session
+ * stream holds, it owns recovery: the box-side ring replays a reconnect's
+ * missed frames and a runtime resync re-reads the tail. The tab-return read is
+ * only the net for a session without that stream.
+ */
+describe('returning to the tab', () => {
+  function counting() {
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        calls += 1;
+        return page(['m1']);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+    return { controller, calls: () => calls };
+  }
+
+  test('a connected session stream skips the tab-return read', async () => {
+    const { controller, calls } = counting();
+    await controller.start();
+    controller.setStreamReliable(true);
+    await controller.reconcile('visible');
+    expect(calls()).toBe(1);
+  });
+
+  test('without the session stream, returning still re-reads the tail', async () => {
+    const { controller, calls } = counting();
+    await controller.start();
+    controller.setStreamReliable(false);
+    await controller.reconcile('visible');
+    expect(calls()).toBe(2);
+  });
+
+  test('a transcript that never loaded is read on return even with the stream connected', async () => {
+    const { controller, calls } = counting();
+    controller.setStreamReliable(true);
+    await controller.reconcile('visible');
+    expect(calls()).toBe(1);
+  });
+
+  test('every other read still runs while the stream is connected', async () => {
+    const { controller, calls } = counting();
+    await controller.start();
+    controller.setStreamReliable(true);
+    await controller.reconcile('sse-gap');
+    await controller.reconcile('manual');
+    expect(calls()).toBe(3);
+  });
+});
