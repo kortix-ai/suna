@@ -184,7 +184,7 @@ test.describe
       await test.step('A real Stripe test subscription activates the account', async () => {
         const env = loadEnv();
         const owner = new Client(apiBase).withBearer(session.access_token, 'BROWSER_OWNER');
-        await subscribe(env, owner, accountId, 20);
+        await subscribe(env, owner, accountId, 100);
       });
 
       await test.step('The Billing page reads and displays the active subscription', async () => {

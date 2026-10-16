@@ -1739,7 +1739,7 @@ gets `capabilities: ["preview"]` and `warnings: []`; one that refuses gets
 carry it. Deploy and `…/token` answer `409 app_capability_unsupported`.
 `…/access-session` answers `200` with the site URL itself. A request to the
 App's Kortix host that passes its access gate answers `302` to the site.
-`PATCH` with `external_url` moves it; the same `PATCH` on an App Kortix runs
+A `PATCH` with `external_url` moves it; the same `PATCH` on an App Kortix runs
 answers `409 app_not_external`. An external App takes no App slot. Delete
 removes it from the list.
 
