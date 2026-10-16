@@ -1399,9 +1399,7 @@
               "image_search",
               "scrape_webpage",
               "memory",
-              "show",
-              "kortix-connectors_call",
-              "kortix-connectors_describe"
+              "show"
             ]
           }
         ],
