@@ -196,8 +196,10 @@ DEPLOYED staging.
 
 ## No quarantine
 
-Do not quarantine a browser test (testing reset, 2026-10-16). A test that fails
+No quarantine exists for any test: browser journey, API flow, or DB suite
+(testing reset, 2026-10-16; the mechanism is deleted). A test that fails
 twice without a bug is fixed at its root or deleted the same day. A test that
+fails because of a Kortix defect stays red until the defect is fixed. A test that
 depends on a third party (OAuth pages, a real model reply) asserts only what
 Kortix controls, or it goes.
 

@@ -179,23 +179,10 @@ harnessFlow(
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    // Un-quarantined in 09aa887a55 (2026-08-24) on the expectation that the
-    // stop-time abort + boot-time orphan finalizer had closed the wake path.
-    // Its first release-gate run since (v0.13.6, run 32992496089, api shard 2)
-    // failed again at 168.7s: `status in [200] — expected [200], got 503` on
-    // the first OpenCode read through the preview proxy right after `/start`
-    // reported ready — the box was still waking (the "503 = waking state"
-    // class), i.e. the same pre-existing stop→wake defect the earlier
-    // quarantine documented (#6638 investigation). On Kortix routes
-    // (2026-09-28, local stack, 2 of 2 runs) the OpenCode defect reads
-    // differently: the first prompt after the wake is recorded
-    // "accepted by the runtime but never became a message" and gets no
-    // reply. SESS-23-pi passed the same flow. Quarantined until the wake path
-    // is proven on a staging dry run
-    // (`gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>`);
-    // un-quarantine ONLY in the PR that carries that green run.
-    quarantine:
-      'stop→wake on OpenCode: the first prompt after the wake is accepted by the runtime but never becomes a message, so it gets no reply (local stack 2026-09-28, 2 of 2 runs; pi passes). First seen as a post-wake 503 on gate run 32992496089; quarantined since 2026-08-26',
+    // Known OpenCode defect (local stack 2026-09-28, 2 of 2 runs): the first
+    // prompt after the wake is "accepted by the runtime but never became a
+    // message" and gets no reply. SESS-23-pi passed the same flow. A red
+    // SESS-23 is that bug, not this test.
     // Boot readiness 540_000 + turn start 120_000 + stop settle 60_000 + wake
     // 180_000 + reply 240_000 exceeds 900_000 only when every wait runs to its
     // bound; 1_200_000 matches SESS-24.

@@ -262,7 +262,7 @@ bun tests/bin/refresh-shard-durations.ts local <tests.yml run id>...
 bun tests/bin/refresh-shard-durations.ts deployed <tests-release.yml run id>...
 ```
 
-A spec file that no run executed (quarantined, local-only) gets 0. A shard wall
+A spec file that no run executed (local-only) gets 0. A shard wall
 time is about `fixed overhead + sum of its files` at one worker: 295 s local, 105 s
 deployed. The largest file is the floor. `27-desktop-parity` was one 520 s file
 (655 s on CI run 38777589705); its journeys now live in
@@ -303,7 +303,7 @@ failed `deployed` flow fails the gate.
 RUN-3 failed once on a request timeout (run 38399331524). Their median times
 sum to ~10 min of flow work, which the 9 workers run in ~3 min. `unit/deployed-set.test.ts`
 pins this table to the tags, keeps the set between 30 and 50 flows, and rejects
-a todo or quarantined `deployed` flow. To add a seam, tag its flow
+a todo `deployed` flow. To add a seam, tag its flow
 (`tags: ['deployed']`, or add `deployed` to the existing tags) and add the row
 here and in that test. A `harnessFlow` tag covers both harness variants.
 
@@ -681,12 +681,12 @@ Entries in the same direction are unioned. Playwright applies both at
 collection, before `--shard`, so an excluded journey is never loaded, never
 counted, and never lands in a shard.
 
-### No quarantined journeys
+### No quarantine
 
-No browser journey is quarantined (testing reset, 2026-10-16). A journey that
-fails twice without a Kortix defect is fixed or deleted the same day. The
-`@quarantine` filter in `playwright.config.ts` still excludes a tagged journey
-from every lane, but nothing runs the tag.
+Nothing is quarantined: no browser journey, no API flow, no DB suite (testing
+reset, 2026-10-16). The mechanism is gone. A test that fails twice without a
+Kortix defect is fixed or deleted the same day. A test that fails because of a
+Kortix defect stays red until the defect is fixed.
 
 ### Deployed-target resilience
 
@@ -770,9 +770,9 @@ suite ignored them. `unit/db-suites.test.ts` fails when a test file reads
 `process.env.TEST_DATABASE_URL` (or the other lane variables) but is not named
 as a DB suite, so a new suite cannot sit skipped inside a unit lane.
 
-To park a broken suite, add it to `DB_SUITE_QUARANTINE` with the reason. The
-lane prints every quarantined file on every run. Remove the entry when the
-cause is fixed.
+The lane also supplies local Supabase Storage's S3 endpoint to the one suite
+whose subject is an S3 round trip (`PROJECT_SNAPSHOT_SUITE` in
+`src/core/db-suites.ts`). No other suite gets the S3 variables.
 
 A test that needs a live cloud sandbox, a model, or another external service is
 not a DB suite. Name it `*.live.test.ts`; no lane runs it.
