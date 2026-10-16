@@ -54,6 +54,9 @@ mock.module('@/features/projects/modal/project-icon-field', () => ({
 function EffortSelect(props: Record<string, unknown>) {
   return createElement('effort-select', props);
 }
+function EffortTrigger(props: Record<string, unknown>) {
+  return createElement('effort-trigger', props);
+}
 function EffortItem(props: Record<string, unknown>) {
   return createElement('effort-item', props);
 }
@@ -61,7 +64,7 @@ mock.module('@/components/ui/select', () => ({
   Select: EffortSelect,
   SelectContent: Passthrough,
   SelectItem: EffortItem,
-  SelectTrigger: Passthrough,
+  SelectTrigger: EffortTrigger,
   SelectValue: (props: Record<string, unknown>) => createElement('effort-value', props),
 }));
 
@@ -171,6 +174,8 @@ describe('GeneralTab default reasoning effort', () => {
     ]);
     expect(options[0].props.children).toBe('Automatic');
     expect(renderer.root.findByType('effort-value').props.placeholder).toBe('Automatic');
+    // The trigger is named for assistive tech, not by its visible label alone.
+    expect(renderer.root.findByType(EffortTrigger).props['aria-label']).toBe('Default reasoning effort');
     expect(calls).toEqual([]);
   });
 
