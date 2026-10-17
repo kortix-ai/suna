@@ -96,6 +96,7 @@ Owners and admins see every member and every group. A `member` sees nobody else:
 - A project's access list shows only themselves. A `member` who manages that project also sees the people and groups with access to it, so they can manage them, and still nobody without access.
 - The Files share dialog names only themselves.
 - **Session costs** list only their own sessions. Asking for another person's costs answers `403`, and another person's session answers `404`.
+- In a project they do not manage, branches, change requests, the review inbox, gateway logs and spend show only their own work and the sessions they may open. Another member's private session leaves no trace there.
 - SSO group mappings list none.
 
 Another member's access details (**View access**, `GET .../iam/members/:userId/...`) and the MFA enforcement preview stay with owners and admins. People you work with in a shared session or project still appear where their work does: as the author of a message, the owner of a session, or a person a secret is shared with.

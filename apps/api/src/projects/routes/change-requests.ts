@@ -24,7 +24,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import {
-  assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
   loadProjectForUser,
 } from '../lib/access';
@@ -35,6 +34,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { projectReadView } from '../lib/project-read-view';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { deliverThroughQueue } from '../session-lifecycle';
@@ -90,6 +90,24 @@ export async function refreshCrTips(input: {
   }
 }
 
+/**
+ * A change request this caller may read: `project.gitops.read`, and for a
+ * non-manager only a CR they opened or whose origin session they may open.
+ * Null answers 404, the same as a CR that does not exist.
+ */
+async function readableCr(
+  c: Parameters<typeof projectReadView>[0],
+  loaded: Parameters<typeof projectReadView>[1],
+  crId: string,
+) {
+  const projectId = loaded.row.projectId;
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return null;
+  const view = await projectReadView(c, loaded);
+  return (await view.allows({ sessionId: cr.originSessionId, createdBy: cr.createdBy })) ? cr : null;
+}
+
 export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
@@ -113,6 +131,8 @@ export function registerChangeRequestsRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
+      const view = await projectReadView(c, loaded);
 
       const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
       if (statusFilter && statusFilter !== 'all' && !['open', 'merged', 'closed'].includes(statusFilter)) {
@@ -151,6 +171,7 @@ export function registerChangeRequestsRoutes(): void {
           originSessionId: originSessionId ?? undefined,
           limit,
           cursor: cursor ?? undefined,
+          visibleTo: view.where(changeRequests.originSessionId, changeRequests.createdBy),
         }),
       );
     },
@@ -511,7 +532,7 @@ export function registerChangeRequestsRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-      let cr = await getCrById(crId, projectId);
+      let cr = await readableCr(c, loaded, crId);
       if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
       await refreshCrTips({
@@ -698,9 +719,7 @@ export function registerChangeRequestsRoutes(): void {
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-
-      const cr = await getCrById(crId, projectId);
+      const cr = await readableCr(c, loaded, crId);
       if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
       const projectForGit = await withProjectGitAuth(loaded.row);
@@ -757,9 +776,7 @@ export function registerChangeRequestsRoutes(): void {
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-
-      const cr = await getCrById(crId, projectId);
+      const cr = await readableCr(c, loaded, crId);
       if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
       try {
