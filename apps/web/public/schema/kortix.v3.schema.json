@@ -1993,11 +1993,13 @@
             ]
           },
           "workspace": {
+            "description": "What new sessions of this agent get in /workspace.",
             "type": "object",
             "properties": {
               "project_repository": {
                 "type": "boolean",
-                "description": "Check out the project repository and allow repository access. Defaults to true."
+                "default": false,
+                "description": "Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true."
               }
             },
             "additionalProperties": false

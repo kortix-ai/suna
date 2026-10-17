@@ -565,6 +565,7 @@
                 "properties": {
                   "project_repository": {
                     "type": "boolean",
+                    "default": true,
                     "description": "Check out the project repository and allow repository access. Defaults to true."
                   }
                 },
