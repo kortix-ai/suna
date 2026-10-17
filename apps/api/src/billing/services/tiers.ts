@@ -40,12 +40,13 @@ export function llmPriceMarkup(): number {
 
 // ─── Credits-only billing ────────────────────────────────────────────────────
 // One credit = $0.01. A paid account picks any monthly amount; every member
-// spends from one shared wallet; plans differ only in credit volume. Free keeps
-// $2 (200 credits) a month. See tier-facts.ts for the legacy plan keys.
+// spends from one shared wallet; plans differ only in credit volume. Free gets
+// $5 (500 credits) a month and every self-serve feature. See tier-facts.ts for
+// the legacy plan keys.
 
 /** Smallest and largest self-serve monthly amount, in whole dollars. */
 export const PLAN_MIN_MONTHLY_USD = 50;
-export const PLAN_MAX_MONTHLY_USD = 10_000;
+export const PLAN_MAX_MONTHLY_USD = 50_000;
 
 /**
  * The tier ladder the product offers: named monthly amounts of the one credits
@@ -55,18 +56,30 @@ export const PLAN_MAX_MONTHLY_USD = 10_000;
  */
 export const PLAN_PRESETS = [
   { monthlyUsd: 50 },
+  { monthlyUsd: 75 },
   { monthlyUsd: 100 },
   { monthlyUsd: 200, popular: true },
   { monthlyUsd: 300 },
+  { monthlyUsd: 400 },
   { monthlyUsd: 500 },
   { monthlyUsd: 750 },
   { monthlyUsd: 1_000 },
   { monthlyUsd: 1_500 },
   { monthlyUsd: 2_000 },
   { monthlyUsd: 3_000 },
+  { monthlyUsd: 4_000 },
   { monthlyUsd: 5_000 },
   { monthlyUsd: 7_500 },
   { monthlyUsd: 10_000 },
+  { monthlyUsd: 12_500 },
+  { monthlyUsd: 15_000 },
+  { monthlyUsd: 20_000 },
+  { monthlyUsd: 25_000 },
+  { monthlyUsd: 30_000 },
+  { monthlyUsd: 35_000 },
+  { monthlyUsd: 40_000 },
+  { monthlyUsd: 45_000 },
+  { monthlyUsd: 50_000 },
 ] as const;
 
 /**
@@ -132,9 +145,9 @@ const TIERS: Record<string, TierConfig> = {
   free: {
     name: 'free',
     displayName: 'Free',
-    monthlyCredits: 2,
-    canPurchaseCredits: false,
-    models: [],
+    monthlyCredits: 5,
+    canPurchaseCredits: true,
+    models: ['all'],
     appLimit: 50,
     entitlements: SELF_SERVE,
   },
