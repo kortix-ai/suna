@@ -2284,7 +2284,8 @@
         "groups": {
           "small": "Kleine Teams",
           "growing": "Wachsende Teams",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Große Organisationen"
         }
       }
     },
@@ -2454,10 +2455,11 @@
         "free": {
           "name": "Free",
           "note": "Starte mit echten Sandbox-Credits.",
-          "f1": "200 Credits / Monat, keine Karte nötig",
-          "f2": "1 Projekt",
-          "f3": "Eigener API-Schlüssel für jedes Premium-Modell",
-          "f4": "Verbinde dein ChatGPT-Abo"
+          "f1": "500 Credits / Monat, keine Karte nötig",
+          "f2": "Verwaltete Modelle: Kimi, DeepSeek, GLM. Keine Datenspeicherung, Inferenz in den USA",
+          "f3": "1 Projekt",
+          "f4": "Eigener API-Schlüssel für jedes Premium-Modell",
+          "f5": "Verbinde dein ChatGPT-Abo"
         },
         "credits": {
           "name": "Credits",
@@ -2467,7 +2469,7 @@
           "f2": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
           "f3": "Ungenutzte Credits werden einen Monat übertragen",
           "f4": "Jederzeit aufladen. Aufladungen verfallen nie",
-          "f5": "Verwaltete Modelle und alle Funktionen",
+          "f5": "Bis zu 200 Projekte und höhere Modell-Ratenlimits",
           "f6": "Support per E-Mail"
         },
         "enterprise": {
@@ -2485,7 +2487,7 @@
       "faq": {
         "free": {
           "question": "Was enthält Free?",
-          "answer": "Free enthält jeden Monat 200 Credits für Sandbox-Rechenzeit und 1 Projekt. Nutze deinen eigenen API-Schlüssel oder verbinde dein ChatGPT-Abo für Premium-Modelle. Verwaltete Modelle mit Kortix-Schlüsseln erfordern einen kostenpflichtigen Plan."
+          "answer": "Free enthält jeden Monat 500 Credits, verwaltete Modelle und alle Funktionen, für 1 Projekt. Credits bezahlen den Agent-Computer und Kortix-Modelle. Nutze deinen eigenen API-Schlüssel oder verbinde dein ChatGPT-Abo für jedes andere Modell."
         },
         "credit": {
           "question": "Was bekomme ich für einen Credit?",
@@ -2493,7 +2495,7 @@
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
-          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 10.000 $ pro Monat (1.000.000 Credits). Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
+          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 50.000 $ pro Monat (5.000.000 Credits). Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 50.000 $ pro Monat sprich mit dem Vertrieb."
         },
         "members": {
           "question": "Zahle ich für Mitglieder?",
@@ -20015,7 +20017,7 @@
       "text146aaf3c71fa": "Hält SSO, SCIM, RBAC und Audit für ein unterzeichnetes Enterprise-Konto freigeschaltet, das zusätzlich über einen kostenpflichtigen Plan abgerechnet wird, damit der Stripe-Abgleich sie nicht entziehen kann.",
       "text517105fd13ce": "Credits finanzieren Sandbox-Rechenzeit – auch eine BYOK-Testphase braucht Guthaben, um Sitzungen auszuführen. Das kostenlose Willkommensguthaben beträgt 2 $.",
       "text2f1d17f50af8": "Enterprise schaltet SAML-SSO, SCIM-Verzeichnissynchronisierung, RBAC und Audit-Zugriff für dieses Konto frei. Der abgerechnete Plan bleibt unverändert.",
-      "text12836c0e435d": "Free kostet 0 $ – ein Projekt und 200 Credits pro Monat für Sandbox-Rechenzeit, mit deinem eigenen Schlüssel für jedes Premium-Modell. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt das ganze Konto. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
+      "text12836c0e435d": "Free kostet 0 $ – ein Projekt, 500 Credits pro Monat, verwaltete Modelle und alle Funktionen, mit deinem eigenen Schlüssel für jedes andere Modell. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt das ganze Konto. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
       "text5dffd4db88c5": "Dein Plan, deine Credits und die Abrechnung für dieses Konto.",
       "text49fd64c206dd": "Dein Plan ist aktiv. Die Credits sind bereit.",
       "textad828837ddd8": "Mitglieder Mitglied Arbeitsbereichszugriff Mitarbeitende Personen Teammitglieder Verzeichnis wer kann sehen Berechtigungen gewähren teilen",
@@ -20140,7 +20142,10 @@
       "text08e6480e9b78": "{value0} hinzugefügt",
       "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen.",
       "textdae75dce541f": "Pausiert alle Zeitpläne und Webhooks in diesem Projekt.",
-      "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein."
+      "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein.",
+      "agentsListSubagentsTitle": "Subagenten",
+      "agentsListSubagentsHint": "Andere Agenten rufen diese während einer Sitzung auf. Niemand startet einen Chat mit ihnen.",
+      "agentsListAlsoSubagent": "Auch Subagent"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

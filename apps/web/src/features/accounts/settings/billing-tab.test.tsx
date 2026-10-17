@@ -46,7 +46,7 @@ const { BillingTab } = await import('./billing-tab');
 
 /**
  * The Plan pane of an account with no paid subscription: the plan card names
- * Free, shows its 200 credits, and offers the tier select with a Subscribe
+ * Free, shows its 500 credits, and offers the tier select with a Subscribe
  * action. The wallet (balance, spend) belongs to the Credits pane and the
  * wallet-first view, so the Plan pane must not print it.
  */
@@ -73,7 +73,7 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     const html = renderPlan();
     expect(html).toContain('Current plan');
     expect(html).toContain('>Free</p>');
-    expect(html).toContain('200 credits / month');
+    expect(html).toContain('500 credits / month');
     expect(html).toContain('Monthly credits');
     expect(html).toContain('Subscribe for $200 / month');
     expect(html).toContain('20,000 credits / month');

@@ -17,7 +17,7 @@ import {
 } from './compute-pricing';
 
 describe('credit tier ladder', () => {
-  test('runs $50 to $10,000, ascending, every tier a valid API amount', () => {
+  test('runs $50 to $50,000, ascending, every tier a valid API amount', () => {
     const amounts = CREDIT_TIERS.map((tier) => tier.monthlyUsd);
     expect(amounts[0]).toBe(CREDITS_PLAN_MIN_USD);
     expect(amounts.at(-1)).toBe(CREDITS_PLAN_MAX_USD);
@@ -47,10 +47,11 @@ describe('credit tier ladder', () => {
     expect(tierForMonthlyUsd(500)?.group).toBe('growing');
   });
 
-  test('valid amounts are whole dollars from $50 to $10,000', () => {
+  test('valid amounts are whole dollars from $50 to $50,000', () => {
     expect(isValidMonthlyUsd(49)).toBe(false);
     expect(isValidMonthlyUsd(20)).toBe(false);
-    expect(isValidMonthlyUsd(10_001)).toBe(false);
+    expect(isValidMonthlyUsd(50_000)).toBe(true);
+    expect(isValidMonthlyUsd(50_001)).toBe(false);
     expect(isValidMonthlyUsd(75.5)).toBe(false);
     expect(isValidMonthlyUsd(null)).toBe(false);
     expect(isValidMonthlyUsd(Number.NaN)).toBe(false);
