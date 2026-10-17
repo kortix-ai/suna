@@ -883,7 +883,7 @@ flow(
  * SESS-36 — public transcript shares are REMOVED (KRTX-2358). `{transcript:true}`
  * mints nothing: the route answers a named 400. The anonymous viewing routes
  * (`/v1/public/session-shares/*`) are unmounted and answer 404. A legacy
- * transcript row — the revoke migration (`20261016151619145`) ended every one
+ * transcript row — the revoke migration (`20261017013738389`) ended every one
  * that existed — is refused at the token edge with the same 410 a revoked link
  * always got, and the share list still shows it, honestly revoked.
  *
