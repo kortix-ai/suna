@@ -34,7 +34,10 @@ interface Provisioned {
 }
 
 async function freshUserWithProject(): Promise<Provisioned> {
-  const email = `e2e-wizard-exit-${Date.now().toString(36)}@example.test`;
+  // Two workers reach this line in the same millisecond more often than one
+  // would guess, and auth.users enforces the email uniqueness; the UUID suffix
+  // keeps the four parallel provisions collision-free.
+  const email = `e2e-wizard-exit-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}@example.test`;
   const user = await createAuthUser(email, authOptions);
   try {
     const session = await signIn(email, authOptions);
