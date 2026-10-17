@@ -18,9 +18,8 @@ locals {
     if alb.name != "kortix-dev-use2-web-alb"
   }
   # SQS queues monitored below. Module capture_store (modules/capture-store/
-  # main.tf) composes both names from its caller's `name`; the
-  # environments/dev-us-east-2 instantiation passes kortix-dev-use2
-  # -capture-store. The value is the alarm-name stem.
+  # main.tf) composes both names from its caller's `name`; the dev-us-east-2
+  # root passes kortix-dev-use2-capture-store. The value is the alarm stem.
   use2_sqs_queues = {
     "kortix-dev-use2-capture-store-manifests"     = "manifests"
     "kortix-dev-use2-capture-store-manifests-dlq" = "manifests-dlq"
