@@ -350,6 +350,25 @@ jobs:
           sc.exe stop KortixCapture | Out-Null
           Start-Sleep 15
           "after service stop: $(@(& $mine).Count)" | Tee-Object "$env:EV\stop.txt"
+      - name: Sign-in reaches the real Kortix through Cloudflare (dev-api.kortix.com)
+        run: |
+          # The CI stand-in issuer is local; Cloudflare in front of Kortix refused requests
+          # without a User-Agent (403) and only a real host shows it. Nothing is approved.
+          $cli = "${env:ProgramFiles}\Kortix\Capture\kortix-capture.exe"
+          $lib = Join-Path $env:RUNNER_TEMP "cf-signin"
+          New-Item -ItemType Directory -Force $lib | Out-Null
+          $env:KORTIX_CAPTURE_DIR = $lib
+          $ok = $false
+          foreach ($i in 1..3) {
+            $p = Start-Process $cli -ArgumentList "sync", "setup", "--provider", "kortix", "--issuer", "https://dev-api.kortix.com", "--no-browser" -RedirectStandardOutput "$lib\out.txt" -RedirectStandardError "$lib\err.txt" -PassThru -NoNewWindow
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Get-Date) -lt $deadline -and -not $ok) { Start-Sleep 1; $ok = [bool](Select-String -Path "$lib\out.txt" -Pattern "user_code=" -SimpleMatch -Quiet) }
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            if ($ok) { break }
+            Start-Sleep 10
+          }
+          if (-not $ok) { Get-Content "$lib\out.txt", "$lib\err.txt" -ErrorAction SilentlyContinue | Select-Object -Last 20; throw "sign-in did not start at dev-api.kortix.com" }
+          "sign-in started at dev-api.kortix.com (device code issued)" | Tee-Object "$env:EV\cloudflare-signin.txt"
       - name: Uninstall
         run: |
           $p = Start-Process msiexec.exe -ArgumentList "/x", "`"$env:RUNNER_TEMP\msi\KortixCapture-next.msi`"", "/qn", "/l*v", "`"$env:EV\msi-uninstall.log`"" -Wait -PassThru
@@ -790,6 +809,20 @@ jobs:
             echo "credentials after reinstall: $(creds_after)"
           } | tee -a "$EV/reinstall.txt"
           launchctl print "gui/$(id -u)/ai.kortix.capture.agent" > "$EV/agent_after_reinstall.txt" 2>&1 || true
+      - name: Sign-in reaches the real Kortix through Cloudflare (dev-api.kortix.com)
+        run: |
+          # The CI stand-in issuer is local; Cloudflare in front of Kortix refused requests
+          # without a User-Agent (403) and only a real host shows it. No secret needed: the
+          # device grant starts unauthenticated, and nothing is approved.
+          lib="$(mktemp -d)"
+          for i in 1 2 3; do
+            out="$(KORTIX_CAPTURE_DIR="$lib" timeout 30 /usr/local/bin/kortix-capture sync setup --provider kortix --issuer https://dev-api.kortix.com --no-browser 2>&1 || true)"
+            grep -q "user_code=" <<< "$out" && break
+            sleep 10
+          done
+          rm -rf "$lib"
+          grep -q "user_code=" <<< "$out" || { echo "::error::sign-in did not start at dev-api.kortix.com"; printf '%s\n' "$out" | tail -20; exit 1; }
+          echo "sign-in started at dev-api.kortix.com (device code issued)" | tee "$EV/cloudflare-signin.txt"
       - name: Uninstall
         run: |
           sudo "/Applications/Kortix Capture.app/Contents/Resources/uninstall.sh" 2>&1 | tee "$EV/uninstall.txt"
@@ -1057,6 +1090,20 @@ jobs:
             ls -ln /etc/kortix/capture.json
           } 2>&1 | tee "$EV/install.txt"
           cat /usr/lib/systemd/system/kortix-capture-machine.service /usr/lib/systemd/user/kortix-capture.service > "$EV/units.txt"
+      - name: Sign-in reaches the real Kortix through Cloudflare (dev-api.kortix.com)
+        run: |
+          # The CI stand-in issuer is local; Cloudflare in front of Kortix refused requests
+          # without a User-Agent (403) and only a real host shows it. No secret needed: the
+          # device grant starts unauthenticated, and nothing is approved.
+          lib="$(mktemp -d)"
+          for i in 1 2 3; do
+            out="$(KORTIX_CAPTURE_DIR="$lib" timeout 30 /usr/bin/kortix-capture sync setup --provider kortix --issuer https://dev-api.kortix.com --no-browser 2>&1 || true)"
+            grep -q "user_code=" <<< "$out" && break
+            sleep 10
+          done
+          rm -rf "$lib"
+          grep -q "user_code=" <<< "$out" || { echo "::error::sign-in did not start at dev-api.kortix.com"; printf '%s\n' "$out" | tail -20; exit 1; }
+          echo "sign-in started at dev-api.kortix.com (device code issued)" | tee "$EV/cloudflare-signin.txt"
       - name: The signed-in person is enrolled and recorded
         run: |
           me="$(id -un)"; uid="$(id -u)"; k=/usr/bin/kortix-capture
