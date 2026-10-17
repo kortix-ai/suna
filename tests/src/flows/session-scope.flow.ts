@@ -998,7 +998,10 @@ flow(
       });
 
       await ctx.step('a plain member cannot spend credits in the gateway playground → 403', async () => {
-        (await asBob.post('/v1/projects/:projectId/gateway/playground', {}, { params })).status(403);
+        // A valid body: schema validation answers 400 before the leaf check.
+        // The leaf check refuses it before any model is called.
+        const body = { prompt: 'scope-10', models: ['kortix/no-such-model'] };
+        (await asBob.post('/v1/projects/:projectId/gateway/playground', body, { params })).status(403);
       });
 
       await ctx.step('Alice reads her own change request, review item, log and member budget', async () => {
