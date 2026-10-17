@@ -273,7 +273,7 @@ describe('kortix channels connect — one-click (cloud)', () => {
     expect(requests).toEqual([]);
   });
 
-  test('--timeout=-5 fails fast (a negative timeout is invalid input)', async () => {
+  test('--wait --timeout=-5 fails fast (a negative timeout is invalid input)', async () => {
     const code = await runChannels(['connect', '--wait', '--timeout=-5']);
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain("got '-5'");

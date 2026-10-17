@@ -194,9 +194,7 @@ export async function runChannels(argv: string[]): Promise<number> {
       // does either), so `connect --wait` hung forever. A finite value whose
       // ms multiplication overflows (`--timeout 2e305`) hangs the same way.
       const timeoutSec = timeoutFlag ? Number(timeoutFlag) : 300;
-      if (
-        !Number.isFinite(timeoutSec) || timeoutSec < 0 || !Number.isFinite(timeoutSec * 1000)
-      ) {
+      if (timeoutSec < 0 || !Number.isFinite(timeoutSec * 1000)) {
         return fail(`--timeout requires a non-negative number of seconds, got '${timeoutFlag}'`);
       }
       return platform === 'teams'
